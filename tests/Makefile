@@ -11,7 +11,7 @@ LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
 REP     ?= 7
 
-all: golden sunrace glprace threadshim cfgleak jplguard
+all: golden sunrace glprace threadshim cfgleak jplguard jplreal
 
 golden: golden.c $(SWE)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
@@ -48,21 +48,15 @@ jplguard: jplguard.c $(SWE)
 
 # G15: the JPL path, against a genuine JPL binary rather than a fixture.
 #
-# Conditional, and it says so: no JPL ephemeris is shipped (the smallest is
-# 41 MB, the useful ones 2.6 GB) and this fork keeps binaries out of the tree.
-# Point SE_JPL_FILE at one to run it:
+# Runs unconditionally: ephe/de200.eph is tracked beside the .se1 files, so
+# there is nothing to configure and nothing to skip. jplguard.c and jplcalc.c
+# only ever fed the reader fabricated headers; this opens a real one.
 #
-#   make check-jplreal SE_JPL_FILE=$$HOME/se1/de200.eph
+# SE_JPL_FILE and SE_TEST_EPHE override the defaults to point at a different
+# ephemeris. ⚠️ SE_TEST_EPHE must name a directory holding BOTH the JPL file
+# and the .se1 files, since the gate compares one against the other:
 #
-# Get one from https://www.astro.com/swisseph-download/jplfiles/ or straight
-# from JPL; de200 is the cheapest that exercises the reader end to end.
-#
-# ⚠️ SE_TEST_EPHE must name a directory holding BOTH the JPL file and the .se1
-# files, because the gate compares one against the other. It defaults to this
-# repository's ephe/, which has the .se1 files and no JPL file -- so point it
-# at wherever the JPL file lives:
-#
-#   make check-jplreal SE_JPL_FILE=de200.eph SE_TEST_EPHE=$$HOME/se1
+#   make check-jplreal SE_JPL_FILE=de441.eph SE_TEST_EPHE=$$HOME/se1
 jplreal: jplreal.c $(SWE)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
@@ -165,7 +159,7 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-version check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
+check: check-version check-threadshim check-jplreal check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
 	rm -f jplcalc jplreal .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt

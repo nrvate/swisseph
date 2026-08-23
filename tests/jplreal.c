@@ -1,23 +1,24 @@
-/* G15: SEFLG_JPLEPH really reaches a JPL ephemeris.
+/* G15: a JPL request is answered by JPL.
  *
- * Every other JPL test in this suite works on fabricated headers -- jplguard.c
- * feeds mutilated files to the reader, jplcalc.c checks the interpolator's
- * arithmetic. None of them opens a genuine JPL binary, because none is shipped:
- * the smallest is de200 at 41 MB and the useful ones are 2.6 GB, and this fork
- * keeps binaries out of the tree.
+ * Two assertions, and the second is why the first can be trusted:
  *
- * So this gate is CONDITIONAL. Point SE_JPL_FILE at a JPL ephemeris and it
- * runs; leave it unset and it says so and passes. A skipped gate that
- * announces itself is honest; a gate that silently tests nothing is not --
- * which is exactly the defect this whole change is about.
+ *   1. Ten bodies from ephe/de200.eph agree with the .se1 files, and
+ *      swe_calc() reports SEFLG_JPLEPH in the return flag.
+ *   2. The same request against a JPL file that does not exist FAILS. It
+ *      does not quietly come back from the Swiss files.
  *
- *   SE_JPL_FILE=/path/to/de200.eph SE_TEST_EPHE=/path/to/ephe ./jplreal
+ * Without the second, the first proves nothing: a substitution would return
+ * Swiss numbers that match Swiss numbers exactly.
  *
- * What it proves that nothing else can: that the JPL request is answered by
- * JPL. Before strict mode a missing file produced a Swiss answer with the
- * Swiss bit set and a note in serr, so a caller checking only the return code
- * could not tell. Here the strict default turns that into an error, and the
- * test additionally asserts the returned flag.
+ * This is the only test here that opens a real JPL binary. jplguard.c feeds
+ * the reader mutilated headers and jplcalc.c checks the interpolator's
+ * arithmetic; both work on fabricated files.
+ *
+ * ephe/de200.eph is tracked beside the .se1 files -- 41 MB against their
+ * 129 MB -- so this needs no configuration and never skips. It spans
+ * 1600..2170 CE, which is all this asks of it. SE_JPL_FILE and SE_TEST_EPHE
+ * point at a different ephemeris; SE_TEST_EPHE must hold both the JPL file
+ * and the .se1 files, since the comparison needs both.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,12 +55,11 @@ int main(void)
   double jd = 2444204.095138889;    /* 1979-11-26, inside DE200's 1600..2170 */
   int i, bad = 0;
 
-  if (jplfile == NULL || *jplfile == '\0') {
-    printf("G15 SKIP: set SE_JPL_FILE to a JPL ephemeris to exercise the JPL path\n");
-    return 0;
-  }
-  if (ephe != NULL && *ephe)
-    swe_set_ephe_path((char *) ephe);
+  if (jplfile == NULL || *jplfile == '\0')
+    jplfile = "de200.eph";        /* shipped in ephe/, beside the .se1 files */
+  if (ephe == NULL || *ephe == '\0')
+    ephe = "../ephe";
+  swe_set_ephe_path((char *) ephe);
   if (strlen(jplfile) >= AS_MAXCH) {
     printf("G15 FAIL: SE_JPL_FILE too long\n");
     return 1;
@@ -103,7 +103,7 @@ int main(void)
   /* And the other half of the contract: with the JPL file deliberately
    * unavailable, the same request must fail rather than answer from Swiss. */
   swe_close();
-  if (ephe != NULL && *ephe)
+  if (ephe != NULL && *ephe)     /* re-assert: swe_close() cleared it */
     swe_set_ephe_path((char *) ephe);
   strcpy(jf, "definitely-not-here.eph");
   swe_set_jpl_file(jf);
