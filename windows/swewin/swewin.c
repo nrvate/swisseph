@@ -89,10 +89,10 @@
 #define GWW_HINSTANCE GWL_HINSTANCE
 #endif
 
-#include "../sweodef.h"
+#include "../../sweodef.h"
 #include "resource.h"
 #include "swewin.h"
-#include "../swephexp.h"
+#include "../../swephexp.h"
 
 #define BUFLEN  8000
 #define MY_ODEGREE_STRING "°"
