@@ -107,35 +107,35 @@ extern void swi_polcart_sp(double *l, double *x);
 extern void swi_polcart(double *l, double *x);
 
 /* GCRS to J2000 */
-extern void swi_bias(double *x, double tjd, int32 iflag, AS_BOOL backward);
+extern void swi_bias(swe_ctx *ctx, double *x, double tjd, int32 iflag, AS_BOOL backward);
 extern void swi_get_eop_time_range(void);
 /* GCRS to FK5 */
 extern void swi_icrs2fk5(double *x, int32 iflag, AS_BOOL backward);
 
 /* precession */
-extern int swi_precess(double *R, double J, int32 iflag, int direction );
-extern void swi_precess_speed(double *xx, double t, int32 iflag, int direction);
+extern int swi_precess(swe_ctx *ctx, double *R, double J, int32 iflag, int direction );
+extern void swi_precess_speed(swe_ctx *ctx, double *xx, double t, int32 iflag, int direction);
 
-extern int32 swi_guess_ephe_flag(void);
+extern int32 swi_guess_ephe_flag(swe_ctx *ctx);
 
 /* from sweph.c, light deflection, aberration, etc. */
 extern void swi_deflect_light(double *xx, double dt, int32 iflag);
 extern void swi_aberr_light(double *xx, double *xe, int32 iflag);
-extern int swi_plan_for_osc_elem(int32 iflag, double tjd, double *xx);
-extern int swi_trop_ra2sid_lon(double *xin, double *xout, double *xoutr, int32 iflag);
-extern int swi_trop_ra2sid_lon_sosy(double *xin, double *xout, int32 iflag);
-extern int swi_get_observer(double tjd, int32 iflag, 
+extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *xx);
+extern int swi_trop_ra2sid_lon(swe_ctx *ctx, double *xin, double *xout, double *xoutr, int32 iflag);
+extern int swi_trop_ra2sid_lon_sosy(swe_ctx *ctx, double *xin, double *xout, int32 iflag);
+extern int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag, 
 	AS_BOOL do_save, double *xobs, char *serr);
 extern void swi_force_app_pos_etc(void);
 
 /* obliquity of ecliptic */
-extern void swi_check_ecliptic(double tjd, int32 iflag);
-extern double swi_epsiln(double J, int32 iflag);
+extern void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag);
+extern double swi_epsiln(swe_ctx *ctx, double J, int32 iflag);
 extern void swi_ldp_peps(double J, double *dpre, double *deps);
 
 /* nutation */
-extern void swi_check_nutation(double tjd, int32 iflag);
-extern int swi_nutation(double J, int32 iflag, double *nutlo);
+extern void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag);
+extern int swi_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo);
 extern void swi_nutate(double *xx, int32 iflag, AS_BOOL backward);
 
 extern void swi_mean_lunar_elements(double tjd, 

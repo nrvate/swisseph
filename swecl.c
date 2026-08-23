@@ -580,7 +580,7 @@ int32 CALL_CONV swe_sol_eclipse_where(
   int32 retflag, retflag2;
   double dcore[10];
   ifl &= SEFLG_EPHMASK; 
-  swi_set_tid_acc(tjd_ut, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_ut, ifl, 0, serr);
   if ((retflag = eclipse_where(ctx, tjd_ut, SE_SUN, NULL, ifl, geopos, dcore, serr)) < 0)
     return retflag;
   if ((retflag2 = eclipse_how(ctx, tjd_ut, SE_SUN, NULL, ifl, geopos[0], geopos[1], 0, attr, serr)) == ERR)
@@ -627,7 +627,7 @@ int32 CALL_CONV swe_lun_occult_where(
   double dcore[10];
   if (ipl < 0) ipl = 0;
   ifl &= SEFLG_EPHMASK; 
-  swi_set_tid_acc(tjd_ut, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_ut, ifl, 0, serr);
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */
   if (ipl == SE_AST_OFFSET + 134340)
@@ -951,7 +951,7 @@ int32 CALL_CONV swe_sol_eclipse_how(
     return ERR;
   }
   ifl &= SEFLG_EPHMASK; 
-  swi_set_tid_acc(tjd_ut, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_ut, ifl, 0, serr);
   if ((retflag = eclipse_how(ctx, tjd_ut, SE_SUN, NULL, ifl, geopos[0], geopos[1], geopos[2], attr, serr)) == ERR)
     return retflag;
   if ((retflag2 = eclipse_where(ctx, tjd_ut, SE_SUN, NULL, ifl, geopos2, dcore, serr)) == ERR)
@@ -1027,7 +1027,7 @@ static int32 eclipse_how( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname
    * azimuth and altitude of sun or planet
    */
 #if USE_AZ_NAV   /* old */
-  eps = swi_epsiln(te, iflag);
+  eps = swi_epsiln(ctx, te, iflag);
   if (iflag & SEFLG_NONUT)
     sidt = swe_sidtime0(tjd_ut, eps * RADTODEG, 0) * 15;
   else
@@ -1221,7 +1221,7 @@ int32 CALL_CONV swe_sol_eclipse_when_glob(double tjd_start, int32 ifl, int32 ifl
   AS_BOOL dont_times = FALSE;
   int32 iflag, iflagcart;
   ifl &= SEFLG_EPHMASK; 
-  swi_set_tid_acc(tjd_start, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
   iflag = SEFLG_EQUATORIAL | ifl;
   iflagcart = iflag | SEFLG_XYZ;
   if (ifltype == (SE_ECL_PARTIAL | SE_ECL_CENTRAL)) {
@@ -1619,7 +1619,7 @@ int32 CALL_CONV swe_lun_occult_when_glob(
   if (ipl == SE_AST_OFFSET + 134340)
     ipl = SE_PLUTO;
   ifl &= SEFLG_EPHMASK; 
-  swi_set_tid_acc(tjd_start, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
   iflag = SEFLG_EQUATORIAL | ifl;
   iflagcart = iflag | SEFLG_XYZ;
   backward &= 1L;
@@ -2050,7 +2050,7 @@ int32 CALL_CONV swe_sol_eclipse_when_loc(double tjd_start, int32 ifl,
     return ERR;
   }
   ifl &= SEFLG_EPHMASK; 
-  swi_set_tid_acc(tjd_start, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
   if ((retflag = eclipse_when_loc(ctx, tjd_start, ifl, geopos, tret, attr, backward, serr)) <= 0)
     return retflag;
   /* 
@@ -2110,7 +2110,7 @@ int32 CALL_CONV swe_lun_occult_when_loc(double tjd_start, int32 ipl, char *starn
   if (ipl == SE_AST_OFFSET + 134340)
     ipl = SE_PLUTO;
   ifl &= SEFLG_EPHMASK; 
-  swi_set_tid_acc(tjd_start, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
   if ((retflag = occult_when_loc(ctx, tjd_start, ipl, starname, ifl, geopos, tret, attr, backward, serr)) <= 0)
     return retflag;
   /* 
@@ -3227,6 +3227,9 @@ int32 CALL_CONV swe_lun_eclipse_how(
           double *attr, 
           char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   double dcore[10];
   double lm[6], xaz[6];
   int32 retc;
@@ -3240,7 +3243,7 @@ int32 CALL_CONV swe_lun_eclipse_how(
   }
   ifl = ifl & ~SEFLG_TOPOCTR;
   ifl &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
-  swi_set_tid_acc(tjd_ut, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_ut, ifl, 0, serr);
   retc = lun_eclipse_how(tjd_ut, ifl, attr, dcore, serr);
   if (geopos == NULL) {
     return retc;
@@ -3411,6 +3414,9 @@ static int32 lun_eclipse_how(
 int32 CALL_CONV swe_lun_eclipse_when(double tjd_start, int32 ifl, int32 ifltype,
      double *tret, int32 backward, char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   int i, j, m, n, o, i1 = 0, i2 = 0;
   int32 retflag = 0, retflag2 = 0;
   double t, tjd, tjd2, dt, dtint, dta, dtb;
@@ -3430,7 +3436,7 @@ int32 CALL_CONV swe_lun_eclipse_when(double tjd_start, int32 ifl, int32 ifltype,
   int32 iflag;
   int32 iflagcart;
   ifl &= SEFLG_EPHMASK; 
-  swi_set_tid_acc(tjd_start, ifl, 0, serr);
+  swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
   iflag = SEFLG_EQUATORIAL | ifl;
   iflagcart = iflag | SEFLG_XYZ;
   ifltype &= ~(SE_ECL_CENTRAL|SE_ECL_NONCENTRAL);
@@ -4457,7 +4463,7 @@ int32 CALL_CONV swe_rise_trans_true_hor(
   if (horhgt == -100) {
     horhgt = 0.0001 + calc_dip(geopos[2], atpress, attemp, ctx->const_lapse_rate);
   }
-  /*swi_set_tid_acc(tjd_ut, epheflag, 0, serr);*/
+  /*swi_set_tid_acc(ctx, tjd_ut, epheflag, 0, serr);*/
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */
   if (ipl == SE_AST_OFFSET + 134340)
@@ -5329,7 +5335,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
         for (j = 0; j <= 5; j++)
           xpos[i][j] += xposm[j] / (EARTH_MOON_MRAT + 1.0);
       }
-      swi_plan_for_osc_elem(iflg0, t, xpos[i]);
+      swi_plan_for_osc_elem(ctx, iflg0, t, xpos[i]);
     }
     for (i = istart; i <= iend; i++) {
       if (fabs(xpos[i][5]) < dzmin)
@@ -5448,7 +5454,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
    ***********************/
   if (iflag & SEFLG_TOPOCTR) {
     /* geocentric position of observer */
-    if (swi_get_observer(tjd_et, iflag, FALSE, xobs, serr) != OK)
+    if (swi_get_observer(ctx, tjd_et, iflag, FALSE, xobs, serr) != OK)
       return ERR;
     /*for (i = 0; i <= 5; i++)
       xobs[i] = ctx->topd.xobs[i];*/
@@ -5503,9 +5509,9 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
     /*********************
      * to J2000 
      *********************/
-    swi_precess(xp, tjd_et, iflag, J_TO_J2000);
+    swi_precess(ctx, xp, tjd_et, iflag, J_TO_J2000);
     if (iflag & SEFLG_SPEED)
-      swi_precess_speed(xp, tjd_et, iflag, J_TO_J2000);
+      swi_precess_speed(ctx, xp, tjd_et, iflag, J_TO_J2000);
 //      fprintf(stderr, "%.17f, %.17f, %.17f, %.17f, %.17f, %.17f\n", xp[0], xp[1], xp[2], xp[3], xp[4], xp[5]);
     /*********************
      * to barycenter 
@@ -5549,7 +5555,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
           return ERR;
         if (iflag & SEFLG_TOPOCTR) {
           /* geocentric position of observer */
-          /* if (swi_get_observer(tjd_et - dt, iflag, FALSE, xobs, serr) != OK)
+          /* if (swi_get_observer(ctx, tjd_et - dt, iflag, FALSE, xobs, serr) != OK)
             return ERR;*/
           for (i = 0; i <= 5; i++)
             xobs2[i] = ctx->topd.xobs[i];
@@ -5587,9 +5593,9 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
     for (j = 0; j <= 5; j++)
       x2000[j] = xp[j];
     if (!(iflag & SEFLG_J2000)) {
-      swi_precess(xp, tjd_et, iflag, J2000_TO_J);
+      swi_precess(ctx, xp, tjd_et, iflag, J2000_TO_J);
       if (iflag & SEFLG_SPEED)
-        swi_precess_speed(xp, tjd_et, iflag, J2000_TO_J);
+        swi_precess_speed(ctx, xp, tjd_et, iflag, J2000_TO_J);
     }
     /*********************
      * nutation           
@@ -5621,16 +5627,16 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
     if (iflag & SEFLG_SIDEREAL) {
       /* project onto ecliptic t0 */
       if (ctx->sidd.sid_mode & SE_SIDBIT_ECL_T0) {
-        if (swi_trop_ra2sid_lon(x2000, pldat.xreturn+6, pldat.xreturn+18, iflag) != OK)
+        if (swi_trop_ra2sid_lon(ctx, x2000, pldat.xreturn+6, pldat.xreturn+18, iflag) != OK)
           return ERR;
       /* project onto solar system equator */
       } else if (ctx->sidd.sid_mode & SE_SIDBIT_SSY_PLANE) {
-        if (swi_trop_ra2sid_lon_sosy(x2000, pldat.xreturn+6, iflag) != OK)
+        if (swi_trop_ra2sid_lon_sosy(ctx, x2000, pldat.xreturn+6, iflag) != OK)
           return ERR;
       } else {
       /* traditional algorithm */
         swi_cartpol_sp(pldat.xreturn+6, pldat.xreturn); 
-	if (swi_get_ayanamsa_ex(tjd_et, iflag, &daya, serr) == ERR)
+	if (swi_get_ayanamsa_ex(ctx, tjd_et, iflag, &daya, serr) == ERR)
 	  return ERR;
         pldat.xreturn[0] -= daya * DEGTORAD;
         swi_polcart_sp(pldat.xreturn, pldat.xreturn+6); 
@@ -5692,7 +5698,7 @@ int32 CALL_CONV swe_nod_aps_ut(double tjd_ut, int32 ipl, int32 iflag,
                       double *xnasc, double *xndsc, 
                       double *xperi, double *xaphe, 
                       char *serr) {
-  /*swi_set_tid_acc(tjd_ut, iflag, 0, serr);*/
+  /*swi_set_tid_acc(ctx, tjd_ut, iflag, 0, serr);*/
   return swe_nod_aps(tjd_ut + swe_deltat_ex(tjd_ut, iflag, serr),
                       ipl, iflag, method, xnasc, xndsc, xperi, xaphe,
                       serr);
@@ -6357,6 +6363,9 @@ int32 CALL_CONV swe_gauquelin_sector(
   double *dgsect, /* return address for gauquelin sector position */
   char *serr)     /* return address for error message */
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   AS_BOOL rise_found = TRUE;
   AS_BOOL set_found = TRUE;
   int32 retval;
@@ -6382,8 +6391,8 @@ int32 CALL_CONV swe_gauquelin_sector(
    */
   if (imeth == 0 || imeth == 1) {
     t_et = t_ut + swe_deltat_ex(t_ut, iflag, serr);
-    eps = swi_epsiln(t_et, iflag) * RADTODEG;
-    swi_nutation(t_et, iflag, nutlo);
+    eps = swi_epsiln(ctx, t_et, iflag) * RADTODEG;
+    swi_nutation(ctx, t_et, iflag, nutlo);
     nutlo[0] *= RADTODEG;
     nutlo[1] *= RADTODEG;
     armc = swe_degnorm(swe_sidtime0(t_ut, eps + nutlo[1], nutlo[0]) * 15 + geopos[0]);

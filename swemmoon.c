@@ -1726,7 +1726,7 @@ static void ecldat_equ2000(swe_ctx *ctx, double tjd, double *xpm) {
   /* equatorial */
   swi_coortrf2(xpm, xpm, -ctx->oec.seps, ctx->oec.ceps);
   /* j2000 */
-  swi_precess(xpm, tjd, 0, J_TO_J2000);/**/
+  swi_precess(ctx, xpm, tjd, 0, J_TO_J2000);/**/
 }
 
 /* Reduce arc seconds modulo 360 degrees

@@ -1445,6 +1445,9 @@ static char *tolower_string_star(char *str)
 */
 int32 CALL_CONV swe_vis_limit_mag(double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   int32 retval = OK, i, scotopic_flag = 0;
   double AltO, AziO, AltM, AziM, AltS, AziS;
   double sunra;
@@ -1457,7 +1460,7 @@ int32 CALL_CONV swe_vis_limit_mag(double tjdut, double *dgeo, double *datm, doub
     }
     return ERR;
   }
-  swi_set_tid_acc(tjdut, helflag, 0, serr);
+  swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   sunra = SunRA(tjdut, helflag, serr);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
   SWI_CFG_LOCAL(swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
@@ -1582,8 +1585,11 @@ static int32 TopoArcVisionis(double Magn, double *dobs, double AltO, double AziO
 
 int32 CALL_CONV swe_topo_arcus_visionis(double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   double sunra;
-  swi_set_tid_acc(tjdut, helflag, 0, serr);
+  swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   sunra = SunRA(tjdut, helflag, serr);
   if (serr != NULL && *serr != '\0')
     return ERR;
@@ -1676,12 +1682,15 @@ static int32 HeliacalAngle(double Magn, double *dobs, double AziO, double AltM, 
 
 int32 CALL_CONV swe_heliacal_angle(double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
     if (serr != NULL)
       sprintf(serr, "location for heliacal events must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
   }
-  swi_set_tid_acc(tjdut, helflag, 0, serr);
+  swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
   return HeliacalAngle(mag, dobs, azi_obj, alt_moon, azi_moon, tjdut, azi_sun, dgeo, datm, helflag, dret, serr);
 }
@@ -1843,6 +1852,9 @@ static void strcpy_VBsafe(char *sout, char *sin)
 */
 int32 CALL_CONV swe_heliacal_pheno_ut(double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   double AziS, AltS, AltS2, AziO, AltO, AltO2, GeoAltO, AppAltO, DAZact, TAVact, ParO, MagnO;
   double ARCVact, ARCLact, kact, WMoon, LMoon = 0, qYal, qCrit;
   double RiseSetO, RiseSetS, Lag, TbYallop, TfirstVR, TlastVR, TbVR;
@@ -1860,7 +1872,7 @@ int32 CALL_CONV swe_heliacal_pheno_ut(double JDNDaysUT, double *dgeo, double *da
       sprintf(serr, "location for heliacal events must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
   }
-  swi_set_tid_acc(JDNDaysUT, helflag, 0, serr);
+  swi_set_tid_acc(ctx, JDNDaysUT, helflag, 0, serr);
   sunra = SunRA(JDNDaysUT, helflag, serr);
   /* note, the fixed stars functions rewrite the star name. The input string 
      may be too short, so we have to make sure we have enough space */
@@ -3366,6 +3378,9 @@ static int32 heliacal_ut(double JDNDaysUTStart, double *dgeo, double *datm, doub
 */
 int32 CALL_CONV swe_heliacal_ut(double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   int32 retval, Planet;
   char ObjectName[AS_MAXCH], serr[AS_MAXCH], s[AS_MAXCH];
   double tjd0 = JDNDaysUTStart, tjd, dsynperiod, tjdmax, tadd;
@@ -3376,7 +3391,7 @@ int32 CALL_CONV swe_heliacal_ut(double JDNDaysUTStart, double *dgeo, double *dat
       sprintf(serr_ret, "location for heliacal events must be between %.0f and %.0f m above sea\n", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
   }
-  swi_set_tid_acc(JDNDaysUTStart, helflag, 0, serr);
+  swi_set_tid_acc(ctx, JDNDaysUTStart, helflag, 0, serr);
   if (helflag & SE_HELFLAG_LONG_SEARCH)
     MaxCountSynodicPeriod = MAX_COUNT_SYNPER_MAX;
 /*  if (helflag & SE_HELFLAG_SEARCH_1_PERIOD)

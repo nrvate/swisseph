@@ -90,14 +90,14 @@ TLS int32 swi_trace_count = 0;
 #endif
 
 static void init_crc32(void);
-static int init_dt(void);
+static int init_dt(swe_ctx *ctx);
 static double adjust_for_tidacc(double ans, double Y, double tid_acc, double tid_acc0, AS_BOOL adjust_after_1955);
 static double deltat_espenak_meeus_1620(double tjd, double tid_acc);
 static double deltat_stephenson_etc_2016(double tjd, double tid_acc);
 static double deltat_longterm_morrison_stephenson(double tjd);
 static double deltat_stephenson_morrison_2004_1600(double tjd, double tid_acc);
 static double deltat_stephenson_morrison_1997_1600(double tjd, double tid_acc);
-static double deltat_aa(double tjd, double tid_acc);
+static double deltat_aa(swe_ctx *ctx, double tjd, double tid_acc);
 
 #define SEFLG_EPHMASK   (SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH)
 
@@ -884,13 +884,13 @@ const double dcor_eps_jpl[] = {
 35.449, 35.409, 35.497, 35.556, 35.672, 35.760, 35.596, 35.565, 35.510, 35.394,
 35.385, 35.375, 35.415,
 };
-double swi_epsiln(double J, int32 iflag) 
+double swi_epsiln(swe_ctx *ctx, double J, int32 iflag) 
 {
   double T, eps;
   double tofs, dofs, t0, t1;
-  int prec_model = swed.astro_models[SE_MODEL_PREC_LONGTERM];
-  int prec_model_short = swed.astro_models[SE_MODEL_PREC_SHORTTERM];
-  int jplhora_model = swed.astro_models[SE_MODEL_JPLHORA_MODE];
+  int prec_model = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
+  int prec_model_short = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   AS_BOOL is_jplhor = FALSE;
   if (prec_model == 0) prec_model = SEMOD_PREC_DEFAULT;
   if (prec_model_short == 0) prec_model_short = SEMOD_PREC_DEFAULT_SHORT;
@@ -1216,7 +1216,7 @@ static const double inclcof_laskar[] = {
   -5.4000441e-11, 1.32115526e-9, -5.998737027e-7, -1.6242797091e-5,
   0.002278495537, 0.0 };
 
-static int precess_2(double *R, double J, int32 iflag, int direction, int prec_method)
+static int precess_2(swe_ctx *ctx, double *R, double J, int32 iflag, int direction, int prec_method)
 {
   int i;
   double T, z;
@@ -1250,9 +1250,9 @@ static int precess_2(double *R, double J, int32 iflag, int direction, int prec_m
    * to the ecliptic. (The input is equatorial.)
    */
   if( direction == 1 ) 
-    eps = swi_epsiln(J, iflag); /* To J2000 */
+    eps = swi_epsiln(ctx, J, iflag); /* To J2000 */
   else 
-    eps = swi_epsiln(J2000, iflag); /* From J2000 */
+    eps = swi_epsiln(ctx, J2000, iflag); /* From J2000 */
   sineps = sin(eps);
   coseps = cos(eps);
   x[0] = R[0];
@@ -1312,9 +1312,9 @@ static int precess_2(double *R, double J, int32 iflag, int direction, int prec_m
   /* Rotate about x axis to final equator.
    */
   if( direction == 1 ) 
-    eps = swi_epsiln(J2000, iflag);
+    eps = swi_epsiln(ctx, J2000, iflag);
   else 
-    eps = swi_epsiln(J, iflag);
+    eps = swi_epsiln(ctx, J, iflag);
   sineps = sin(eps);
   coseps = cos(eps);
   z = coseps * x[1] - sineps * x[2];
@@ -1370,12 +1370,12 @@ static int precess_3(double *R, double J, int direction, int iflag, int prec_met
  * first go from J1 to J2000, then call the program again
  * to go from J2000 to J2.
  */
-int swi_precess(double *R, double J, int32 iflag, int direction )
+int swi_precess(swe_ctx *ctx, double *R, double J, int32 iflag, int direction )
 {
   double T = (J - J2000)/36525.0;
-  int prec_model = swed.astro_models[SE_MODEL_PREC_LONGTERM];
-  int prec_model_short = swed.astro_models[SE_MODEL_PREC_SHORTTERM];
-  int jplhora_model = swed.astro_models[SE_MODEL_JPLHORA_MODE];
+  int prec_model = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
+  int prec_model_short = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   AS_BOOL is_jplhor = FALSE;
   if (prec_model == 0) prec_model = SEMOD_PREC_DEFAULT;
   if (prec_model_short == 0) prec_model_short = SEMOD_PREC_DEFAULT_SHORT;
@@ -1414,11 +1414,11 @@ int swi_precess(double *R, double J, int32 iflag, int direction )
   } else if (prec_model == SEMOD_PREC_NEWCOMB) {
     return precess_1(R, J, direction, SEMOD_PREC_NEWCOMB);
   } else if (prec_model == SEMOD_PREC_LASKAR_1986) {
-    return precess_2(R, J, iflag, direction, SEMOD_PREC_LASKAR_1986);
+    return precess_2(ctx, R, J, iflag, direction, SEMOD_PREC_LASKAR_1986);
   } else if (prec_model == SEMOD_PREC_SIMON_1994) {
-    return precess_2(R, J, iflag, direction, SEMOD_PREC_SIMON_1994);
+    return precess_2(ctx, R, J, iflag, direction, SEMOD_PREC_SIMON_1994);
   } else if (prec_model == SEMOD_PREC_WILLIAMS_1994 || prec_model == SEMOD_PREC_WILL_EPS_LASK) {
-    return precess_2(R, J, iflag, direction, SEMOD_PREC_WILLIAMS_1994);
+    return precess_2(ctx, R, J, iflag, direction, SEMOD_PREC_WILLIAMS_1994);
   } else if (prec_model == SEMOD_PREC_OWEN_1990) { 
     return precess_3(R, J, direction, iflag, SEMOD_PREC_OWEN_1990);
   } else { /* SEMOD_PREC_VONDRAK_2011 */
@@ -1595,7 +1595,7 @@ static const short nt[] = {
  0, 0, 2, 4, 2,    -1,  0,    0,  0,
  0, 1, 0, 1, 0,     1,  0,    0,  0,
 #if 1
-/*#if NUT_CORR_1987  switch is handled in function calc_nutation_iau1980() */
+/*#if NUT_CORR_1987  switch is handled in function calc_nutation_iau1980(ctx) */
 /* corrections to IAU 1980 nutation series by Herring 1987
  *             in 0.00001" !!!
  *              LS      OC      */
@@ -1612,7 +1612,7 @@ static const short nt[] = {
  ENDMARK,
 };
 
-static int calc_nutation_iau1980(double J, double *nutlo)
+static int calc_nutation_iau1980(swe_ctx *ctx, double J, double *nutlo)
 {
   /* arrays to hold sines and cosines of multiple angles */
   double ss[5][8];
@@ -1626,7 +1626,7 @@ static int calc_nutation_iau1980(double J, double *nutlo)
   int i, j, k, k1, m, n;
   int ns[5];
   const short *p;
-  int nut_model = swed.astro_models[SE_MODEL_NUT];
+  int nut_model = ctx->astro_models[SE_MODEL_NUT];
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
   /* Julian centuries from 2000 January 1.5,
    * barycentric dynamical time
@@ -1810,7 +1810,7 @@ static int calc_nutation_iau1980(double J, double *nutlo)
  */
 
 #include "swenut2000a.h"
-static int calc_nutation_iau2000ab(double J, double *nutlo) 
+static int calc_nutation_iau2000ab(swe_ctx *ctx, double J, double *nutlo) 
 {
   int i, j, k, inls;
   double M, SM, F, D, OM;
@@ -1819,7 +1819,7 @@ static int calc_nutation_iau2000ab(double J, double *nutlo)
   double darg, sinarg, cosarg;
   double dpsi = 0, deps = 0;
   double T = (J - J2000 ) / 36525.0;
-  int nut_model = swed.astro_models[SE_MODEL_NUT];
+  int nut_model = ctx->astro_models[SE_MODEL_NUT];
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
   /* luni-solar nutation */
   /* Fundamental arguments, Simon & al. (1994) */
@@ -2066,12 +2066,12 @@ done:
   return ans;
 }
 
-static int calc_nutation(double J, int32 iflag, double *nutlo)
+static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
 {
   int n;
   double dpsi, deps, J2;
-  int nut_model = swed.astro_models[SE_MODEL_NUT];
-  int jplhora_model = swed.astro_models[SE_MODEL_JPLHORA_MODE];
+  int nut_model = ctx->astro_models[SE_MODEL_NUT];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   AS_BOOL is_jplhor = FALSE;
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
@@ -2082,14 +2082,14 @@ static int calc_nutation(double J, int32 iflag, double *nutlo)
       && J <= HORIZONS_TJD0_DPSI_DEPS_IAU1980)
     is_jplhor = TRUE;
   if (is_jplhor) {
-    calc_nutation_iau1980(J, nutlo);
+    calc_nutation_iau1980(ctx, J, nutlo);
     if (iflag & SEFLG_JPLHOR) {
-      n = (int) (swed.eop_tjd_end - swed.eop_tjd_beg + 0.000001);
+      n = (int) (ctx->eop_tjd_end - ctx->eop_tjd_beg + 0.000001);
       J2 = J;
-      if (J < swed.eop_tjd_beg_horizons)
-	J2 = swed.eop_tjd_beg_horizons;
-      dpsi = bessel(swed.dpsi, n + 1, J2 - swed.eop_tjd_beg);
-      deps = bessel(swed.deps, n + 1, J2 - swed.eop_tjd_beg);
+      if (J < ctx->eop_tjd_beg_horizons)
+	J2 = ctx->eop_tjd_beg_horizons;
+      dpsi = bessel(ctx->dpsi, n + 1, J2 - ctx->eop_tjd_beg);
+      deps = bessel(ctx->deps, n + 1, J2 - ctx->eop_tjd_beg);
       nutlo[0] += dpsi / 3600.0 * DEGTORAD;
       nutlo[1] += deps / 3600.0 * DEGTORAD;
 #if 0
@@ -2100,9 +2100,9 @@ static int calc_nutation(double J, int32 iflag, double *nutlo)
       nutlo[1] += DEPS_IAU1980_TJD0 / 3600.0 * DEGTORAD;
     }
   } else if (nut_model == SEMOD_NUT_IAU_1980 || nut_model == SEMOD_NUT_IAU_CORR_1987) {
-    calc_nutation_iau1980(J, nutlo);
+    calc_nutation_iau1980(ctx, J, nutlo);
   } else if (nut_model == SEMOD_NUT_IAU_2000A || nut_model == SEMOD_NUT_IAU_2000B) {
-    calc_nutation_iau2000ab(J, nutlo);
+    calc_nutation_iau2000ab(ctx, J, nutlo);
     if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_2) {
       nutlo[0] += -41.7750 / 3600.0 / 1000.0 * DEGTORAD;
       nutlo[1] += -6.8192 / 3600.0 / 1000.0 * DEGTORAD;
@@ -2123,35 +2123,35 @@ static double quadratic_intp(double ym, double y0, double yp, double x)
   return y;
 }
 
-int swi_nutation(double tjd, int32 iflag, double *nutlo)
+int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
 {
   int retc = OK;
   double dnut[2], dx;
-  if (!swed.do_interpolate_nut) {
-    retc = calc_nutation(tjd, iflag, nutlo);
+  if (!ctx->do_interpolate_nut) {
+    retc = calc_nutation(ctx, tjd, iflag, nutlo);
   // from interpolation, with three data points in 1-day steps;
   // maximum error is about 3 mas
   } else {
     // precalculated data points available
-    if (tjd < swed.interpol.tjd_nut2 && tjd > swed.interpol.tjd_nut0) {
-      dx = (tjd - swed.interpol.tjd_nut0) - 1.0;
-      nutlo[0] = quadratic_intp(swed.interpol.nut_dpsi0, swed.interpol.nut_dpsi1, swed.interpol.nut_dpsi2, dx);
-      nutlo[1] = quadratic_intp(swed.interpol.nut_deps0, swed.interpol.nut_deps1, swed.interpol.nut_deps2, dx);
+    if (tjd < ctx->interpol.tjd_nut2 && tjd > ctx->interpol.tjd_nut0) {
+      dx = (tjd - ctx->interpol.tjd_nut0) - 1.0;
+      nutlo[0] = quadratic_intp(ctx->interpol.nut_dpsi0, ctx->interpol.nut_dpsi1, ctx->interpol.nut_dpsi2, dx);
+      nutlo[1] = quadratic_intp(ctx->interpol.nut_deps0, ctx->interpol.nut_deps1, ctx->interpol.nut_deps2, dx);
     } else {
-      swed.interpol.tjd_nut0 = tjd - 1.0; // one day earlier
-      swed.interpol.tjd_nut2 = tjd + 1.0; // one day later
-      retc = calc_nutation(swed.interpol.tjd_nut0, iflag, dnut);
+      ctx->interpol.tjd_nut0 = tjd - 1.0; // one day earlier
+      ctx->interpol.tjd_nut2 = tjd + 1.0; // one day later
+      retc = calc_nutation(ctx, ctx->interpol.tjd_nut0, iflag, dnut);
       if (retc == ERR) return ERR;
-      swed.interpol.nut_dpsi0 = dnut[0];
-      swed.interpol.nut_deps0 = dnut[1];
-      retc = calc_nutation(swed.interpol.tjd_nut2, iflag, dnut);
+      ctx->interpol.nut_dpsi0 = dnut[0];
+      ctx->interpol.nut_deps0 = dnut[1];
+      retc = calc_nutation(ctx, ctx->interpol.tjd_nut2, iflag, dnut);
       if (retc == ERR) return ERR;
-      swed.interpol.nut_dpsi2 = dnut[0];
-      swed.interpol.nut_deps2 = dnut[1];
-      retc = calc_nutation(tjd, iflag, nutlo);
+      ctx->interpol.nut_dpsi2 = dnut[0];
+      ctx->interpol.nut_deps2 = dnut[1];
+      retc = calc_nutation(ctx, tjd, iflag, nutlo);
       if (retc == ERR) return ERR;
-      swed.interpol.nut_dpsi1 = nutlo[0];
-      swed.interpol.nut_deps1 = nutlo[1];
+      ctx->interpol.nut_dpsi1 = nutlo[0];
+      ctx->interpol.nut_deps1 = nutlo[1];
     }
   }
   return retc;
@@ -2169,12 +2169,12 @@ const double dcor_ra_jpl[] = {
 -52.165, -52.141, -52.255,
 };
 
-static void swi_approx_jplhor(double *x, double tjd, int32 iflag, AS_BOOL backward) 
+static void swi_approx_jplhor(swe_ctx *ctx, double *x, double tjd, int32 iflag, AS_BOOL backward) 
 {
   double t0, t1;
   double t = (tjd - DCOR_RA_JPL_TJD0) / 365.25;
   double dofs = OFFSET_JPLHORIZONS;
-  int jplhora_model = swed.astro_models[SE_MODEL_JPLHORA_MODE];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
   if (!(iflag & SEFLG_JPLHOR_APPROX))
     return;
@@ -2202,7 +2202,7 @@ static void swi_approx_jplhor(double *x, double tjd, int32 iflag, AS_BOOL backwa
 }
 
 /* GCRS to J2000 */
-void swi_bias(double *x, double tjd, int32 iflag, AS_BOOL backward)
+void swi_bias(swe_ctx *ctx, double *x, double tjd, int32 iflag, AS_BOOL backward)
 {
 #if 0
   double DAS2R = 1.0 / 3600.0 * DEGTORAD;
@@ -2213,8 +2213,8 @@ void swi_bias(double *x, double tjd, int32 iflag, AS_BOOL backward)
 #endif
   double xx[6], rb[3][3];
   int i;
-  int bias_model = swed.astro_models[SE_MODEL_BIAS];
-  int jplhora_model = swed.astro_models[SE_MODEL_JPLHORA_MODE];
+  int bias_model = ctx->astro_models[SE_MODEL_BIAS];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   if (bias_model == 0) bias_model = SEMOD_BIAS_DEFAULT;
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
   if (bias_model == SEMOD_BIAS_NONE)
@@ -2261,7 +2261,7 @@ rb[1][2] = -0.0000000330604145;
 rb[2][2] = +0.9999999999999962; 
 #endif
   if (backward) {
-    swi_approx_jplhor(x, tjd, iflag, TRUE);
+    swi_approx_jplhor(ctx, x, tjd, iflag, TRUE);
     for (i = 0; i <= 2; i++) {
       xx[i] = x[0] * rb[i][0] +
 	      x[1] * rb[i][1] +
@@ -2281,7 +2281,7 @@ rb[2][2] = +0.9999999999999962;
 	      x[4] * rb[1][i] +
 	      x[5] * rb[2][i];
     }
-    swi_approx_jplhor(xx, tjd, iflag, FALSE);
+    swi_approx_jplhor(ctx, xx, tjd, iflag, FALSE);
   }
   for (i = 0; i <= 2; i++) x[i] = xx[i];
   if (iflag & SEFLG_SPEED)
@@ -2542,13 +2542,13 @@ static const short dt97[TAB97_SIZ] = {
  * that of DE431).
  */
 #define DEMO 0
-static int32 calc_deltat(double tjd, int32 iflag, double *deltat, char *serr)
+static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, char *serr)
 {
   double ans = 0;
   double B, Y, Ygreg, dd;
   int iy;
   int32 retc;
-  int deltat_model = swed.astro_models[SE_MODEL_DELTAT];
+  int deltat_model = ctx->astro_models[SE_MODEL_DELTAT];
   double tid_acc;
   int32 denum, denumret;
   int32 epheflag, otherflag;
@@ -2558,19 +2558,19 @@ static int32 calc_deltat(double tjd, int32 iflag, double *deltat, char *serr)
   otherflag = iflag & ~SEFLG_EPHMASK;
   /* with iflag == -1, we use default tid_acc */
   if (iflag == -1) {
-    retc = swi_get_tid_acc(tjd, 0, 9999, &denumret, &tid_acc, serr); /* for default tid_acc */
+    retc = swi_get_tid_acc(ctx, tjd, 0, 9999, &denumret, &tid_acc, serr); /* for default tid_acc */
   /* otherwise we use tid_acc consistent with epheflag */
   } else {
-    denum = swed.jpldenum;
-    if (epheflag & SEFLG_SWIEPH) denum = swed.fidat[SEI_FILE_MOON].sweph_denum;
+    denum = ctx->jpldenum;
+    if (epheflag & SEFLG_SWIEPH) denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
     if (swi_init_swed_if_start() == 1 && !(epheflag & SEFLG_MOSEPH)) {
       if (serr != NULL) 
 	strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_deltat_ex()");
-      retc = swi_set_tid_acc(tjd, epheflag, denum, NULL);  /* _set_ saves tid_acc in swed */
+      retc = swi_set_tid_acc(ctx, tjd, epheflag, denum, NULL);  /* _set_ saves tid_acc in swed */
     } else {
-      retc = swi_set_tid_acc(tjd, epheflag, denum, serr);  /* _set_ saves tid_acc in swed */
+      retc = swi_set_tid_acc(ctx, tjd, epheflag, denum, serr);  /* _set_ saves tid_acc in swed */
     }
-    tid_acc = swed.tid_acc;
+    tid_acc = ctx->tid_acc;
   }
   iflag = otherflag | retc;
   Y = 2000.0 + (tjd - J2000)/365.25;
@@ -2673,7 +2673,7 @@ static int32 calc_deltat(double tjd, int32 iflag, double *deltat, char *serr)
    * (http://maia.usno.navy.mil/ser7/deltat.data).
    */
   if (Y >= TABSTART) {
-    *deltat = deltat_aa(tjd, tid_acc);
+    *deltat = deltat_aa(ctx, tjd, tid_acc);
     return iflag;
   }
 #ifdef TRACE
@@ -2700,18 +2700,24 @@ static int32 calc_deltat(double tjd, int32 iflag, double *deltat, char *serr)
 
 double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   double deltat;
-  if (swed.delta_t_userdef_is_set)
-    return swed.delta_t_userdef;
+  if (ctx->delta_t_userdef_is_set)
+    return ctx->delta_t_userdef;
   if (serr != NULL)
     *serr = '\0';
-  calc_deltat(tjd, iflag, &deltat, serr);
+  calc_deltat(ctx, tjd, iflag, &deltat, serr);
   return deltat;
 }
 
 double CALL_CONV swe_deltat(double tjd)
 {
-  int32 iflag = swi_guess_ephe_flag();
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
+  int32 iflag = swi_guess_ephe_flag(ctx);
   return swe_deltat_ex(tjd, iflag, NULL); /* with default tidal acceleration/default ephemeris */
 }
 
@@ -2730,16 +2736,16 @@ double CALL_CONV swe_deltat(double tjd)
  * a step width of 365.25 days. As a consequence, in three out of four years
  * the interpolation does not reproduce the exact values of the sampling points
  * on the days they refer to.  */
-static double deltat_aa(double tjd, double tid_acc)
+static double deltat_aa(swe_ctx *ctx, double tjd, double tid_acc)
 {
   double ans = 0, ans2 = 0, ans3;
   double p, B, B2, Y, dd;
   double d[6];
   int i, iy, k;
   /* read additional values from swedelta.txt */
-  int tabsiz = init_dt();
+  int tabsiz = init_dt(ctx);
   int tabend = TABSTART + tabsiz - 1;
-  int deltat_model = swed.astro_models[SE_MODEL_DELTAT];
+  int deltat_model = ctx->astro_models[SE_MODEL_DELTAT];
   if (deltat_model == 0) deltat_model = SEMOD_DELTAT_DEFAULT;
   Y = 2000.0 + (tjd - 2451544.5)/365.25;
   if (Y <= tabend) {
@@ -3086,7 +3092,7 @@ static double deltat_espenak_meeus_1620(double tjd, double tid_acc)
 /* Read delta t values from external file.
 * record structure: year(whitespace)delta_t in 0.01 sec.
 */
-static int init_dt(void)
+static int init_dt(swe_ctx *ctx)
 {
 FILE *fp;
 int year;
@@ -3095,11 +3101,11 @@ int tabsiz;
 int i;
 char s[AS_MAXCH];
 char *sp;
-if (!swed.init_dt_done) {
-  swed.init_dt_done = TRUE;
+if (!ctx->init_dt_done) {
+  ctx->init_dt_done = TRUE;
   /* no error message if file is missing */
-  if ((fp = swi_fopen(-1, "swe_deltat.txt", swed.ephepath, NULL)) == NULL
-    && (fp = swi_fopen(-1, "sedeltat.txt", swed.ephepath, NULL)) == NULL)
+  if ((fp = swi_fopen(-1, "swe_deltat.txt", ctx->ephepath, NULL)) == NULL
+    && (fp = swi_fopen(-1, "sedeltat.txt", ctx->ephepath, NULL)) == NULL)
     return TABSIZ; 
   while(fgets(s, AS_MAXCH, fp) != NULL) {
     sp = s;
@@ -3153,7 +3159,10 @@ static double adjust_for_tidacc(double ans, double Y, double tid_acc, double tid
 /* returns tidal acceleration used in swe_deltat() and swe_deltat_ex() */
 double CALL_CONV swe_get_tid_acc(void)
 {
-  return swed.tid_acc;
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
+  return ctx->tid_acc;
 }
 
 /* function sets tidal acceleration of the Moon.
@@ -3164,33 +3173,39 @@ double CALL_CONV swe_get_tid_acc(void)
  */
 void CALL_CONV swe_set_tid_acc(double t_acc)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   if (t_acc == SE_TIDAL_AUTOMATIC) {
-    swed.tid_acc = SE_TIDAL_DEFAULT;
-    swed.is_tid_acc_manual = FALSE;
+    ctx->tid_acc = SE_TIDAL_DEFAULT;
+    ctx->is_tid_acc_manual = FALSE;
     swi_config_publish(SWI_CFG_TIDACC);
     return;
   }
-  swed.tid_acc = t_acc;
-  swed.is_tid_acc_manual = TRUE;
+  ctx->tid_acc = t_acc;
+  ctx->is_tid_acc_manual = TRUE;
   swi_config_publish(SWI_CFG_TIDACC);
 }
 
 void CALL_CONV swe_set_delta_t_userdef(double dt)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   if (dt == SE_DELTAT_AUTOMATIC) {
-    swed.delta_t_userdef_is_set = FALSE; 
+    ctx->delta_t_userdef_is_set = FALSE; 
   } else {
-    swed.delta_t_userdef_is_set = TRUE;
-    swed.delta_t_userdef = dt;
+    ctx->delta_t_userdef_is_set = TRUE;
+    ctx->delta_t_userdef = dt;
   }
   swi_config_publish(SWI_CFG_DELTAT);
 }
 
-int32 swi_guess_ephe_flag(void)
+int32 swi_guess_ephe_flag(swe_ctx *ctx)
 {
   int32 iflag = SEFLG_SWIEPH;
   /* if jpl file is open, assume SEFLG_JPLEPH */
-  if (swed.jpl_file_is_open) {
+  if (ctx->jpl_file_is_open) {
     iflag = SEFLG_JPLEPH;
   } else {
     iflag = SEFLG_SWIEPH;
@@ -3198,13 +3213,13 @@ int32 swi_guess_ephe_flag(void)
   return iflag;
 }
 
-int32 swi_get_tid_acc(double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr)
+int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr)
 {
   (void) tjd_ut;
   (void) serr;
   iflag &= SEFLG_EPHMASK;
-  if (swed.is_tid_acc_manual) {
-    *tid_acc = swed.tid_acc;
+  if (ctx->is_tid_acc_manual) {
+    *tid_acc = ctx->tid_acc;
     return iflag;
   }
   if (denum == 0) {
@@ -3214,14 +3229,14 @@ int32 swi_get_tid_acc(double tjd_ut, int32 iflag, int32 denum, int32 *denumret, 
       return iflag;
     }
     if (iflag & SEFLG_JPLEPH) {
-      if (swed.jpl_file_is_open) {
-	denum = swed.jpldenum;
+      if (ctx->jpl_file_is_open) {
+	denum = ctx->jpldenum;
       }
     }
     /* SEFLG_SWIEPH wanted or SEFLG_JPLEPH failed: */
     if (iflag & SEFLG_SWIEPH) {
-      if (swed.fidat[SEI_FILE_MOON].fptr != NULL) {
-	denum = swed.fidat[SEI_FILE_MOON].sweph_denum;
+      if (ctx->fidat[SEI_FILE_MOON].fptr != NULL) {
+	denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
       }
     }
   }
@@ -3244,27 +3259,27 @@ int32 swi_get_tid_acc(double tjd_ut, int32 iflag, int32 denum, int32 *denumret, 
   return iflag;
 }
 
-int32 swi_set_tid_acc(double tjd_ut, int32 iflag, int32 denum, char *serr)
+int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr)
 {
   int32 retc = iflag;
   int32 denumret;
   /* manual tid_acc overrides automatic tid_acc */
-  if (swed.is_tid_acc_manual)
+  if (ctx->is_tid_acc_manual)
     return retc;
-  retc = swi_get_tid_acc(tjd_ut, iflag, denum, &denumret, &(swed.tid_acc), serr);
+  retc = swi_get_tid_acc(ctx, tjd_ut, iflag, denum, &denumret, &(ctx->tid_acc), serr);
 #if TRACE
   swi_open_trace(NULL);
   if (swi_trace_count < TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_SET_TID_ACC*/\n", swi_fp_trace_c);
-      fprintf(swi_fp_trace_c, "  t = %.9f;\n", swed.tid_acc);
+      fprintf(swi_fp_trace_c, "  t = %.9f;\n", ctx->tid_acc);
       fprintf(swi_fp_trace_c, "  swe_set_tid_acc(t);\n");
       fputs("  printf(\"swe_set_tid_acc: %f\\t\\n\", ", swi_fp_trace_c);
       fputs("t);\n", swi_fp_trace_c);
       fflush(swi_fp_trace_c);
     }
     if (swi_fp_trace_out != NULL) {
-      fprintf(swi_fp_trace_out, "swe_set_tid_acc: %f\t\n", swed.tid_acc);
+      fprintf(swi_fp_trace_out, "swe_set_tid_acc: %f\t\n", ctx->tid_acc);
       fflush(swi_fp_trace_out);
     }
   }
@@ -3287,7 +3302,7 @@ int32 swi_set_tid_acc(double tjd_ut, int32 iflag, int32 denum, char *serr)
  */
 /*#define SIDT_LTERM   TRUE
 #if SIDT_LTERM*/
-static double sidtime_long_term(double tjd_ut, double eps, double nut)
+static double sidtime_long_term(swe_ctx *ctx, double tjd_ut, double eps, double nut)
 {
   double tsid = 0, tjd_et;
   double dlon, xs[6], xobl[6], dhour, nutlo[2];
@@ -3303,14 +3318,14 @@ static double sidtime_long_term(double tjd_ut, double eps, double nut)
   xs[0] = dlon * DEGTORAD; xs[1] = 0; xs[2] = 1;
   /* to mean equator J2000, cartesian */
   xobl[0] = 23.45; xobl[1] = 23.45;
-  xobl[1] = swi_epsiln(J2000 + swe_deltat_ex(J2000, -1, NULL), 0) * RADTODEG;
+  xobl[1] = swi_epsiln(ctx, J2000 + swe_deltat_ex(J2000, -1, NULL), 0) * RADTODEG;
   swi_polcart(xs, xs);
   swi_coortrf(xs, xs, -xobl[1] * DEGTORAD);
   /* precess to mean equinox of date */
-  swi_precess(xs, tjd_et, 0, -1);
+  swi_precess(ctx, xs, tjd_et, 0, -1);
   /* to mean equinox of date */
-  xobl[1] = swi_epsiln(tjd_et, 0) * RADTODEG;
-  swi_nutation(tjd_et, 0, nutlo);
+  xobl[1] = swi_epsiln(ctx, tjd_et, 0) * RADTODEG;
+  swi_nutation(ctx, tjd_et, 0, nutlo);
   xobl[0] = xobl[1] + nutlo[1] * RADTODEG;
   xobl[2] = nutlo[0] * RADTODEG;
   swi_coortrf(xs, xs, xobl[1] * DEGTORAD);
@@ -3461,25 +3476,28 @@ static double sidtime_non_polynomial_part(double tt)
  * This is a "short" term model, that can be combined with other models
  */
 /*#define SIDT_IERS_CONV_2010 TRUE*/
-/* sidtime_long_term() is not used between the following two dates */
+/* sidtime_long_term(ctx) is not used between the following two dates */
 #define SIDT_LTERM_T0  2396758.5  /* 1 Jan 1850  */
 #define SIDT_LTERM_T1  2469807.5  /* 1 Jan 2050  */
 #define SIDT_LTERM_OFS0   (0.000378172 / 15.0)
 #define SIDT_LTERM_OFS1   (0.001385646 / 15.0)
 double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   double jd0;    	/* Julian day at midnight Universal Time */
   double secs;   	/* Time of day, UT seconds since UT midnight */
   double eqeq, jd, tu, tt, msday, jdrel;
   double gmst, dadd;
-  int prec_model_short = swed.astro_models[SE_MODEL_PREC_SHORTTERM];
-  int sidt_model = swed.astro_models[SE_MODEL_SIDT];
+  int prec_model_short = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
+  int sidt_model = ctx->astro_models[SE_MODEL_SIDT];
   if (prec_model_short == 0) prec_model_short = SEMOD_PREC_DEFAULT_SHORT;
   if (sidt_model == 0) sidt_model = SEMOD_SIDT_DEFAULT;
   swi_init_swed_if_start();
   if (sidt_model == SEMOD_SIDT_LONGTERM) {
     if (tjd <= SIDT_LTERM_T0 || tjd >= SIDT_LTERM_T1) {
-      gmst = sidtime_long_term(tjd, eps, nut);
+      gmst = sidtime_long_term(ctx, tjd, eps, nut);
       if (tjd <= SIDT_LTERM_T0)
 	gmst -= SIDT_LTERM_OFS0;
       else if (tjd >= SIDT_LTERM_T1)
@@ -3562,22 +3580,25 @@ sidtime_done:
 
 void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
 {
-  if (swed.do_interpolate_nut == do_interpolate) {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
+  if (ctx->do_interpolate_nut == do_interpolate) {
     swi_config_claim(SWI_CFG_NUT);
     return;
   }
   if (do_interpolate) 
-    swed.do_interpolate_nut = TRUE;
+    ctx->do_interpolate_nut = TRUE;
   else
-    swed.do_interpolate_nut = FALSE;
-  swed.interpol.tjd_nut0 = 0;
-  swed.interpol.tjd_nut2 = 0;
-  swed.interpol.nut_dpsi0 = 0;
-  swed.interpol.nut_dpsi1 = 0;
-  swed.interpol.nut_dpsi2 = 0;
-  swed.interpol.nut_deps0 = 0;
-  swed.interpol.nut_deps1 = 0;
-  swed.interpol.nut_deps2 = 0;
+    ctx->do_interpolate_nut = FALSE;
+  ctx->interpol.tjd_nut0 = 0;
+  ctx->interpol.tjd_nut2 = 0;
+  ctx->interpol.nut_dpsi0 = 0;
+  ctx->interpol.nut_dpsi1 = 0;
+  ctx->interpol.nut_dpsi2 = 0;
+  ctx->interpol.nut_deps0 = 0;
+  ctx->interpol.nut_deps1 = 0;
+  ctx->interpol.nut_deps2 = 0;
   swi_config_publish(SWI_CFG_NUT);
 }
 
@@ -3587,14 +3608,17 @@ void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
  */
 double CALL_CONV swe_sidtime(double tjd_ut)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   int i;
   double eps, nutlo[2], tsid;
   double tjde;
   /* delta t adjusted to default tidal acceleration of the moon */
   tjde = tjd_ut + swe_deltat_ex(tjd_ut, -1, NULL); 
   swi_init_swed_if_start();
-  eps = swi_epsiln(tjde, 0) * RADTODEG;
-  swi_nutation(tjde, 0, nutlo);
+  eps = swi_epsiln(ctx, tjde, 0) * RADTODEG;
+  swi_nutation(ctx, tjde, 0, nutlo);
   for (i = 0; i < 2; i++)
     nutlo[i] *= RADTODEG;
   tsid = swe_sidtime0(tjd_ut, eps + nutlo[1], nutlo[0]);
@@ -3946,7 +3970,7 @@ char *CALL_CONV swe_cs2degstr(CSEC t, char *a)
  * dsecfr	fraction of seconds (zero if rounding used) 
  * inak	nakshatra number; 
  ******************************************************************/
-static void split_deg_nakshatra(double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *inak)
+static void split_deg_nakshatra(swe_ctx *ctx, double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *inak)
 {
   double dadd = 0;
   double dnakshsize = 13.33333333333333;
@@ -3957,7 +3981,7 @@ static void split_deg_nakshatra(double ddeg, int32 roundflag, int32 *ideg, int32
     ddeg = 0;
   }
   // Sheoran "Vedic" ayanamsha: 0 Aries = 3°20 Ashvini
-  if ((swed.sidd.sid_mode & SE_SIDM_TRUE_SHEORAN) == SE_SIDM_TRUE_SHEORAN)
+  if ((ctx->sidd.sid_mode & SE_SIDM_TRUE_SHEORAN) == SE_SIDM_TRUE_SHEORAN)
     ddeg = swe_degnorm(ddeg + 3.33333333333333);
   if (roundflag & SE_SPLIT_DEG_ROUND_DEG) {
     dadd = 0.5;
@@ -4024,13 +4048,16 @@ static void split_deg_nakshatra(double ddeg, int32 roundflag, int32 *ideg, int32
  *********************************************************/
 void CALL_CONV swe_split_deg(double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   double dadd = 0;
   *isgn = 1;
   if (ddeg < 0) {
     *isgn = -1;
     ddeg = -ddeg;
   } else if (roundflag & SE_SPLIT_DEG_NAKSHATRA) {
-    split_deg_nakshatra(ddeg, roundflag, ideg, imin, isec, dsecfr, isgn);
+    split_deg_nakshatra(ctx, ddeg, roundflag, ideg, imin, isec, dsecfr, isgn);
     return;
   }
   if (roundflag & SE_SPLIT_DEG_ROUND_DEG) {
@@ -4131,9 +4158,9 @@ void swi_FK5_FK4(double *xp, double tjd)
 }
 
 /* function for inhouse testing only */
-void set_astro_models(char *samod)
+void set_astro_models(swe_ctx *ctx, char *samod)
 {
-  int *pmodel = &(swed.astro_models[0]);
+  int *pmodel = &(ctx->astro_models[0]);
   char *sp, *sp2;
   int i = 0;
   swi_init_swed_if_start();
@@ -4198,12 +4225,15 @@ S4 SEMOD_SIDT_LONGTERM
 # define AMODELS_SE_2_06    "5,9,9,4,3,0,0,4"
 void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   AS_BOOL swi_cfg_was = swi_config_begin_apply();
   double dversion;
   char s[30], *sp;
   swi_init_swed_if_start();
   if (*samod != '\0' && isdigit((int) *samod)) {
-    set_astro_models(samod);
+    set_astro_models(ctx, samod);
   } else if (*samod == '\0' || strncmp(samod, "SE", 2) == 0) {
     strncpy(s, samod, 20);
     s[20] = '\0';
@@ -4215,33 +4245,33 @@ void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
     if (dversion == 0)
       dversion = atof(SE_VERSION);
     if (dversion >= 2.06) {
-      set_astro_models(AMODELS_SE_2_06);
+      set_astro_models(ctx, AMODELS_SE_2_06);
     } else if (dversion >= 2.01) {
-      set_astro_models(AMODELS_SE_2_00);
+      set_astro_models(ctx, AMODELS_SE_2_00);
     } else if (dversion >= 2.00) {
-      set_astro_models(AMODELS_SE_2_00);
+      set_astro_models(ctx, AMODELS_SE_2_00);
       if (swi_get_denum(SEI_SUN, iflag) == 431) 
         swe_set_tid_acc(SE_TIDAL_DE406);
     } else if (dversion >= 1.80) {
-      set_astro_models(AMODELS_SE_1_80);
+      set_astro_models(ctx, AMODELS_SE_1_80);
       swe_set_tid_acc(SE_TIDAL_DE406);
     } else if (dversion >= 1.78) {
-      set_astro_models(AMODELS_SE_1_78);
+      set_astro_models(ctx, AMODELS_SE_1_78);
       swe_set_tid_acc(SE_TIDAL_DE406);
     } else if (dversion >= 1.77) {
-      set_astro_models(AMODELS_SE_1_77);
+      set_astro_models(ctx, AMODELS_SE_1_77);
       swe_set_tid_acc(SE_TIDAL_DE406);
     } else if (dversion >= 1.72) {
-      set_astro_models(AMODELS_SE_1_72);
+      set_astro_models(ctx, AMODELS_SE_1_72);
       swe_set_tid_acc(-25.7376);
     } else if (dversion >= 1.70) {
-      set_astro_models(AMODELS_SE_1_70);
+      set_astro_models(ctx, AMODELS_SE_1_70);
       swe_set_tid_acc(-25.7376);
     } else if (dversion >= 1.64) {
-      set_astro_models(AMODELS_SE_1_64);
+      set_astro_models(ctx, AMODELS_SE_1_64);
       swe_set_tid_acc(-25.7376);
     } else {
-      set_astro_models(AMODELS_SE_1_00);
+      set_astro_models(ctx, AMODELS_SE_1_00);
       swe_set_tid_acc(-25.7376);
     }
   }
@@ -4328,10 +4358,10 @@ static void get_deltat_model(int dtmod, char *s)
 }
 
 /* function for inhouse testing only */
-static void get_nutation_model(int nutmod, int32 iflag, char *s)
+static void get_nutation_model(swe_ctx *ctx, int nutmod, int32 iflag, char *s)
 {
-  int jplhormod = swed.astro_models[SE_MODEL_JPLHOR_MODE];
-  int jplhoramod = swed.astro_models[SE_MODEL_JPLHORA_MODE];
+  int jplhormod = ctx->astro_models[SE_MODEL_JPLHOR_MODE];
+  int jplhoramod = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   if (jplhormod == 0)
     jplhormod = SEMOD_JPLHOR_DEFAULT;
   if (jplhoramod == 0)
@@ -4418,8 +4448,11 @@ static void get_sidt_model(int sidtmod, char *s)
 /* function for inhouse testing only */
 void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   int i, imod;
-  int *pmodel = &(swed.astro_models[0]);
+  int *pmodel = &(ctx->astro_models[0]);
   char s[AS_MAXCH], samod0[AS_MAXCH];
   AS_BOOL list_all_models = FALSE;
   if (samod != NULL) {
@@ -4486,7 +4519,7 @@ void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
       sprintf(sdet + strlen(sdet), "+ short-term model: %s\n", s);
     }
     /* nutation */
-    get_nutation_model(pmodel[SE_MODEL_NUT], iflag, s);
+    get_nutation_model(ctx, pmodel[SE_MODEL_NUT], iflag, s);
     sprintf(sdet + strlen(sdet), "Nutation: %s\n", s);
     /* frame bias */
     get_frame_bias_model(pmodel[SE_MODEL_BIAS], s);
@@ -4524,7 +4557,7 @@ void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
 	if (i == SEMOD_NUT_DEFAULT) continue;
         sprintf(sdet + strlen(sdet), "  (%d)", i);
 	if (i == 0) sprintf(sdet + strlen(sdet), " (=%d)", SEMOD_NUT_DEFAULT);
-	get_nutation_model(i, iflag, s);
+	get_nutation_model(ctx, i, iflag, s);
 	sprintf(sdet + strlen(sdet), ": %s\n", s);
       }
       strcat(sdet, "FRAME BIAS MODELS (B)\n");

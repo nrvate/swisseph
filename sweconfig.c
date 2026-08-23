@@ -169,7 +169,7 @@ AS_BOOL swi_config_apply(const struct swe_config *c, int32 groups)
     swed.last_epheflag = 0;
   }
   if (geo_changed)
-    swed.topd.teval = 0;        /* force swi_get_observer() to recompute */
+    swed.topd.teval = 0;        /* force swi_get_observer(ctx) to recompute */
   if (nut_changed) {
     swed.interpol.tjd_nut0 = 0;
     swed.interpol.tjd_nut2 = 0;

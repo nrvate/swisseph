@@ -683,12 +683,12 @@ extern int swi_moshplan2(double J, int iplm, double *pobj);
 extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double *xp, int ipl, int ipli, double *xearth, double *xsun, char *serr);
 extern FILE *swi_fopen(int ifno, char *fname, char *ephepath, char *serr);
 extern int32 swi_init_swed_if_start(void);
-extern int32 swi_set_tid_acc(double tjd_ut, int32 iflag, int32 denum, char *serr);
-extern int32 swi_get_tid_acc(double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
+extern int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr);
+extern int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
 
-extern int32 swi_get_ayanamsa_ex(double tjd_et, int32 iflag, double *daya, char *serr);
+extern int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr);
 extern int32 swi_get_ayanamsa_ex_ut(double tjd_ut, int32 iflag, double *daya, char *serr);
-extern int32 swi_get_ayanamsa_with_speed(double tjd_et, int32 iflag, double *daya, char *serr);
+extern int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr);
 
 extern double swi_armc_to_mc(double armc, double eps);
 
