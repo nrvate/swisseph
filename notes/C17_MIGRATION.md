@@ -249,15 +249,25 @@ move, but no `nm -D` diff was run.
 
 `REVIEW.md` §6 already found these are the *only* two left in the tree:
 
-- [ ] `swephgen4.c:85` — `int split(w, m, min, sec)` → ANSI prototype
-- [ ] `swephgen4.c:167-168` — `char *degstr (t) double t;` → ANSI prototype
+- [x] `swephgen4.c:85` — `int split(w, m, min, sec)` → ANSI prototype
+- [x] `swephgen4.c:167-168` — `char *degstr (t) double t;` → ANSI prototype
       (leave the non-reentrant `static char a[20]` return convention alone;
       that's a separate, larger API change out of scope here)
 
 Trivial, but it's what actually blocks `-std=c17 -Wold-style-definition` from
 going clean, so it has to happen before Phase 5's `-Werror` flip.
 
-**Exit gate:** `-Wold-style-definition -Wstrict-prototypes` clean.
+**Exit gate: ✅ Done.**
+
+**Outcome:** found and fixed a third old-style definition `-Wstrict-prototypes`
+flagged that `REVIEW.md`'s K&R-specific search missed because it isn't K&R
+syntax — `eph_test()` with empty parens (unspecified-args, not zero-args) at
+`swephgen4.c:184`. Fixed to `eph_test(void)`, no callers pass arguments so
+behavior is unchanged. `swephgen4.c` is not referenced by the root `Makefile`
+or any header — it isn't part of any build target — so the only meaningful
+verification available is a standalone compile:
+`gcc -Wall -Wextra -Wstrict-prototypes -Wold-style-definition -c swephgen4.c`,
+clean, exit 0.
 
 ### Phase 4 — `static_assert` on the file-trusted buffer sizes
 
