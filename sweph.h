@@ -972,6 +972,13 @@ struct swe_ctx {
 
   /* sweph.c memo caches -- see struct sweph_state above. */
   struct sweph_state sp;
+
+  /* swedate.c: leap-second table. The built-in values live in a shared
+   * const (leap_seconds_builtin); this is the working copy, because
+   * init_leapsec() extends it from seleapsec.txt. NLEAP_SECONDS_SPACE is
+   * 100 -- kept literal here because the macro is private to swedate.c. */
+  int     leap_seconds[100];
+  AS_BOOL leapsec_done;
 };
 
 /* swe_ctx is forward-declared near the top of this header, next to

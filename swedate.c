@@ -84,7 +84,7 @@
 # include "swephexp.h"
 # include "sweph.h"
 
-static TLS AS_BOOL init_leapseconds_done = FALSE;
+/* moved to ctx->leapsec_done / ctx->leap_seconds (Phase 3c) */
 
 
 int CALL_CONV swe_date_conversion(int y,
@@ -273,7 +273,12 @@ void CALL_CONV swe_utc_time_zone(
 /* Leap seconds were inserted at the end of the following days:*/
 #define NLEAP_SECONDS 27 // ignoring end mark '0'
 #define NLEAP_SECONDS_SPACE 100
-static TLS int leap_seconds[NLEAP_SECONDS_SPACE] = {
+/* The built-in leap-second table. Was a TLS mutable array; init_leapsec()
+ * EXTENDS it at runtime from seleapsec.txt, so the working copy is
+ * per-context (ctx->leap_seconds) while the built-in values stay a single
+ * shared constant. Splitting it this way means the defaults cannot be
+ * corrupted by one context's file load. */
+static const int leap_seconds_builtin[NLEAP_SECONDS_SPACE] = {
 19720630,
 19721231,
 19731231,
@@ -310,9 +315,8 @@ static TLS int leap_seconds[NLEAP_SECONDS_SPACE] = {
  */
 /* Takes a context because it reads ctx->ephepath to find seleapsec.txt.
  *
- * Its other state -- init_leapseconds_done and leap_seconds[] -- is still
- * TLS-static here; those move into the context in 3c along with the other
- * 77. Doing it now would mean touching this function twice. */
+ * Its other state -- leapsec_done and leap_seconds[] -- now lives in the
+ * context too (Phase 3c); the built-in values stay in a shared const. */
 static int init_leapsec(swe_ctx *ctx)
 {
   FILE *fp;
@@ -321,10 +325,12 @@ static int init_leapsec(swe_ctx *ctx)
   int i;
   char s[AS_MAXCH];
   char *sp;
-  if (!init_leapseconds_done) {
-    init_leapseconds_done = TRUE;
+  if (!ctx->leapsec_done) {
+    ctx->leapsec_done = TRUE;
+    /* seed the working copy; the file below only ever EXTENDS it */
+    memcpy(ctx->leap_seconds, leap_seconds_builtin, sizeof(ctx->leap_seconds));
     tabsiz = NLEAP_SECONDS;
-    ndat_last = leap_seconds[NLEAP_SECONDS - 1];
+    ndat_last = ctx->leap_seconds[NLEAP_SECONDS - 1];
     /* no error message if file is missing */
     if ((fp = swi_fopen(ctx, -1, "seleapsec.txt", ctx->ephepath, NULL)) == NULL)
       return NLEAP_SECONDS; 
@@ -340,17 +346,17 @@ static int init_leapsec(swe_ctx *ctx)
       /* table space is limited. no error msg, if exceeded */
       if (tabsiz >= NLEAP_SECONDS_SPACE)
         return tabsiz;
-      leap_seconds[tabsiz] = ndat;
+      ctx->leap_seconds[tabsiz] = ndat;
       tabsiz++;
     }
-    if (tabsiz > NLEAP_SECONDS) leap_seconds[tabsiz] = 0; /* end mark */
+    if (tabsiz > NLEAP_SECONDS) ctx->leap_seconds[tabsiz] = 0; /* end mark */
     fclose(fp);
     return tabsiz;
   }
   /* find table size */
   tabsiz = 0;
   for (i = 0; i < NLEAP_SECONDS_SPACE; i++) {
-    if (leap_seconds[i] == 0) 
+    if (ctx->leap_seconds[i] == 0) 
       break;
     else
       tabsiz++;
@@ -379,6 +385,9 @@ static int init_leapsec(swe_ctx *ctx)
 */
 int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   double tjd_ut1, tjd_et, tjd_et_1972, dhour, d;
   int iyear2, imonth2, iday2;
   int i, j, ndat, nleap, tabsiz_nleap;
@@ -423,7 +432,7 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
   nleap = NLEAP_INIT; /* initial difference between UTC and TAI in 1972 */
   ndat = iyear * 10000 + imonth * 100 + iday;
   for (i = 0; i < tabsiz_nleap; i++) {
-    if (ndat <= leap_seconds[i])
+    if (ndat <= ctx->leap_seconds[i])
       break;
     nleap++;
   }
@@ -445,7 +454,7 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
   if (dsec >= 60) {
     j = 0;
     for (i = 0; i < tabsiz_nleap; i++) {
-      if (ndat == leap_seconds[i]) {
+      if (ndat == ctx->leap_seconds[i]) {
 	j = 1;
 	break;
       }
@@ -490,6 +499,9 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
  */
 void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec) 
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   int i;
   int second_60 = 0;
   int iyear2, imonth2, iday2, nleap, ndat, tabsiz_nleap;
@@ -519,13 +531,13 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
   ndat = iyear2 * 10000 + imonth2 * 100 + iday2;
   nleap = 0; 
   for (i = 0; i < tabsiz_nleap; i++) {
-    if (ndat <= leap_seconds[i])
+    if (ndat <= ctx->leap_seconds[i])
       break;
     nleap++;
   }
   /* date of potentially missing leapsecond */
   if (nleap < tabsiz_nleap) {
-    i = leap_seconds[nleap];
+    i = ctx->leap_seconds[nleap];
     iyear2 = i / 10000;
     imonth2 = (i % 10000) / 100;;
     iday2 = i % 100;
