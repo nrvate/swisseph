@@ -150,7 +150,8 @@ clean:
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
-        check-build check-ctx check-jplcalc check-threadtiers check-bridge clean
+        check-build check-ctx check-jplcalc check-threadtiers check-bridge \
+        ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
 #
@@ -164,6 +165,63 @@ bench: bench.c $(wildcard ../*.c)
 
 bench-run: bench
 	@./bench --ephe $(EPHE) --rep $(REP)
+
+# check-ci: run the gate set under the CI runner's exact toolchain.
+#
+# NOT one of the numbered gates -- it is the others, re-run somewhere that
+# matches CI. This box is Ubuntu 22.04 with gcc 11.4 and no clang; the
+# runner is ubuntu-24.04 with gcc 13.3.0-6ubuntu2~24.04.1 and clang 18.
+# Two gcc releases apart, and several diagnostics the CI build treats as
+# errors simply do not exist here.
+#
+# That cost real time: an uninitialised read in swevents.c passed all 14
+# gates locally and failed CI, and a gcc-only __attribute__((aligned(64)))
+# broke the MSVC job while gcc accepted it in silence. Both were a
+# push/wait/read cycle to find.
+#
+# The clang half mirrors the CI clang job exactly -- same targets, same
+# CC=clang, same flags (tests/CFLAGS, which carries no -Werror). An earlier
+# version swept every source with -Wall -Wextra -Werror and failed on things
+# CI never compiles or never treats as errors, which makes this gate a worse
+# proxy, not a better one. Findings from that stricter sweep are recorded in
+# notes/REVIEW.md rather than enforced here.
+#
+# Requires docker. Builds the image on first use (~30 s), reuses it after.
+CI_IMAGE = swisseph-ci
+
+ci-image:
+	@docker build -q -t $(CI_IMAGE) ../tools/ci-image > /dev/null
+	@echo "  $(CI_IMAGE): $$(docker run --rm $(CI_IMAGE) gcc --version | head -1)"
+
+check-ci: ci-image
+	@echo "=== gate set under the CI toolchain ==="
+	@docker run --rm -v $(abspath ..):/src -w /src/tests $(CI_IMAGE) sh -c '\
+	  set -e; \
+	  make -s -C .. clean > /dev/null 2>&1 || true; \
+	  make -s clean       > /dev/null 2>&1 || true; \
+	  for t in check-golden check-golden-O2 check-threads check-cfgleak \
+	           check-sunrace check-glprace check-jplguard check-jplcalc \
+	           check-threadshim check-threadtiers check-ctx check-bridge \
+	           check-build; do \
+	    printf "  %-22s " $$t; \
+	    if make -s $$t > /tmp/o 2>&1; then echo OK; \
+	    else echo FAIL; tail -20 /tmp/o | sed "s/^/      /"; exit 1; fi; \
+	  done; \
+	  echo "  --- clang (as the CI clang job runs it) ---"; \
+	  make -s clean > /dev/null 2>&1 || true; \
+	  for t in check-threads check-threads-workaround check-sunrace \
+	           check-glprace check-cfgleak check-threadshim; do \
+	    printf "  %-22s " $$t; \
+	    if make -s $$t CC=clang > /tmp/o 2>&1; then echo OK; \
+	    else echo FAIL; tail -20 /tmp/o | sed "s/^/      /"; exit 1; fi; \
+	  done'
+	@# Clean both trees afterwards too: binaries built inside the container
+	@# link against the image's libasan/libc and will not run on the host.
+	@# Inheriting them in either direction is what made this gate fail the
+	@# first time it ran.
+	@$(MAKE) -s -C .. clean > /dev/null 2>&1 || true
+	@$(MAKE) -s clean       > /dev/null 2>&1 || true
+	@echo "PASS (CI toolchain)"
 
 # G12: no library-internal code may call a legacy (shim) entry point.
 #

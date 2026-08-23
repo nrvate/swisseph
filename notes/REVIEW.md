@@ -64,6 +64,21 @@ Beyond those two, the dominant themes across every file are:
 > a way that would break on re-enabling — but edits near them need checking,
 > not trusting.
 
+> **Clang `-Werror` findings, recorded but not enforced.** Sweeping the
+> library with `clang-18 -Wall -Wextra -Werror` (stricter than any CI job —
+> the clang jobs use `tests/CFLAGS`, which carries no `-Werror`) reports
+> three pre-existing `-Wunused-but-set-parameter` in `swehel.c`:
+> `OpticFactor`'s `JDNDaysUT` (:225), `SunRA`'s `helflag` (:554), and
+> `Bcity`'s `Press` (:1263) — each assigned and then never read. Upstream
+> code smells rather than bugs, and out of scope for the thread-safety
+> branch; noted so the next person does not have to rediscover them.
+>
+> One from the same sweep *was* fixed: `sweephe4.c:673` declared
+> `char *getenv();`, a K&R prototype conflicting with `stdlib.h`'s, which
+> clang 18 rejects outright. That file is referenced by no Makefile target,
+> so nothing built it — the same unreachable-is-unverified pattern this
+> branch hit with `interp()` and `swethread.h` tier 5.
+
 The rest of this document goes subsystem by subsystem. Performance findings
 are included but are secondary to the modernization/maintainability focus
 requested for this pass; where a finding is primarily about speed rather than

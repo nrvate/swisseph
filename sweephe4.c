@@ -670,7 +670,10 @@ static int inpolq(int n, int o, double p, double *x, double *axu, double *adxu)
 
 static char *my_makepath(char *d, char *s)
 {
-  char *getenv();
+  /* `char *getenv();` stood here -- a K&R declaration with no prototype,
+   * conflicting with stdlib.h's. clang 18 rejects it under -Werror
+   * (-Wdeprecated-non-prototype: in C23 it means zero parameters). The
+   * declaration was redundant; stdlib.h is included above. */
   if (*s == *DIR_GLUE || *s == '/' || strchr (s, ':') != NULL) {
     strcpy (d, s);	/* s is absolute path name */
   }

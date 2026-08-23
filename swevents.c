@@ -375,8 +375,9 @@ int main(int argc, char *argv[])
    * declaration left it uninitialised, so an empty first input copied
    * stack garbage into s and then parsed it as a date.
    *
-   * gcc 14 on the CI runner catches this via -Werror=maybe-uninitialized
-   * in the fortified strcpy; gcc 13 locally does not. */
+   * gcc 13.3 on the CI runner catches this via -Werror=maybe-uninitialized
+   * in the fortified strcpy; gcc 11.4 here does not. Reproduce locally with
+   * `make -C tests check-ci`, which runs the gates in the runner image. */
   char saves[AS_MAXCH] = "";
   char *sp, *spsave;
   char *spno;
