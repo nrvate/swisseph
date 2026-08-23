@@ -126,12 +126,14 @@ static const struct plantbl *planets[] =
   &plu404
 };
 
-static TLS double ss[9][24];
-static TLS double cc[9][24];
+/* were TLS statics; now ctx->plan_ss / ctx->plan_cc (Phase 3c).
+ * Renamed on the way in: swemmoon.c has its own ss/cc of a different
+ * shape, and identical names for different arrays in one struct would
+ * be a trap. */
 
-static void sscc (int k, double arg, int n);
+static void sscc (swe_ctx *ctx, int k, double arg, int n);
 
-int swi_moshplan2 (double J, int iplm, double *pobj)
+int swi_moshplan2 (swe_ctx *ctx, double J, int iplm, double *pobj)
 {
   int i, j, k, m, k1, ip, np, nt;
   const signed char *p;
@@ -147,7 +149,7 @@ int swi_moshplan2 (double J, int iplm, double *pobj)
       if ((j = plan->max_harmonic[i]) > 0)
 	{
 	  sr = (mods3600 (freqs[i] * T) + phases[i]) * STR;
-	  sscc (i, sr, j);
+	  sscc (ctx, i, sr, j);
 	}
     }
 
@@ -209,10 +211,10 @@ int swi_moshplan2 (double J, int iplm, double *pobj)
 	      if (j < 0)
 		k = -k;
 	      k -= 1;
-	      su = ss[m][k];	/* sin(k*angle) */
+	      su = ctx->plan_ss[m][k];	/* sin(k*angle) */
 	      if (j < 0)
 		su = -su;
-	      cu = cc[m][k];
+	      cu = ctx->plan_cc[m][k];
 	      if (k1 == 0)
 		{		/* set first angle */
 		  sv = su;
@@ -312,7 +314,7 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       xe = pedp->x;
     } else {
       /* emb */
-      swi_moshplan2(tjd, pnoint2msh[SEI_EMB], xe); /* emb hel. ecl. 2000 polar */ 
+      swi_moshplan2(ctx, tjd, pnoint2msh[SEI_EMB], xe); /* emb hel. ecl. 2000 polar */ 
       swi_polcart(xe, xe);			  /* to cartesian */
       swi_coortrf2(xe, xe, -seps2000, ceps2000);/* and equator 2000 */
       embofs_mosh(ctx, tjd, xe);		  /* emb -> earth */
@@ -322,7 +324,7 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
 	pedp->iephe = SEFLG_MOSEPH;
       }
       /* one more position for speed. */
-      swi_moshplan2(tjd - PLAN_SPEED_INTV, pnoint2msh[SEI_EMB], x2); 
+      swi_moshplan2(ctx, tjd - PLAN_SPEED_INTV, pnoint2msh[SEI_EMB], x2); 
       swi_polcart(x2, x2);
       swi_coortrf2(x2, x2, -seps2000, ceps2000);
       embofs_mosh(ctx, tjd - PLAN_SPEED_INTV, x2);/**/
@@ -346,7 +348,7 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
     if (tjd == pdp->teval && pdp->iephe == SEFLG_MOSEPH) {
       xp = pdp->x;
     } else { 
-      swi_moshplan2(tjd, iplm, xp); 
+      swi_moshplan2(ctx, tjd, iplm, xp); 
       swi_polcart(xp, xp);
       swi_coortrf2(xp, xp, -seps2000, ceps2000);
       if (do_save) {
@@ -363,7 +365,7 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       dt = LIGHTTIME_AUNIT * sqrt(square_sum(dx));   
     #endif
       dt = PLAN_SPEED_INTV;
-      swi_moshplan2(tjd - dt, iplm, x2); 
+      swi_moshplan2(ctx, tjd - dt, iplm, x2); 
       swi_polcart(x2, x2);
       swi_coortrf2(x2, x2, -seps2000, ceps2000);
       for (i = 0; i <= 2; i++) 
@@ -384,26 +386,26 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
 /* Prepare lookup table of sin and cos ( i*Lj )
  * for required multiple angles
  */
-static void sscc (int k, double arg, int n)
+static void sscc (swe_ctx *ctx, int k, double arg, int n)
 {
   double cu, su, cv, sv, s;
   int i;
 
   su = sin (arg);
   cu = cos (arg);
-  ss[k][0] = su;		/* sin(L) */
-  cc[k][0] = cu;		/* cos(L) */
+  ctx->plan_ss[k][0] = su;		/* sin(L) */
+  ctx->plan_cc[k][0] = cu;		/* cos(L) */
   sv = 2.0 * su * cu;
   cv = cu * cu - su * su;
-  ss[k][1] = sv;		/* sin(2L) */
-  cc[k][1] = cv;
+  ctx->plan_ss[k][1] = sv;		/* sin(2L) */
+  ctx->plan_cc[k][1] = cv;
   for (i = 2; i < n; i++)
     {
       s = su * cv + cu * sv;
       cv = cu * cv - su * sv;
       sv = s;
-      ss[k][i] = sv;		/* sin( i+1 L ) */
-      cc[k][i] = cv;
+      ctx->plan_ss[k][i] = sv;		/* sin( i+1 L ) */
+      ctx->plan_cc[k][i] = cv;
     }
 }
 

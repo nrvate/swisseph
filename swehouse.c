@@ -639,6 +639,9 @@ int CALL_CONV swe_houses_armc_ex2(
 				double *ascmc_speed,
 				char *serr)
 {
+  /* bridge to the default context; 3d replaces this with a
+   * swe_ctx * parameter on the _r variant. */
+  swe_ctx *ctx = swi_default_ctx();
   struct houses h, hm1, hp1;
   int i, retc = 0, rm1, rp1;
   int ito;
@@ -647,7 +650,7 @@ int CALL_CONV swe_houses_armc_ex2(
    * Must be thread-local -- otherwise concurrent callers recall each
    * other's declination and silently produce wrong charts.
    * TODO(phase3c): move into the ephemeris context. */
-  static TLS double saved_sundec = 99;
+  /* was a TLS static; now ctx->saved_sundec (Phase 3c) */
   if (toupper(hsys) == 'G')
     ito = 36;
   else
@@ -662,10 +665,10 @@ int CALL_CONV swe_houses_armc_ex2(
   if (toupper(hsys) ==  'I') {	// declination for sunshine houses
     if (ascmc[9] == 99) {
       h.sundec = 0;
-      if (saved_sundec != 99) h.sundec = saved_sundec;
+      if (ctx->saved_sundec != 99) h.sundec = ctx->saved_sundec;
     } else {
       h.sundec = ascmc[9];
-      saved_sundec = h.sundec;
+      ctx->saved_sundec = h.sundec;
     }
     if (h.sundec < -24 || h.sundec > 24) {
       sprintf(serr, "House system I (Sunshine) needs valid Sun declination in ascmc[9]");

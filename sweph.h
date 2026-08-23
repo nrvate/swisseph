@@ -679,7 +679,7 @@ extern int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli);
 
 /* planets, s. moshplan.c */
 extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr);
-extern int swi_moshplan2(double J, int iplm, double *pobj);
+extern int swi_moshplan2(swe_ctx *ctx, double J, int iplm, double *pobj);
 extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double *xp, int ipl, int ipli, double *xearth, double *xsun, char *serr);
 extern FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char *serr);
 extern int32 swi_init_swed_if_start(swe_ctx *ctx);
@@ -911,6 +911,20 @@ struct swe_ctx {
   struct fixed_star *fixed_stars;
   /* Moshier lunar theory scratch -- see struct moon_state above. */
   struct moon_state moon;
+
+  /* --- Phase 3c: former file-scope TLS statics ---------------------- */
+
+  /* swemplan.c: sin/cos of multiple angles, rebuilt per call by sscc().
+   * Same role as moon.ss/cc but a different theory and a different shape,
+   * so deliberately not shared with it. */
+  double plan_ss[9][24], plan_cc[9][24];
+
+  /* swehouse.c: last solar declination handed to swe_houses_armc_ex2(),
+   * recalled when a caller passes the sentinel 99. 99 means "none yet", so
+   * zero would be a real declination and wrong. Set in swed's designated
+   * initialiser (sweph.c) and in swi_init_swed_if_start(), which memsets
+   * before filling in non-zero defaults. */
+  double saved_sundec;
 };
 
 /* swe_ctx is forward-declared near the top of this header, next to

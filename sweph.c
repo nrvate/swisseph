@@ -103,6 +103,9 @@ struct meff_ele {double r,m;};
  * instead). */
 TLS struct swe_ctx swed = {
   .const_lapse_rate = SE_LAPSE_RATE,
+  /* 99 is the "no declination recorded yet" sentinel for Sunshine houses;
+   * 0 would be a legitimate declination. */
+  .saved_sundec     = 99,
 };
 
 /*************
@@ -854,7 +857,7 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     iflag = pdp->xflgs;
   /*********************i************************ 
    * mean lunar node                            * 
-   * for comment s. moshmoon.c, swi_mean_node() *
+   * for comment s. moshmoon.c, swi_mean_node(ctx) *
    **********************************************/
   } else if (ipl == SE_MEAN_NODE) {
     if ((iflag & SEFLG_HELCTR) || (iflag & SEFLG_BARYCTR)) {
@@ -866,11 +869,11 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     ndp = &ctx->nddat[SEI_MEAN_NODE];
     xp = ndp->xreturn;
     xp2 = ndp->x;
-    retc = swi_mean_node(tjd, xp2, serr);
+    retc = swi_mean_node(ctx, tjd, xp2, serr);
     if (retc == ERR)
       goto return_error;
     /* speed (is almost constant; variation < 0.001 arcsec) */
-    retc = swi_mean_node(tjd - MEAN_NODE_SPEED_INTV, xp2+3, serr);
+    retc = swi_mean_node(ctx, tjd - MEAN_NODE_SPEED_INTV, xp2+3, serr);
     if (retc == ERR)
       goto return_error;
     xp2[3] = swe_difrad2n(xp2[0], xp2[3]) / MEAN_NODE_SPEED_INTV;
@@ -893,7 +896,7 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
       goto return_error;
   /********************************************** 
    * mean lunar apogee ('dark moon', 'lilith')  *
-   * for comment s. moshmoon.c, swi_mean_apog() *
+   * for comment s. moshmoon.c, swi_mean_apog(ctx) *
    **********************************************/
   } else if (ipl == SE_MEAN_APOG) {
     if ((iflag & SEFLG_HELCTR) || (iflag & SEFLG_BARYCTR)) {
@@ -905,11 +908,11 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     ndp = &ctx->nddat[SEI_MEAN_APOG];
     xp = ndp->xreturn;
     xp2 = ndp->x;
-    retc = swi_mean_apog(tjd, xp2, serr);
+    retc = swi_mean_apog(ctx, tjd, xp2, serr);
     if (retc == ERR)
       goto return_error;
     /* speed (is not constant! variation ~= several arcsec) */
-    retc = swi_mean_apog(tjd - MEAN_NODE_SPEED_INTV, xp2+3, serr);
+    retc = swi_mean_apog(ctx, tjd - MEAN_NODE_SPEED_INTV, xp2+3, serr);
     if (retc == ERR)
       goto return_error;
     for(i = 0; i <= 1; i++)
@@ -5695,7 +5698,7 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
    *********************************************/
   for (t = tjd - speed_intv, i = 0; i < 3; t += speed_intv, i++) {
     if (! (iflag & SEFLG_SPEED) && i != 1) continue;
-    swi_intp_apsides(t, xpos[i], ipl);
+    swi_intp_apsides(ctx, t, xpos[i], ipl);
   }
   /************************************************************
    * apsis with speed                                         * 
