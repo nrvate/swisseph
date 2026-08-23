@@ -1,0 +1,263 @@
+name: CI
+
+# Shared safety net for both in-flight plans:
+#   notes/PLAN.md          section 0.4  (thread-safety)
+#   notes/C17_MIGRATION.md section 6, Phase 5.4  (C17 migration)
+# Both call for the same matrix; whichever landed it first was to build it
+# for both. This is it.
+#
+# The gates themselves live in tests/Makefile and are NOT duplicated here --
+# this workflow only supplies the toolchains and platforms that cannot be
+# reached from a single dev box.
+#
+# On the numerical gate specifically:
+#   tests/baseline.txt is pinned to gcc -O0. That is the ONLY configuration
+#   where a bit-exact diff is meaningful. Measured on this tree, gcc -O0 vs
+#   -O2 already differs in 224 values across 65 of 5127 rows -- median
+#   2.2e-15, max 7.6e-08 deg (0.00027 arcsec), all in the speed fields,
+#   which are finite-differenced and so amplify rounding.
+#   So: gcc -O0 runs `check-golden` (bit-exact); every other toolchain runs
+#   tests/cmpgolden.py with a tolerance instead. Using diff there would fail
+#   for reasons that have nothing to do with our changes.
+
+on:
+  push:
+    branches: [ master, threadsafe ]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # ephe/ is tracked in-repo (379 MB). sat/ (227 MB) and ep4/ (25 MB) are
+  # not opened by any gate -- verified with strace -- so they are excluded
+  # to keep checkout sane.
+  EPHE: ephe
+  TOL: 1e-6
+
+jobs:
+  # ---------------------------------------------------------------------
+  # The reference configuration. This is the one that owns baseline.txt,
+  # and the only job allowed to assert bit-exactness.
+  # ---------------------------------------------------------------------
+  linux-gcc:
+    name: linux / gcc (reference, bit-exact)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - name: Versions
+        run: gcc --version && make --version | head -1
+      - name: Build library
+        run: make libswe.a
+      - name: G1 numerical no-op (bit-exact, the pinned config)
+        run: make -C tests check-golden EPHE=../$EPHE
+      - name: G1b -O2 within tolerance
+        run: make -C tests check-golden-O2 EPHE=../$EPHE TOL=$TOL
+      - name: G2 config propagates to worker threads
+        run: make -C tests check-threads EPHE=../$EPHE
+      - name: Per-thread-setup still works
+        run: make -C tests check-threads-workaround EPHE=../$EPHE
+      - name: Race and leak gates
+        run: |
+          make -C tests check-sunrace  EPHE=../$EPHE
+          make -C tests check-glprace  EPHE=../$EPHE
+          make -C tests check-cfgleak  EPHE=../$EPHE
+      - name: Threading shim
+        run: make -C tests check-threadshim
+
+  # ---------------------------------------------------------------------
+  # Second compiler, same platform. Catches gcc-specific assumptions.
+  # ---------------------------------------------------------------------
+  linux-clang:
+    name: linux / clang
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - run: clang --version
+      - name: Build + numerical check (tolerance, not diff)
+        run: |
+          make -C tests golden CC=clang EPHE=../$EPHE
+          (cd tests && env -u SE_EPHE_PATH ./golden --ephe ../$EPHE > out_clang.txt)
+          python3 tests/cmpgolden.py tests/baseline.txt tests/out_clang.txt --abs=$TOL --verbose
+      - name: Thread gates
+        run: |
+          make -C tests check-threads              CC=clang EPHE=../$EPHE
+          make -C tests check-threads-workaround   CC=clang EPHE=../$EPHE
+          make -C tests check-sunrace CC=clang EPHE=../$EPHE
+          make -C tests check-glprace CC=clang EPHE=../$EPHE
+          make -C tests check-cfgleak CC=clang EPHE=../$EPHE
+          make -C tests check-threadshim CC=clang
+
+  # ---------------------------------------------------------------------
+  # macOS. Historically the platform where TLS silently compiled to nothing
+  # (sweodef.h excluded __APPLE__), which inverted the library's threading
+  # behaviour -- see notes/INVESTIGATION.md section 3. Nobody has been able
+  # to run these gates there.
+  # ---------------------------------------------------------------------
+  macos:
+    name: macos / clang
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - run: cc --version
+      - name: Build + numerical check (tolerance)
+        run: |
+          make -C tests golden EPHE=../$EPHE
+          (cd tests && env -u SE_EPHE_PATH ./golden --ephe ../$EPHE > out_macos.txt)
+          python3 tests/cmpgolden.py tests/baseline.txt tests/out_macos.txt --abs=$TOL --verbose
+      - name: Is TLS actually enabled here?
+        run: |
+          printf '#include "sweodef.h"\nTLS int probe;\n' > /tmp/p.c
+          echo "TLS expands to:"; cc -E -I. /tmp/p.c | tail -1
+      - name: Thread gates
+        run: |
+          make -C tests check-threads            EPHE=../$EPHE
+          make -C tests check-threads-workaround EPHE=../$EPHE
+          make -C tests check-sunrace EPHE=../$EPHE
+          make -C tests check-glprace EPHE=../$EPHE
+          make -C tests check-cfgleak EPHE=../$EPHE
+          make -C tests check-threadshim
+
+  # ---------------------------------------------------------------------
+  # Windows / MSVC. The only way to exercise swethread.h's SRWLOCK backend,
+  # which has never been run -- it is unreachable on Linux and macOS, and
+  # was explicitly NOT claimed working in the Phase 2.1 commit.
+  # ---------------------------------------------------------------------
+  windows-msvc:
+    name: windows / msvc (SRWLOCK backend)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Compile the library
+        shell: cmd
+        run: |
+          cl /nologo /c /W3 /DWIN32_LEAN_AND_MEAN sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c
+      - name: Which swethread backend did MSVC select?
+        shell: cmd
+        run: |
+          echo #include "swethread.h" > probe.c
+          echo #include ^<stdio.h^> >> probe.c
+          echo int main(void){ printf("backend=%%s\n", SWI_THREAD_BACKEND); return 0; } >> probe.c
+          cl /nologo probe.c && probe.exe
+      - name: threadshim (mutex, generation, publish/observe)
+        shell: cmd
+        run: |
+          cl /nologo /I. tests\threadshim.c && threadshim.exe
+
+  # ---------------------------------------------------------------------
+  # Sanitizers. TSan needs ASLR off on some kernels, hence setarch -R.
+  # ---------------------------------------------------------------------
+  sanitizers:
+    name: linux / tsan + asan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - name: ThreadSanitizer -- threaded golden must report zero races
+        run: |
+          cd tests
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. golden.c \
+             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
+             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+             -o golden_tsan -lm -ldl -lpthread
+          setarch -R env TSAN_OPTIONS=halt_on_error=0 ./golden_tsan --ephe ../$EPHE --threads 4 > /dev/null 2> tsan.log || true
+          n=$(grep -c "WARNING: ThreadSanitizer" tsan.log || true)
+          echo "races reported: $n"; sed -n '1,40p' tsan.log
+          test "$n" -eq 0
+      - name: ThreadSanitizer -- shim and sunshine race
+        run: |
+          make -C tests check-threadshim-tsan
+          make -C tests check-sunrace-tsan EPHE=../$EPHE
+      - name: AddressSanitizer -- single-threaded golden
+        run: |
+          cd tests
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=address,undefined -I.. golden.c \
+             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
+             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+             -o golden_asan -lm -ldl -lpthread
+          env -u SE_EPHE_PATH ./golden_asan --ephe ../$EPHE > /dev/null
+
+  # ---------------------------------------------------------------------
+  # Dialects. The library floats on whatever -std= the local cc defaults to,
+  # so pin each explicitly. C89 is EXPECTED to fail (58 errors on this tree,
+  # long before either plan started) -- asserted as a known-fail so that if
+  # the C17 migration ever makes it pass, we hear about it.
+  # ---------------------------------------------------------------------
+  dialects:
+    name: linux / C dialects
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - name: Library must build at c99 / c11 / c17
+        run: |
+          for std in c99 gnu99 c11 gnu11 c17 gnu17; do
+            echo "--- $std ---"
+            for f in sweconfig swedate swehouse swejpl swemmoon swemplan sweph swephlib swecl swehel; do
+              cc -std=$std -D_GNU_SOURCE -c -o /dev/null $f.c
+            done
+          done
+      - name: C89 is expected to fail (pre-existing, not ours)
+        run: |
+          n=0
+          for f in sweconfig swedate swehouse swejpl swemmoon swemplan sweph swephlib swecl swehel; do
+            n=$((n + $(cc -std=c89 -D_GNU_SOURCE -c -o /dev/null $f.c 2>&1 | grep -c "error:" || true)))
+          done
+          echo "c89 errors: $n"
+          if [ "$n" -eq 0 ]; then
+            echo "c89 now builds clean -- that is good news, update this job"; exit 1
+          fi
+      - name: swethread.h across every backend it can select
+        run: make -C tests check-threadshim-all
+
+  # ---------------------------------------------------------------------
+  # ABI. Additions are fine; removals and type changes are not.
+  # ---------------------------------------------------------------------
+  abi:
+    name: linux / exported symbols
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - name: Compare exported symbols against the merge base
+        run: |
+          set -x
+          cc -shared -fPIC -D_GNU_SOURCE -o /tmp/new.so \
+             sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c \
+             sweph.c swephlib.c swecl.c swehel.c -lm -ldl
+          nm -D --defined-only /tmp/new.so | awk '{print $2, $3}' | sort > /tmp/new.sym
+          base=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          if [ -z "$base" ]; then echo "no base commit, skipping"; exit 0; fi
+          git worktree add -q /tmp/base "$base"
+          cc -shared -fPIC -D_GNU_SOURCE -o /tmp/base.so \
+             $(ls /tmp/base/sweconfig.c /tmp/base/swedate.c /tmp/base/swehouse.c \
+                  /tmp/base/swejpl.c /tmp/base/swemmoon.c /tmp/base/swemplan.c \
+                  /tmp/base/sweph.c /tmp/base/swephlib.c /tmp/base/swecl.c \
+                  /tmp/base/swehel.c 2>/dev/null) -lm -ldl || { echo "base build failed, skipping"; exit 0; }
+          nm -D --defined-only /tmp/base.so | awk '{print $2, $3}' | sort > /tmp/base.sym
+          if comm -23 /tmp/base.sym /tmp/new.sym | grep .; then
+            echo "ABI FAIL: symbol(s) removed or changed type"; exit 1
+          fi
+          echo "ABI ok: no symbol removed"
+
+  # ---------------------------------------------------------------------
+  # Upstream's own suite, used as a DIFFERENTIAL gate. It cannot be
+  # pass/fail: t.exp was generated against the JPL ephemeris (de431.eph),
+  # which this repo does not ship, so ~2730 assertions fail and the binary
+  # aborts in suite_08_eclipses on pristine 3fd0f95 too. What must hold is
+  # that its output is byte-identical before and after our changes.
+  # ---------------------------------------------------------------------
+  setest-differential:
+    name: linux / setest differential
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: Capture reference from 3fd0f95, compare against HEAD
+        run: |
+          make -C tests setest-ref REF=3fd0f95 EPHE=../$EPHE
+          make -C tests check-setest EPHE=../$EPHE
