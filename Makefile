@@ -151,8 +151,13 @@ libswe.a: $(SWEOBJ)
 	ar r libswe.a $(SWEOBJ)
 
 # Create a shared library
+# CFLAGS and LIBS belong on this line as much as on any other. Without
+# them the shared library is the one artifact built with different flags
+# from everything around it: -flto never reached it under LTO=1, macOS
+# universal builds silently produced a host-only dylib from fat objects,
+# and it recorded no dependency on libm or libdl.
 libswe.$(DYLIB_EXT): $(SWEOBJ)
-	$(CC) $(DYLIB_FLAG) -o libswe.$(DYLIB_EXT) $(SWEOBJ)
+	$(CC) $(CFLAGS) $(DYLIB_FLAG) -o libswe.$(DYLIB_EXT) $(SWEOBJ) $(LIBS)
 
 # Test targets (requires a "setest" subdirectory with its own Makefile)
 test:
