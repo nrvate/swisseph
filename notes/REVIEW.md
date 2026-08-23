@@ -64,14 +64,33 @@ Beyond those two, the dominant themes across every file are:
 > a way that would break on re-enabling — but edits near them need checking,
 > not trusting.
 
-> **Clang `-Werror` findings, recorded but not enforced.** Sweeping the
-> library with `clang-18 -Wall -Wextra -Werror` (stricter than any CI job —
-> the clang jobs use `tests/CFLAGS`, which carries no `-Werror`) reports
-> three pre-existing `-Wunused-but-set-parameter` in `swehel.c`:
-> `OpticFactor`'s `JDNDaysUT` (:225), `SunRA`'s `helflag` (:554), and
-> `Bcity`'s `Press` (:1263) — each assigned and then never read. Upstream
-> code smells rather than bugs, and out of scope for the thread-safety
-> branch; noted so the next person does not have to rediscover them.
+> **Clang `-Werror` findings — now fixed, and they were blocking macOS.**
+> Three `-Wunused-but-set-parameter` in `swehel.c` (`OpticFactor`'s
+> `JDNDaysUT`, `SunRA`'s `helflag`, `Bcity`'s `Press`). Originally recorded
+> here as harmless smells; they turned out to make **`make all` fail on
+> macOS**, whose `cc` is clang and whose build uses `-Werror`. Nothing had
+> noticed because the `macos / clang` job builds through `tests/Makefile`,
+> which carries no `-Werror`.
+>
+> The cause is almost too neat: each was a hand-written warning suppression —
+>
+> ```c
+> JDNDaysUT += 0.0; /* currently not used, statement prevents compiler warning */
+> ```
+>
+> — written to silence the old `-Wunused-parameter`, and it is precisely
+> that assignment which trips the newer `-Wunused-but-set-parameter`. The
+> workaround became the defect. All three now use `(void) param;`.
+>
+> **A real finding fell out of `SunRA`.** Its `helflag` is not merely
+> unused-looking: the only code reading it sits under
+> `#ifndef SIMULATE_VICTORVB`, and `swephexp.h:451` defines that macro
+> unconditionally. So the high-precision branch — the one that would call
+> `swe_calc()` for the actual solar position — is **never compiled**, and
+> `SunRA()` always falls through to a monthly approximation,
+> `swe_degnorm((imon + (iday - 1) / 30.4 - 3.69) * 30)`. That is upstream
+> behaviour and correcting it would move results, so it is documented rather
+> than changed.
 >
 > One from the same sweep *was* fixed: `sweephe4.c:673` declared
 > `char *getenv();`, a K&R prototype conflicting with `stdlib.h`'s, which

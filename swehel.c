@@ -232,7 +232,7 @@ static double OpticFactor(double Bback, double kX, double *dobs, double JDNDaysU
   double OpticDia = dobs[4];
   double OpticTrans = dobs[5];
   AS_BOOL is_scotopic = FALSE;
-  JDNDaysUT += 0.0; /* currently not used, statement prevents compiler warning */
+  (void) JDNDaysUT;  /* not used yet -- see the ObjectSize/CI note below */
   SNi = SN;
   if (SNi <= 0.00000001) SNi = 0.00000001;
   /* 23 jaar as standard from Garstang*/
@@ -556,9 +556,15 @@ static double SunRA(swe_ctx *ctx, double JDNDaysUT, int32 helflag, char *serr)
   int imon, iday, iyar, calflag = SE_GREG_CAL;
   double dut;
   /* moved to ctx->hel.sunra (Phase 3c) */
-  /* moved to ctx->hel.sunra (Phase 3c) */
-  helflag += 0; /* statement prevents compiler warning */
-  *serr = '\0';
+  /* helflag is genuinely unused: the only code that reads it sits under
+   * `#ifndef SIMULATE_VICTORVB`, and swephexp.h:451 defines that macro
+   * unconditionally. So the high-precision branch below -- the one that
+   * would call swe_calc() for the real solar position -- is never compiled,
+   * and this function always falls through to the monthly approximation at
+   * the end. That is upstream behaviour and changing it would move results,
+   * so it is left alone and merely recorded (notes/REVIEW.md). */
+  (void) helflag;
+    *serr = '\0';
   if (JDNDaysUT == ctx->hel.sunra.tjdlast)
     return ctx->hel.sunra.ralast;
 #ifndef SIMULATE_VICTORVB
@@ -1263,7 +1269,7 @@ static double Bday(swe_ctx *ctx, double AltO, double AziO, double AltS, double A
 static double Bcity(double Value, double Press)
 {
   double Bcity = Value;
-  Press += 0.0; /* unused; statement prevents compiler warning */
+  (void) Press;  /* unused: Bcity models brightness independently of pressure */
   Bcity = mymax(Bcity, 0);
   return Bcity;
 }
