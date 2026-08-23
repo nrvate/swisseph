@@ -317,15 +317,16 @@ compile-time failure with the exact assertion message, then discarded the
 revert (not committed). `G4` tightened in §5 to grep the specific
 assertion text rather than any `static_assert` in the file.
 
-**Still open, not done here:** the runtime check on `ncf` (Phase 1,
-04bb51a) has never been exercised — none of this repo's shipped `ephe/`
-files trip it, so it's unverified beyond compiling and reading correctly.
-Needs a synthetic malformed JPL file (an `ipt[]` entry claiming more
-coefficients than `pc[18]` can hold) as a fixture before it's a tested
-guard rather than a plausible one. Left for whoever picks up `REVIEW.md`'s
-optional-follow-on work — not blocking Phase 5 or `PLAN.md` Phase 3, since
-the runtime check itself is already live in the shipped code regardless
-of whether a test exercises it yet.
+**Update, closed:** the fixture gap noted above is filled —
+`tests/jplguard.c` (`swisseph-d2`) now exercises the `ncf` bound, the
+`ksize > JPL_NCOEFF_MAX*2` bound, and (a related overflow found the same
+day) a 32-bit overflow in the file-length check's own arithmetic —
+`ipt[]`/`k`/`nseg` were multiplied entirely in 32-bit before widening
+into the 64-bit `nb`, wrapping negative for `na >= 3` with a large
+`nseg`. Fixed with an `(off_t64)` cast (896d558) plus a matching
+`(unsigned int)`/`%d` display-truncation bug at the same site that had
+been hiding the arithmetic bug's real signature. All in `swejpl.c`, all
+green against `tests/jplguard.c` and the rest of `make check`.
 
 ### Phase 5 — Flip the build, turn on `-Werror`
 
