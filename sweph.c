@@ -121,6 +121,7 @@ TLS struct swe_data swed = {FALSE,	/* ephe_path_is_set = FALSE */
 			    NULL,	/* deps */
 			    0,		/* timeout */
 			    {0,0,0,0,0,0,0,0,}, /* astro_models */
+			    SE_LAPSE_RATE, /* const_lapse_rate, for refraction */
 			    };
 
 /*************
@@ -1188,6 +1189,8 @@ int32 swi_init_swed_if_start(void)
     memset((void *) &swed, 0, sizeof(struct swe_data));
     strcpy(swed.ephepath, SE_EPHE_PATH);
     strcpy(swed.jplfnam, SE_FNAME_DFT);
+    /* the memset above would leave this 0.0, not the 0.0065 default */
+    swed.const_lapse_rate = SE_LAPSE_RATE;
     swe_set_tid_acc(SE_TIDAL_AUTOMATIC);
     swed.swed_is_initialised = TRUE;
     return 1;

@@ -71,7 +71,6 @@ static int find_zero(double y00, double y11, double y2, double dx,
 			double *dxret, double *dxret2);
 static double calc_dip(double geoalt, double atpress, double attemp, double lapse_rate);
 static double calc_astronomical_refr(double geoalt,double atpress, double attemp);
-static TLS double const_lapse_rate = SE_LAPSE_RATE;  /* for refraction */
 
 #if 0
 #define DSUN 	(1391978489.9 / AUNIT)	/* this value is consistent with
@@ -2820,8 +2819,8 @@ void CALL_CONV swe_azalt(
     /* estimate atmospheric pressure */
     atpress = 1013.25 * pow(1 - 0.0065 * geopos[2] / 288, 5.255);
   } 
-  xaz[2] = swe_refrac_extended(x[1], geopos[2], atpress, attemp, const_lapse_rate, SE_TRUE_TO_APP, NULL);
-  /* xaz[2] = swe_refrac_extended(xaz[2], geopos[2], atpress, attemp, const_lapse_rate, SE_APP_TO_TRUE, NULL);*/
+  xaz[2] = swe_refrac_extended(x[1], geopos[2], atpress, attemp, swed.const_lapse_rate, SE_TRUE_TO_APP, NULL);
+  /* xaz[2] = swe_refrac_extended(xaz[2], geopos[2], atpress, attemp, swed.const_lapse_rate, SE_APP_TO_TRUE, NULL);*/
 }
 
 /* 
@@ -2985,7 +2984,7 @@ double CALL_CONV swe_refrac(double inalt, double atpress, double attemp, int32 c
 
 void CALL_CONV swe_set_lapse_rate(double lapse_rate) 
 {
-  const_lapse_rate = lapse_rate;
+  swed.const_lapse_rate = lapse_rate;
 }
 
 /* swe_refrac_extended()
@@ -4281,7 +4280,7 @@ run_rise_again:
     /* estimate atmospheric pressure */
     atpress = 1013.25 * pow(1 - 0.0065 * dgeo[2] / 288, 5.255);
   } 
-  swe_refrac_extended(0.000001, 0, atpress, attemp, const_lapse_rate, SE_APP_TO_TRUE, xx);
+  swe_refrac_extended(0.000001, 0, atpress, attemp, swed.const_lapse_rate, SE_APP_TO_TRUE, xx);
   refr = xx[1] - xx[0];
 //fprintf(stderr, "refr=%f, %f, %f\n", refr, xx[0], xx[1]);
   if (rsmi & SE_BIT_GEOCTR_NO_ECL_LAT) {
@@ -4413,7 +4412,7 @@ int32 CALL_CONV swe_rise_trans_true_hor(
   // if horhgt == -100, set horhgt = dip of horizon, i.e. refracted height
   // of ocean if visible at horizon.
   if (horhgt == -100) {
-    horhgt = 0.0001 + calc_dip(geopos[2], atpress, attemp, const_lapse_rate);
+    horhgt = 0.0001 + calc_dip(geopos[2], atpress, attemp, swed.const_lapse_rate);
   }
   /*swi_set_tid_acc(tjd_ut, epheflag, 0, serr);*/
   /* function calls for Pluto with asteroid number 134340

@@ -825,6 +825,14 @@ struct swe_data {
   double *deps;
   int32 timeout;
   int32 astro_models[SEI_NMODELS];
+  /* Atmospheric lapse rate for refraction, set by swe_set_lapse_rate().
+   * Was a file-scope static in swecl.c; moved here because it is
+   * configuration and Phase 2 needs every config field in one place.
+   * NOTE: the static initialiser of swed in sweph.c is positional and
+   * stops just after astro_models, so this field must stay immediately
+   * after it -- anything later would be implicitly zero-initialised,
+   * silently replacing SE_LAPSE_RATE (0.0065) with 0.0. */
+  double const_lapse_rate;
   AS_BOOL do_interpolate_nut;
   struct interpol interpol;
   struct file_data fidat[SEI_NEPHFILES];
