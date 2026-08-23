@@ -763,12 +763,31 @@ static int state(double et, int32 *list, int do_bary,
     flen = FTELL(js->jplfptr);
     /* # of segments in file */
     nseg = (int32) ((js->eh_ss[1] - js->eh_ss[0]) / js->eh_ss[2]);	
-    /* sum of all cheby coeffs of all planets and segments */
-    for(i = 0, nb = 0; i < 13; i++) {		
+    /* sum of all cheby coeffs of all planets and segments.
+     *
+     * The (off_t64) cast is load-bearing. ipt[] and nseg are int32 and k is
+     * int, so without it each term is evaluated entirely in 32-bit and only
+     * then widened into the 64-bit nb -- and each term is
+     * ncf * na * k * nseg, all four of which come from the file header.
+     *
+     * ncf is bounded to 18 by the check above and nseg to 14609851 by the
+     * ss[] plausibility test, but na has no bound at all, so na >= 3 already
+     * overflows: 18 * 3 * 3 * 14609851 = 2366795862 > INT_MAX. Measured, at
+     * ncf=18 and nseg at its maximum, 12 of the 13 terms wrap and nb comes
+     * out at -21560193300 instead of 29979414252.
+     *
+     * A negative nb happens to fail the comparison below and reject the
+     * file, so this is fail-safe rather than exploitable as far as has been
+     * shown -- but nb is the expected file length, and it is the check
+     * immediately below that indirectly bounds interp()'s base offset and
+     * na. Computing it in a type that silently wraps is not a foundation to
+     * leave that resting on.
+     */
+    for(i = 0, nb = 0; i < 13; i++) {
       k = 3;
       if (i == 11)
 	k = 2;
-      nb += (ipt[i*3+1] * ipt[i*3+2]) * k * nseg;
+      nb += (off_t64) ipt[i*3+1] * ipt[i*3+2] * k * nseg;
     }
     /* add start and end epochs of segments */
     nb += 2 * nseg; 
@@ -781,9 +800,14 @@ static int state(double et, int32 *list, int do_bary,
       && flen - nb != ksize * nrecl
       ) {
       if (serr != NULL) {
-	sprintf(serr, "JPL ephemeris file is mutilated; length = %d instead of %d.", (unsigned int) flen, (unsigned int) nb);
+	/* flen and nb are off_t64. Casting them to (unsigned int) and printing
+	 * with %d truncated both to 32 bits, so a large expected length was
+	 * reported as a negative number -- which is how the nb overflow above
+	 * disguised itself: the diagnostic looked like the arithmetic bug even
+	 * after the arithmetic was correct. Print them at full width. */
+	sprintf(serr, "JPL ephemeris file is mutilated; length = %lld instead of %lld.", (long long) flen, (long long) nb);
 	if (strlen(serr) + strlen(js->jplfname) < AS_MAXCH - 1) {
-	  sprintf(serr, "JPL ephemeris file %s is mutilated; length = %d instead of %d.", js->jplfname, (unsigned int) flen, (unsigned int) nb);
+	  sprintf(serr, "JPL ephemeris file %s is mutilated; length = %lld instead of %lld.", js->jplfname, (long long) flen, (long long) nb);
 	}
       }
       return(NOT_AVAILABLE);

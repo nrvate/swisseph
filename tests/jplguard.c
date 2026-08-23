@@ -50,8 +50,10 @@ static void put32(unsigned char *p, int v)    { memcpy(p, &v, 4); }
 static void putd (unsigned char *p, double v) { memcpy(p, &v, 8); }
 
 /* Writes a header whose ipt[] is filled from `ncf` and `na`, with body 10
- * (ipt[30]) carrying `maxoff` so ksize is computed from it. */
-static int write_eph(const char *path, int ncf, int na, int maxoff)
+ * (ipt[30]) carrying `maxoff` so ksize is computed from it. ss0/ss1/ss2 set
+ * the segment range, which is what drives nseg in the length computation. */
+static int write_eph_ss(const char *path, int ncf, int na, int maxoff,
+                        double ss0, double ss1, double ss2)
 {
   unsigned char h[2856];
   int i, ksize, irecsz;
@@ -59,9 +61,9 @@ static int write_eph(const char *path, int ncf, int na, int maxoff)
   memset(h, ' ', 252);
   memcpy(h, "SWISSEPH JPL GUARD FIXTURE", 26);
   memset(h + 252, ' ', 2400);
-  putd(h + 2652, 2451545.0);
-  putd(h + 2660, 2460000.0);
-  putd(h + 2668, 32.0);            /* ss[2]: valid, so no byte reordering */
+  putd(h + 2652, ss0);
+  putd(h + 2660, ss1);
+  putd(h + 2668, ss2);             /* must be 1..200 or reordering kicks in */
   put32(h + 2676, 0);              /* ncon */
   putd (h + 2680, 149597870.7);    /* au    */
   putd (h + 2688, 81.3);           /* emrat */
@@ -88,6 +90,12 @@ static int write_eph(const char *path, int ncf, int na, int maxoff)
   for (i = 0; i < 4 * ksize / 2; i++) { double d = 1.0; fwrite(&d, 8, 1, fp); }
   fclose(fp);
   return ksize;
+}
+
+/* the ordinary case: a short segment range, nseg small */
+static int write_eph(const char *path, int ncf, int na, int maxoff)
+{
+  return write_eph_ss(path, ncf, na, maxoff, 2451545.0, 2460000.0, 32.0);
 }
 
 static int expect_reject(const char *what, const char *file, const char *want)
@@ -140,6 +148,49 @@ int main(void)
       bad = 1;
     }
     if (r == OK) swi_close_jpl_file();
+  }
+
+  /* 4. The expected-length computation must not wrap.
+   *
+   *    nb accumulates ncf * na * k * nseg over 13 bodies. ipt[] and nseg are
+   *    int32 and k is int, so before the (off_t64) cast each term was
+   *    evaluated in 32-bit and only then widened into the 64-bit nb.
+   *
+   *    ncf is capped at 18 and nseg at 14609851 (the ss[] plausibility
+   *    bounds), but na is unbounded, so na >= 3 suffices:
+   *      18 * 3 * 3 * 14609851 = 2366795862 > INT_MAX
+   *    With the wrap, 12 of 13 terms overflow and nb becomes NEGATIVE.
+   *
+   *    The file is rejected either way -- a negative expected length fails
+   *    the comparison, so this is fail-safe -- which is exactly why it needs
+   *    an explicit test. The observable signature is the expected length in
+   *    the error message going negative. That is what the very first J1
+   *    probe accidentally printed:
+   *        "length = 48440 instead of -1760248016"
+   *    and it is what this asserts against.
+   */
+  {
+    char serr[AS_MAXCH] = ""; double ss[3];
+    long long expected = 0;
+    int r;
+    /* ss[2] = 1 day across the full accepted range -> nseg at its maximum */
+    ksize = write_eph_ss("/tmp/jplguard_nb.eph", 18, 3, 1200,
+                         -5583940.0, 9025900.0, 1.0);
+    printf("  fixture ncf=18 na=3 nseg~14.6e6 ksize=%d\n", ksize);
+    r = swi_open_jpl_file(ss, (char *) "jplguard_nb.eph", "/tmp", serr);
+    printf("  %-34s rc=%-3d %s\n", "expected length must not wrap", r, serr);
+    if (r == OK) {
+      printf("    FAIL: accepted -- the length check did not run\n");
+      bad = 1; swi_close_jpl_file();
+    } else if (sscanf(serr, "%*[^0-9-]%*d%*[^0-9-]%lld", &expected) == 1
+               && expected < 0) {
+      printf("    FAIL: expected length is NEGATIVE (%lld) -- nb wrapped\n",
+             expected);
+      bad = 1;
+    } else if (strstr(serr, "instead of -") != NULL) {
+      printf("    FAIL: expected length is negative -- nb wrapped\n");
+      bad = 1;
+    }
   }
 
   printf("%s\n", bad ? "FAIL" : "PASS");
