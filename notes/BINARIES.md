@@ -1,6 +1,8 @@
 # Binaries in the source tree — findings and plan
 
-**Status:** in progress. Step 1 partially done; `contrib/` deliberately deferred.
+**Status:** Windows done — no build artifacts remain under `windows/`, and CI
+builds the whole MSVC solution into a package on every push. `contrib/` is
+deliberately deferred. Linux/macOS/Android artifacts and releases are next.
 
 The tree carries compiled artifacts, prebuilt archives, and in one case a
 second copy of its own source. This note records what is actually there, what
@@ -36,8 +38,6 @@ library, silently — the exact failure mode this branch exists to eliminate.
 exists anywhere in this tree. Its own readme said it "is NOT part of the
 Swiss Ephemeris, and it is NOT supported", so it was dropped rather than
 replaced.
-
-### Still present, decision pending
 
 ### Removed: `windows/sweph.zip` (10.5 MB)
 
@@ -112,12 +112,14 @@ pushed.
 
 ## Where this is heading
 
-1. **Binaries out of `HEAD`** — in progress.
-2. **CI builds per-platform artifacts on every push**, uploaded as workflow
-   artifacts. Valuable on its own and a prerequisite for step 3: today the
-   Windows job runs `cl /c` on the library sources and links **nothing**, and
-   there is no Android job at all — so we would otherwise be promising
-   binaries we have never proven we can build.
+1. **Binaries out of `HEAD`** — done for `bin/` and `windows/`; `contrib/`
+   deferred.
+2. **CI builds per-platform artifacts on every push.** Done for Windows: the
+   `windows / package` job builds all 15 MSVC projects, smoke-tests both
+   CLIs, verifies the DLL actually exports the context API, and uploads a
+   package with `SHA256SUMS`. Still to do: Linux, macOS, and Android — there
+   is no Android job at all, so that platform's prebuilts in `contrib/`
+   remain something we cannot yet reproduce.
 3. **Tag-triggered release** attaching those same artifacts, per platform,
    plus `SHA256SUMS`. The tag *is* the source; GitHub generates source
    tarballs from it, so no hand-built source archive can drift — which is
