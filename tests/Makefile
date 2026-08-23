@@ -142,13 +142,13 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
+check: check-version check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
 	rm -f jplcalc .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
-        check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
+        check-threadshim-tsan all baseline check check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge \
         check-winmacros \
@@ -205,6 +205,34 @@ check-winmacros:
 	echo "  _WIN32 branches parse                         OK"; \
 	rm -f /tmp/wm.$$$$; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G13 FAIL"; exit 1; }
+
+# G14: SE_VERSION in sweph.h is the only place the version is written.
+#
+# It was in four files. Bumping meant remembering all of them, and the one
+# that mattered most was the least obvious: Android.mk's LOCAL_MODULE is
+# the string a consumer passes to System.loadLibrary(), so a missed copy
+# there ships a library nobody can load by the documented name.
+#
+# The check is a grep, deliberately: anything cleverer would itself need
+# to know where versions are allowed to live.
+check-version:
+	@echo "G14: one source of truth for the version"
+	@v=$$(sed -n 's/^\#define SE_VERSION[[:space:]]*"\([^"]*\)".*/\1/p' ../sweph.h); \
+	[ -n "$$v" ] || { echo "  FAIL: cannot read SE_VERSION from sweph.h"; exit 1; }; \
+	echo "  SE_VERSION = $$v"; \
+	stray=$$(cd .. && git grep -l -E '[0-9]+\.[0-9]+\.[0-9]+-ts\.[0-9]+' -- . ':!ephe' ':!notes' \
+	         | grep -v '^sweph\.h$$' || true); \
+	if [ -n "$$stray" ]; then \
+	  echo "  FAIL: version literal outside sweph.h:"; \
+	  echo "$$stray" | sed 's/^/    /'; \
+	  echo "  derive it instead -- see Android.mk, or 'make version' in the root"; \
+	  exit 1; \
+	fi; \
+	echo "  no other tracked file carries a version literal   OK"; \
+	m=$$(cd ../contrib/android/jni && sed -n 's/^\#define SE_VERSION[[:space:]]*"\([^"]*\)".*/\1/p' sweph.h); \
+	[ "$$m" = "$$v" ] || { echo "  FAIL: Android.mk would derive $$m, not $$v"; exit 1; }; \
+	echo "  Android.mk derives swe-$$v                        OK"; \
+	echo "PASS"
 
 # check-ci: run the gate set under the CI runner's exact toolchain.
 #

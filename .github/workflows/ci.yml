@@ -22,10 +22,13 @@ name: CI
 
 on:
   push:
-    # main is the default branch; legacy-master is the pristine upstream
-    # tree and deliberately has no CI. threadsafe stays as the granular
-    # history of the transformation and keeps running the gates.
-    branches: [ main, threadsafe ]
+    # main is the default branch and takes squashes through a PR. work is
+    # where fixes land in the meantime. legacy-master is the pristine
+    # upstream tree and deliberately has no CI; threadsafe is the granular
+    # history of the transformation and is frozen by a repository ruleset,
+    # so nothing can be pushed to it -- it stays listed only so the gates
+    # would still run if that freeze were ever lifted.
+    branches: [ main, work, threadsafe ]
   pull_request:
   workflow_dispatch:
 

@@ -1,7 +1,7 @@
 /*
  * Author    Yura Krymlov
  * Created   2021-02
- * Version   2.10.03-ts.1
+ * Version   see SE_VERSION in sweph.h -- not repeated here, it only rots
  */
  
 #include "swephexp.h"

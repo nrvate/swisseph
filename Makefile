@@ -159,6 +159,34 @@ libswe.a: $(SWEOBJ)
 libswe.$(DYLIB_EXT): $(SWEOBJ)
 	$(CC) $(CFLAGS) $(DYLIB_FLAG) -o libswe.$(DYLIB_EXT) $(SWEOBJ) $(LIBS)
 
+# ---------------------------------------------------------------------
+# Version. SE_VERSION in sweph.h is the ONLY place the version is written
+# down; everything else derives from it (contrib/android/jni/Android.mk
+# reads it with the same sed, the release workflow refuses to publish a
+# tag that disagrees with it, and tests/Makefile's check-version fails the
+# build if any other file grows a copy).
+#
+#   make version                       -> prints the current version
+#   make bump VERSION=X.Y.Z-ts.N
+# ---------------------------------------------------------------------
+VERSION_SED = s/^\#define SE_VERSION[[:space:]]*"\([^"]*\)".*/\1/p
+
+.PHONY: version bump
+version:
+	@sed -n '$(VERSION_SED)' sweph.h
+
+bump:
+	@test -n "$(VERSION)" || { \
+	  echo "usage: make bump VERSION=X.Y.Z-ts.N   (current: $$(sed -n '$(VERSION_SED)' sweph.h))"; \
+	  exit 1; }
+	@old=$$(sed -n '$(VERSION_SED)' sweph.h); \
+	if [ "$$old" = "$(VERSION)" ]; then echo "already $(VERSION)"; exit 0; fi; \
+	sed -i 's/^\(#define SE_VERSION[[:space:]]*\)"[^"]*"/\1"$(VERSION)"/' sweph.h; \
+	new=$$(sed -n '$(VERSION_SED)' sweph.h); \
+	[ "$$new" = "$(VERSION)" ] || { echo "FAIL: sweph.h still reads $$new"; exit 1; }; \
+	echo "SE_VERSION $$old -> $$new"; \
+	echo "  tag with: git tag v$$new && git push origin v$$new"
+
 # Test targets (requires a "setest" subdirectory with its own Makefile)
 test:
 	cd setest && make && ./setest t
