@@ -238,8 +238,18 @@ jobs:
             /*
             !/ephe/sat/
             !/ephe/ep4/
-      - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v2
+      - name: Locate MSBuild
+        shell: cmd
+        run: |
+          rem vswhere instead of microsoft/setup-msbuild@v2. That action still
+          rem targets Node 20, which GitHub has deprecated, and it does nothing
+          rem this job cannot do itself -- vswhere is already used in the ABI
+          rem step to find the compiler, and ships with every Visual Studio
+          rem installer. One fewer third-party action, and no runtime to age out.
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe`) do (
+            echo %%~dpi>> "%GITHUB_PATH%"
+            echo found: %%i
+          )
       - name: Build Win32 projects
         shell: cmd
         run: |
