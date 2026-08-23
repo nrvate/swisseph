@@ -640,9 +640,9 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     return ERR;
   }
   if (epheflag != SEFLG_MOSEPH && !ctx->ephe_path_is_set && !ctx->jpl_file_is_open)
-    SWI_CFG_LOCAL(swe_set_ephe_path(NULL));
+    SWI_CFG_LOCAL(ctx, swe_set_ephe_path(NULL));
   if ((iflag & SEFLG_SIDEREAL) && !ctx->ayana_is_set)
-    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
+    SWI_CFG_LOCAL(ctx, swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   /****************************************** 
    * obliquity of ecliptic 2000 and of date * 
    ******************************************/
@@ -1197,15 +1197,32 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
   if (!ctx->swed_is_initialised) {
     /* Guard the whole block: swe_set_tid_acc() below is a publishing
      * setter, and this thread's defaults must not become the master. */
-    AS_BOOL swi_cfg_was = swi_config_begin_apply();
-    memset((void *) &swed, 0, sizeof(struct swe_data));
+    /* These three must survive the memset. They describe this context's
+     * relationship to the shared config master, not library state that a
+     * fresh start should discard.
+     *
+     * While they were TLS in sweconfig.c the memset could not reach them.
+     * As swe_ctx fields (Phase 3d) it clears cfg_applying in the middle of
+     * the guard that is meant to be held right here -- and swe_set_tid_acc()
+     * below then publishes this context's freshly-zeroed defaults as the
+     * master, which is precisely the failure swi_config_publish() documents.
+     * G2 caught it: all 8 workers diverged from the main thread at calc_ut,
+     * i.e. delta-T, i.e. tid_acc. */
+    swi_gen_t saved_seen  = ctx->cfg_seen;
+    int32     saved_local = ctx->cfg_local;
+    AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
+    /* ctx, not &swed: a non-default context must clear itself. */
+    memset((void *) ctx, 0, sizeof(struct swe_ctx));
+    ctx->cfg_seen     = saved_seen;
+    ctx->cfg_local    = saved_local;
+    ctx->cfg_applying = TRUE;      /* re-arm the guard the memset cleared */
     strcpy(ctx->ephepath, SE_EPHE_PATH);
     strcpy(ctx->jplfnam, SE_FNAME_DFT);
     /* the memset above would leave this 0.0, not the 0.0065 default */
     ctx->const_lapse_rate = SE_LAPSE_RATE;
     swe_set_tid_acc(SE_TIDAL_AUTOMATIC);
     ctx->swed_is_initialised = TRUE;
-    swi_config_end_apply(swi_cfg_was);
+    swi_config_end_apply(ctx, swi_cfg_was);
     started = 1;
   }
   /* Adopt any configuration published by another thread. This is the
@@ -1284,7 +1301,7 @@ void CALL_CONV swe_close(void)
     fclose(ctx->fixfp);
     ctx->fixfp = NULL;
   }
-  SWI_CFG_LOCAL(swe_set_tid_acc(SE_TIDAL_AUTOMATIC));
+  SWI_CFG_LOCAL(ctx, swe_set_tid_acc(SE_TIDAL_AUTOMATIC));
   ctx->geopos_is_set = FALSE;
   ctx->ayana_is_set = FALSE;
   ctx->is_old_starfile = FALSE;
@@ -1322,7 +1339,7 @@ void CALL_CONV swe_close(void)
    * for a library whose configuration is process-wide. A caller that
    * closes on one thread while another is still computing is misusing the
    * API in exactly the way it always has been. */
-  swi_config_reset();
+  swi_config_reset(ctx);
 #ifdef TRACE
 #define TRACE_CLOSE FALSE
   swi_open_trace(NULL);
@@ -1360,7 +1377,7 @@ void CALL_CONV swe_set_ephe_path(const char *path)
   /* bridge to the default context; 3d replaces this with a
    * swe_ctx * parameter on the _r variant. */
   swe_ctx *ctx = swi_default_ctx();
-  AS_BOOL swi_cfg_was = swi_config_begin_apply();
+  AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
   int i, iflag;
   char s[AS_MAXCH];
   char serr[AS_MAXCH];
@@ -1424,8 +1441,8 @@ void CALL_CONV swe_set_ephe_path(const char *path)
   }
   swi_trace_unlock();
 #endif
-  swi_config_end_apply(swi_cfg_was);
-  swi_config_publish(SWI_CFG_PATH);
+  swi_config_end_apply(ctx, swi_cfg_was);
+  swi_config_publish(ctx, SWI_CFG_PATH);
 }
 
 void load_dpsi_deps(swe_ctx *ctx)
@@ -1528,7 +1545,7 @@ void CALL_CONV swe_set_jpl_file(const char *fname)
   /* bridge to the default context; 3d replaces this with a
    * swe_ctx * parameter on the _r variant. */
   swe_ctx *ctx = swi_default_ctx();
-  AS_BOOL swi_cfg_was = swi_config_begin_apply();
+  AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
   char *sp, s[AS_MAXCH];
   int retc;
   double ss[3];
@@ -1583,8 +1600,8 @@ void CALL_CONV swe_set_jpl_file(const char *fname)
   }
   swi_trace_unlock();
 #endif
-  swi_config_end_apply(swi_cfg_was);
-  swi_config_publish(SWI_CFG_PATH);
+  swi_config_end_apply(ctx, swi_cfg_was);
+  swi_config_publish(ctx, SWI_CFG_PATH);
 }
 
 /* calculates obliquity of ecliptic and stores it together
@@ -2923,7 +2940,7 @@ void CALL_CONV swe_set_sid_mode(int32 sid_mode, double t0, double ayan_t0)
   /* bridge to the default context; 3d replaces this with a
    * swe_ctx * parameter on the _r variant. */
   swe_ctx *ctx = swi_default_ctx();
-  AS_BOOL swi_cfg_was = swi_config_begin_apply();
+  AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
   struct sid_data *sip = &ctx->sidd;
   swi_init_swed_if_start(ctx);
   if (sid_mode < 0)
@@ -2989,8 +3006,8 @@ void CALL_CONV swe_set_sid_mode(int32 sid_mode, double t0, double ayan_t0)
     }
   }
   swi_force_app_pos_etc(ctx);
-  swi_config_end_apply(swi_cfg_was);
-  swi_config_publish(SWI_CFG_SID);
+  swi_config_end_apply(ctx, swi_cfg_was);
+  swi_config_publish(ctx, SWI_CFG_SID);
 }
 
 int32 CALL_CONV swe_get_ayanamsa_ex(double tjd_et, int32 iflag, double *daya, char *serr)
@@ -3114,7 +3131,7 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_get_ayanamsa_ex()");
   }
   if (!ctx->ayana_is_set)
-    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
+    SWI_CFG_LOCAL(ctx, swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   if (sid_mode == SE_SIDM_TRUE_CITRA) {
     strcpy(star, "Spica"); /* Citra */
     if ((retflag = swe_fixstar(star, tjd_et, iflag_true, x, serr)) == ERR) {
@@ -6518,7 +6535,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   /* high precision speed prevails fast speed */
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
   if (iflag & SEFLG_SIDEREAL && !ctx->ayana_is_set)
-    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
+    SWI_CFG_LOCAL(ctx, swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   /****************************************** 
    * obliquity of ecliptic 2000 and of date * 
    ******************************************/
@@ -7347,14 +7364,14 @@ void CALL_CONV swe_set_topo(double geolon, double geolat, double geoalt)
   /* bridge to the default context; 3d replaces this with a
    * swe_ctx * parameter on the _r variant. */
   swe_ctx *ctx = swi_default_ctx();
-  AS_BOOL was = swi_config_begin_apply();
+  AS_BOOL was = swi_config_begin_apply(ctx);
   swi_init_swed_if_start(ctx);
   if (ctx->geopos_is_set == TRUE
     && ctx->topd.geolon == geolon
     && ctx->topd.geolat == geolat
     && ctx->topd.geoalt == geoalt) {
-    swi_config_end_apply(was);
-    swi_config_claim(SWI_CFG_TOPO);
+    swi_config_end_apply(ctx, was);
+    swi_config_claim(ctx, SWI_CFG_TOPO);
     return;
   }
   ctx->topd.geolon = geolon;
@@ -7366,8 +7383,8 @@ void CALL_CONV swe_set_topo(double geolon, double geolat, double geoalt)
   /* to force new calculation of light-time etc.
    */
   swi_force_app_pos_etc(ctx);
-  swi_config_end_apply(was);
-  swi_config_publish(SWI_CFG_TOPO);
+  swi_config_end_apply(ctx, was);
+  swi_config_publish(ctx, SWI_CFG_TOPO);
 }
 
 void swi_force_app_pos_etc(swe_ctx *ctx)
@@ -7759,7 +7776,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   /* high precision speed prevails fast speed */
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
   if (iflag & SEFLG_SIDEREAL && !ctx->ayana_is_set)
-    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
+    SWI_CFG_LOCAL(ctx, swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   /****************************************** 
    * obliquity of ecliptic 2000 and of date * 
    ******************************************/

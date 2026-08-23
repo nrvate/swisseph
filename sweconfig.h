@@ -150,7 +150,7 @@ struct swe_config {
 
 /* Copy this thread's live configuration out of swed into *c.
  * Does not touch the cache half of topd. */
-extern void swi_config_capture(struct swe_config *c);
+extern void swi_config_capture(swe_ctx *ctx, struct swe_config *c);
 
 /* Copy the groups in `groups` from *c into this thread's swed and
  * invalidate whatever the change makes stale. Returns TRUE if anything
@@ -162,7 +162,7 @@ extern AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 
  * for them. Called by the swe_set_* functions after they have updated swed.
  * Takes the mutex; must never be called with it already held. A nested
  * call (one setter invoked from inside another) is a no-op. */
-extern void swi_config_publish(int32 groups);
+extern void swi_config_publish(swe_ctx *ctx, int32 groups);
 
 /* Call a public swe_set_* function for THIS THREAD ONLY.
  *
@@ -177,21 +177,21 @@ extern void swi_config_publish(int32 groups);
  * thread's topocentric results. ThreadSanitizer found it via the write in
  * swi_config_publish() reached from eclipse_how() -> swe_set_topo().
  */
-#define SWI_CFG_LOCAL(stmt) do {                    \
-    AS_BOOL swi__cfg_was = swi_config_begin_apply();\
-    stmt;                                           \
-    swi_config_end_apply(swi__cfg_was);             \
+#define SWI_CFG_LOCAL(ctx, stmt) do {                    \
+    AS_BOOL swi__cfg_was = swi_config_begin_apply(ctx);  \
+    stmt;                                                \
+    swi_config_end_apply(ctx, swi__cfg_was);             \
   } while (0)
 
 /* Claim `groups` as locally owned without publishing. For the early-return
  * paths of setters that no-op when the value is unchanged. */
-extern void swi_config_claim(int32 groups);
+extern void swi_config_claim(swe_ctx *ctx, int32 groups);
 
 /* Fast path for compute entry points: if the master has moved on since
  * this thread last synced, adopt it. One atomic load in the common case. */
 extern void swi_config_sync(swe_ctx *ctx);
 
 /* Re-arm the master from the compile-time defaults. Used by swe_close(). */
-extern void swi_config_reset(void);
+extern void swi_config_reset(swe_ctx *ctx);
 
 #endif /* _SWECONFIG_INCLUDED */

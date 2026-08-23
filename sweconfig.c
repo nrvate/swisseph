@@ -16,7 +16,7 @@
  *
  * cfg_master.generation is the published version number. It starts at 0,
  * and swi_config_publish() bumps it to 1 on the first setter call, so a
- * thread whose cfg_seen == 0 has by definition never synced.
+ * thread whose ctx->cfg_seen == 0 has by definition never synced.
  *====================================================================*/
 static swi_mutex_t cfg_mutex = SWI_MUTEX_INIT;
 static struct swe_config cfg_master;
@@ -24,12 +24,12 @@ static struct swe_config cfg_master;
  * is already read atomically on the fast path, whereas a plain AS_BOOL read
  * outside the mutex is a data race -- ThreadSanitizer caught exactly that. */
 
-/* The generation this thread last adopted. */
-static TLS swi_gen_t cfg_seen = 0;
-
-/* Groups this thread has set itself, and therefore no longer tracks
- * globally. See the rule in sweconfig.h. */
-static TLS int32 cfg_local = 0;
+/* ctx->cfg_seen, ctx->cfg_local and ctx->cfg_applying used to live here as TLS. They are
+ * fields of swe_ctx as of Phase 3d: they describe one context's relationship
+ * to the master, not one thread's, and tying them to the thread would have
+ * made two contexts on the same thread share a single ctx->cfg_local -- which is
+ * exactly the independence Phase 3 exists to provide.
+ */
 
 /* Re-entrancy guard.
  *
@@ -41,7 +41,6 @@ static TLS int32 cfg_local = 0;
  * This is a flag, not a recursive mutex, deliberately: the mutex is never
  * held across any of that, so there is nothing to recurse into.
  */
-static TLS AS_BOOL cfg_applying = FALSE;
 
 /*======================================================================
  * swed  ->  struct swe_config
@@ -49,25 +48,25 @@ static TLS AS_BOOL cfg_applying = FALSE;
  * Reads only the config half of topd; teval/tjd_ut/xobs[] are the
  * computed observer vector and stay per-thread.
  *====================================================================*/
-void swi_config_capture(struct swe_config *c)
+void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
 {
-  memcpy(c->ephepath, swed.ephepath, sizeof(c->ephepath));
-  memcpy(c->jplfnam,  swed.jplfnam,  sizeof(c->jplfnam));
-  c->sidd = swed.sidd;
-  memcpy(c->astro_models, swed.astro_models, sizeof(c->astro_models));
-  c->geolon                 = swed.topd.geolon;
-  c->geolat                 = swed.topd.geolat;
-  c->geoalt                 = swed.topd.geoalt;
-  c->tid_acc                = swed.tid_acc;
-  c->delta_t_userdef        = swed.delta_t_userdef;
-  c->const_lapse_rate       = swed.const_lapse_rate;
-  c->ephe_path_is_set       = swed.ephe_path_is_set;
-  c->geopos_is_set          = swed.geopos_is_set;
-  c->ayana_is_set           = swed.ayana_is_set;
-  c->is_tid_acc_manual      = swed.is_tid_acc_manual;
-  c->delta_t_userdef_is_set = swed.delta_t_userdef_is_set;
-  c->do_interpolate_nut     = swed.do_interpolate_nut;
-  /* generation is owned by the master, not captured from swed */
+  memcpy(c->ephepath, ctx->ephepath, sizeof(c->ephepath));
+  memcpy(c->jplfnam,  ctx->jplfnam,  sizeof(c->jplfnam));
+  c->sidd = ctx->sidd;
+  memcpy(c->astro_models, ctx->astro_models, sizeof(c->astro_models));
+  c->geolon                 = ctx->topd.geolon;
+  c->geolat                 = ctx->topd.geolat;
+  c->geoalt                 = ctx->topd.geoalt;
+  c->tid_acc                = ctx->tid_acc;
+  c->delta_t_userdef        = ctx->delta_t_userdef;
+  c->const_lapse_rate       = ctx->const_lapse_rate;
+  c->ephe_path_is_set       = ctx->ephe_path_is_set;
+  c->geopos_is_set          = ctx->geopos_is_set;
+  c->ayana_is_set           = ctx->ayana_is_set;
+  c->is_tid_acc_manual      = ctx->is_tid_acc_manual;
+  c->delta_t_userdef_is_set = ctx->delta_t_userdef_is_set;
+  c->do_interpolate_nut     = ctx->do_interpolate_nut;
+  /* generation is owned by the master, not captured from the context */
 }
 
 /*======================================================================
@@ -93,92 +92,92 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
   AS_BOOL any;
 
   path_changed  = (groups & SWI_CFG_PATH)
-                  && (strcmp(swed.ephepath, c->ephepath) != 0
-                   || strcmp(swed.jplfnam, c->jplfnam) != 0
-                   || swed.ephe_path_is_set != c->ephe_path_is_set);
+                  && (strcmp(ctx->ephepath, c->ephepath) != 0
+                   || strcmp(ctx->jplfnam, c->jplfnam) != 0
+                   || ctx->ephe_path_is_set != c->ephe_path_is_set);
   geo_changed   = (groups & SWI_CFG_TOPO)
-                  && (swed.topd.geolon != c->geolon
-                   || swed.topd.geolat != c->geolat
-                   || swed.topd.geoalt != c->geoalt
-                   || swed.geopos_is_set != c->geopos_is_set);
+                  && (ctx->topd.geolon != c->geolon
+                   || ctx->topd.geolat != c->geolat
+                   || ctx->topd.geoalt != c->geoalt
+                   || ctx->geopos_is_set != c->geopos_is_set);
   model_changed = (groups & SWI_CFG_SID)
-                  && (memcmp(&swed.sidd, &c->sidd, sizeof(swed.sidd)) != 0
-                   || memcmp(swed.astro_models, c->astro_models,
-                             sizeof(swed.astro_models)) != 0
-                   || swed.ayana_is_set != c->ayana_is_set);
+                  && (memcmp(&ctx->sidd, &c->sidd, sizeof(ctx->sidd)) != 0
+                   || memcmp(ctx->astro_models, c->astro_models,
+                             sizeof(ctx->astro_models)) != 0
+                   || ctx->ayana_is_set != c->ayana_is_set);
   dt_changed    = ((groups & SWI_CFG_TIDACC)
-                   && (swed.tid_acc != c->tid_acc
-                    || swed.is_tid_acc_manual != c->is_tid_acc_manual))
+                   && (ctx->tid_acc != c->tid_acc
+                    || ctx->is_tid_acc_manual != c->is_tid_acc_manual))
                   || ((groups & SWI_CFG_DELTAT)
-                   && (swed.delta_t_userdef != c->delta_t_userdef
-                    || swed.delta_t_userdef_is_set != c->delta_t_userdef_is_set));
+                   && (ctx->delta_t_userdef != c->delta_t_userdef
+                    || ctx->delta_t_userdef_is_set != c->delta_t_userdef_is_set));
   nut_changed   = (groups & SWI_CFG_NUT)
-                  && (swed.do_interpolate_nut != c->do_interpolate_nut);
+                  && (ctx->do_interpolate_nut != c->do_interpolate_nut);
 
   any = (path_changed || geo_changed || model_changed || dt_changed
          || nut_changed
          || ((groups & SWI_CFG_LAPSE)
-             && swed.const_lapse_rate != c->const_lapse_rate));
+             && ctx->const_lapse_rate != c->const_lapse_rate));
   if (!any)
     return FALSE;
 
   /* --- copy the values in, group by group ---------------------------- */
   if (groups & SWI_CFG_PATH) {
-    memcpy(swed.ephepath, c->ephepath, sizeof(swed.ephepath));
-    memcpy(swed.jplfnam,  c->jplfnam,  sizeof(swed.jplfnam));
-    swed.ephe_path_is_set = c->ephe_path_is_set;
+    memcpy(ctx->ephepath, c->ephepath, sizeof(ctx->ephepath));
+    memcpy(ctx->jplfnam,  c->jplfnam,  sizeof(ctx->jplfnam));
+    ctx->ephe_path_is_set = c->ephe_path_is_set;
   }
   if (groups & SWI_CFG_SID) {
-    swed.sidd = c->sidd;
-    memcpy(swed.astro_models, c->astro_models, sizeof(swed.astro_models));
-    swed.ayana_is_set = c->ayana_is_set;
+    ctx->sidd = c->sidd;
+    memcpy(ctx->astro_models, c->astro_models, sizeof(ctx->astro_models));
+    ctx->ayana_is_set = c->ayana_is_set;
   }
   if (groups & SWI_CFG_TOPO) {
-    swed.topd.geolon   = c->geolon;
-    swed.topd.geolat   = c->geolat;
-    swed.topd.geoalt   = c->geoalt;
-    swed.geopos_is_set = c->geopos_is_set;
+    ctx->topd.geolon   = c->geolon;
+    ctx->topd.geolat   = c->geolat;
+    ctx->topd.geoalt   = c->geoalt;
+    ctx->geopos_is_set = c->geopos_is_set;
   }
   if (groups & SWI_CFG_TIDACC) {
-    swed.tid_acc           = c->tid_acc;
-    swed.is_tid_acc_manual = c->is_tid_acc_manual;
+    ctx->tid_acc           = c->tid_acc;
+    ctx->is_tid_acc_manual = c->is_tid_acc_manual;
   }
   if (groups & SWI_CFG_DELTAT) {
-    swed.delta_t_userdef        = c->delta_t_userdef;
-    swed.delta_t_userdef_is_set = c->delta_t_userdef_is_set;
+    ctx->delta_t_userdef        = c->delta_t_userdef;
+    ctx->delta_t_userdef_is_set = c->delta_t_userdef_is_set;
   }
   if (groups & SWI_CFG_LAPSE)
-    swed.const_lapse_rate = c->const_lapse_rate;
+    ctx->const_lapse_rate = c->const_lapse_rate;
   if (groups & SWI_CFG_NUT)
-    swed.do_interpolate_nut = c->do_interpolate_nut;
+    ctx->do_interpolate_nut = c->do_interpolate_nut;
 
   /* --- invalidate what that made stale ------------------------------ */
   if (path_changed) {
     int i;
     /* This thread's own file handles only. Another thread's fidat[] is
      * its own business -- these are per-thread FILE*, not shared. */
-    if (swed.jpl_file_is_open) {
+    if (ctx->jpl_file_is_open) {
       swi_close_jpl_file(ctx);
-      swed.jpl_file_is_open = FALSE;
+      ctx->jpl_file_is_open = FALSE;
     }
     for (i = 0; i < SEI_NEPHFILES; i++) {
-      if (swed.fidat[i].fptr != NULL)
-        fclose(swed.fidat[i].fptr);
-      memset((void *) &swed.fidat[i], 0, sizeof(struct file_data));
+      if (ctx->fidat[i].fptr != NULL)
+        fclose(ctx->fidat[i].fptr);
+      memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
     }
-    swed.last_epheflag = 0;
+    ctx->last_epheflag = 0;
   }
   if (geo_changed)
-    swed.topd.teval = 0;        /* force swi_get_observer(ctx) to recompute */
+    ctx->topd.teval = 0;        /* force swi_get_observer(ctx) to recompute */
   if (nut_changed) {
-    swed.interpol.tjd_nut0 = 0;
-    swed.interpol.tjd_nut2 = 0;
-    swed.interpol.nut_dpsi0 = 0;
-    swed.interpol.nut_dpsi1 = 0;
-    swed.interpol.nut_dpsi2 = 0;
-    swed.interpol.nut_deps0 = 0;
-    swed.interpol.nut_deps1 = 0;
-    swed.interpol.nut_deps2 = 0;
+    ctx->interpol.tjd_nut0 = 0;
+    ctx->interpol.tjd_nut2 = 0;
+    ctx->interpol.nut_dpsi0 = 0;
+    ctx->interpol.nut_dpsi1 = 0;
+    ctx->interpol.nut_dpsi2 = 0;
+    ctx->interpol.nut_deps0 = 0;
+    ctx->interpol.nut_deps1 = 0;
+    ctx->interpol.nut_deps2 = 0;
   }
   if (path_changed || geo_changed || model_changed || dt_changed)
     swi_force_app_pos_etc(ctx);
@@ -232,10 +231,10 @@ static void cfg_merge(struct swe_config *dst, const struct swe_config *src,
  *
  * Called at the END of each swe_set_*(), after swed already holds the new
  * value. Note the ordering: the master is written and the generation
- * bumped under the lock, and cfg_seen is set to the value we just
+ * bumped under the lock, and ctx->cfg_seen is set to the value we just
  * published so this thread does not then re-sync its own change.
  *====================================================================*/
-void swi_config_publish(int32 groups)
+void swi_config_publish(swe_ctx *ctx, int32 groups)
 {
   struct swe_config tmp;
 
@@ -248,18 +247,18 @@ void swi_config_publish(int32 groups)
    * broadcast its *freshly zeroed* swed -- empty ephepath and all -- as
    * the new master, overwriting configuration another thread had
    * legitimately set. */
-  if (cfg_applying)
+  if (ctx->cfg_applying)
     return;
 
-  cfg_local |= groups;          /* this thread now owns these groups */
-  swi_config_capture(&tmp);
+  ctx->cfg_local |= groups;          /* this thread now owns these groups */
+  swi_config_capture(ctx, &tmp);
   swi_mutex_lock(&cfg_mutex);
   /* merge, do not overwrite: only the groups this setter owns */
   cfg_merge(&cfg_master, &tmp, groups);
   swi_gen_bump(&cfg_master.generation);
   swi_mutex_unlock(&cfg_mutex);
 
-  /* Deliberately NOT: cfg_seen = <the new generation>.
+  /* Deliberately NOT: ctx->cfg_seen = <the new generation>.
    *
    * Publishing one group says nothing about the others. A worker that
    * calls swe_set_ephe_path() as its very first action has claimed PATH,
@@ -268,8 +267,8 @@ void swi_config_publish(int32 groups)
    * would freeze it on its own startup defaults for every group it did
    * not publish -- silently, and permanently.
    *
-   * Leaving cfg_seen stale makes the next swi_config_sync(ctx) pull in
-   * everything except the groups this thread now owns (cfg_local), which
+   * Leaving ctx->cfg_seen stale makes the next swi_config_sync(ctx) pull in
+   * everything except the groups this thread now owns (ctx->cfg_local), which
    * is exactly right. */
 }
 
@@ -282,12 +281,12 @@ void swi_config_sync(swe_ctx *ctx)
   struct swe_config tmp;
   swi_gen_t g;
 
-  if (cfg_applying)             /* re-entered from inside a setter */
+  if (ctx->cfg_applying)             /* re-entered from inside a setter */
     return;
   g = swi_gen_load(&cfg_master.generation);
   if (g == 0)                   /* nobody has published anything yet */
     return;
-  if (g == cfg_seen)
+  if (g == ctx->cfg_seen)
     return;
 
   swi_mutex_lock(&cfg_mutex);
@@ -297,23 +296,23 @@ void swi_config_sync(swe_ctx *ctx)
 
   /* Apply outside the lock: swi_config_apply(ctx) closes files and drops
    * caches, and must not run with cfg_mutex held. */
-  cfg_applying = TRUE;
-  swi_config_apply(ctx, &tmp, SWI_CFG_ALL & ~cfg_local);
-  cfg_applying = FALSE;
-  cfg_seen = g;
+  ctx->cfg_applying = TRUE;
+  swi_config_apply(ctx, &tmp, SWI_CFG_ALL & ~ctx->cfg_local);
+  ctx->cfg_applying = FALSE;
+  ctx->cfg_seen = g;
 }
 
 /*======================================================================
  * swe_close() drops this thread's state; the master must go with it, or a
  * later thread would resurrect the closed configuration.
  *====================================================================*/
-void swi_config_reset(void)
+void swi_config_reset(swe_ctx *ctx)
 {
   swi_mutex_lock(&cfg_mutex);
   memset((void *) &cfg_master, 0, sizeof(cfg_master));
   swi_mutex_unlock(&cfg_mutex);
-  cfg_seen = 0;
-  cfg_local = 0;
+  ctx->cfg_seen = 0;
+  ctx->cfg_local = 0;
 }
 
 /*======================================================================
@@ -330,22 +329,22 @@ void swi_config_reset(void)
  * unchanged early-return, never claimed the group, and silently followed
  * the main thread to the *next* site mid-loop.
  *====================================================================*/
-void swi_config_claim(int32 groups)
+void swi_config_claim(swe_ctx *ctx, int32 groups)
 {
-  if (!cfg_applying)
-    cfg_local |= groups;
+  if (!ctx->cfg_applying)
+    ctx->cfg_local |= groups;
 }
 
 /* Guard accessors, so the setters can bracket their own work without
- * needing to see cfg_applying. */
-AS_BOOL swi_config_begin_apply(void)
+ * needing to see ctx->cfg_applying. */
+AS_BOOL swi_config_begin_apply(swe_ctx *ctx)
 {
-  AS_BOOL was = cfg_applying;
-  cfg_applying = TRUE;
+  AS_BOOL was = ctx->cfg_applying;
+  ctx->cfg_applying = TRUE;
   return was;
 }
 
-void swi_config_end_apply(AS_BOOL was)
+void swi_config_end_apply(swe_ctx *ctx, AS_BOOL was)
 {
-  cfg_applying = was;
+  ctx->cfg_applying = was;
 }

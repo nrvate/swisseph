@@ -878,7 +878,17 @@ struct sweph_state {
  * changes later is only how it is REACHED -- see swi_default_ctx().
  *
  * if this is changed, then also update initialisation in sweph.c */
+#include "swethread.h"   /* swi_gen_t, for the config-tracking fields below */
+
 struct swe_ctx {
+  /* Phase 3d: this context's relationship to the shared config master.
+   * These were TLS in sweconfig.c, which tied the tracking to the thread
+   * rather than to the context -- so two contexts on one thread shared one
+   * cfg_local and could not hold independent configurations, which is the
+   * entire point of Phase 3. */
+  swi_gen_t cfg_seen;      /* master generation this context last adopted  */
+  int32     cfg_local;     /* groups this context set itself and now owns  */
+  AS_BOOL   cfg_applying;  /* re-entrancy guard while a setter is applying */
   AS_BOOL ephe_path_is_set;
   struct jpl_save *jpl;   /* Phase 3c: the open JPL file and every scrap of
                            * state derived from its header. Opaque here;
@@ -1014,5 +1024,5 @@ extern swe_ctx *swi_default_ctx(void);
  * SEI_NMODELS, because struct swe_config embeds both. */
 #include "sweconfig.h"
 
-extern AS_BOOL swi_config_begin_apply(void);
-extern void    swi_config_end_apply(AS_BOOL was);
+extern AS_BOOL swi_config_begin_apply(swe_ctx *ctx);
+extern void    swi_config_end_apply(swe_ctx *ctx, AS_BOOL was);

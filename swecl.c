@@ -959,7 +959,7 @@ int32 CALL_CONV swe_sol_eclipse_how(
   if (retflag)
     retflag |= (retflag2 & (SE_ECL_CENTRAL | SE_ECL_NONCENTRAL));
   attr[3] = dcore[0];
-  SWI_CFG_LOCAL(swe_set_topo(geopos[0], geopos[1], geopos[2]));
+  SWI_CFG_LOCAL(ctx, swe_set_topo(geopos[0], geopos[1], geopos[2]));
   if (swe_calc_ut(tjd_ut, SE_SUN, ifl | SEFLG_TOPOCTR | SEFLG_EQUATORIAL, ls, serr) == ERR)
     return ERR;
   swe_azalt(tjd_ut, SE_EQU2HOR, geopos, 0, 10, ls, xaz);
@@ -1003,7 +1003,7 @@ static int32 eclipse_how( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname
   geopos[1] = geolat;
   geopos[2] = geohgt;
   te = tjd_ut + swe_deltat_ex(tjd_ut, ifl, serr);
-  SWI_CFG_LOCAL(swe_set_topo(geolon, geolat, geohgt));
+  SWI_CFG_LOCAL(ctx, swe_set_topo(geolon, geolat, geohgt));
   if (calc_planet_star(te, ipl, starname, iflag, ls, serr) == ERR)
     return ERR;
   if (swe_calc(te, SE_MOON, iflag, lm, serr) == ERR)
@@ -2140,7 +2140,7 @@ static int32 eclipse_when_loc(swe_ctx *ctx, double tjd_start, int32 ifl, double 
   double dt1 = 0, dt2 = 0, dtdiv, dtstart;
   int32 iflag = SEFLG_EQUATORIAL | SEFLG_TOPOCTR | ifl;
   int32 iflagcart = iflag | SEFLG_XYZ;
-  SWI_CFG_LOCAL(swe_set_topo(geopos[0], geopos[1], geopos[2]));
+  SWI_CFG_LOCAL(ctx, swe_set_topo(geopos[0], geopos[1], geopos[2]));
   K = (int) ((tjd_start - J2000) / 365.2425 * 12.3685);
   if (backward)
     K++;
@@ -2185,7 +2185,7 @@ next_try:
   // A1 *= DEGTORAD;
   tjd = tjd - 0.4075 * sin(Mm)
             + 0.1721 * E * sin(M);
-  SWI_CFG_LOCAL(swe_set_topo(geopos[0], geopos[1], geopos[2]));
+  SWI_CFG_LOCAL(ctx, swe_set_topo(geopos[0], geopos[1], geopos[2]));
   dtdiv = 2;
   dtstart = 0.5;
   if (tjd < 1900000 || tjd > 2500000)	/* because above formula is not good (delta t?) */
@@ -2463,7 +2463,7 @@ static int32 occult_when_loc(
   AS_BOOL stop_after_this = FALSE;
   backward &= 1L;
   retflag = 0;
-  SWI_CFG_LOCAL(swe_set_topo(geopos[0], geopos[1], geopos[2]));
+  SWI_CFG_LOCAL(ctx, swe_set_topo(geopos[0], geopos[1], geopos[2]));
   for (i = 0; i <= 9; i++)
     tret[i] = 0;
   if (backward)
@@ -3018,7 +3018,7 @@ void CALL_CONV swe_set_lapse_rate(double lapse_rate)
    * swe_ctx * parameter on the _r variant. */
   swe_ctx *ctx = swi_default_ctx();
   ctx->const_lapse_rate = lapse_rate;
-  swi_config_publish(SWI_CFG_LAPSE);
+  swi_config_publish(ctx, SWI_CFG_LAPSE);
 }
 
 /* swe_refrac_extended()
@@ -3251,7 +3251,7 @@ int32 CALL_CONV swe_lun_eclipse_how(
   /* 
    * azimuth and altitude of moon
    */
-  SWI_CFG_LOCAL(swe_set_topo(geopos[0], geopos[1], geopos[2]));
+  SWI_CFG_LOCAL(ctx, swe_set_topo(geopos[0], geopos[1], geopos[2]));
   if (swe_calc_ut(tjd_ut, SE_MOON, ifl | SEFLG_TOPOCTR | SEFLG_EQUATORIAL, lm, serr) == ERR)
     return ERR;
   swe_azalt(tjd_ut, SE_EQU2HOR, geopos, 0, 10, lm, xaz);
@@ -4269,7 +4269,7 @@ static int32 rise_set_fast(
     facrise = -1;
   if (!(rsmi & SE_BIT_GEOCTR_NO_ECL_LAT)) {
     iflagtopo |= SEFLG_TOPOCTR;
-    SWI_CFG_LOCAL(swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
+    SWI_CFG_LOCAL(ctx, swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
   }
 run_rise_again:
   if (swe_calc_ut(tjd_ut, ipl, iflagtopo, xx, serr) == ERR) 
@@ -4333,7 +4333,7 @@ run_rise_again:
     tohor_flag = SE_EQU2HOR; // this is more efficient
     iflagtopo = iflag | SEFLG_EQUATORIAL;
     iflagtopo |= SEFLG_TOPOCTR;
-    SWI_CFG_LOCAL(swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
+    SWI_CFG_LOCAL(ctx, swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
   }
   for (i = 0; i < nloop; i++) {
     if (swe_calc_ut(tr, ipl, iflagtopo, xx, serr) == ERR)
@@ -4478,7 +4478,7 @@ int32 CALL_CONV swe_rise_trans_true_hor(
     tohor_flag = SE_EQU2HOR;
     iflag |= SEFLG_EQUATORIAL;
     iflag |= SEFLG_TOPOCTR;
-    SWI_CFG_LOCAL(swe_set_topo(geopos[0], geopos[1], geopos[2]));
+    SWI_CFG_LOCAL(ctx, swe_set_topo(geopos[0], geopos[1], geopos[2]));
   }
   if (rsmi & (SE_CALC_MTRANSIT | SE_CALC_ITRANSIT))
     return calc_mer_trans(tjd_ut, ipl, epheflag, rsmi, 

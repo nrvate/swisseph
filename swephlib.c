@@ -3209,12 +3209,12 @@ void CALL_CONV swe_set_tid_acc(double t_acc)
   if (t_acc == SE_TIDAL_AUTOMATIC) {
     ctx->tid_acc = SE_TIDAL_DEFAULT;
     ctx->is_tid_acc_manual = FALSE;
-    swi_config_publish(SWI_CFG_TIDACC);
+    swi_config_publish(ctx, SWI_CFG_TIDACC);
     return;
   }
   ctx->tid_acc = t_acc;
   ctx->is_tid_acc_manual = TRUE;
-  swi_config_publish(SWI_CFG_TIDACC);
+  swi_config_publish(ctx, SWI_CFG_TIDACC);
 }
 
 void CALL_CONV swe_set_delta_t_userdef(double dt)
@@ -3228,7 +3228,7 @@ void CALL_CONV swe_set_delta_t_userdef(double dt)
     ctx->delta_t_userdef_is_set = TRUE;
     ctx->delta_t_userdef = dt;
   }
-  swi_config_publish(SWI_CFG_DELTAT);
+  swi_config_publish(ctx, SWI_CFG_DELTAT);
 }
 
 int32 swi_guess_ephe_flag(swe_ctx *ctx)
@@ -3618,7 +3618,7 @@ void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
    * swe_ctx * parameter on the _r variant. */
   swe_ctx *ctx = swi_default_ctx();
   if (ctx->do_interpolate_nut == do_interpolate) {
-    swi_config_claim(SWI_CFG_NUT);
+    swi_config_claim(ctx, SWI_CFG_NUT);
     return;
   }
   if (do_interpolate) 
@@ -3633,7 +3633,7 @@ void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
   ctx->interpol.nut_deps0 = 0;
   ctx->interpol.nut_deps1 = 0;
   ctx->interpol.nut_deps2 = 0;
-  swi_config_publish(SWI_CFG_NUT);
+  swi_config_publish(ctx, SWI_CFG_NUT);
 }
 
 /* sidereal time, without eps and nut as parameters.
@@ -4302,7 +4302,7 @@ void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
   /* bridge to the default context; 3d replaces this with a
    * swe_ctx * parameter on the _r variant. */
   swe_ctx *ctx = swi_default_ctx();
-  AS_BOOL swi_cfg_was = swi_config_begin_apply();
+  AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
   double dversion;
   char s[30], *sp;
   swi_init_swed_if_start(ctx);
@@ -4349,8 +4349,8 @@ void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
       swe_set_tid_acc(-25.7376);
     }
   }
-  swi_config_end_apply(swi_cfg_was);
-  swi_config_publish(SWI_CFG_SID);
+  swi_config_end_apply(ctx, swi_cfg_was);
+  swi_config_publish(ctx, SWI_CFG_SID);
 }
 
 /* function for inhouse testing only */
