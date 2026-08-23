@@ -698,10 +698,13 @@ struct nut {
 struct plantbl {
   char max_harmonic[9];
   char max_power_of_t;
-  signed char *arg_tbl;
-  double *lon_tbl;
-  double *lat_tbl;
-  double *rad_tbl;
+  /* These point at the static perturbation tables in swemptab.h, which are
+   * read-only. const-qualified so they land in .rodata rather than .data:
+   * shared between processes, and provably never written. */
+  const signed char *arg_tbl;
+  const double *lon_tbl;
+  const double *lat_tbl;
+  const double *rad_tbl;
   double distance;
 };
 

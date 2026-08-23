@@ -134,8 +134,8 @@ static void sscc (int k, double arg, int n);
 int swi_moshplan2 (double J, int iplm, double *pobj)
 {
   int i, j, k, m, k1, ip, np, nt;
-  signed char *p;
-  double *pl, *pb, *pr;
+  const signed char *p;
+  const double *pl, *pb, *pr;
   double su, cu, sv, cv, T;
   double t, sl, sb, sr;
   const struct plantbl *plan = planets[iplm];

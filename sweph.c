@@ -127,7 +127,7 @@ TLS struct swe_data swed = {FALSE,	/* ephe_path_is_set = FALSE */
  * constants *
  *************/
 
-static const char *ayanamsa_name[] = {
+static const char * const ayanamsa_name[] = {
    "Fagan/Bradley",                    /*  0 SE_SIDM_FAGAN_BRADLEY */
    "Lahiri",                           /*  1 SE_SIDM_LAHIRI */
    "De Luce",                          /*  2 SE_SIDM_DELUCE */

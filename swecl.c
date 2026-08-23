@@ -113,7 +113,7 @@ struct saros_data {int series_no; double tstart;};
 // >= 2 Sep 2666, Saros cycle numbers cannot always be given.
 #define SAROS_CYCLE  6585.3213
 #define NSAROS_SOLAR 181
-struct saros_data saros_data_solar[NSAROS_SOLAR] = {
+const struct saros_data saros_data_solar[NSAROS_SOLAR] = {
 {0, 641886.5}, /* 23 May -2955 */
 {1, 672214.5}, /* 04 Jun -2872 */
 {2, 676200.5}, /* 04 May -2861 */
@@ -303,7 +303,7 @@ struct saros_data saros_data_solar[NSAROS_SOLAR] = {
 // Note, for eclipse dates =< 29 April -1337 and eclipse dates
 // >= 10 Aug 2892, Saros cycle numbers cannot always be given.
 #define NSAROS_LUNAR 180
-struct saros_data saros_data_lunar[NSAROS_LUNAR] = {
+const struct saros_data saros_data_lunar[NSAROS_LUNAR] = {
 {1, 782437.5}, /* 14 Mar -2570 */
 {2, 799593.5}, /* 03 Mar -2523 */
 {3, 783824.5}, /* 30 Dec -2567 */

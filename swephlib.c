@@ -876,7 +876,7 @@ static void epsiln_owen_1986(double tjd, double *eps)
 #define OFFSET_EPS_JPLHORIZONS (35.95) 
 #define DCOR_EPS_JPL_TJD0  2437846.5
 #define NDCOR_EPS_JPL  51
-double dcor_eps_jpl[] = {
+const double dcor_eps_jpl[] = {
 36.726, 36.627, 36.595, 36.578, 36.640, 36.659, 36.731, 36.765,
 36.662, 36.555, 36.335, 36.321, 36.354, 36.227, 36.289, 36.348, 36.257, 36.163,
 35.979, 35.896, 35.842, 35.825, 35.912, 35.950, 36.093, 36.191, 36.009, 35.943,
@@ -2160,7 +2160,7 @@ int swi_nutation(double tjd, int32 iflag, double *nutlo)
 #define OFFSET_JPLHORIZONS (-52.3) 
 #define DCOR_RA_JPL_TJD0  2437846.5
 #define NDCOR_RA_JPL  51
-double dcor_ra_jpl[] = {
+const double dcor_ra_jpl[] = {
 -51.257, -51.103, -51.065, -51.503, -51.224, -50.796, -51.161, -51.181,
 -50.932, -51.064, -51.182, -51.386, -51.416, -51.428, -51.586, -51.766, -52.038, -52.370,
 -52.553, -52.397, -52.340, -52.676, -52.348, -51.964, -52.444, -52.364, -51.988, -52.212,
@@ -2941,7 +2941,7 @@ static double deltat_stephenson_morrison_2004_1600(double tjd, double tid_acc)
  * Year numbers have been replaced by Julian day numbers by D. Koch.
  */
 #define NDTCF16 54 
-double dtcf16[NDTCF16][6] =
+const double dtcf16[NDTCF16][6] =
 {
 /*00*/ {1458085.5, 1867156.5, 20550.593,-21268.478, 11863.418, -4541.129}, /* ybeg=-720, yend= 400 */
 /*01*/ {1867156.5, 2086302.5,  6604.404, -5981.266,  -505.093,  1349.609}, /* ybeg= 400, yend=1000 */
