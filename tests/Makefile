@@ -140,12 +140,12 @@ check-threads-workaround: golden
 check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
-	rm -f bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f jplcalc .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
-        check-build check-ctx clean
+        check-build check-ctx check-jplcalc clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
 #
@@ -159,6 +159,25 @@ bench: bench.c $(wildcard ../*.c)
 
 bench-run: bench
 	@./bench --ephe $(EPHE) --rep $(REP)
+
+# G10: numerical regression coverage for the JPL reader.
+#
+# swejpl.c's state() and interp() are executed ZERO times by every other
+# gate -- they need a .eph file, and this repo ships only .se1. Measured
+# with an fprintf: 0 hits across the whole golden suite. jplcalc generates
+# a synthetic .eph and drives swi_pleph() through it.
+jplcalc: jplcalc.c $(SWE)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-jplcalc: jplcalc
+	@./jplcalc --dir . > .jplcalc.txt 2>.jplcalc.err || \
+	  { echo "G10 FAIL: jplcalc errored"; cat .jplcalc.err; exit 1; }
+	@if [ ! -f jplcalc.baseline ]; then \
+	   echo "G10: no baseline, recording one"; cp .jplcalc.txt jplcalc.baseline; fi
+	@if diff -q jplcalc.baseline .jplcalc.txt >/dev/null; then \
+	   echo "G10 PASS: JPL reader output bit-identical ($$(wc -l < .jplcalc.txt) rows)"; \
+	 else echo "G10 FAIL: JPL reader output changed"; \
+	   diff jplcalc.baseline .jplcalc.txt | head -20; exit 1; fi
 
 # G4: two swe_ctx handles are genuinely independent.
 #

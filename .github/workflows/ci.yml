@@ -86,6 +86,12 @@ jobs:
       # file-supplied value, so a static_assert cannot cover it.
       - name: JPL header guards (malformed-file fixtures)
         run: make -C tests check-jplguard EPHE=../$EPHE
+
+      # G10. jplguard covers header REJECTION; this covers the reader
+      # actually computing. Bit-exact, so reference toolchain only --
+      # same rule as check-golden.
+      - name: JPL reader numerical baseline
+        run: make -C tests check-jplcalc
       - name: Threading shim
         run: make -C tests check-threadshim
 

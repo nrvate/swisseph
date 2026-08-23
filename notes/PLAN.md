@@ -54,6 +54,14 @@ env -u SE_EPHE_PATH tests/golden --ephe ephe --threads 8      # exit 0
 tests/threadconf                                              # exit 0
 
 # G4  independent concurrent contexts (Phase 3 only)
+# G10 the JPL reader actually computes (see notes/C17_PERFORMANCE.md §4.1)
+#     swejpl.c's state() and interp() were executed ZERO times by every
+#     other gate -- they need a .eph and this repo ships only .se1.
+#     Measured, not assumed: an fprintf in interp() fires 0 times across
+#     the whole 5137-row golden suite. Phase 3c restructured both
+#     functions with nothing ever running them. tests/jplcalc.c generates
+#     a synthetic .eph and drives swi_pleph() through it: 198 interp()
+#     calls, 96 bit-exact rows.
 tests/ctxtest                                                 # exit 0
 
 # G5  no data races
