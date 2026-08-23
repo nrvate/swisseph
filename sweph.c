@@ -706,7 +706,7 @@ static int32 swecalc(double tjd, int ipl, int32 iplmoon, int32 iflag, double *x,
 	break;
       case SEFLG_MOSEPH:
 	moshier_moon:
-        retc = swi_moshmoon(tjd, DO_SAVE, NULL, serr);/**/
+        retc = swi_moshmoon(swi_default_ctx(), tjd, DO_SAVE, NULL, serr);/**/
 	if (retc == ERR)
 	  goto return_error;
 	/* for hel. position, we need earth as well */
@@ -1927,7 +1927,7 @@ static int sweplan(double tjd, int ipli, int ifno, int32 iflag, AS_BOOL do_save,
       if (swed.fidat[SEI_FILE_MOON].fptr == NULL) {
 	if (serr != NULL && strlen(serr) + 35 < AS_MAXCH)
 	  strcat(serr, " \nusing Moshier eph. for moon; ");
-	retc = swi_moshmoon(tjd, do_save, xpm, serr);
+	retc = swi_moshmoon(swi_default_ctx(), tjd, do_save, xpm, serr);
 	if (retc != OK)
 	  return(retc);
       }
@@ -5384,7 +5384,7 @@ static int lunar_osc_elem(double tjd, int ipl, int32 iflag, char *serr)
         } else  {
 	  t = tjd;
 	}
-	retc = swi_moshmoon(t, NO_SAVE, xpos[i], serr);/**/
+	retc = swi_moshmoon(swi_default_ctx(), t, NO_SAVE, xpos[i], serr);/**/
 	if (retc == ERR)
 	  return(retc);
 	/* precession and nutation etc. */

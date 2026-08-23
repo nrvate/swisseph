@@ -195,6 +195,14 @@
 #define SEI_CURR_FPOS   -1
 #define SEI_NMODELS 8
 
+/* Forward declaration of the ephemeris context.
+ *
+ * The full definition is ~700 lines below, but the swi_* prototypes between
+ * here and there already need to name the type, so declare it up front. An
+ * incomplete type is all a prototype requires. See notes/PHASE3-API.md. */
+struct swe_ctx;
+typedef struct swe_ctx swe_ctx;
+
 #define SEI_ECL_GEOALT_MAX   25000.0
 #define SEI_ECL_GEOALT_MIN   (-500.0)
 
@@ -665,7 +673,7 @@ struct plan_data {
 /* moon, s. moshmoon.c */
 extern int swi_mean_node(double jd, double *x, char *serr);
 extern int swi_mean_apog(double jd, double *x, char *serr);
-extern int swi_moshmoon(double tjd, AS_BOOL do_save, double *xpm, char *serr) ;
+extern int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpm, char *serr) ;
 extern int swi_moshmoon2(double jd, double *x);
 extern int swi_intp_apsides(double J, double *pol, int ipli);
 
@@ -881,13 +889,10 @@ struct swe_ctx {
   struct fixed_star *fixed_stars;
 };
 
-/* The handle type callers will hold in Phase 3d. Opaque to them: swephexp.h
- * forward-declares it and never exposes the layout, so this 23 KB structure
- * -- which has changed shape twice already -- stays an implementation
- * detail. */
-typedef struct swe_ctx swe_ctx;
-
-/* Historical name. Nothing public uses it, but keeping it spares anyone
+/* swe_ctx is forward-declared near the top of this header, next to
+ * SEI_NMODELS, because the swi_* prototypes above need to name it.
+ *
+ * Historical name. Nothing public uses it, but keeping it spares anyone
  * tracking upstream a rename they did not ask for. */
 #define swe_data swe_ctx
 

@@ -185,7 +185,7 @@
 static void mean_elements(void);
 static void mean_elements_pl(void);
 static double mods3600(double x);
-static void ecldat_equ2000(double tjd, double *xpm);
+static void ecldat_equ2000(swe_ctx *ctx, double tjd, double *xpm);
 static void chewm(const short *pt, int nlines, int nangles, 
   				     int typflg, double *ans );
 static void sscc(int k, double arg, int n );
@@ -866,12 +866,12 @@ return(0);
  * xpm		array of 6 doubles for moon's position and speed vectors
  * serr		pointer to error string
  */
-int swi_moshmoon(double tjd, AS_BOOL do_save, double *xpmret, char *serr) 
+int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char *serr) 
 {
   int i;
   double a, b, x1[6], x2[6], t;
   double xx[6], *xpm;
-  struct plan_data *pdp = &swed.pldat[SEI_MOON];
+  struct plan_data *pdp = &ctx->pldat[SEI_MOON];
   char s[AS_MAXCH];
   if (do_save)
     xpm = pdp->x;
@@ -907,17 +907,17 @@ int swi_moshmoon(double tjd, AS_BOOL do_save, double *xpmret, char *serr)
    *                  of heliocentric moon
    * Besides, this helps to keep the program structure simpler 
    */
-  ecldat_equ2000(tjd, xpm);
+  ecldat_equ2000(ctx, tjd, xpm);
   /* speed */
   /* from 2 other positions. */
   /* one would be good enough for computation of osculating node, 
    * but not for osculating apogee */
   t = tjd + MOON_SPEED_INTV;
   swi_moshmoon2(t, x1);
-  ecldat_equ2000(t, x1);
+  ecldat_equ2000(ctx, t, x1);
   t = tjd - MOON_SPEED_INTV;
   swi_moshmoon2(t, x2);
-  ecldat_equ2000(t, x2);
+  ecldat_equ2000(ctx, t, x2);
   for (i = 0; i <= 2; i++) {
 #if 0
     xpm[i+3] = (x1[i] - x2[i]) / MOON_SPEED_INTV / 2;
@@ -1719,11 +1719,12 @@ static void sscc(int k, double arg, int n )
  * tjd		date
  * x 		array of position
  */
-static void ecldat_equ2000(double tjd, double *xpm) {
+/* reads ctx->oec, the obliquity cache */
+static void ecldat_equ2000(swe_ctx *ctx, double tjd, double *xpm) {
   /* cartesian */
   swi_polcart(xpm, xpm);
   /* equatorial */
-  swi_coortrf2(xpm, xpm, -swed.oec.seps, swed.oec.ceps);
+  swi_coortrf2(xpm, xpm, -ctx->oec.seps, ctx->oec.ceps);
   /* j2000 */
   swi_precess(xpm, tjd, 0, J_TO_J2000);/**/
 }
