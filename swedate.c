@@ -308,7 +308,12 @@ static TLS int leap_seconds[NLEAP_SECONDS_SPACE] = {
 
 /* Read additional leap second dates from external file, if given.
  */
-static int init_leapsec(void)
+/* Takes a context because it reads ctx->ephepath to find seleapsec.txt.
+ *
+ * Its other state -- init_leapseconds_done and leap_seconds[] -- is still
+ * TLS-static here; those move into the context in 3c along with the other
+ * 77. Doing it now would mean touching this function twice. */
+static int init_leapsec(swe_ctx *ctx)
 {
   FILE *fp;
   int ndat, ndat_last;
@@ -321,7 +326,7 @@ static int init_leapsec(void)
     tabsiz = NLEAP_SECONDS;
     ndat_last = leap_seconds[NLEAP_SECONDS - 1];
     /* no error message if file is missing */
-    if ((fp = swi_fopen(-1, "seleapsec.txt", swed.ephepath, NULL)) == NULL)
+    if ((fp = swi_fopen(-1, "seleapsec.txt", ctx->ephepath, NULL)) == NULL)
       return NLEAP_SECONDS; 
     while(fgets(s, AS_MAXCH, fp) != NULL) {
       sp = s;
@@ -414,7 +419,7 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
   /* 
    * number of leap seconds since 1972: 
    */
-  tabsiz_nleap = init_leapsec();
+  tabsiz_nleap = init_leapsec(swi_default_ctx());
   nleap = NLEAP_INIT; /* initial difference between UTC and TAI in 1972 */
   ndat = iyear * 10000 + imonth * 100 + iday;
   for (i = 0; i < tabsiz_nleap; i++) {
@@ -509,7 +514,7 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
    * minimum number of leap seconds since 1972; we may be missing one leap
    * second
    */
-  tabsiz_nleap = init_leapsec();
+  tabsiz_nleap = init_leapsec(swi_default_ctx());
   swe_revjul(tjd_ut-1, SE_GREG_CAL, &iyear2, &imonth2, &iday2, &d);
   ndat = iyear2 * 10000 + imonth2 * 100 + iday2;
   nleap = 0; 
