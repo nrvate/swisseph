@@ -405,7 +405,7 @@ jobs:
           # the API this fork spent its effort making safe.
           Copy-Item swephexp.h,sweodef.h,swedate.h,swehouse.h,swedll.h "$pkg/include"
           Copy-Item LICENSE,THREADING.md "$pkg"
-          Copy-Item windows/PACKAGE.md "$pkg/README.md"
+          Copy-Item packaging/windows-README.md "$pkg/README.md"
 
           Push-Location $pkg
           Get-ChildItem -Recurse -File | ForEach-Object {
@@ -467,6 +467,170 @@ jobs:
         with:
           name: swisseph-windows
           path: pkg/swisseph-windows
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # Linux package. Same shape as windows/package: build, smoke-test,
+  # verify the shared library really exports the context API, then assemble
+  # something with a manifest.
+  #
+  # The export check is not ceremony. On Windows the DLL built, ran and
+  # passed both smoke tests while exporting NOTHING -- every project was
+  # writing its objects to one shared directory, so the DLL was linked from
+  # objects compiled without MAKE_DLL. Only an explicit "is swe_ctx_new in
+  # there?" caught it.
+  # ---------------------------------------------------------------------
+  linux-package:
+    runs-on: ubuntu-latest
+    name: linux / package
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Build
+        run: |
+          make -B all libswe.a libswe.so
+          ls -la libswe.a libswe.so swetest swevents swemini
+      - name: Smoke-test the CLI
+        run: |
+          # -emos is the Moshier ephemeris: self-contained, so no .se1 files
+          # are needed. Exit status alone proves little -- swetest prints
+          # "illegal option" and carries on -- so the output is checked too.
+          out=$(./swetest -b1.1.2020 -p0 -fPl -emos 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "illegal option" && { echo "FAIL: argument rejected"; exit 1; }
+          # The Sun's ecliptic longitude on 2020-01-01 is about 280 degrees.
+          echo "$out" | grep -qE "^Sun +280\." || { echo "FAIL: no plausible Sun position"; exit 1; }
+          echo "swetest produces a plausible Sun position"
+      - name: Shared library must export the context API
+        run: |
+          syms=$(nm -D --defined-only libswe.so | awk '$2=="T"{print $3}' | grep "^swe_" | sort -u)
+          n=$(echo "$syms" | grep -c .)
+          echo "libswe.so exports $n swe_* symbols"
+          [ "$n" -ge 100 ] || { echo "FAIL: implausibly few exports"; exit 1; }
+          for s in swe_ctx_new swe_ctx_free swe_calc_ut_r swe_close_r swe_set_topo_r; do
+            echo "$syms" | grep -qx "$s" || { echo "FAIL: $s not exported"; exit 1; }
+          done
+          echo "context API present: $(echo "$syms" | grep -c '_r$') _r entry points"
+      - name: Assemble package
+        run: |
+          pkg=pkg/swisseph-linux
+          mkdir -p $pkg/bin $pkg/lib $pkg/include
+          cp swetest swevents swemini            $pkg/bin/
+          cp libswe.a libswe.so                $pkg/lib/
+          # PUBLIC headers only. swephlib.h declares internal swi_* functions
+          # and swephexp.h does not include it.
+          cp swephexp.h sweodef.h swedate.h swehouse.h swedll.h $pkg/include/
+          cp LICENSE THREADING.md                $pkg/
+          cp packaging/unix-README.md            $pkg/README.md
+          # find -printf is GNU-only; sed keeps this working on macOS.
+          # shasum ships on macOS, sha256sum on Linux -- try both.
+          ( cd $pkg && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs shasum -a 256 > SHA256SUMS 2>/dev/null ||
+            find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs sha256sum > SHA256SUMS )
+          cat $pkg/SHA256SUMS
+      - name: Verify the package
+        run: |
+          pkg=pkg/swisseph-linux
+          for f in bin/swetest lib/libswe.a lib/libswe.so include/swephexp.h \
+                   LICENSE README.md SHA256SUMS; do
+            [ -f "$pkg/$f" ] || { echo "FAIL: missing from package: $f"; exit 1; }
+          done
+          [ -f "$pkg/include/swephlib.h" ] && { echo "FAIL: internal header shipped"; exit 1; }
+          ( cd $pkg && { shasum -a 256 -c SHA256SUMS >/dev/null || sha256sum -c SHA256SUMS >/dev/null; } ) \
+            || { echo "FAIL: checksums do not verify"; exit 1; }
+          echo "package verified"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swisseph-linux
+          path: pkg/swisseph-linux
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # macOS package. Same shape as windows/package: build, smoke-test,
+  # verify the shared library really exports the context API, then assemble
+  # something with a manifest.
+  #
+  # The export check is not ceremony. On Windows the DLL built, ran and
+  # passed both smoke tests while exporting NOTHING -- every project was
+  # writing its objects to one shared directory, so the DLL was linked from
+  # objects compiled without MAKE_DLL. Only an explicit "is swe_ctx_new in
+  # there?" caught it.
+  # ---------------------------------------------------------------------
+  macos-package:
+    runs-on: macos-latest
+    name: macos / package
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Build
+        run: |
+          make -B all libswe.a libswe.dylib
+          ls -la libswe.a libswe.dylib swetest swevents swemini
+      - name: Smoke-test the CLI
+        run: |
+          # -emos is the Moshier ephemeris: self-contained, so no .se1 files
+          # are needed. Exit status alone proves little -- swetest prints
+          # "illegal option" and carries on -- so the output is checked too.
+          out=$(./swetest -b1.1.2020 -p0 -fPl -emos 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "illegal option" && { echo "FAIL: argument rejected"; exit 1; }
+          # The Sun's ecliptic longitude on 2020-01-01 is about 280 degrees.
+          echo "$out" | grep -qE "^Sun +280\." || { echo "FAIL: no plausible Sun position"; exit 1; }
+          echo "swetest produces a plausible Sun position"
+      - name: Shared library must export the context API
+        run: |
+          syms=$(nm -gU libswe.dylib | sed 's/^.* _//;s/^_//' | grep "^swe_" | sort -u)
+          n=$(echo "$syms" | grep -c .)
+          echo "libswe.dylib exports $n swe_* symbols"
+          [ "$n" -ge 100 ] || { echo "FAIL: implausibly few exports"; exit 1; }
+          for s in swe_ctx_new swe_ctx_free swe_calc_ut_r swe_close_r swe_set_topo_r; do
+            echo "$syms" | grep -qx "$s" || { echo "FAIL: $s not exported"; exit 1; }
+          done
+          echo "context API present: $(echo "$syms" | grep -c '_r$') _r entry points"
+      - name: Assemble package
+        run: |
+          pkg=pkg/swisseph-macos
+          mkdir -p $pkg/bin $pkg/lib $pkg/include
+          cp swetest swevents swemini            $pkg/bin/
+          cp libswe.a libswe.dylib                $pkg/lib/
+          # PUBLIC headers only. swephlib.h declares internal swi_* functions
+          # and swephexp.h does not include it.
+          cp swephexp.h sweodef.h swedate.h swehouse.h swedll.h $pkg/include/
+          cp LICENSE THREADING.md                $pkg/
+          cp packaging/unix-README.md            $pkg/README.md
+          # find -printf is GNU-only; sed keeps this working on macOS.
+          # shasum ships on macOS, sha256sum on Linux -- try both.
+          ( cd $pkg && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs shasum -a 256 > SHA256SUMS 2>/dev/null ||
+            find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs sha256sum > SHA256SUMS )
+          cat $pkg/SHA256SUMS
+      - name: Verify the package
+        run: |
+          pkg=pkg/swisseph-macos
+          for f in bin/swetest lib/libswe.a lib/libswe.dylib include/swephexp.h \
+                   LICENSE README.md SHA256SUMS; do
+            [ -f "$pkg/$f" ] || { echo "FAIL: missing from package: $f"; exit 1; }
+          done
+          [ -f "$pkg/include/swephlib.h" ] && { echo "FAIL: internal header shipped"; exit 1; }
+          ( cd $pkg && { shasum -a 256 -c SHA256SUMS >/dev/null || sha256sum -c SHA256SUMS >/dev/null; } ) \
+            || { echo "FAIL: checksums do not verify"; exit 1; }
+          echo "package verified"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swisseph-macos
+          path: pkg/swisseph-macos
           if-no-files-found: error
 
   # ---------------------------------------------------------------------
