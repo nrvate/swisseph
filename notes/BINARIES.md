@@ -28,6 +28,8 @@ library, silently — the exact failure mode this branch exists to eliminate.
 |---|---|---|
 | `bin/swetest`, `bin/swevents` | output of the `swetests`/`sweventss` targets | `make all` **rewrote them on every build**, so the tree was dirty after every gate run. Also broke CI: the runner's sparse checkout had no `bin/`, so the bare `cp` failed. Both targets now `mkdir -p bin` first. |
 | `windows/programs/*.exe` (7) | 2.10.03 prebuilts | predate every fix on this branch; all rebuildable from source here |
+| `windows/sweph.zip` | source snapshot + 9 binaries | see below |
+| `windows/swephzip.txt` | listing of that archive | its subject is gone |
 | `windows/programs/ceres.readme` | doc for `ceres.exe` | its subject is gone |
 
 `ceres.exe` is the only one that was **not** rebuildable — no source for it
@@ -37,32 +39,33 @@ replaced.
 
 ### Still present, decision pending
 
-**`windows/sweph.zip` (10.5 MB)** — the worst offender, and *not* a simple
-delete. It is a snapshot of the 2021/22 upstream tree containing:
+### Removed: `windows/sweph.zip` (10.5 MB)
 
-- **35 of its 73 files duplicate something already tracked** — including
-  full copies of `sweph.c` (290 KB vs the current 314 KB), `swephlib.c`,
-  `swephexp.h`, `seasnam.txt`, `sefstars.txt`. So the repo currently holds
-  two different versions of its own source.
-- **Unique source found nowhere else**: 15 `.vcxproj`, `sweph.sln`, 2 `.rc`,
-  `module1.bas`, `sweph_vb7_64.bas` — the MSVC build system.
-- **Unique binary samples**: `orbit.xls`, `orbit2.xls` (to be kept, extracted).
-- Binaries to drop: `swedll32/64.dll` and `.lib`, `vb/swedll32.lib`.
-- Docs to drop: `doc/*.htm`, `*.gif`, `*.cdr` — `doc/*.pdf` covers these.
-- **A nested copy of `contrib/Sweph32_For_Excel_VBA_and_VB.zip`.**
+A snapshot of the 2021/22 upstream tree. **35 of its 73 files duplicated
+something already tracked** — including full copies of `sweph.c` (290 KB
+against the current 314 KB), `swephlib.c`, `swephexp.h`, `seasnam.txt` — so
+the repository held two different versions of its own source. It even
+contained a nested copy of `contrib/Sweph32_For_Excel_VBA_and_VB.zip`.
 
-Plan: extract the unique source into `windows/projects/` and `windows/vb/`,
-**repair it** (see below), drop the rest, delete the zip. Both
-`windows/readme.md` and `contrib/readme.md` reference the zip by name and
-need updating with it.
+It was not simply deleted, because it also held the **only** copy of the
+MSVC build system. Extracted first:
 
-**The extracted projects are broken as-is.** All 15 `.vcxproj` list nine
-library sources and **none mentions `sweconfig.c`**, which this branch added
-and the library now requires. Opening the solution today gives unresolved
-externals for `swi_config_publish`, `swi_default_ctx` and the rest. Checking
-in a build system that cannot build is just relocating the smell, so the
-extraction must fix them. Their `Include="..\foo.c"` paths are also relative
-to the zip's `src/projects/`, and need rewriting for wherever they land.
+| to | what |
+|---|---|
+| `windows/projects/` | 15 `.vcxproj`, `sweph.sln` |
+| `windows/vb/` | `module1.bas`, `sweph_vb7_64.bas`, `orbit.xls`, `orbit2.xls` |
+| `doc/ast_list.txt` | the last unique text in the archive |
+
+Dropped: the duplicated sources, `swedll32/64.dll` and `.lib`,
+`vb/swedll32.lib`, the empty `.rc` stubs, and `doc/*.htm`/`*.gif`/`*.cdr`
+(older HTML copies of what `doc/*.pdf` already carries).
+
+**The projects could not build this tree**, and CI now builds all 15 on
+every push so they cannot rot again. What had to be fixed is in
+`windows/projects/README.md`; the one that mattered most was every project
+writing its object files to a single shared directory, so the DLL was
+linked from objects compiled without `MAKE_DLL` and exported **nothing** —
+while still building, running, and passing every smoke test.
 
 ### Deliberately deferred: `contrib/`
 
