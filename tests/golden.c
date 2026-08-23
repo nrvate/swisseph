@@ -61,6 +61,28 @@ static const int32 FLAGS[] = {
 };
 #define NFLAGS (sizeof(FLAGS)/sizeof(FLAGS[0]))
 
+/* Some quantities this suite records are numerically ill-conditioned: a
+ * change of a couple of ULP in the INPUT moves the output by arcseconds.
+ * They are perfectly reproducible for a fixed binary, so they stay in the
+ * bit-exact baseline, but they are NOT reproducible across math libraries
+ * and must be skipped when comparing transcripts from different toolchains.
+ *
+ * Rather than teach cmpgolden.py a list of row/field coordinates -- which
+ * would silently rot the moment FLAGS[] or a loop bound here changed -- the
+ * rows tag THEMSELVES with this marker, and cmpgolden.py skips any row whose
+ * tag contains it. Measured conditioning, +2 ULP on tjd at 3000-01-01:
+ *
+ *   SE_OSCU_APOG via Moshier   2.86    arcsec   <-- tagged
+ *   SE_OSCU_APOG via SWIEPH    0.000012 arcsec
+ *   SE_MEAN_APOG via Moshier   0.0000007 arcsec
+ *   SE_MOON      via Moshier   0.000043 arcsec
+ *
+ * i.e. the osculating lunar apogee under Moshier amplifies input noise by
+ * ~1e9, and is 238,000x worse than the same body via SWIEPH. Deriving apse
+ * direction from near-circular osculating elements is inherently unstable.
+ */
+#define ILLCOND "~illcond"
+
 static void row(const char *tag, int32 rf, double *x, int n, const char *serr) {
   char cl[AS_MAXCH * 2];
   fprintf(OUT, "%-46s rf=%-6d", tag, rf);
@@ -76,7 +98,8 @@ static void planets(void) {
       for (int p = SE_SUN; p <= SE_VESTA; p++) {
         serr[0] = 0; memset(x, 0, sizeof x);
         int32 rf = swe_calc(DATES[d], p, FLAGS[f], x, serr);
-        snprintf(tag, sizeof tag, "calc[%zu,%zu,%d]", d, f, p);
+        snprintf(tag, sizeof tag, "calc[%zu,%zu,%d]%s", d, f, p,
+                 ((FLAGS[f] & SEFLG_MOSEPH) && p == SE_OSCU_APOG) ? ILLCOND : "");
         row(tag, rf, x, 6, serr);
       }
 }
@@ -214,7 +237,10 @@ static void fixstars(void) {
     for (size_t d = 0; d < NDATES; d++) {
       serr[0]=0; memset(x,0,sizeof x); strcpy(nm, stars[s]);
       int32 rf = swe_fixstar2_ut(nm, DATES[d], SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
-      snprintf(tag, sizeof tag, "star[%s,%zu]", stars[s], d);
+      /* field[5] is the star's distance SPEED, extracted by differencing a
+       * distance of ~1e7 AU to recover a quantity ~3e-10 of it -- see the
+       * ILLCOND note above and cmpgolden.py's header. */
+      snprintf(tag, sizeof tag, "star[%s,%zu]%s", stars[s], d, ILLCOND);
       row(tag, rf, x, 6, serr);
       double mag = 0; strcpy(nm, stars[s]);
       swe_fixstar2_mag(nm, &mag, serr);

@@ -16,25 +16,33 @@ this to prove a *build* change stays within tolerance.
 
 KNOWN CROSS-PLATFORM DIVERGENCE
 -------------------------------
-One quantity is not reproducible across math libraries and is excluded from
-tolerance checking by default: field[5] of the fixed-star rows, which is the
-star's distance SPEED.
+Two quantities in this suite are numerically ill-conditioned: a change of a
+couple of ULP in the INPUT moves the output by arcseconds. They are perfectly
+reproducible for a fixed binary -- so they stay in the bit-exact baseline --
+but they are NOT reproducible across math libraries, and are skipped here.
 
-It is not a bug and not a regression -- it is inherent conditioning. For
-Polaris the distance is 2.74e+07 AU and the distance speed is -8.37e-03, i.e.
-3.1e-10 of the value it is differenced out of. Double precision carries about
-2.2e-16 relative, so any difference in the underlying trig/sqrt chain between
-glibc and Apple's libm is amplified by ten orders of magnitude on its way into
-this field.
+golden.c tags those rows itself with "~illcond"; this script skips any row
+whose tag contains it. The tag travels in the transcript rather than living
+as a coordinate list here, so it cannot rot when golden.c's loops change.
 
-Measured, macOS/clang vs the gcc -O0 baseline: 17401 values differ across 3754
-of 5127 rows, but the median difference is 5.7e-14 (ULP noise) and only 115
-exceed 1e-6 -- every one of them fixstar field[5], up to 1.3e-01 on the
-Galactic Centre, whose distance is larger still.
+  SE_OSCU_APOG via Moshier -- the osculating lunar apogee. Measured with
+  +2 ULP on tjd at 3000-01-01: longitude moves 2.86 arcsec. The same body
+  via SWIEPH moves 0.000012 arcsec, SE_MEAN_APOG via Moshier 0.0000007.
+  So it amplifies input noise by ~1e9 and is 238,000x worse than SWIEPH.
+  Deriving apse direction from near-circular osculating elements is
+  inherently unstable.
 
-Excluding it here does NOT stop a real regression in that field being caught:
-the gcc -O0 job compares bit-exactly with diff, where the value IS
-reproducible. Pass --no-skip to check it anyway.
+  fixed-star distance speed (field[5]) -- extracted by differencing a
+  distance of ~1e7 AU to recover a quantity ~3e-10 of it. Polaris: distance
+  2.74e+07 AU, distance speed -8.37e-03.
+
+Measured, macOS/clang vs the gcc -O0 baseline: 17401 values differ across
+3754 of 5127 rows, but the median is 5.7e-14 -- ULP noise from a different
+libm -- and the only values exceeding 1e-6 belong to those two groups.
+
+Skipping them does NOT stop a real regression being caught: the gcc -O0 job
+compares them bit-exactly with diff, where they ARE reproducible. Pass
+--no-skip to include them here anyway.
 
 Usage:  cmpgolden.py A.txt B.txt [--abs 1e-6] [--verbose] [--no-skip]
 Exit 0 if every value agrees within tolerance, 1 otherwise.
@@ -87,8 +95,10 @@ def main():
         for i, (x, y) in enumerate(zip(a[k], b[k])):
             if x == y:
                 continue
-            # fixstar distance speed: ill-conditioned, see the header
-            if skip_illcond and i == 5 and k.startswith("star["):
+            # Rows that golden.c tagged as numerically ill-conditioned.
+            # The tag lives in the transcript, not in a coordinate list here,
+            # so it cannot drift when golden.c's loops or FLAGS[] change.
+            if skip_illcond and "~illcond" in k:
                 skipped += 1
                 continue
             fx, fy = float.fromhex(x), float.fromhex(y)
@@ -99,8 +109,9 @@ def main():
         return 1
 
     if skipped:
-        print(f"note: skipped {skipped} fixstar distance-speed value(s) "
-              f"-- ill-conditioned across libm, see header (--no-skip to include)")
+        print(f"note: skipped {skipped} value(s) in rows golden.c tagged "
+              f"~illcond -- not reproducible across libm, see header "
+              f"(--no-skip to include)")
     if not diffs:
         print(f"PASS: transcripts are bit-identical ({len(a)} rows)")
         return 0
@@ -117,7 +128,10 @@ def main():
     print(f"  tolerance    : {tol:.3e}")
 
     if verbose or over:
-        for ad, k, i, fx, fy in diffs[:8]:
+        # print ALL offenders when there are any -- the first CI run showed
+        # only the top 8 and left us guessing whether the rest matched
+        show = over if over else diffs[:8]
+        for ad, k, i, fx, fy in (show if verbose else show[:8]):
             flag = "  <-- OVER" if ad > tol else ""
             print(f"    {k:26s} field[{i}]  {fx:+.12e} vs {fy:+.12e}  d={ad:.2e}{flag}")
 
