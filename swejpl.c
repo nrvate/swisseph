@@ -68,6 +68,7 @@
   #define _FILE_OFFSET_BITS 64
 #endif
 
+#include <assert.h>
 #include <string.h>
 #include "swephexp.h"
 #include "sweph.h"
@@ -117,6 +118,14 @@ struct jpl_save {
 };
 
 static TLS struct jpl_save *js;
+
+/* C17_MIGRATION.md Phase 4 / REVIEW.md J1: buf[]'s declared size and
+ * JPL_NCOEFF_MAX are independently editable (buf[] just happens to be
+ * *declared* in terms of the macro today); this fails to compile if a
+ * future edit ever lets them drift apart the way buf[1500] vs. a real
+ * need for 2500 coefficients did before this was fixed. */
+static_assert(sizeof(js->buf) / sizeof(js->buf[0]) == JPL_NCOEFF_MAX,
+    "buf[] must hold exactly JPL_NCOEFF_MAX doubles -- see REVIEW.md J1");
 
 static int state (double et, int32 *list, int do_bary, 
 		  double *pv, double *pvsun, double *nut, char *serr);
