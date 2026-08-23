@@ -790,8 +790,24 @@ struct interpol {
   double nut_deps0, nut_deps1, nut_deps2;
 };
 
-/* if this is changed, then also update initialisation in sweph.c */
-struct swe_data {
+/* THE EPHEMERIS CONTEXT.
+ *
+ * Everything the library remembers between calls: configuration, caches,
+ * open files, scratch. Historically this was `struct swe_data`, existing
+ * exactly once as the global `swed`. Phase 3 (notes/PHASE3-API.md) turns it
+ * into a handle callers can hold several of, so that N threads can compute
+ * with N independent configurations -- which is the one thing Phase 2's
+ * shared-config design deliberately cannot provide.
+ *
+ * `swe_data` is retained as an alias below: it appears in no public header,
+ * but the rename is gratuitous churn for anyone tracking upstream.
+ *
+ * Renaming the type is all that happens here. `swed` is still the same
+ * single TLS instance, and the legacy API still resolves to it. What
+ * changes later is only how it is REACHED -- see swi_default_ctx().
+ *
+ * if this is changed, then also update initialisation in sweph.c */
+struct swe_ctx {
   AS_BOOL ephe_path_is_set;
   AS_BOOL jpl_file_is_open;
   FILE *fixfp;		/* fixed stars file pointer */
@@ -865,7 +881,29 @@ struct swe_data {
   struct fixed_star *fixed_stars;
 };
 
-extern TLS struct swe_data swed;
+/* The handle type callers will hold in Phase 3d. Opaque to them: swephexp.h
+ * forward-declares it and never exposes the layout, so this 23 KB structure
+ * -- which has changed shape twice already -- stays an implementation
+ * detail. */
+typedef struct swe_ctx swe_ctx;
+
+/* Historical name. Nothing public uses it, but keeping it spares anyone
+ * tracking upstream a rename they did not ask for. */
+#define swe_data swe_ctx
+
+/* The default context: the one the legacy, contextless API resolves to.
+ *
+ * Still the same TLS instance it has always been. Phase 3d makes the legacy
+ * shims call swi_default_ctx() instead of naming `swed` directly, at which
+ * point this becomes a process-wide context kept in sync by sweconfig.c --
+ * preserving Phase 2's semantics for every caller who never migrates.
+ * See notes/PHASE3-API.md section 4. */
+extern TLS struct swe_ctx swed;
+
+/* Returns the default context. Exists from the start so call sites can be
+ * converted incrementally: a function that has been given a `ctx` parameter
+ * is called with swi_default_ctx() until its callers have one of their own. */
+extern swe_ctx *swi_default_ctx(void);
 
 /* Shared configuration layer. Included here, after struct sid_data and
  * SEI_NMODELS, because struct swe_config embeds both. */

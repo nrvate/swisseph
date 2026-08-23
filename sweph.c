@@ -101,7 +101,7 @@ struct meff_ele {double r,m;};
  * hazard (a member inserted anywhere but the very end used to be silently
  * zero-filled with no diagnostic; a member renamed here fails to compile
  * instead). */
-TLS struct swe_data swed = {
+TLS struct swe_ctx swed = {
   .const_lapse_rate = SE_LAPSE_RATE,
 };
 
@@ -1172,6 +1172,15 @@ static void free_planets(void)
 
 /* Function initialises swed structure. 
  * Returns 1 if initialisation is done, otherwise 0 */
+/* The default context. See notes/PHASE3-API.md section 4: for now this is
+ * the same TLS `swed` the library has always used, reached through a
+ * function so that call sites can be converted to take a context before the
+ * question of WHICH context is settled. */
+swe_ctx *swi_default_ctx(void)
+{
+  return &swed;
+}
+
 int32 swi_init_swed_if_start(void)
 {
   int32 started = 0;
