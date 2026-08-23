@@ -433,13 +433,17 @@ jobs:
           # API. A DLL built from stale sources -- which is exactly what the
           # prebuilt 2.10.03 binaries removed from this tree were -- would
           # pass every other check in this job.
-          $dumpbin = (Get-Command dumpbin -ErrorAction SilentlyContinue).Source
-          if (-not $dumpbin) {
-            $dumpbin = (Get-ChildItem -Path "C:\Program Files*\Microsoft Visual Studio" -Recurse `
-                          -Filter dumpbin.exe -ErrorAction SilentlyContinue |
-                        Select-Object -First 1).FullName
-          }
-          if (-not $dumpbin) { Write-Error "dumpbin not found -- cannot verify exports"; exit 1 }
+          # Take dumpbin from VC\Tools\MSVC, newest first. NOT whatever is
+          # on PATH: Get-Command found a 2017-era copy under
+          # SDK\ScopeCppSDK\vc15 which printed only a section summary for a
+          # DLL built by the current toolset, and reported no exports at all.
+          # The DLL was fine -- an import library had been generated, which
+          # only happens when there ARE exports.
+          $dumpbin = (Get-ChildItem -Path "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC" `
+                        -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -match "Hostx64\\x64" } |
+                      Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $dumpbin) { Write-Error "dumpbin not found under VC\Tools\MSVC"; exit 1 }
           Write-Host "dumpbin: $dumpbin"
 
           $exports = & $dumpbin /exports "$pkg/bin/x64/swedll64.dll" 2>&1 | Out-String
