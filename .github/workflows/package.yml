@@ -354,3 +354,72 @@ jobs:
           name: swisseph-windows
           path: pkg/swisseph-windows
           if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # Android JNI package. The one platform whose prebuilt binaries sat in the
+  # tree with nothing able to rebuild them -- contrib/android/libs held four
+  # libswe-2.10.03.so, stamped with upstream's version and containing none
+  # of this branch's work.
+  #
+  # The build was broken here too, and in the same way as the MSVC projects:
+  # Android.mk did not list sweconfig.c, and sweconfig.h and swethread.h had
+  # no symlink in jni/, so the module could not compile, let alone link.
+  #
+  # This is a JNI library, not a general libswe: LOCAL_CFLAGS sets
+  # -fvisibility=hidden, so it exports the Java_* entry points and keeps the
+  # swe_* API internal. That is deliberate and the export check below
+  # matches it.
+  # ---------------------------------------------------------------------
+  android-package:
+    runs-on: ubuntu-latest
+    name: android / package
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Show the NDK the runner provides
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          "$ANDROID_NDK_HOME/ndk-build" --version | head -2
+      - name: Build all ABIs
+        run: |
+          cd contrib/android
+          "$ANDROID_NDK_HOME/ndk-build" NDK_PROJECT_PATH=. NDK_APPLICATION_MK=jni/Application.mk
+          find libs obj -name '*.so' | sort
+      - name: Verify the JNI library
+        run: |
+          cd contrib/android
+          abis=$(ls libs)
+          echo "ABIs built: $abis"
+          n=$(echo "$abis" | grep -c .)
+          [ "$n" -ge 4 ] || { echo "FAIL: expected 4 ABIs, got $n"; exit 1; }
+          for abi in $abis; do
+            so=$(ls libs/$abi/*.so)
+            # A JNI library is useless without its Java entry points, and
+            # -fvisibility=hidden means a missing source would still link
+            # quietly with far too few of them.
+            j=$("$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+                  --defined-only --dynamic "$so" | grep -c "Java_") || true
+            echo "  $abi: $(basename $so), $j Java_* entry points"
+            [ "$j" -ge 100 ] || { echo "FAIL: $abi exports only $j JNI entry points"; exit 1; }
+          done
+      - name: Assemble package
+        run: |
+          pkg=pkg/swisseph-android
+          mkdir -p $pkg/jni
+          cp -r contrib/android/libs/* $pkg/jni/
+          cp contrib/android/jni/swejni.h $pkg/
+          cp LICENSE THREADING.md $pkg/
+          cp packaging/android-README.md $pkg/README.md
+          ( cd $pkg && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs sha256sum > SHA256SUMS )
+          cat $pkg/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swisseph-android
+          path: pkg/swisseph-android
+          if-no-files-found: error

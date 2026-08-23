@@ -7,6 +7,10 @@
 *.dll
 *.exe
 
+# ndk-build output.
+/contrib/android/libs/
+/contrib/android/obj/
+
 # MSVC build output. windows/projects/*.vcxproj write here; see
 # windows/projects/README.md.
 /windows/projects/out/
