@@ -376,13 +376,38 @@ that header did not declare `swe_ctx`. No behaviour gate compiles the sample
 programs, so nothing noticed. Gate G9 (`tests/check-build`) now builds them
 and syntax-checks every `*.c` in default, `-DTRACE=1` and `-DTRACE=2`.
 
-### 8.5 3d — Public `_r` API, shim, headers
+### 8.5 3d — Public `_r` API, shim, headers  ✅ DONE
 
-- [ ] `_r` variants for all 106 entry points
-- [ ] Legacy shims (`abi-check` must show additions only)
-- [ ] `swephexp.h` documented; `swe_ctx` opaque
-- [ ] `tests/ctxtest.c` — G4: two contexts, different sidereal modes and
-      ephemeris paths, computing concurrently, each matching its own baseline
+- [x] `_r` variants — **77**, not the 106 this originally said. 106 is every
+      entry point; 30 are already pure and get no `_r`. Of the 77, 57 came
+      from functions carrying the Phase 3a bridge line and 20 more were found
+      by the compiler: they reach state only through *other* public
+      functions, so they had no bridge. 18 static helpers gained a `ctx`
+      parameter the same way.
+- [x] Legacy shims — ABI went 106 → 185 exported symbols, **none removed**.
+- [x] `swephexp.h` documented; `swe_ctx` opaque
+- [x] `swe_ctx_new()` / `swe_ctx_free()`
+- [x] `tests/ctxtest.c` — G4
+
+**The part that was not in this plan and mattered most:** 353 internal call
+sites had to be repointed from the legacy names to the `_r` forms. Left
+alone, `swe_houses_r(myctx, ...)` would have called `swe_houses_armc_ex2()`
+and silently computed against the *default* context. There are now zero
+calls to a legacy shim from inside the library, and that is checked.
+
+**Also not in this plan:** the generated `_r` setters inherited
+`swi_config_publish()`, which would have made `swe_set_topo_r(myctx, ...)`
+move every other context — the Phase 2 leak, reintroduced through the new
+API. Publishing and syncing are now restricted to the default context, and
+a fresh context inherits exactly once via `swi_config_inherit()`.
+
+**G4 had to be broken twice before it could detect anything.** The first
+version computed the default context tropical/geocentric, where a leaked
+ayanamsa cannot show. The second used SIDEREAL|TOPOCTR but measured the main
+thread, which had set those groups itself and therefore correctly stops
+tracking the master. The leak only reaches a thread with no opinion of its
+own, so G4 probes with a fresh thread. Both arms are now verified by
+deliberate sabotage.
 
 ### 8.6 3e — Shared ephemeris file cache  *(decision point)*
 

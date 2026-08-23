@@ -1,7 +1,8 @@
 # Phase 3 API Spec — the `swe_ctx` handle
 
-**Status:** proposed, not implemented. Decisions marked **[DECIDE]** need sign-off
-before 3a starts moving 650 references.
+**Status:** IMPLEMENTED (3a–3d). Every **[DECIDE]** below was signed off and
+built as recommended. Measured surface came out at 77 `_r` entry points, not
+the 75 estimated here — see PLAN.md §8.5.
 **Companion to:** [PLAN.md](PLAN.md) §8, [CONFIG-MAP.md](CONFIG-MAP.md)
 
 ---
