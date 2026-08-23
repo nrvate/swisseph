@@ -550,6 +550,7 @@ static int sidereal_houses_trad(double tjde,
   int ito;
   int ihs = toupper(hsys);
   int ihs2 = ihs;
+  (void) nutl;	/* unused */
 // ay = swe_get_ayanamsa(tjde);
 //fprintf(stderr, "ay=%f\n", ay);
   retc = swe_get_ayanamsa_ex(tjde, iflag, &ay, NULL);

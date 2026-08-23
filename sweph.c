@@ -222,13 +222,11 @@ char *CALL_CONV swe_version(char *s)
 #if MSDOS
 HANDLE dllhandle = NULL;        // global used in swe_version
 				// if DLL, set by DllMain()
-#else		
+#else
 #ifdef __GNUC__
-// The following define is actually forbidden. 
-// It would be better to compile with -D_GNU_SOURCE.
-#ifndef __USE_GNU
-#define __USE_GNU
-#endif
+// C17_MIGRATION.md Phase 5: the root Makefile now compiles with
+// -D_GNU_SOURCE, which is what this comment used to ask for -- the
+// hand-forced __USE_GNU define it replaced is redundant with that.
 #include <dlfcn.h>		// must be linked with -ldl
 #endif
 #endif // MSDOS
@@ -2014,7 +2012,7 @@ static int jplplan(double tjd, int ipli, int32 iflag, AS_BOOL do_save,
   struct plan_data *pdp = &swed.pldat[ipli];
   struct plan_data *pedp = &swed.pldat[SEI_EARTH];
   struct plan_data *psdp = &swed.pldat[SEI_SUNBARY];
-  iflag = SEFLG_JPLEPH; /* currently not used, but this stops compiler warning */
+  (void) iflag; /* currently not used */
   /* we assume Teph ~= TDB ~= TT. The maximum error is < 0.002 sec, 
    * corresponding to an ephemeris error < 0.001 arcsec for the moon */
   /* double tjd_tdb, T;
@@ -2461,6 +2459,7 @@ int32 swi_get_denum(int32 ipli, int32 iflag)
 static int calc_center_body(int32 ipli, int32 iflag, double *xx, double *xcom, char *serr)
 {
   int i;
+  (void) serr;
   if (!(iflag & SEFLG_CENTER_BODY))
     return OK;
   if (ipli < SEI_MARS || ipli > SEI_PLUTO)
@@ -6085,6 +6084,7 @@ void swi_check_nutation(double tjd, int32 iflag)
 static int32 plaus_iflag(int32 iflag, int32 ipl, double tjd, char *serr)
 {
   int32 epheflag = 0;
+  (void) tjd;
   int jplhor_model = swed.astro_models[SE_MODEL_JPLHOR_MODE];
   int jplhora_model = swed.astro_models[SE_MODEL_JPLHORA_MODE];
   if (jplhor_model == 0) jplhor_model = SEMOD_JPLHOR_DEFAULT;
@@ -6721,7 +6721,7 @@ static int32 search_star_in_list(char *sstar, struct fixed_star *stardata, char 
   } else if (!is_bayer && (sp = strchr(sstar, '%')) != NULL) {
     stardatabegp = &(swed.fixed_stars[swed.n_fixstars_real]);
     ndata = swed.n_fixstars_named;
-    if (sp - sstar != strlen(sstar) - 1) {
+    if ((size_t) (sp - sstar) != strlen(sstar) - 1) {	/* sp >= sstar: strchr() found sp within sstar */
       if (serr != NULL)
 	sprintf(serr, "error, swe_fixstar(): invalid search string %s", sstar);
       return ERR;
@@ -7507,6 +7507,8 @@ static int32 swi_fixstar_load_record(char *star, char *srecord, char *sname, cha
   size_t cmplen;
   size_t slen;
   struct fixed_star stardata;
+  (void) sname;
+  (void) sbayer;
   /* function formats the input search name of a star:
    * - remove white spaces
    * - traditional name to lower case (Bayer designation remains as it is)

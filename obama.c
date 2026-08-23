@@ -32,6 +32,8 @@
 
 int main(int argc, char *argv[])
 {
+  (void) argc;
+  (void) argv;
   int iday = 5;		// day  in range 1..31
   int imon = 8;		// month in range 1..12
   int iyar = 1961;	// year in range -12998 .. 16799

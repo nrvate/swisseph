@@ -34,7 +34,7 @@ OS := $(shell uname)
 ifeq ($(OS), Darwin)
   # macOS settings
   CC               = cc
-  CFLAGS           = -g -Wall -fPIC
+  CFLAGS           = -std=c17 -Wall -Wextra -Werror -O2 -g -fPIC -D_GNU_SOURCE
   LIBS             = -lm
   DYLIB_FLAG       = -dynamiclib
   DYLIB_EXT        = dylib
@@ -42,7 +42,7 @@ ifeq ($(OS), Darwin)
 else
   # Assume Linux settings
   CC               = cc
-  CFLAGS           = -g -Wall -fPIC
+  CFLAGS           = -std=c17 -Wall -Wextra -Werror -O2 -g -fPIC -D_GNU_SOURCE
   LIBS             = -lm -ldl
   DYLIB_FLAG       = -shared
   DYLIB_EXT        = so

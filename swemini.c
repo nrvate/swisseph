@@ -35,7 +35,8 @@ int main(void)
   iflag = SEFLG_SPEED;
   while (TRUE) {
     printf("\nDate (d.m.y) ?");
-    fgets(sdate, sizeof(sdate)-1, stdin);
+    if (fgets(sdate, sizeof(sdate)-1, stdin) == NULL)
+      return OK;
     // stop if a period . is entered
     if (*sdate == '.') 
       return OK;
