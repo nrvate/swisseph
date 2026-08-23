@@ -166,6 +166,62 @@ static int test_close_resets(void) {
   return 0;
 }
 
+/* ---- 3. sync coverage --------------------------------------------------
+ *
+ * The mirror of test 1. Sync happens in swi_init_swed_if_start(); a public
+ * entry point that never reaches it would never adopt configuration at
+ * all. Each probe below depends on a DIFFERENT config field.
+ *
+ * Note on swe_azalt and the lapse rate: the obvious probe is blind. At
+ * ordinary altitudes swe_azalt's apparent-altitude output does not move at
+ * all between lapse rates 0.0065 and 0.0300 -- verified -- so a test built
+ * on it would pass regardless. The lapse rate is observable through
+ * swe_rise_trans_true_hor() with horhgt == -100, which routes through
+ * calc_dip(); there it shifts sunrise by 8.5e-04 days (~74 s).
+ */
+static volatile double probe_main[8], probe_thr[8];
+
+static void probe(volatile double *o) {
+  char serr[AS_MAXCH] = ""; double x[6], tret[10];
+  double hi[3] = { 8.55, 47.37, 2000 };
+  double cusp[13], ascmc[10];
+  swe_calc_ut(TJD, SE_MOON, SEFLG_SWIEPH, x, serr);
+  o[0] = x[0];                                  /* ephepath  */
+  o[1] = swe_deltat(TJD);                       /* tid_acc   */
+  o[2] = swe_get_ayanamsa_ut(TJD);              /* sidd      */
+  o[3] = swe_deltat_ex(TJD, SEFLG_SWIEPH, serr);/* tid_acc   */
+  swe_houses(TJD, 47.37, 8.55, 'P', cusp, ascmc);
+  o[4] = ascmc[0];
+  o[5] = swe_sidtime(TJD);
+  swe_rise_trans_true_hor(TJD, SE_SUN, NULL, SEFLG_SWIEPH, SE_CALC_RISE,
+                          hi, 1013.25, 15.0, -100, tret, serr);
+  o[6] = tret[0];                               /* const_lapse_rate */
+}
+
+static void *probe_worker(void *a) { (void)a; probe(probe_thr); return NULL; }
+
+static int test_sync_coverage(void) {
+  static const char *nm[7] = {
+    "swe_calc_ut (ephepath)", "swe_deltat (tid_acc)",
+    "swe_get_ayanamsa_ut (sidd)", "swe_deltat_ex (tid_acc)",
+    "swe_houses", "swe_sidtime", "swe_rise_trans_true_hor (lapse)" };
+  pthread_t t; int i, bad = 0;
+  swe_set_ephe_path((char *)EPHE);
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  swe_set_tid_acc(-25.85);
+  swe_set_lapse_rate(0.0300);       /* not the 0.0065 default */
+  probe(probe_main);
+  pthread_create(&t, NULL, probe_worker, NULL);
+  pthread_join(t, NULL);
+  for (i = 0; i < 7; i++) {
+    int ok = (probe_main[i] == probe_thr[i]);
+    printf("  %-34s %s\n", nm[i], ok ? "synced" : "<-- NOT SYNCED");
+    if (!ok) bad = 1;
+  }
+  if (!bad) printf("  PASS: every probed entry point syncs\n");
+  return bad;
+}
+
 int main(void) {
   const char *e = getenv("SE_TEST_EPHE");
   int bad = 0;
@@ -177,6 +233,10 @@ int main(void) {
 
   printf("2. swe_close() must clear the shared master\n");
   bad |= test_close_resets();
+  swe_close();
+
+  printf("3. every config-dependent entry point must sync\n");
+  bad |= test_sync_coverage();
 
   printf("%s\n", bad ? "FAIL" : "PASS");
   return bad;
