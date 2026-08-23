@@ -720,6 +720,12 @@ extern int32 swi_init_swed_if_start(swe_ctx *ctx);
 extern const char *swi_ephe_name(int32 epheflag);
 /* SE_EPHE_FALLBACK, read fresh -- see swe_set_ephe_fallback(). */
 extern AS_BOOL swi_env_ephe_fallback(void);
+/* Close the .se1 files. FORGET_DENUM when the next open may find different
+ * files, KEEP_DENUM when the same ones are coming back -- delta-t reads that
+ * number before anything reopens them. */
+#define FORGET_DENUM TRUE
+#define KEEP_DENUM   FALSE
+extern void swi_close_ephe_files(swe_ctx *ctx, AS_BOOL forget_denum);
 extern int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr);
 extern int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
 

@@ -803,6 +803,30 @@ static void coverage(void) {
     *serr = 0; swe_calc(DATES[0], SE_SUN, SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
     *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
     row("cov:order_swiss_after_moseph", rf, x, 6, serr);
+
+    /* Merely NAMING a JPL file. swe_set_jpl_file() closes the .se1 files and
+     * sets jpldenum, and both leaked into ephemerides that are not JPL.
+     *
+     * The close is FIXED: cov:order_swiss_after_jplname now equals
+     * cov:order_swiss_alone, where it used to be 4.56 arcsec off because the
+     * Moon file's DE number was forgotten.
+     *
+     * ⚠️ The other is NOT. cov:order_moseph_after_jplname DIFFERS from
+     * cov:order_moseph_alone by 56 arcsec, because jpldenum reaches
+     * Moshier's tidal term through swe_deltat_ex_r. These two rows are here
+     * to pin that divergence, not to assert it away: the obvious fix breaks
+     * upstream's eclipse reference values by three orders of magnitude, so
+     * the coupling is load-bearing somewhere. See swi_get_tid_acc(). */
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_moseph_alone", rf, x, 6, serr);
+    { char jf[AS_MAXCH]; strcpy(jf, "de200.eph"); swe_set_jpl_file(jf); }
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_moseph_after_jplname", rf, x, 6, serr);
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_swiss_after_jplname", rf, x, 6, serr);
+    { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
+    swe_close();
+    swe_set_ephe_path((char *) EPHE);
   }
 }
 

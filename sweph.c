@@ -205,7 +205,8 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr);
 extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *xx);
-static void swi_close_keep_topo_etc(swe_ctx *ctx); 
+static AS_BOOL swi_was_downgraded(swe_ctx *ctx, int32 wanted, int32 iflag);
+static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum);
 static int app_pos_etc_mean(swe_ctx *ctx, int ipl, int32 iflag, char *serr);
 static void nut_matrix(struct nut *nu, struct epsilon *oec); 
 static void calc_epsilon(swe_ctx *ctx, double tjd, int32 iflag, struct epsilon *e);
@@ -389,28 +390,7 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 	swi_close_jpl_file(ctx);
 	ctx->jpl_file_is_open = FALSE;
       }
-      for (i = 0; i < SEI_NEPHFILES; i ++) {
-	/* ⛔ Keep the DE number across the close.
-	 *
-	 * It describes the FILE, not the session: reopening the same .se1
-	 * yields the same value, so clearing it loses information that is
-	 * still true. And something needs it before the reopen happens --
-	 * swe_deltat_ex_r() picks the tidal acceleration from
-	 * fidat[SEI_FILE_MOON].sweph_denum, and swe_calc_ut() calls it
-	 * BEFORE the position that would reopen the file.
-	 *
-	 * Zeroed, that lookup fell through to the default -25.8 instead of
-	 * DE441's -25.936, so any Swiss calc_ut() that followed a Moshier
-	 * call got a delta-t computed from the wrong tidal term. At -3000,
-	 * where delta-t is hours, that moved the Sun by 4.56 arcsec -- and
-	 * the answer depended on what had been calculated before it, which
-	 * is the whole class of bug this fork exists to remove. */
-	int32 keep_denum = ctx->fidat[i].sweph_denum;
-	if (ctx->fidat[i].fptr != NULL)
-	  fclose(ctx->fidat[i].fptr);
-	memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
-	ctx->fidat[i].sweph_denum = keep_denum;
-      }
+      swi_close_ephe_files(ctx, KEEP_DENUM);
       ctx->last_epheflag = epheflag;
     }
   }
@@ -564,36 +544,16 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
   /* if no ephemeris has been specified, do not return chosen ephemeris */
   if ((iflgsave & SEFLG_EPHMASK) == 0)
     iflag = iflag & ~SEFLG_DEFAULTEPH;
-  /* ⛔ Refuse a silent downgrade.
-   *
-   * This is the one place worth doing it. Every substitution path in this
-   * file -- there are nineteen -- converges here with the ephemeris it
-   * actually used sitting in iflag, whatever route it took. Guarding the
-   * paths individually would be nineteen chances to miss one, and a path
-   * added later would not be covered at all.
-   *
-   * Only an *involuntary* change counts: a caller who asked for Moshier is
-   * not being downgraded.
-   *
-   * Naming no ephemeris is covered too, and deliberately. epheflag has
-   * already resolved to SEFLG_SWIEPH by then, which is the library's own
-   * choice -- and answering from Moshier instead is the same silent
-   * substitution whether the caller spelled out SEFLG_SWIEPH or let the
-   * default stand. swe_calc_ut() settles the question anyway: it fills in
-   * SEFLG_SWIEPH itself before delegating here, so excluding the
-   * unspecified case would have made swe_calc() and swe_calc_ut() answer
-   * the same arguments differently. */
-  if (!ctx->ephe_fallback) {
-    int32 got = iflag & SEFLG_EPHMASK;
-    if (got != 0 && got != epheflag) {
-      if (serr != NULL)
-        sprintf(serr,
-          "%s ephemeris is not available for jd %.4f; falling back to %s would "
-          "answer with lower precision. Install the data files, or call "
-          "swe_set_ephe_fallback(1) to allow the substitution.",
-          swi_ephe_name(epheflag), tjd, swi_ephe_name(got));
-      goto return_error;
-    }
+  /* The nineteen substitution paths in this file all converge here, with the
+   * ephemeris they actually used sitting in iflag. */
+  if (swi_was_downgraded(ctx, epheflag, iflag)) {
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH,
+        "%s ephemeris is not available for jd %.4f; falling back to %s would "
+        "answer with lower precision. Install the data files, or call "
+        "swe_set_ephe_fallback(1) to allow the substitution.",
+        swi_ephe_name(epheflag), tjd, swi_ephe_name(iflag & SEFLG_EPHMASK));
+    goto return_error;
   }
 #ifdef TRACE
   trace_swe_calc(2, tjd, ipl, iflag, xx, serr);
@@ -1384,15 +1344,9 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
 /* closes all open files, frees space of planetary data, 
  * deletes memory of all computed positions 
  */
-static void swi_close_keep_topo_etc(swe_ctx *ctx) 
+static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
 {
-  int i;
-  /* close SWISSEPH files */
-  for (i = 0; i < SEI_NEPHFILES; i ++) {
-    if (ctx->fidat[i].fptr != NULL) 
-      fclose(ctx->fidat[i].fptr);
-    memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
-  }
+  swi_close_ephe_files(ctx, forget_denum);
   free_planets(ctx);
   memset((void *) &ctx->oec, 0, sizeof(struct epsilon));
   memset((void *) &ctx->oec2000, 0, sizeof(struct epsilon));
@@ -1429,13 +1383,7 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx)
  * freeing one context must not reconfigure every other one. */
 static void ctx_release(swe_ctx *ctx)
 {
-  int i;
-  /* close SWISSEPH files */
-  for (i = 0; i < SEI_NEPHFILES; i ++) {
-    if (ctx->fidat[i].fptr != NULL) 
-      fclose(ctx->fidat[i].fptr);
-    memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
-  }
+  swi_close_ephe_files(ctx, FORGET_DENUM);
   free_planets(ctx);
   memset((void *) &ctx->oec, 0, sizeof(struct epsilon));
   memset((void *) &ctx->oec2000, 0, sizeof(struct epsilon));
@@ -1560,8 +1508,9 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
   char serr[AS_MAXCH];
   char *sp;
   double xx[6];
-  /* close all open files and delete all planetary data */
-  swi_close_keep_topo_etc(ctx);
+  /* The path is changing: the next open may find a different generation of
+   * files, so their DE numbers go with them. */
+  swi_close_keep_topo_etc(ctx, FORGET_DENUM);
   swi_init_swed_if_start(ctx);
   ctx->ephe_path_is_set = TRUE;
   /* environment variable SE_EPHE_PATH has priority */
@@ -1719,6 +1668,51 @@ void load_dpsi_deps(swe_ctx *ctx)
   fclose(fp);
 }
 
+/* Close the .se1 files.
+ *
+ * FORGET_DENUM when the next open may find different files (the ephemeris
+ * path changed, or the context is being torn down); KEEP_DENUM when the same
+ * files are coming back.
+ *
+ * The DE number matters after the close because swe_calc_ut_r() computes
+ * delta-t BEFORE the position that reopens anything:
+ *
+ *   swe_calc_ut_r()   -> swe_deltat_ex_r()
+ *                     -> denum = fidat[SEI_FILE_MOON].sweph_denum
+ *                     -> swi_set_tid_acc() -> swi_get_tid_acc()
+ *
+ * and swi_get_tid_acc()'s fallback for denum == 0 also tests
+ * fidat[SEI_FILE_MOON].fptr, which the close just set to NULL. So a zeroed
+ * denum takes the default -25.8 instead of DE441's -25.936: at -3000, where
+ * delta-t runs to hours, the Sun lands 4.56 arcsec out and the Moon 53. */
+void swi_close_ephe_files(swe_ctx *ctx, AS_BOOL forget_denum)
+{
+  int i;
+  for (i = 0; i < SEI_NEPHFILES; i++) {
+    int32 denum = ctx->fidat[i].sweph_denum;
+    if (ctx->fidat[i].fptr != NULL)
+      fclose(ctx->fidat[i].fptr);
+    memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
+    if (!forget_denum)
+      ctx->fidat[i].sweph_denum = denum;
+  }
+}
+
+/* Did the library answer from a weaker ephemeris than the one asked for?
+ *
+ * `wanted` has already resolved an unspecified request to SEFLG_SWIEPH, so
+ * naming nothing is treated as asking for Swiss -- which is what
+ * swe_calc_ut_r() does explicitly anyway, and the two entry points must agree
+ * about identical arguments. Asking for Moshier and getting it is not a
+ * downgrade. */
+static AS_BOOL swi_was_downgraded(swe_ctx *ctx, int32 wanted, int32 iflag)
+{
+  int32 got = iflag & SEFLG_EPHMASK;
+  if (ctx->ephe_fallback)
+    return FALSE;
+  return got != 0 && got != wanted;
+}
+
 /* SE_EPHE_FALLBACK=1 restores upstream's silent substitution without touching
  * the caller -- for programs that cannot be recompiled. Anything other than
  * unset, empty, or "0" enables it. */
@@ -1791,8 +1785,8 @@ void CALL_CONV swe_set_jpl_file_r(swe_ctx *ctx, const char *fname)
   char *sp, s[AS_MAXCH];
   int retc;
   double ss[3];
-  /* close all open files and delete all planetary data */
-  swi_close_keep_topo_etc(ctx);
+  /* The ephemeris path is unchanged, so the same .se1 files come back. */
+  swi_close_keep_topo_etc(ctx, KEEP_DENUM);
   swi_init_swed_if_start(ctx);
   /* if path is contained in fname, it is filled into the path variable */
   if (strlen(fname) >= AS_MAXCH) {
@@ -6817,11 +6811,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
       swi_close_jpl_file(ctx);
       ctx->jpl_file_is_open = FALSE;
     }
-    for (i = 0; i < SEI_NEPHFILES; i ++) {
-      if (ctx->fidat[i].fptr != NULL) 
-	fclose(ctx->fidat[i].fptr);
-      memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
-    }
+    swi_close_ephe_files(ctx, KEEP_DENUM);
     ctx->last_epheflag = epheflag;
   }
   /* high precision speed prevails fast speed */
@@ -8101,11 +8091,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
       swi_close_jpl_file(ctx);
       ctx->jpl_file_is_open = FALSE;
     }
-    for (i = 0; i < SEI_NEPHFILES; i ++) {
-      if (ctx->fidat[i].fptr != NULL) 
-	fclose(ctx->fidat[i].fptr);
-      memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
-    }
+    swi_close_ephe_files(ctx, KEEP_DENUM);
     ctx->last_epheflag = epheflag;
   }
   /* high precision speed prevails fast speed */
