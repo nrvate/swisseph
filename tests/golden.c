@@ -251,6 +251,26 @@ static void eclipses(void) {
     row(tag, rf, tret, 10, serr);
     if (rf < 0) break;
     tjd = tret[0] + 10;
+
+    /* A fixed observer is almost never inside the eclipse path, so
+     * swe_sol_eclipse_how() there returns 0 and never reaches the saros
+     * lookup. Locate the point of maximum eclipse first, then ask "how"
+     * THERE -- that exercises swe_sol_eclipse_where() and populates
+     * attr[9]/attr[10] from saros_data_solar[]. */
+    serr[0]=0; memset(attr,0,sizeof attr);
+    double gmax[2] = {0, 0}, attrw[20];
+    memset(attrw, 0, sizeof attrw);
+    int32 rw = swe_sol_eclipse_where(tret[0], SEFLG_SWIEPH, gmax, attrw, serr);
+    snprintf(tag, sizeof tag, "solecl_where[%d]", i);
+    row(tag, rw, attrw, 11, serr);
+
+    double gm[3] = { gmax[0], gmax[1], 0 };
+    serr[0]=0; memset(attr,0,sizeof attr);
+    rf = swe_sol_eclipse_how(tret[0], SEFLG_SWIEPH, gm, attr, serr);
+    snprintf(tag, sizeof tag, "solecl_how_max[%d]", i);   /* saros in attr[9] */
+    row(tag, rf, attr, 11, serr);
+
+    /* keep the fixed-observer case too: it pins the not-visible path */
     serr[0]=0; memset(attr,0,sizeof attr);
     rf = swe_sol_eclipse_how(tret[0], SEFLG_SWIEPH, geo, attr, serr);
     snprintf(tag, sizeof tag, "solecl_how[%d]", i);
@@ -263,6 +283,11 @@ static void eclipses(void) {
     snprintf(tag, sizeof tag, "lunecl[%d]", i);
     row(tag, rf, tret, 10, serr);
     if (rf < 0) break;
+    /* lunar saros lives in saros_data_lunar[], filled by lun_eclipse_how */
+    serr[0]=0; memset(attr,0,sizeof attr);
+    int32 rh = swe_lun_eclipse_how(tret[0], SEFLG_SWIEPH, geo, attr, serr);
+    snprintf(tag, sizeof tag, "lunecl_how[%d]", i);
+    row(tag, rh, attr, 11, serr);
     tjd = tret[0] + 10;
   }
   serr[0]=0; memset(tret,0,sizeof tret);
@@ -287,6 +312,110 @@ static void pheno(void) {
     }
 }
 
+/* swehel.c had ZERO line coverage before this was added, yet Phase 1.4
+ * modified it. Heliacal events, visibility limits and the atmospheric
+ * extinction chain (kR/kW/kOZ/ka) all live there. */
+static void heliacal(void) {
+  char serr[AS_MAXCH]; double dret[50]; char tag[256]; char obj[AS_MAXCH];
+  double datm[4] = {1013.25, 15, 40, 0};
+  double dobs[6] = {36, 1, 1, 1, 1, 1};
+  const double sites[][3] = {{8.55,47.37,400},{31.2,30.0,20},{-70.7,-29.3,2400}};
+  const char *objs[] = {"Venus", "Mercury", "Moon", "Sirius", "Mars"};
+  const int32 events[] = {SE_HELIACAL_RISING, SE_HELIACAL_SETTING,
+                          SE_EVENING_FIRST, SE_MORNING_LAST};
+  for (size_t g = 0; g < sizeof(sites)/sizeof(sites[0]); g++) {
+    double dgeo[3] = { sites[g][0], sites[g][1], sites[g][2] };
+    for (size_t o = 0; o < sizeof(objs)/sizeof(objs[0]); o++) {
+      for (size_t e = 0; e < sizeof(events)/sizeof(events[0]); e++) {
+        memset(dret, 0, sizeof dret); serr[0] = 0; strcpy(obj, objs[o]);
+        int32 rf = swe_heliacal_ut(2451545.0, dgeo, datm, dobs, obj,
+                                   events[e], SEFLG_SWIEPH, dret, serr);
+        snprintf(tag, sizeof tag, "hel_ut[%zu,%s,%d]", g, objs[o], (int)events[e]);
+        row(tag, rf, dret, 3, serr);
+      }
+      memset(dret, 0, sizeof dret); serr[0] = 0; strcpy(obj, objs[o]);
+      int32 rf = swe_vis_limit_mag(2451545.0, dgeo, datm, dobs, obj,
+                                   SEFLG_SWIEPH, dret, serr);
+      snprintf(tag, sizeof tag, "vislim[%zu,%s]", g, objs[o]);
+      row(tag, rf, dret, 8, serr);
+
+      memset(dret, 0, sizeof dret); serr[0] = 0; strcpy(obj, objs[o]);
+      rf = swe_heliacal_pheno_ut(2451545.0, dgeo, datm, dobs, obj,
+                                 SE_HELIACAL_RISING, SEFLG_SWIEPH, dret, serr);
+      snprintf(tag, sizeof tag, "helpheno[%zu,%s]", g, objs[o]);
+      row(tag, rf, dret, 12, serr);
+    }
+    memset(dret, 0, sizeof dret); serr[0] = 0;
+    int32 rf = swe_topo_arcus_visionis(2451545.0, dgeo, datm, dobs, SEFLG_SWIEPH,
+                                       -1, 0, 100, 10, 120, 20, dret, serr);
+    snprintf(tag, sizeof tag, "tav[%zu]", g);
+    row(tag, rf, dret, 1, serr);
+    memset(dret, 0, sizeof dret); serr[0] = 0;
+    rf = swe_heliacal_angle(2451545.0, dgeo, datm, dobs, SEFLG_SWIEPH,
+                            -1, 0, 100, 120, 20, dret, serr);
+    snprintf(tag, sizeof tag, "helangle[%zu]", g);
+    row(tag, rf, dret, 3, serr);
+  }
+}
+
+/* Name lookups and small conversions. swe_get_ayanamsa_name() in particular
+ * reads the ayanamsa_name[] table that Phase 1.5 const-qualified, and had
+ * zero coverage. */
+static void misc(void) {
+  char tag[256], buf[AS_MAXCH], serr[AS_MAXCH];
+  for (int sid = 0; sid <= 47; sid++) {
+    const char *nm = swe_get_ayanamsa_name(sid);
+    fprintf(OUT, "%-46s %s\n",
+            (snprintf(tag, sizeof tag, "ayanname[%d]", sid), tag),
+            nm ? nm : "(null)");
+  }
+  for (int p = SE_SUN; p <= SE_VESTA; p++) {
+    buf[0] = 0; swe_get_planet_name(p, buf);
+    fprintf(OUT, "%-46s %s\n",
+            (snprintf(tag, sizeof tag, "plname[%d]", p), tag), buf);
+  }
+  const char *hs = "PKORCAEVXHTBGWMNQLIUSDFY";
+  for (const char *h = hs; *h; h++)
+    fprintf(OUT, "%-46s %s\n",
+            (snprintf(tag, sizeof tag, "hname[%c]", *h), tag), swe_house_name(*h));
+  /* degree splitting across rounding modes */
+  for (int i = 0; i < 6; i++) {
+    int32 ideg, imin, isec, isgn; double dsecfr;
+    const int32 fl[] = {0, SE_SPLIT_DEG_ROUND_SEC, SE_SPLIT_DEG_ROUND_MIN,
+                        SE_SPLIT_DEG_ROUND_DEG, SE_SPLIT_DEG_ZODIACAL,
+                        SE_SPLIT_DEG_NAKSHATRA};
+    swe_split_deg(123.456789 + i, fl[i], &ideg, &imin, &isec, &dsecfr, &isgn);
+    fprintf(OUT, "%-46s %d %d %d %a %d\n",
+            (snprintf(tag, sizeof tag, "splitdeg[%d]", i), tag),
+            ideg, imin, isec, dsecfr, isgn);
+  }
+  /* calendar / UTC conversions */
+  for (int y = 1500; y <= 2100; y += 100) {
+    double jd, dret[2]; int32 iy, im, id, ih, mi; double sec;
+    swe_utc_to_jd(y, 6, 15, 12, 30, 30.5, SE_GREG_CAL, dret, serr);
+    swe_jdet_to_utc(dret[0], SE_GREG_CAL, &iy, &im, &id, &ih, &mi, &sec);
+    jd = swe_julday(y, 6, 15, 12.5, SE_GREG_CAL);
+    fprintf(OUT, "%-46s %a %a %a %d-%d-%d %d:%d:%a\n",
+            (snprintf(tag, sizeof tag, "utc[%d]", y), tag),
+            dret[0], dret[1], jd, iy, im, id, ih, mi, sec);
+  }
+  /* refraction + horizontal coordinates */
+  double xin[3] = {45.0, 10.0, 0}, xaz[3], xout[6], geo[3] = {8.55, 47.37, 400};
+  for (int i = 0; i < 5; i++) {
+    xin[1] = -2.0 + i * 3.0;
+    swe_azalt(2451545.0, SE_ECL2HOR, geo, 1013.25, 15.0, xin, xaz);
+    double r = swe_refrac_extended(xin[1], 400, 1013.25, 15.0, 0.0065,
+                                   SE_TRUE_TO_APP, xout);
+    fprintf(OUT, "%-46s %a %a %a | %a %a\n",
+            (snprintf(tag, sizeof tag, "azalt[%d]", i), tag),
+            xaz[0], xaz[1], xaz[2], r, xout[0]);
+  }
+  /* library path: value is machine-specific, so assert only its shape */
+  buf[0] = 0; swe_get_library_path(buf);
+  fprintf(OUT, "%-46s len_nonzero=%d terminated=%d\n", "libpath",
+          buf[0] != '\0', memchr(buf, '\0', AS_MAXCH) != NULL);
+}
+
 /* Runs the entire suite against the current thread's library state. */
 static void suite(void) {
   char sv[AS_MAXCH];
@@ -302,6 +431,8 @@ static void suite(void) {
   timeconv();
   eclipses();
   pheno();
+  heliacal();
+  misc();
 }
 
 struct targ { int id; char *buf; size_t len; int setup; };

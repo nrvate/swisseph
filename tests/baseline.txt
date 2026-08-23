@@ -4975,23 +4975,41 @@ eclnut[7]                                      rf=0      0x1.76dbc8c5eec02p+4 0x
 time[8]                                        rf=0      0x1.382a7cc97ea05p-5 0x1.ae3b2de66cf84p+2 0x1.2b42caaaaaaabp+21 -0x1.9ef9db22d0e56p+4
 eclnut[8]                                      rf=0      0x1.74ec85effd134p+4 0x1.74f4a2f969b21p+4 0x1.d5d24e8c664c8p-9 -0x1.03a12d93d9c9dp-9 0x0p+0 0x0p+0
 solecl_glob[0]                                 rf=18     0x1.2b43e0461ea56p+21 0x1.2b43e01c35b3bp+21 0x1.2b43dfa53bd54p+21 0x1.2b43e0e79215p+21 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
+solecl_where[0]                                rf=18     0x1.28cfa19f107b2p-1 0x1.da47198f2a42cp-1 0x1.e07243c66887cp-2 0x1.15304f0de1d3ep+8 0x1.188aac5afdf4p+5 -0x1.c53944bc585fp-5 0x1.be52d6e36ccbbp-2 0x1.a8a45d3d19a75p-3 0x1.28cfa19f107b2p-1 0x1.2cp+7 0x1p+4
+solecl_how_max[0]                              rf=146    0x1.28cfa19f107b2p-1 0x1.da47198f2a42cp-1 0x1.e07243c66887cp-2 0x1.15304f0de1d3ep+8 0x1.188aac5afdf4p+5 -0x1.c53944bc585fp-5 0x1.be52d6e36ccbbp-2 0x1.a8a45d3d19a75p-3 0x1.28cfa19f107b2p-1 0x1.2cp+7 0x1p+4
 solecl_how[0]                                  rf=0      0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.26d78210f0ecp+4 0x1.8b43f2e576514p+4 0x1.8bcce2ab440eap+4 0x1.eb62801459719p+0 0x0p+0 0x0p+0 0x0p+0
 solecl_glob[1]                                 rf=18     0x1.2b487a838b1dp+21 0x1.2b487a801ee23p+21 0x1.2b487a0abe4dap+21 0x1.2b487afc628b3p+21 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
+solecl_where[1]                                rf=18     0x1.e870ff43afdf3p-2 0x1.102ecf0459344p+0 0x1.7d1ba921a94cbp-2 -0x1.9e65becf17df1p+7 0x1.631d905b1ffbap+7 0x1.4b52206a15a43p-4 0x1.1ae8caad5c2f8p-1 0x1.29ccc3101f9c4p-2 0x1.e870ff43afdf3p-2 0x1.d4p+6 0x1.1p+6
+solecl_how_max[1]                              rf=146    0x1.e870ff43afdf3p-2 0x1.102ecf0459344p+0 0x1.7d1ba921a94cbp-2 -0x1.9e65becf17df1p+7 0x1.631d905b1ffbap+7 0x1.4b52206a15a43p-4 0x1.1ae8caad5c2f8p-1 0x1.29ccc3101f9c4p-2 0x1.e870ff43afdf3p-2 0x1.d4p+6 0x1.1p+6
 solecl_how[1]                                  rf=0      0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.fe9bccfdad95p+6 -0x1.b98bec61bb24bp+0 -0x1.b98bec61bb24bp+0 0x1.1a797e8a22ba2p+1 0x0p+0 0x0p+0 0x0p+0
 solecl_glob[2]                                 rf=18     0x1.2b4964bd4acfbp+21 0x1.2b49649f5edbp+21 0x1.2b496435d2af3p+21 0x1.2b496545024b7p+21 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
+solecl_where[2]                                rf=18     0x1.350fb57afa9c3p-1 0x1.0e88744b627eep+0 0x1.08c38e8cb0006p-1 -0x1.7677a19fdbaf6p+7 0x1.32f22c4c90502p+7 -0x1.01abbfa18f0bbp-4 0x1.b7b42b27f2a76p-2 0x1.c8dde244f0505p-3 0x1.350fb57afa9c3p-1 0x1.36p+7 0x1.4p+2
+solecl_how_max[2]                              rf=146    0x1.350fb57afa9c3p-1 0x1.0e88744b627eep+0 0x1.08c38e8cb0006p-1 -0x1.7677a19fdbaf6p+7 0x1.32f22c4c90502p+7 -0x1.01abbfa18f0bbp-4 0x1.b7b42b27f2a76p-2 0x1.c8dde244f0505p-3 0x1.350fb57afa9c3p-1 0x1.36p+7 0x1.4p+2
 solecl_how[2]                                  rf=0      0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.b6ec8fab2bfaep+7 -0x1.e4601d7aa873ap+3 -0x1.e4601d7aa873ap+3 0x1.7790f9872cf4ep-1 0x0p+0 0x0p+0 0x0p+0
 solecl_glob[3]                                 rf=18     0x1.2b4e01dc5659ep+21 0x1.2b4e01cf91efap+21 0x1.2b4e01267dcfbp+21 0x1.2b4e02924a31p+21 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
+solecl_where[3]                                rf=18     0x1.7236da53bf8ffp-1 0x1.d2a9a22e41f14p-1 0x1.427462278945ep-1 0x1.52ae4c75b877dp+8 0x1.16b6b2c1bf28p+3 0x1.4f0a11e8408e5p-4 0x1.1b4f322e3ba52p-1 0x1.024856f5849b2p-3 0x1.7236da53bf8ffp-1 0x1.e8p+6 0x1.c8p+5
+solecl_how_max[3]                              rf=146    0x1.7236da53bf8ffp-1 0x1.d2a9a22e41f14p-1 0x1.427462278945ep-1 0x1.52ae4c75b877dp+8 0x1.16b6b2c1bf28p+3 0x1.4f0a11e8408e5p-4 0x1.1b4f322e3ba52p-1 0x1.024856f5849b2p-3 0x1.7236da53bf8ffp-1 0x1.e8p+6 0x1.c8p+5
 solecl_how[3]                                  rf=0      0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.2cafebe0bee7p+6 -0x1.2664a1a44c184p+4 -0x1.2664a1a44c184p+4 0x1.607f718264cb3p-1 0x0p+0 0x0p+0 0x0p+0
 solecl_glob[4]                                 rf=5      0x1.2b5390053fb58p+21 0x1.2b538ffceb0b3p+21 0x1.2b538f2f1e1f7p+21 0x1.2b5390db7911p+21 0x1.2b538f888a8d3p+21 0x1.2b5390822abb9p+21 0x1.2b538f8a3c998p+21 0x1.2b5390806c3cfp+21 0x0p+0 0x0p+0
+solecl_where[4]                                rf=5      0x1.066e0ed4c07f6p+0 0x1.0cea40353194ap+0 0x1.1a7b4cc8d1287p+0 -0x1.4eaf65f219acp+7 0x1.5da118e73bcc6p+7 0x1.b944bc8ae6af9p+5 0x1.b95bdabc44983p+5 0x1.da95dc15f8753p-15 0x1.0cea40353194ap+0 0x1.fcp+6 0x1.c8p+5
+solecl_how_max[4]                              rf=133    0x1.066e0ed4c07f6p+0 0x1.0cea40353194ap+0 0x1.1a7b4cc8d1287p+0 -0x1.4eaf65f219acp+7 0x1.5da118e73bcc6p+7 0x1.b944bc8ae6af9p+5 0x1.b95bdabc44983p+5 0x1.da95dc15f8753p-15 0x1.0cea40353194ap+0 0x1.fcp+6 0x1.c8p+5
 solecl_how[4]                                  rf=0      0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.3ed8147834c9p+4 0x1.0401813808197p+6 0x1.0408db63aa404p+6 0x1.f7bb5483df8c5p-1 0x0p+0 0x0p+0 0x0p+0
 solecl_glob[5]                                 rf=9      0x1.2b5912f48f295p+21 0x1.2b5912ea87044p+21 0x1.2b591204ea915p+21 0x1.2b5913e48dc03p+21 0x1.2b5912611529p+21 0x1.2b5913884d4a8p+21 0x1.2b59126352dd5p+21 0x1.2b591385fce3fp+21 0x0p+0 0x0p+0
+solecl_where[5]                                rf=9      0x1.f80a2c685cf5fp-1 0x1.f01625e607a82p-1 0x1.e0aaea62f3688p-1 0x1.bf324c452af53p+6 0x1.0102b3979f16p+3 0x1.0773b30cabb96p+6 0x1.077b241240675p+6 0x1.f37e36ec9cdcbp-19 0x1.f01625e607a82p-1 0x1.08p+7 0x1.68p+5
+solecl_how_max[5]                              rf=137    0x1.f80a2c685cf5fp-1 0x1.f01625e607a82p-1 0x1.e0aaea62f3688p-1 0x1.bf324c452af53p+6 0x1.0102b3979f16p+3 0x1.0773b30cabb96p+6 0x1.077b241240675p+6 0x1.f37e36ec9cdcbp-19 0x1.f01625e607a82p-1 0x1.08p+7 0x1.68p+5
 solecl_how[5]                                  rf=0      0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.d020e9e141cf4p+6 -0x1.9ea9a196582bep+5 -0x1.9ea9a196582bep+5 0x1.50d0155da7a21p-2 0x0p+0 0x0p+0 0x0p+0
 lunecl[0]                                      rf=4      0x1.2b436593321d8p+21 0x0p+0 0x1.2b4365028d53ap+21 0x1.2b436623d74f8p+21 0x1.2b43655c6b95fp+21 0x1.2b4365c9fc106p+21 0x1.2b4364b0e7df5p+21 0x1.2b43667597b3fp+21 0x0p+0 0x0p+0
+lunecl_how[0]                                  rf=4      0x1.532af19705671p+0 0x1.27255653d3768p+1 0x0p+0 0x0p+0 0x1.79665d6858ap+6 0x1.65aea55aee88p+4 0x1.6647c6c69b78bp+4 0x1.32b75fc9992p-2 0x1.532af19705671p+0 0x1.fp+6 0x1.8p+5
 lunecl[1]                                      rf=4      0x1.2b48f0a4631bcp+21 0x0p+0 0x1.2b48effc8dc31p+21 0x1.2b48f14c37be1p+21 0x1.2b48f058bd1cap+21 0x1.2b48f0f0075p+21 0x1.2b48ef9a04f7dp+21 0x1.2b48f1aeb7411p+21 0x0p+0 0x0p+0
+lunecl_how[1]                                  rf=0      0x1.c49e018f279f7p+0 0x1.6b374888e1294p+1 0x0p+0 0x0p+0 0x1.e0e0e824ddc78p+7 -0x1.9cc1e245b5b8fp+5 -0x1.9cc1e245b5b8fp+5 0x1.bcb905e6e8p-6 0x1.c49e018f279f7p+0 0x1.02p+7 0x1.28p+5
 lunecl[2]                                      rf=4      0x1.2b4e7ac7f6ccap+21 0x0p+0 0x1.2b4e7a3c4b49cp+21 0x1.2b4e7b53a2161p+21 0x1.2b4e7a9c8120dp+21 0x1.2b4e7af36b537p+21 0x1.2b4e79eaaf9bap+21 0x1.2b4e7ba53136cp+21 0x0p+0 0x0p+0
+lunecl_how[2]                                  rf=4      0x1.30715f76a0db7p+0 0x1.14aea98d72959p+1 0x0p+0 0x0p+0 0x1.1de17d50c19bcp+8 0x1.5c2cbaee461b8p+5 0x1.5c4dedc6ea321p+5 0x1.8571df02394p-2 0x1.30715f76a0db7p+0 0x1.0cp+7 0x1.ap+4
 lunecl[3]                                      rf=16     0x1.2b5400f94548bp+21 0x0p+0 0x1.2b540087fe5dep+21 0x1.2b54016a8a3bcp+21 0x0p+0 0x0p+0 0x1.2b540012138cep+21 0x1.2b5401e09c2d9p+21 0x0p+0 0x0p+0
+lunecl_how[3]                                  rf=0      0x1.fa87c5420d632p-2 0x1.8c36c6c4ac5edp+0 0x0p+0 0x0p+0 0x1.01dad93a73fc3p+8 -0x1.5d048dc0849fbp+5 -0x1.5d048dc0849fbp+5 0x1.54fca613c4ep-1 0x1.fa87c5420d632p-2 0x1.16p+7 0x1.4p+4
 lunecl[4]                                      rf=64     0x1.2b598f7f1f4fdp+21 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.2b598ed1d5a74p+21 0x1.2b59902c4f689p+21 0x0p+0 0x0p+0
+lunecl_how[4]                                  rf=0      0x0p+0 0x1.c9625ec3f2f6bp-1 0x0p+0 0x0p+0 0x1.4bf254bb28f84p+7 -0x1.224378fe4e9dep+4 -0x1.224378fe4e9dep+4 0x1.0eeb80888998p+0 0x0p+0 0x1.2p+7 0x1.ep+3
 lunecl[5]                                      rf=64     0x1.2b5e2804ab304p+21 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.2b5e276aa946ap+21 0x1.2b5e289ebd05fp+21 0x0p+0 0x0p+0 | no lunar eclipse at tjd = 2452421.078256
+lunecl_how[5]                                  rf=0      0x0p+0 0x1.60de044747f62p-1 0x0p+0 0x0p+0 0x1.8f255ecd71679p+7 -0x1.efdbd8b1bc8e1p+5 -0x1.efdbd8b1bc8e1p+5 0x1.2936b1100948p+0 0x0p+0 0x1.bcp+6 0x1.08p+6
 rise_trans                                     rf=0      0x1.2b42ce680dc89p+21
 nod_aps                                        rf=0      0x1.0776de82663f7p+8 0x1.b5b938bb7575bp+1 0x1.63497c95bddc4p-9 0x0p+0
 pheno[0,0]                                     rf=2      0x0p+0 0x0p+0 0x0p+0 0x1.14bf3ffa85eaap-1 -0x1.ae3cedd210e56p+4 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -5057,3 +5075,229 @@ pheno[8,3]                                     rf=2      0x1.816e5d49400e6p+5 0x
 pheno[8,4]                                     rf=2      0x1.fb0154ef1e5a9p+3 0x1.f646394b37432p-1 0x1.9e66c44bf953ap+4 0x1.1b6ec92777ccep-10 0x1.9d5ec7b9a1324p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
 pheno[8,5]                                     rf=2      0x1.3fc7b91b7a4ccp+3 0x1.fc1db99459afcp-1 0x1.b4544c07a28ccp+6 0x1.61af82b8769edp-7 -0x1.1b0f166439edp+1 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
 pheno[8,6]                                     rf=2      0x1.60de062b049b7p+2 0x1.fed0cc3ccceb3p-1 0x1.c78b7ebb2204ap+6 0x1.47a2059ad5e6fp-8 0x1.c20e85fac01ep-2 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
+hel_ut[0,Venus,1]                              rf=0      0x1.2b511576c94eap+21 0x1.2b5115822a046p+21 0x1.2b51158f51d69p+21
+hel_ut[0,Venus,2]                              rf=0      0x1.2b50d20122691p+21 0x1.2b50d219f3c28p+21 0x1.2b50d22cd8127p+21
+hel_ut[0,Venus,3]                              rf=0      0x1.2b4a622a8b09ep+21 0x1.2b4a622df4d9fp+21 0x1.2b4a622f60f09p+21
+hel_ut[0,Venus,4]                              rf=0      0x1.2b44cdcfd78a8p+21 0x1.2b44cdd70c41fp+21 0x1.2b44cddf2da1bp+21
+vislim[0,Venus]                                rf=0      -0x1.905d229f09dcap+2 0x1.5a2f551f37dap+3 0x1.c5c5aa196329cp+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 0x1.93ab530d489bep+2 0x1.ea79a8dfa0108p+7 -0x1.043b6245a6be8p+2
+helpheno[0,Venus]                              rf=0      0x1.5a2f551f37dap+3 0x1.5cc2fb0c4ebdp+3 0x1.5a409260ebec6p+3 0x1.c5c5aa196329cp+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.0ddbef5b7550ap+3 -0x1.0dcab219c13e4p+3 -0x1.3ae8a8396f2bp+5 0x1.40e649577a7d1p+5 0x1.049f5575197c6p-2 0x1.bd06ep+2
+hel_ut[0,Mercury,1]                            rf=0      0x1.2b4c85c0d6483p+21 0x1.2b4c85ce530e9p+21 0x1.2b4c85dad0f85p+21
+hel_ut[0,Mercury,2]                            rf=0      0x1.2b4451dd0b07fp+21 0x1.2b4451f124d1bp+21 0x1.2b445202bb624p+21
+hel_ut[0,Mercury,3]                            rf=0      0x1.2b43e1bdbf27ep+21 0x1.2b43e1c6419ebp+21 0x1.2b43e1ccfcf91p+21
+hel_ut[0,Mercury,4]                            rf=0      0x1.2b4d25f084beep+21 0x1.2b4d25fb9ca34p+21 0x1.2b4d260727d31p+21
+vislim[0,Mercury]                              rf=0      -0x1.a4fd12488a308p+2 0x1.09afee5cbcd1ep+4 0x1.8818800f1edd4p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 0x1.93ab530d489bep+2 0x1.ea79a8dfa0108p+7 -0x1.781bd97ee685ep-1
+helpheno[0,Mercury]                            rf=0      0x1.09afee5cbcd1ep+4 0x1.0a894e4f4a391p+4 0x1.09b6afc30c6dfp+4 0x1.8818800f1edd4p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.52ad9f04ce1b8p+1 -0x1.527793d2513bp+1 -0x1.10d0004177e4p+3 0x1.1d8a8721c5325p+3 0x1.049f5575197c6p-2 -0x1.56bca37c7ffbap+3
+hel_ut[0,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon
+
+hel_ut[0,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon
+
+hel_ut[0,Moon,3]                               rf=0      0x1.2b43014af0e54p+21 0x1.2b4301a2a50a3p+21 0x1.2b4301d8b67c2p+21
+hel_ut[0,Moon,4]                               rf=0      0x1.2b42e601bb158p+21 0x1.2b42e623cb031p+21 0x1.2b42e65f68676p+21
+vislim[0,Moon]                                 rf=0      -0x1.c2c0721dd0f3ep+2 0x1.93ab530d489bep+2 0x1.ea79a8dfa0108p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.68p+6 0x0p+0 -0x1.12b69ed1bcc8ep+3
+helpheno[0,Moon]                               rf=0      0x1.93ab530d489bep+2 0x1.9c0d1540c3774p+2 0x1.cd530cb8c199dp+2 0x1.ea79a8dfa0108p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.9e359af408dcbp+3 -0x1.8161be1e4c5dcp+3 -0x1.cdb8a35262c6p+5 0x1.d4114aa7477eep+5 0x1.049f5575197c6p-2 0x1.3abd262762762p+1
+hel_ut[0,Sirius,1]                             rf=0      0x1.2b4a154012dc8p+21 0x1.2b4a154d95b46p+21 0x1.2b4a155c47f4ap+21
+hel_ut[0,Sirius,2]                             rf=0      0x1.2b46ba6540e03p+21 0x1.2b46ba7621657p+21 0x1.2b46ba8337035p+21
+hel_ut[0,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius
+
+hel_ut[0,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius
+
+vislim[0,Sirius]                               rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
+helpheno[0,Sirius]                             rf=0      -0x1.d588d61ca4c6dp+5 -0x1.d588d61ca4c6dp+5 -0x1.d588d61c55283p+5 0x1.cab4237d1adap+3 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.37c5d39da808cp+6 -0x1.37c5d39d80397p+6 0x1.5a603dd335b16p+7 0x1.97e1b8c1ca00cp+6 0x1.049f5575197c6p-2 0x1.0f7fb49249249p+3
+hel_ut[0,Mars,1]                               rf=0      0x1.2b4aad45f6defp+21 0x1.2b4aad4d62336p+21 0x1.2b4aad53554e2p+21
+hel_ut[0,Mars,2]                               rf=0      0x1.2b45fa5fd2f3dp+21 0x1.2b45fa6818bc3p+21 0x1.2b45fa6f8a221p+21
+hel_ut[0,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars
+
+hel_ut[0,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars
+
+vislim[0,Mars]                                 rf=0      -0x1.503623d2a1282p+2 0x1.305e8d1309324p+4 0x1.11e267585e7b6p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 0x1.93ab530d489bep+2 0x1.ea79a8dfa0108p+7 0x1.09283d076c6abp+0
+helpheno[0,Mars]                               rf=0      0x1.305e8d1309324p+4 0x1.311b9e92edaa5p+4 0x1.3063a6e98b406p+4 0x1.11e267585e7b6p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.d38a9526b188p-3 -0x1.d0fda9e5aa78p-3 0x1.94a462caa38e8p+5 0x1.94a524a92e7bep+5 0x1.049f5575197c6p-2 0x0p+0
+tav[0]                                         rf=0      0x1.9p+6
+helangle[0]                                    rf=0      0x1.dcp+1 0x1.3581cp+3 -0x1.7d038p+2
+hel_ut[1,Venus,1]                              rf=0      0x1.2b51150ddb191p+21 0x1.2b511518b03d9p+21 0x1.2b51152824acp+21
+hel_ut[1,Venus,2]                              rf=0      0x1.2b50c9750f669p+21 0x1.2b50c9845f6c5p+21 0x1.2b50c9909484cp+21
+hel_ut[1,Venus,3]                              rf=0      0x1.2b4949bc92c4bp+21 0x1.2b4949c1ab6b7p+21 0x1.2b4949c471648p+21
+hel_ut[1,Venus,4]                              rf=0      0x1.2b45d5146b4a7p+21 0x1.2b45d5170cdaep+21 0x1.2b45d5185a9a4p+21
+vislim[1,Venus]                                rf=0      -0x1.eb0528583bd66p+2 0x1.6b5e982e96d11p+2 0x1.e9bc181032b2ap+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.69743bf7b9ffbp+2 0x1.0424956b1726p+8 -0x1.043b877077f5ep+2
+helpheno[1,Venus]                              rf=0      0x1.6b5e982e96d11p+2 0x1.7483712916399p+2 0x1.6b819156f4401p+2 0x1.e9bc181032b2ap+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.7cadbc11d96d9p+4 -0x1.7ca4fdc7c211dp+4 -0x1.0482b87e460cp+5 0x1.3c52386aa7f8cp+5 0x1.1388821bb0b31p-2 0x1.ef853a1642c86p+2
+hel_ut[1,Mercury,1]                            rf=0      0x1.2b454d15417a1p+21 0x1.2b454d196766ep+21 0x1.2b454d1c2d5ffp+21
+hel_ut[1,Mercury,2]                            rf=0      0x1.2b445977c9d8p+21 0x1.2b44597ee649bp+21 0x1.2b445986ef63ap+21
+hel_ut[1,Mercury,3]                            rf=0      0x1.2b43d15b2a17p+21 0x1.2b43d162de3ccp+21 0x1.2b43d16a437fcp+21
+hel_ut[1,Mercury,4]                            rf=0      0x1.2b458d0b98a09p+21 0x1.2b458d0c977d3p+21 0x1.2b458d0dccf6dp+21
+vislim[1,Mercury]                              rf=0      -0x1.93cbcb2dd240cp+2 0x1.7a677b18aa73ep+4 0x1.b6907427f7794p+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.69743bf7b9ffbp+2 0x1.0424956b1726p+8 -0x1.781f0660374bp-1
+helpheno[1,Mercury]                            rf=0      0x1.7a677b18aa73ep+4 0x1.7afc7f6fe48fcp+4 0x1.7a6df1aeed596p+4 0x1.b6907427f7794p+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.74779c1352b7cp+2 -0x1.745dc1ba4721cp+2 -0x1.bea146eac934p+2 0x1.2273916695661p+3 0x1.1388821bb0b31p-2 0x1.9177245d1745dp+3
+hel_ut[1,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon
+
+hel_ut[1,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon
+
+hel_ut[1,Moon,3]                               rf=0      0x1.2b4301102e24p+21 0x1.2b430159a9659p+21 0x1.2b4301911acb6p+21
+hel_ut[1,Moon,4]                               rf=0      0x1.2b42e537f4bd7p+21 0x1.2b42e55ef2d7bp+21 0x1.2b42e59ef2d7p+21
+vislim[1,Moon]                                 rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
+helpheno[1,Moon]                               rf=0      -0x1.69743bf7b9ffbp+2 -0x1.69743bf7b9ffbp+2 -0x1.2faa4062bb3dfp+2 0x1.0424956b1726p+8 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.18f1388db6d0ep+5 -0x1.11b7f91b16f8ap+5 -0x1.7eb7039634718p+5 0x1.c249a3f591049p+5 0x1.1388821bb0b31p-2 0x1.b88266db6db6ep+1
+hel_ut[1,Sirius,1]                             rf=0      0x1.2b4994e00fec7p+21 0x1.2b4994ec7ba1ep+21 0x1.2b4994fbd7ca8p+21
+hel_ut[1,Sirius,2]                             rf=0      0x1.2b4751b67fb93p+21 0x1.2b4751c593108p+21 0x1.2b4751d26bfffp+21
+hel_ut[1,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius
+
+hel_ut[1,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius
+
+vislim[1,Sirius]                               rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
+helpheno[1,Sirius]                             rf=0      -0x1.da05330549ba9p+5 -0x1.da05330549ba9p+5 -0x1.da053304fb051p+5 0x1.1d21291eb002cp+6 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.62e3f20a04a5cp+6 -0x1.62e3f209dd4bp+6 0x1.1a0ad561492e4p+7 0x1.6bf8d1e4bbb07p+6 0x1.1388821bb0b31p-2 0x1.1a2a88ccccccdp+3
+hel_ut[1,Mars,1]                               rf=0      0x1.2b4a94e79f1dp+21 0x1.2b4a94eb57cfdp+21 0x1.2b4a94f132a4cp+21
+hel_ut[1,Mars,2]                               rf=0      0x1.2b4629b8960bcp+21 0x1.2b4629bcda4fdp+21 0x1.2b4629bfc4b19p+21
+hel_ut[1,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars
+
+hel_ut[1,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars
+
+vislim[1,Mars]                                 rf=0      -0x1.14ffbc6a7e626p+2 0x1.592e6a75a05adp+5 0x1.34daa1e34fdb8p+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.69743bf7b9ffbp+2 0x1.0424956b1726p+8 0x1.09273360fac25p+0
+helpheno[1,Mars]                               rf=0      0x1.592e6a75a05adp+5 0x1.59514845be9ep+5 0x1.593061fc952acp+5 0x1.34daa1e34fdb8p+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 0x1.b5aee59b8327ap+3 0x1.b5b6c3b756676p+3 0x1.cf03203545508p+5 0x1.d72148e118064p+5 0x1.1388821bb0b31p-2 0x0p+0
+tav[1]                                         rf=0      0x1.9p+6
+helangle[1]                                    rf=0      0x1.fcp+1 0x1.3ea5cp+3 -0x1.7f4b8p+2
+hel_ut[2,Venus,1]                              rf=0      0x1.2b511f7ca6fc5p+21 0x1.2b511f83cf90ep+21 0x1.2b511f8ffe97ep+21
+hel_ut[2,Venus,2]                              rf=0      0x1.2b5083b4f1123p+21 0x1.2b5083c13e706p+21 0x1.2b5083ca4667p+21
+hel_ut[2,Venus,3]                              rf=0      0x1.2b48cb71806adp+21 0x1.2b48cb786c50cp+21 0x1.2b48cb7efd31p+21
+hel_ut[2,Venus,4]                              rf=0      0x1.2b46f79f7e7aep+21 0x1.2b46f7a312c51p+21 0x1.2b46f7a86208dp+21
+vislim[2,Venus]                                rf=0      -0x1.fdb4ee433efb8p+1 0x1.e3e189a7dee75p+5 0x1.2d038bc21c648p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 0x1.0f1a15c919c72p+6 0x1.1b281e200ccfp+5 -0x1.043bd048e8b83p+2
+helpheno[2,Venus]                              rf=0      0x1.e3e189a7dee75p+5 0x1.e3f40c1506086p+5 0x1.e3e3b33f4f4fep+5 0x1.2d038bc21c648p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 0x1.10268f9104cd3p+5 0x1.1028b9287535cp+5 0x1.b8f97b215629p+4 0x1.55afdf695fe9bp+5 0x1.d55e5770f0148p-3 0x1.a33f791a7b961p+2
+hel_ut[2,Mercury,1]                            rf=0      0x1.2b44f74108f6p+21 0x1.2b44f74d56543p+21 0x1.2b44f7584fe16p+21
+hel_ut[2,Mercury,2]                            rf=0      0x1.2b482b87785a2p+21 0x1.2b482b993964cp+21 0x1.2b482ba76c367p+21
+hel_ut[2,Mercury,3]                            rf=0      0x1.2b473b7ad46abp+21 0x1.2b473b82efb9p+21 0x1.2b473b895c30ap+21
+hel_ut[2,Mercury,4]                            rf=0      0x1.2b467f7fd137p+21 0x1.2b467f86db742p+21 0x1.2b467f8e225fep+21
+vislim[2,Mercury]                              rf=0      -0x1.68e3ab86345c6p+2 0x1.168beb4016675p+5 0x1.9326dd7b4c91p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 0x1.0f1a15c919c72p+6 0x1.1b281e200ccfp+5 -0x1.7816b37b515f3p-1
+helpheno[2,Mercury]                            rf=0      0x1.168beb4016675p+5 0x1.16bae424efcbcp+5 0x1.168ed1f9f1896p+5 0x1.9326dd7b4c91p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 0x1.0b43c4a4f134cp+3 0x1.0b4f5f8c5dbdp+3 0x1.0361a1e4abb8p+1 0x1.1302354808258p+3 0x1.d55e5770f0148p-3 0x1.7fcf495555555p+3
+hel_ut[2,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon
+
+hel_ut[2,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon
+
+hel_ut[2,Moon,3]                               rf=0      0x1.2b42fbfd052bap+21 0x1.2b42fc15faee1p+21 0x1.2b42fc24b9513p+21
+hel_ut[2,Moon,4]                               rf=0      0x1.2b42e6feed1adp+21 0x1.2b42e716d7ddbp+21 0x1.2b42e73f54431p+21
+vislim[2,Moon]                                 rf=0      -0x1.d16c542de458cp+1 0x1.0f1a15c919c72p+6 0x1.1b281e200ccfp+5 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 -0x1.68p+6 0x0p+0 -0x1.12fc6728d9c8ap+3
+helpheno[2,Moon]                               rf=0      0x1.0f1a15c919c72p+6 0x1.0f20c3eec766p+6 0x1.107799b37ade7p+6 0x1.1b281e200ccfp+5 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 0x1.4a79317b59742p+5 0x1.4d3439501ba2cp+5 0x1.0daddb7a6b874p+6 0x1.254eaa244a6ebp+6 0x1.d55e5770f0148p-3 0x1.4bf72675ea051p+0
+hel_ut[2,Sirius,1]                             rf=0      0x1.2b4817b1d406bp+21 0x1.2b4817b74dc49p+21 0x1.2b4817bc8ad4p+21
+hel_ut[2,Sirius,2]                             rf=0      0x1.2b48d3735876p+21 0x1.2b48d3803d885p+21 0x1.2b48d38a74e75p+21
+hel_ut[2,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius
+
+hel_ut[2,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius
+
+vislim[2,Sirius]                               rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
+helpheno[2,Sirius]                             rf=0      -0x1.c7489fc2fd204p+2 -0x1.c7489fc2fd204p+2 -0x1.c7489fbe34dc5p+2 0x1.ec8a79d686d14p+7 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 -0x1.0ca40e0f39be2p+5 -0x1.0ca40e0ea0b5ap+5 -0x1.1ee984914dd9ep+7 0x1.0807a18ce0d24p+7 0x1.d55e5770f0148p-3 -0x1.5985be7eda9cp-1
+hel_ut[2,Mars,1]                               rf=0      0x1.2b4b6f2425b25p+21 0x1.2b4b6f2ba33b1p+21 0x1.2b4b6f34fa147p+21
+hel_ut[2,Mars,2]                               rf=0      0x1.2b458bc7992f3p+21 0x1.2b458bd2195f8p+21 0x1.2b458bda65396p+21
+hel_ut[2,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars
+
+hel_ut[2,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars
+
+vislim[2,Mars]                                 rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
+helpheno[2,Mars]                               rf=0      -0x1.2d60753b8c2e8p+4 -0x1.2d60753b8c2e8p+4 -0x1.2d5b57a7b459cp+4 0x1.d787046889a54p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 -0x1.6a6b34b4a0316p+5 -0x1.6a68a5eab447p+5 -0x1.e228cef0bdb4p+3 0x1.79c05541143b2p+5 0x1.d55e5770f0148p-3 0x0p+0
+tav[2]                                         rf=0      0x1.9p+6
+helangle[2]                                    rf=0      0x1.bcp+1 0x1.2933cp+3 -0x1.74678p+2
+ayanname[0]                                    Fagan/Bradley
+ayanname[1]                                    Lahiri
+ayanname[2]                                    De Luce
+ayanname[3]                                    Raman
+ayanname[4]                                    Usha/Shashi
+ayanname[5]                                    Krishnamurti
+ayanname[6]                                    Djwhal Khul
+ayanname[7]                                    Yukteshwar
+ayanname[8]                                    J.N. Bhasin
+ayanname[9]                                    Babylonian/Kugler 1
+ayanname[10]                                   Babylonian/Kugler 2
+ayanname[11]                                   Babylonian/Kugler 3
+ayanname[12]                                   Babylonian/Huber
+ayanname[13]                                   Babylonian/Eta Piscium
+ayanname[14]                                   Babylonian/Aldebaran = 15 Tau
+ayanname[15]                                   Hipparchos
+ayanname[16]                                   Sassanian
+ayanname[17]                                   Galact. Center = 0 Sag
+ayanname[18]                                   J2000
+ayanname[19]                                   J1900
+ayanname[20]                                   B1950
+ayanname[21]                                   Suryasiddhanta
+ayanname[22]                                   Suryasiddhanta, mean Sun
+ayanname[23]                                   Aryabhata
+ayanname[24]                                   Aryabhata, mean Sun
+ayanname[25]                                   SS Revati
+ayanname[26]                                   SS Citra
+ayanname[27]                                   True Citra
+ayanname[28]                                   True Revati
+ayanname[29]                                   True Pushya (PVRN Rao)
+ayanname[30]                                   Galactic Center (Gil Brand)
+ayanname[31]                                   Galactic Equator (IAU1958)
+ayanname[32]                                   Galactic Equator
+ayanname[33]                                   Galactic Equator mid-Mula
+ayanname[34]                                   Skydram (Mardyks)
+ayanname[35]                                   True Mula (Chandra Hari)
+ayanname[36]                                   Dhruva/Gal.Center/Mula (Wilhelm)
+ayanname[37]                                   Aryabhata 522
+ayanname[38]                                   Babylonian/Britton
+ayanname[39]                                   "Vedic"/Sheoran
+ayanname[40]                                   Cochrane (Gal.Center = 0 Cap)
+ayanname[41]                                   Galactic Equator (Fiorenza)
+ayanname[42]                                   Vettius Valens
+ayanname[43]                                   Lahiri 1940
+ayanname[44]                                   Lahiri VP285
+ayanname[45]                                   Krishnamurti-Senthilathiban
+ayanname[46]                                   Lahiri ICRC
+ayanname[47]                                   (null)
+plname[0]                                      Sun
+plname[1]                                      Moon
+plname[2]                                      Mercury
+plname[3]                                      Venus
+plname[4]                                      Mars
+plname[5]                                      Jupiter
+plname[6]                                      Saturn
+plname[7]                                      Uranus
+plname[8]                                      Neptune
+plname[9]                                      Pluto
+plname[10]                                     mean Node
+plname[11]                                     true Node
+plname[12]                                     mean Apogee
+plname[13]                                     osc. Apogee
+plname[14]                                     Earth
+plname[15]                                     Chiron
+plname[16]                                     Pholus
+plname[17]                                     Ceres
+plname[18]                                     Pallas
+plname[19]                                     Juno
+plname[20]                                     Vesta
+hname[P]                                       Placidus
+hname[K]                                       Koch
+hname[O]                                       Porphyry
+hname[R]                                       Regiomontanus
+hname[C]                                       Campanus
+hname[A]                                       equal
+hname[E]                                       equal
+hname[V]                                       equal/Vehlow
+hname[X]                                       axial rotation system/Meridian houses
+hname[H]                                       horizon/azimut
+hname[T]                                       Polich/Page
+hname[B]                                       Alcabitius
+hname[G]                                       Gauquelin sectors
+hname[W]                                       equal/ whole sign
+hname[M]                                       Morinus
+hname[N]                                       equal/1=Aries
+hname[Q]                                       Pullen SR
+hname[L]                                       Pullen SD
+hname[I]                                       Sunshine
+hname[U]                                       Krusinski-Pisa-Goelzer
+hname[S]                                       Sripati
+hname[D]                                       equal (MC)
+hname[F]                                       Carter poli-equ.
+hname[Y]                                       APC houses
+splitdeg[0]                                    123 27 24 0x1.c2f837b4aad4p-2 1
+splitdeg[1]                                    124 27 24 0x0p+0 1
+splitdeg[2]                                    125 27 0 0x0p+0 1
+splitdeg[3]                                    126 0 0 0x0p+0 1
+splitdeg[4]                                    7 27 24 0x1.c2f837b4aad4p-2 4
+splitdeg[5]                                    8 27 24 0x1.c2f837b731b4p-2 9
+utc[1500]                                      0x1.14fd083247d6cp+21 0x1.14fd082b63becp+21 0x1.14fd082aaaaabp+21 1500-6-15 12:30:0x1.e7fff44p+4
+utc[1600]                                      0x1.1972702d7af7dp+21 0x1.1972702b63becp+21 0x1.1972702aaaaabp+21 1600-6-15 12:30:0x1.e7fff44p+4
+utc[1700]                                      0x1.1de7d02bb97dbp+21 0x1.1de7d02b63becp+21 0x1.1de7d02aaaaabp+21 1700-6-15 12:30:0x1.e7fff44p+4
+utc[1800]                                      0x1.225d302bd366ep+21 0x1.225d302b63becp+21 0x1.225d302aaaaabp+21 1800-6-15 12:30:0x1.e7fff44p+4
+utc[1900]                                      0x1.26d2902b5aed1p+21 0x1.26d2902b63becp+21 0x1.26d2902aaaaabp+21 1900-6-15 12:30:0x1.e7fff44p+4
+utc[2000]                                      0x1.2b47f82ce9392p+21 0x1.2b47f82b651eep+21 0x1.2b47f82aaaaabp+21 2000-6-15 12:30:0x1.e7fff44p+4
+utc[2100]                                      0x1.2fbd582d9a763p+21 0x1.2fbd582b63becp+21 0x1.2fbd582aaaaabp+21 2100-6-15 12:30:0x1.e7fff44p+4
+azalt[0]                                       0x1.e501bf604eafap+7 -0x1.37dc79377c398p+2 -0x1.37dc79377c398p+2 | -0x1p+1 -0x1p+1
+azalt[1]                                       0x1.e2cfbf213358ep+7 -0x1.0a3df9b75ce87p+1 -0x1.0a3df9b75ce87p+1 | 0x1.5b4d8bd2654d5p+0 0x1p+0
+azalt[2]                                       0x1.e09fbbd3a27cp+7 0x1.6d5799dbd34a6p-1 0x1.1946238fcd9bep+0 | 0x1.0beda9c483999p+2 0x1p+2
+azalt[3]                                       0x1.de6f0a2f06741p+7 0x1.c0e13ee891777p+1 0x1.daf79a446cb11p+1 | 0x1.c7aadeae49b23p+2 0x1.cp+2
+azalt[4]                                       0x1.dc3afbd791853p+7 0x1.93213bbd57d7ep+2 0x1.9b85686c1504bp+2 | 0x1.42c681ff5c4b4p+3 0x1.4p+3
+libpath                                        len_nonzero=1 terminated=1

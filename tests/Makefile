@@ -60,7 +60,53 @@ check-threads-workaround: golden
 check: check-golden check-sunrace check-glprace check-threads-workaround check-threads
 
 clean:
-	rm -f golden golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt
+	rm -f golden golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .setest_now.txt
 
-.PHONY: all baseline check check-golden check-sunrace check-sunrace-tsan \
+.PHONY: setest-ref check-setest all baseline check check-golden check-sunrace check-sunrace-tsan \
         check-glprace check-threads check-threads-workaround clean
+
+# G8: upstream's own suite (setest/, 13 MB of expectations).
+#
+# It CANNOT be used as pass/fail here: t.exp was generated against the JPL
+# ephemeris (de431.eph), which this checkout does not ship, so ~2730
+# assertions fail on pristine upstream too -- retflag comes back SWIEPH(2)
+# where the fixture expects JPLEPH(1), with ~1e-8 positional differences.
+# It also aborts with "stack smashing detected" in suite_08_eclipses on
+# pristine 3fd0f95.
+#
+# It IS a strong DIFFERENTIAL gate: whatever it prints must be byte-identical
+# before and after our changes. Usage:
+#     make setest-ref REF=3fd0f95     # capture reference output once
+#     make check-setest               # compare current tree against it
+SETEST_REF ?= /tmp/setest_ref.txt
+REF        ?= 3fd0f95
+
+# setest resolves t.exp relative to its CWD, so it must be run from inside
+# setest/. It also aborts partway through, so `|| true` is expected -- but the
+# output must still be substantial; a short file means the run never started.
+SETEST_MINLINES = 1000
+
+setest-ref:
+	@rm -rf /tmp/se_ref_wt && git -C .. worktree add -q /tmp/se_ref_wt $(REF)
+	@cp -n ../setest/t.exp ../setest/t.fix /tmp/se_ref_wt/setest/ 2>/dev/null || true
+	@$(MAKE) -C /tmp/se_ref_wt libswe.a >/dev/null 2>&1
+	@$(MAKE) -C /tmp/se_ref_wt/setest >/dev/null 2>&1
+	@cd /tmp/se_ref_wt/setest && SE_EPHE_PATH=$(EPHE) ./setest t > $(SETEST_REF) 2>&1 || true
+	@git -C .. worktree remove --force /tmp/se_ref_wt
+	@lines=$$(wc -l < $(SETEST_REF)); \
+	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
+	   echo "setest-ref FAILED: only $$lines lines (expected >= $(SETEST_MINLINES))"; \
+	   head -3 $(SETEST_REF); exit 1; fi; \
+	 echo "setest reference captured from $(REF): $$lines lines"
+
+check-setest: $(SETEST_REF)
+	@$(MAKE) -C .. libswe.a >/dev/null 2>&1
+	@$(MAKE) -C ../setest >/dev/null 2>&1
+	@cd ../setest && SE_EPHE_PATH=$(EPHE) ./setest t > ../tests/.setest_now.txt 2>&1 || true
+	@lines=$$(wc -l < .setest_now.txt); \
+	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
+	   echo "G8 FAIL: setest produced only $$lines lines -- it did not run"; \
+	   head -3 .setest_now.txt; exit 1; fi
+	@diff -q $(SETEST_REF) .setest_now.txt >/dev/null \
+	  && echo "G8 PASS: setest output identical to $(REF) ($$(wc -l < .setest_now.txt) lines)" \
+	  || { echo "G8 FAIL: setest output changed"; diff $(SETEST_REF) .setest_now.txt | head -20; exit 1; }
