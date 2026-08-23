@@ -79,6 +79,15 @@ ifeq ($(LTO),1)
   LIBS   += -flto
 endif
 
+# Appended to every compile and link. Lets a caller add flags without
+# restating the whole list -- CFLAGS is assigned, not ?=, so overriding it
+# from the command line drops -std=c17 -Werror and the rest along with it.
+#
+# The release packaging uses it for macOS universal binaries:
+#   make EXTRA_CFLAGS="-arch arm64 -arch x86_64"
+EXTRA_CFLAGS ?=
+CFLAGS += $(EXTRA_CFLAGS)
+
 # Object files for the Swiss Ephemeris library
 SWEOBJ = swedate.o swehouse.o swejpl.o swemmoon.o swemplan.o sweph.o sweconfig.o \
          swephlib.o swecl.o swehel.o

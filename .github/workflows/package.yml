@@ -134,10 +134,36 @@ jobs:
             /*
             !/ephe/sat/
             !/ephe/ep4/
-      - name: Build
+      - name: "Build (universal: arm64 + x86_64)"
         run: |
-          make -B all libswe.a libswe.dylib
+          # macos-latest is Apple silicon, so a plain build ships arm64 only
+          # and every Intel Mac gets nothing it can load. Build both slices.
+          make -B all libswe.a libswe.dylib EXTRA_CFLAGS="-arch arm64 -arch x86_64"
           ls -la libswe.a libswe.dylib swetest swevents swemini
+      - name: Both architectures must be present
+        run: |
+          # `ar` archiving fat objects and clang's multi-arch driver both
+          # fail quietly enough to ship a half-universal package, so assert
+          # the slices rather than trusting the build.
+          rc=0
+          for f in libswe.dylib swetest swevents swemini; do
+            archs=$(lipo -archs "$f")
+            printf '  %-14s %s\n' "$f" "$archs"
+            for a in arm64 x86_64; do
+              case " $archs " in *" $a "*) ;; *) echo "  FAIL: $f lacks $a"; rc=1;; esac
+            done
+          done
+          # A static archive is not a Mach-O file, so lipo cannot read it.
+          # Ask a member instead -- extracted somewhere else, since the
+          # build's own sweph.o is sitting in this directory.
+          d=$(mktemp -d) && cp libswe.a "$d/" && ( cd "$d" && ar x libswe.a sweph.o )
+          archs=$(lipo -archs "$d/sweph.o"); rm -rf "$d"
+          printf '  %-14s %s (member sweph.o)\n' libswe.a "$archs"
+          for a in arm64 x86_64; do
+            case " $archs " in *" $a "*) ;; *) echo "  FAIL: libswe.a lacks $a"; rc=1;; esac
+          done
+          [ $rc -eq 0 ] || exit 1
+          echo "universal: arm64 + x86_64 in every shipped binary"
       - name: Smoke-test the CLI
         run: |
           # -emos is the Moshier ephemeris: self-contained, so no .se1 files
