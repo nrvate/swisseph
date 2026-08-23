@@ -858,3 +858,10 @@ struct swe_data {
 };
 
 extern TLS struct swe_data swed;
+
+/* Shared configuration layer. Included here, after struct sid_data and
+ * SEI_NMODELS, because struct swe_config embeds both. */
+#include "sweconfig.h"
+
+extern AS_BOOL swi_config_begin_apply(void);
+extern void    swi_config_end_apply(AS_BOOL was);

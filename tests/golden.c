@@ -416,6 +416,56 @@ static void misc(void) {
           buf[0] != '\0', memchr(buf, '\0', AS_MAXCH) != NULL);
 }
 
+/* Compute-only suite: touches no swe_set_* function.
+ *
+ * This is what the --threads mode runs, and it is the precise statement of
+ * what Phase 2 guarantees: configuration applied ONCE, before workers
+ * start, is visible to every worker. It is also exactly the pyswisseph
+ * bug -- set_ephe_path()/set_sid_mode()/set_topo() on the main thread,
+ * compute on a pool.
+ *
+ * What it deliberately does NOT assert is N threads holding N different
+ * live configurations at once. A single shared master cannot provide that,
+ * and pretending otherwise here would be a test that can only be made to
+ * pass by weakening it. That capability is Phase 3 (the context handle).
+ */
+static void suite_compute_only(void) {
+  char sv[AS_MAXCH];
+  fprintf(OUT, "# swe_version=%s\n", swe_version(sv));
+  planets();
+  planets_ut();
+  asteroids();
+  houses();
+  fixstars();
+  timeconv();
+  eclipses();
+  pheno();
+  heliacal();
+  /* sidereal positions and topocentric positions computed against
+   * whatever the main thread configured -- the fields that were broken */
+  {
+    char serr[AS_MAXCH]; double x[6]; char tag[256];
+    for (size_t d = 0; d < NDATES; d++) {
+      double ay = swe_get_ayanamsa_ut(DATES[d]);
+      snprintf(tag, sizeof tag, "inherit_ayan[%zu]", d);
+      row(tag, 0, &ay, 1, NULL);
+      for (int p = SE_SUN; p <= SE_SATURN; p++) {
+        serr[0]=0; memset(x,0,sizeof x);
+        int32 rf = swe_calc_ut(DATES[d], p,
+                     SEFLG_SWIEPH|SEFLG_SIDEREAL|SEFLG_SPEED, x, serr);
+        snprintf(tag, sizeof tag, "inherit_sid[%zu,%d]", d, p);
+        row(tag, rf, x, 6, serr);
+        serr[0]=0; memset(x,0,sizeof x);
+        rf = swe_calc_ut(DATES[d], p,
+                     SEFLG_SWIEPH|SEFLG_TOPOCTR|SEFLG_SPEED, x, serr);
+        snprintf(tag, sizeof tag, "inherit_topo[%zu,%d]", d, p);
+        row(tag, rf, x, 6, serr);
+      }
+    }
+    fprintf(OUT, "%-46s %a\n", "inherit_tidacc", swe_get_tid_acc());
+  }
+}
+
 /* Runs the entire suite against the current thread's library state. */
 static void suite(void) {
   char sv[AS_MAXCH];
@@ -444,7 +494,7 @@ static void *thread_suite(void *p) {
    * 0 = configure only on the main thread (the pyswisseph pattern).
    * 1 = re-apply configuration on every worker thread (today's workaround). */
   if (a->setup) swe_set_ephe_path((char *)EPHE);
-  suite();
+  suite_compute_only();
   fclose(OUT);
   return NULL;
 }
@@ -471,7 +521,13 @@ int main(int argc, char **argv) {
 
   /* thread-consistency mode: every thread must reproduce the main-thread
    * transcript byte for byte. */
-  struct targ ref = { -1, NULL, 0, 1 };
+  /* Configure EVERYTHING here, on the main thread, once. Workers below
+   * call no setter at all. */
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  swe_set_topo(8.55, 47.37, 400);
+  swe_set_tid_acc(-25.85);
+
+  struct targ ref = { -1, NULL, 0, 0 };
   thread_suite(&ref);
 
   struct targ *a = calloc(nthreads, sizeof *a);

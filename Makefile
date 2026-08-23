@@ -52,7 +52,7 @@ else
 endif
 
 # Object files for the Swiss Ephemeris library
-SWEOBJ = swedate.o swehouse.o swejpl.o swemmoon.o swemplan.o sweph.o \
+SWEOBJ = swedate.o swehouse.o swejpl.o swemmoon.o swemplan.o sweph.o sweconfig.o \
          swephlib.o swecl.o swehel.o
 
 # Define overall targets. On Linux, include the static swetests target.

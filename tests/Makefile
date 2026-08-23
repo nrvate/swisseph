@@ -1,5 +1,5 @@
 # Regression + thread-safety tests for libswe.
-SWE      = ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c ../swemplan.c \
+SWE      = ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c ../swemplan.c \
            ../sweph.c ../swephlib.c ../swecl.c ../swehel.c
 CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
 LIBS     = -lm -ldl -lpthread
@@ -94,7 +94,7 @@ check-golden-O2: golden_O2 baseline.txt
 # G2: every thread reproduces the main-thread transcript with NO per-thread setup
 check-threads: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 > /dev/null \
-	  && echo "G2 PASS" || { echo "G2 FAIL (expected until Phase 2)"; exit 1; }
+	  && echo "G2 PASS" || { echo "G2 FAIL"; exit 1; }
 
 # Sanity: the same test WITH per-thread setup must pass today.
 check-threads-workaround: golden

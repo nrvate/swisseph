@@ -3167,10 +3167,12 @@ void CALL_CONV swe_set_tid_acc(double t_acc)
   if (t_acc == SE_TIDAL_AUTOMATIC) {
     swed.tid_acc = SE_TIDAL_DEFAULT;
     swed.is_tid_acc_manual = FALSE;
+    swi_config_publish(SWI_CFG_TIDACC);
     return;
   }
   swed.tid_acc = t_acc;
   swed.is_tid_acc_manual = TRUE;
+  swi_config_publish(SWI_CFG_TIDACC);
 }
 
 void CALL_CONV swe_set_delta_t_userdef(double dt)
@@ -3181,6 +3183,7 @@ void CALL_CONV swe_set_delta_t_userdef(double dt)
     swed.delta_t_userdef_is_set = TRUE;
     swed.delta_t_userdef = dt;
   }
+  swi_config_publish(SWI_CFG_DELTAT);
 }
 
 int32 swi_guess_ephe_flag(void)
@@ -3557,8 +3560,10 @@ sidtime_done:
 
 void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
 {
-  if (swed.do_interpolate_nut == do_interpolate)
+  if (swed.do_interpolate_nut == do_interpolate) {
+    swi_config_claim(SWI_CFG_NUT);
     return;
+  }
   if (do_interpolate) 
     swed.do_interpolate_nut = TRUE;
   else
@@ -3571,6 +3576,7 @@ void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
   swed.interpol.nut_deps0 = 0;
   swed.interpol.nut_deps1 = 0;
   swed.interpol.nut_deps2 = 0;
+  swi_config_publish(SWI_CFG_NUT);
 }
 
 /* sidereal time, without eps and nut as parameters.
@@ -4190,6 +4196,7 @@ S4 SEMOD_SIDT_LONGTERM
 # define AMODELS_SE_2_06    "5,9,9,4,3,0,0,4"
 void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
 {
+  AS_BOOL swi_cfg_was = swi_config_begin_apply();
   double dversion;
   char s[30], *sp;
   swi_init_swed_if_start();
@@ -4236,6 +4243,8 @@ void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
       swe_set_tid_acc(-25.7376);
     }
   }
+  swi_config_end_apply(swi_cfg_was);
+  swi_config_publish(SWI_CFG_SID);
 }
 
 /* function for inhouse testing only */

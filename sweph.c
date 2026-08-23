@@ -641,9 +641,9 @@ static int32 swecalc(double tjd, int ipl, int32 iplmoon, int32 iflag, double *x,
     return ERR;
   }
   if (epheflag != SEFLG_MOSEPH && !swed.ephe_path_is_set && !swed.jpl_file_is_open)
-    swe_set_ephe_path(NULL);
+    SWI_CFG_LOCAL(swe_set_ephe_path(NULL));
   if ((iflag & SEFLG_SIDEREAL) && !swed.ayana_is_set)
-    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   /****************************************** 
    * obliquity of ecliptic 2000 and of date * 
    ******************************************/
@@ -1184,8 +1184,12 @@ static void free_planets(void)
  * Returns 1 if initialisation is done, otherwise 0 */
 int32 swi_init_swed_if_start(void)
 {
+  int32 started = 0;
   /* initialisation of swed, when called first time from */
   if (!swed.swed_is_initialised) {
+    /* Guard the whole block: swe_set_tid_acc() below is a publishing
+     * setter, and this thread's defaults must not become the master. */
+    AS_BOOL swi_cfg_was = swi_config_begin_apply();
     memset((void *) &swed, 0, sizeof(struct swe_data));
     strcpy(swed.ephepath, SE_EPHE_PATH);
     strcpy(swed.jplfnam, SE_FNAME_DFT);
@@ -1193,9 +1197,17 @@ int32 swi_init_swed_if_start(void)
     swed.const_lapse_rate = SE_LAPSE_RATE;
     swe_set_tid_acc(SE_TIDAL_AUTOMATIC);
     swed.swed_is_initialised = TRUE;
-    return 1;
+    swi_config_end_apply(swi_cfg_was);
+    started = 1;
   }
-  return 0;
+  /* Adopt any configuration published by another thread. This is the
+   * hook the whole of Phase 2 hangs off: it is already called from 16
+   * sites across sweph.c and swephlib.c, so the entry points are wired
+   * up for free. Cheap -- one atomic load and a compare -- unless the
+   * configuration actually moved. No-op while a setter on this thread is
+   * mid-apply. */
+  swi_config_sync();
+  return started;
 }
 
 /* closes all open files, frees space of planetary data, 
@@ -1320,6 +1332,7 @@ void CALL_CONV swe_close(void)
  */
 void CALL_CONV swe_set_ephe_path(const char *path) 
 {
+  AS_BOOL swi_cfg_was = swi_config_begin_apply();
   int i, iflag;
   char s[AS_MAXCH];
   char serr[AS_MAXCH];
@@ -1381,6 +1394,8 @@ void CALL_CONV swe_set_ephe_path(const char *path)
     }
   }
 #endif
+  swi_config_end_apply(swi_cfg_was);
+  swi_config_publish(SWI_CFG_PATH);
 }
 
 void load_dpsi_deps(void)
@@ -1480,6 +1495,7 @@ void load_dpsi_deps(void)
  */
 void CALL_CONV swe_set_jpl_file(const char *fname)
 {
+  AS_BOOL swi_cfg_was = swi_config_begin_apply();
   char *sp, s[AS_MAXCH];
   int retc;
   double ss[3];
@@ -1532,6 +1548,8 @@ void CALL_CONV swe_set_jpl_file(const char *fname)
     }
   }
 #endif
+  swi_config_end_apply(swi_cfg_was);
+  swi_config_publish(SWI_CFG_PATH);
 }
 
 /* calculates obliquity of ecliptic and stores it together
@@ -2866,6 +2884,7 @@ static int app_pos_rest(struct plan_data *pdp, int32 iflag,
 
 void CALL_CONV swe_set_sid_mode(int32 sid_mode, double t0, double ayan_t0)
 {
+  AS_BOOL swi_cfg_was = swi_config_begin_apply();
   struct sid_data *sip = &swed.sidd;
   swi_init_swed_if_start();
   if (sid_mode < 0)
@@ -2931,6 +2950,8 @@ void CALL_CONV swe_set_sid_mode(int32 sid_mode, double t0, double ayan_t0)
     }
   }
   swi_force_app_pos_etc();
+  swi_config_end_apply(swi_cfg_was);
+  swi_config_publish(SWI_CFG_SID);
 }
 
 int32 CALL_CONV swe_get_ayanamsa_ex(double tjd_et, int32 iflag, double *daya, char *serr)
@@ -3051,7 +3072,7 @@ int32 swi_get_ayanamsa_ex(double tjd_et, int32 iflag, double *daya, char *serr)
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_get_ayanamsa_ex()");
   }
   if (!swed.ayana_is_set)
-    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   if (sid_mode == SE_SIDM_TRUE_CITRA) {
     strcpy(star, "Spica"); /* Citra */
     if ((retflag = swe_fixstar(star, tjd_et, iflag_true, x, serr)) == ERR) {
@@ -6448,7 +6469,7 @@ static int32 fixstar_calc_from_struct(struct fixed_star *stardata, double tjd, i
   /* high precision speed prevails fast speed */
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
   if (iflag & SEFLG_SIDEREAL && !swed.ayana_is_set)
-    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   /****************************************** 
    * obliquity of ecliptic 2000 and of date * 
    ******************************************/
@@ -7254,11 +7275,14 @@ static void trace_swe_get_planet_name(int swtch, int ipl, char *s)
 /* set geographic position and altitude of observer */
 void CALL_CONV swe_set_topo(double geolon, double geolat, double geoalt)
 {
+  AS_BOOL was = swi_config_begin_apply();
   swi_init_swed_if_start();
   if (swed.geopos_is_set == TRUE
     && swed.topd.geolon == geolon
     && swed.topd.geolat == geolat
     && swed.topd.geoalt == geoalt) {
+    swi_config_end_apply(was);
+    swi_config_claim(SWI_CFG_TOPO);
     return;
   }
   swed.topd.geolon = geolon;
@@ -7267,9 +7291,11 @@ void CALL_CONV swe_set_topo(double geolon, double geolat, double geoalt)
   swed.geopos_is_set = TRUE;
   /* to force new calculation of observer position vector */
   swed.topd.teval = 0;
-  /* to force new calculation of light-time etc. 
+  /* to force new calculation of light-time etc.
    */
   swi_force_app_pos_etc();
+  swi_config_end_apply(was);
+  swi_config_publish(SWI_CFG_TOPO);
 }
 
 void swi_force_app_pos_etc(void)
@@ -7656,7 +7682,7 @@ static int32 swi_fixstar_calc_from_record(char *srecord, double tjd, int32 iflag
   /* high precision speed prevails fast speed */
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
   if (iflag & SEFLG_SIDEREAL && !swed.ayana_is_set)
-    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   /****************************************** 
    * obliquity of ecliptic 2000 and of date * 
    ******************************************/
