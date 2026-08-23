@@ -26,10 +26,9 @@ Ranked by payoff (detail in §4-§5):
    TU boundaries, and this is a 9-object-file shared library, so LTO's usual
    compile-time cost is a non-issue here.
 3. **A real, if latent, bug found while looking for `static_assert`
-   candidates**, unrelated to performance: `sweph.c:183`'s `pnoext2int[]` is
-   sized for 21 entries but indexed against `SE_NPLANETS` (23). Currently
-   masked by branch ordering — worth fixing standalone, now, independent of
-   this plan's timeline. See §4.6, B1.
+   candidates**, unrelated to performance: `sweph.c:163`'s `pnoext2int[]` was
+   sized for 21 entries but indexed against `SE_NPLANETS` (23). Was masked
+   by branch ordering. **✅ Fixed, `0a7fc6d`** — see §4.6, B1.
 4. **`plan_data`/`save_positions` cache-line alignment** — real, quantified
    false-sharing risk (416 B and 216 B strides, neither a multiple of 64),
    but should be designed *together with* `PLAN.md` Phase 3's `swe_ctx`
@@ -242,18 +241,17 @@ written specifically to survive being compiled as C89 today.
 
 ### 4.6 `static_assert` candidates (mostly documentation value — B1 is a real bug)
 
-- **B1 — worth fixing now, independent of this plan's timeline.**
-  `sweph.c:183`: `pnoext2int[]` has 21 entries, indexed at `sweph.c:1033`
-  when `ipl < SE_NPLANETS` (23, `swephexp.h`). The two slots
-  `SE_INTP_APOG`/`SE_INTP_PERG` (21/22) were never added to the array.
-  Currently masked because an earlier branch intercepts those `ipl` values
-  first — **latent, not live, but one branch-ordering refactor away from a
-  real out-of-bounds read.** `static_assert(sizeof(pnoext2int)/sizeof(pnoext2int[0]) == SE_NPLANETS, ...)`
-  would fail today, which is exactly the point — it documents and enforces
-  an invariant that's currently only true by accident of control flow.
-  **Recommend routing this to a standalone fix (or `PLAN.md`, since it's in
-  `sweph.c` which Phase 3 already touches) rather than waiting for this
-  plan.**
+- **B1 — ✅ Fixed, `0a7fc6d`.** `sweph.c:163`: `pnoext2int[]` had 21
+  entries, indexed at two call sites whenever `ipl < SE_NPLANETS` (23,
+  `swephexp.h`). The two slots `SE_INTP_APOG`/`SE_INTP_PERG` (21/22) were
+  never added to the array. Was masked because an earlier branch
+  intercepts those `ipl` values first — latent, not live, but one
+  branch-ordering refactor away from a real out-of-bounds read. Widened
+  to 23 entries (same `0`-placeholder convention already used for indices
+  10-13, which are also `nddat[]`-handled and never real `SEI_*`
+  indices), and landed exactly the `static_assert` this section proposed
+  — `sizeof(pnoext2int)/sizeof(pnoext2int[0]) == SE_NPLANETS` — verified
+  against both the broken 21-entry array (fails to compile) and the fix.
 - **B2** — `sweph.c:4719-4732`: the ephemeris-file-format bounds check on
   `nplan` uses a bare literal `20`, not the header's declared capacity
   `SEI_FILE_NMAXPLAN` (50, `sweph.h:722`). A `static_assert(20 <= SEI_FILE_NMAXPLAN, ...)`
@@ -284,8 +282,7 @@ written specifically to survive being compiled as C89 today.
   `C17_MIGRATION.md` Phase 5 (§4.4)
 
 **Tier 2 — do alongside Tier 1, low effort, real value:**
-- Fix B1 (`pnoext2int`/`SE_NPLANETS`) now, standalone — it's a latent bug,
-  not a style issue, and doesn't need to wait for anything (§4.6)
+- ~~Fix B1 (`pnoext2int`/`SE_NPLANETS`) now, standalone~~ — **done, `0a7fc6d`** (§4.6)
 - `swethread.h` dead-tier removal, done together with `tests/threadshim.c`'s
   matching cleanup, timed to land with `C17_MIGRATION.md` Phase 5 (§4.3)
 - Macro dedup: A3/A4 (`square_sum`/`dot_prod`, 3-file duplication) and A2
