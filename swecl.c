@@ -5161,7 +5161,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
   xap = xx+18;
   xpos[0][0] = 0; /* to shut up mint */
   /* to get control over the save area: */
-  swi_force_app_pos_etc();
+  swi_force_app_pos_etc(ctx);
   method %= SE_NODBIT_FOPOINT;
   ipli = ipl;
   if (ipl == SE_SUN) 
@@ -5442,7 +5442,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
    * i.e. ecliptic, nutation, barycentric sun, earth
    * we compute the planet */
   if (ipli == SE_MOON && (iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))) {
-    swi_force_app_pos_etc();
+    swi_force_app_pos_etc(ctx);
     if (swe_calc(tjd_et, SE_SUN, iflg0, x, serr) == ERR)
       return ERR;
   } else {
@@ -5504,7 +5504,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
        * to mean ecliptic of date 
        ****************************/
       if (!(iflag & SEFLG_NONUT))
-	swi_nutate(xp, iflag, TRUE);
+	swi_nutate(ctx, xp, iflag, TRUE);
     }
     /*********************
      * to J2000 
@@ -5538,7 +5538,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
      *********************/
     dt = sqrt(square_sum(xp)) * AUNIT / CLIGHT / 86400.0;     
     if (do_defl)
-      swi_deflect_light(xp, dt, iflag);
+      swi_deflect_light(ctx, xp, dt, iflag);
     /*********************
      * aberration 
      *********************/
@@ -5601,7 +5601,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
      * nutation           
      *********************/
     if (!(iflag & SEFLG_NONUT))
-      swi_nutate(xp, iflag, FALSE);
+      swi_nutate(ctx, xp, iflag, FALSE);
     /* now we have equatorial cartesian coordinates; keep them */
     for (j = 0; j <= 5; j++)
       pldat.xreturn[18+j] = xp[j];

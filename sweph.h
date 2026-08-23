@@ -681,8 +681,8 @@ extern int swi_intp_apsides(double J, double *pol, int ipli);
 extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr);
 extern int swi_moshplan2(double J, int iplm, double *pobj);
 extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double *xp, int ipl, int ipli, double *xearth, double *xsun, char *serr);
-extern FILE *swi_fopen(int ifno, char *fname, char *ephepath, char *serr);
-extern int32 swi_init_swed_if_start(void);
+extern FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char *serr);
+extern int32 swi_init_swed_if_start(swe_ctx *ctx);
 extern int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr);
 extern int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
 
@@ -692,7 +692,7 @@ extern int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 ifla
 
 extern double swi_armc_to_mc(double armc, double eps);
 
-extern int32 swi_get_denum(int32 ipli, int32 iflag);
+extern int32 swi_get_denum(swe_ctx *ctx, int32 ipli, int32 iflag);
 
 
 /* nutation */
@@ -879,7 +879,7 @@ struct swe_ctx {
   /* Were AS_BOOL until C17_MIGRATION.md Phase 2 -- a pre-existing mistype,
    * harmless for decades because AS_BOOL and int32 were both plain `int`.
    * Made AS_BOOL a real bool (Phase 2, stdbool.h) and every fixed-star
-   * lookup broke: load_all_fixed_stars() correctly counted e.g. 1141 stars,
+   * lookup broke: load_all_fixed_stars(ctx) correctly counted e.g. 1141 stars,
    * but storing 1141 into a _Bool truncates to 1, so every subsequent
    * bsearch() ran over 1 record instead of the real array. Caught by
    * tests/golden's fixed-star rows, not by inspection. */

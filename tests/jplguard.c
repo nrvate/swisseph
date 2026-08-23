@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "swephexp.h"
+#include "sweph.h"
 #include "swejpl.h"
 
 /* Header layout fsizer()/state() expect, little-endian:
@@ -101,7 +102,7 @@ static int write_eph(const char *path, int ncf, int na, int maxoff)
 static int expect_reject(const char *what, const char *file, const char *want)
 {
   char serr[AS_MAXCH] = ""; double ss[3];
-  int r = swi_open_jpl_file(ss, (char *) file, "/tmp", serr);
+  int r = swi_open_jpl_file(swi_default_ctx(), ss, (char *) file, "/tmp", serr);
   printf("  %-34s rc=%-3d %s\n", what, r, serr);
   if (r == OK) {
     printf("    FAIL: malformed file was ACCEPTED -- the guard is gone\n");
@@ -141,7 +142,7 @@ int main(void)
   printf("  fixture ncf=4 na=1 ksize=%d (both guards satisfied)\n", ksize);
   {
     char serr[AS_MAXCH] = ""; double ss[3];
-    int r = swi_open_jpl_file(ss, (char *) "jplguard_ok.eph", "/tmp", serr);
+    int r = swi_open_jpl_file(swi_default_ctx(), ss, (char *) "jplguard_ok.eph", "/tmp", serr);
     printf("  %-34s rc=%-3d %s\n", "control: passes both guards", r, serr);
     if (r != OK && (strstr(serr, "coefficient count") || strstr(serr, "ksize"))) {
       printf("    FAIL: control rejected by a guard it should satisfy\n");
@@ -177,7 +178,7 @@ int main(void)
     ksize = write_eph_ss("/tmp/jplguard_nb.eph", 18, 3, 1200,
                          -5583940.0, 9025900.0, 1.0);
     printf("  fixture ncf=18 na=3 nseg~14.6e6 ksize=%d\n", ksize);
-    r = swi_open_jpl_file(ss, (char *) "jplguard_nb.eph", "/tmp", serr);
+    r = swi_open_jpl_file(swi_default_ctx(), ss, (char *) "jplguard_nb.eph", "/tmp", serr);
     printf("  %-34s rc=%-3d %s\n", "expected length must not wrap", r, serr);
     if (r == OK) {
       printf("    FAIL: accepted -- the length check did not run\n");

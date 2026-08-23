@@ -87,7 +87,7 @@ void swi_config_capture(struct swe_config *c)
  *                        (matches swe_set_interpolate_nut)
  *   const_lapse_rate  -> nothing; read directly at its use sites
  *====================================================================*/
-AS_BOOL swi_config_apply(const struct swe_config *c, int32 groups)
+AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 {
   AS_BOOL path_changed, geo_changed, model_changed, dt_changed, nut_changed;
   AS_BOOL any;
@@ -181,7 +181,7 @@ AS_BOOL swi_config_apply(const struct swe_config *c, int32 groups)
     swed.interpol.nut_deps2 = 0;
   }
   if (path_changed || geo_changed || model_changed || dt_changed)
-    swi_force_app_pos_etc();
+    swi_force_app_pos_etc(ctx);
 
   return TRUE;
 }
@@ -240,11 +240,11 @@ void swi_config_publish(int32 groups)
   struct swe_config tmp;
 
   /* Nested call: a setter invoked from inside another setter, or from
-   * swi_init_swed_if_start(), which calls swe_set_tid_acc(). Only the
+   * swi_init_swed_if_start(ctx), which calls swe_set_tid_acc(). Only the
    * outermost call publishes.
    *
    * This is not an optimisation. Without it, a thread starting up would
-   * run swi_init_swed_if_start() -> swe_set_tid_acc() -> publish, and
+   * run swi_init_swed_if_start(ctx) -> swe_set_tid_acc() -> publish, and
    * broadcast its *freshly zeroed* swed -- empty ephepath and all -- as
    * the new master, overwriting configuration another thread had
    * legitimately set. */
@@ -268,7 +268,7 @@ void swi_config_publish(int32 groups)
    * would freeze it on its own startup defaults for every group it did
    * not publish -- silently, and permanently.
    *
-   * Leaving cfg_seen stale makes the next swi_config_sync() pull in
+   * Leaving cfg_seen stale makes the next swi_config_sync(ctx) pull in
    * everything except the groups this thread now owns (cfg_local), which
    * is exactly right. */
 }
@@ -277,7 +277,7 @@ void swi_config_publish(int32 groups)
  * Adopt the master if it has moved on. The fast path -- by far the common
  * one -- is a single acquire load and a compare.
  *====================================================================*/
-void swi_config_sync(void)
+void swi_config_sync(swe_ctx *ctx)
 {
   struct swe_config tmp;
   swi_gen_t g;
@@ -295,10 +295,10 @@ void swi_config_sync(void)
   g = cfg_master.generation;
   swi_mutex_unlock(&cfg_mutex);
 
-  /* Apply outside the lock: swi_config_apply() closes files and drops
+  /* Apply outside the lock: swi_config_apply(ctx) closes files and drops
    * caches, and must not run with cfg_mutex held. */
   cfg_applying = TRUE;
-  swi_config_apply(&tmp, SWI_CFG_ALL & ~cfg_local);
+  swi_config_apply(ctx, &tmp, SWI_CFG_ALL & ~cfg_local);
   cfg_applying = FALSE;
   cfg_seen = g;
 }

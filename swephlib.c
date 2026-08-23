@@ -2563,7 +2563,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   } else {
     denum = ctx->jpldenum;
     if (epheflag & SEFLG_SWIEPH) denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
-    if (swi_init_swed_if_start() == 1 && !(epheflag & SEFLG_MOSEPH)) {
+    if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH)) {
       if (serr != NULL) 
 	strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_deltat_ex()");
       retc = swi_set_tid_acc(ctx, tjd, epheflag, denum, NULL);  /* _set_ saves tid_acc in swed */
@@ -3104,8 +3104,8 @@ char *sp;
 if (!ctx->init_dt_done) {
   ctx->init_dt_done = TRUE;
   /* no error message if file is missing */
-  if ((fp = swi_fopen(-1, "swe_deltat.txt", ctx->ephepath, NULL)) == NULL
-    && (fp = swi_fopen(-1, "sedeltat.txt", ctx->ephepath, NULL)) == NULL)
+  if ((fp = swi_fopen(ctx, -1, "swe_deltat.txt", ctx->ephepath, NULL)) == NULL
+    && (fp = swi_fopen(ctx, -1, "sedeltat.txt", ctx->ephepath, NULL)) == NULL)
     return TABSIZ; 
   while(fgets(s, AS_MAXCH, fp) != NULL) {
     sp = s;
@@ -3494,7 +3494,7 @@ double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
   int sidt_model = ctx->astro_models[SE_MODEL_SIDT];
   if (prec_model_short == 0) prec_model_short = SEMOD_PREC_DEFAULT_SHORT;
   if (sidt_model == 0) sidt_model = SEMOD_SIDT_DEFAULT;
-  swi_init_swed_if_start();
+  swi_init_swed_if_start(ctx);
   if (sidt_model == SEMOD_SIDT_LONGTERM) {
     if (tjd <= SIDT_LTERM_T0 || tjd >= SIDT_LTERM_T1) {
       gmst = sidtime_long_term(ctx, tjd, eps, nut);
@@ -3616,7 +3616,7 @@ double CALL_CONV swe_sidtime(double tjd_ut)
   double tjde;
   /* delta t adjusted to default tidal acceleration of the moon */
   tjde = tjd_ut + swe_deltat_ex(tjd_ut, -1, NULL); 
-  swi_init_swed_if_start();
+  swi_init_swed_if_start(ctx);
   eps = swi_epsiln(ctx, tjde, 0) * RADTODEG;
   swi_nutation(ctx, tjde, 0, nutlo);
   for (i = 0; i < 2; i++)
@@ -4163,7 +4163,7 @@ void set_astro_models(swe_ctx *ctx, char *samod)
   int *pmodel = &(ctx->astro_models[0]);
   char *sp, *sp2;
   int i = 0;
-  swi_init_swed_if_start();
+  swi_init_swed_if_start(ctx);
   sp = samod;
   pmodel[0] = atoi(sp);
   i++;
@@ -4231,7 +4231,7 @@ void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
   AS_BOOL swi_cfg_was = swi_config_begin_apply();
   double dversion;
   char s[30], *sp;
-  swi_init_swed_if_start();
+  swi_init_swed_if_start(ctx);
   if (*samod != '\0' && isdigit((int) *samod)) {
     set_astro_models(ctx, samod);
   } else if (*samod == '\0' || strncmp(samod, "SE", 2) == 0) {
@@ -4250,7 +4250,7 @@ void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
       set_astro_models(ctx, AMODELS_SE_2_00);
     } else if (dversion >= 2.00) {
       set_astro_models(ctx, AMODELS_SE_2_00);
-      if (swi_get_denum(SEI_SUN, iflag) == 431) 
+      if (swi_get_denum(ctx, SEI_SUN, iflag) == 431) 
         swe_set_tid_acc(SE_TIDAL_DE406);
     } else if (dversion >= 1.80) {
       set_astro_models(ctx, AMODELS_SE_1_80);
@@ -4497,7 +4497,7 @@ void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
   if (sdet != NULL) {
     /* JPL ephemeris number and tidal acceleration used with it */
     sprintf(sdet + strlen(sdet), "JPL eph. %d; tidal acc. Moon used by SE: %.4f\n", 
-      swi_get_denum(SEI_SUN, iflag), swe_get_tid_acc());
+      swi_get_denum(ctx, SEI_SUN, iflag), swe_get_tid_acc());
     if (iflag & SEFLG_JPLEPH) {
       if (iflag & SEFLG_JPLHOR) 
 	strcat(sdet, "JPL Horizons method:\n");

@@ -705,7 +705,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
   AS_BOOL elem_found = FALSE;
   double tt = 0;
   /* -1, because file information is not saved, file is always closed */
-  if ((fp = swi_fopen(-1, SE_FICTFILE, ctx->ephepath, serr)) == NULL) {
+  if ((fp = swi_fopen(ctx, -1, SE_FICTFILE, ctx->ephepath, serr)) == NULL) {
     /* file does not exist, use built-in bodies */
     if (ipl >= SE_NFICT_ELEM) {
       if (serr != NULL)

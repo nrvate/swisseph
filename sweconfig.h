@@ -74,6 +74,11 @@
 #include "sweodef.h"
 #include "swethread.h"
 
+/* Prototypes below name swe_ctx; sweph.h includes THIS header (after the
+ * struct definition) rather than the other way round, so forward-declare. */
+struct swe_ctx;
+typedef struct swe_ctx swe_ctx;
+
 /* sweph.h defines struct sid_data and SEI_NMODELS, and includes this file
  * after them. */
 
@@ -150,7 +155,7 @@ extern void swi_config_capture(struct swe_config *c);
 /* Copy the groups in `groups` from *c into this thread's swed and
  * invalidate whatever the change makes stale. Returns TRUE if anything
  * actually changed. */
-extern AS_BOOL swi_config_apply(const struct swe_config *c, int32 groups);
+extern AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups);
 
 /* Publish this thread's current configuration as the new master, and mark
  * `groups` as locally owned so this thread stops tracking the global value
@@ -184,7 +189,7 @@ extern void swi_config_claim(int32 groups);
 
 /* Fast path for compute entry points: if the master has moved on since
  * this thread last synced, adopt it. One atomic load in the common case. */
-extern void swi_config_sync(void);
+extern void swi_config_sync(swe_ctx *ctx);
 
 /* Re-arm the master from the compile-time defaults. Used by swe_close(). */
 extern void swi_config_reset(void);

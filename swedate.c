@@ -326,7 +326,7 @@ static int init_leapsec(swe_ctx *ctx)
     tabsiz = NLEAP_SECONDS;
     ndat_last = leap_seconds[NLEAP_SECONDS - 1];
     /* no error message if file is missing */
-    if ((fp = swi_fopen(-1, "seleapsec.txt", ctx->ephepath, NULL)) == NULL)
+    if ((fp = swi_fopen(ctx, -1, "seleapsec.txt", ctx->ephepath, NULL)) == NULL)
       return NLEAP_SECONDS; 
     while(fgets(s, AS_MAXCH, fp) != NULL) {
       sp = s;

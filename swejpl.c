@@ -92,7 +92,7 @@
 
 #define DEBUG_DO_SHOW	FALSE
 
-/* fsizer() rejects any ksize outside [1000, 5000] (see below); ncoeffs is
+/* fsizer(ctx) rejects any ksize outside [1000, 5000] (see below); ncoeffs is
  * ksize/2, so this is that bound restated as a coefficient count. buf[]
  * must hold at least this many doubles, or a file at the legal upper edge
  * of ksize overflows it. */
@@ -127,13 +127,13 @@ static TLS struct jpl_save *js;
 static_assert(sizeof(js->buf) / sizeof(js->buf[0]) == JPL_NCOEFF_MAX,
     "buf[] must hold exactly JPL_NCOEFF_MAX doubles -- see REVIEW.md J1");
 
-static int state (double et, int32 *list, int do_bary, 
+static int state (swe_ctx *ctx, double et, int32 *list, int do_bary, 
 		  double *pv, double *pvsun, double *nut, char *serr);
 static int interp(double *buf, double t, double intv, int32 ncfin, 
 		  int32 ncmin, int32 nain, int32 ifl, double *pv);
-static int32 fsizer(char *serr);
+static int32 fsizer(swe_ctx *ctx, char *serr);
 static void reorder(char *x, int size, int number);
-static int read_const_jpl(double *ss, char *serr);
+static int read_const_jpl(swe_ctx *ctx, double *ss, char *serr);
 
 /* information about eh_ipt[] and buf[]
 DE200	DE102		  	DE403
@@ -197,11 +197,11 @@ DE200	DE102		  	DE403
  * the number of single precision words in a record. 
  * RETURN: ksize (record size of ephemeris data)
  * jplfptr is opened on return.
- * note 26-aug-2008: now record size is computed by fsizer(), not 
+ * note 26-aug-2008: now record size is computed by fsizer(ctx), not 
  * set to a fixed value depending as in previous releases. The caller of
- * fsizer() will verify by data comparison whether it computed correctly.
+ * fsizer(ctx) will verify by data comparison whether it computed correctly.
  */
-static int32 fsizer(char *serr)
+static int32 fsizer(swe_ctx *ctx, char *serr)
 {
   /* Local variables */
   int32 ncon; 
@@ -212,7 +212,7 @@ static int32 fsizer(char *serr)
   int32 ksize, lpt[3];
   char ttl[6*14*3];	
   size_t nrd; /* unused, removes compile warnings */
-  if ((js->jplfptr = swi_fopen(SEI_FILE_PLANET, js->jplfname, js->jplfpath, serr)) == NULL) {
+  if ((js->jplfptr = swi_fopen(ctx, SEI_FILE_PLANET, js->jplfname, js->jplfpath, serr)) == NULL) {
     return NOT_AVAILABLE;
   }
   /* ttl = ephemeris title, e.g.
@@ -374,7 +374,7 @@ static int32 fsizer(char *serr)
  *            The option is available to have the units in km and km/sec. 
  *            For this, set do_km=TRUE (default FALSE). 
  */
-int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
+int swi_pleph(swe_ctx *ctx, double et, int ntarg, int ncent, double *rrd, char *serr)
 {
   int i, retc;
   int32 list[12];
@@ -390,7 +390,7 @@ int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
   if (ntarg == J_NUT) {
     if (js->eh_ipt[34] > 0) {
       list[10] = 2;
-      return(state(et, list, FALSE, pv, pvsun, rrd, serr));
+      return(state(ctx, et, list, FALSE, pv, pvsun, rrd, serr));
     } else {
       if (serr != NULL) 
 	sprintf(serr,"No nutations on the JPL ephemeris file;");
@@ -400,7 +400,7 @@ int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
   if (ntarg == J_LIB) {
     if (js->eh_ipt[37] > 0) {
       list[11] = 2;
-      if ((retc = state(et, list, FALSE, pv, pvsun, rrd, serr)) != OK)
+      if ((retc = state(ctx, et, list, FALSE, pv, pvsun, rrd, serr)) != OK)
 	return (retc);
       for (i = 0; i < 6; ++i) 
 	rrd[i] = pv[i + 60];
@@ -428,7 +428,7 @@ int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
     list[J_MOON] = 2;
   if (ncent == J_EMB) 	/* EMB needs Earth */
     list[J_EARTH] = 2;
-  if ((retc = state(et, list, TRUE, pv, pvsun, rrd, serr)) != OK)
+  if ((retc = state(ctx, et, list, TRUE, pv, pvsun, rrd, serr)) != OK)
     return (retc);
   if (ntarg == J_SUN || ncent == J_SUN) {
     for (i = 0; i < 6; ++i) 
@@ -664,7 +664,7 @@ static int interp(double *buf, double t, double intv, int32 ncfin,
  |            default value = FALSE  (km determines time unit 
  |            for nutations and librations.  angle unit is always radians.)
  */
-static int state(double et, int32 *list, int do_bary, 
+static int state(swe_ctx *ctx, double et, int32 *list, int do_bary, 
 	  double *pv, double *pvsun, double *nut, char *serr)
 {
   int i, j, k;
@@ -681,7 +681,7 @@ static int state(double et, int32 *list, int do_bary,
   static TLS int32 nrl, lpt[3], ncoeffs;
   size_t nrd; /* unused, removes compile warnings */
   if (js->jplfptr == NULL) {
-    ksize = fsizer(serr); /* the number of single precision words in a record */
+    ksize = fsizer(ctx, serr); /* the number of single precision words in a record */
     nrecl = 4;
     if (ksize == NOT_AVAILABLE)
       return NOT_AVAILABLE;
@@ -913,10 +913,10 @@ static int state(double et, int32 *list, int do_bary,
  *  this entry obtains the constants from the ephemeris file 
  *  call state to initialize the ephemeris and read in the constants 
  */
-static int read_const_jpl(double *ss,  char *serr)
+static int read_const_jpl(swe_ctx *ctx, double *ss,  char *serr)
 {
   int i, retc;
-  retc = state(0.0, NULL, FALSE, NULL, NULL, NULL, serr);
+  retc = state(ctx, 0.0, NULL, FALSE, NULL, NULL, NULL, serr);
   if (retc != OK)
     return (retc);
   for (i = 0; i < 3; i++)
@@ -978,7 +978,7 @@ void swi_close_jpl_file(void)
   }
 }
 
-int swi_open_jpl_file(double *ss, char *fname, char *fpath, char *serr)
+int swi_open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *serr)
 {
   int retc = OK;
   /* if open, return */
@@ -994,7 +994,7 @@ int swi_open_jpl_file(double *ss, char *fname, char *fpath, char *serr)
   }
   strcpy(js->jplfname, fname);
   strcpy(js->jplfpath, fpath);
-  retc = read_const_jpl(ss, serr);
+  retc = read_const_jpl(ctx, ss, serr);
   if (retc != OK) 
     swi_close_jpl_file();
   else {
