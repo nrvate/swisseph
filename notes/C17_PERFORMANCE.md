@@ -300,6 +300,22 @@ written specifically to survive being compiled as C89 today.
 
 ## 5. Prioritization
 
+> ### Results so far (measured, not projected)
+>
+> | item | status | measured effect |
+> |---|---|---|
+> | `restrict` on `interp()` | landed | **unmeasurable here** — `interp()` executes 0 times in this checkout (see §4.1 warning). Kept because it is correct. |
+> | `-flto` | landed, **opt-in** (`make LTO=1`) | `moon` **−5.0%**, `calc-moseph` −2.6%; everything else inside the ±2–3% noise floor. Bit-identical to plain `-O2` across all 5137 golden rows on gcc 13. |
+>
+> LTO is not on by default: clang/macOS/MSVC parity is unverified (no clang
+> on the machine these were measured on — the CI `lto` job exists to close
+> that), and changing default build flags for a library other people
+> package is a maintainer decision, not a side effect of a perf patch.
+>
+> Only `moon` clears the noise floor convincingly, and that is exactly what
+> §4.4 predicted: cross-TU inlining is the only way `-O2` reaches helpers
+> like `swi_coortrf2` from `swemmoon.c`.
+
 **Tier 1 — real performance, do first, low risk:**
 - `restrict` on `interp()` and the 6 verified-safe functions (§4.1)
 - `const`-qualify the 7 function-parameter candidates + add `-flto` to

@@ -2,6 +2,11 @@
 SWE      = ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c ../swemplan.c \
            ../sweph.c ../swephlib.c ../swecl.c ../swehel.c
 CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
+# `make LTO=1` mirrors the root Makefile's opt-in; see the note there for
+# the measured numbers and why it is not on by default.
+ifeq ($(LTO),1)
+  CFLAGS += -flto
+endif
 LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
 REP     ?= 7

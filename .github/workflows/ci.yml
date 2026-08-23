@@ -107,6 +107,34 @@ jobs:
         run: make -C tests check-build
 
   # ---------------------------------------------------------------------
+  # LTO parity. `make LTO=1` is opt-in and was measured only on gcc 13,
+  # where it is bit-identical to plain -O2 and worth ~5% on the Moshier
+  # Moon path. This job exists to prove it does not change results under a
+  # second toolchain before anyone considers making it the default.
+  # ---------------------------------------------------------------------
+  lto:
+    runs-on: ubuntu-latest
+    env:
+      EPHE: ephe
+      TOL: 1e-5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Build with LTO
+        run: make LTO=1 libswe.a
+      - name: Golden within tolerance
+        run: make -C tests LTO=1 check-golden-O2 EPHE=../$EPHE TOL=$TOL
+      - name: JPL reader baseline
+        run: make -C tests LTO=1 check-jplcalc
+      - name: Independent contexts
+        run: make -C tests LTO=1 check-ctx EPHE=../$EPHE
+
+  # ---------------------------------------------------------------------
   # Second compiler, same platform. Catches gcc-specific assumptions.
   # ---------------------------------------------------------------------
   linux-clang:

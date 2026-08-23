@@ -51,6 +51,34 @@ else
   DYNAMIC_LINK_FLAGS= -Wl,-Bdynamic
 endif
 
+# Link-time optimisation. OPT-IN: `make LTO=1`.
+#
+# Measured on gcc 13 -O2 (tests/bench, 3 interleaved runs, median of 5):
+#
+#   moon         -5.0%     swemmoon.c calling swephlib.c helpers across TUs
+#   calc-moseph  -2.6%
+#   jpl-interp   -1.3%     within the benchmark's +/-2-3% noise floor
+#   calc-swieph  -0.8%     "
+#   houses       -1.3%     "
+#
+# Only the Moshier Moon path clears the noise floor convincingly, which is
+# what notes/C17_PERFORMANCE.md section 4.4 predicted: this is a 10-object
+# library and cross-TU inlining is the only way -O2 can reach helpers like
+# swi_coortrf2 (64 cross-file call sites).
+#
+# Output is BIT-IDENTICAL to plain -O2 across all 5137 golden rows on gcc
+# 13 -- verified, not assumed.
+#
+# Not enabled by default for two reasons: clang, macOS and MSVC parity is
+# unverified here (no clang on the machine this was measured on -- the CI
+# lto job exists to close that), and changing default build flags for a
+# library that other people package is the maintainer's call, not a
+# side effect of a performance patch.
+ifeq ($(LTO),1)
+  CFLAGS += -flto
+  LIBS   += -flto
+endif
+
 # Object files for the Swiss Ephemeris library
 SWEOBJ = swedate.o swehouse.o swejpl.o swemmoon.o swemplan.o sweph.o sweconfig.o \
          swephlib.o swecl.o swehel.o
