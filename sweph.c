@@ -547,6 +547,29 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
   /* if no ephemeris has been specified, do not return chosen ephemeris */
   if ((iflgsave & SEFLG_EPHMASK) == 0)
     iflag = iflag & ~SEFLG_DEFAULTEPH;
+  /* ⛔ Refuse a silent downgrade.
+   *
+   * This is the one place worth doing it. Every substitution path in this
+   * file -- there are nineteen -- converges here with the ephemeris it
+   * actually used sitting in iflag, whatever route it took. Guarding the
+   * paths individually would be nineteen chances to miss one, and a path
+   * added later would not be covered at all.
+   *
+   * Only an *involuntary* change counts. A caller who asked for Moshier is
+   * not being downgraded, and a caller who named no ephemeris still gets
+   * whatever the library picks, exactly as before. */
+  if (!ctx->ephe_fallback && (iflgsave & SEFLG_EPHMASK) != 0) {
+    int32 got = iflag & SEFLG_EPHMASK;
+    if (got != 0 && got != epheflag) {
+      if (serr != NULL)
+        sprintf(serr,
+          "%s ephemeris is not available for jd %.4f; falling back to %s would "
+          "answer with lower precision. Install the data files, or call "
+          "swe_set_ephe_fallback(1) to allow the substitution.",
+          swi_ephe_name(epheflag), tjd, swi_ephe_name(got));
+      goto return_error;
+    }
+  }
 #ifdef TRACE
   trace_swe_calc(2, tjd, ipl, iflag, xx, serr);
 #endif
@@ -1226,6 +1249,9 @@ static void ctx_init_defaults(swe_ctx *ctx)
   ctx->saved_sundec     = 99;              /* "no Sunshine memo yet" */
   ctx->tid_acc          = SE_TIDAL_DEFAULT;
   ctx->is_tid_acc_manual = FALSE;
+  /* Strict by default, and stated rather than left to calloc: a caller who
+   * asks for an ephemeris either gets it or gets an error. See sweph.h. */
+  ctx->ephe_fallback    = FALSE;
   /* The two builtin tables are working copies, not statics, since Phase 3c.
    * A context that never reaches init_dt()/init_leapsec() would otherwise
    * read them as zeros -- which is how a 2.71 arcsec Delta-T regression got
@@ -1654,6 +1680,52 @@ void load_dpsi_deps(swe_ctx *ctx)
   }
   ctx->eop_dpsi_loaded = 2;
   fclose(fp);
+}
+
+/* The name of an ephemeris flag, for error messages. Not a lookup table:
+ * SEFLG_JPLEPH/SWIEPH/MOSEPH are separate bits, not an index. */
+const char *swi_ephe_name(int32 epheflag)
+{
+  if (epheflag & SEFLG_JPLEPH)
+    return "JPL";
+  if (epheflag & SEFLG_MOSEPH)
+    return "Moshier";
+  if (epheflag & SEFLG_SWIEPH)
+    return "Swiss (.se1)";
+  return "default";
+}
+
+/* Allow, or refuse, an involuntary drop to a weaker ephemeris.
+ *
+ * Off by default in this fork, which is a deliberate break from upstream.
+ * Upstream answers with Moshier when a .se1 file is missing or the date
+ * falls outside it, mentions this in serr, and returns success -- so a
+ * caller that checks the return value alone cannot tell a data-file
+ * position from an analytic approximation. The discrepancy is small enough
+ * to pass a spot check (the Sun agrees to about 0.02 arcsec) and large
+ * enough to matter elsewhere (the Moon to ~2.9 arcsec, Neptune growing past
+ * an arcsecond after 2030).
+ *
+ * Set it to 1 to restore upstream behaviour. The ephemeris actually used is
+ * still reported in the return flag either way. */
+void CALL_CONV swe_set_ephe_fallback_r(swe_ctx *ctx, int allow)
+{
+  ctx->ephe_fallback = allow ? TRUE : FALSE;
+}
+
+void CALL_CONV swe_set_ephe_fallback(int allow)
+{
+  swe_set_ephe_fallback_r(swi_default_ctx(), allow);
+}
+
+int CALL_CONV swe_get_ephe_fallback_r(swe_ctx *ctx)
+{
+  return ctx->ephe_fallback ? 1 : 0;
+}
+
+int CALL_CONV swe_get_ephe_fallback(void)
+{
+  return swe_get_ephe_fallback_r(swi_default_ctx());
 }
 
 /* sets jpl file name.

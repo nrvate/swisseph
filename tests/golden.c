@@ -186,7 +186,21 @@ static void planets(void) {
     for (size_t f = 0; f < NFLAGS; f++)
       for (int p = SE_SUN; p <= SE_VESTA; p++) {
         serr[0] = 0; memset(x, 0, sizeof x);
+        /* ⚠️ The SEFLG_JPLEPH set has never actually reached JPL: no .eph
+         * file is shipped with this repository, so every one of those rows
+         * was answered by the Swiss files after a silent substitution, and
+         * the transcript recorded it as though JPL had been consulted.
+         *
+         * Strict mode now refuses that substitution, which would turn these
+         * rows into errors and lose the coverage they do provide -- the
+         * SEFLG_JPLEPH *request* path through swe_calc. So allow the
+         * fallback for exactly this flag set, and only this one: the numbers
+         * stay bit-identical to the pre-strict baseline, which is the point.
+         * The serr on each row still says what happened. */
+        int jpl = (FLAGS[f] & SEFLG_JPLEPH) != 0;
+        if (jpl) swe_set_ephe_fallback(1);
         int32 rf = swe_calc(DATES[d], p, FLAGS[f], x, serr);
+        if (jpl) swe_set_ephe_fallback(0);
         snprintf(tag, sizeof tag, "calc[%zu,%zu,%d]%s", d, f, p,
                  is_illcond(FLAGS[f], p) ? ILLCOND : "");
         row(tag, rf, x, 6, serr);
@@ -771,8 +785,11 @@ static void coverage(void) {
     row("cov:interpolate_nut", rf, x, 6, serr);
     swe_set_interpolate_nut(FALSE);
 
-    /* swe_set_jpl_file() only records a name; no .eph is shipped, so the
-     * observable effect is that a JPL calc falls back and says so. */
+    /* swe_set_jpl_file() only records a name; no .eph is shipped with this
+     * repository, so the observable effect is what happens when the file is
+     * missing. Under the strict default that is now a refusal (rf=-1) rather
+     * than a Swiss answer wearing a JPL label -- which is the whole point,
+     * and this row is the transcript's record of it. */
     { char jf[AS_MAXCH]; strcpy(jf, "de431.eph"); swe_set_jpl_file(jf); }
     *serr = 0; rf = swe_calc(2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr);
     row("cov:set_jpl_file", rf, x, 6, serr);

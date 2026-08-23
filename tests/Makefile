@@ -46,6 +46,29 @@ cfgleak: cfgleak.c $(SWE)
 jplguard: jplguard.c $(SWE)
 	$(CC) $(CFLAGS) -fsanitize=address $^ -o $@ $(LIBS)
 
+# G15: the JPL path, against a genuine JPL binary rather than a fixture.
+#
+# Conditional, and it says so: no JPL ephemeris is shipped (the smallest is
+# 41 MB, the useful ones 2.6 GB) and this fork keeps binaries out of the tree.
+# Point SE_JPL_FILE at one to run it:
+#
+#   make check-jplreal SE_JPL_FILE=$$HOME/se1/de200.eph
+#
+# Get one from https://www.astro.com/swisseph-download/jplfiles/ or straight
+# from JPL; de200 is the cheapest that exercises the reader end to end.
+#
+# ⚠️ SE_TEST_EPHE must name a directory holding BOTH the JPL file and the .se1
+# files, because the gate compares one against the other. It defaults to this
+# repository's ephe/, which has the .se1 files and no JPL file -- so point it
+# at wherever the JPL file lives:
+#
+#   make check-jplreal SE_JPL_FILE=de200.eph SE_TEST_EPHE=$$HOME/se1
+jplreal: jplreal.c $(SWE)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-jplreal: jplreal
+	@SE_TEST_EPHE="$${SE_TEST_EPHE:-$(EPHE)}" ./jplreal
+
 check-jplguard: jplguard
 	@./jplguard
 
@@ -145,13 +168,13 @@ check-threads-workaround: golden
 check: check-version check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
-	rm -f jplcalc .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f jplcalc jplreal .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge \
-        check-winmacros \
+        check-winmacros check-jplreal \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
