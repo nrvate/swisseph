@@ -773,6 +773,59 @@ static void coverage(void) {
   }
 }
 
+/* Broad date sweep: every major body at 120 pseudo-random dates.
+ *
+ * The nine dates above are hand-picked EDGE cases -- -3000, year 1, the
+ * Gregorian switch, J2000, a fractional day, 2100 -- and they are good at
+ * catching boundary faults. They are poor at catching a fault that lives in
+ * the middle of the range, which is most of it: 9 samples across 5000 years
+ * is one every 550 years.
+ *
+ * This walks 120 dates spread across roughly 1000..2400 CE and reports the
+ * full state vector for each body: ecliptic longitude and latitude,
+ * distance, and all three speeds. Plus an equatorial pass, because a fault
+ * in the coordinate transform would otherwise hide behind correct ecliptic
+ * values.
+ *
+ * The dates are DETERMINISTIC -- a fixed 64-bit LCG, not rand(), whose
+ * sequence cannot change with the platform's libc. A transcript that varied
+ * between runs would be worthless as a bit-exact baseline.
+ */
+#define NSWEEP 120
+
+static double sweep_date(int i)
+{
+  /* splitmix64-style mixing of the index. Deterministic everywhere, and
+   * well spread, which a plain linear stride would not be -- a stride can
+   * alias with an orbital period and sample the same phase every time. */
+  unsigned long long z = (unsigned long long) i * 0x9E3779B97F4A7C15ULL + 0x123456789ABCDEFULL;
+  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+  z ^=  z >> 31;
+  /* JD 2086302.5 (1000-01-01) .. 2597641.5 (2400-01-01), ~1400 years */
+  return 2086302.5 + (double) (z % 511339ULL) + (double) ((z >> 20) % 1000ULL) / 1000.0;
+}
+
+static void sweep(void) {
+  char serr[AS_MAXCH]; double x[6]; char tag[256];
+  static const struct { int32 f; const char *n; } SF[] = {
+    { SEFLG_SWIEPH | SEFLG_SPEED,                     "swieph" },
+    { SEFLG_MOSEPH | SEFLG_SPEED,                     "moseph" },
+    { SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_EQUATORIAL,  "equat"  },
+  };
+  for (int d = 0; d < NSWEEP; d++) {
+    double tjd = sweep_date(d);
+    for (size_t f = 0; f < sizeof SF / sizeof SF[0]; f++)
+      for (int p = SE_SUN; p <= SE_VESTA; p++) {
+        serr[0] = 0; memset(x, 0, sizeof x);
+        int32 rf = swe_calc(tjd, p, SF[f].f, x, serr);
+        snprintf(tag, sizeof tag, "sweep[%d,%s,%d]%s", d, SF[f].n, p,
+                 is_illcond(SF[f].f, p) ? ILLCOND : "");
+        row(tag, rf, x, 6, serr);
+      }
+  }
+}
+
 static void suite(void) {
   char sv[AS_MAXCH];
   emit_version();
@@ -790,6 +843,7 @@ static void suite(void) {
   heliacal();
   misc();
   coverage();
+  sweep();
 }
 
 struct targ { int id; char *buf; size_t len; int setup; };
