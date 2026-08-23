@@ -710,7 +710,7 @@ static int32 swecalc(double tjd, int ipl, int32 iplmoon, int32 iflag, double *x,
 	if (retc == ERR)
 	  goto return_error;
 	/* for hel. position, we need earth as well */
-	retc = swi_moshplan(tjd, SEI_EARTH, DO_SAVE, NULL, NULL, serr);/**/
+	retc = swi_moshplan(swi_default_ctx(), tjd, SEI_EARTH, DO_SAVE, NULL, NULL, serr);/**/
 	if (retc == ERR)
 	  goto return_error;
 	break;
@@ -1108,7 +1108,7 @@ static int32 swecalc(double tjd, int ipl, int32 iplmoon, int32 iflag, double *x,
     /* iflag (ephemeris bit) has possibly changed in main_planet() */
     iflag = swed.pldat[SEI_EARTH].xflgs;
     /* planet from osculating elements */
-    if (swi_osc_el_plan(tjd, pdp->x, ipl-SE_FICT_OFFSET, ipli, pedp->x, psdp->x, serr) != OK)
+    if (swi_osc_el_plan(swi_default_ctx(), tjd, pdp->x, ipl-SE_FICT_OFFSET, ipli, pedp->x, psdp->x, serr) != OK)
       goto return_error;
     if (retc == ERR)
       goto return_error;
@@ -1689,7 +1689,7 @@ static int main_planet(double tjd, int ipli, int iplmoon, int32 epheflag, int32 
       break;
     case SEFLG_MOSEPH:
       moshier_planet:
-      retc = swi_moshplan(tjd, ipli, DO_SAVE, NULL, NULL, serr);/**/
+      retc = swi_moshplan(swi_default_ctx(), tjd, ipli, DO_SAVE, NULL, NULL, serr);/**/
       if (retc == ERR)
 	return ERR;
       /* geocentric, lighttime etc. */
@@ -1769,7 +1769,7 @@ static int main_planet_bary(double tjd, int ipli, int32 epheflag, int32 iflag, A
       break;
     case SEFLG_MOSEPH:
       moshier_planet:
-      retc = swi_moshplan(tjd, ipli, do_save, xp, xe, serr);/**/
+      retc = swi_moshplan(swi_default_ctx(), tjd, ipli, do_save, xp, xe, serr);/**/
       if (retc == ERR)
 	return ERR;
       for (i = 0; i <= 5; i++)
@@ -2698,7 +2698,7 @@ static int app_pos_etc_plan(int ipli, int iplmoon, int32 iflag, char *serr)
 	 * with moshier or other ephemerides, subtraction of dt * speed 
 	 * is sufficient (has been done in light-time iteration above)
 	 */
-        /* if speed flag is true, we call swi_moshplan() for new t.
+        /* if speed flag is true, we call swi_moshplan(swi_default_ctx(), ) for new t.
 	 * this does not increase position precision,
 	 * but speed precision, which becomes better than 0.01"/day.
 	 * for precise speed, we need earth as well.
@@ -2706,11 +2706,11 @@ static int app_pos_etc_plan(int ipli, int iplmoon, int32 iflag, char *serr)
 	if (iflag & SEFLG_SPEED
 	  && !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))) { 	
 	  if (ibody == IS_PLANET) {
-	    retc = swi_moshplan(t, ipli, NO_SAVE, xxsv, xearth, serr);
+	    retc = swi_moshplan(swi_default_ctx(), t, ipli, NO_SAVE, xxsv, xearth, serr);
           } else {		/* if asteroid */
 	    retc = sweph(t, ipli, ifno, iflag, NULL, NO_SAVE, xxsv, serr);
 	    if (retc == OK)
-	      retc = swi_moshplan(t, SEI_EARTH, NO_SAVE, xearth, xearth, serr);
+	      retc = swi_moshplan(swi_default_ctx(), t, SEI_EARTH, NO_SAVE, xearth, xearth, serr);
           }
 	  if (retc != OK)
 	    return(retc);
@@ -3515,7 +3515,7 @@ static int app_pos_etc_plan_osc(int ipl, int ipli, int32 iflag, char *serr)
       t = pdp->teval - dt;
       /* for accuracy in speed, we will need earth as well */
       retc = main_planet_bary(t, SEI_EARTH, epheflag, iflag, NO_SAVE, xearth, xearth, xsun, xmoon, serr);
-      if (swi_osc_el_plan(t, xx, ipl-SE_FICT_OFFSET, ipli, xearth, xsun, serr) != OK)
+      if (swi_osc_el_plan(swi_default_ctx(), t, xx, ipl-SE_FICT_OFFSET, ipli, xearth, xsun, serr) != OK)
 	return ERR;
       if (retc != OK)
 	return(retc);
@@ -4051,7 +4051,7 @@ static int app_pos_etc_sun(int32 iflag, char *serr)
 	    break;
 	  case SEFLG_MOSEPH:
 	    if ((iflag & SEFLG_HELCTR) || (iflag & SEFLG_BARYCTR))
-	      retc = swi_moshplan(t, SEI_EARTH, NO_SAVE, xearth, xearth, serr);
+	      retc = swi_moshplan(swi_default_ctx(), t, SEI_EARTH, NO_SAVE, xearth, xearth, serr);
 	    /* with moshier there is no barycentric sun */
 	    break;
           default:
@@ -7080,7 +7080,7 @@ char *CALL_CONV swe_get_planet_name(int ipl, char *s)
     default: 
       /* fictitious planets */
       if (ipl >= SE_FICT_OFFSET && ipl <= SE_FICT_MAX) {
-        swi_get_fict_name(ipl - SE_FICT_OFFSET, s);
+        swi_get_fict_name(swi_default_ctx(), ipl - SE_FICT_OFFSET, s);
         break;
       }
       /* asteroids */

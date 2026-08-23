@@ -166,7 +166,7 @@ extern char *swi_right_trim(char *s);
 
 extern double swi_kepler(double E, double M, double ecce);
 
-extern char *swi_get_fict_name(int32 ipl, char *s);
+extern char *swi_get_fict_name(swe_ctx *ctx, int32 ipl, char *s);
 
 extern void swi_FK4_FK5(double *xp, double tjd);
 
