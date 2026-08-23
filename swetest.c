@@ -3978,11 +3978,17 @@ static char *hms(double x, int32 iflag)
 
 static void do_printf(char *info)
 {
-#ifdef _WINDOWS
-  fprintf(fp, info);
-#else
-  fputs(info,stdout);
-#endif
+  /* The #ifdef _WINDOWS branch here read `fprintf(fp, info)`. There is no
+   * `fp` in this file -- the only one is a local in
+   * swe_get_named_ast_list(), 170 lines away -- so that branch has never
+   * compiled. It was simply never reached until sweodef.h began defining
+   * _WINDOWS whenever _WIN32 is set, which turned it on for console builds
+   * too, and nothing built swetest.c on Windows to notice.
+   *
+   * It was also `fprintf(dst, info)` with `info` as the FORMAT string, so
+   * any '%' in a message would have been read as a conversion. stdout is
+   * correct for a console program either way. */
+  fputs(info, stdout);
 }
 
 /* make_ephemeris_path().
@@ -4164,7 +4170,12 @@ int swe_get_named_ast_list(int amax, int *iarr, char*serr)
 
 int print_asteroids(double tjd, double dref, double orb)
 {
-  int i, rc, nast, amax = 30000;
+  /* amax was a plain int, making arr[] a variable-length array. GCC
+   * accepts VLAs; MSVC's C compiler does not, so swetest.c could not be
+   * built on Windows at all. An enum constant keeps the value in one place
+   * and is a constant expression. */
+  enum { amax = 30000 };
+  int i, rc, nast;
   int arr[amax];
   char serr[AS_MAXCH];
   char si[AS_MAXCH];
