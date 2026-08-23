@@ -11,7 +11,35 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
+/* Portable thread shim, same as tests/threadshim.c and tests/ctxtest.c.
+ *
+ * golden.c hardcoded <pthread.h>, which MSVC does not have -- so the one
+ * transcript that verifies the library's NUMBERS could not be built on
+ * Windows at all. Windows shipped a DLL whose only numerical check was a
+ * smoke test asserting the Sun is near 280 degrees.
+ *
+ * It also means G2 (worker threads agree with the main thread) can now run
+ * against the SRWLOCK backend, which no other platform exercises. */
+#if defined(_WIN32)
+# include <windows.h>
+  typedef HANDLE thr_t;
+  typedef DWORD  thr_ret_t;
+# define THR_CALL __stdcall
+  static int thr_create(thr_t *t, thr_ret_t (THR_CALL *fn)(void *), void *arg) {
+    *t = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) fn, arg, 0, NULL);
+    return *t == NULL;
+  }
+  static void thr_join(thr_t t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); }
+#else
+# include <pthread.h>
+  typedef pthread_t thr_t;
+  typedef void *    thr_ret_t;
+# define THR_CALL
+  static int thr_create(thr_t *t, thr_ret_t (THR_CALL *fn)(void *), void *arg) {
+    return pthread_create(t, NULL, fn, arg);
+  }
+  static void thr_join(thr_t t) { pthread_join(t, NULL); }
+#endif
 #include "swephexp.h"
 
 #define DEFAULT_EPHE "../ephe"
@@ -766,7 +794,16 @@ static void suite(void) {
 
 struct targ { int id; char *buf; size_t len; int setup; };
 
-static void *thread_suite(void *p) {
+/* The --threads path (G2) needs open_memstream() to capture each worker's
+ * transcript, and MSVC has no such function. The single-threaded transcript
+ * -- the numerical check that matters most, and the reason this file exists
+ * -- is portable, so only the threaded mode is excluded on Windows.
+ *
+ * G2 still runs on Linux and macOS. Windows' SRWLOCK backend is covered by
+ * tests/threadshim.c and tests/ctxtest.c, both of which already build there.
+ */
+#if !defined(_WIN32)
+static thr_ret_t THR_CALL thread_suite(void *p) {
   struct targ *a = p;
   OUT = open_memstream(&a->buf, &a->len);
   /* a->setup mirrors what a well-behaved caller does on a worker thread.
@@ -777,6 +814,7 @@ static void *thread_suite(void *p) {
   fclose(OUT);
   return NULL;
 }
+#endif  /* !_WIN32 */
 
 int main(int argc, char **argv) {
   int nthreads = 0, setup = 0;
@@ -807,15 +845,20 @@ int main(int argc, char **argv) {
   swe_set_tid_acc(-25.85);
 
   struct targ ref = { -1, NULL, 0, 0 };
+#if defined(_WIN32)
+  fprintf(stderr, "--threads is POSIX-only (needs open_memstream); "
+                  "use tests/threadshim and tests/ctxtest on Windows\n");
+  return 2;
+#else
   thread_suite(&ref);
 
   struct targ *a = calloc(nthreads, sizeof *a);
-  pthread_t *t = calloc(nthreads, sizeof *t);
+  thr_t *t = calloc(nthreads, sizeof *t);
   for (int i = 0; i < nthreads; i++) {
     a[i].id = i; a[i].setup = setup;
-    pthread_create(&t[i], NULL, thread_suite, &a[i]);
+    thr_create(&t[i], thread_suite, &a[i]);
   }
-  for (int i = 0; i < nthreads; i++) pthread_join(t[i], NULL);
+  for (int i = 0; i < nthreads; i++) thr_join(t[i]);
 
   if (getenv("SE_DUMP")) {
     FILE *f = fopen("/tmp/ref.txt","w"); fwrite(ref.buf,1,ref.len,f); fclose(f);
@@ -840,5 +883,6 @@ int main(int argc, char **argv) {
   fprintf(stderr, "%d/%d threads matched the main-thread transcript%s\n",
           nthreads - bad, nthreads, setup ? " (--per-thread-setup)" : "");
   swe_close();
+#endif  /* !_WIN32 */
   return bad ? 1 : 0;
 }

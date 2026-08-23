@@ -277,6 +277,32 @@ jobs:
 
           cl /nologo /I. tests\threadshim.c || exit /b 1
           threadshim.exe || exit /b 1
+      - name: Numerical transcript under MSVC
+        shell: cmd
+        run: |
+          rem Windows had NO numerical verification at all. This job compiled
+          rem objects and ran a TLS probe; windows-package smoke-tested swetest
+          rem for "the Sun is near 280 degrees". A DLL producing wrong numbers
+          rem would have shipped with every check green.
+          rem
+          rem golden.c could not be built here until now because it hardcoded
+          rem <pthread.h>. It uses a portable thread shim as of this change; its
+          rem --threads mode needs POSIX open_memstream and stays excluded on
+          rem Windows, where threadshim and ctxtest already cover SRWLOCK.
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /I. /D_CRT_SECURE_NO_WARNINGS tests\golden.c sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c /Fe:golden_msvc.exe || exit /b 1
+          golden_msvc.exe --ephe %EPHE% > msvc.txt || exit /b 1
+          for /f %%n in ('type msvc.txt ^| find /c /v ""') do echo transcript rows: %%n
+      - name: Compare against the reference transcript
+        shell: bash
+        run: |
+          # Tolerance, not diff: MSVC and gcc differ in the last bits of
+          # floating point, so bit-exactness ACROSS compilers is not a
+          # meaningful requirement. 1e-5 is the bound check-golden-O2 already
+          # uses, measured against the values' own conditioning.
+          rows=$(wc -l < msvc.txt)
+          [ "$rows" -gt 5000 ] || { echo "FAIL: only $rows rows -- golden did not run"; exit 1; }
+          python3 tests/cmpgolden.py tests/baseline.txt msvc.txt --abs=$TOL
 
   # ---------------------------------------------------------------------
   # Sanitizers. TSan needs ASLR off on some kernels, hence setarch -R.
