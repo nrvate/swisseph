@@ -217,7 +217,7 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Library Include="..\..\bin\swedll32.lib" />
+    <Library Include="$(OutDir)swedll32.lib" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\swewin\swewin.c">

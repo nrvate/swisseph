@@ -212,7 +212,7 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Library Include="..\..\bin\swedll64.lib" />
+    <Library Include="$(OutDir)swedll64.lib" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\swetest.c">
