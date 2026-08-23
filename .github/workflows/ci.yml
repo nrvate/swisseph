@@ -89,6 +89,11 @@ jobs:
       - name: Threading shim
         run: make -C tests check-threadshim
 
+      # G4. The only gate that can tell whether swe_ctx_new() does anything:
+      # a swe_X_r() ignoring its context argument passes G1 and G2 both.
+      - name: Independent contexts
+        run: make -C tests check-ctx EPHE=../$EPHE
+
       # G9. Behaviour gates link only libswe.a and tests/, so nothing here
       # ever compiled swetest.c/swevents.c or any TRACE build. Phase 3 broke
       # `make all` for three phases with every other gate green.

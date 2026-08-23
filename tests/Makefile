@@ -139,12 +139,23 @@ check-threads-workaround: golden
 check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
-	rm -f jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
-        check-build clean
+        check-build check-ctx clean
+
+# G4: two swe_ctx handles are genuinely independent.
+#
+# The gate every other one is blind to. G1 is bit-exactness of the legacy
+# path and G2 is agreement between threads sharing the default context --
+# a swe_X_r() that ignored its context argument entirely would pass both.
+ctxtest: ctxtest.c $(SWE)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-ctx: ctxtest
+	@./ctxtest --ephe $(EPHE)
 
 # G9: the shipped sample programs and the TRACE build must still compile.
 #
