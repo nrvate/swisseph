@@ -671,11 +671,11 @@ struct plan_data {
 #define STR             4.8481368110953599359e-6 /* radians per arc second */
 
 /* moon, s. moshmoon.c */
-extern int swi_mean_node(double jd, double *x, char *serr);
-extern int swi_mean_apog(double jd, double *x, char *serr);
+extern int swi_mean_node(swe_ctx *ctx, double jd, double *x, char *serr);
+extern int swi_mean_apog(swe_ctx *ctx, double jd, double *x, char *serr);
 extern int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpm, char *serr) ;
-extern int swi_moshmoon2(double jd, double *x);
-extern int swi_intp_apsides(double J, double *pol, int ipli);
+extern int swi_moshmoon2(swe_ctx *ctx, double jd, double *x);
+extern int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli);
 
 /* planets, s. moshplan.c */
 extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr);
@@ -798,6 +798,28 @@ struct interpol {
   double nut_deps0, nut_deps1, nut_deps2;
 };
 
+/* Scratch state for the Moshier lunar theory (swemmoon.c).
+ *
+ * These 27 values were file-scope TLS statics used as IMPLICIT PARAMETERS:
+ * moon1(ctx) sets them, moon2(ctx)/moon3(ctx)/moon4(ctx) read and refine them, and
+ * mean_elements(ctx) fills them in first. Fourteen functions share them without
+ * any of it appearing in a signature.
+ *
+ * Bundling them here is what lets a context own its lunar scratch, so two
+ * contexts can be mid-lunar-calculation at once. The names are kept exactly
+ * as they were -- l, B, T, T2, SWELP -- because they match the published
+ * theory's notation, and renaming them would make the code harder to check
+ * against the source it implements.
+ */
+struct moon_state {
+  double ss[5][8], cc[5][8];
+  double l;             /* Moon's ecliptic longitude */
+  double B;             /* ecliptic latitude         */
+  double moonpol[3];
+  double SWELP, M, MP, D, NF, T, T2, T3, T4;
+  double f, g, Ve, Ea, Ma, Ju, Sa, cg, sg, l1, l2, l3, l4;
+};
+
 /* THE EPHEMERIS CONTEXT.
  *
  * Everything the library remembers between calls: configuration, caches,
@@ -887,6 +909,8 @@ struct swe_ctx {
   int32 n_fixstars_named;    // number of fixed stars with tradtional name
   int32 n_fixstars_records;  // number of fixed stars records in fixed_stars
   struct fixed_star *fixed_stars;
+  /* Moshier lunar theory scratch -- see struct moon_state above. */
+  struct moon_state moon;
 };
 
 /* swe_ctx is forward-declared near the top of this header, next to
