@@ -409,7 +409,10 @@ jobs:
           # which is why it shipped a CRLF sums file that failed to verify
           # on every line, on every platform, for as long as it existed.
           Push-Location $pkg
-          $raw = [IO.File]::ReadAllText("SHA256SUMS")
+          # Absolute: Push-Location moves PowerShell's location, not the .NET
+          # process working directory, so a bare relative path here resolves
+          # against the repo root instead of the package.
+          $raw = [IO.File]::ReadAllText((Join-Path (Get-Location).Path "SHA256SUMS"))
           if ($raw -match "`r") { Write-Host "SHA256SUMS contains CR -- must be LF-only"; $bad = 1 }
           else { $bad = 0 }
           $n = 0
