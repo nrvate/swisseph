@@ -14,7 +14,29 @@ speed fields. Well under the library's own accuracy, but not zero.
 So: use `diff` to prove a code change is a no-op at fixed flags, and use
 this to prove a *build* change stays within tolerance.
 
-Usage:  cmpgolden.py A.txt B.txt [--abs 1e-6] [--verbose]
+KNOWN CROSS-PLATFORM DIVERGENCE
+-------------------------------
+One quantity is not reproducible across math libraries and is excluded from
+tolerance checking by default: field[5] of the fixed-star rows, which is the
+star's distance SPEED.
+
+It is not a bug and not a regression -- it is inherent conditioning. For
+Polaris the distance is 2.74e+07 AU and the distance speed is -8.37e-03, i.e.
+3.1e-10 of the value it is differenced out of. Double precision carries about
+2.2e-16 relative, so any difference in the underlying trig/sqrt chain between
+glibc and Apple's libm is amplified by ten orders of magnitude on its way into
+this field.
+
+Measured, macOS/clang vs the gcc -O0 baseline: 17401 values differ across 3754
+of 5127 rows, but the median difference is 5.7e-14 (ULP noise) and only 115
+exceed 1e-6 -- every one of them fixstar field[5], up to 1.3e-01 on the
+Galactic Centre, whose distance is larger still.
+
+Excluding it here does NOT stop a real regression in that field being caught:
+the gcc -O0 job compares bit-exactly with diff, where the value IS
+reproducible. Pass --no-skip to check it anyway.
+
+Usage:  cmpgolden.py A.txt B.txt [--abs 1e-6] [--verbose] [--no-skip]
 Exit 0 if every value agrees within tolerance, 1 otherwise.
 """
 import sys
@@ -41,6 +63,7 @@ def main():
         if o.startswith("--abs="):
             tol = float(o.split("=", 1)[1])
     verbose = "--verbose" in opts
+    skip_illcond = "--no-skip" not in opts
 
     a, b = load(args[0]), load(args[1])
 
@@ -56,12 +79,17 @@ def main():
 
     diffs = []
     shape = 0
+    skipped = 0
     for k in a:
         if len(a[k]) != len(b[k]):
             shape += 1
             continue
         for i, (x, y) in enumerate(zip(a[k], b[k])):
             if x == y:
+                continue
+            # fixstar distance speed: ill-conditioned, see the header
+            if skip_illcond and i == 5 and k.startswith("star["):
+                skipped += 1
                 continue
             fx, fy = float.fromhex(x), float.fromhex(y)
             diffs.append((abs(fx - fy), k, i, fx, fy))
@@ -70,6 +98,9 @@ def main():
         print(f"FAIL: {shape} rows have a different number of values")
         return 1
 
+    if skipped:
+        print(f"note: skipped {skipped} fixstar distance-speed value(s) "
+              f"-- ill-conditioned across libm, see header (--no-skip to include)")
     if not diffs:
         print(f"PASS: transcripts are bit-identical ({len(a)} rows)")
         return 0

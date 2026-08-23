@@ -35,7 +35,31 @@ int main(void) {
 }
 #else
 
-#include <pthread.h>
+/* A tiny thread shim for the TEST only. swethread.h itself needs no thread
+ * creation API -- it only locks and counts -- but this test has to spawn
+ * threads, and MSVC has no <pthread.h>. Without this the Windows CI job
+ * cannot exercise the SRWLOCK backend at all, which is the one backend
+ * unreachable from Linux and macOS. */
+#if defined(_WIN32)
+# include <windows.h>
+  typedef HANDLE thr_t;
+  typedef DWORD  thr_ret_t;
+# define THR_CALL __stdcall
+  static int thr_create(thr_t *t, thr_ret_t (THR_CALL *fn)(void *), void *arg) {
+    *t = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) fn, arg, 0, NULL);
+    return *t == NULL;
+  }
+  static void thr_join(thr_t t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); }
+#else
+# include <pthread.h>
+  typedef pthread_t thr_t;
+  typedef void *    thr_ret_t;
+# define THR_CALL
+  static int thr_create(thr_t *t, thr_ret_t (THR_CALL *fn)(void *), void *arg) {
+    return pthread_create(t, NULL, fn, arg);
+  }
+  static void thr_join(thr_t t) { pthread_join(t, NULL); }
+#endif
 
 #define NTHREADS 8
 #define NITER    20000
@@ -52,7 +76,7 @@ static long guarded_counter;          /* deliberately NOT atomic */
 static swi_gen_t generation;
 
 /* --- 1 & 2 ------------------------------------------------------------ */
-static void *hammer(void *arg) {
+static thr_ret_t THR_CALL hammer(void *arg) {
   (void)arg;
   int i;
   for (i = 0; i < NITER; i++) {
@@ -61,7 +85,7 @@ static void *hammer(void *arg) {
     swi_mutex_unlock(&lock);
     swi_gen_bump(&generation);
   }
-  return NULL;
+  return (thr_ret_t) 0;
 }
 
 /* --- 3: publish / observe --------------------------------------------- */
@@ -76,7 +100,7 @@ static swi_gen_t stop_readers;
 static long torn_reads, observed_updates;
 static swi_mutex_t stat_lock = SWI_MUTEX_INIT;
 
-static void *publisher(void *arg) {
+static thr_ret_t THR_CALL publisher(void *arg) {
   (void)arg;
   int i;
   for (i = 1; i <= NITER; i++) {
@@ -88,10 +112,10 @@ static void *publisher(void *arg) {
     swi_gen_bump(&pub_gen);          /* release: payload before generation */
   }
   swi_gen_bump(&stop_readers);
-  return NULL;
+  return (thr_ret_t) 0;
 }
 
-static void *reader(void *arg) {
+static thr_ret_t THR_CALL reader(void *arg) {
   (void)arg;
   swi_gen_t last = 0, g;
   struct payload p;
@@ -110,20 +134,20 @@ static void *reader(void *arg) {
   torn_reads += torn;
   observed_updates += seen;
   swi_mutex_unlock(&stat_lock);
-  return NULL;
+  return (thr_ret_t) 0;
 }
 
 int main(void) {
-  pthread_t t[NTHREADS];
-  pthread_t pub, rd[NTHREADS - 1];
+  thr_t t[NTHREADS];
+  thr_t pub, rd[NTHREADS - 1];
   struct payload p;
   long want;
   int bad = 0, i;
 
   printf("backend = %s\n", SWI_THREAD_BACKEND);
 
-  for (i = 0; i < NTHREADS; i++) pthread_create(&t[i], NULL, hammer, NULL);
-  for (i = 0; i < NTHREADS; i++) pthread_join(t[i], NULL);
+  for (i = 0; i < NTHREADS; i++) thr_create(&t[i], hammer, NULL);
+  for (i = 0; i < NTHREADS; i++) thr_join(t[i]);
 
   want = (long)NTHREADS * NITER;
   printf("mutex      : counter=%ld expected=%ld %s\n",
@@ -136,10 +160,10 @@ int main(void) {
   if ((long)generation != want) bad = 1;
 
   /* publish/observe */
-  pthread_create(&pub, NULL, publisher, NULL);
-  for (i = 0; i < NTHREADS - 1; i++) pthread_create(&rd[i], NULL, reader, NULL);
-  pthread_join(pub, NULL);
-  for (i = 0; i < NTHREADS - 1; i++) pthread_join(rd[i], NULL);
+  thr_create(&pub, publisher, NULL);
+  for (i = 0; i < NTHREADS - 1; i++) thr_create(&rd[i], reader, NULL);
+  thr_join(pub);
+  for (i = 0; i < NTHREADS - 1; i++) thr_join(rd[i]);
 
   printf("publish    : %ld updates observed, %ld torn %s\n",
          observed_updates, torn_reads, torn_reads == 0 ? "OK" : "TORN");

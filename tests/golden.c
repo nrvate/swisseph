@@ -4,7 +4,7 @@
  * numerical output is visible as a byte diff.  Used to prove that the
  * thread-safety refactor is numerically a no-op.
  *
- * Build:  cc -O0 -I.. golden.c ../*.c -lm -ldl -o golden
+ * Build:  see tests/Makefile
  * Use:    ./golden > baseline.txt   (before)
  *         ./golden | diff baseline.txt -   (after; must be empty)
  */
@@ -295,10 +295,19 @@ static void eclipses(void) {
                             SE_CALC_RISE, geo, 1013.25, 15.0, tret, serr);
   row("rise_trans", rf, tret, 1, serr);
   serr[0]=0;
-  double xn[4];
-  rf = swe_nod_aps_ut(2451545.0, SE_MOON, SEFLG_SWIEPH, SE_NODBIT_MEAN,
-                      xn, xn, xn, xn, serr);
-  row("nod_aps", rf, xn, 4, serr);
+  /* swe_nod_aps() writes SIX doubles to EACH of its four output arrays
+   * (swecl.c:5637-5641, `for (i = 0; i <= 5; i++)`). The first version of
+   * this passed a single double[4] aliased four ways -- a stack buffer
+   * overflow, caught by AddressSanitizer in CI rather than here. */
+  double xasc[6], xdsc[6], xper[6], xaph[6];
+  memset(xasc,0,sizeof xasc); memset(xdsc,0,sizeof xdsc);
+  memset(xper,0,sizeof xper); memset(xaph,0,sizeof xaph);
+  rf = swe_nod_aps_ut(2451545.0, SE_MOON, SEFLG_SWIEPH|SEFLG_SPEED,
+                      SE_NODBIT_MEAN, xasc, xdsc, xper, xaph, serr);
+  row("nod_aps_asc",  rf, xasc, 6, serr);
+  row("nod_aps_dsc",  rf, xdsc, 6, NULL);
+  row("nod_aps_peri", rf, xper, 6, NULL);
+  row("nod_aps_aphe", rf, xaph, 6, NULL);
 }
 
 static void pheno(void) {

@@ -5011,7 +5011,10 @@ lunecl_how[4]                                  rf=0      0x0p+0 0x1.c9625ec3f2f6
 lunecl[5]                                      rf=64     0x1.2b5e2804ab304p+21 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x1.2b5e276aa946ap+21 0x1.2b5e289ebd05fp+21 0x0p+0 0x0p+0 | no lunar eclipse at tjd = 2452421.078256
 lunecl_how[5]                                  rf=0      0x0p+0 0x1.60de044747f62p-1 0x0p+0 0x0p+0 0x1.8f255ecd71679p+7 -0x1.efdbd8b1bc8e1p+5 -0x1.efdbd8b1bc8e1p+5 0x1.2936b1100948p+0 0x0p+0 0x1.bcp+6 0x1.08p+6
 rise_trans                                     rf=0      0x1.2b42ce680dc89p+21
-nod_aps                                        rf=0      0x1.0776de82663f7p+8 0x1.b5b938bb7575bp+1 0x1.63497c95bddc4p-9 0x0p+0
+nod_aps_asc                                    rf=0      0x1.f4299f1eaf824p+6 0x1.8488672f1b831p-42 0x1.428ed2ecc9d7cp-9 -0x1.b1c7f51cdce23p-5 -0x1.39959739f0533p-18 -0x1.096d205da628cp-22
+nod_aps_dsc                                    rf=0      0x1.310a67c7abe0fp+8 0x1.153bf8ef72ca6p-42 0x1.5e22cd2738254p-9 -0x1.b1c7f52246625p-5 0x1.399558763eecap-18 0x1.38d19fe6ac6c8p-22
+nod_aps_peri                                   rf=0      0x1.4ddb7a0998ff3p+6 -0x1.b5b938bb75b86p+1 0x1.3e4e7327a6f79p-9 0x1.c7fd8b592176cp-4 -0x1.b44fa040e8bfcp+1 -0x1.08ca98p-48
+nod_aps_aphe                                   rf=0      0x1.0776de82663f7p+8 0x1.b5b938bb7575ap+1 0x1.63497c95bddc5p-9 0x1.c7fd8b5a1d5bdp-4 0x1.b44fa040f9ee8p+1 -0x1.66a2cp-51
 pheno[0,0]                                     rf=2      0x0p+0 0x0p+0 0x0p+0 0x1.14bf3ffa85eaap-1 -0x1.ae3cedd210e56p+4 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
 pheno[0,1]                                     rf=2      0x1.455bdf4496bfbp+7 0x1.73796b7c3159p-6 0x1.1461c247518d7p+4 0x1.f6e78d91b77afp-2 -0x1.369ad90b677d4p+2 0x1.cd8e4553a896fp-1 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
 pheno[0,2]                                     rf=2      0x1.8b7937cf392cbp+2 0x1.fe833bd2c0642p-1 0x1.4345a3219fe41p+1 0x1.613dfb94380d2p-10 -0x1.89725906a1bcbp+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
