@@ -42,7 +42,7 @@ jobs:
     name: linux / gcc (reference, bit-exact)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Versions
         run: gcc --version && make --version | head -1
@@ -86,7 +86,7 @@ jobs:
     name: linux / clang
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - run: clang --version
       - name: Build + numerical check (tolerance, not diff)
@@ -113,7 +113,7 @@ jobs:
     name: macos / clang
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - run: cc --version
       # This is an ASSERTION, not a diagnostic.
@@ -154,32 +154,34 @@ jobs:
     name: windows / msvc (SRWLOCK backend)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
-      - uses: ilammy/msvc-dev-cmd@v1
-      - name: Compile the library
+      # Deliberately NOT ilammy/msvc-dev-cmd: it targets Node 20 (deprecated)
+      # and is a third-party action sitting in the build path. The runners
+      # ship Visual Studio, and the installer ships vswhere to locate it, so
+      # call vcvars64.bat directly. One step, because vcvars sets environment
+      # that does not survive between steps.
+      - name: Build and check under MSVC
         shell: cmd
         run: |
-          cl /nologo /c /W3 /DWIN32_LEAN_AND_MEAN sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c
-      - name: TLS must be a real thread-local here (MSVC)
-        shell: cmd
-        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          @echo on
+          cl /nologo /c /W3 /DWIN32_LEAN_AND_MEAN sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c || exit /b 1
+
           echo #include "sweodef.h" > tlsp.c
           echo TLS int probe; >> tlsp.c
-          cl /nologo /EP /I. tlsp.c > tlsout.txt
-          type tlsout.txt | findstr /C:"__declspec(thread)" >nul || (echo FAIL: TLS is empty on MSVC & exit /b 1)
-          echo ok: TLS is __declspec(thread)
-      - name: Which swethread backend did MSVC select?
-        shell: cmd
-        run: |
+          cl /nologo /EP /I. tlsp.c > tlsout.txt || exit /b 1
+          findstr /C:"__declspec(thread)" tlsout.txt >nul || (echo FAIL: TLS is empty on MSVC & exit /b 1)
+          echo ok: TLS is __declspec^(thread^)
+
           echo #include "swethread.h" > probe.c
           echo #include ^<stdio.h^> >> probe.c
           echo int main(void){ printf("backend=%%s\n", SWI_THREAD_BACKEND); return 0; } >> probe.c
-          cl /nologo probe.c && probe.exe
-      - name: threadshim (mutex, generation, publish/observe)
-        shell: cmd
-        run: |
-          cl /nologo /I. tests\threadshim.c && threadshim.exe
+          cl /nologo probe.c || exit /b 1
+          probe.exe || exit /b 1
+
+          cl /nologo /I. tests\threadshim.c || exit /b 1
+          threadshim.exe || exit /b 1
 
   # ---------------------------------------------------------------------
   # Sanitizers. TSan needs ASLR off on some kernels, hence setarch -R.
@@ -188,7 +190,7 @@ jobs:
     name: linux / tsan + asan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: ThreadSanitizer -- threaded golden must report zero races
         run: |
@@ -224,7 +226,7 @@ jobs:
     name: linux / C dialects
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Library must build at c99 / c11 / c17
         run: |
@@ -254,7 +256,7 @@ jobs:
     name: linux / exported symbols
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Compare exported symbols against the merge base
         run: |
@@ -288,7 +290,7 @@ jobs:
     name: linux / setest differential
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - run: sudo apt-get update && sudo apt-get install -y libssl-dev
       - name: Capture reference from 3fd0f95, compare against HEAD
