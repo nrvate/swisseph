@@ -37,22 +37,32 @@ Two findings are more than style complaints and worth flagging up front:
    bug**, not just dead code: the true-Sheoran sidereal-mode case is
    unreachable and silently falls through to the Pushya case, returning the
    wrong star record. See §3, finding S1.
-   **Downgraded, not fixed** — `PLAN.md` §14.5 checked: both branches return
-   a byte-identical record, so the fallthrough returns the *same* data, not
-   wrong data. Genuinely dead code, not a correctness bug; still worth
-   deleting for clarity, just not urgent.
+   **Downgraded, then fixed.** `PLAN.md` §14.5 checked: both branches return
+   a byte-identical record, so the fallthrough returned the *same* data, not
+   wrong data — dead code, not a correctness bug. Now deleted; the
+   SHEORAN→Pushya mapping it documented is recorded in the surviving
+   branch's comment. G1 stayed bit-exact, as unreachable code must.
 
 Beyond those two, the dominant themes across every file are:
 
 | Theme | Scale | Where |
 |---|---|---|
 | Unsafe string handling (`sprintf`/`strcpy`/`strcat`, 0 `snprintf`) | ~930 call sites repo-wide | everywhere, worst in `swetest.c` (153), `swevents.c` (62+), `sweph.c` (127 `strcpy` alone) |
-| No optimization flag in the shipped build | `CFLAGS = -g -Wall -fPIC`, no `-O2`, no `-std=` | `Makefile:37,45` |
-| No CI | zero `.yml`/`.yaml` workflow files in the tree | — |
+| ~~No optimization flag in the shipped build~~ | **fixed on `threadsafe`**: `-std=c17 -Wall -Wextra -Werror -O2 -g -fPIC`, plus opt-in `-flto` | `Makefile` |
+| ~~No CI~~ | **fixed on `threadsafe`**: 10 jobs — gcc/clang/macOS/MSVC, TSan+ASan+LSan, dialects, ABI, LTO, setest differential | `.github/workflows/ci.yml` |
 | `#define`-only public constants, 0 enums | 330 macros, 0 `enum` | `swephexp.h` |
 | `goto`-based control flow | 9 files, up to 115 in one file (`sweph.c`) | see per-section counts below |
-| Dead / `#if 0`'d code | hundreds of lines across `swehel.c`, `swephlib.c`, `swecl.c`, `swehouse.c` | see per-section |
+| Dead / `#if 0`'d code | 47 regions, ~500 lines, across `swehel.c`, `swephlib.c`, `swecl.c`, `swehouse.c` | see per-section |
 | Duplicated logic across near-identical branches | house-cusp iteration (6x), eclipse-max search (6x), JPL header parse (2x) | §4, §5, §6 |
+
+> **Note on the dead-code row.** It is not merely untidy: on the `threadsafe`
+> branch, three separate scripted edits landed *inside* `#if 0` blocks and
+> silently did nothing — two generated shims that vanished from the ABI
+> until the linker complained, and a `static_assert` that pinned nothing
+> until a deliberately-false probe exposed it. All 47 regions were audited
+> afterwards and none references the pre-Phase-3 API, so nothing is stale in
+> a way that would break on re-enabling — but edits near them need checking,
+> not trusting.
 
 The rest of this document goes subsystem by subsystem. Performance findings
 are included but are secondary to the modernization/maintainability focus

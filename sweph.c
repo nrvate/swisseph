@@ -7018,13 +7018,16 @@ static AS_BOOL get_builtin_star(char *star, char *sstar, char *srecord)
     strcpy(srecord, "Revati,zePsc,ICRS,01,13,43.88735,+07,34,31.2745,145,-55.69,15,18.76,5.187,06,174");
     strcpy(sstar, "revati");
     return TRUE;
-  /* Ayanamsha SE_SIDM_TRUE_PUSHYA */
+  /* Ayanamsha SE_SIDM_TRUE_PUSHYA, and SE_SIDM_TRUE_SHEORAN, which uses
+   * the same star.
+   *
+   * SHEORAN had its own branch below this one, guarded by
+   * strstr(star, ",deCnc") != NULL -- a strict subset of this branch's
+   * condition, so it was unreachable, and its body was byte-identical to
+   * this one. It returned the right record only because it never ran.
+   * (notes/REVIEW.md finding S1.) Removed; the mapping it documented is
+   * recorded here instead. */
   } else if (strstr(star, ",deCnc") != NULL || strncmp(star, "pushya", 6) == 0 || strncmp(star, "Pushya", 6) == 0 ) {
-    strcpy(srecord, "Pushya,deCnc,ICRS,08,44,41.09921,+18,09,15.5034,-17.67,-229.26,17.14,24.98,3.94,18,2027");
-    strcpy(sstar, "pushya");
-    return TRUE;
-  /* Ayanamsha SE_SIDM_TRUE_SHEORAN */
-  } else if (strstr(star, ",deCnc") != NULL) {
     strcpy(srecord, "Pushya,deCnc,ICRS,08,44,41.09921,+18,09,15.5034,-17.67,-229.26,17.14,24.98,3.94,18,2027");
     strcpy(sstar, "pushya");
     return TRUE;
