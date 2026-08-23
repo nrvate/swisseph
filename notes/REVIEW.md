@@ -29,10 +29,18 @@ Two findings are more than style complaints and worth flagging up front:
    header, unbounded) — are trusted from the `.eph`/`.bsp` file itself with no
    check against the actual array capacities. A malformed or unusually large
    JPL ephemeris file can overflow both buffers. See §5, finding J1.
+   **✅ Fixed — `04bb51a`** (`C17_MIGRATION.md`'s Phase 4 drafting caught that
+   its own worked-example `static_assert` didn't compile, which is what
+   surfaced this; `buf[]` widened to a named, ksize-tied constant, and `ncf`
+   given a real runtime bound check).
 2. **A dead branch in `get_builtin_star()` that looks like a real behavioral
    bug**, not just dead code: the true-Sheoran sidereal-mode case is
    unreachable and silently falls through to the Pushya case, returning the
    wrong star record. See §3, finding S1.
+   **Downgraded, not fixed** — `PLAN.md` §14.5 checked: both branches return
+   a byte-identical record, so the fallthrough returns the *same* data, not
+   wrong data. Genuinely dead code, not a correctness bug; still worth
+   deleting for clarity, just not urgent.
 
 Beyond those two, the dominant themes across every file are:
 

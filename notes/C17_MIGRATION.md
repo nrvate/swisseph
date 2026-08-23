@@ -1,14 +1,11 @@
 # Plan: C89 → C17 Migration
 
-**Status:** in progress — `PLAN.md` Phase 2 landed (`48a7540`, confirmed
-green: G1/G1b/G2/G8, ThreadSanitizer clean); `PLAN.md` Phase 3 has not
-started, so this is the right window (§8). Reviewed against Phase 2's actual
-diff before starting: `sweodef.h` (Phase 1's target) was untouched; the
-`swed` initializer (§9/Phase 2.4) still has exactly the shape described there
-— Phase 2.2 added `const_lapse_rate` positionally as a documented workaround,
-not a fix; two new files landed (`sweconfig.c`/`sweconfig.h`, already in
-`Makefile`'s `SWEOBJ`) using the same `int32`/`AS_BOOL`/`TLS` typedefs, so
-they fall into this plan's scope with no extra edits needed.
+**Status:** Phases 1-3 done (04bb51a, 5c2eb9d, aceb318; stray comment fixed
+in 2a4bad4). Phase 4 (real `static_assert` on J1) and Phase 5 (`-std=c17
+-Wall -Wextra`/`-Werror` build flip) are next — **not yet started**, picking
+up here next session. Sequencing revised 2026-08-23 (§8): these two now go
+*before* `PLAN.md` Phase 3 rather than after, agreed with `swisseph-d2`.
+`PLAN.md` Phase 3 is on hold, waiting on this.
 **Companion to:** [`REVIEW.md`](REVIEW.md) §1.3, §0 (the "no `stdint.h`/`stdbool.h`
 anywhere," "K&R holdouts," "hand-rolled `int32`" findings this plan resolves)
 **Relationship to** [`PLAN.md`](PLAN.md): independent effort, same safety net
@@ -352,15 +349,32 @@ compiler-detection cascade this plan deletes) and both use the same
 - **Phase 1 of this plan (kill the 16-bit/DOS cruft) can start immediately**,
   in parallel with `PLAN.md`'s work — it's an almost pure deletion, doesn't
   touch `swed` or any TLS-annotated state, and the overlap in `sweodef.h` is
-  small enough to rebase past either way.
-- **Phases 2-5 (typedef changes, build-flag flip, `-Werror`) should wait
-  until `PLAN.md` reaches at least its Phase 2 exit gate.** Landing a
-  build-wide flag change and a threading-model change on the same unstable
-  ground at the same time makes it hard to tell which change caused a given
-  CI failure, and both plans independently want a clean, green baseline to
-  work from.
-- The CI-matrix work in §6 Phase 5.4 and `PLAN.md` §0.4 are the same
-  deliverable — whichever plan gets there first should build it for both.
+  small enough to rebase past either way. **Done** — 04bb51a.
+- **Phases 1-3 of this plan landed once `PLAN.md` Phase 2 shipped**
+  (typedef swap + two latent bugs it exposed, K&R fixes) — 5c2eb9d,
+  aceb318. Also fixed one stale comment a code-review pass caught — 2a4bad4.
+- **Revised, 2026-08-23: Phases 4-5 (the J1 `static_assert`, the build-flag
+  flip to `-std=c17 -Wall -Wextra`/`-Werror`) go *before* `PLAN.md` Phase 3
+  starts, not after — reversing this doc's original call.** Proposed by the
+  other session (`swisseph-d2`, working `PLAN.md`) once Phase 2 was fully
+  gated and Phase 3 genuinely hadn't started: the original "wait until
+  Phase 3 is done" reasoning was about not landing a build-flag change
+  *simultaneously* with a threading-model change on unstable ground — but
+  with Phase 3 not yet started, doing Phase 4/5 first isn't simultaneous
+  with anything, it's just first. And it means Phase 3's 650-reference
+  mechanical rewrite gets to build fresh against an already-clean C17/
+  `-Werror` baseline (real `stdint.h`/`stdbool.h`/eventually `stdatomic.h`
+  from the first commit) instead of Phase 3 landing on the old build and
+  this plan re-touching the same 650 sites afterward. Agreed; `PLAN.md`
+  Phase 3 is on hold until this plan's Phase 5 lands.
+- The CI-matrix work in §6 Phase 5.4 and `PLAN.md` §0.4 turned out to be
+  the same deliverable, and `swisseph-d2` built it — 9b97fdd, 7217f67,
+  f2843b0. It also caught something neither of these plans' own review
+  passes had: TLS was still disabled on macOS (`__APPLE__` excluded from
+  the `TLS` macro in `sweodef.h`, `PLAN.md`'s own deferred Phase 1.6) —
+  `swed` was a plain unsynchronized global there. Fixed in f2843b0, outside
+  this plan's scope but sharing the same file Phase 1 touched, noted here
+  for the record.
 
 ## 9. Handed over from `PLAN.md` Phase 2: the `swed` positional initialiser
 
