@@ -543,6 +543,196 @@ static void suite_compute_only(void) {
 }
 
 /* Runs the entire suite against the current thread's library state. */
+/* Entry points no other section reaches.
+ *
+ * Measured with gcov: 36 of the 77 swe_*_r entry points were never executed
+ * by this suite. Phase 3 rewrote all 77 mechanically -- and two of the
+ * generated shims silently landed inside a `#if 0` and vanished from the
+ * ABI before the linker caught them -- so an untested entry point is
+ * exactly where such a mistake survives.
+ *
+ * Appended last on purpose: existing rows keep their order, so the baseline
+ * diff for this addition is a pure append and stays reviewable.
+ *
+ * Setters are save/restored, since a leaked configuration change here would
+ * corrupt every row that follows in the threaded run. */
+static void coverage(void) {
+  char serr[AS_MAXCH]; char tag[256]; double x[24]; int32 rf;
+  double cusp[13], ascmc[10], cs[13], as[10];
+  int i;
+
+  /* --- houses: the variants the houses() section does not call ------- */
+  for (i = 0; i < 3; i++) {
+    double tjd = 2451545.0 + i * 3000.0;
+    int hs = "PKO"[i];
+    rf = swe_houses(tjd, 48.2 + i, 16.4 - i, hs, cusp, ascmc);
+    sprintf(tag, "cov:houses[%d,%c]", i, hs);          row(tag, rf, cusp, 13, "");
+    rf = swe_houses_ex(tjd, SEFLG_SWIEPH, 48.2 + i, 16.4 - i, hs, cusp, ascmc);
+    sprintf(tag, "cov:houses_ex[%d,%c]", i, hs);       row(tag, rf, ascmc, 10, "");
+    rf = swe_houses_armc(30.0 * i, 48.2, 23.44, hs, cs, as);
+    sprintf(tag, "cov:houses_armc[%d,%c]", i, hs);     row(tag, rf, cs, 13, "");
+    x[0] = swe_house_pos(30.0 * i, 48.2, 23.44, hs, (double[]){ 120.0, 1.5, 1.0 }, serr);
+    sprintf(tag, "cov:house_pos[%d,%c]", i, hs);       row(tag, 0, x, 1, serr);
+  }
+
+  /* --- ayanamsa: three of the four forms are otherwise untouched ------ */
+  for (i = 0; i < 2; i++) {
+    double tjd = 2451545.0 + i * 10000.0;
+    x[0] = swe_get_ayanamsa(tjd);
+    sprintf(tag, "cov:ayanamsa[%d]", i);               row(tag, 0, x, 1, "");
+    *serr = 0; rf = swe_get_ayanamsa_ex(tjd, SEFLG_SWIEPH, &x[0], serr);
+    sprintf(tag, "cov:ayanamsa_ex[%d]", i);            row(tag, rf, x, 1, serr);
+    *serr = 0; rf = swe_get_ayanamsa_ex_ut(tjd, SEFLG_SWIEPH, &x[0], serr);
+    sprintf(tag, "cov:ayanamsa_ex_ut[%d]", i);         row(tag, rf, x, 1, serr);
+  }
+
+  /* --- time conversions not covered by timeconv() -------------------- */
+  for (i = 0; i < 2; i++) {
+    double tjd = 2451545.0 + i * 5000.0;
+    int32 y, mo, d, h, mi; double sec;
+    x[0] = swe_deltat(tjd);
+    sprintf(tag, "cov:deltat[%d]", i);                 row(tag, 0, x, 1, "");
+    *serr = 0; rf = swe_time_equ(tjd, &x[0], serr);
+    sprintf(tag, "cov:time_equ[%d]", i);               row(tag, rf, x, 1, serr);
+    *serr = 0; rf = swe_lmt_to_lat(tjd, 16.4, &x[0], serr);
+    sprintf(tag, "cov:lmt_to_lat[%d]", i);             row(tag, rf, x, 1, serr);
+    *serr = 0; rf = swe_lat_to_lmt(tjd, 16.4, &x[0], serr);
+    sprintf(tag, "cov:lat_to_lmt[%d]", i);             row(tag, rf, x, 1, serr);
+    swe_jdut1_to_utc(tjd, SE_GREG_CAL, &y, &mo, &d, &h, &mi, &sec);
+    x[0] = y; x[1] = mo; x[2] = d; x[3] = h; x[4] = mi; x[5] = sec;
+    sprintf(tag, "cov:jdut1_to_utc[%d]", i);           row(tag, 0, x, 6, "");
+  }
+
+  /* --- crossings ------------------------------------------------------ */
+  for (i = 0; i < 2; i++) {
+    double jd = 2451545.0 + i * 400.0;
+    *serr = 0; x[0] = swe_solcross(90.0 * (i + 1), jd, SEFLG_SWIEPH, serr);
+    sprintf(tag, "cov:solcross[%d]", i);               row(tag, 0, x, 1, serr);
+    *serr = 0; x[0] = swe_solcross_ut(90.0 * (i + 1), jd, SEFLG_SWIEPH, serr);
+    sprintf(tag, "cov:solcross_ut[%d]", i);            row(tag, 0, x, 1, serr);
+    *serr = 0; x[0] = swe_mooncross(90.0 * (i + 1), jd, SEFLG_SWIEPH, serr);
+    sprintf(tag, "cov:mooncross[%d]", i);              row(tag, 0, x, 1, serr);
+    *serr = 0; x[0] = swe_mooncross_ut(90.0 * (i + 1), jd, SEFLG_SWIEPH, serr);
+    sprintf(tag, "cov:mooncross_ut[%d]", i);           row(tag, 0, x, 1, serr);
+    *serr = 0; x[1] = 0;
+    x[0] = swe_mooncross_node(jd, SEFLG_SWIEPH, &x[1], &x[2], serr);
+    sprintf(tag, "cov:mooncross_node[%d]", i);         row(tag, 0, x, 3, serr);
+    *serr = 0; x[1] = 0;
+    x[0] = swe_mooncross_node_ut(jd, SEFLG_SWIEPH, &x[1], &x[2], serr);
+    sprintf(tag, "cov:mooncross_node_ut[%d]", i);      row(tag, 0, x, 3, serr);
+    *serr = 0; rf = swe_helio_cross(SE_VENUS, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
+    sprintf(tag, "cov:helio_cross[%d]", i);            row(tag, rf, x, 1, serr);
+    *serr = 0; rf = swe_helio_cross_ut(SE_VENUS, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
+    sprintf(tag, "cov:helio_cross_ut[%d]", i);         row(tag, rf, x, 1, serr);
+  }
+
+  /* --- misc compute --------------------------------------------------- */
+  for (i = 0; i < 2; i++) {
+    double tjd = 2451545.0 + i * 2000.0;
+    *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH, x, serr);
+    sprintf(tag, "cov:calc_pctr[%d]", i);              row(tag, rf, x, 6, serr);
+    *serr = 0; rf = swe_gauquelin_sector(tjd, SE_MARS, NULL, SEFLG_SWIEPH, 0,
+                                         (double[]){ 16.4, 48.2, 190.0 }, 1013.25, 15.0, &x[0], serr);
+    sprintf(tag, "cov:gauquelin[%d]", i);              row(tag, rf, x, 1, serr);
+    *serr = 0; rf = swe_get_orbital_elements(tjd, SE_MARS, SEFLG_SWIEPH, x, serr);
+    sprintf(tag, "cov:orbital_elements[%d]", i);       row(tag, rf, x, 17, serr);
+    /* star is an IN/OUT parameter -- swe_fixstar_ut() writes the resolved
+     * name back into it, so it must be a writable AS_MAXCH buffer. Passing
+     * a string literal segfaults in fixstar_cut_string(). */
+    { char star[AS_MAXCH]; strcpy(star, "Sirius");
+      *serr = 0; rf = swe_fixstar_ut(star, tjd, SEFLG_SWIEPH, x, serr);
+      sprintf(tag, "cov:fixstar_ut[%d]", i);           row(tag, rf, x, 6, serr); }
+  }
+
+  /* --- file/model accessors ------------------------------------------- */
+  {
+    double tfstart = 0, tfend = 0; int32 denum = 0;
+    const char *fn = swe_get_current_file_data(0, &tfstart, &tfend, &denum);
+    x[0] = tfstart; x[1] = tfend; x[2] = denum;
+    sprintf(tag, "cov:current_file_data[%s]", fn ? "set" : "null");
+    row(tag, 0, x, 3, "");
+    /* NULL samod, deliberately: swe_get_astro_models() CALLS
+     * swe_set_astro_models() whenever samod is non-NULL, so the obvious
+     * "read the models into a buffer" usage would mutate process-wide
+     * state. Passing NULL is the only read-only form. */
+    char sdet[AS_MAXCH * 4];
+    *sdet = '\0';
+    swe_get_astro_models(NULL, sdet, 0);
+    { char cl[AS_MAXCH * 4]; sanitize(cl, sizeof cl, sdet);
+      fprintf(OUT, "%-46s rf=%-6d | %s\n", "cov:astro_models", 0, cl); }
+  }
+
+  /* --- eclipse/occultation searches the eclipses() section skips ------
+   * These are iterative searches, so one call each: the point is to
+   * execute the code path, not to survey it. */
+  {
+    double geo[3] = { 16.4, 48.2, 190.0 };
+    double tret[10], attr[20];
+    memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr);
+    *serr = 0;
+    rf = swe_sol_eclipse_when_loc(2451545.0, SEFLG_SWIEPH, geo, tret, attr, FALSE, serr);
+    row("cov:sol_eclipse_when_loc", rf, tret, 7, serr);
+    memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr);
+    *serr = 0;
+    rf = swe_lun_eclipse_when_loc(2451545.0, SEFLG_SWIEPH, geo, tret, attr, FALSE, serr);
+    row("cov:lun_eclipse_when_loc", rf, tret, 7, serr);
+    memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr);
+    *serr = 0;
+    rf = swe_lun_occult_when_loc(2451545.0, SE_VENUS, NULL, SEFLG_SWIEPH,
+                                 geo, tret, attr, FALSE, serr);
+    row("cov:lun_occult_when_loc", rf, tret, 7, serr);
+    memset(tret, 0, sizeof tret);
+    *serr = 0;
+    rf = swe_lun_occult_when_glob(2451545.0, SE_VENUS, NULL, SEFLG_SWIEPH, 0,
+                                  tret, FALSE, serr);
+    row("cov:lun_occult_when_glob", rf, tret, 7, serr);
+    memset(attr, 0, sizeof attr);
+    { double g2[10]; memset(g2, 0, sizeof g2); *serr = 0;
+      rf = swe_lun_occult_where(2451545.0, SE_VENUS, NULL, SEFLG_SWIEPH, g2, attr, serr);
+      row("cov:lun_occult_where", rf, attr, 8, serr); }
+  }
+
+  /* --- setters: exercised, then restored ------------------------------
+   * Each publishes to the process-wide master, so leaving one set would
+   * move every row computed afterwards -- including in the threaded run,
+   * where a worker would adopt it mid-suite. */
+  {
+    swe_set_delta_t_userdef(70.0);
+    x[0] = swe_deltat(2451545.0);
+    row("cov:set_delta_t_userdef", 0, x, 1, "");
+    swe_set_delta_t_userdef(SE_DELTAT_AUTOMATIC);
+
+    swe_set_lapse_rate(0.0070);
+    *serr = 0;
+    rf = swe_rise_trans(2451545.0, SE_SUN, NULL, SEFLG_SWIEPH, SE_CALC_RISE,
+                        (double[]){ 16.4, 48.2, 190.0 }, 1013.25, 15.0, &x[0], serr);
+    row("cov:set_lapse_rate", rf, x, 1, serr);
+    swe_set_lapse_rate(0.0065);          /* SE_LAPSE_RATE, the documented default */
+
+    /* swe_set_astro_models("") re-applies the library defaults, which is
+     * what is already in force -- so this exercises the setter without
+     * moving any row computed afterwards. Verified: the 5137 pre-existing
+     * baseline rows are byte-identical with and without this call. */
+    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    *serr = 0; rf = swe_calc(2451545.0, SE_SUN, SEFLG_SWIEPH, x, serr);
+    row("cov:set_astro_models", rf, x, 6, serr);
+
+    swe_set_interpolate_nut(TRUE);
+    *serr = 0; rf = swe_calc(2451545.0, SE_MOON, SEFLG_SWIEPH, x, serr);
+    row("cov:interpolate_nut", rf, x, 6, serr);
+    swe_set_interpolate_nut(FALSE);
+
+    /* swe_set_jpl_file() only records a name; no .eph is shipped, so the
+     * observable effect is that a JPL calc falls back and says so. */
+    { char jf[AS_MAXCH]; strcpy(jf, "de431.eph"); swe_set_jpl_file(jf); }
+    *serr = 0; rf = swe_calc(2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr);
+    row("cov:set_jpl_file", rf, x, 6, serr);
+    { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
+    swe_close();                          /* drop the failed JPL attempt */
+    swe_set_ephe_path((char *) EPHE);
+  }
+}
+
 static void suite(void) {
   char sv[AS_MAXCH];
   fprintf(OUT, "# swe_version=%s\n", swe_version(sv));
@@ -559,6 +749,7 @@ static void suite(void) {
   pheno();
   heliacal();
   misc();
+  coverage();
 }
 
 struct targ { int id; char *buf; size_t len; int setup; };

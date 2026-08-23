@@ -1,6 +1,20 @@
 # Plan: C17 Performance & Code-Quality Follow-On
 
-**Status:** not started — depends on [`C17_MIGRATION.md`](C17_MIGRATION.md) landing first (see §3)
+**Status:** COMPLETE. Tiers 1–3 all addressed — some landed, several
+**declined with measurements** rather than implemented on faith. See the
+results table in §5 and the boxed notes in §4.1, §4.2 and §4.3.
+
+Landed: `restrict` on 5 functions, opt-in `-flto`, macro→inline for
+`square_sum`/`dot_prod`/`mods3600`, dead macro removal, three
+`static_assert`s, and two gates the plan did not ask for but the work made
+necessary — **G10** (the JPL reader had no numerical coverage at all) and
+**G11** (`swethread.h` tier 5 could not link).
+
+Declined, each with evidence: `restrict` on `swi_cross_prod` (fragile
+aliasing precondition, no measurable gain), `_Alignas(64)` (premise does not
+hold; −1.8% measured, +5% memory), `nddat`→`node_data` (shared helper), tier
+5 removal (it is a supported platform's only path — and it was broken), and
+A1's `sind`/`cosd` family (~200 call sites, no gain).
 **Companion to:** [`C17_MIGRATION.md`](C17_MIGRATION.md) (the mechanical build/typedef migration this
 plan builds on), [`REVIEW.md`](REVIEW.md) (general modernization survey), [`PLAN.md`](PLAN.md)
 (thread-safety architecture — §4.2 and §4.3 below intersect with its Phase 3)
