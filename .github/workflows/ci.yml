@@ -352,23 +352,27 @@ jobs:
         shell: cmd
         run: dir /s /b windows\projects\out
       - name: Smoke-test the CLI
-        shell: pwsh
+        shell: cmd
         run: |
-          # -emos, the Moshier ephemeris: self-contained, so this needs no
-          # .se1 files. Exit status alone is not enough -- swetest prints
-          # "illegal option" and keeps going for an unrecognised flag, which
-          # is how the first version of this step passed nothing useful.
-          foreach ($exe in @("windows/projects/out/x64/Release/swetest64.exe",
-                             "windows/projects/out/Win32/Release/swetest.exe")) {
-            Write-Host "--- $exe"
-            $out = & $exe -b1.1.2020 -p0 -fPl -emos 2>&1 | Out-String
-            Write-Host $out
-            if ($LASTEXITCODE -ne 0)      { Write-Error "$exe exited $LASTEXITCODE"; exit 1 }
-            if ($out -match "illegal option") { Write-Error "$exe rejected an argument"; exit 1 }
-            # The Sun's ecliptic longitude on 2020-01-01 is about 280 degrees.
-            if ($out -notmatch "280") { Write-Error "$exe produced no plausible position"; exit 1 }
-          }
-          Write-Host "both CLIs produce a plausible Sun position"
+          rem cmd, not pwsh: PowerShell splits -b1.1.2020 into "-b1" and
+          rem ".1.2020" before the program sees it, and swetest then reports
+          rem "illegal option .1.2020".
+          rem
+          rem -emos is the Moshier ephemeris -- self-contained, so no .se1
+          rem files are needed. Exit status alone proves little: swetest
+          rem prints "illegal option" and carries on, which is how the first
+          rem version of this step verified nothing at all.
+          setlocal enabledelayedexpansion
+          for %%e in ("out\x64\Release\swetest64.exe" "out\Win32\Release\swetest.exe") do (
+            echo --- %%~e
+            windows\projects\%%~e -b1.1.2020 -p0 -fPl -emos > swe_smoke.txt 2>&1
+            if errorlevel 1 ( type swe_smoke.txt & echo FAIL: nonzero exit & exit /b 1 )
+            type swe_smoke.txt
+            findstr /C:"illegal option" swe_smoke.txt >nul && ( echo FAIL: argument rejected & exit /b 1 )
+            rem The Sun's ecliptic longitude on 2020-01-01 is about 280 deg.
+            findstr /C:"280" swe_smoke.txt >nul || ( echo FAIL: no plausible position & exit /b 1 )
+          )
+          echo both CLIs produce a plausible Sun position
       - name: Assemble package
         shell: pwsh
         run: |
