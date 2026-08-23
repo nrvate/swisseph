@@ -334,14 +334,47 @@ Bundle into `struct moon_state` and thread a pointer through. Self-contained to
 one 1930-line file. **G1 is the whole safety net here** — the lunar rows in the
 baseline are the assertion.
 
-### 8.4 3c — Remaining TLS statics into the context
+### 8.4 3c — Remaining TLS statics into the context  ✅ DONE
 
 All the memo caches and scratch listed in §5: `sweph.c` (10 sites), `swehel.c`
-(7), `swejpl.c` (3), `swephlib.c` (`dt[]`, `crc32_table`, trace state),
+(7), `swejpl.c`, `swephlib.c` (`dt[]`, `crc32_table`, trace state),
 `swedate.c` (leap seconds), `swemplan.c` (`ss`/`cc`).
 
-Also fixes the trace-file corruption: `swi_fp_trace_*` currently has every thread
-writing the same path.
+`swejpl.c` turned out to hold 8, not 3. Seven of them —
+`np`/`nv`/`nac`/`njk`/`twot` and `irecsz`/`nrl`/`ncoeffs` — are derived from
+the header of the file `js` describes, so they became members of
+`struct jpl_save` rather than context fields; only `js` itself moved to the
+context. `state()`'s `lpt[3]` was not cross-call state at all, just a local
+mislabelled `static`.
+
+`dt[]` is covered in §15 — it took two attempts, and the failure was a
+silently-unapplied patch rather than the design.
+
+**Correction to what this section used to claim.** It said 3c "fixes the
+trace-file corruption: `swi_fp_trace_*` currently has every thread writing
+the same path." The premise was never verified, and it is wrong on Linux:
+each record ends in `fflush()` on an append-mode stream, so a record leaves
+as one `write()`. Measured both ways under 4 threads — zero interleaved
+records before the change, zero after.
+
+What TLS *did* break is the counter: `TRACE_COUNT_MAX` is a per-run budget
+whose own message reads "trace stopped, %d calls exceeded", and as TLS it
+became per-thread. The same 4-worker run emitted 28470 records against a
+documented ceiling of 9999. It is now one budget (5694). The record lock is
+still worth having, but for a narrower reason than claimed: record integrity
+was resting on an unspecified stdio/OS interaction (record < BUFSIZ, atomic
+append) rather than on anything guaranteed, least of all on Windows.
+
+Remaining TLS in the tree after 3c: `swed` itself in `sweph.c` — which is
+the intended per-thread default context — and `sweconfig.c`'s three
+bookkeeping slots (`cfg_seen`, `cfg_local`, `cfg_applying`), which belong to
+a context and move in 3d.
+
+**Also repaired here, found by accident:** `make all` had not built for three
+phases. `swetest.c`/`swevents.c` include `swephlib.h` before `sweph.h`, and
+that header did not declare `swe_ctx`. No behaviour gate compiles the sample
+programs, so nothing noticed. Gate G9 (`tests/check-build`) now builds them
+and syntax-checks every `*.c` in default, `-DTRACE=1` and `-DTRACE=2`.
 
 ### 8.5 3d — Public `_r` API, shim, headers
 
