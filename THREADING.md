@@ -176,6 +176,15 @@ does not reach, so no exported function is entirely unwitnessed.
 | `check-build` | the sample programs and the `TRACE` build still compile |
 | `check-winmacros` | nothing collides with `windows.h`'s empty annotation macros, and the `_WIN32` branches parse |
 | `check-version` | `SE_VERSION` is the only place the version is written down |
+| `check-jplreal` | `SEFLG_JPLEPH` reaches a real JPL ephemeris, and a missing one is refused rather than substituted |
+
+The bit-exact transcript also carries `cov:order_*`, which pin something
+easily lost: **the same call must give the same answer regardless of what was
+calculated before it.** Three leaks broke that — a Moshier calculation, a JPL
+calculation, or merely naming a JPL file each moved a later result by 4.56″ to
+56″, because the DE number that selects the tidal acceleration was discarded
+when files closed, or read from a file that was never in use. Each row fails
+if its fix is reverted.
 
 CI runs gcc, clang, macOS, MSVC, ThreadSanitizer, AddressSanitizer,
 LeakSanitizer, four C dialects, an ABI check, an LTO build, and a differential

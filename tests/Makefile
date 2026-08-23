@@ -63,6 +63,20 @@ jplreal: jplreal.c $(SWE)
 check-jplreal: jplreal
 	@SE_TEST_EPHE="$${SE_TEST_EPHE:-$(EPHE)}" ./jplreal
 
+# The order-dependence probe. NOT a gate -- a bug-finding instrument.
+#
+# Runs every (prior operation, measurement) pair in its own process and
+# reports anything whose value moved because of what ran before it. That is
+# how the three tid_acc leaks were found; the cov:order_* rows in
+# baseline.txt are the permanent guard those turned into.
+#
+#   make orderprobe && cd tests && ./orderprobe.py
+#
+# A clean run still lists three: swe_set_tid_acc, swe_set_delta_t_userdef and
+# swe_set_sid_mode, which are the caller deliberately changing the value.
+orderprobe: orderprobe.c $(SWE)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
 check-jplguard: jplguard
 	@./jplguard
 
@@ -162,13 +176,13 @@ check-threads-workaround: golden
 check: check-version check-threadshim check-jplreal check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
-	rm -f jplcalc jplreal .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge \
-        check-winmacros check-jplreal \
+        check-winmacros check-jplreal orderprobe \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
