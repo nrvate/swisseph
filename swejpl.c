@@ -839,6 +839,11 @@ static int state(double et, int32 *list, int do_bary,
     intv = js->eh_ss[2];
     aufac = 1. / js->eh_au;
   }
+  /* ipt[i*3] (base offset into buf[]) and ipt[i*3+2] (na, sub-intervals)
+   * feed every interp() call below and are file-controlled with no direct
+   * bound, unlike ncf (checked above). They stay inside buf[]'s ncoeffs
+   * today only indirectly, via the ksize bound plus the file-length
+   * identity check in the block above -- not verified independently. */
   /*   interpolate ssbary sun */
   interp(&buf[(int) ipt[30] - 1], t, intv, ipt[31], 3L, ipt[32], 2L, pvsun);
   for (i = 0; i < 6; ++i) {
