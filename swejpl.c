@@ -91,6 +91,12 @@
 
 #define DEBUG_DO_SHOW	FALSE
 
+/* fsizer() rejects any ksize outside [1000, 5000] (see below); ncoeffs is
+ * ksize/2, so this is that bound restated as a coefficient count. buf[]
+ * must hold at least this many doubles, or a file at the legal upper edge
+ * of ksize overflows it. */
+#define JPL_NCOEFF_MAX 2500
+
 /*
  * local globals
  */
@@ -99,13 +105,13 @@ struct jpl_save {
   char *jplfpath;
   FILE *jplfptr;
   short do_reorder;
-  double eh_cval[400]; 
+  double eh_cval[400];
   double eh_ss[3], eh_au, eh_emrat;
   int32 eh_denum, eh_ncon, eh_ipt[39];
   char ch_cnam[6*400];
   double pv[78];
   double pvsun[6];
-  double buf[1500];
+  double buf[JPL_NCOEFF_MAX];
   double pc[18], vc[18], ac[18], jc[18];
   short do_km;
 };
@@ -319,7 +325,7 @@ static int32 fsizer(char *serr)
       return ERR;
   }
 #endif
-  if (ksize < 1000 || ksize > 5000) {
+  if (ksize < 1000 || ksize > JPL_NCOEFF_MAX * 2) {
     if (serr != NULL)
       sprintf(serr, "JPL ephemeris file does not provide valid ksize (%d)", ksize);/**/
     return NOT_AVAILABLE;
@@ -726,8 +732,21 @@ static int state(double et, int32 *list, int do_bary,
     if (js->do_reorder)
       reorder((char *) &js->eh_cval[0], sizeof(double), 400);
     /* new 26-aug-2008: verify correct block size */
-    for (i = 0; i < 3; ++i) 
+    for (i = 0; i < 3; ++i)
       ipt[i + 36] = lpt[i];
+    /* ipt[i*3+1] (i = 0..12: 10 planets, sun, nutation, libration) is the
+     * per-body coefficient count ("ncf" in interp()). It is read straight
+     * from the file with no independent bound, but interp() uses it to
+     * index js->pc/vc/ac/jc[], each fixed at 18 entries -- a file claiming
+     * more overflows them. Reject up front rather than corrupting memory
+     * on the first interp() call. */
+    for (i = 0; i < 13; ++i) {
+      if (ipt[i * 3 + 1] > (int32) (sizeof(js->pc) / sizeof(js->pc[0]))) {
+	if (serr != NULL)
+	  sprintf(serr, "JPL ephemeris file has an invalid coefficient count (%d) for body %d", (int) ipt[i * 3 + 1], i);
+	return NOT_AVAILABLE;
+      }
+    }
     nrl = 0;
     /* is file length correct? */
     /* file length */

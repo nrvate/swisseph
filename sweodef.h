@@ -7,7 +7,7 @@
    and must be kept compatible. Everything not used in SwissEph
    has been deleted.
 
-   Does auto-detection of MSDOS (TURBO_C or MS_C),  HPUNIX, Linux.
+   Does auto-detection of MSDOS (MS_C), HPUNIX, Linux.
    Must be extended for more portability; there should be a way
    to detect byte order and file system type.
    
@@ -111,43 +111,15 @@
 # define MS_VC
 #endif
 
-#ifdef WIN32		/* Microsoft VC 5.0 does not define MSDOS anymore */
-# define MSDOS MY_TRUE
-#endif
-
-#ifdef MSDOS	/* already defined by some DOS compilers */
+#if defined(WIN32) && !defined(_WIN32)	/* Microsoft VC 5.0 does not define MSDOS anymore */
 # undef MSDOS
 # define MSDOS MY_TRUE
 #endif
 
-#ifdef __TURBOC__	/* defined by  turboc */
-# ifndef MSDOS
-#   define MSDOS MY_TRUE
-# endif
-# define TURBO_C
-#endif
-
-#ifdef __SC__	/* defined by  Symantec C */
-# ifndef MSDOS
-#   define MSDOS MY_TRUE
-# endif
-# define SYMANTEC_C
-#endif
-
-#ifdef __WATCOMC__	/* defined by  WatcomC */
-# ifndef MSDOS
-#   define MSDOS MY_TRUE
-# endif
-# define WATCOMC
-#endif
-
-
 #ifdef MSDOS
 #  define HPUNIX MY_FALSE
 #  define INTEL_BYTE_ORDER 1
-#  ifndef TURBO_C
-#    define MS_C	/* assume Microsoft C compiler */
-#  endif
+#  define MS_C	/* assume Microsoft C compiler */
 # define UNIX_FS MY_FALSE
 #else
 #  define MSDOS MY_FALSE
@@ -168,19 +140,7 @@
 #  include <unistd.h>
 #endif
 
-/*
- * if we have 16-bit ints, we define INT_16; we will need %ld to printf an int32
- * if we have 64-bit long, we define LONG_64
- * If none is defined, we have int = long = 32 bit, and use %d to printf an int32
- */
-#include <limits.h>
-#if INT_MAX < 40000
-# define INT_16
-#else
-# if LONG_MAX > INT_MAX
-#   define LONG_64
-# endif
-#endif
+/* int = long = 32 bit is assumed throughout; use %d to printf an int32. */
 
 #ifdef BYTE_ORDER
 #ifdef LITTLE_ENDIAN
@@ -190,38 +150,21 @@
 #endif
 #endif
 
-#ifdef INT_16
-  typedef long	int32;
-  typedef unsigned long	uint32;
-  typedef int	int16;
-  typedef double  REAL8;  /* real with at least 64 bit precision */
-  typedef long    INT4;   /* signed integer with at least 32 bit precision */
-  typedef unsigned long UINT4;
-                          /* unsigned integer with at least 32 bit precision */
-  typedef int     AS_BOOL;
-  typedef unsigned int UINT2;	/* unsigned 16 bits */
-# define ABS4	labs		/* abs function for long */ 
-#else
   typedef int	int32;
   typedef long long	int64;
   typedef unsigned int	uint32;
   typedef short	int16;
   typedef double  REAL8;  /* real with at least 64 bit precision */
   typedef int     INT4;   /* signed integer with at least 32 bit precision */
-  typedef unsigned int UINT4; 
+  typedef unsigned int UINT4;
 			/* unsigned integer with at least 32 bit precision */
   typedef int     AS_BOOL;
   typedef unsigned short UINT2;	/* unsigned 16 bits */
   # define ABS4	abs		/* abs function for long */
-#endif
 
-#if MSDOS 
-# ifdef TURBO_C
-#   include <alloc.h>		/* MSC needs malloc ! */
-# else
-#   include <malloc.h>
-# endif
-# define SIGALRM SIGINT
+#if MSDOS
+#  include <malloc.h>
+#  define SIGALRM SIGINT
 #endif
 
 #ifndef TRUE 

@@ -1,7 +1,14 @@
 # Plan: C89 → C17 Migration
 
-**Status:** not started — begins once `PLAN.md` Phase 2 lands (in progress
-elsewhere as of this writing; see §8)
+**Status:** in progress — `PLAN.md` Phase 2 landed (`48a7540`, confirmed
+green: G1/G1b/G2/G8, ThreadSanitizer clean); `PLAN.md` Phase 3 has not
+started, so this is the right window (§8). Reviewed against Phase 2's actual
+diff before starting: `sweodef.h` (Phase 1's target) was untouched; the
+`swed` initializer (§9/Phase 2.4) still has exactly the shape described there
+— Phase 2.2 added `const_lapse_rate` positionally as a documented workaround,
+not a fix; two new files landed (`sweconfig.c`/`sweconfig.h`, already in
+`Makefile`'s `SWEOBJ`) using the same `int32`/`AS_BOOL`/`TLS` typedefs, so
+they fall into this plan's scope with no extra edits needed.
 **Companion to:** [`REVIEW.md`](REVIEW.md) §1.3, §0 (the "no `stdint.h`/`stdbool.h`
 anywhere," "K&R holdouts," "hand-rolled `int32`" findings this plan resolves)
 **Relationship to** [`PLAN.md`](PLAN.md): independent effort, same safety net
@@ -131,16 +138,31 @@ deletion:
 
 | # | Action | Location |
 |---|---|---|
-| 1.1 | Delete `__TURBOC__`/`TURBO_C`, `__SC__`/`SYMANTEC_C`, `__WATCOMC__`/`WATCOMC` branches | `sweodef.h:123-142` |
-| 1.2 | Delete the `INT_16` branch and its `typedef long int32` / `typedef int int16` fallback — collapse to the 32-bit-int path unconditionally | `sweodef.h:176-216` |
-| 1.3 | Collapse the `MSDOS` detection cascade to a single `#ifdef _WIN32`/`WIN32` check; drop the bare `MSDOS` legacy alias entirely if nothing outside `sweodef.h` reads it (`grep -rn 'MSDOS' --include='*.c'` first) | `sweodef.h:96-159` |
-| 1.4 | Re-verify the `TLS` macro's compiler list (`sweodef.h:86-94`) still matches reality post-cleanup — this is shared ground with `PLAN.md`, touch carefully | `sweodef.h:86-94` |
+| 1.1 ✅ | Delete `__TURBOC__`/`TURBO_C`, `__SC__`/`SYMANTEC_C`, `__WATCOMC__`/`WATCOMC` branches | `sweodef.h:123-142` |
+| 1.2 ✅ | Delete the `INT_16` branch and its `typedef long int32` / `typedef int int16` fallback — collapse to the 32-bit-int path unconditionally | `sweodef.h:176-216` |
+| 1.3 ✅ | Collapse the `MSDOS` detection cascade to a single `#ifdef _WIN32`/`WIN32` check; drop the bare `MSDOS` legacy alias entirely if nothing outside `sweodef.h` reads it (`grep -rn 'MSDOS' --include='*.c'` first) | `sweodef.h:96-159` |
+| 1.4 ✅ | Re-verify the `TLS` macro's compiler list (`sweodef.h:86-94`) still matches reality post-cleanup — this is shared ground with `PLAN.md`, touch carefully | `sweodef.h:86-94` |
 
 Each sub-step is independently revertable and gated on `tests/golden` staying
 byte-identical, same discipline as `PLAN.md` Phase 1.
 
 **Exit gate:** `sweodef.h` no longer contains any 16-bit-int or DOS-era-compiler
-branch; G1 and G5 (Linux/macOS/Windows) still pass.
+branch; G1 and G5 (Linux/macOS/Windows) still pass. **✅ Done.**
+
+**Outcome:** `grep -rln 'MSDOS' --include='*.c'` before deleting confirmed
+bare `MSDOS` is read in 7 `.c` files outside `sweodef.h`, so it was kept
+(per 1.3's own conditional) — only the now-unreachable *paths that set it*
+(Turbo C/Symantec C/Watcom C/"already defined by some DOS compiler") were
+removed. `LONG_64` (defined alongside `INT_16`, 1.2) was independently
+confirmed unused anywhere in the tree and deleted with it. `MS_C`'s `#ifndef
+TURBO_C` guard collapsed to an unconditional define since `TURBO_C` can no
+longer exist. 1.4 required no edit — the `TLS` block was untouched by 1.1-1.3
+and its pre-existing `!defined(WIN32)`-disables-TLS behavior is
+INVESTIGATION.md's already-documented Class B, `PLAN.md` territory, not
+touched here. Verified: `make check` (G1, G1b, G2, cfgleak, threadshim) all
+green; root `make all` clean under `-Wall`, zero warnings;
+`check-threadshim-all` still passes across all 5 dialect configs including
+`-std=c89`. Diff is 65 lines removed, 8 added, `sweodef.h` only.
 
 ### Phase 2 — Real fixed-width types, same public names
 
@@ -203,25 +225,51 @@ going clean, so it has to happen before Phase 5's `-Werror` flip.
 
 ### Phase 4 — `static_assert` on the file-trusted buffer sizes
 
-Directly targets `REVIEW.md` finding J1 (`swejpl.c` `buf[1500]`/`pc/vc/ac/jc[18]`
-sized from unchecked file header values). This phase doesn't fix the
-underlying validation gap (that's a `REVIEW.md`-driven bug-fix, tracked
-separately) — it adds compile-time documentation of the invariant the runtime
-check needs to enforce:
+**Correction, caught before this phase started (credit: a review from the
+other session working `PLAN.md` Phase 3, relayed by the user):** this
+section's original worked example —
+`static_assert(sizeof(js->buf)/sizeof(js->buf[0]) >= 2500, ...)` — does not
+compile. `buf[]` was declared `double buf[1500]`, not 2500; the assertion as
+written is `static_assert(1500 >= 2500)`, which fails on the spot. The
+"documentation-only" framing below was wrong: landing that assertion as
+originally written forces an immediate choice between widening `buf[]` (a
+real fix) or weakening the assertion to something true but vacuous
+(`>= 1500`), which asserts nothing. There was no way to land this phase as
+pure documentation.
 
-```c
-static_assert(sizeof(js->buf) / sizeof(js->buf[0]) >= 2500,
-              "buf[] must hold the maximum ncoeffs the ksize bound in "
-              "fsizer() can produce");
-```
+**Resolved by fixing J1 directly, ahead of this phase**, rather than
+deferring it — the fix needs no C11 feature (an array size and a bounds
+check are both plain C, valid under every dialect this codebase supports),
+so nothing about it required waiting for Phase 5's build-flag flip:
 
-so the next person who changes the `ksize` bound in `fsizer()` gets a
-compiler error instead of a silent overflow if they widen it without
-widening `buf[]` to match.
+- `buf[1500]` → `buf[JPL_NCOEFF_MAX]` (`JPL_NCOEFF_MAX` = 2500, named and
+  tied to `fsizer()`'s existing `ksize > 5000` bound at the same site, so
+  the two can't drift apart silently again).
+- `pc`/`vc`/`ac`/`jc[18]` had **no assertable bound at all** — `ncf` (the
+  per-body coefficient count that indexes them) comes straight from the
+  file's `ipt[]` with no compile-time relationship to anything. Added a
+  **runtime** check in `state()`, once at file-open time (all 13 relevant
+  `ipt[]` entries, covering 10 planets + sun + nutation + libration),
+  rejecting a file that claims more than `sizeof(js->pc)/sizeof(js->pc[0])`
+  coefficients — `NOT_AVAILABLE` + `serr`, the file's own existing
+  validation-failure convention, not a new one.
 
-**Exit gate:** one `static_assert` landed per fixed-capacity array whose size
-is derived from a file-controlled value (`swejpl.c` is the known instance;
-grep for the pattern elsewhere while here).
+What's left for *this* phase, now genuinely documentation rather than a
+disguised bug fix: land a real, now-true `static_assert` confirming
+`JPL_NCOEFF_MAX` sizes `buf[]` correctly, once C11 is guaranteed (Phase 5).
+The `pc`/`vc`/`ac`/`jc[18]` bound stays a runtime check permanently — it
+can't become a `static_assert`, because there's no compile-time constant on
+the other side of that comparison; the file controls it.
+
+**Exit gate (revised):** `static_assert` present and passing on `buf[]`'s
+sizing (only place a real compile-time invariant exists); runtime check on
+`ncf` verified to reject a synthetic oversized-`ipt[]` value (needs a
+malformed-file fixture — none of this repo's shipped `ephe/` files exercise
+the JPL code path at all, so this can't be checked against `tests/golden`
+and needs its own fixture before it's considered verified, not just
+compiled). Also fix the original `G4` gate (`grep -q static_assert
+swejpl.c`) — it passes on any `static_assert` in the file, including a
+trivially true one; tighten it to check the specific assertion.
 
 ### Phase 5 — Flip the build, turn on `-Werror`
 
