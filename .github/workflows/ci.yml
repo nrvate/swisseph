@@ -97,6 +97,11 @@ jobs:
       # built by nothing else. Tier 5 had already rotted unbuildable.
       - name: swethread.h backends all build and compute
         run: make -C tests check-threadtiers EPHE=../$EPHE
+
+      # G12. A bare swe_X() from inside the library silently uses the
+      # default context. Two hand audits missed cases; this cannot.
+      - name: No internal calls to legacy entry points
+        run: make -C tests check-bridge
       - name: Threading shim
         run: make -C tests check-threadshim
 

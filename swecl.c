@@ -4660,7 +4660,7 @@ nazalt++;
       xh[ii][1] -= horhgt;
       h[ii] = xh[ii][1];
     } else {
-      swe_azalt_rev(t, SE_HOR2EQU, geopos, xh[ii], xc);
+      swe_azalt_rev_r(ctx, t, SE_HOR2EQU, geopos, xh[ii], xc);
 nazalt++;
       swe_azalt_r(ctx, t, SE_EQU2HOR, geopos, atpress, attemp, xc, xh[ii]);
 nazalt++;
@@ -4751,7 +4751,7 @@ nazalt++;
 	  ah[1] -= horhgt;
 	  h[j] = ah[1];
 	} else {
-	  swe_azalt_rev(tc[j], SE_HOR2EQU, geopos, ah, xc);
+	  swe_azalt_rev_r(ctx, tc[j], SE_HOR2EQU, geopos, ah, xc);
 nazalt++;
 	  swe_azalt_r(ctx, tc[j], SE_EQU2HOR, geopos, atpress, attemp, xc, ah);
 nazalt++;
@@ -4813,7 +4813,7 @@ nazalt++;
 	ah[1] -= horhgt;
 	aha = ah[1];
       } else {
-	swe_azalt_rev(t, SE_HOR2EQU, geopos, ah, xc);
+	swe_azalt_rev_r(ctx, t, SE_HOR2EQU, geopos, ah, xc);
 	nazalt++;
 	swe_azalt_r(ctx, t, SE_EQU2HOR, geopos, atpress, attemp, xc, ah);
 	nazalt++;
@@ -6290,7 +6290,7 @@ static void osc_iterate_min_dist(double ean, double *pqr, double *xa, double *xb
 /* function calculates maximum distance, minimum distance and true distance between
  * the Sun and the Earth-Moon barycentre. Maximum and minimum distance are derived
  * from Kepler elements. */
-static int32 orbit_max_min_true_distance_helio(double tjd_et, int ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
+static int32 orbit_max_min_true_distance_helio(swe_ctx *ctx, double tjd_et, int ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
 {
   double xinner[3], pqri[20];
   double eani;
@@ -6302,7 +6302,7 @@ static int32 orbit_max_min_true_distance_helio(double tjd_et, int ipl, int32 ifl
     ipli = SE_EARTH;
   }
   /* Kepler elements */
-  if ((retval = swe_get_orbital_elements(tjd_et, ipli, iflagi, de, serr)) == ERR)
+  if ((retval = swe_get_orbital_elements_r(ctx, tjd_et, ipli, iflagi, de, serr)) == ERR)
     return ERR;
   *dmax = de[16];
   *dmin = de[15];
@@ -6359,7 +6359,7 @@ static int32 orbit_max_min_true_distance_helio(double tjd_et, int ipl, int32 ifl
  * dtrue	true distance (pointer to double)
  * serr	        error string
  */
-int32 CALL_CONV swe_orbit_max_min_true_distance(double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
+int32 CALL_CONV swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
 {
   int i, j, k, retval;
   int32 iflagi = (iflag & (SEFLG_EPHMASK | SEFLG_HELCTR | SEFLG_BARYCTR));
@@ -6374,12 +6374,12 @@ int32 CALL_CONV swe_orbit_max_min_true_distance(double tjd_et, int32 ipl, int32 
   double nitermax = 300;
   /* separate handling for the Sun, Moon and heliocentric calculation */
   if (ipl == SE_SUN || ipl == SE_MOON || (iflagi & (SEFLG_HELCTR | SEFLG_BARYCTR))) {
-    retval = orbit_max_min_true_distance_helio(tjd_et, ipl, iflagi, dmax, dmin, dtrue, serr);
+    retval = orbit_max_min_true_distance_helio(ctx, tjd_et, ipl, iflagi, dmax, dmin, dtrue, serr);
     return retval;
   }
-  if ((retval = swe_get_orbital_elements(tjd_et, ipl, iflagi, dp, serr)) == ERR)
+  if ((retval = swe_get_orbital_elements_r(ctx, tjd_et, ipl, iflagi, dp, serr)) == ERR)
     return ERR;
-  if ((retval = swe_get_orbital_elements(tjd_et, SE_EARTH, iflagi, de, serr)) == ERR)
+  if ((retval = swe_get_orbital_elements_r(ctx, tjd_et, SE_EARTH, iflagi, de, serr)) == ERR)
     return ERR;
   if (de[0] > dp[0]) {
     douter = de;
@@ -6478,6 +6478,13 @@ int32 CALL_CONV swe_orbit_max_min_true_distance(double tjd_et, int32 ipl, int32 
   return retval;
 }
 
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+int32 CALL_CONV swe_orbit_max_min_true_distance(double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
+{
+  return swe_orbit_max_min_true_distance_r(swi_default_ctx(), tjd_et, ipl, iflag, dmax, dmin, dtrue, serr);
+}
+
 /* function finds the gauquelin sector position of a planet or fixed star
  * 
  * if starname != NULL then a star is computed.
@@ -6553,7 +6560,7 @@ int32 CALL_CONV swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut,  /* input time
     }
     if (imeth == 1) 
       x0[1] = 0;
-    *dgsect = swe_house_pos(armc, geopos[1], eps + nutlo[1], 'G', x0, NULL);
+    *dgsect = swe_house_pos_r(ctx, armc, geopos[1], eps + nutlo[1], 'G', x0, NULL);
     return OK;
   }
   /* 

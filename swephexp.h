@@ -842,6 +842,7 @@ ext_def( double ) swe_mooncross_r(swe_ctx *ctx, double x2cross, double jd_et, in
 ext_def( double ) swe_mooncross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr);
 ext_def( int32 ) swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, int32 method, double *xnasc, double *xndsc, double *xperi, double *xaphe, char *serr);
 ext_def( int32 ) swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, int32 method, double *xnasc, double *xndsc, double *xperi, double *xaphe, char *serr);
+ext_def( int32 ) swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr);
 ext_def( int32 ) swe_pheno_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, double *attr, char *serr);
 ext_def( int32 ) swe_pheno_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, double *attr, char *serr);
 ext_def( int32 ) swe_rise_trans_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname, int32 epheflag, int32 rsmi, double *geopos, double atpress, double attemp, double *tret, char *serr);

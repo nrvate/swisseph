@@ -1111,7 +1111,7 @@ static int32 Magnitude(swe_ctx *ctx, double JDNDaysUT, double *dgeo, char *Objec
   if (Planet != -1) {
     /**dmag = Phenomena(JDNDaysUT, Lat, Longitude, HeightEye, TempE, PresE, ObjectName, 4);*/
     SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, dgeo[0], dgeo[1], dgeo[2]));
-    if (swe_pheno_ut(JDNDaysUT, Planet, iflag, x, serr) == ERR)
+    if (swe_pheno_ut_r(ctx, JDNDaysUT, Planet, iflag, x, serr) == ERR)
       return ERR;
     *dmag = x[4];
   } else {
@@ -1914,7 +1914,7 @@ int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *
     elong = ARCLact;
     illum = 100;
   } else {
-    retval = swe_pheno_ut(JDNDaysUT, Planet, iflag|(SEFLG_TOPOCTR|SEFLG_EQUATORIAL), attr, serr);
+    retval = swe_pheno_ut_r(ctx, JDNDaysUT, Planet, iflag|(SEFLG_TOPOCTR|SEFLG_EQUATORIAL), attr, serr);
     if (retval == ERR) return ERR;
     elong = attr[2];
     illum = attr[1] * 100;
@@ -2164,13 +2164,13 @@ static int32 moon_event_arc_vis(swe_ctx *ctx, double JDNDaysUTStart, double *dge
   /* start 30 days later if TypeEvent=4 (1) */
   if (TypeEvent == 1) JDNDaysUT = JDNDaysUT + 30;
   /* determination of new moon date */
-  swe_pheno_ut(JDNDaysUT, Planet, iflag, x, serr);
+  swe_pheno_ut_r(ctx, JDNDaysUT, Planet, iflag, x, serr);
   phase2 = x[0];
   goingup = 0;
   do {
     JDNDaysUT = JDNDaysUT + Daystep;
     phase1 = phase2;
-    swe_pheno_ut(JDNDaysUT, Planet, iflag, x, serr);
+    swe_pheno_ut_r(ctx, JDNDaysUT, Planet, iflag, x, serr);
     phase2 = x[0];
     if (phase2 > phase1) 
       goingup = 1;

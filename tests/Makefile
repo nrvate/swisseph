@@ -150,7 +150,7 @@ clean:
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
-        check-build check-ctx check-jplcalc check-threadtiers clean
+        check-build check-ctx check-jplcalc check-threadtiers check-bridge clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
 #
@@ -164,6 +164,18 @@ bench: bench.c $(wildcard ../*.c)
 
 bench-run: bench
 	@./bench --ephe $(EPHE) --rep $(REP)
+
+# G12: no library-internal code may call a legacy (shim) entry point.
+#
+# A bare swe_X() from inside the library computes against the DEFAULT
+# context regardless of the caller's -- so an explicit swe_ctx quietly gives
+# the wrong answer, with no error and no race for a sanitizer to catch.
+#
+# A gate rather than a review item because the hand audit under-reported:
+# the first pass said "0 violations" using a name list that was stale, and
+# the second found 12 real ones.
+check-bridge:
+	@python3 ../tools/bridgecheck.py
 
 # G11: every swethread.h backend must build, link and compute.
 #

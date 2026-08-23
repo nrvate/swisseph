@@ -831,7 +831,7 @@ int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
 for (i = 1; i <=12; i++) {
   double x[6];
   x[0] = cusp[i]; x[1] = 0; x[2] = 1;
-  cusp[i] = (swe_house_pos(armc, geolat, eps, hsys, x, NULL) - 1) * 30;
+  cusp[i] = (swe_house_pos_r(ctx, armc, geolat, eps, hsys, x, NULL) - 1) * 30;
 }
 #endif
   return retc;
