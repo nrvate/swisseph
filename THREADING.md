@@ -129,7 +129,7 @@ make -C tests check-golden   # bit-exact regression gate
 ```
 
 - **`LTO=1`** is opt-in. Measured at about **5% faster** on the Moshier Moon
-  path and bit-identical to plain `-O2` across all 5201 golden rows on gcc 13.
+  path and bit-identical to plain `-O2` across all 5201 golden rows on gcc 11.4.
   It is not the default because parity on clang/macOS/MSVC has not been
   confirmed — the CI `lto` job exists to close that.
 - **`-DSWE_NO_THREADS`** compiles the threading primitives to no-ops for

@@ -379,7 +379,7 @@ written specifically to survive being compiled as C89 today.
 > | `restrict` on `interp()` | landed | **unmeasurable here** — `interp()` executes 0 times in this checkout (see §4.1 warning). Kept because it is correct. |
 > | `restrict` on `embofs`, `calc_center_body`, `swi_osc_el_plan`, `swi_trop_ra2sid_lon_sosy` | landed | `moon` **−3.6% to −5.6%** across two A/B rounds, `calc-moseph` −1.7% to −2.9%; nothing elsewhere. Call the Moon figure "a few percent" — the estimate is not stable enough to quote precisely. |
 | `restrict` on `swi_cross_prod` | **declined** | see below |
-| `-flto` | landed, **opt-in** (`make LTO=1`) | `moon` **−5.0%**, `calc-moseph` −2.6%; everything else inside the ±2–3% noise floor. Bit-identical to plain `-O2` across all 5137 golden rows on gcc 13. |
+| `-flto` | landed, **opt-in** (`make LTO=1`) | `moon` **−5.0%**, `calc-moseph` −2.6%; everything else inside the ±2–3% noise floor. Bit-identical to plain `-O2` across all 5137 golden rows (as it then was) on gcc 11.4. |
 >
 > LTO is not on by default: clang/macOS/MSVC parity is unverified (no clang
 > on the machine these were measured on — the CI `lto` job exists to close
@@ -437,7 +437,7 @@ claims speed improvements. `tests/golden` proves "didn't break it," not
 - [x] `tests/bench` (`make -C tests bench-run`). Median of N runs, plus min
       and the spread, at `-O2` regardless of `CFLAGS` — a claim about codegen
       measured at `-O0` is meaningless.
-- [x] **Baseline recorded**, gcc 13 `-O2`, this machine, median of 7:
+- [x] **Baseline recorded**, gcc 11.4 `-O2`, this machine, median of 7:
 
       | workload | median (s) | note |
       |---|---|---|

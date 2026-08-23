@@ -53,7 +53,7 @@ endif
 
 # Link-time optimisation. OPT-IN: `make LTO=1`.
 #
-# Measured on gcc 13 -O2 (tests/bench, 3 interleaved runs, median of 5):
+# Measured on gcc 11.4 -O2 (tests/bench, 3 interleaved runs, median of 5):
 #
 #   moon         -5.0%     swemmoon.c calling swephlib.c helpers across TUs
 #   calc-moseph  -2.6%

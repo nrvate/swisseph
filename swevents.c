@@ -368,7 +368,16 @@ int main(int argc, char *argv[])
 {
   AS_BOOL is_opposition;
   char serr[256];
-  char sout[AS_MAXCH], s[AS_MAXCH], saves[AS_MAXCH]; 
+  char sout[AS_MAXCH], s[AS_MAXCH];
+  /* saves holds the previous input line, so that entering an empty line
+   * repeats it (see the *sp == '\0' branch below). It must start empty:
+   * on the FIRST iteration there is no previous line, and the old
+   * declaration left it uninitialised, so an empty first input copied
+   * stack garbage into s and then parsed it as a date.
+   *
+   * gcc 14 on the CI runner catches this via -Werror=maybe-uninitialized
+   * in the fortified strcpy; gcc 13 locally does not. */
+  char saves[AS_MAXCH] = "";
   char *sp, *spsave;
   char *spno;
   int i, j, k, n, izod;
