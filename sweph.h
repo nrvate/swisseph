@@ -820,6 +820,26 @@ struct moon_state {
   double f, g, Ve, Ea, Ma, Ju, Sa, cg, sg, l1, l2, l3, l4;
 };
 
+/* Memo caches for the heliacal code (swehel.c).
+ *
+ * Thirteen function-local TLS statics. They are grouped by OWNING FUNCTION
+ * rather than flattened, because the names collide: alts_last and
+ * sunra_last each existed three times -- in kOZ(), ka() and Deltam() -- and
+ * tjdsv twice, in call_swe_calc() and fast_magnitude(). Each was a distinct
+ * variable that merely shared a name with the others, so flattening them
+ * into one struct would have silently merged three separate caches into
+ * one and produced wrong answers with nothing failing to compile.
+ */
+struct hel_state {
+  struct { double tjdsv[3], xsv[3][6]; int32 iflagsv[3]; } calc;
+  struct { double dmag; char star_save[AS_MAXCH]; }        starmag;
+  struct { double tjdlast, ralast; }                       sunra;
+  struct { double koz_last, alts_last, sunra_last; }       koz;
+  struct { double alts_last, sunra_last, ka_last; }        ka;
+  struct { double alts_last, alto_last, sunra_last, deltam_last; } deltam;
+  struct { double tjdsv[3], dmagsv[3]; int32 helflagsv[3]; } fastmag;
+};
+
 /* THE EPHEMERIS CONTEXT.
  *
  * Everything the library remembers between calls: configuration, caches,
@@ -925,6 +945,9 @@ struct swe_ctx {
    * initialiser (sweph.c) and in swi_init_swed_if_start(), which memsets
    * before filling in non-zero defaults. */
   double saved_sundec;
+
+  /* swehel.c memo caches -- see struct hel_state above. */
+  struct hel_state hel;
 };
 
 /* swe_ctx is forward-declared near the top of this header, next to
