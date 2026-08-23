@@ -20,6 +20,23 @@ Related, elsewhere in the tree:
 - `tests/` — 13 gates: golden baseline, thread consistency, context independence, leak/race, JPL reader, threading backends, bridge invariant, build
 - `tests/baseline.txt` — bit-exact reference transcript, 5201 rows
 
+## Status
+
+| Plan | State |
+|---|---|
+| [INVESTIGATION.md](INVESTIGATION.md) | complete — root cause understood and reproduced |
+| [PLAN.md](PLAN.md) Phases 0–2 | complete — configuration propagates, races fixed |
+| [PLAN.md](PLAN.md) Phase 3a–3d | complete — 78 `_r` entry points, `swe_ctx_new`/`free`, ABI additive only |
+| [PLAN.md](PLAN.md) Phase 3e | **not started, and optional** — a shared ephemeris file cache. It was always a decision point, not a commitment; §8.6 has the trade-off. Nothing depends on it. |
+| [C17_MIGRATION.md](C17_MIGRATION.md) | complete — all five phases |
+| [C17_PERFORMANCE.md](C17_PERFORMANCE.md) | complete — several items measured and *declined*, which is recorded as carefully as what landed |
+| [REVIEW.md](REVIEW.md) | both correctness findings resolved (J1 fixed, S1 deleted). The remaining themes — unsafe string handling, `goto` density, no enums — are systemic modernization, untouched and out of scope for this branch. |
+
+**14 gates**, all green; see [`THREADING.md`](../THREADING.md) for what each
+one proves. The one thing worth knowing before changing anything here: the
+gates are bit-exact, so a change that alters *any* number fails loudly rather
+than drifting.
+
 ## The one-paragraph version
 
 libswe is not "not thread safe" in the usual sense. Since v2.03 upstream
