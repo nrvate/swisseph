@@ -153,6 +153,26 @@ jobs:
             echo "$syms" | grep -qx "$s" || { echo "FAIL: $s not exported"; exit 1; }
           done
           echo "context API present: $(echo "$syms" | grep -c '_r$') _r entry points"
+      - name: ABI -- nothing upstream exported may disappear
+        run: |
+          set -e
+          SRC="sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c
+               sweph.c swephlib.c swecl.c swehel.c"
+          nm -gU libswe.dylib | sed 's/^.* _//;s/^_//' | sort -u > /tmp/new.sym
+          # The Linux abi job asks the same question, but only for Linux. The
+          # export set is decided per platform, so "nothing was removed" has
+          # to be established where the linker actually decides it.
+          git fetch -q --depth=1 origin legacy-master
+          git worktree add -q /tmp/base "$(git rev-parse FETCH_HEAD)"
+          ( cd /tmp/base && cc -dynamiclib -fPIC -D_GNU_SOURCE -o /tmp/base.dylib \
+              $(for f in $SRC; do [ -f "$f" ] && printf '%s ' "$f"; done) -lm )
+          nm -gU /tmp/base.dylib | sed 's/^.* _//;s/^_//' | sort -u > /tmp/base.sym
+          removed=$(comm -23 /tmp/base.sym /tmp/new.sym)
+          if [ -n "$removed" ]; then
+            echo "ABI FAIL: symbol(s) removed relative to upstream:"; echo "$removed" | sed 's/^/  /'; exit 1
+          fi
+          echo "ABI ok: nothing removed, $(comm -13 /tmp/base.sym /tmp/new.sym | grep -c . || true) added"
+
       - name: Assemble package
         run: |
           pkg=pkg/swisseph-macos
@@ -259,6 +279,32 @@ jobs:
             findstr /C:"280" swe_smoke.txt >nul || ( echo FAIL: no plausible position & exit /b 1 )
           )
           echo both CLIs produce a plausible Sun position
+      - name: ABI -- nothing upstream exported may disappear
+        shell: cmd
+        run: |
+          rem Windows exports are a DIFFERENT set from Linux: __declspec(dllexport)
+          rem on the swe_* declarations means the DLL exposes the public API only,
+          rem not internal globals. So "nothing was removed" has to be asked here
+          rem too, against a DLL built from the pristine upstream tree.
+          rem
+          rem Built with cl /LD directly rather than msbuild: the upstream tree's
+          rem .vcxproj files cannot build at all (no sweconfig.c, retired toolset),
+          rem which is why they were repaired on this branch.
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat" >nul
+          git fetch -q --depth=1 origin legacy-master || exit /b 1
+          for /f %%h in ('git rev-parse FETCH_HEAD') do set BASE=%%h
+          git worktree add -q ..\base %BASE% || exit /b 1
+          pushd ..\base
+          cl /nologo /LD /DMAKE_DLL /DWIN32 /D_WINDOWS /DNDEBUG /D_CRT_SECURE_NO_WARNINGS ^
+             swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c ^
+             /Fe:base.dll >nul || exit /b 1
+          dumpbin /exports base.dll | findstr /R "swe_" > ..\swisseph\base_exports.txt
+          popd
+          dumpbin /exports windows\projects\out\x64\Release\swedll64.dll | findstr /R "swe_" > new_exports.txt
+          for /f %%n in ('type base_exports.txt ^| find /c "swe_"') do echo baseline exports: %%n
+          for /f %%n in ('type new_exports.txt  ^| find /c "swe_"') do echo current  exports: %%n
+          powershell -Command "$b=(Select-String -Path base_exports.txt -Pattern 'swe_[a-z_0-9]+' -AllMatches).Matches.Value | Sort-Object -Unique; $n=(Select-String -Path new_exports.txt -Pattern 'swe_[a-z_0-9]+' -AllMatches).Matches.Value | Sort-Object -Unique; $gone=$b | Where-Object { $n -notcontains $_ }; if ($gone) { Write-Host 'ABI FAIL: removed relative to upstream:'; $gone | ForEach-Object { Write-Host \"  $_\" }; exit 1 }; Write-Host \"ABI ok: nothing removed, $(($n | Where-Object { $b -notcontains $_ }).Count) added\"" || exit /b 1
+
       - name: Assemble package
         shell: pwsh
         run: |

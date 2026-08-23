@@ -350,26 +350,47 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
-      - name: Compare exported symbols against the merge base
+      - name: Compare exported symbols against the upstream base
         run: |
-          set -x
-          cc -shared -fPIC -D_GNU_SOURCE -o /tmp/new.so \
-             sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c \
-             sweph.c swephlib.c swecl.c swehel.c -lm -ldl
-          nm -D --defined-only /tmp/new.so | awk '{print $2, $3}' | sort > /tmp/new.sym
-          base=$(git rev-parse HEAD~1 2>/dev/null || echo "")
-          if [ -z "$base" ]; then echo "no base commit, skipping"; exit 0; fi
+          set -e
+          SRC="sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c
+               sweph.c swephlib.c swecl.c swehel.c"
+          cc -shared -fPIC -D_GNU_SOURCE -o /tmp/new.so $SRC -lm -ldl
+          nm -D --defined-only /tmp/new.so | awk '{print $3}' | sort -u > /tmp/new.sym
+
+          # legacy-master is the pristine upstream tree this fork started
+          # from. The old base was HEAD~1, which meant this gate only ever
+          # compared ONE commit's delta -- a symbol dropped three commits
+          # earlier would have sailed straight through. The question worth
+          # asking is whether the fork has removed anything upstream
+          # exported, and that needs a fixed baseline.
+          git fetch -q --depth=1 origin legacy-master
+          base=$(git rev-parse FETCH_HEAD)
+          echo "baseline: $base (origin/legacy-master)"
           git worktree add -q /tmp/base "$base"
-          cc -shared -fPIC -D_GNU_SOURCE -o /tmp/base.so \
-             $(ls /tmp/base/sweconfig.c /tmp/base/swedate.c /tmp/base/swehouse.c \
-                  /tmp/base/swejpl.c /tmp/base/swemmoon.c /tmp/base/swemplan.c \
-                  /tmp/base/sweph.c /tmp/base/swephlib.c /tmp/base/swecl.c \
-                  /tmp/base/swehel.c 2>/dev/null) -lm -ldl || { echo "base build failed, skipping"; exit 0; }
-          nm -D --defined-only /tmp/base.so | awk '{print $2, $3}' | sort > /tmp/base.sym
-          if comm -23 /tmp/base.sym /tmp/new.sym | grep .; then
-            echo "ABI FAIL: symbol(s) removed or changed type"; exit 1
+          ( cd /tmp/base && cc -shared -fPIC -D_GNU_SOURCE -o /tmp/base.so \
+              $(for f in $SRC; do [ -f "$f" ] && printf '%s ' "$f"; done) -lm -ldl )
+          nm -D --defined-only /tmp/base.so | awk '{print $3}' | sort -u > /tmp/base.sym
+
+          # Compare NAMES, not "type name". Five internal tables became const
+          # on this branch and so moved from .data to .rodata; nm reports them
+          # as R instead of D. Nothing was removed -- but the old pairwise
+          # comparison read a section change as a deletion and failed the
+          # gate. A symbol moving into read-only memory is an improvement.
+          removed=$(comm -23 /tmp/base.sym /tmp/new.sym)
+          if [ -n "$removed" ]; then
+            echo "ABI FAIL: symbol(s) removed relative to upstream:"
+            echo "$removed" | sed 's/^/  /'
+            exit 1
           fi
-          echo "ABI ok: no symbol removed"
+          added=$(comm -13 /tmp/base.sym /tmp/new.sym | grep -c . || true)
+          echo "ABI ok: nothing removed, $added symbol(s) added since upstream"
+
+          # Informational: report where a retained symbol changed section, so
+          # a genuine type change is still visible without failing the build.
+          nm -D --defined-only /tmp/base.so | awk '{print $3, $2}' | sort > /tmp/base.tn
+          nm -D --defined-only /tmp/new.so  | awk '{print $3, $2}' | sort > /tmp/new.tn
+          join /tmp/base.tn /tmp/new.tn | awk '$2!=$3{print "  note: "$1" "$2" -> "$3}'
 
   # ---------------------------------------------------------------------
   # Upstream's own suite, used as a DIFFERENTIAL gate. It cannot be
