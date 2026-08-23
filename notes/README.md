@@ -1,0 +1,28 @@
+# Thread-Safety Working Notes
+
+Working documents for the thread-safe Swiss Ephemeris effort (`threadsafe`
+branch). These are **our** notes — upstream Astrodienst documentation lives in
+`doc/`, not here.
+
+| Document | What it is |
+|---|---|
+| [INVESTIGATION.md](INVESTIGATION.md) | Root-cause analysis: *why* libswe is not thread-usable, with measurements and reproductions. Read this first. |
+| [PLAN.md](PLAN.md) | The end-to-end remediation plan: phases, gates, risks, effort. |
+
+Related, elsewhere in the tree:
+
+- `tests/` — the golden-baseline and thread-consistency harness (Phase 0)
+- `tests/baseline.txt` — bit-exact reference transcript from pristine `3fd0f95`
+
+## The one-paragraph version
+
+libswe is not "not thread safe" in the usual sense. Since v2.03 upstream
+annotated the global `swed` blob with `TLS` → `__thread`, which on Linux/GCC
+genuinely eliminates data races. The result is a library that is **race-free but
+not thread-usable**: configuration set on one thread is invisible to every other,
+so worker threads silently fall back to lower-precision ephemerides and wrong
+sidereal modes while still reporting success. On macOS `TLS` compiles to nothing,
+so the behaviour inverts. Details in [INVESTIGATION.md](INVESTIGATION.md).
+
+> **Note on paths:** file paths in these documents are relative to the **repository
+> root**, not to `notes/`. So `tests/golden.c` means `<repo>/tests/golden.c`.
