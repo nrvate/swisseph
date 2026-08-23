@@ -614,7 +614,16 @@ hand-rolled in `sweodef.h:193-216` with legacy 16-bit-compiler branches, and
 
 - [x] G1b `-O2` gate exists and passes (§14.3)
 - [x] setest differential gate G8 exists and passes
-- [ ] `swi_mutex`/`swi_atomic` shim designed against pre-C11 constraints (§14.4)
-- [ ] `last_epheflag` classified as config vs. derived state (§14.1)
-- [ ] Re-entrancy design for `swe_set_ephe_path -> swe_calc -> sync` (§14.2)
-- [ ] Decide whether `swi_set_tid_acc()`'s derived write bumps the generation
+- [x] `swi_mutex`/`swi_atomic` shim built and tested (`swethread.h`, commit fa5fde8)
+- [x] `last_epheflag` classified — **derived, per-thread** ([CONFIG-MAP.md](CONFIG-MAP.md) §3.1)
+- [x] Re-entrancy design for `swe_set_ephe_path -> swe_calc -> sync` ([CONFIG-MAP.md](CONFIG-MAP.md) §3.2)
+- [x] `swi_set_tid_acc()`'s derived write must **not** bump the generation ([CONFIG-MAP.md](CONFIG-MAP.md) §3.3)
+- [x] Full config read/write map complete — [CONFIG-MAP.md](CONFIG-MAP.md)
+
+**Correction to §7.1/§11 from that map:** `struct swe_config` holds **12**
+fields, not the ~22 first estimated. `last_epheflag`, `jpldenum` and
+`jpl_file_is_open` are derived per-thread state, and `struct topo_data` must be
+*split* — `geolon/geolat/geoalt` are config, `teval/tjd_ut/xobs[6]` are cache.
+A further finding, `get_aya_correction()` save/restoring `astro_models` on a
+compute path, makes the per-thread working copy mandatory rather than merely
+convenient ([CONFIG-MAP.md](CONFIG-MAP.md) §3.4).
