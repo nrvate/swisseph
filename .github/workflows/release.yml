@@ -63,11 +63,11 @@ jobs:
           # silently produced nothing would otherwise become a release with
           # no binaries in it.
           n=$(ls dist | grep -cE '\.(tar\.gz|zip)$')
-          [ "$n" -eq 3 ] || { echo "FAIL: expected 3 platform archives, found $n"; ls dist; exit 1; }
-          for p in linux macos windows; do
+          [ "$n" -eq 4 ] || { echo "FAIL: expected 4 platform archives, found $n"; ls dist; exit 1; }
+          for p in linux macos windows android; do
             ls dist | grep -q "swisseph-$p-" || { echo "FAIL: no archive for $p"; exit 1; }
           done
-          echo "3 platform archives present"
+          echo "4 platform archives present"
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
@@ -89,6 +89,7 @@ jobs:
             | `swisseph-linux-*.tar.gz` | `libswe.so`, `libswe.a`, `swetest`, headers |
             | `swisseph-macos-*.tar.gz` | `libswe.dylib`, `libswe.a`, `swetest`, headers |
             | `swisseph-windows-*.zip` | `swedll{32,64}.dll` + import libs, static libs, `swetest`, headers |
+            | `swisseph-android-*.tar.gz` | JNI library for every ABI the NDK builds, plus `swejni.h` |
 
             Ephemeris data is **not** included — it has its own release
             cadence. Without it the library uses the built-in Moshier

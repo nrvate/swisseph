@@ -1,6 +1,7 @@
 # Binaries in the source tree — findings and plan
 
-**Status:** Windows done — no build artifacts remain under `windows/`, and CI
+**Status:** Windows, Linux, macOS and Android all build and package in CI.
+Originally: Windows done — no build artifacts remain under `windows/`, and CI
 builds the whole MSVC solution into a package on every push. `contrib/` is
 deliberately deferred. Linux/macOS/Android artifacts and releases are next.
 
@@ -67,19 +68,27 @@ writing its object files to a single shared directory, so the DLL was
 linked from objects compiled without `MAKE_DLL` and exported **nothing** —
 while still building, running, and passing every smoke test.
 
-### Deliberately deferred: `contrib/`
+### `contrib/android` — fixed and building
 
-Left entirely alone for now — it is a large enough question to derail the
-work in progress, and may end up refactored or dropped wholesale. Recorded
-so the findings are not lost:
+`contrib/android/libs/*.so` — four `libswe-2.10.03.so`, stamped with
+upstream's version — were the last binaries in the tree that nothing could
+rebuild. Untracked; CI now builds every ABI the NDK offers (five as of
+NDK 27, which adds `riscv64`).
 
-- `contrib/android/libs/*.so` — 4 ABIs, all stamped 2.10.03
+**The build was broken in exactly the way the MSVC projects were:**
+`Android.mk` did not list `sweconfig.c`, and `jni/` had no symlink for
+`sweconfig.h` or `swethread.h` — all three arrived with Phase 2, and the
+library needs them. The module could not compile, let alone link.
+
+Worth preserving deliberately: every library source in `jni/` is a
+**symlink** to the repository root, so Android tracks this branch
+automatically. Replacing them with copies would silently freeze it — which
+is precisely what `windows/sweph.zip` did.
+
+### Still deferred: the rest of `contrib/`
+
 - `contrib/swedll64_2.02.01.zip` — 2 files, both binary, from 2015
-- `contrib/android/jni/` — **`sweph.c`, `swephlib.c`, `swephexp.h` and
-  others here are symlinks to the root sources**, so the Android build
-  tracks this branch automatically. Worth knowing before anyone "tidies"
-  them into copies.
-- The other five contrib archives are genuine third-party contributions with
+- The other five archives are genuine third-party contributions with
   essentially no overlap with the tree (0 duplicate filenames each, except
   the Java one's 4: `LICENSE`, `sefstars.txt`, `seleapsec.txt`,
   `seorbel.txt`).
