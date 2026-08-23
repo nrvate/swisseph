@@ -643,7 +643,7 @@ extern struct epsilon oec2000;
 extern struct epsilon oec;
 */
 
-struct __attribute__((aligned(64))) plan_data {
+struct plan_data {
   /* the following data are read from file only once, immediately after 
    * file has been opened */
   int ibdy;		/* internal body number */
@@ -768,7 +768,7 @@ struct gen_const {
 	sunradius;
 };
 
-struct __attribute__((aligned(64))) save_positions {
+struct save_positions {
   int ipl;
   double tsave;
   int32 iflgsave;

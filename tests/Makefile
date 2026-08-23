@@ -145,7 +145,7 @@ check-threads-workaround: golden
 check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
-	rm -f jplcalc .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f jplcalc .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
@@ -251,7 +251,13 @@ check-build:
 	@# stale swetest.o hides exactly the header-ordering break this gate exists
 	@# to catch. Verified by removing the forward decl and watching `make all`
 	@# pass anyway.
-	@$(MAKE) -s -B -C .. all >/dev/null 2>&1 || { echo "  FAIL: make all"; exit 1; }
+	@# Errors are SHOWN, not swallowed. The first version sent both stdout
+	@# and stderr to /dev/null, so when this gate failed in CI it reported
+	@# only "FAIL: make all" -- the diagnosis had to be reconstructed from
+	@# scratch. A gate that hides why it failed is barely a gate.
+	@$(MAKE) -B -C .. all > .build.log 2>&1 || { \
+	  echo "  FAIL: make all"; tail -25 .build.log; rm -f .build.log; exit 1; }
+	@rm -f .build.log
 	@echo "  make all              OK  (swetest swevents swemini)"
 	@# TRACE=0 means "no -DTRACE at all" -- the default build, checked here
 	@# because it is the one the sample programs actually ship as.

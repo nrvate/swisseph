@@ -104,6 +104,11 @@ swetest: swetest.o libswe.a
 ifeq ($(STATIC_SUPPORTED),true)
 swetests: swetest.o $(SWEOBJ)
 	$(CC) $(CFLAGS) $(STATIC_LINK_FLAGS) -o swetests swetest.o $(SWEOBJ) $(DYNAMIC_LINK_FLAGS) $(LIBS)
+	@# mkdir -p: bin/ is not guaranteed to exist. It does in a full clone,
+	@# but not in a sparse checkout (the CI runner) or a source tarball, and
+	@# the bare cp then fails the whole `make all` with a message that says
+	@# nothing about which target broke.
+	mkdir -p bin
 	cp swetests bin/swetest
 endif
 
