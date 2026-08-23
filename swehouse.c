@@ -73,7 +73,7 @@ static double Asc1(double, double, double, double);
 static double AscDash(double, double, double, double);
 static double Asc2(double, double, double, double);
 static int CalcH(double th, double fi, double ekl, char hsy, struct houses *hsp);
-static int sidereal_houses_ecl_t0(double tjde, 
+static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -96,7 +96,7 @@ static int sidereal_houses_trad(double tjde,
 			   double *cusp_speed,
 			   double *ascmc_speed,
 			   char *serr);
-static int sidereal_houses_ssypl(double tjde, 
+static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -216,9 +216,14 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
 				char *serr)
 {
   int i, retc = 0;
+  /* Public entry point, so it has no context of its own until 3d turns it
+   * into swe_houses_ex2_r(). Bridge to the default one here; everything
+   * below is already written against `ctx`, so 3d is a signature change and
+   * the deletion of this line. */
+  swe_ctx *ctx = swi_default_ctx();
   double armc, eps_mean, nutlo[2];
   double tjde = tjd_ut + swe_deltat_ex(tjd_ut, iflag, NULL);
-  struct sid_data *sip = &swed.sidd;
+  struct sid_data *sip = &ctx->sidd;
   double xp[6];
   int retc_makr = 0;
   int ito;
@@ -226,7 +231,7 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
     ito = 36;
   else
     ito = 12;
-  if ((iflag & SEFLG_SIDEREAL) && !swed.ayana_is_set)
+  if ((iflag & SEFLG_SIDEREAL) && !ctx->ayana_is_set)
     SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   eps_mean = swi_epsiln(tjde, 0) * RADTODEG;
   swi_nutation(tjde, 0, nutlo);
@@ -268,9 +273,9 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
   }
   if (iflag & SEFLG_SIDEREAL) { 
     if (sip->sid_mode & SE_SIDBIT_ECL_T0)
-      retc = sidereal_houses_ecl_t0(tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+      retc = sidereal_houses_ecl_t0(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
     else if (sip->sid_mode & SE_SIDBIT_SSY_PLANE)
-      retc = sidereal_houses_ssypl(tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+      retc = sidereal_houses_ssypl(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
     else
       retc = sidereal_houses_trad(tjde, iflag, armc, eps_mean + nutlo[1], nutlo[0], geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
   } else {
@@ -315,7 +320,7 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
  * 6. subtract this distance from all house cusps.
  * 7. subtract ayanamsa_t0 from all house cusps.
  */
-static int sidereal_houses_ecl_t0(double tjde, 
+static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -331,7 +336,7 @@ static int sidereal_houses_ecl_t0(double tjde,
   double x[6], xvpx[6], x2[6], epst0, xnorm[6];
   double rxy, rxyz, c2, epsx, sgn, fac, dvpx, dvpxe;
   double armcx;
-  struct sid_data *sip = &swed.sidd;
+  struct sid_data *sip = &ctx->sidd;
   int ito;
   if (toupper(hsys) == 'G')
     ito = 36;
@@ -422,7 +427,7 @@ static int sidereal_houses_ecl_t0(double tjde,
  * 8. subtract ayanamsa_t0 from all house cusps.
  * 9. subtract ayanamsa_2000 from all house cusps.
  */
-static int sidereal_houses_ssypl(double tjde, 
+static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -438,7 +443,7 @@ static int sidereal_houses_ssypl(double tjde,
   double x[6], x0[6], xvpx[6], x2[6], xnorm[6];
   double rxy, rxyz, c2, epsx, eps2000, sgn, fac, dvpx, dvpxe, x00;
   double armcx;
-  struct sid_data *sip = &swed.sidd;
+  struct sid_data *sip = &ctx->sidd;
   int ito;
   if (toupper(hsys) == 'G')
     ito = 36;
