@@ -158,7 +158,7 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     /* This thread's own file handles only. Another thread's fidat[] is
      * its own business -- these are per-thread FILE*, not shared. */
     if (swed.jpl_file_is_open) {
-      swi_close_jpl_file();
+      swi_close_jpl_file(ctx);
       swed.jpl_file_is_open = FALSE;
     }
     for (i = 0; i < SEI_NEPHFILES; i++) {

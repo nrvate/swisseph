@@ -880,6 +880,9 @@ struct sweph_state {
  * if this is changed, then also update initialisation in sweph.c */
 struct swe_ctx {
   AS_BOOL ephe_path_is_set;
+  struct jpl_save *jpl;   /* Phase 3c: the open JPL file and every scrap of
+                           * state derived from its header. Opaque here;
+                           * defined in swejpl.c. NULL when closed. */
   AS_BOOL jpl_file_is_open;
   FILE *fixfp;		/* fixed stars file pointer */
   char ephepath[AS_MAXCH];

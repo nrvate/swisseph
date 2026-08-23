@@ -388,7 +388,7 @@ int32 CALL_CONV swe_calc(double tjd, int ipl, int32 iflag,
     /* close and free ephemeris files */
     if (ipl != SE_ECL_NUT) {  /* because file will not be reopened with this ipl */
       if (ctx->jpl_file_is_open) {
-	swi_close_jpl_file();
+	swi_close_jpl_file(ctx);
 	ctx->jpl_file_is_open = FALSE;
       }
       for (i = 0; i < SEI_NEPHFILES; i ++) {
@@ -759,7 +759,7 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	}
 	retc = swi_pleph(ctx, tjd, J_SUN, J_SBARY, psdp->x, serr);
 	if (retc == ERR || retc == BEYOND_EPH_LIMITS) {
-	  swi_close_jpl_file();
+	  swi_close_jpl_file(ctx);
 	  ctx->jpl_file_is_open = FALSE;
 	  goto return_error;
 	}
@@ -1238,7 +1238,7 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx)
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
-  swi_close_jpl_file();
+  swi_close_jpl_file(ctx);
   ctx->jpl_file_is_open = FALSE;
   ctx->jpldenum = 0;
   /* close fixed stars */
@@ -1276,7 +1276,7 @@ void CALL_CONV swe_close(void)
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
-  swi_close_jpl_file();
+  swi_close_jpl_file(ctx);
   ctx->jpl_file_is_open = FALSE;
   ctx->jpldenum = 0;
   /* close fixed stars */
@@ -2092,7 +2092,7 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
 	pedp->iephe = SEFLG_JPLEPH;
       }
       if (retc != OK) {
-	swi_close_jpl_file();
+	swi_close_jpl_file(ctx);
 	ctx->jpl_file_is_open = FALSE;
 	return retc;
       }
@@ -2114,7 +2114,7 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
 	psdp->iephe = SEFLG_JPLEPH;
       }
       if (retc != OK) {
-	swi_close_jpl_file();
+	swi_close_jpl_file(ctx);
 	ctx->jpl_file_is_open = FALSE;
 	return retc;
       }
@@ -2146,7 +2146,7 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
 	pdp->iephe = SEFLG_JPLEPH;
       }
       if (retc != OK) {
-	swi_close_jpl_file();
+	swi_close_jpl_file(ctx);
 	ctx->jpl_file_is_open = FALSE;
 	return retc;
       }
@@ -2673,14 +2673,14 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	if (ibody == IS_PLANET) {
 	  retc = swi_pleph(ctx, t, ipl, J_SBARY, xx, serr);
 	  if (retc != OK) {
-	    swi_close_jpl_file();
+	    swi_close_jpl_file(ctx);
 	    ctx->jpl_file_is_open = FALSE;
 	  } 
 	} else { 	/* asteroid */
 	  /* first sun */
 	  retc = swi_pleph(ctx, t, J_SUN, J_SBARY, xsun, serr);
 	  if (retc != OK) {
-	    swi_close_jpl_file();
+	    swi_close_jpl_file(ctx);
 	    ctx->jpl_file_is_open = FALSE;
 	  } 
 	  /* asteroid */
@@ -2693,7 +2693,7 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	  && !(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR)) { 	
 	  retc = swi_pleph(ctx, t, J_EARTH, J_SBARY, xearth, serr);
 	  if (retc != OK) {
-	    swi_close_jpl_file();
+	    swi_close_jpl_file(ctx);
 	    ctx->jpl_file_is_open = FALSE;
 	    return(retc);
 	  } 
@@ -4064,7 +4064,7 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
 	    else
 	      retc = swi_pleph(ctx, t, J_SUN, J_SBARY, xsun, serr);
 	    if (retc != OK) {
-	      swi_close_jpl_file();
+	      swi_close_jpl_file(ctx);
 	      ctx->jpl_file_is_open = FALSE;
 	      return(retc);
 	    } 
@@ -4228,7 +4228,7 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
         if (retc == OK && (iflag & SEFLG_HELCTR))
           retc = swi_pleph(ctx, t, J_SUN, J_SBARY, xs, serr);
         if (retc != OK) {
-	      swi_close_jpl_file();
+	      swi_close_jpl_file(ctx);
 	      ctx->jpl_file_is_open = FALSE;
         } 
 	for (i = 0; i <= 5; i++)
@@ -6499,7 +6499,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     free_planets(ctx);
     /* close and free ephemeris files */
     if (ctx->jpl_file_is_open) {
-      swi_close_jpl_file();
+      swi_close_jpl_file(ctx);
       ctx->jpl_file_is_open = FALSE;
     }
     for (i = 0; i < SEI_NEPHFILES; i ++) {
@@ -7551,7 +7551,7 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
     }
   }
   if (retc == OK) {
-    ctx->jpldenum = swi_get_jpl_denum();
+    ctx->jpldenum = swi_get_jpl_denum(ctx);
     ctx->jpl_file_is_open = TRUE;
     swi_set_tid_acc(ctx, 0, 0, ctx->jpldenum, serr);
   }
@@ -7728,7 +7728,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     free_planets(ctx);
     /* close and free ephemeris files */
     if (ctx->jpl_file_is_open) {
-      swi_close_jpl_file();
+      swi_close_jpl_file(ctx);
       ctx->jpl_file_is_open = FALSE;
     }
     for (i = 0; i < SEI_NEPHFILES; i ++) {

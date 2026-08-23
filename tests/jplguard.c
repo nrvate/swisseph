@@ -106,7 +106,7 @@ static int expect_reject(const char *what, const char *file, const char *want)
   printf("  %-34s rc=%-3d %s\n", what, r, serr);
   if (r == OK) {
     printf("    FAIL: malformed file was ACCEPTED -- the guard is gone\n");
-    swi_close_jpl_file();
+    swi_close_jpl_file(swi_default_ctx());
     return 1;
   }
   if (want && strstr(serr, want) == NULL) {
@@ -148,7 +148,7 @@ int main(void)
       printf("    FAIL: control rejected by a guard it should satisfy\n");
       bad = 1;
     }
-    if (r == OK) swi_close_jpl_file();
+    if (r == OK) swi_close_jpl_file(swi_default_ctx());
   }
 
   /* 4. The expected-length computation must not wrap.
@@ -182,7 +182,7 @@ int main(void)
     printf("  %-34s rc=%-3d %s\n", "expected length must not wrap", r, serr);
     if (r == OK) {
       printf("    FAIL: accepted -- the length check did not run\n");
-      bad = 1; swi_close_jpl_file();
+      bad = 1; swi_close_jpl_file(swi_default_ctx());
     } else if (sscanf(serr, "%*[^0-9-]%*d%*[^0-9-]%lld", &expected) == 1
                && expected < 0) {
       printf("    FAIL: expected length is NEGATIVE (%lld) -- nb wrapped\n",
