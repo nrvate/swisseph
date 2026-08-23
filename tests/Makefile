@@ -134,18 +134,31 @@ clean:
 SETEST_REF ?= /tmp/setest_ref.txt
 REF        ?= 3fd0f95
 
+# EPHE is relative to tests/ by default. Both setest runs below cd elsewhere
+# -- one into a throwaway worktree under /tmp -- so a relative EPHE would
+# resolve to two DIFFERENT ephemeris directories and the "differential" gate
+# would be comparing runs over different data. Resolve it once, absolutely.
+EPHE_ABS := $(abspath $(EPHE))
+
 # setest resolves t.exp relative to its CWD, so it must be run from inside
 # setest/. It also aborts partway through, so `|| true` is expected -- but the
 # output must still be substantial; a short file means the run never started.
 SETEST_MINLINES = 1000
 
+# See scrub-ephe.sed: normalises the ephemeris path out of setest's output so
+# the gate compares the library, not how make happened to be invoked.
+SCRUB = sed -f $(CURDIR)/scrub-ephe.sed
+
 setest-ref:
-	@rm -rf /tmp/se_ref_wt && git -C .. worktree add -q /tmp/se_ref_wt $(REF)
+	@rm -rf /tmp/se_ref_wt
+	@git -C .. worktree prune          # a killed run leaves a stale registration
+	@git -C .. worktree add -q /tmp/se_ref_wt $(REF)
 	@cp -n ../setest/t.exp ../setest/t.fix /tmp/se_ref_wt/setest/ 2>/dev/null || true
 	@$(MAKE) -C /tmp/se_ref_wt libswe.a >/dev/null 2>&1
 	@$(MAKE) -C /tmp/se_ref_wt/setest >/dev/null 2>&1
-	@cd /tmp/se_ref_wt/setest && SE_EPHE_PATH=$(EPHE) ./setest t > $(SETEST_REF) 2>&1 || true
-	@git -C .. worktree remove --force /tmp/se_ref_wt
+	@cd /tmp/se_ref_wt/setest && SE_EPHE_PATH=$(EPHE_ABS) ./setest t 2>&1 | $(SCRUB) > $(SETEST_REF) || true
+	@git -C .. worktree remove --force /tmp/se_ref_wt 2>/dev/null || true
+	@git -C .. worktree prune
 	@lines=$$(wc -l < $(SETEST_REF)); \
 	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
 	   echo "setest-ref FAILED: only $$lines lines (expected >= $(SETEST_MINLINES))"; \
@@ -155,7 +168,7 @@ setest-ref:
 check-setest: $(SETEST_REF)
 	@$(MAKE) -C .. libswe.a >/dev/null 2>&1
 	@$(MAKE) -C ../setest >/dev/null 2>&1
-	@cd ../setest && SE_EPHE_PATH=$(EPHE) ./setest t > ../tests/.setest_now.txt 2>&1 || true
+	@cd ../setest && SE_EPHE_PATH=$(EPHE_ABS) ./setest t 2>&1 | $(SCRUB) > ../tests/.setest_now.txt || true
 	@lines=$$(wc -l < .setest_now.txt); \
 	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
 	   echo "G8 FAIL: setest produced only $$lines lines -- it did not run"; \
