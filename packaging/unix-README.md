@@ -38,13 +38,25 @@ API — reaching past it is how you get the behaviour the fork exists to fix.
 
 ## Requirements
 
-The Linux build is produced on Ubuntu 22.04, so it needs **glibc 2.35 or
-newer** — Ubuntu 22.04+, Debian 12+, RHEL 9+. glibc is forward-compatible
-but not backward-compatible, so a binary built on a newer distribution will
-refuse to start on an older one. Build from source if you need to go further
-back.
+The Linux build is produced on Ubuntu 22.04 (glibc 2.35). The shipped binaries
+reference symbol versions up to **`GLIBC_2.34`**, so they need a glibc at least
+that new — Ubuntu 22.04+, Debian 12+, RHEL 9+. glibc is forward-compatible but
+not backward-compatible, so a binary built on a newer distribution refuses to
+start on an older one; the runner is pinned to 22.04 rather than `latest` for
+exactly that reason. Build from source if you need to go further back.
 
-The macOS build is produced on the current `macos-latest` runner.
+You can check for yourself:
+
+```sh
+objdump -T lib/libswe.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+```
+
+The macOS build is a **universal binary** — both `arm64` and `x86_64` in every
+library and tool, so it runs on Apple silicon and Intel alike:
+
+```sh
+lipo -archs lib/libswe.dylib     # x86_64 arm64
+```
 
 ## Ephemeris data
 

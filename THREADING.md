@@ -131,13 +131,14 @@ make -C tests check-ci       # every gate, under CI's exact toolchain (needs doc
 
 `check-ci` exists because a development machine is usually not the CI
 machine. It runs the whole gate set inside `ubuntu:24.04`, which carries the
-same gcc the runner reports. Two bugs on this branch passed every local gate
+same gcc the runner reports. Two bugs in this work passed every local gate
 and failed CI — an uninitialised read only newer gcc diagnoses, and a
 gcc-only `__attribute__` that MSVC rejects — so if you are about to push,
 run this rather than trusting a green local run.
 
 - **`LTO=1`** is opt-in. Measured at about **5% faster** on the Moshier Moon
-  path and bit-identical to plain `-O2` across all 5201 golden rows on gcc 11.4.
+  path and bit-identical to plain `-O2` across the whole golden transcript on
+  gcc 11.4 (5137 rows as the transcript then stood; it is 12761 today).
   It is not the default because parity on clang/macOS/MSVC has not been
   confirmed — the CI `lto` job exists to close that.
 - **`-DSWE_NO_THREADS`** compiles the threading primitives to no-ops for
@@ -151,9 +152,15 @@ run this rather than trusting a green local run.
 
 ## What is verified
 
-Every change on this branch is gated on a bit-exact transcript: 5201 rows of
-C99 `%a` hex floats, compared byte for byte, so no test ever has to pick a
-tolerance.
+Every change is gated on a bit-exact transcript: **12761 rows** of C99 `%a` hex
+floats, compared byte for byte, so no test ever has to pick a tolerance.
+
+The transcript is not a handful of spot checks. It sweeps 120 pseudo-random
+dates spanning roughly 1400 years (JD 2086302.5 to 2597641.5) across three
+ephemeris flag sets — Swiss, Moshier and equatorial — for every body from the
+Sun to Vesta, recording ecliptic longitude and latitude, distance, and all
+three speed components. A further 64 rows exercise the entry points the sweep
+does not reach, so no exported function is entirely unwitnessed.
 
 | Gate | What it proves |
 |---|---|
@@ -167,10 +174,19 @@ tolerance.
 | `check-threadtiers` | all threading backends build and agree |
 | `check-bridge` | no internal call silently uses the default context |
 | `check-build` | the sample programs and the `TRACE` build still compile |
+| `check-winmacros` | nothing collides with `windows.h`'s empty annotation macros, and the `_WIN32` branches parse |
+| `check-version` | `SE_VERSION` is the only place the version is written down |
 
 CI runs gcc, clang, macOS, MSVC, ThreadSanitizer, AddressSanitizer,
 LeakSanitizer, four C dialects, an ABI check, an LTO build, and a differential
-run of upstream's own `setest` suite.
+run of upstream's own `setest` suite. MSVC's output is compared numerically
+against the gcc reference across the whole transcript, within a measured
+tolerance rather than by diff — a bit-exact comparison across toolchains would
+fail for reasons unrelated to this code.
+
+Four packaging jobs then build the shipped artifacts for Linux, macOS, Windows
+and Android on every push, so a release cannot depend on a recipe that has not
+already run.
 
 ---
 

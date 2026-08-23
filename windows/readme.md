@@ -25,5 +25,9 @@ source for it exists anywhere in this tree.
 
 For official upstream Windows binaries, see
 https://github.com/aloistr/swisseph — this fork does not redistribute them.
-CI-built artifacts are the intended replacement; see the release plan in
-`notes/`.
+
+CI-built artifacts are the replacement, and they exist now: every release
+carries a `swisseph-windows-*.zip` with both 32- and 64-bit DLLs, import
+libraries, static libraries, `swetest`, the sample programs, the diagnostic
+DLLs and the public headers, plus a `SHA256SUMS` covering all of it. See
+[the latest release](https://github.com/nrvate/swisseph/releases/latest).

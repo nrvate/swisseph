@@ -14,6 +14,7 @@ from source.
 ```
 jni/arm64-v8a/     libswe-*.so
 jni/armeabi-v7a/
+jni/riscv64/
 jni/x86/
 jni/x86_64/
 swejni.h           the JNI entry points

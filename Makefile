@@ -187,6 +187,77 @@ bump:
 	echo "SE_VERSION $$old -> $$new"; \
 	echo "  tag with: git tag v$$new && git push origin v$$new"
 
+# ---------------------------------------------------------------------
+# Installation, and the pkg-config file that makes this library findable.
+#
+#   make install                     -> /usr/local
+#   make install PREFIX=$HOME/.local -> anywhere, no root needed
+#
+# Consumers then build against it with the usual incantation:
+#
+#   pkg-config --cflags --libs swe
+#
+# This exists because a consumer that statically compiles our .c files ends
+# up with its OWN copy of libswe -- its own `swed`, its own caches, its own
+# open file handles. Two such consumers in one process (a Python binding
+# and a native extension, say) cannot see each other's configuration at
+# all, and no amount of thread-safety work in here fixes that. Linking one
+# shared library is what makes them one library.
+# ---------------------------------------------------------------------
+PREFIX       ?= /usr/local
+LIBDIR       ?= $(PREFIX)/lib
+INCLUDEDIR   ?= $(PREFIX)/include
+PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
+INSTALL      ?= install
+
+# PUBLIC headers only, the same set the release packages ship. swephlib.h
+# and sweph.h are internal; swephexp.h does not include them and consumers
+# do not need them -- verified by compiling against this set alone.
+PUBLIC_HEADERS = swephexp.h sweodef.h swedate.h swehouse.h swedll.h
+
+# The pkg-config version is the upstream API level -- SE_VERSION with the
+# -ts suffix removed and leading zeros normalised (X.Y.0Z-ts.N -> X.Y.Z).
+#
+# That is deliberate, and it is NOT the same question as SE_VERSION.
+# pkg-config's version answers "which API do you implement", which is what
+# a consumer compares against; pyswisseph, for one, tests it for exact
+# equality with 2.10.3 and refuses the library otherwise. SE_VERSION
+# answers "which build is this", and swe_version() still reports the full
+# 2.10.03-ts.N at runtime. The .pc also exposes it as a variable:
+#
+#   pkg-config --variable=swe_full_version swe
+#
+# Derived rather than written down, so it cannot drift from SE_VERSION.
+SWE_API_VERSION = $(shell sed -n '$(VERSION_SED)' sweph.h | sed 's/-ts\..*//' \
+                  | awk -F. '{for(i=1;i<=NF;i++) printf "%s%d", (i>1?".":""), $$i+0}')
+
+.PHONY: install swe.pc
+swe.pc:
+	@printf '%s\n' \
+	  'prefix=$(PREFIX)' \
+	  'exec_prefix=$${prefix}' \
+	  'libdir=$(LIBDIR)' \
+	  'includedir=$(INCLUDEDIR)' \
+	  'swe_full_version=$(shell sed -n '$(VERSION_SED)' sweph.h)' \
+	  '' \
+	  'Name: swe' \
+	  'Description: Swiss Ephemeris (thread-safe fork)' \
+	  'URL: https://github.com/nrvate/swisseph' \
+	  'Version: $(SWE_API_VERSION)' \
+	  'Libs: -L$${libdir} -lswe' \
+	  'Libs.private: $(LIBS)' \
+	  'Cflags: -I$${includedir}' > swe.pc
+	@echo "swe.pc: Version $(SWE_API_VERSION), swe_full_version $$(sed -n '$(VERSION_SED)' sweph.h)"
+
+install: libswe.a libswe.$(DYLIB_EXT) swe.pc
+	$(INSTALL) -d $(DESTDIR)$(LIBDIR) $(DESTDIR)$(INCLUDEDIR) $(DESTDIR)$(PKGCONFIGDIR)
+	$(INSTALL) -m 644 libswe.a              $(DESTDIR)$(LIBDIR)/
+	$(INSTALL) -m 755 libswe.$(DYLIB_EXT)   $(DESTDIR)$(LIBDIR)/
+	$(INSTALL) -m 644 $(PUBLIC_HEADERS)     $(DESTDIR)$(INCLUDEDIR)/
+	$(INSTALL) -m 644 swe.pc                $(DESTDIR)$(PKGCONFIGDIR)/
+	@echo "installed to $(DESTDIR)$(PREFIX)"
+	@echo "  PKG_CONFIG_PATH=$(DESTDIR)$(PKGCONFIGDIR) pkg-config --cflags --libs swe"
+
 # Test targets (requires a "setest" subdirectory with its own Makefile)
 test:
 	cd setest && make && ./setest t
@@ -196,7 +267,7 @@ test.exp:
 
 # Clean up build artifacts
 clean:
-	rm -f *.o swetest libswe.* swetests swevents swemini
+	rm -f *.o swetest libswe.* swetests swevents swemini swe.pc
 	cd setest && make clean
 
 # Dependency rules
