@@ -8,6 +8,7 @@ branch). These are **our** notes — upstream Astrodienst documentation lives in
 |---|---|
 | [INVESTIGATION.md](INVESTIGATION.md) | Root-cause analysis: *why* libswe is not thread-usable, with measurements and reproductions. Read this first. |
 | [PLAN.md](PLAN.md) | The end-to-end remediation plan: phases, gates, risks, effort. |
+| [PHASE3-API.md](PHASE3-API.md) | Proposed `swe_ctx` handle API for Phase 3: surface, threading contract, legacy shim, sequencing. Has open decisions. |
 | [CONFIG-MAP.md](CONFIG-MAP.md) | Read/write map of every configuration field: what is shared config vs. per-thread derived state, and the cache-invalidation dependency table. Input to Phase 2. |
 | [REVIEW.md](REVIEW.md) | Separate survey: modernization/maintainability and performance findings across the whole codebase, unrelated to thread-safety. |
 | [C17_MIGRATION.md](C17_MIGRATION.md) | Staged plan to move the codebase from C89 to C17: kill the 16-bit/DOS compiler cruft, adopt `stdint.h`/`stdbool.h`, flip the build to `-std=c17 -Wall -Wextra -Werror`. See its §8 for how it sequences against `PLAN.md`. |
