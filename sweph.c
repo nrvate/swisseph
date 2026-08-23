@@ -1266,7 +1266,7 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx)
   swe_set_tid_acc(SE_TIDAL_AUTOMATIC);
   ctx->is_old_starfile = FALSE;
   ctx->i_saved_planet_name = 0;
-  *(swed.saved_planet_name) = '\0';
+  *(ctx->saved_planet_name) = '\0';
   ctx->timeout = 0;
 }
 
@@ -1306,7 +1306,7 @@ void CALL_CONV swe_close(void)
   ctx->ayana_is_set = FALSE;
   ctx->is_old_starfile = FALSE;
   ctx->i_saved_planet_name = 0;
-  *(swed.saved_planet_name) = '\0';
+  *(ctx->saved_planet_name) = '\0';
   memset((void *) &ctx->topd, 0, sizeof(struct topo_data));
   memset((void *) &ctx->sidd, 0, sizeof(struct sid_data));
   ctx->timeout = 0;
@@ -1353,7 +1353,6 @@ void CALL_CONV swe_close(void)
 #endif
       fflush(swi_fp_trace_c);
     }
-  swi_trace_unlock();
 #if TRACE_CLOSE
     fclose(swi_fp_trace_c);
 #endif
@@ -1364,6 +1363,7 @@ void CALL_CONV swe_close(void)
   swi_fp_trace_c = NULL;
   swi_fp_trace_out = NULL;
 #endif
+  swi_trace_unlock();
 #endif  /* TRACE */
 }
 
@@ -6784,7 +6784,7 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
 	sprintf(serr, "error, swe_fixstar(): sequential fixed star number %d is not available", star_nr);
       return ERR;
     }
-    *stardata = swed.fixed_stars[star_nr - 1]; // keys start from 1
+    *stardata = ctx->fixed_stars[star_nr - 1]; // keys start from 1
     //printf("seq.number: %s, %s, %s, %f\n", stardata.skey, stardata.starname, stardata.starbayer, stardata.mag);
     return OK;
   /* traditional name with wildcard '%' at end of string */
