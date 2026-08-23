@@ -47,10 +47,17 @@ static const char *EPHE = DEFAULT_EPHE;
 
 /* Per-thread output sink so N threads can each produce a full transcript.
  *
- * TLS, not a bare __thread: that spelling is GCC/clang only and MSVC wants
- * __declspec(thread). sweodef.h already picks the right one per compiler,
- * and this file gets it via swephexp.h. */
-static TLS FILE *OUT;
+ * TLS rather than a bare __thread: that spelling is GCC/clang only, and
+ * MSVC wants __declspec(thread). sweodef.h picks the right one per
+ * compiler and this file gets it through swephexp.h.
+ *
+ * No `static`: MSVC rejects `static __declspec(thread) FILE *OUT;` with
+ * C2059. The library's own thread-locals are declared without it --
+ * `TLS struct swe_ctx swed`, `TLS FILE *swi_fp_trace_c` -- and those do
+ * compile under MSVC, so this follows the form already proven to work.
+ * This program is a single translation unit, so the external linkage that
+ * costs is of no consequence. */
+TLS FILE *OUT;
 
 /* Normalise serr for the transcript.
  *
@@ -550,7 +557,6 @@ static void misc(void) {
  * pass by weakening it. That capability is Phase 3 (the context handle).
  */
 static void suite_compute_only(void) {
-  char sv[AS_MAXCH];
   emit_version();
   planets();
   planets_ut();
@@ -831,7 +837,6 @@ static void sweep(void) {
 }
 
 static void suite(void) {
-  char sv[AS_MAXCH];
   emit_version();
   planets();
   planets_ut();
