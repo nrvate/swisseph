@@ -4147,7 +4147,20 @@ static char *our_strcpy(char *to, char *from)
   return to;
 }
 
-#if TRUE
+/* NOT available in a USE_DLL build.
+ *
+ * This reads the asteroid-name file through swi_fopen() and the context's
+ * ephepath -- both swi_-internal, and the DLL exports only the public swe_
+ * API. So swete32/swete64, which are exactly this program linked against
+ * the DLL, have never been able to link: at the branch base the same line
+ * read swi_fopen(-1, SE_ASTNAMFILE, swed.ephepath, serr), equally internal.
+ *
+ * Guarded rather than "fixed" because there is no public entry point that
+ * opens a file relative to the ephemeris path. The upstream comment below
+ * -- that this belongs in the library, not in a sample program -- is the
+ * actual resolution.
+ */
+#ifndef USE_DLL
 // this function should move to swephlib.c in next release
 int swe_get_named_ast_list(int amax, int *iarr, char*serr) 
 {
@@ -4168,8 +4181,18 @@ int swe_get_named_ast_list(int amax, int *iarr, char*serr)
   return nast;
 }
 
+#endif /* USE_DLL */
+
 int print_asteroids(double tjd, double dref, double orb)
 {
+#ifdef USE_DLL
+  /* see the note on swe_get_named_ast_list() above */
+  (void) tjd; (void) dref; (void) orb;
+  printf("\nlisting named asteroids needs the asteroid-name file, which is\n"
+         "read through a library-internal entry point not exported by the\n"
+         "DLL. Use the statically linked swetest instead.\n");
+  return ERR;
+#else
   /* amax was a plain int, making arr[] a variable-length array. GCC
    * accepts VLAs; MSVC's C compiler does not, so swetest.c could not be
    * built on Windows at all. An enum constant keeps the value in one place
@@ -4206,5 +4229,5 @@ int print_asteroids(double tjd, double dref, double orb)
     }
   }
   return OK;
+#endif /* USE_DLL */
 }
-#endif
