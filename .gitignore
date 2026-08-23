@@ -21,6 +21,7 @@
 /tests/sunrace_tsan
 /tests/glprace
 /tests/glprace_tsan
+/tests/cfgleak
 /tests/threadshim
 /tests/threadshim_tsan
 /tests/.ts_cfg

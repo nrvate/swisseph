@@ -227,7 +227,7 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
   else
     ito = 12;
   if ((iflag & SEFLG_SIDEREAL) && !swed.ayana_is_set)
-    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+    SWI_CFG_LOCAL(swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0));
   eps_mean = swi_epsiln(tjde, 0) * RADTODEG;
   swi_nutation(tjde, 0, nutlo);
   for (i = 0; i < 2; i++)

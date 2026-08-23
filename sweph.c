@@ -1273,7 +1273,7 @@ void CALL_CONV swe_close(void)
     fclose(swed.fixfp);
     swed.fixfp = NULL;
   }
-  swe_set_tid_acc(SE_TIDAL_AUTOMATIC);
+  SWI_CFG_LOCAL(swe_set_tid_acc(SE_TIDAL_AUTOMATIC));
   swed.geopos_is_set = FALSE;
   swed.ayana_is_set = FALSE;
   swed.is_old_starfile = FALSE;
@@ -1300,6 +1300,18 @@ void CALL_CONV swe_close(void)
   }
 /*  swed.ephe_path_is_set = FALSE;
   *swed.ephepath = '\0'; */
+  /* Drop the shared master too.
+   *
+   * swe_close() is documented as releasing everything the library holds.
+   * Without this the master outlives it, and a thread starting afterwards
+   * would silently adopt the configuration of a session that had already
+   * been closed -- reopening files the caller believed were released.
+   *
+   * This is process-wide, which matches what swe_close() already means
+   * for a library whose configuration is process-wide. A caller that
+   * closes on one thread while another is still computing is misusing the
+   * API in exactly the way it always has been. */
+  swi_config_reset();
 #ifdef TRACE
 #define TRACE_CLOSE FALSE
   swi_open_trace(NULL);

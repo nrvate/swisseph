@@ -1109,7 +1109,7 @@ static int32 Magnitude(double JDNDaysUT, double *dgeo, char *ObjectName, int32 h
     iflag |= SEFLG_NONUT|SEFLG_TRUEPOS;
   if (Planet != -1) {
     /**dmag = Phenomena(JDNDaysUT, Lat, Longitude, HeightEye, TempE, PresE, ObjectName, 4);*/
-    swe_set_topo(dgeo[0], dgeo[1], dgeo[2]);
+    SWI_CFG_LOCAL(swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
     if (swe_pheno_ut(JDNDaysUT, Planet, iflag, x, serr) == ERR)
       return ERR;
     *dmag = x[4];
@@ -1460,7 +1460,7 @@ int32 CALL_CONV swe_vis_limit_mag(double tjdut, double *dgeo, double *datm, doub
   swi_set_tid_acc(tjdut, helflag, 0, serr);
   sunra = SunRA(tjdut, helflag, serr);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
-  swe_set_topo(dgeo[0], dgeo[1], dgeo[2]);
+  SWI_CFG_LOCAL(swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
   if (ObjectLoc(tjdut, dgeo, datm, ObjectName, 0, helflag, &AltO, serr) == ERR)
     return ERR;
   if (AltO < 0) {
@@ -1867,7 +1867,7 @@ int32 CALL_CONV swe_heliacal_pheno_ut(double JDNDaysUT, double *dgeo, double *da
   strcpy_VBsafe(ObjectName, ObjectNameIn);
   tolower_string_star(ObjectName);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
-  swe_set_topo(dgeo[0], dgeo[1], dgeo[2]);
+  SWI_CFG_LOCAL(swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
   retval = ObjectLoc(JDNDaysUT, dgeo, datm, "sun", 1, helflag, &AziS, serr);
   if (retval == OK)
     retval = ObjectLoc(JDNDaysUT, dgeo, datm, "sun", 0, helflag, &AltS, serr);
@@ -3388,7 +3388,7 @@ int32 CALL_CONV swe_heliacal_ut(double JDNDaysUTStart, double *dgeo, double *dat
   strcpy_VBsafe(ObjectName, ObjectNameIn);
   tolower_string_star(ObjectName);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
-  swe_set_topo(dgeo[0], dgeo[1], dgeo[2]);
+  SWI_CFG_LOCAL(swe_set_topo(dgeo[0], dgeo[1], dgeo[2]));
   Planet = DeterObject(ObjectName);
   if (Planet == SE_SUN) {
     if (serr_ret != NULL) {

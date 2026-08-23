@@ -5,7 +5,7 @@ CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
 LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
 
-all: golden sunrace glprace threadshim
+all: golden sunrace glprace threadshim cfgleak
 
 golden: golden.c $(SWE)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
@@ -28,6 +28,14 @@ check-sunrace: sunrace
 
 check-sunrace-tsan: sunrace_tsan
 	@SE_TEST_EPHE=$(EPHE) setarch -R env TSAN_OPTIONS=halt_on_error=0 ./sunrace_tsan
+
+cfgleak: cfgleak.c $(SWE)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+# Phase 2 stragglers: internal setter calls must not publish, and
+# swe_close() must clear the shared master.
+check-cfgleak: cfgleak
+	@SE_TEST_EPHE=$(EPHE) ./cfgleak
 
 # swe_get_library_path(): buffer bounds + no shared Dl_info static
 check-glprace: glprace
@@ -101,14 +109,14 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-threads-workaround check-threads
+check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-threads-workaround check-threads
 
 clean:
-	rm -f threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
-        check-glprace check-threads check-threads-workaround clean
+        check-glprace check-cfgleak check-threads check-threads-workaround clean
 
 # G8: upstream's own suite (setest/, 13 MB of expectations).
 #
