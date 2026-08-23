@@ -249,39 +249,42 @@ HANDLE dllhandle = NULL;        // global used in swe_version
 #define __USE_GNU
 #endif
 #include <dlfcn.h>		// must be linked with -ldl
-  static Dl_info dli;
 #endif
 #endif // MSDOS
 
+/* The caller's buffer is char[AS_MAXCH], so the last writable index is
+ * AS_MAXCH-1. The guard below used to read `#if !defined(__APPLE)`; nothing
+ * ever defines __APPLE (the predefined macro is spelled __APPLE__), so the
+ * body has always run on every platform, macOS included. Correcting the
+ * spelling would therefore be a regression -- it would make this function
+ * return "" on macOS -- so the dead conditional is simply dropped.
+ */
 char *CALL_CONV swe_get_library_path(char *s)
 {
-  size_t bytes;
-  size_t len;
+  size_t bytes = 0;
+  size_t len = AS_MAXCH - 1;	// leave room for the terminator at s[len]
   *s = '\0';
-#if !defined(__APPLE) 
-  len = AS_MAXCH;
-  bytes = 0;
 #if MSDOS
   bytes = GetModuleFileName((HMODULE) dllhandle, (TCHAR*) s, (DWORD) len);
 #else
   #ifdef __GNUC__
+    /* Must be a local. As a file-scope static this was shared mutable state
+     * written by every concurrent caller. */
+    Dl_info dli;
     if (dladdr((void *)swe_version, &dli) != 0) {
-      if (strlen(dli.dli_fname) >= len) {
-	strncpy(s, dli.dli_fname, len);
-	s[len] = '\0';
-      } else{
-	strcpy(s, dli.dli_fname);
-      }
+      strncpy(s, dli.dli_fname, len);
+      s[len] = '\0';
       bytes = strlen(s);
     } else {
-      bytes = readlink("/proc/self/exe", s, len);
+      ssize_t r = readlink("/proc/self/exe", s, len);
+      bytes = (r < 0) ? 0 : (size_t) r;	// readlink() returns -1 on failure
     }
   #else
-    bytes = readlink("/proc/self/exe", s, len);
+    ssize_t r = readlink("/proc/self/exe", s, len);
+    bytes = (r < 0) ? 0 : (size_t) r;
   #endif
 #endif
   s[bytes] = '\0';
-#endif
   return s;
 }
 #else	// NO_SWE_GLP

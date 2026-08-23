@@ -19,6 +19,8 @@
 /tests/golden_tsan
 /tests/sunrace
 /tests/sunrace_tsan
+/tests/glprace
+/tests/glprace_tsan
 /tests/.out.txt
 
 # Editors / IDEs
