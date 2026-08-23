@@ -303,6 +303,93 @@ jobs:
           env -u SE_EPHE_PATH ./ctxtest_tsan --ephe ../$EPHE
 
   # ---------------------------------------------------------------------
+  # Windows package. Builds the MSVC solution and assembles a distributable
+  # zip -- DLLs, import libs, static libs, CLI tools, headers.
+  #
+  # The project files in windows/projects/ are AUTHORITATIVE: this job
+  # builds them, so they cannot rot the way the tree's other unbuilt code
+  # did (interp(), swethread.h tier 5, sweephe4.c -- all unreachable, all
+  # broken by the time anyone looked).
+  #
+  # They needed real repair to get here. As shipped in windows/sweph.zip
+  # they used PlatformToolset v140_xp (removed in VS2019+), the Windows 8.1
+  # SDK, an OutDir hardcoded to the original author's S: drive, and none of
+  # the 15 listed sweconfig.c -- the file this branch added and the library
+  # now requires.
+  #
+  # Each project is built at the platform its NAME implies. Building the
+  # whole solution at one platform would happily produce a 64-bit
+  # "swedll32.dll".
+  # ---------------------------------------------------------------------
+  windows-package:
+    runs-on: windows-latest
+    name: windows / package
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+      - name: Build Win32 projects
+        shell: cmd
+        run: |
+          cd windows\projects
+          for %%p in (swedll32 swelib32 swetest swete32 swewin32 swedlltrm32 swedlltrs32) do (
+            msbuild %%p.vcxproj /p:Configuration=Release /p:Platform=Win32 /v:minimal /nologo || exit /b 1
+          )
+      - name: Build x64 projects
+        shell: cmd
+        run: |
+          cd windows\projects
+          for %%p in (swedll64 swelib64 swetest64 swete64 swewin64 swedlltrm64 swedlltrs64) do (
+            msbuild %%p.vcxproj /p:Configuration=Release /p:Platform=x64 /v:minimal /nologo || exit /b 1
+          )
+      - name: Show what was built
+        shell: cmd
+        run: dir /s /b windows\projects\out
+      - name: Smoke-test the CLI
+        shell: cmd
+        run: |
+          windows\projects\out\x64\Release\swetest64.exe -b1.1.2020 -p0 -fPl -mosh || exit /b 1
+          windows\projects\out\Win32\Release\swetest.exe   -b1.1.2020 -p0 -fPl -mosh || exit /b 1
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          $out = "windows/projects/out"
+          $pkg = "pkg/swisseph-windows"
+          New-Item -ItemType Directory -Force -Path "$pkg/bin/x64","$pkg/bin/Win32",
+                                                   "$pkg/lib/x64","$pkg/lib/Win32",
+                                                   "$pkg/include" | Out-Null
+          Copy-Item "$out/x64/Release/*.dll","$out/x64/Release/*.exe"     "$pkg/bin/x64"   -EA SilentlyContinue
+          Copy-Item "$out/Win32/Release/*.dll","$out/Win32/Release/*.exe" "$pkg/bin/Win32" -EA SilentlyContinue
+          Copy-Item "$out/x64/Release/*.lib"                              "$pkg/lib/x64"   -EA SilentlyContinue
+          Copy-Item "$out/Win32/Release/*.lib"                            "$pkg/lib/Win32" -EA SilentlyContinue
+          Copy-Item swephexp.h,sweodef.h,swedll.h,swedate.h,swehouse.h,swephlib.h "$pkg/include"
+          Copy-Item LICENSE,THREADING.md "$pkg"
+          Get-ChildItem -Recurse $pkg | Where-Object {!$_.PSIsContainer} |
+            ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.FullName.Replace((Get-Location).Path + "\", "") }
+      - name: Package must not be empty
+        shell: pwsh
+        run: |
+          # A silent msbuild failure would otherwise ship an empty zip.
+          foreach ($f in @("pkg/swisseph-windows/bin/x64/swedll64.dll",
+                           "pkg/swisseph-windows/bin/x64/swetest64.exe",
+                           "pkg/swisseph-windows/lib/x64/swedll64.lib",
+                           "pkg/swisseph-windows/bin/Win32/swedll32.dll")) {
+            if (!(Test-Path $f)) { Write-Error "missing from package: $f"; exit 1 }
+          }
+          Write-Host "package contents verified"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swisseph-windows
+          path: pkg/swisseph-windows
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
   # Dialects. The library floats on whatever -std= the local cc defaults to,
   # so pin each explicitly. C89 is EXPECTED to fail (58 errors on this tree,
   # long before either plan started) -- asserted as a known-fail so that if

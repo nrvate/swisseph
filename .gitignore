@@ -7,6 +7,12 @@
 *.dll
 *.exe
 
+# MSVC build output. windows/projects/*.vcxproj write here; see
+# windows/projects/README.md.
+/windows/projects/out/
+/windows/projects/obj/
+*.vcxproj.user
+
 # bin/ -- output of the swetests/sweventss targets.
 #
 # These were tracked, which was ordinary practice when this codebase was
