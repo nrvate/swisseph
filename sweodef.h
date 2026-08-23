@@ -150,16 +150,22 @@
 #endif
 #endif
 
-  typedef int	int32;
-  typedef long long	int64;
-  typedef unsigned int	uint32;
-  typedef short	int16;
+#include <stdint.h>
+#include <stdbool.h>
+
+  /* Real fixed-width types since C17_MIGRATION.md Phase 2. Names kept
+   * identical to the pre-C11 hand-rolled versions for source/ABI
+   * compatibility -- only the underlying type changed. */
+  typedef int32_t	int32;
+  typedef int64_t	int64;
+  typedef uint32_t	uint32;
+  typedef int16_t	int16;
   typedef double  REAL8;  /* real with at least 64 bit precision */
-  typedef int     INT4;   /* signed integer with at least 32 bit precision */
-  typedef unsigned int UINT4;
+  typedef int32_t INT4;   /* signed integer with at least 32 bit precision */
+  typedef uint32_t UINT4;
 			/* unsigned integer with at least 32 bit precision */
-  typedef int     AS_BOOL;
-  typedef unsigned short UINT2;	/* unsigned 16 bits */
+  typedef bool     AS_BOOL;
+  typedef uint16_t UINT2;	/* unsigned 16 bits */
   # define ABS4	abs		/* abs function for long */
 
 #if MSDOS

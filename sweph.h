@@ -851,9 +851,16 @@ struct swe_data {
   struct nut nutv;
   struct topo_data topd;
   struct sid_data sidd;
-  AS_BOOL n_fixstars_real;   // real number of fixed stars in sefstars.txt
-  AS_BOOL n_fixstars_named;  // number of fixed stars with tradtional name
-  AS_BOOL n_fixstars_records;// number of fixed stars records in fixed_stars
+  /* Were AS_BOOL until C17_MIGRATION.md Phase 2 -- a pre-existing mistype,
+   * harmless for decades because AS_BOOL and int32 were both plain `int`.
+   * Made AS_BOOL a real bool (Phase 2, stdbool.h) and every fixed-star
+   * lookup broke: load_all_fixed_stars() correctly counted e.g. 1141 stars,
+   * but storing 1141 into a _Bool truncates to 1, so every subsequent
+   * bsearch() ran over 1 record instead of the real array. Caught by
+   * tests/golden's fixed-star rows, not by inspection. */
+  int32 n_fixstars_real;     // real number of fixed stars in sefstars.txt
+  int32 n_fixstars_named;    // number of fixed stars with tradtional name
+  int32 n_fixstars_records;  // number of fixed stars records in fixed_stars
   struct fixed_star *fixed_stars;
 };
 

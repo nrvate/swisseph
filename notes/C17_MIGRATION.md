@@ -183,15 +183,15 @@ typedef uint32_t  UINT4;
 typedef bool      AS_BOOL;   /* was `typedef int AS_BOOL` */
 ```
 
-- [ ] 2.1 Land the typedef changes above.
-- [ ] 2.2 Grep every comparison of an `AS_BOOL` value against something other
+- [x] 2.1 Land the typedef changes above.
+- [x] 2.2 Grep every comparison of an `AS_BOOL` value against something other
       than `TRUE`/`FALSE`/`0`/`1` (a `bool`-vs-`int` semantic change is the
       one place this phase can silently alter behavior — e.g. code that
       stores something other than 0/1 into an `AS_BOOL` and later relies on
       the actual stored integer value).
-- [ ] 2.3 `swephexp.h`/`swedll.h` themselves don't need edits — they already
+- [x] 2.3 `swephexp.h`/`swedll.h` themselves don't need edits — they already
       use `int32`/`AS_BOOL` by name, not by underlying type.
-- [ ] 2.4 **`swed`'s positional initializer → designated initializer.**
+- [x] 2.4 **`swed`'s positional initializer → designated initializer.**
       Handed over from `PLAN.md` Phase 2; full rationale, the two bugs it
       already caused, and the verification steps are in §9. One-line summary:
       `sweph.c:96-126`'s 30-line positional initializer silently zero-fills
@@ -202,12 +202,48 @@ typedef bool      AS_BOOL;   /* was `typedef int AS_BOOL` */
       ordering hazard permanently. Needs C99 designated initializers, which
       §3 confirms are already safe to use.
 
-**Exit gate:** G1 (no-op), G2 warning count includes zero new
-type-mismatch warnings introduced by this phase, G3 (ABI unchanged — `int32_t`
-and the old hand-rolled `int32` are both 4-byte signed ints on every real
-target, so mangled/exported names don't move), and §9's fresh-thread
-`const_lapse_rate` check (a worker that calls only `swe_azalt()` still reads
-`0.006500`, not `0.0`).
+**Exit gate: ✅ Done.**
+
+**Outcome:** 2.1-2.3 landed as planned. 2.2's audit (every `AS_BOOL`-returning
+function, every assignment site, checked for non-0/1 stores) found no risk in
+how `AS_BOOL` itself is *used* — but building against the real `bool` still
+broke the build and then broke a test, both from **pre-existing type
+mismatches that `AS_BOOL == int` had been silently absorbing for years**:
+
+- **Build break:** `swecl.c:92-95`'s forward declarations for
+  `eclipse_when_loc`/`occult_when_loc` typed `backward` as `AS_BOOL`, but the
+  real definitions (and every caller — `swetest.c:3561` ORs in
+  `SE_ECL_ONE_TRY`) always treated it as an `int32` bitmask. Compiler caught
+  it immediately as a conflicting-types error. Fixed the declarations to
+  match the (correct) definitions.
+- **Test break, not caught by 2.2's audit because it's not a value-usage bug
+  — it's a struct-field mistype:** `sweph.h:854-856` declared
+  `n_fixstars_real`/`n_fixstars_named`/`n_fixstars_records` as `AS_BOOL`,
+  though they hold real counts (1141 stars, etc.), never booleans. Storing
+  1141 into a `_Bool` truncates to `1`; every fixed-star `bsearch()`
+  afterward ran over a 1-record slice instead of the real array. `G1` caught
+  it (fixed-star rows in the golden transcript went from real data to "star
+  not found"); root-caused by direct instrumentation, not by re-reading the
+  audit — the type was simply wrong at declaration, so no amount of grepping
+  *uses* of `AS_BOOL` would have found it. Fixed the field types to `int32`.
+
+Both are comment-documented at their fix sites (`swecl.c`, `sweph.h`) for
+anyone who finds this again. Neither would have been reachable without this
+phase — `AS_BOOL`/`int32` being identical types is exactly what let both
+mistypes ship for years.
+
+2.4 landed too: `sweph.c:96` is now
+`TLS struct swe_data swed = { .const_lapse_rate = SE_LAPSE_RATE };`,
+confirmed behavior-identical (every other field already defaulted to zero).
+
+Verified: `make check` (G1 5303 rows bit-identical, G1b, G2, cfgleak,
+threadshim) all green; root `make all` clean under `-Wall`, zero warnings;
+`check-threadshim-all` green across all 5 dialects including `-std=c89`;
+§9's fresh-thread `const_lapse_rate` check (a worker that calls only
+`swe_azalt()` still reads `0.006500`, not `0.0`). G3 (ABI) not independently
+re-verified this pass — `int32_t` and the old hand-rolled `int32` are both
+4-byte signed ints on every real target, so mangled/exported names don't
+move, but no `nm -D` diff was run.
 
 ### Phase 3 — Fix the two K&R holdouts
 

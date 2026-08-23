@@ -93,36 +93,16 @@ struct meff_ele {double r,m;};
 /****************
  * global stuff *
  ****************/
-TLS struct swe_data swed = {FALSE,	/* ephe_path_is_set = FALSE */
-                            FALSE,	/* jpl_file_is_open = FALSE */
-                            NULL,	/* fixfp, fixed stars file pointer */
-			    "",		/* ephepath, ephemeris path */
-			    "",		/* jplfnam, JPL file name, default */
-			    0,		/* jpldenum */
-			    0,          /* last_epheflag */
-			    FALSE,	/* geopos_is_set, for topocentric */
-			    FALSE,	/* ayana_is_set, ayanamsa is set */
-			    FALSE,	/* is_old_starfile, fixstars.cat is used (default is sefstars.txt) */
-			    0.0, 0.0, 0.0, 0.0, /* eop_tjd_... */
-			    0,          /* eop_dpsi_loaded */
-			    0.0, 	/* tid_acc */
-			    FALSE,	/* is_tid_acc_manual */
-			    FALSE,	/* init_dt_done */
-			    FALSE,	/* swed_is_initialised */
-			    FALSE,	/* delta_t_userdef_is_set */
-			    0.0,	/* delta_t_userdef */
-			    0.0,	/* ast_G */
-			    0.0,	/* ast_H */
-			    0.0,	/* ast_diam */
-			    "",		/* astelem[] */
-			    0, 		/* i_saved_planet_name */
-			    "",		/* saved_planet_name[] */
-			    NULL,	/* dpsi */
-			    NULL,	/* deps */
-			    0,		/* timeout */
-			    {0,0,0,0,0,0,0,0,}, /* astro_models */
-			    SE_LAPSE_RATE, /* const_lapse_rate, for refraction */
-			    };
+/* Designated initializer (C99+, confirmed safe -- see notes/C17_MIGRATION.md
+ * §3/§9): every swe_data member is FALSE/0/0.0/NULL/"" by default except
+ * const_lapse_rate, so this is behaviour-identical to the field-by-field
+ * positional initializer it replaces, without that initializer's ordering
+ * hazard (a member inserted anywhere but the very end used to be silently
+ * zero-filled with no diagnostic; a member renamed here fails to compile
+ * instead). */
+TLS struct swe_data swed = {
+  .const_lapse_rate = SE_LAPSE_RATE,
+};
 
 /*************
  * constants *
@@ -6427,7 +6407,7 @@ static int32 load_all_fixed_stars(char *serr)
   swed.n_fixstars_real = nstars;
   swed.n_fixstars_named = nnamed;
   swed.n_fixstars_records = nrecs;
-  // fprintf(stderr, "nstars=%d, nrecords=%d\n", nstars, nrecs);	
+  // fprintf(stderr, "nstars=%d, nrecords=%d\n", nstars, nrecs);
   (void) qsort ((void *) swed.fixed_stars, (size_t) nrecs, sizeof (struct fixed_star),
                     (int (CMP_CALL_CONV *)(const void *,const void *))(fixedstar_name_compare));
   return retc;
@@ -6771,9 +6751,9 @@ static int32 search_star_in_list(char *sstar, struct fixed_star *stardata, char 
       stardatabegp = &(swed.fixed_stars[swed.n_fixstars_real]);
       ndata = swed.n_fixstars_named;
     }
-    stardatap = (struct fixed_star *) bsearch((void *) searchkey, 
+    stardatap = (struct fixed_star *) bsearch((void *) searchkey,
 	       (void *) stardatabegp, (size_t) ndata,
-	       sizeof (struct fixed_star), 
+	       sizeof (struct fixed_star),
 	       fstar_node_compare);
     if (stardatap == NULL) {
       if (serr != NULL) 

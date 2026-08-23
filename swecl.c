@@ -89,10 +89,16 @@ static int32 eclipse_where( double tjd_ut, int32 ipl, char *starname, int32 ifl,
 static int32 eclipse_how( double tjd_ut, int32 ipl, char *starname, int32 ifl,
         double geolon, double geolat, double geohgt, 
 	double *attr, char *serr);
-static int32 eclipse_when_loc(double tjd_start, int32 ifl, double *geopos, 
-	double *tret, double *attr, AS_BOOL backward, char *serr);
-static int32 occult_when_loc(double tjd_start, int32 ipl, char *starname, int32 ifl, 
-        double *geopos, double *tret, double *attr, AS_BOOL backward, char *serr);
+/* backward is int32, not AS_BOOL: swe_lun_occult_when_loc() callers OR
+ * SE_ECL_ONE_TRY into it (see the definitions below), so it is a bitmask,
+ * not a strict boolean. These forward declarations said AS_BOOL until
+ * C17_MIGRATION.md Phase 2 -- harmless while AS_BOOL was plain `int`,
+ * a compile error once it became a real bool, because the definitions
+ * below (the actual truth) never agreed with it. */
+static int32 eclipse_when_loc(double tjd_start, int32 ifl, double *geopos,
+	double *tret, double *attr, int32 backward, char *serr);
+static int32 occult_when_loc(double tjd_start, int32 ipl, char *starname, int32 ifl,
+        double *geopos, double *tret, double *attr, int32 backward, char *serr);
 static int32 lun_eclipse_how(double tjd_ut, int32 ifl, double *attr, 
         double *dcore, char *serr);
 static int32 calc_mer_trans(
