@@ -397,15 +397,21 @@ jobs:
           echo "ABIs built: $abis"
           n=$(echo "$abis" | grep -c .)
           [ "$n" -ge 4 ] || { echo "FAIL: expected 4 ABIs, got $n"; exit 1; }
+          # Expected count comes from the header, not a magic number: every
+          # JNIEXPORT declared in swejni.h must actually be exported. A
+          # first attempt hardcoded ">= 100" and failed at the real value of
+          # 94 -- a threshold picked by guessing tests the guess, not the
+          # library.
+          want=$(grep -c 'JNIEXPORT' jni/swejni.h)
+          echo "swejni.h declares $want JNIEXPORT entry points"
+          nm="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
           for abi in $abis; do
             so=$(ls libs/$abi/*.so)
-            # A JNI library is useless without its Java entry points, and
-            # -fvisibility=hidden means a missing source would still link
-            # quietly with far too few of them.
-            j=$("$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
-                  --defined-only --dynamic "$so" | grep -c "Java_") || true
+            # -fvisibility=hidden means a missing source links quietly with
+            # too few entry points rather than failing outright.
+            j=$("$nm" --defined-only --dynamic "$so" | grep -c "Java_") || true
             echo "  $abi: $(basename $so), $j Java_* entry points"
-            [ "$j" -ge 100 ] || { echo "FAIL: $abi exports only $j JNI entry points"; exit 1; }
+            [ "$j" -eq "$want" ] || { echo "FAIL: $abi exports $j, expected $want"; exit 1; }
           done
       - name: Assemble package
         run: |
