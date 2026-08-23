@@ -5,7 +5,7 @@ CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
 LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
 
-all: golden sunrace glprace threadshim cfgleak
+all: golden sunrace glprace threadshim cfgleak jplguard
 
 golden: golden.c $(SWE)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
@@ -31,6 +31,17 @@ check-sunrace-tsan: sunrace_tsan
 
 cfgleak: cfgleak.c $(SWE)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+# REVIEW.md J1: swejpl.c's header-validation guards, exercised against real
+# malformed .eph fixtures. The ksize half is backed by a static_assert and so
+# cannot regress silently; the ncf half is a runtime value read from a file
+# and cannot be, which is why it needs this. Built with ASan so a removed
+# guard shows up as a diagnosed overflow rather than silent corruption.
+jplguard: jplguard.c $(SWE)
+	$(CC) $(CFLAGS) -fsanitize=address $^ -o $@ $(LIBS)
+
+check-jplguard: jplguard
+	@./jplguard
 
 # Phase 2 stragglers: internal setter calls must not publish, and
 # swe_close() must clear the shared master.
@@ -86,10 +97,26 @@ check-golden: golden baseline.txt
 	  || { echo "G1 FAIL: numerical regression"; diff baseline.txt .out.txt | head -20; exit 1; }
 
 # G1b: the library must also behave at -O2, which is what a release build
-# would use (the shipped root Makefile has no -O flag at all). Compared with
-# tolerance, not diff: measured gcc -O0 vs -O2 divergence on this tree is
-# 224 values / 65 rows, median 2.2e-15, max 7.6e-08 deg = 0.00027 arcsec.
-TOL ?= 1e-6
+# uses. Compared with tolerance, not diff: measured gcc -O0 vs -O2 divergence
+# on this tree is 224 values / 65 rows, median 2.2e-15, max 7.6e-08 deg
+# (0.00027 arcsec).
+#
+# TOL is 1e-5, and the number is measured rather than picked. It has to clear
+# the INTRINSIC sensitivity of the values themselves: perturb the input tjd by
+# just +2 ULP and the worst non-ill-conditioned row moves by
+#
+#   Moon,    Moshier, longitude speed, year +3000   8.7e-06 deg/day
+#   Mercury, Moshier, longitude speed, year -3000   1.5e-06 deg/day
+#
+# i.e. a difference below ~1e-5 is indistinguishable from the input noise
+# floor and says nothing about the code. Those are finite-differenced analytic
+# series at the extreme ends of the date range, where they are weakest; the
+# same bodies mid-range sit at 1.1e-09 and 7.3e-07.
+#
+# 1e-5 deg is 0.036 arcsec, still ~30x tighter than the library's own quoted
+# positional accuracy. This gate is a cross-toolchain SANITY check; the thing
+# that actually catches regressions is check-golden, which is bit-exact.
+TOL ?= 1e-5
 
 golden_O2: golden.c $(SWE)
 	$(CC) -O2 -g -D_GNU_SOURCE -I.. $^ -o $@ $(LIBS)
@@ -109,14 +136,14 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-threads-workaround check-threads
+check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
-	rm -f cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
-        check-glprace check-cfgleak check-threads check-threads-workaround clean
+        check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround clean
 
 # G8: upstream's own suite (setest/, 13 MB of expectations).
 #

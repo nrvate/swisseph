@@ -31,7 +31,13 @@ env:
   # not opened by any gate -- verified with strace -- so they are excluded
   # to keep checkout sane.
   EPHE: ephe
-  TOL: 1e-6
+  # Measured, not picked. A cross-toolchain difference below ~1e-5 deg is
+  # indistinguishable from the values' own input-noise floor: perturbing tjd
+  # by +2 ULP already moves the worst non-ill-conditioned row (Moon, Moshier,
+  # longitude speed, year +3000) by 8.7e-06 deg/day. 1e-5 deg is 0.036
+  # arcsec, ~30x tighter than the library's quoted positional accuracy.
+  # Real regressions are caught by check-golden, which is bit-exact.
+  TOL: 1e-5
 
 jobs:
   # ---------------------------------------------------------------------
@@ -76,6 +82,10 @@ jobs:
           make -C tests check-sunrace  EPHE=../$EPHE
           make -C tests check-glprace  EPHE=../$EPHE
           make -C tests check-cfgleak  EPHE=../$EPHE
+      # REVIEW.md J1. Runs under ASan; the ncf guard is a runtime check on a
+      # file-supplied value, so a static_assert cannot cover it.
+      - name: JPL header guards (malformed-file fixtures)
+        run: make -C tests check-jplguard EPHE=../$EPHE
       - name: Threading shim
         run: make -C tests check-threadshim
 
