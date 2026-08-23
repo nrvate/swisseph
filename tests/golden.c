@@ -114,7 +114,10 @@ static const int32 FLAGS[] = {
   SEFLG_SWIEPH|SEFLG_TRUEPOS,
   SEFLG_SWIEPH|SEFLG_NOABERR|SEFLG_NOGDEFL,
   SEFLG_MOSEPH|SEFLG_SPEED,
-  SEFLG_JPLEPH|SEFLG_SPEED,
+  /* No SEFLG_JPLEPH. It never reached JPL -- no .eph is shipped, so all 189
+   * of those rows were Swiss results recorded under a JPL label. Real JPL is
+   * tested by tests/jplreal.c (G15) against a real file; the refusal a
+   * missing one now produces is recorded by cov:set_jpl_file below. */
 };
 #define NFLAGS (sizeof(FLAGS)/sizeof(FLAGS[0]))
 
@@ -186,21 +189,7 @@ static void planets(void) {
     for (size_t f = 0; f < NFLAGS; f++)
       for (int p = SE_SUN; p <= SE_VESTA; p++) {
         serr[0] = 0; memset(x, 0, sizeof x);
-        /* ⚠️ The SEFLG_JPLEPH set has never actually reached JPL: no .eph
-         * file is shipped with this repository, so every one of those rows
-         * was answered by the Swiss files after a silent substitution, and
-         * the transcript recorded it as though JPL had been consulted.
-         *
-         * Strict mode now refuses that substitution, which would turn these
-         * rows into errors and lose the coverage they do provide -- the
-         * SEFLG_JPLEPH *request* path through swe_calc. So allow the
-         * fallback for exactly this flag set, and only this one: the numbers
-         * stay bit-identical to the pre-strict baseline, which is the point.
-         * The serr on each row still says what happened. */
-        int jpl = (FLAGS[f] & SEFLG_JPLEPH) != 0;
-        if (jpl) swe_set_ephe_fallback(1);
         int32 rf = swe_calc(DATES[d], p, FLAGS[f], x, serr);
-        if (jpl) swe_set_ephe_fallback(0);
         snprintf(tag, sizeof tag, "calc[%zu,%zu,%d]%s", d, f, p,
                  is_illcond(FLAGS[f], p) ? ILLCOND : "");
         row(tag, rf, x, 6, serr);
@@ -796,6 +785,24 @@ static void coverage(void) {
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();                          /* drop the failed JPL attempt */
     swe_set_ephe_path((char *) EPHE);
+
+    /* ⛔ Order independence: the same Swiss request must answer the same
+     * whether or not a Moshier calculation preceded it.
+     *
+     * It did not. Switching ephemeris closes the .se1 files and used to zero
+     * the DE number recorded with them, and swe_calc_ut() asks for delta-t
+     * BEFORE the position that would reopen them -- so the tidal term fell
+     * back to the default -25.8 instead of DE441's -25.936. At -3000, where
+     * delta-t is hours, that moved the Sun 4.56 arcsec depending on what had
+     * been computed before it.
+     *
+     * These two rows are identical by construction and worthless if they
+     * ever stop being identical, which is exactly what makes them a test. */
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_swiss_alone", rf, x, 6, serr);
+    *serr = 0; swe_calc(DATES[0], SE_SUN, SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_swiss_after_moseph", rf, x, 6, serr);
   }
 }
 

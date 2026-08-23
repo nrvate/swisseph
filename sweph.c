@@ -390,9 +390,26 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 	ctx->jpl_file_is_open = FALSE;
       }
       for (i = 0; i < SEI_NEPHFILES; i ++) {
-	if (ctx->fidat[i].fptr != NULL) 
+	/* ⛔ Keep the DE number across the close.
+	 *
+	 * It describes the FILE, not the session: reopening the same .se1
+	 * yields the same value, so clearing it loses information that is
+	 * still true. And something needs it before the reopen happens --
+	 * swe_deltat_ex_r() picks the tidal acceleration from
+	 * fidat[SEI_FILE_MOON].sweph_denum, and swe_calc_ut() calls it
+	 * BEFORE the position that would reopen the file.
+	 *
+	 * Zeroed, that lookup fell through to the default -25.8 instead of
+	 * DE441's -25.936, so any Swiss calc_ut() that followed a Moshier
+	 * call got a delta-t computed from the wrong tidal term. At -3000,
+	 * where delta-t is hours, that moved the Sun by 4.56 arcsec -- and
+	 * the answer depended on what had been calculated before it, which
+	 * is the whole class of bug this fork exists to remove. */
+	int32 keep_denum = ctx->fidat[i].sweph_denum;
+	if (ctx->fidat[i].fptr != NULL)
 	  fclose(ctx->fidat[i].fptr);
 	memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
+	ctx->fidat[i].sweph_denum = keep_denum;
       }
       ctx->last_epheflag = epheflag;
     }
@@ -555,10 +572,18 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * paths individually would be nineteen chances to miss one, and a path
    * added later would not be covered at all.
    *
-   * Only an *involuntary* change counts. A caller who asked for Moshier is
-   * not being downgraded, and a caller who named no ephemeris still gets
-   * whatever the library picks, exactly as before. */
-  if (!ctx->ephe_fallback && (iflgsave & SEFLG_EPHMASK) != 0) {
+   * Only an *involuntary* change counts: a caller who asked for Moshier is
+   * not being downgraded.
+   *
+   * Naming no ephemeris is covered too, and deliberately. epheflag has
+   * already resolved to SEFLG_SWIEPH by then, which is the library's own
+   * choice -- and answering from Moshier instead is the same silent
+   * substitution whether the caller spelled out SEFLG_SWIEPH or let the
+   * default stand. swe_calc_ut() settles the question anyway: it fills in
+   * SEFLG_SWIEPH itself before delegating here, so excluding the
+   * unspecified case would have made swe_calc() and swe_calc_ut() answer
+   * the same arguments differently. */
+  if (!ctx->ephe_fallback) {
     int32 got = iflag & SEFLG_EPHMASK;
     if (got != 0 && got != epheflag) {
       if (serr != NULL)
