@@ -1,9 +1,15 @@
 # Binaries in the source tree — findings and plan
 
-**Status:** Windows, Linux, macOS and Android all build and package in CI.
-Originally: Windows done — no build artifacts remain under `windows/`, and CI
-builds the whole MSVC solution into a package on every push. `contrib/` is
-deliberately deferred. Linux/macOS/Android artifacts and releases are next.
+**Status: done.** No build products are tracked. CI builds Linux, macOS,
+Windows and Android packages on every push, and pushing a `v*` tag publishes
+them as a GitHub release — first done for `2.10.03-ts.1`, and again for
+`2.10.03-ts.2`. The `contrib/` third-party archives are still there by
+decision, not oversight; see
+[Still deferred: the rest of `contrib/`](#still-deferred-the-rest-of-contrib)
+below.
+
+*Everything after this line is the note as written while the work was in
+progress, kept as the record of how it was reasoned about.*
 
 The tree carries compiled artifacts, prebuilt archives, and in one case a
 second copy of its own source. This note records what is actually there, what
@@ -121,6 +127,8 @@ pushed.
 
 ## Where this is heading
 
+*All three landed. Kept as written, with the outcome recorded after each.*
+
 1. **Binaries out of `HEAD`** — done for `bin/` and `windows/`; `contrib/`
    deferred.
 2. **CI builds per-platform artifacts on every push.** Done for Windows: the
@@ -138,3 +146,33 @@ Open decision before any tag: `SE_VERSION` is still `"2.10.03"` and the repo
 carries 24 upstream tags with 0 releases. A fork that ships releases needs
 its own version identity, or its tags become indistinguishable from
 upstream's while the behaviour differs.
+
+---
+
+## Outcome
+
+**2** and **3** landed. All four platforms package on every push — Linux
+(pinned to `ubuntu-22.04` so the binaries need only `GLIBC_2.34`), macOS
+(universal `arm64` + `x86_64`), Windows (all 15 MSVC projects), and Android
+(five ABIs, JNI export count checked against `swejni.h` rather than a guessed
+threshold). A `v*` tag publishes them.
+
+The version question was settled with a `-ts.N` suffix: `SE_VERSION` is
+`2.10.03-ts.2` today, it is the only place the version is written down, and
+`make bump` moves it. Tags are `v2.10.03-ts.N`, which cannot collide with
+upstream's, and the release workflow refuses to publish a tag that disagrees
+with `SE_VERSION`.
+
+Two things only showed up once a release actually existed, and neither was
+visible from a green CI run:
+
+- `actions/upload-artifact` does not carry unix file modes, so `ts.1` shipped
+  tarballs whose binaries were `0644` — extract, run `./bin/swetest`, get
+  `Permission denied`. Found by downloading the published release and running
+  it. The gate now reads the mode back out of the finished tarball.
+- The Windows `SHA256SUMS` was written with CRLF, which makes `sha256sum -c`
+  fail on every line. It survived because the Windows job only checked the
+  file *existed*, where Linux and macOS ran a real `-c`.
+
+Both are why the packaging jobs now verify their own output the way a
+recipient would, rather than trusting the step that produced it.

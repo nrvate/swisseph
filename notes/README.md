@@ -1,7 +1,11 @@
 # Thread-Safety Working Notes
 
-Working documents for the thread-safe Swiss Ephemeris effort (`threadsafe`
-branch). These are **our** notes — upstream Astrodienst documentation lives in
+Working documents for the thread-safe Swiss Ephemeris effort. They are a
+**historical record**, written as the work happened and dated accordingly --
+not a description of the current tree. Where a note states a row count, a
+symbol count or a phase status, read it as true at the time of writing; the
+current numbers are in [`THREADING.md`](../THREADING.md) and the top-level
+[readme](../readme.md). These are **our** notes — upstream Astrodienst documentation lives in
 `doc/`, not here.
 
 | Document | What it is |
@@ -18,8 +22,8 @@ branch). These are **our** notes — upstream Astrodienst documentation lives in
 Related, elsewhere in the tree:
 
 - [`THREADING.md`](../THREADING.md) — **user-facing** guide to the thread-safe API. Start there if you want to *use* the library rather than read how it was built.
-- `tests/` — 13 gates: golden baseline, thread consistency, context independence, leak/race, JPL reader, threading backends, bridge invariant, build
-- `tests/baseline.txt` — bit-exact reference transcript, 5201 rows
+- `tests/` — 17 gate targets: golden baseline, thread consistency, context independence, leak/race, JPL reader, threading backends, bridge invariant, build, Windows code paths, version single-source. Ten run in `make -C tests check`; the rest are run explicitly or by CI.
+- `tests/baseline.txt` — bit-exact reference transcript, 12761 rows (2.5 MB)
 
 ## Status
 
@@ -32,9 +36,16 @@ Related, elsewhere in the tree:
 | [C17_MIGRATION.md](C17_MIGRATION.md) | complete — all five phases |
 | [C17_PERFORMANCE.md](C17_PERFORMANCE.md) | complete — several items measured and *declined*, which is recorded as carefully as what landed |
 | [REVIEW.md](REVIEW.md) | both correctness findings resolved (J1 fixed, S1 deleted). The remaining themes — unsafe string handling, `goto` density, no enums — are systemic modernization, untouched and out of scope for this branch. |
+| [BINARIES.md](BINARIES.md) | complete — no build products are tracked any more. CI builds Linux, macOS, Windows and Android packages on every push, and a tag publishes them as a release. The `contrib/` third-party archives are deliberately still there; BINARIES.md says why. |
 
-**14 gates**, all green; see [`THREADING.md`](../THREADING.md) for what each
-one proves. The one thing worth knowing before changing anything here: the
+**Released.** The work described in these notes shipped as `2.10.03-ts.1` and
+`2.10.03-ts.2` (see [releases](https://github.com/nrvate/swisseph/releases)).
+It lives on `main`; `threadsafe` holds the granular history and is frozen by a
+repository ruleset; `legacy-master` is the pristine upstream tree kept for
+merges from upstream.
+
+All gates green; see [`THREADING.md`](../THREADING.md) for what each one
+proves. The one thing worth knowing before changing anything here: the
 gates are bit-exact, so a change that alters *any* number fails loudly rather
 than drifting.
 

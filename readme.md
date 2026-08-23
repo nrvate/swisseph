@@ -1,192 +1,219 @@
-readme.md  created 5-oct-2017 by Alois Treindl
+# Swiss Ephemeris — thread-safe fork
 
-last update 14-apr-2026
+A fork of [Swiss Ephemeris](https://github.com/aloistr/swisseph) that can be
+used from more than one thread, with the same numbers and the same ABI.
 
-## About the Swiss Ephemeris:
+[**Latest release**](https://github.com/nrvate/swisseph/releases/latest) —
+prebuilt for Linux, macOS, Windows and Android. Versions are `2.10.03-ts.N`:
+upstream's version, plus this fork's own counter, so a tag here can never be
+confused with one of upstream's.
 
-Swiss Ephemeris (SE) is a software toolbox for programmers of astrological
-software. It is of little use for a non-programmer
+(The version is deliberately not written out on this page. `SE_VERSION` in
+`sweph.h` is the only place it lives, and a gate enforces that against every
+tracked file — this one included, as an earlier draft of this paragraph
+discovered.)
 
-Swiss Ephemeris was developed by Dieter Koch and Alois Treindl, while both were
-employed by Astrodienst AG in Zollikon/Zürich Switzerland.
+---
 
-Most astrological programmers all over the world use Swiss Ephemeris in their
-software. 
+## Why this fork exists
 
-SE ist built according to the highest standards of precision available
-in astronomical data, with raw data from Nasa's JPL. It is able to reproduce the ephemeris data in
-astronomical standard books up to the last printed digit.
+Upstream is not "not thread safe" in the usual sense. Since v2.03 it annotates
+the global `swed` with `TLS`, which on Linux/GCC genuinely eliminates data
+races. The result is **race-free but not thread-usable**: every thread gets its
+own private copy of the configuration, so
 
-Detailed information is available at https://www.astro.com/swisseph
-or in the documentation files included here (folder doc).
+```c
+swe_set_ephe_path("/usr/share/ephe");   /* main thread */
+```
 
-## Update to JPL Ephemeris DE441
-As of 14 April 2026, all .se1 data files for planets and for asteroids have been rebuilt
-with JL Ephemeris DE441.
+is invisible to every worker thread. They silently fall back to the built-in
+Moshier ephemeris — lower precision, different answers — and still report
+success. Nothing errors and nothing warns; the positions are just quietly worse.
 
-These files remain compatible with all older SE versions at least back
-to release 1.67 of March 2005.
+On platforms where `TLS` expanded to nothing, the failure inverted into real
+races over 23 KB of shared caches and open `FILE *` handles.
 
-# Download location of files:
+This fork fixes both halves: configuration propagates between threads, and
+threads can hold genuinely independent state when they need to.
 
-## Compressed Swiss Ephemeris planet and main asteroid files
+---
 
-In the public Swiss Ephemeris github repository
-folder ephe
-https://github.com/aloistr/swisseph/tree/master/ephe
+## Getting it
 
-This directory contains also in list.zip the lists of all asteroid files and their
-most recent updates.
+**Prebuilt**, from [the latest release](https://github.com/nrvate/swisseph/releases/latest) —
+Linux (`libswe.so`, `libswe.a`, CLI tools), macOS (universal arm64 + x86_64),
+Windows (32- and 64-bit DLLs, import libraries, static libraries), and Android
+(JNI library for every ABI the NDK builds). Every archive carries a
+`SHA256SUMS`; the release carries one for the archives themselves.
 
-	list_short.txt		recent updates short files
-	all_short.txt
-	list_long.txt		recent updates long files
-	all_long.txt
+Nothing is checked into this repository — the binaries are built by CI from the
+tag and only exist in releases.
 
-or from Alois' public Dropbox area in folder 'ephe' with this link
+**From source:**
 
-https://www.dropbox.com/scl/fo/y3naz62gy6f6qfrhquu7u/h?rlkey=ejltdhb262zglm7eo6yfj2940&dl=0
+```sh
+make                    # -std=c17 -Wall -Wextra -Werror -O2
+make libswe.so          # or libswe.dylib on macOS
+make LTO=1              # optional, see THREADING.md
+```
 
-## Swiss Ephemeris source code
+Ephemeris data files are **not** included and have their own release cadence —
+see [Ephemeris data files](#ephemeris-data-files) below. Without them the
+library uses the built-in Moshier ephemeris, which needs no files at all.
 
-In the public Swiss Ephemeris Github repository
-https://github.com/aloistr/swisseph
+---
 
-## Swiss Ephemeris Documentation
+## Using it
 
-in the public Swiss Ephemeris Github repository
-folder doc/
-https://github.com/aloistr/swisseph/tree/master/doc
+There are two ways, and they compose. Both are described in full in
+[THREADING.md](THREADING.md).
 
-## Swiss Ephemeris for Windows
+**1. The existing API, which now works across threads.** Nothing to change:
 
-see folder windows/
-https://github.com/aloistr/swisseph/tree/master/windows
+```c
+swe_set_ephe_path("/usr/share/ephe");   /* main thread */
+/* ... worker threads now see it, and use the real ephemeris */
+swe_calc_ut(tjd, SE_MOON, iflag, xx, serr);
+```
 
-## JPL files
+**2. Explicit contexts,** when threads need genuinely separate state:
 
-to be downloaded directly from JPL, see
-https://www.astro.com/swisseph-download/jplfiles/
+```c
+swe_ctx *ctx = swe_ctx_new();
+swe_set_sid_mode_r(ctx, SE_SIDM_LAHIRI, 0, 0);
+swe_calc_ut_r(ctx, tjd, SE_MOON, iflag, xx, serr);
+swe_ctx_free(ctx);
+```
 
-- de200.eph  size 41 Mb  [download de200.eph](https://ssd.jpl.nasa.gov/ftp/eph/planets/Linux/de200/lnxm1600p2170.200)
-- de406.eph  size 190 Mb [download de406.eph](https://ssd.jpl.nasa.gov/ftp/eph/planets/Linux/de406/lnxm3000p3000.406)
-- de431.eph  size 2.6 Gb [download de431.eph](https://ssd.jpl.nasa.gov/ftp/eph/planets/Linux/de431/lnxm13000p17000.431)
-- de441.eph  size 2.6 Gb [download de441.eph](https://ssd.jpl.nasa.gov/ftp/eph/planets/Linux/de441/linux_m13000p17000.441)
+There are **78** `_r` entry points, each taking a context as its first
+argument. Two contexts can hold two sidereal modes or two observer positions at
+once — something the process-wide API cannot express at all.
 
- 	These download links refer to the JPL area https://ssd.jpl.nasa.gov/ftp/eph/planets/Linux/` 
- 	After download, files like de441/linux_m13000p17000.441 must be renamed de441.eph to be recognized by Swiss Ephemeris code.`
-or from Alois' public Dropbox area in folder 'jpl binary files'  with this link
+`swe_close_r()` is separate from `swe_close()`: the latter also resets the
+process-wide configuration, so a worker releasing its own state would otherwise
+wipe the settings every other thread was reading.
 
-https://www.dropbox.com/scl/fo/y3naz62gy6f6qfrhquu7u/h?rlkey=ejltdhb262zglm7eo6yfj2940&dl=0
+---
 
-	md5-keys
-	1ef6191b614b2b854adae8675b1b981f  de200.eph
-	1ef768440cc1617b6c8ad27a9a788135  de406e.eph
-	fad0f432ae18c330f9e14915fbf8960a  de431.eph
-	a7b2a5b8b2ebed52ea4da2304958053b  de441.eph
+## Compatibility
 
-or from https://ephe.scryr.io/jpl/  which is a web space provided by  Phillip McCabe
+The public ABI is **additive only**: 106 exported symbols before this work,
+**186** after, none removed and none changed. Existing binaries keep working
+and existing source keeps compiling. Every legacy entry point is now exactly
+`swe_X_r(swi_default_ctx(), ...)`.
 
+A CI job compares the exported symbol set against upstream on Linux, macOS and
+Windows on every push, and fails if anything upstream exported disappears.
 
-## Asteroid files for all available numbered asteroids (more than 760'000)
+---
 
-Asteroids are organized in folders of 1000 asteroids each, 
-available in Alois' public Dropbox area in folder 'all_ast' with this link:
-The 'short' files with file names like sXXXs.se1 or seXXXs.se1 (suffix s.se1) cover each 600 years, from 1500 CE to 2100 CE.
-Named asteroids have 'long file' with suffix .se1; they cover each 6000 years from 3000 BCE to 3000 CE.
+## What is verified
 
-Since an update in April 2026, long and short files are the same directories.
+Every change is gated on a bit-exact transcript — **12761 rows** of C99 `%a`
+hex floats compared byte for byte, so no test has to pick a tolerance. The
+transcript sweeps 120 pseudo-random dates spanning roughly 1400 years across
+three ephemeris flag sets and every major body, recording longitude, latitude,
+distance and all three speed components.
 
-https://www.dropbox.com/scl/fo/y3naz62gy6f6qfrhquu7u/h?rlkey=ejltdhb262zglm7eo6yfj2940&dl=0
+Ten gates run on every push (`make -C tests check`), covering bit-exactness,
+cross-thread agreement, context independence, configuration leaks, two specific
+historical races, malformed-input handling and the threading backends.
 
-or from https://ephe.scryr.io/ephe , the web space provided by Phillip McCabe.
+CI additionally builds and checks under gcc, clang, macOS/clang and MSVC, with
+ThreadSanitizer, AddressSanitizer and LeakSanitizer, across four C dialects,
+plus an LTO build and a differential run of upstream's own `setest` suite.
+MSVC's output is compared numerically against the gcc reference over the whole
+transcript.
 
-The total volume was 48 Gb in June 2026.
+See [THREADING.md](THREADING.md) for the gate-by-gate detail.
 
-## How to organize Ephemeris files so that SwissEph finds them
-Swissephe code uses an internal swed.ephepath for the directory names where it looks
-for its data files.
+---
 
-It defaults to \sweph\ephe on Windows and to  ".:/users/ephe2/:/users/ephe/" on Linux or other
-Unix-like systems like Android or Mac OS-X.
+## Repository layout
 
-The characters ; in Windows and ; or : in Linux serve as path separators.
-In the default setting on Linux, the three directories . , /users/ephe and /users/ephe2 are
-searched when Swiss Ephemeris looks for a file.
+| Branch | What it is |
+|---|---|
+| `main` | default branch; releases are cut from here |
+| `work` | fixes in flight, squashed into `main` through a pull request |
+| `threadsafe` | the granular history of the transformation — **frozen** |
+| `legacy-master` | pristine upstream tree, no CI, kept for merges from upstream |
 
-The programmer can call the function swe_set_ephe_path() to set the ephepath variable,
-and may include path separators.
+`notes/` holds the working notes from the transformation: the plan, the
+investigation, the configuration map, the API design and the review. They are a
+historical record and are dated accordingly, not a description of the current
+tree.
 
-The user of a program can also set an evironment variable which override the builtin default.
+**Versioning.** `SE_VERSION` in `sweph.h` is the only place the version is
+written down; everything else derives from it.
 
-The compressed planetary ephemeris files like sepl*.se1, sem*.se1 and seas*.se1 must be directly in one of
-the path elements.
+```sh
+make version                    # print it
+make bump VERSION=X.Y.Z-ts.N    # set it
+```
 
-Asteroid files must be in subdirectories named astN  like ast0, ast1, ... ast623,
-where N is the asteroid number divided by 1000.
+A gate fails the build if any other tracked file grows a version literal, and
+the release workflow refuses to publish a tag that disagrees with `SE_VERSION`.
 
-The folders all_ast and long_ast are only used inside the Dropbox area to organize the files. Once downloaded,
-the astN directory must be placed directly in one of the elements of ephepath.
-Short asteroid files and long asteroid filese differ by an s in the file name, like se1001.ses and se1001s.se1.
-They can be merged into the same astN directory, in this case ast1.
-Astrodienst keeps them traditionally separate in /ephe and /ephe2, but that distinction is not technically necessary.
+---
 
+## License
 
-## Contributed code
+Swiss Ephemeris is dual-licensed by Astrodienst AG under either the **GNU
+Affero General Public License (AGPL)** or a **Swiss Ephemeris Professional
+License**, and you must choose one before distributing software that uses it.
+This fork changes nothing about that. Read [LICENSE](LICENSE) and
+[LICENSE.TXT](LICENSE.TXT), and see
+[astro.com/swisseph](https://www.astro.com/swisseph/) for the professional
+license.
 
-folder contrib:
-It contains open source code and applications using the Swiss Ephemeris.
-See the readme file in directory contrib for more details.
+Swiss Ephemeris was developed by Dieter Koch and Alois Treindl at Astrodienst
+AG, Zollikon/Zürich, Switzerland. All the astronomy here is theirs; this fork
+only changes how the library handles state.
 
+---
 
-### Legal restrictions
+## Upstream
 
-The SWISS EPHEMERIS can be licensed by programmers to include this 
-calculation engine in their software. More information is found at
-https://www.astro.com/swisseph/
+Upstream repository, documentation and support:
 
-Depending on your application the free edition under the Public License
-may apply, or you may have to acquire a professional license for a fee.
+- Source: <https://github.com/aloistr/swisseph>
+- Documentation: [`doc/`](doc/), and <https://www.astro.com/swisseph>
+- Mailing list (the main support channel, and public):
+  <https://groups.io/g/swisseph>
 
-Read LICENSE.TXT
+Support questions about the ephemeris itself belong upstream. Issues with
+*this fork's* threading, contexts, build or packaging belong here.
 
-### Mailing list
-We maintain a mailing list which servers for discussion between developers and 
-as the main support channel. All Swiss Ephemeris support is public. There is
-no private support by email.
+### Ephemeris data files
 
-If you want to have your name added to this mailing list, please
-visit https://groups.io/g/swisseph
+Not included in this repository's releases. As of April 2026 all `.se1` files
+have been rebuilt with JPL ephemeris DE441 and remain compatible with Swiss
+Ephemeris releases back to 1.67 (March 2005).
 
-## Feedback
+- Planets and main asteroids:
+  [upstream `ephe/`](https://github.com/aloistr/swisseph/tree/master/ephe)
+- Asteroid files for all numbered asteroids (over 760,000; ~48 GB), and JPL
+  binaries: Alois' public
+  [Dropbox area](https://www.dropbox.com/scl/fo/y3naz62gy6f6qfrhquu7u/h?rlkey=ejltdhb262zglm7eo6yfj2940&dl=0),
+  or <https://ephe.scryr.io/> (web space provided by Phillip McCabe)
+- JPL files direct from JPL:
+  <https://www.astro.com/swisseph-download/jplfiles/>. After download,
+  `de441/linux_m13000p17000.441` must be renamed `de441.eph` to be recognised.
 
-We welcome any suggestions and comments you may have about the Swiss Ephemeris.
-Please email to swisseph@groups.io
+**Where the library looks.** `swed.ephepath` defaults to `\sweph\ephe` on
+Windows and `.:/users/ephe2/:/users/ephe/` on Unix-likes; `;` (Windows) or `;`
+and `:` (Unix) separate entries. Call `swe_set_ephe_path()` to change it — in
+this fork, from any thread, and it will be seen by the others.
 
-If you want your feedback distributed to all members of the swisseph
-mailing list, please subscribe to https://groups.io/g/swisseph
+Planetary files (`sepl*.se1`, `sem*.se1`, `seas*.se1`) go directly in a path
+element. Asteroid files go in subdirectories `astN`, where N is the asteroid
+number divided by 1000. Short and long asteroid files may share a directory.
 
-## Python-Version:
+### Other language bindings
 
-An uptodate fork of oPyswisseph by Sailorfe https://github.com/sailorfe/pysweph
-
-## Java-Version:
-
-Thomas Mack has ported the Swiss Ephemeris library to Java.
-
-His work can be found at:  http://www.th-mack.de/international/download/
-
-If you use it for commercial or for non-open-source purposes, please
-be aware that AGPL Public License of Swiss Ephemeris 
-also applies for the Java version, besides any additional requirements
-which may be defined by Thomas Mack.
-
-## PHP-Version
-found on Github https://github.com/cyjoelchen/php-sweph
-
-## Perl-Version
-found on Github https://github.com/aloistr/perl-sweph
-
-## Numerical Integrator
-the numerical integrator to prepare swisss ephemeris files is not in a state
-fit for publication.
+Python ([pysweph](https://github.com/sailorfe/pysweph)),
+Java ([Thomas Mack](http://www.th-mack.de/international/download/)),
+PHP ([php-sweph](https://github.com/cyjoelchen/php-sweph)),
+Perl ([perl-sweph](https://github.com/aloistr/perl-sweph)).
+These wrap upstream and do not carry this fork's changes. The AGPL applies to
+them as well.
