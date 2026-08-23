@@ -4947,7 +4947,14 @@ fendian, ifno, serr);
     nbytes_ipl = 4;
     nplan %= 256;
   }
-  if (nplan < 1 || nplan > 20) {
+  /* The bound is a file-format limit, but it also has to keep nplan within
+   * fdp->ipl[], which is SEI_FILE_NMAXPLAN long. Those were independent
+   * numbers -- a bare 20 here and a 50 in the header -- so shrinking
+   * SEI_FILE_NMAXPLAN below 20 would have silently turned this check into
+   * no protection at all. (C17_PERFORMANCE.md B2.) */
+  static_assert(SEI_FILE_MAXPLAN <= SEI_FILE_NMAXPLAN,
+      "the nplan bound must not exceed fdp->ipl[]'s capacity");
+  if (nplan < 1 || nplan > SEI_FILE_MAXPLAN) {
     smsg = "i";
     goto file_damage;
   }

@@ -187,10 +187,6 @@
 #define SEI_FILE_REORD  	2
 
 #define SEI_FILE_NMAXPLAN	50
-/* Largest planet count a .se1 file header may declare. Distinct from
- * SEI_FILE_NMAXPLAN, which is the capacity of fdp->ipl[]; the static_assert
- * at the check site in sweph.c ties the two together. */
-#define SEI_FILE_MAXPLAN	20
 #define SEI_FILE_EFPOSBEGIN      500
 
 #define SE_FILE_SUFFIX	"se1"
@@ -643,7 +639,7 @@ extern struct epsilon oec2000;
 extern struct epsilon oec;
 */
 
-struct __attribute__((aligned(64))) plan_data {
+struct plan_data {
   /* the following data are read from file only once, immediately after 
    * file has been opened */
   int ibdy;		/* internal body number */
@@ -768,7 +764,7 @@ struct gen_const {
 	sunradius;
 };
 
-struct __attribute__((aligned(64))) save_positions {
+struct save_positions {
   int ipl;
   double tsave;
   int32 iflgsave;
@@ -967,15 +963,11 @@ struct swe_ctx {
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;
   struct plan_data pldat[SEI_NPLANETS];
-  /* nddat is deliberately the heavier plan_data, not node_data.
-   *
-   * Every access does touch only node_data's five members, so the leaner
-   * struct would fit -- but app_pos_rest() takes a struct plan_data * and
-   * is called with both pldat[] and nddat[] entries, so narrowing this
-   * means refactoring a hot shared helper to save 912 B out of a 34,800 B
-   * context. Kept as plan_data on purpose; see notes/C17_PERFORMANCE.md
-   * section 4.2. */
+#if 0
+  struct node_data nddat[SEI_NNODE_ETC];
+#else
   struct plan_data nddat[SEI_NNODE_ETC];
+#endif
   struct save_positions savedat[SE_NPLANETS+1];
   struct epsilon oec;
   struct epsilon oec2000;

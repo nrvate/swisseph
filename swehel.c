@@ -68,6 +68,7 @@
 */
 
 
+#include <assert.h>   /* static_assert() */
 #include "swephexp.h"
 #include "sweph.h"
 #include "swephlib.h"
@@ -1857,6 +1858,12 @@ static void strcpy_VBsafe(char *sout, char *sin)
 */
 int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
 {
+  /* darr is caller-allocated and this function writes darr[0..30], so the
+   * only thing that can be checked here is that the documented minimum in
+   * swephexp.h actually covers what is written. (C17_PERFORMANCE.md B4 --
+   * the survey said 28; the highest index written is 30.) */
+  static_assert(SE_HELIACAL_DARR_SIZE >= 31,
+      "SE_HELIACAL_DARR_SIZE must cover darr[30]");
   double AziS, AltS, AltS2, AziO, AltO, AltO2, GeoAltO, AppAltO, DAZact, TAVact, ParO, MagnO;
   double ARCVact, ARCLact, kact, WMoon, LMoon = 0, qYal, qCrit;
   double RiseSetO, RiseSetS, Lag, TbYallop, TfirstVR, TlastVR, TbVR;

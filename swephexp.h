@@ -674,6 +674,17 @@ extern HANDLE dllhandle;        // set by swedllst::DllMain,
 			/* ext_def(x) evaluates to x on Unix */
 
 ext_def(int32) swe_heliacal_ut(double tjdstart_ut, double *geopos, double *datm, double *dobs, char *ObjectName, int32 TypeEvent, int32 iflag, double *dret, char *serr);
+/* Minimum length of the darr[] out-parameter of swe_heliacal_pheno_ut()
+ * and swe_heliacal_pheno_ut_r().
+ *
+ * The function writes darr[0..30]. That requirement was documented nowhere
+ * and existed only as tribal knowledge -- callers in this tree happen to
+ * pass 40- and 50-element arrays. A caller who reasonably assumed 10, as
+ * several other swe_* out-parameters use, would silently smash their stack.
+ * (notes/C17_PERFORMANCE.md B4; the survey said 28, the actual highest
+ * index written is 30.) */
+#define SE_HELIACAL_DARR_SIZE 31
+
 ext_def(int32) swe_heliacal_pheno_ut(double tjd_ut, double *geopos, double *datm, double *dobs, char *ObjectName, int32 TypeEvent, int32 helflag, double *darr, char *serr);
 ext_def(int32) swe_vis_limit_mag(double tjdut, double *geopos, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr);
 

@@ -186,6 +186,33 @@ for free via strict aliasing).
   not stack/array-packed, so false sharing *between* whole contexts isn't a
   real concern regardless of alignment.
 
+> ### `_Alignas(64)` is DECLINED — measured, and the premise does not hold
+>
+> The false-sharing argument requires two threads writing to the same cache
+> line. Under **both** models in this library that cannot happen: `swed` is
+> TLS, so each thread's `pldat[]`/`savedat[]` live in its own TLS block, and
+> an explicit `swe_ctx` is separately heap-allocated and used by one thread
+> at a time by contract. No two threads ever touch adjacent elements of the
+> same array.
+>
+> Measured anyway rather than argued: 8-thread `golden`, three interleaved
+> pairs — 1.766 s plain vs 1.734 s aligned, −1.8%, inside the noise.
+>
+> The cost is real: `plan_data` 416 → 448 B and `save_positions` 216 → 256 B
+> grows every context from 34,800 to 36,544 B, **+5%**. Paying 5% memory per
+> context for a within-noise timing difference on a premise that does not
+> apply is a bad trade.
+>
+> ### `nddat` as `node_data` is DECLINED
+>
+> Every `nddat` access does touch only `node_data`'s five members
+> (`iephe`, `teval`, `x`, `xflgs`, `xreturn`) — verified across all pointer
+> aliases, not just direct subscripts. But `app_pos_rest()` is shared: it
+> takes `struct plan_data *` and is called with both `pldat[]` and `nddat[]`
+> entries. Narrowing `nddat` means refactoring a hot shared helper to save
+> 912 B out of 34,800 (2.6%), with no speed effect. Not worth the risk. The
+> `#if 0` now carries a comment saying so, rather than looking abandoned.
+
 ### 4.3 Threading shim (`swethread.h`) — code-quality cleanup, no perf change
 
 `swethread.h` is a 5-tier fallback (no-threads → Windows → GCC/Clang

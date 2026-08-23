@@ -180,6 +180,7 @@
 #include <string.h>
 #include "swephexp.h"
 #include "sweph.h"
+#include <assert.h>   /* static_assert() in sscc() */
 #include "swephlib.h"
 
 static void mean_elements(swe_ctx *ctx);
@@ -1674,8 +1675,26 @@ static void chewm(swe_ctx *ctx, const short *pt, int nlines, int nangles, int ty
 /* Prepare lookup table of sin and cos ( i*Lj )
  * for required multiple angles
  */
+/* Fills ctx->moon.ss[k][0..n-1] and cc[k][0..n-1] with sin/cos of
+ * multiples of arg. Neither k nor n is checked -- they are compile-time
+ * literals at all 8 call sites (k = 0..3, n = 4 or 6), well inside the
+ * [5][8] the arrays declare. The static_asserts below tie those literals
+ * to the declaration so a future edit narrowing ss[][] fails to compile
+ * rather than overrunning. (notes/C17_PERFORMANCE.md B3.) */
+#define SSCC_MAX_K 4      /* highest k any call site passes */
+#define SSCC_MAX_N 6      /* highest n any call site passes */
+
 static void sscc(swe_ctx *ctx, int k, double arg, int n )
 {
+  static_assert(sizeof(((struct moon_state *) 0)->ss) /
+                sizeof(((struct moon_state *) 0)->ss[0]) > SSCC_MAX_K,
+      "moon.ss[][] has too few rows for the k values sscc() is called with");
+  static_assert(sizeof(((struct moon_state *) 0)->ss[0]) /
+                sizeof(((struct moon_state *) 0)->ss[0][0]) >= SSCC_MAX_N,
+      "moon.ss[][] has too few columns for the n values sscc() is called with");
+  static_assert(sizeof(((struct moon_state *) 0)->cc) ==
+                sizeof(((struct moon_state *) 0)->ss),
+      "moon.cc[][] and moon.ss[][] must have the same shape");
   double cu, su, cv, sv, s;
   int i;
   su = sin(arg);
