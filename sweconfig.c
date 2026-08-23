@@ -18,6 +18,19 @@
  * and swi_config_publish() bumps it to 1 on the first setter call, so a
  * thread whose ctx->cfg_seen == 0 has by definition never synced.
  *====================================================================*/
+#ifdef SWI_NEEDS_GEN_FALLBACK_MUTEX
+/* The generation counter's stand-in lock, on toolchains with neither the
+ * __atomic builtins nor C11 <stdatomic.h>.
+ *
+ * swethread.h declares this extern and calls it, and NO translation unit in
+ * the library defined it -- so tier 5 could not link. The fallback that
+ * exists to serve Sun Studio and IBM XL (named in sweodef.h's TLS block)
+ * was dead on arrival, and nothing noticed because gcc and clang pick tier
+ * 3 at every -std=, c89 included. tests/check-threadtiers now builds all
+ * five. */
+swi_mutex_t swi_gen_fallback_mutex = SWI_MUTEX_INIT;
+#endif
+
 static swi_mutex_t cfg_mutex = SWI_MUTEX_INIT;
 static struct swe_config cfg_master;
 /* Validity is "generation != 0" rather than a separate flag: the generation

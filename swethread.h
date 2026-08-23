@@ -151,6 +151,14 @@ SWI_INLINE swi_gen_t swi_gen_bump(swi_gen_t *g)
 
 #include <pthread.h>
 #define SWI_THREAD_BACKEND "pthread+mutex"
+/* Tier 5, and ONLY tier 5, needs a process-wide mutex to stand in for the
+ * atomic generation counter. Exactly one translation unit must define it.
+ *
+ * This macro exists so that translation unit does not have to re-implement
+ * the selector cascade above to find out whether it should. tests/
+ * threadshim.c did re-implement it, omitted the SWE_PREFER_C11_ATOMICS
+ * term, and so disagreed with this header about which tier was active. */
+#define SWI_NEEDS_GEN_FALLBACK_MUTEX 1
 typedef pthread_mutex_t swi_mutex_t;
 #define SWI_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
 SWI_INLINE void swi_mutex_lock(swi_mutex_t *m)   { pthread_mutex_lock(m); }

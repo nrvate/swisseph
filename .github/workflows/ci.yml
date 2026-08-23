@@ -92,6 +92,11 @@ jobs:
       # same rule as check-golden.
       - name: JPL reader numerical baseline
         run: make -C tests check-jplcalc
+
+      # G11. gcc/clang pick tier 3 at every -std=, so tiers 4 and 5 are
+      # built by nothing else. Tier 5 had already rotted unbuildable.
+      - name: swethread.h backends all build and compute
+        run: make -C tests check-threadtiers EPHE=../$EPHE
       - name: Threading shim
         run: make -C tests check-threadshim
 

@@ -64,10 +64,14 @@ int main(void) {
 #define NTHREADS 8
 #define NITER    20000
 
-/* backend 5 needs this defined exactly once */
-#if !defined(_WIN32) && !defined(__ATOMIC_SEQ_CST) \
-    && !(defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L \
-         && !defined(__STDC_NO_ATOMICS__))
+/* Tier 5 needs this defined exactly once, and this test does not link the
+ * library, so it defines it here.
+ *
+ * Was a hand-copied version of swethread.h's selector cascade, which had
+ * drifted: it omitted the SWE_PREFER_C11_ATOMICS term, so building with
+ * -std=c99 -DSWE_PREFER_C11_ATOMICS selected tier 5 in the header and tier
+ * 3 here, and the link failed. The header now exports the answer. */
+#ifdef SWI_NEEDS_GEN_FALLBACK_MUTEX
 swi_mutex_t swi_gen_fallback_mutex = SWI_MUTEX_INIT;
 #endif
 

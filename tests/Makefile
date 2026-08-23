@@ -150,7 +150,7 @@ clean:
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
-        check-build check-ctx check-jplcalc clean
+        check-build check-ctx check-jplcalc check-threadtiers clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
 #
@@ -164,6 +164,34 @@ bench: bench.c $(wildcard ../*.c)
 
 bench-run: bench
 	@./bench --ephe $(EPHE) --rep $(REP)
+
+# G11: every swethread.h backend must build, link and compute.
+#
+# gcc and clang select tier 3 (__atomic builtins) at EVERY -std=, c89
+# included, so tiers 4 and 5 were never built by anything. Tier 5 had
+# rotted: swethread.h declared swi_gen_fallback_mutex extern and called it,
+# and no translation unit in the library defined it, so the library could
+# not link at all on the exotic toolchains that fallback exists to serve.
+# tests/threadshim.c had a hand-copied selector that had drifted too.
+#
+# Nothing detects that except building the tiers, which is what this does.
+check-threadtiers: baseline.txt
+	@echo "G11: swethread.h backends"
+	@rc=0; \
+	for spec in "c17:" "c17:-DSWE_PREFER_C11_ATOMICS" \
+	            "c99:-DSWE_PREFER_C11_ATOMICS" "c17:-DSWE_NO_THREADS"; do \
+	  std=$${spec%%:*}; extra=$${spec##*:}; \
+	  if $(CC) -std=$$std $$extra -O0 -g -D_GNU_SOURCE -I.. golden.c $(SWE) \
+	       -o .tiergolden $(LIBS) 2>.tier.err; then \
+	    ./.tiergolden --ephe $(EPHE) > .tier.txt 2>&1; \
+	    if diff -q baseline.txt .tier.txt >/dev/null; then \
+	      printf "  %-34s OK\n" "-std=$$std $$extra"; \
+	    else printf "  %-34s OUTPUT DIFFERS\n" "-std=$$std $$extra"; rc=1; fi; \
+	  else printf "  %-34s BUILD FAIL\n" "-std=$$std $$extra"; \
+	       head -3 .tier.err; rc=1; fi; \
+	done; \
+	rm -f .tiergolden .tier.txt .tier.err; \
+	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
 #

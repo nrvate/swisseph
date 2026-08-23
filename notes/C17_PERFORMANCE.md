@@ -214,6 +214,37 @@ written specifically to survive being compiled as C89 today.
 - No other hand-rolled atomics-detection cascade exists elsewhere in the
   tree (verified by grep) — this is the only site.
 
+> ### ⚠ Tier 5 removal is DECLINED, and tier 5 was already broken
+>
+> This section proposes deleting tier 5 as "genuinely unreachable once C17
+> is guaranteed". Two things came out of checking that.
+>
+> **1. Tier 5 did not build at all.** `swethread.h` declares
+> `swi_gen_fallback_mutex` `extern` and calls it, and **no translation unit
+> in the library ever defined it**. Any toolchain selecting tier 5 could not
+> link the library. The fallback that exists to serve Sun Studio and IBM XL
+> — both named in `sweodef.h`'s TLS block — was dead on arrival.
+>
+> Nothing noticed because gcc and clang pick tier 3 at **every** `-std=`,
+> `c89` included; tiers 4 and 5 were built by nothing, ever. Same shape as
+> `interp()` in §4.1: unreachable code is unverified code. Fixed, and G11
+> (`tests/check-threadtiers`) now builds and runs all four selectable
+> backends against the golden baseline.
+>
+> **2. `tests/threadshim.c`'s copy of the selector had drifted.** It omitted
+> the `SWE_PREFER_C11_ATOMICS` term, so `-std=c99 -DSWE_PREFER_C11_ATOMICS`
+> chose tier 5 in the header and tier 3 in the test, and the link failed.
+> The header now exports `SWI_NEEDS_GEN_FALLBACK_MUTEX` so the condition
+> exists in exactly one place — which is the durable fix for the "must be
+> deleted in lockstep" hazard this section itself warns about.
+>
+> **The removal is declined.** `sweodef.h` explicitly supports Sun Studio
+> and IBM XL, which are precisely the compilers that may offer neither the
+> `__atomic` builtins nor C11 `<stdatomic.h>`. Deleting their only path to
+> save 29 lines trades a hard build failure on a supported platform for
+> nothing measurable. The tier is now correct and tested, which is worth
+> more than it is short.
+
 ### 4.4 `const`-correctness (function parameters) + LTO
 
 - **`PLAN.md` Phase 1.5 already const-qualified every file-scope coefficient
