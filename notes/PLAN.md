@@ -426,3 +426,51 @@ architectural fix and can proceed at its own pace behind that release.
 5. Cross-check the baseline under clang, record any toolchain FP divergence now
 6. Stand up the CI matrix
 7. Then Phase 1.1–1.5 (holding 1.6 for Phase 2)
+
+---
+
+## 13. Phase 1 outcome (completed)
+
+| # | Item | Result |
+|---|---|---|
+| 1.1 | `saved_sundec` | **Fixed.** Real, dramatic race: 1336/1600 recalls returned another thread's declination. TSan named it. Now TLS; 0/1600, 0 races. |
+| 1.2 | `dli` shared static | **Fixed**, but *latent*, not firing — all threads write identical content, and glibc's loader lock appears to order it. Cannot produce a wrong answer. |
+| 1.3 | `__APPLE` typo | **Plan was wrong.** Fixing the spelling would have *regressed* macOS (see below). Dead conditional removed instead. |
+| 1.4 | Dead debug blocks | **Fixed.** `swehel.o` now has no non-TLS writable statics. |
+| 1.5 | `const` tables | **Fixed.** `.data` in `libswe.so`: 127232 → 248 bytes. No ABI symbol removed. |
+| 1.6 | `TLS` guard | **Deliberately not done** — held for Phase 2, as planned. |
+
+Two corrections to §6 worth carrying forward:
+
+- **1.1 could not be done the way §6 proposed.** "Move into `struct houses`"
+  is impossible — the value is deliberately *cross-call* state, so it cannot
+  live in a per-call struct. And `swed` was wrong too: `swi_init_swed_if_start()`
+  `memset`s the struct to zero, which would silently replace the `99` sentinel
+  with `0`. TLS was the only provably behaviour-neutral option.
+- **1.3 was backwards.** `#if !defined(__APPLE)` is a typo for `__APPLE__`, so
+  nothing ever defined it and the body has *always* run everywhere, macOS
+  included. "Fixing" the spelling would have made `swe_get_library_path()`
+  return `""` on macOS — a functional regression. The dead conditional was
+  removed instead. **Lesson: a typo in a preprocessor guard may be load-bearing;
+  check which way the condition actually evaluates before correcting it.**
+
+Also found and fixed while in `swe_get_library_path()` — adjacent, not
+thread-related, but not safe to leave next to code we were already touching:
+
+- `s[len] = '\0'` with `len == AS_MAXCH` wrote one past the end of the
+  caller's `char[AS_MAXCH]` buffer.
+- `bytes` was `size_t` receiving `readlink()`'s return; on failure `-1`
+  became `SIZE_MAX` and `s[bytes] = '\0'` was a wild write.
+
+**Audit target met:** an ELF scan of all nine library objects now reports
+**zero** non-TLS writable statics.
+
+**Gate status after Phase 1:**
+
+```
+G1 golden bit-identical ......... PASS
+   sunrace (1.1) ................ PASS  0/1600 contaminated
+   glprace (1.2) ................ PASS
+   threads --per-thread-setup ... PASS  8/8
+G2 threads, no per-thread setup .. FAIL  0/8   <- expected; Phase 2 fixes this
+```
