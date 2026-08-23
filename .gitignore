@@ -17,6 +17,8 @@
 # Test harness build products (extensionless, so not caught by the rules above)
 /tests/golden
 /tests/golden_tsan
+/tests/sunrace
+/tests/sunrace_tsan
 /tests/.out.txt
 
 # Editors / IDEs

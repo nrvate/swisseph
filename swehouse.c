@@ -633,7 +633,12 @@ int CALL_CONV swe_houses_armc_ex2(
   struct houses h, hm1, hp1;
   int i, retc = 0, rm1, rp1;
   int ito;
-  static double saved_sundec = 99;
+  /* Sunshine houses: remembers the last solar declination supplied by the
+   * caller, so that a later call may pass the sentinel 99 to recall it.
+   * Must be thread-local -- otherwise concurrent callers recall each
+   * other's declination and silently produce wrong charts.
+   * TODO(phase3c): move into the ephemeris context. */
+  static TLS double saved_sundec = 99;
   if (toupper(hsys) == 'G')
     ito = 36;
   else

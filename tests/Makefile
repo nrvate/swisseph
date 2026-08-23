@@ -5,10 +5,23 @@ CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
 LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
 
-all: golden
+all: golden sunrace
 
 golden: golden.c $(SWE)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+sunrace: sunrace.c $(SWE)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+sunrace_tsan: sunrace.c $(SWE)
+	$(CC) $(CFLAGS) -fsanitize=thread $^ -o $@ $(LIBS)
+
+# Sunshine-houses cross-thread contamination (swehouse.c saved_sundec)
+check-sunrace: sunrace
+	@SE_TEST_EPHE=$(EPHE) ./sunrace
+
+check-sunrace-tsan: sunrace_tsan
+	@SE_TEST_EPHE=$(EPHE) setarch -R env TSAN_OPTIONS=halt_on_error=0 ./sunrace_tsan
 
 golden_tsan: golden.c $(SWE)
 	$(CC) $(CFLAGS) -fsanitize=thread $^ -o $@ $(LIBS)
@@ -34,9 +47,10 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-golden check-threads-workaround check-threads
+check: check-golden check-sunrace check-threads-workaround check-threads
 
 clean:
-	rm -f golden golden_tsan .out.txt
+	rm -f golden golden_tsan sunrace sunrace_tsan .out.txt
 
-.PHONY: all baseline check check-golden check-threads check-threads-workaround clean
+.PHONY: all baseline check check-golden check-sunrace check-sunrace-tsan \
+        check-threads check-threads-workaround clean
