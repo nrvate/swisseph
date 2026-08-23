@@ -2427,7 +2427,9 @@ void swi_icrs2fk5(double *x, int32 iflag, AS_BOOL backward)
 #define TABSIZ 		(TABEND-TABSTART+1) 
 /* we make the table greater for additional values read from external file */
 #define TABSIZ_SPACE 	(TABSIZ+100)
-static TLS double dt[TABSIZ_SPACE] = {
+/* Built-in Delta-T table: shared const source. init_dt() extends the
+ * per-context working copy (ctx->dt) from swe_deltat.txt at runtime. */
+static const double dt_builtin[TABSIZ_SPACE] = {
 /* 1620.0 - 1659.0 */
 124.00, 119.00, 115.00, 110.00, 106.00, 102.00, 98.00, 95.00, 91.00, 88.00,
 85.00, 82.00, 79.00, 77.00, 74.00, 72.00, 70.00, 67.00, 65.00, 63.00,
@@ -2619,7 +2621,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
 	B = TABSTART - TAB2_END;
 	iy = (TAB2_END - TAB2_START) / TAB2_STEP;
 	dd = (Y - TAB2_END) / B;
-	ans = dt2[iy] + dd * (dt[0] - dt2[iy]);
+	ans = dt2[iy] + dd * (ctx->dt[0] - dt2[iy]);
 	ans = adjust_for_tidacc(ans, Ygreg, tid_acc, SE_TIDAL_26, FALSE);
 	*deltat = ans / 86400.0;
 	return iflag;
@@ -2642,7 +2644,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
 	B = TABSTART - TAB97_END;
 	iy = (TAB97_END - TAB97_START) / TAB97_STEP;
 	dd = (Y - TAB97_END) / B;
-	ans = dt97[iy] + dd * (dt[0] - dt97[iy]);
+	ans = dt97[iy] + dd * (ctx->dt[0] - dt97[iy]);
 	ans = adjust_for_tidacc(ans, Ygreg, tid_acc, SE_TIDAL_26, FALSE);
 	*deltat = ans / 86400.0;
 	return iflag;
@@ -2753,14 +2755,14 @@ static double deltat_aa(swe_ctx *ctx, double tjd, double tid_acc)
     p = floor(Y);
     iy = (int) (p - TABSTART);
     /* Zeroth order estimate is value at start of year */
-    ans = dt[iy];
+    ans = ctx->dt[iy];
     k = iy + 1;
     if( k >= tabsiz )
       goto done; /* No data, can't go on. */
     /* The fraction of tabulation interval */
     p = Y - p;
     /* First order interpolated value */
-    ans += p*(dt[k] - dt[iy]);
+    ans += p*(ctx->dt[k] - ctx->dt[iy]);
     if( (iy-1 < 0) || (iy+2 >= tabsiz) )
       goto done; /* can't do second differences */
     /* Make table of first differences */
@@ -2769,7 +2771,7 @@ static double deltat_aa(swe_ctx *ctx, double tjd, double tid_acc)
       if( (k < 0) || (k+1 >= tabsiz) ) 
 	d[i] = 0;
       else
-	d[i] = dt[k+1] - dt[k];
+	d[i] = ctx->dt[k+1] - ctx->dt[k];
       k += 1;
     }
     /* Compute second differences */
@@ -2836,7 +2838,7 @@ static double deltat_aa(swe_ctx *ctx, double tjd, double tid_acc)
   }
   /* slow transition from tabulated values to Stephenson formula: */
   if (Y <= tabend+100) {
-    ans3 = dt[tabsiz-1];
+    ans3 = ctx->dt[tabsiz-1];
     dd = (ans2 - ans3);
     ans += dd * (Y - (tabend + 100)) * 0.01;
   }
@@ -3091,6 +3093,14 @@ static double deltat_espenak_meeus_1620(double tjd, double tid_acc)
 /* Read delta t values from external file.
 * record structure: year(whitespace)delta_t in 0.01 sec.
 */
+/* calc_deltat() reads ctx->dt[0] (swephlib.c:2622, 2645) on paths that never
+ * call init_dt(), and the table used to be statically initialised, so dt[0]
+ * was always 124.00. Exposed so context creation seeds it too. */
+void swi_seed_dt_table(swe_ctx *ctx)
+{
+  memcpy(ctx->dt, dt_builtin, sizeof(ctx->dt));
+}
+
 static int init_dt(swe_ctx *ctx)
 {
 FILE *fp;
@@ -3102,6 +3112,10 @@ char s[AS_MAXCH];
 char *sp;
 if (!ctx->init_dt_done) {
   ctx->init_dt_done = TRUE;
+  /* Seed the working copy BEFORE the early return below: if swe_deltat.txt
+   * is absent this returns immediately, and calc_deltat() then reads
+   * ctx->dt[iy] as zeros. */
+  memcpy(ctx->dt, dt_builtin, sizeof(ctx->dt));
   /* no error message if file is missing */
   if ((fp = swi_fopen(ctx, -1, "swe_deltat.txt", ctx->ephepath, NULL)) == NULL
     && (fp = swi_fopen(ctx, -1, "sedeltat.txt", ctx->ephepath, NULL)) == NULL)
@@ -3121,14 +3135,14 @@ if (!ctx->init_dt_done) {
     while (strchr(" \t", *sp) != NULL && *sp != '\0')
       sp++;	/* was *sp++  fixed by Alois 2-jul-2003 */
     /*dt[tab_index] = (short) (atof(sp) * 100 + 0.5);*/
-    dt[tab_index] = atof(sp);
+    ctx->dt[tab_index] = atof(sp);
   }
   fclose(fp);
 }
 /* find table size */
 tabsiz = 2001 - TABSTART + 1;
 for (i = tabsiz - 1; i < TABSIZ_SPACE; i++) {
-  if (dt[i] == 0) 
+  if (ctx->dt[i] == 0) 
     break;
   else
     tabsiz++;

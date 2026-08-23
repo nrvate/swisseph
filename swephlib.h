@@ -161,6 +161,7 @@ extern void swi_gen_filename(double tjd, int ipli, char *fname);
 /* cyclic redundancy checksum (CRC), 32 bit */
 extern uint32 swi_crc32(unsigned char *buf, int len);
 extern void swi_seed_leap_table(swe_ctx *ctx);
+extern void swi_seed_dt_table(swe_ctx *ctx);
 
 extern int swi_cutstr(char *s, char *cutlist, char *cpos[], int nmax);
 extern char *swi_right_trim(char *s);

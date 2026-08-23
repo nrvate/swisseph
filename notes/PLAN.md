@@ -630,63 +630,30 @@ convenient ([CONFIG-MAP.md](CONFIG-MAP.md) §3.4).
 
 ---
 
-## 15. Phase 3c: deferred item — `swephlib.c`'s `dt[]` Delta-T table
+## 15. Phase 3c: `dt[]` — resolved after a false start
 
-Every other TLS static is now context-owned. This one is **reverted and
-deferred**, deliberately, because an attempt to convert it produced a real
-numerical regression that is not yet fully explained.
+An earlier attempt to move `swephlib.c`'s Delta-T table into the context
+regressed solar longitude by 2.71 arcsec and was reverted with the mechanism
+unexplained. It is now converted, and G1 is bit-exact.
 
-### What was tried
+**The cause was not the design; two string replacements silently did not
+match.** The `if (!ctx->init_dt_done) {` block sits at column 0, not indented
+as the patch assumed, and the `sweph.c` anchor did not exist at all. Neither
+seeding path was ever compiled in, so `ctx->dt[]` stayed zeros — at J2000
+`swe_deltat_ex` returned 1.29e-08 instead of 0.00073876, moving everything
+downstream of a UT→ET conversion: 1823 rows across houses, sidereal,
+topocentric, heliacal and fixed stars.
 
-Same split that worked for `swedate.c`'s `leap_seconds[]`: a shared
-`dt_builtin[]` const holding the 409 built-in values, plus a per-context
-working copy `ctx->dt[]`, because `init_dt()` extends the table at runtime
-from `swe_deltat.txt`.
+Diagnosis was delayed by trusting an earlier probe that reported
+`ctx->dt[0] == 124.00`. That probe ran against a build where the replacement
+*had* applied, so it was measuring a different binary than the failing one.
 
-### What broke
+**Lesson, now costly twice on this branch:** a scripted edit that reports
+success must be verified to have changed the file — assert on the anchor
+before replacing, and grep for the result afterwards. Both replacements here
+returned quietly having done nothing.
 
-G1 failed with a genuine error — solar longitude off by **2.71 arcsec** at
-J2000 (`calc_ut[4,0]`: 280.368918670 → 280.368165553).
-
-### What is understood
-
-`init_dt(ctx)` is called from exactly **one** place, `deltat_aa()`
-(swephlib.c:2745). But `calc_deltat()` reads `dt[0]` at swephlib.c:2622 and
-2645 on paths that never reach it:
-
-```c
-ans = dt2[iy]  + dd * (dt[0] - dt2[iy]);      /* SEMOD_DELTAT_STEPHENSON_MORRISON_2004 */
-ans = dt97[iy] + dd * (dt[0] - dt97[iy]);     /* SEMOD_DELTAT_STEPHENSON_1997 */
-```
-
-As a statically initialised array, `dt[0]` was always 124.00 (the 1620
-value). A lazily seeded per-context copy reads 0 there. So the table cannot
-simply be moved; it has to be valid from the moment the context exists.
-
-### What is NOT understood, and why it was reverted rather than patched
-
-Seeding at context creation did not fix it. A diagnostic confirmed
-`ctx->dt[0]` was correctly 124.00 by the time `calc_deltat()` ran, so the
-uninitialised-read theory is *necessary but not sufficient* — something else
-in the conversion is also wrong. Comparing every `dt` reference against HEAD
-shows 12 rewritten and the remainder accounted for as comments, a local in
-`deltat_stephenson_etc_2016()` (swephlib.c:3015), and the parameter of
-`swe_set_delta_t_userdef(double dt)` — i.e. the rewrite *looks* complete.
-
-Shipping a 2.71 arcsec error with an unexplained mechanism is worse than
-leaving one TLS static in place, so it is reverted. `dt[]` stays TLS: correct
-today, and the only remaining barrier to two contexts holding different
-Delta-T tables.
-
-### For whoever picks this up
-
-- The local `dt` at swephlib.c:3015 is why a blanket regex must not be used
-  here; the conversion has to be compiler-driven, as the others were.
-- Instrument `calc_deltat()` and `deltat_aa()` and compare `ctx->dt[]`
-  element by element against the built-in table at the moment of use — the
-  discrepancy is somewhere between seeding and reading, not in the
-  seeding itself.
-- `tests/golden`'s `time[]` rows show `swe_deltat_ex` output directly and
-  were IDENTICAL across the regression, while `swe_sidtime` differed. That
-  is the sharpest clue available: whatever changed did not go through
-  `swe_deltat_ex`.
+The design itself is the same split used for `leap_seconds[]`: a shared
+`dt_builtin[]` const, and `ctx->dt[]` seeded inside `init_dt()` before its
+early return, because `calc_deltat()` reads `dt[0]` at swephlib.c:2622 and
+:2645 on paths that never call `init_dt()`.
