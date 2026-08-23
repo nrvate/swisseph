@@ -1,6 +1,7 @@
 # Tag a release.
 #
-#   git tag v2.10.03-ts.1 && git push origin v2.10.03-ts.1
+#   make bump VERSION=X.Y.Z-ts.N      # if the version is changing
+#   v=v$(make -s version) && git tag $v && git push origin $v
 #
 # The tag IS the source of truth. GitHub generates the source tarballs from
 # it automatically, so nothing here hand-builds a source archive that could
@@ -68,8 +69,8 @@ jobs:
         run: |
           # actions/upload-artifact does not carry unix file modes, so every
           # binary arrives here 0644 and `tar czf` records that faithfully.
-          # v2.10.03-ts.1 shipped exactly that: extract the tarball, run
-          # ./bin/swetest, get "Permission denied".
+          # The first tagged release shipped exactly that: extract the
+          # tarball, run ./bin/swetest, get "Permission denied".
           #
           # Only the CLI tools need +x. Shared libraries stay 0644, which is
           # what distributions ship (Debian policy 8.1) and what the loader
