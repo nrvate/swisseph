@@ -14,21 +14,29 @@
 /swemini
 /obama
 
-# Test harness build products (extensionless, so not caught by the rules above)
-/tests/golden
-/tests/golden_tsan
-/tests/sunrace
-/tests/sunrace_tsan
-/tests/glprace
-/tests/glprace_tsan
-/tests/jplguard
-/tests/cfgleak
-/tests/threadshim
-/tests/threadshim_tsan
-/tests/.ts_cfg
-/tests/golden_O2
-/tests/.out_O2.txt
-/tests/.setest_now.txt
+# Test harness build products.
+#
+# Listed by name, this list went stale three times in a row: bench, ctxtest
+# and jplcalc were each committed as ~1.2 MB executables because adding a
+# test and remembering to extend an ignore list are two separate acts. The
+# binaries are extensionless, so the *.o/*.a rules above never caught them.
+#
+# Allow-list instead: everything under tests/ is ignored unless it is a
+# recognised source or fixture type. A new test binary is then ignored on
+# the day it first builds, with nothing to remember.
+/tests/*
+!/tests/*.c
+!/tests/*.h
+!/tests/*.py
+!/tests/*.sed
+!/tests/*.md
+!/tests/Makefile
+!/tests/baseline.txt
+!/tests/*.baseline
+
+# Python bytecode (tools/)
+__pycache__/
+*.pyc
 
 # setest build products (generated_tests.c is produced by setest/Makefile)
 /setest/setest
