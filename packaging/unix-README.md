@@ -36,6 +36,16 @@ your toolchain does not pull it in, and `-lpthread` if you use threads.
 `swi_*` functions, and this fork's guarantees are about the public `swe_*`
 API — reaching past it is how you get the behaviour the fork exists to fix.
 
+## Requirements
+
+The Linux build is produced on Ubuntu 22.04, so it needs **glibc 2.35 or
+newer** — Ubuntu 22.04+, Debian 12+, RHEL 9+. glibc is forward-compatible
+but not backward-compatible, so a binary built on a newer distribution will
+refuse to start on an older one. Build from source if you need to go further
+back.
+
+The macOS build is produced on the current `macos-latest` runner.
+
 ## Ephemeris data
 
 Not included — it is hundreds of megabytes and has its own release cadence.

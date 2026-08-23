@@ -28,7 +28,15 @@ jobs:
   # there?" caught it.
   # ---------------------------------------------------------------------
   linux-package:
-    runs-on: ubuntu-latest
+    # ubuntu-22.04, NOT ubuntu-latest. Binaries link against the glibc they
+    # are built on, and glibc is forward- but not backward-compatible: a
+    # package built on 24.04 (glibc 2.39) refuses to start on 22.04, Debian
+    # 12 or RHEL 9 with
+    #   version `GLIBC_2.38' not found (required by ./bin/swetest)
+    # Found by unpacking a real artifact and running it, not by reading the
+    # workflow. Building on the oldest supported runner costs nothing and
+    # makes the package usable on everything newer.
+    runs-on: ubuntu-22.04
     name: linux / package
     steps:
       - uses: actions/checkout@v5
