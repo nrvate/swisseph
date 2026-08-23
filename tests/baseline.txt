@@ -1,4 +1,4 @@
-# swe_version=2.10.03
+# swe_version=<not compared; see stderr>
 calc[0,0,0]                                    rf=2      0x1.100278edab794p+8 0x1.a444cf17cb523p-12 0x1.f8f96ad50524fp-1 0x0p+0 0x0p+0 0x0p+0
 calc[0,0,1]                                    rf=2      0x1.1d8617ac3161cp+8 0x1.20f78c8c25d3dp+2 0x1.6383a639c9f3fp-9 0x0p+0 0x0p+0 0x0p+0
 calc[0,0,2]                                    rf=2      0x1.11521de232a1fp+8 -0x1.00c58d2aa434cp+1 0x1.63766a01d303cp+0 0x0p+0 0x0p+0 0x0p+0

@@ -1,7 +1,11 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := swe-2.10.03
+# Produces libswe-2.10.03-ts.1.so, and Java loads it by this name:
+#   System.loadLibrary("swe-2.10.03-ts.1")
+# Version-stamped so a consumer cannot silently link a build that
+# predates the thread-safety work.
+LOCAL_MODULE := swe-2.10.03-ts.1
 
 LOCAL_LDFLAGS   += -ffunction-sections -fdata-sections -Wl,--gc-sections
 LOCAL_CFLAGS    += -ffunction-sections -fdata-sections -fvisibility=hidden -Wall -Wno-error=implicit-function-declaration

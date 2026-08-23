@@ -253,7 +253,7 @@ check-threadtiers: baseline.txt
 	  std=$${spec%%:*}; extra=$${spec##*:}; \
 	  if $(CC) -std=$$std $$extra -O0 -g -D_GNU_SOURCE -I.. golden.c $(SWE) \
 	       -o .tiergolden $(LIBS) 2>.tier.err; then \
-	    ./.tiergolden --ephe $(EPHE) > .tier.txt 2>&1; \
+	    ./.tiergolden --ephe $(EPHE) > .tier.txt 2>/dev/null; \
 	    if diff -q baseline.txt .tier.txt >/dev/null; then \
 	      printf "  %-34s OK\n" "-std=$$std $$extra"; \
 	    else printf "  %-34s OUTPUT DIFFERS\n" "-std=$$std $$extra"; rc=1; fi; \

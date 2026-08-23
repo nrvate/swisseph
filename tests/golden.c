@@ -122,6 +122,18 @@ static int is_illcond(int32 iflag, int ipl) {
       && (ipl == SE_TRUE_NODE || ipl == SE_OSCU_APOG);
 }
 
+/* The library version goes in the transcript as provenance, but must NOT
+ * gate the comparison: bumping SE_VERSION would otherwise read as a
+ * numerical regression and force a baseline regeneration that hides real
+ * changes in the noise. The value is written to stderr, where it is visible
+ * when running by hand, and a fixed placeholder goes into the transcript. */
+static void emit_version(void) {
+  char sv[AS_MAXCH];
+  swe_version(sv);
+  fprintf(stderr, "swe_version=%s\n", sv);
+  fprintf(OUT, "# swe_version=<not compared; see stderr>\n");
+}
+
 static void row(const char *tag, int32 rf, double *x, int n, const char *serr) {
   char cl[AS_MAXCH * 2];
   fprintf(OUT, "%-46s rf=%-6d", tag, rf);
@@ -507,7 +519,7 @@ static void misc(void) {
  */
 static void suite_compute_only(void) {
   char sv[AS_MAXCH];
-  fprintf(OUT, "# swe_version=%s\n", swe_version(sv));
+  emit_version();
   planets();
   planets_ut();
   asteroids();
@@ -735,7 +747,7 @@ static void coverage(void) {
 
 static void suite(void) {
   char sv[AS_MAXCH];
-  fprintf(OUT, "# swe_version=%s\n", swe_version(sv));
+  emit_version();
   planets();
   planets_ut();
   asteroids();
