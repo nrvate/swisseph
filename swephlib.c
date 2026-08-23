@@ -3272,30 +3272,22 @@ int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int
     *tid_acc = ctx->tid_acc;
     return iflag;
   }
-  /* ⚠️ KNOWN, and deliberately left alone: this MOSEPH branch is nested
-   * inside `denum == 0`, so it only applies when nothing else is known.
+  /* Moshier reads no file: it is an analytic theory fitted to DE404, so its
+   * tidal acceleration is a property of the theory and cannot depend on which
+   * ephemeris files happen to be present.
    *
-   * swe_deltat_ex_r() passes jpldenum for any non-Swiss request, so merely
-   * naming a JPL file -- swe_set_jpl_file("de200.eph"), without calculating
-   * from it -- makes denum 200, skips this branch, and puts Moshier on
-   * DE200's tidal term. A Moshier position at -3000 moves 56 arcsec
-   * depending on whether a JPL filename was ever mentioned, which is
-   * order dependence of exactly the kind fixed elsewhere in this file.
-   *
-   * Hoisting the check out of the guard was tried and is WRONG. It makes
-   * upstream's own eclipse expectations worse by three orders of magnitude
-   * (setest suite_08 xxgeopos: 4e-7 agreement becomes 4e-4). Those are
-   * independently derived reference values, so the coupling is load-bearing
-   * somewhere -- whatever the right resolution is, it is not this, and it
-   * needs someone who knows why the eclipse code depends on it.
-   *
-   * tests/golden.c records the divergence in cov:order_moseph_*. */
+   * This test used to sit inside the `denum == 0` guard below, where it did
+   * depend on them: swe_deltat_ex_r() passes jpldenum for any non-Swiss
+   * request, so naming a JPL file -- without ever calculating from it -- made
+   * denum nonzero, skipped this branch, and put Moshier on that file's tidal
+   * term. A Moshier Sun at -3000 moved 56 arcsec because a filename had been
+   * mentioned. tests/golden.c cov:order_moseph_* holds it. */
+  if (iflag & SEFLG_MOSEPH) {
+    *tid_acc = SE_TIDAL_DE404;
+    *denumret = 404;
+    return iflag;
+  }
   if (denum == 0) {
-    if (iflag & SEFLG_MOSEPH) {
-      *tid_acc = SE_TIDAL_DE404;
-      *denumret = 404;
-      return iflag;
-    }
     if (iflag & SEFLG_JPLEPH) {
       if (ctx->jpl_file_is_open) {
 	denum = ctx->jpldenum;
