@@ -830,12 +830,6 @@ static double kOZ(double AltS, double sunra, double Lat)
   if (altslim < 0)
     altslim = 0;
   CHANGEKO = (100 - 11.6 * mymin(6, altslim)) / 100;
-if ((0)) {
-  static int a = 0;
-  if (a == 0)
-    printf("bsk=%f %f\n", kOZret, AltS);
-  a = 1;
-}
   koz_last = kOZret * CHANGEKO;
   return koz_last;
 }
@@ -1286,12 +1280,6 @@ static double Bsky(double AltO, double AziO, double AltM, double AziM, double JD
       Bsky += Bday(AltO, AziO, AltS, AziS, sunra, Lat, HeightEye, datm, helflag, serr);
     } else {
       Bsky += mymin(Bday(AltO, AziO, AltS, AziS, sunra, Lat, HeightEye, datm, helflag, serr), Btwi(AltO, AziO, AltS, AziS, sunra, Lat, HeightEye, datm, helflag, serr));
-if ((0)) {
-  static int a = 0;
-  if (a == 0)
-    printf("bsk=%f\n", Bsky);
-  a = 1;
-}
     }
   }
   /* if max. Bm [1E7] <5% of Bsky don't add Bm*/
@@ -1389,12 +1377,6 @@ static double VisLimMagn(double *dobs, double AltO, double AziO, double AltM, do
   Bsk = Bsky(AltO, AziO, AltM, AziM, JDNDaysUT, AltS, AziS, sunra, Lat, HeightEye, datm, helflag, serr);
   /* Schaefer, Astronomy and the limits of vision, Archaeoastronomy, 1993 Verder:*/
   kX = Deltam(AltO, AltS, sunra, Lat, HeightEye, datm, helflag, serr);
-if ((0)) {
-  static int a = 0;
-  if (a == 0)
-    printf("bsk=%f, kx=%f\n", Bsk, kX);
-  a = 1;
-}
   /* influence of age*/
   /*Fa = mymax(1, pow(p(23, Bsk) / p(Age, Bsk), 2)); */
   CorrFactor1 = OpticFactor(Bsk, kX, dobs, JDNDaysUT, "", 1, helflag);
