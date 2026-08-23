@@ -28,6 +28,59 @@
 #include <math.h>
 #include "swephexp.h"
 
+/* pthread_barrier_* is an OPTIONAL part of POSIX (_POSIX_BARRIERS) and Apple
+ * has never implemented it -- on macOS this file failed to compile at all,
+ * which is why the macOS thread gates had never run. Provide a barrier built
+ * from a mutex and condition variable, which macOS does have.
+ *
+ * Only the three entry points this test uses, and only the semantics it
+ * needs: a fixed participant count, reused across several rounds. The
+ * generation counter is what makes reuse safe -- without it a thread that
+ * loops back round can slip through the next barrier before the previous
+ * cohort has finished waking. */
+#if defined(__APPLE__) || !defined(_POSIX_BARRIERS)
+typedef struct {
+  pthread_mutex_t m;
+  pthread_cond_t  c;
+  unsigned        count, waiting, generation;
+} se_barrier_t;
+
+static int se_barrier_init(se_barrier_t *b, void *attr, unsigned count) {
+  (void)attr;
+  if (count == 0) return -1;
+  pthread_mutex_init(&b->m, NULL);
+  pthread_cond_init(&b->c, NULL);
+  b->count = count; b->waiting = 0; b->generation = 0;
+  return 0;
+}
+static int se_barrier_wait(se_barrier_t *b) {
+  unsigned gen;
+  pthread_mutex_lock(&b->m);
+  gen = b->generation;
+  if (++b->waiting == b->count) {
+    b->waiting = 0;
+    b->generation++;
+    pthread_cond_broadcast(&b->c);
+    pthread_mutex_unlock(&b->m);
+    return 1;
+  }
+  while (gen == b->generation)
+    pthread_cond_wait(&b->c, &b->m);
+  pthread_mutex_unlock(&b->m);
+  return 0;
+}
+static int se_barrier_destroy(se_barrier_t *b) {
+  pthread_mutex_destroy(&b->m);
+  pthread_cond_destroy(&b->c);
+  return 0;
+}
+#else
+typedef pthread_barrier_t se_barrier_t;
+# define se_barrier_init    pthread_barrier_init
+# define se_barrier_wait    pthread_barrier_wait
+# define se_barrier_destroy pthread_barrier_destroy
+#endif
+
 static const char *EPHE = "../ephe";
 static const double TJD = 2451545.0;
 
@@ -42,7 +95,7 @@ static double topo_moon(void) {
   return x[0];
 }
 
-static pthread_barrier_t bar;
+static se_barrier_t bar;
 static volatile double obs_before, obs_after;
 
 /* The victim: a thread that INHERITS the observer position from main and
@@ -52,12 +105,12 @@ static volatile double obs_before, obs_after;
  * this test pass against a deliberately broken build. */
 static void *observer(void *a) {
   (void)a;
-  pthread_barrier_wait(&bar);      /* main configured */
+  se_barrier_wait(&bar);      /* main configured */
   obs_before = topo_moon();        /* inherit Zurich */
-  pthread_barrier_wait(&bar);      /* let the noisy thread run */
-  pthread_barrier_wait(&bar);      /* noisy thread done */
+  se_barrier_wait(&bar);      /* let the noisy thread run */
+  se_barrier_wait(&bar);      /* noisy thread done */
   obs_after = topo_moon();
-  pthread_barrier_wait(&bar);
+  se_barrier_wait(&bar);
   return NULL;
 }
 
@@ -69,8 +122,8 @@ static void *noisy_worker(void *a) {
   double cusp[37], ascmc[10];
   (void)a;
 
-  pthread_barrier_wait(&bar);          /* main configured */
-  pthread_barrier_wait(&bar);          /* observer took its reading */
+  se_barrier_wait(&bar);          /* main configured */
+  se_barrier_wait(&bar);          /* observer took its reading */
 
   /* swehel.c: swe_heliacal_ut / _pheno_ut / vis_limit_mag -> swe_set_topo */
   strcpy(obj, "Venus"); serr[0] = 0;
@@ -95,8 +148,8 @@ static void *noisy_worker(void *a) {
   swe_houses_ex2(TJD, SEFLG_SWIEPH | SEFLG_SIDEREAL, -33.9, 151.2,
                  'P', cusp, ascmc, NULL, NULL, serr);
 
-  pthread_barrier_wait(&bar);          /* observer takes second reading */
-  pthread_barrier_wait(&bar);
+  se_barrier_wait(&bar);          /* observer takes second reading */
+  se_barrier_wait(&bar);
   return NULL;
 }
 
@@ -107,16 +160,16 @@ static int test_no_leak(void) {
   swe_set_topo(ZUR[0], ZUR[1], ZUR[2]);
   swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
 
-  pthread_barrier_init(&bar, NULL, 3);
+  se_barrier_init(&bar, NULL, 3);
   pthread_create(&obs,   NULL, observer,     NULL);
   pthread_create(&noisy, NULL, noisy_worker, NULL);
-  pthread_barrier_wait(&bar);   /* configured */
-  pthread_barrier_wait(&bar);   /* observer read #1 */
-  pthread_barrier_wait(&bar);   /* noisy done */
-  pthread_barrier_wait(&bar);   /* observer read #2 */
+  se_barrier_wait(&bar);   /* configured */
+  se_barrier_wait(&bar);   /* observer read #1 */
+  se_barrier_wait(&bar);   /* noisy done */
+  se_barrier_wait(&bar);   /* observer read #2 */
   pthread_join(noisy, NULL);
   pthread_join(obs, NULL);
-  pthread_barrier_destroy(&bar);
+  se_barrier_destroy(&bar);
 
   printf("  inheriting thread, before noisy calcs : %.9f\n", obs_before);
   printf("  inheriting thread, after  noisy calcs : %.9f\n", obs_after);
