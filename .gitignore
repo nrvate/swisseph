@@ -7,6 +7,15 @@
 *.dll
 *.exe
 
+# bin/ -- output of the swetests/sweventss targets.
+#
+# These were tracked, which was ordinary practice when this codebase was
+# written. But `make all` rewrites them on every build, so the tree was
+# dirty after every gate run and a rebuilt binary could ride along in a
+# commit unnoticed. They are regenerable from source; the prebuilt Windows
+# and Android binaries are not, and remain tracked.
+/bin/
+
 # Built executables (Makefile targets)
 /swetest
 /swetests

@@ -104,10 +104,17 @@ swetest: swetest.o libswe.a
 ifeq ($(STATIC_SUPPORTED),true)
 swetests: swetest.o $(SWEOBJ)
 	$(CC) $(CFLAGS) $(STATIC_LINK_FLAGS) -o swetests swetest.o $(SWEOBJ) $(DYNAMIC_LINK_FLAGS) $(LIBS)
-	@# mkdir -p: bin/ is not guaranteed to exist. It does in a full clone,
-	@# but not in a sparse checkout (the CI runner) or a source tarball, and
-	@# the bare cp then fails the whole `make all` with a message that says
-	@# nothing about which target broke.
+	@# mkdir -p: bin/ is no longer in the repository at all.
+	@#
+	@# bin/swetest and bin/swevents used to be tracked -- normal practice
+	@# when this codebase was written -- but `make all` REWRITES them, so
+	@# every build dirtied the working tree and invited a rebuilt binary
+	@# into a commit. They are build output of this Makefile and are now
+	@# ignored. The prebuilt Windows and Android binaries are NOT: nothing
+	@# here regenerates those, so they stay tracked.
+	@#
+	@# This also fixed a real CI failure -- the runner's sparse checkout had
+	@# no bin/, so the bare cp took `make all` down with it.
 	mkdir -p bin
 	cp swetests bin/swetest
 endif
@@ -119,6 +126,7 @@ swevents: swevents.o $(SWEOBJ)
 # Build sweventss, statically compiled
 sweventss: swevents.o $(SWEOBJ)
 	$(CC) $(CFLAGS) $(STATIC_LINK_FLAGS) -o sweventss swevents.o $(SWEOBJ) $(DYNAMIC_LINK_FLAGS) $(LIBS)
+	mkdir -p bin
 	cp sweventss  bin/swevents
 
 # Build swemini
