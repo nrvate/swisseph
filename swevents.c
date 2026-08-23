@@ -239,7 +239,8 @@ int prev_yout = -999999;
 int max_cols = MAX_COLS;
 
 #define J2000           2451545.0  /* 2000 January 1.5 */
-#define square_sum(x)   (x[0]*x[0]+x[1]*x[1]+x[2]*x[2])
+/* square_sum() comes from sweph.h, which this file already includes.
+ * It was redefined here byte-identically -- see C17_PERFORMANCE.md A3. */
 #define SEFLG_EPHMASK   (SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH)
 #define SUN_RADIUS      (959.63 / 3600 * DEGTORAD)  /*  Meeus germ. p 391 */
 #define VENUS_RADIUS	(8.34 / 3600 * DEGTORAD) /* AA96 E43 */

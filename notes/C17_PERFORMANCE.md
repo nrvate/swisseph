@@ -336,12 +336,17 @@ written specifically to survive being compiled as C89 today.
 - `const`-qualify the 7 function-parameter candidates + add `-flto` to
   `C17_MIGRATION.md` Phase 5 (§4.4)
 
-**Tier 2 — do alongside Tier 1, low effort, real value:**
+**Tier 2 — ✅ macro items DONE; do alongside Tier 1, low effort, real value:**
 - ~~Fix B1 (`pnoext2int`/`SE_NPLANETS`) now, standalone~~ — **done, `0a7fc6d`** (§4.6)
 - `swethread.h` dead-tier removal, done together with `tests/threadshim.c`'s
   matching cleanup, timed to land with `C17_MIGRATION.md` Phase 5 (§4.3)
-- Macro dedup: A3/A4 (`square_sum`/`dot_prod`, 3-file duplication) and A2
-  (`mods3600`'s real double-eval risk) (§4.5)
+- ~~Macro dedup: A3/A4 (`square_sum`/`dot_prod`) and A2 (`mods3600`)~~ — **done**.
+  A5's dead `degtocs`/`cstodeg` deleted at the same time. No measurable
+  perf change either way (all within ±0.7%), which is the expected
+  result: `-O2` inlines these to what the macros produced. A1 (`sind`
+  and friends in `swehouse.h`) is left alone — 7 macros, ~200 call
+  sites, no measurable gain, and the type-safety argument does not
+  justify that much churn on numerical code.
 
 **Tier 3 — opportunistic, smaller or needs more design first:**
 - `plan_data`/`save_positions` `_Alignas(64)` — fold into `PLAN.md` Phase

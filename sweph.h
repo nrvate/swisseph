@@ -313,8 +313,32 @@ typedef struct swe_ctx swe_ctx;
 
 #define SE_LAPSE_RATE        0.0065  /* deg K / m, for refraction */
 
-#define square_sum(x)   (x[0]*x[0]+x[1]*x[1]+x[2]*x[2])
-#define dot_prod(x,y)   (x[0]*y[0]+x[1]*y[1]+x[2]*y[2])
+/* swi_gen_t for the config-tracking fields in swe_ctx, and SWI_INLINE for
+ * the two helpers immediately below. */
+#include "swethread.h"
+
+/* Functions, not macros (notes/C17_PERFORMANCE.md A3/A4).
+ *
+ * The macro forms were `(x[0]*x[0]+...)` with no parentheses around x, so
+ * the argument had to be a bare identifier: square_sum(a+1) would have
+ * parsed as a + 1[0]. Call sites were already working around it --
+ * swecl.c:5489 and sweph.c:5673 write square_sum((xpos[i]+3)) with an
+ * extra pair of parens for exactly this reason.
+ *
+ * They were also independently redefined, byte-identical, in swevents.c
+ * and swetest.c, both of which already include this header.
+ *
+ * The argument order is unchanged, so the arithmetic is bit-identical;
+ * -O2 inlines these to the same code the macro produced. */
+SWI_INLINE double square_sum(const double *x)
+{
+  return x[0]*x[0] + x[1]*x[1] + x[2]*x[2];
+}
+
+SWI_INLINE double dot_prod(const double *x, const double *y)
+{
+  return x[0]*y[0] + x[1]*y[1] + x[2]*y[2];
+}
 
 #define PNOINT2JPL {J_EARTH, J_MOON, J_MERCURY, J_VENUS, J_MARS, J_JUPITER, J_SATURN, J_URANUS, J_NEPTUNE, J_PLUTO, J_SUN, }
 
@@ -880,8 +904,6 @@ struct sweph_state {
  * changes later is only how it is REACHED -- see swi_default_ctx().
  *
  * if this is changed, then also update initialisation in sweph.c */
-#include "swethread.h"   /* swi_gen_t, for the config-tracking fields below */
-
 struct swe_ctx {
   /* Phase 3d: this context's relationship to the shared config master.
    * These were TLS in sweconfig.c, which tied the tracking to the thread

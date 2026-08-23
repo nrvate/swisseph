@@ -66,7 +66,6 @@
 
 #define TIMESCALE 3652500.0
 
-#define mods3600(x) ((x) - 1.296e6 * floor ((x)/1.296e6))
 
 #define FICT_GEO 1
 #define KGAUSS_GEO 0.0000298122353216 /* Earth only */
@@ -148,7 +147,7 @@ int swi_moshplan2 (swe_ctx *ctx, double J, int iplm, double *pobj)
     {
       if ((j = plan->max_harmonic[i]) > 0)
 	{
-	  sr = (mods3600 (freqs[i] * T) + phases[i]) * STR;
+	  sr = (swi_mods3600(freqs[i] * T) + phases[i]) * STR;
 	  sscc (ctx, i, sr, j);
 	}
     }
@@ -179,7 +178,7 @@ int swi_moshplan2 (swe_ctx *ctx, double J, int iplm, double *pobj)
 	    {
 	      cu = cu * T + *pl++;
 	    }
-	  sl +=  mods3600 (cu);
+	  sl +=  swi_mods3600(cu);
 	  /* Latitude polynomial. */
 	  cu = *pb++;
 	  for (ip = 0; ip < nt; ip++)

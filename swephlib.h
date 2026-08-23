@@ -61,8 +61,25 @@
 /* swe_ctx is defined in sweph.h, which this header does not include -- and
  * swetest.c/swevents.c include this one first. An incomplete type is all the
  * prototypes below need, so forward-declare it (swejpl.h does the same). */
+#include <math.h>       /* floor(), for swi_mods3600() below */
+#include "swethread.h" /* SWI_INLINE */
+
 struct swe_ctx;
 typedef struct swe_ctx swe_ctx;
+
+/* Reduce an angle in arcseconds modulo a full circle (1296000").
+ *
+ * Was a macro in swemplan.c substituting its argument TWICE -- the classic
+ * SQR(x++) shape (notes/C17_PERFORMANCE.md A2). Every call today passes
+ * plain arithmetic, so nothing is broken, but the hazard is live: one
+ * future mods3600(next_value()) would silently evaluate it twice.
+ *
+ * swemmoon.c had already made its own copy a real function, independently.
+ * This is that function, shared, so the two cannot drift. */
+SWI_INLINE double swi_mods3600(double x)
+{
+  return x - 1296000.0 * floor(x / 1296000.0);
+}
 
 #define PREC_IAU_1976_CTIES          2.0 	/* J2000 +/- two centuries */
 #define PREC_IAU_2000_CTIES          2.0 	/* J2000 +/- two centuries */

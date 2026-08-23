@@ -184,7 +184,6 @@
 
 static void mean_elements(swe_ctx *ctx);
 static void mean_elements_pl(swe_ctx *ctx);
-static double mods3600(double x);
 static void ecldat_equ2000(swe_ctx *ctx, double tjd, double *xpm);
 static void chewm(swe_ctx *ctx, const short *pt, int nlines, int nangles, 
   				     int typflg, double *ans );
@@ -1440,7 +1439,7 @@ ctx->moon.moonpol[2] = 1.0e-4 * ctx->moon.moonpol[2] + 385000.52899; /* kilomete
 static void moon4(swe_ctx *ctx)
 {
 ctx->moon.moonpol[2] /= AUNIT / 1000;
-ctx->moon.moonpol[0] = STR * mods3600( ctx->moon.moonpol[0] );
+ctx->moon.moonpol[0] = STR * swi_mods3600( ctx->moon.moonpol[0] );
 ctx->moon.moonpol[1] = STR * ctx->moon.moonpol[1];
 ctx->moon.B = ctx->moon.moonpol[1];
 }
@@ -1714,13 +1713,6 @@ static void ecldat_equ2000(swe_ctx *ctx, double tjd, double *xpm) {
 /* Reduce arc seconds modulo 360 degrees
  * answer in arc seconds
  */
-static double mods3600(double x)
-{
-double lx;
-lx = x;
-lx = lx - 1296000.0 * floor( lx/1296000.0 );
-return( lx );
-}
 
 void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 
 							 double *node, double *dnode, 
@@ -1747,8 +1739,8 @@ static void mean_elements(swe_ctx *ctx)
 {
 double fracT = fmod(ctx->moon.T, 1);
 /* Mean anomaly of sun = l' (J. Laskar) */
-/*M =  mods3600(129596581.038354 * T +  1287104.76154);*/
-ctx->moon.M =  mods3600(129600000.0 * fracT - 3418.961646 * ctx->moon.T +  1287104.76154);
+/*M =  swi_mods3600(129596581.038354 * T +  1287104.76154);*/
+ctx->moon.M =  swi_mods3600(129600000.0 * fracT - 3418.961646 * ctx->moon.T +  1287104.76154);
 ctx->moon.M += ((((((((
   1.62e-20 * ctx->moon.T
 - 1.0390e-17 ) * ctx->moon.T
@@ -1761,13 +1753,13 @@ ctx->moon.M += ((((((((
 - 0.552891801772 ) * ctx->moon.T2;
 #ifdef MOSH_MOON_200
 /* Mean distance of moon from its ascending node = F */
-ctx->moon.NF = mods3600( 1739527263.0983 * ctx->moon.T + 335779.55755 );
+ctx->moon.NF = swi_mods3600( 1739527263.0983 * ctx->moon.T + 335779.55755 );
 /* Mean anomaly of moon = l */
-ctx->moon.MP = mods3600( 1717915923.4728 * ctx->moon.T +  485868.28096 );
+ctx->moon.MP = swi_mods3600( 1717915923.4728 * ctx->moon.T +  485868.28096 );
 /* Mean elongation of moon = D */
-ctx->moon.D = mods3600( 1602961601.4603 * ctx->moon.T + 1072260.73512 );
+ctx->moon.D = swi_mods3600( 1602961601.4603 * ctx->moon.T + 1072260.73512 );
 /* Mean longitude of moon */
-ctx->moon.SWELP = mods3600( 1732564372.83264 * ctx->moon.T +  785939.95571 );                      
+ctx->moon.SWELP = swi_mods3600( 1732564372.83264 * ctx->moon.T +  785939.95571 );                      
 /* Higher degree secular terms found by least squares fit */
 ctx->moon.NF += (((((z[5] *ctx->moon.T+z[4] )*ctx->moon.T + z[3] )*ctx->moon.T + z[2] )*ctx->moon.T + z[1] )*ctx->moon.T + z[0] )*ctx->moon.T2;
 ctx->moon.MP += (((((z[11]*ctx->moon.T+z[10])*ctx->moon.T + z[9] )*ctx->moon.T + z[8] )*ctx->moon.T + z[7] )*ctx->moon.T + z[6] )*ctx->moon.T2;
@@ -1775,17 +1767,17 @@ ctx->moon.D  += (((((z[17]*ctx->moon.T+z[16])*ctx->moon.T + z[15])*ctx->moon.T +
 ctx->moon.SWELP += (((((z[23]*ctx->moon.T+z[22])*ctx->moon.T + z[21])*ctx->moon.T + z[20])*ctx->moon.T + z[19])*ctx->moon.T + z[18])*ctx->moon.T2;    
 #else
 /* Mean distance of moon from its ascending node = F */
-/*NF = mods3600((1739527263.0983 - 2.079419901760e-01) * T + 335779.55755);*/
-ctx->moon.NF = mods3600(1739232000.0 * fracT + 295263.0983 * ctx->moon.T - 2.079419901760e-01 * ctx->moon.T + 335779.55755);
+/*NF = swi_mods3600((1739527263.0983 - 2.079419901760e-01) * T + 335779.55755);*/
+ctx->moon.NF = swi_mods3600(1739232000.0 * fracT + 295263.0983 * ctx->moon.T - 2.079419901760e-01 * ctx->moon.T + 335779.55755);
 /* Mean anomaly of moon = l */
-/*MP = mods3600((1717915923.4728 - 2.035946368532e-01) * T +  485868.28096);*/
-ctx->moon.MP = mods3600(1717200000.0 * fracT + 715923.4728 * ctx->moon.T - 2.035946368532e-01 * ctx->moon.T +  485868.28096);
+/*MP = swi_mods3600((1717915923.4728 - 2.035946368532e-01) * T +  485868.28096);*/
+ctx->moon.MP = swi_mods3600(1717200000.0 * fracT + 715923.4728 * ctx->moon.T - 2.035946368532e-01 * ctx->moon.T +  485868.28096);
 /* Mean elongation of moon = D */
-/*D = mods3600((1602961601.4603 + 3.962893294503e-01) * T + 1072260.73512);*/
-ctx->moon.D = mods3600(1601856000.0 * fracT + 1105601.4603 * ctx->moon.T + 3.962893294503e-01 * ctx->moon.T + 1072260.73512);
+/*D = swi_mods3600((1602961601.4603 + 3.962893294503e-01) * T + 1072260.73512);*/
+ctx->moon.D = swi_mods3600(1601856000.0 * fracT + 1105601.4603 * ctx->moon.T + 3.962893294503e-01 * ctx->moon.T + 1072260.73512);
 /* Mean longitude of moon, referred to the mean ecliptic and equinox of date */
-/*SWELP = mods3600((1732564372.83264 - 6.784914260953e-01) * T +  785939.95571);*/
-ctx->moon.SWELP = mods3600(1731456000.0 * fracT + 1108372.83264 * ctx->moon.T - 6.784914260953e-01 * ctx->moon.T +  785939.95571);
+/*SWELP = swi_mods3600((1732564372.83264 - 6.784914260953e-01) * T +  785939.95571);*/
+ctx->moon.SWELP = swi_mods3600(1731456000.0 * fracT + 1108372.83264 * ctx->moon.T - 6.784914260953e-01 * ctx->moon.T +  785939.95571);
 /* Higher degree secular terms found by least squares fit */
 ctx->moon.NF += ((z[2]*ctx->moon.T + z[1])*ctx->moon.T + z[0])*ctx->moon.T2;
 ctx->moon.MP += ((z[5]*ctx->moon.T + z[4])*ctx->moon.T + z[3])*ctx->moon.T2;
@@ -1803,7 +1795,7 @@ ctx->moon.SWELP += ((z[11]*ctx->moon.T + z[10])*ctx->moon.T + z[9])*ctx->moon.T2
 void mean_elements_pl(swe_ctx *ctx)
 {
 /* Mean longitudes of planets (Laskar, Bretagnon) */
-ctx->moon.Ve = mods3600( 210664136.4335482 * ctx->moon.T + 655127.283046 );
+ctx->moon.Ve = swi_mods3600( 210664136.4335482 * ctx->moon.T + 655127.283046 );
 ctx->moon.Ve += ((((((((
   -9.36e-023 * ctx->moon.T
  - 1.95e-20 ) * ctx->moon.T
@@ -1814,7 +1806,7 @@ ctx->moon.Ve += ((((((((
  - 2.26602516e-9 ) * ctx->moon.T
  - 1.4244812531e-5 ) * ctx->moon.T
  + 0.005871373088 ) * ctx->moon.T2;
-ctx->moon.Ea = mods3600( 129597742.26669231  * ctx->moon.T +  361679.214649 );
+ctx->moon.Ea = swi_mods3600( 129597742.26669231  * ctx->moon.T +  361679.214649 );
 ctx->moon.Ea += (((((((( -1.16e-22 * ctx->moon.T
  + 2.976e-19 ) * ctx->moon.T
  + 2.8460e-17 ) * ctx->moon.T
@@ -1824,11 +1816,11 @@ ctx->moon.Ea += (((((((( -1.16e-22 * ctx->moon.T
  + 1.515912254e-7 ) * ctx->moon.T
  + 8.863982531e-6 ) * ctx->moon.T
  - 2.0199859001e-2 ) * ctx->moon.T2;
-ctx->moon.Ma = mods3600(  68905077.59284 * ctx->moon.T + 1279559.78866 );
+ctx->moon.Ma = swi_mods3600(  68905077.59284 * ctx->moon.T + 1279559.78866 );
 ctx->moon.Ma += (-1.043e-5*ctx->moon.T + 9.38012e-3)*ctx->moon.T2;
-ctx->moon.Ju = mods3600( 10925660.428608 * ctx->moon.T +  123665.342120 );
+ctx->moon.Ju = swi_mods3600( 10925660.428608 * ctx->moon.T +  123665.342120 );
 ctx->moon.Ju += (1.543273e-5*ctx->moon.T - 3.06037836351e-1)*ctx->moon.T2;
-ctx->moon.Sa = mods3600( 4399609.65932 * ctx->moon.T + 180278.89694 );
+ctx->moon.Sa = swi_mods3600( 4399609.65932 * ctx->moon.T + 180278.89694 );
 ctx->moon.Sa += (( 4.475946e-8*ctx->moon.T - 6.874806E-5 ) * ctx->moon.T + 7.56161437443E-1)*ctx->moon.T2;
 }
 
@@ -1867,10 +1859,10 @@ sEa = ctx->moon.Ea;
 sMa = ctx->moon.Ma;
 sJu = ctx->moon.Ju;
 sSa = ctx->moon.Sa;
-sNF = mods3600(ctx->moon.NF);
-sD  = mods3600(ctx->moon.D);
-sLP = mods3600(ctx->moon.SWELP);
-sMP = mods3600(ctx->moon.MP);
+sNF = swi_mods3600(ctx->moon.NF);
+sD  = swi_mods3600(ctx->moon.D);
+sLP = swi_mods3600(ctx->moon.SWELP);
+sMP = swi_mods3600(ctx->moon.MP);
 if (ipli == SEI_INTP_PERG) {ctx->moon.MP = 0.0; niter = 5;}
 if (ipli == SEI_INTP_APOG) {ctx->moon.MP = 648000.0; niter = 4;}
 cMP = 0;
