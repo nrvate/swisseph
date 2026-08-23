@@ -143,7 +143,39 @@ clean:
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
-        check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround clean
+        check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
+        check-build clean
+
+# G9: the shipped sample programs and the TRACE build must still compile.
+#
+# Not a behaviour gate -- a compile gate. swetest.c and swevents.c include
+# swephlib.h BEFORE sweph.h, so every swe_ctx parameter added during Phase 3
+# broke `make all` while every behaviour gate stayed green: nothing in
+# tests/ compiles them. It went unnoticed across three phases. swetest is
+# the library's shipped CLI, so that is not an acceptable blind spot.
+#
+# TRACE is likewise compiled by no other target. It is off by default and
+# has no runtime gate, but it must at least not bit-rot.
+check-build:
+	@echo "G9: sample programs + TRACE build"
+	@# -B, not plain `all`: the Makefile carries no header dependencies, so a
+	@# stale swetest.o hides exactly the header-ordering break this gate exists
+	@# to catch. Verified by removing the forward decl and watching `make all`
+	@# pass anyway.
+	@$(MAKE) -s -B -C .. all >/dev/null 2>&1 || { echo "  FAIL: make all"; exit 1; }
+	@echo "  make all              OK  (swetest swevents swemini)"
+	@# TRACE=0 means "no -DTRACE at all" -- the default build, checked here
+	@# because it is the one the sample programs actually ship as.
+	@for t in 0 1 2; do \
+	  [ $$t = 0 ] && d="" || d="-DTRACE=$$t"; \
+	  rc=0; \
+	  for f in $(wildcard ../*.c); do \
+	    $(CC) -fsyntax-only -D_GNU_SOURCE $$d -I.. $$f 2>&1 | grep -q "error:" && rc=1; \
+	  done; \
+	  [ $$rc -eq 0 ] && echo "  $${d:-(no TRACE)}         OK" \
+	                 || { echo "  FAIL: $${d:-default build} does not compile"; exit 1; }; \
+	done
+	@echo "PASS"
 
 # G8: upstream's own suite (setest/, 13 MB of expectations).
 #

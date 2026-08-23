@@ -4145,7 +4145,8 @@ static char *our_strcpy(char *to, char *from)
 int swe_get_named_ast_list(int amax, int *iarr, char*serr) 
 {
   char si[AS_MAXCH], *sp;
-  FILE *fp = swi_fopen(-1, SE_ASTNAMFILE, swed.ephepath, serr);
+  swe_ctx *ctx = swi_default_ctx();
+  FILE *fp = swi_fopen(ctx, -1, SE_ASTNAMFILE, ctx->ephepath, serr);
   int nast = 0;
   if (fp == NULL) return ERR;
   while (fgets(si, AS_MAXCH, fp) != NULL) {

@@ -89,6 +89,12 @@ jobs:
       - name: Threading shim
         run: make -C tests check-threadshim
 
+      # G9. Behaviour gates link only libswe.a and tests/, so nothing here
+      # ever compiled swetest.c/swevents.c or any TRACE build. Phase 3 broke
+      # `make all` for three phases with every other gate green.
+      - name: Sample programs and TRACE build
+        run: make -C tests check-build
+
   # ---------------------------------------------------------------------
   # Second compiler, same platform. Catches gcc-specific assumptions.
   # ---------------------------------------------------------------------

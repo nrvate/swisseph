@@ -58,6 +58,12 @@
   for promoting such software, products or services.
 */
 
+/* swe_ctx is defined in sweph.h, which this header does not include -- and
+ * swetest.c/swevents.c include this one first. An incomplete type is all the
+ * prototypes below need, so forward-declare it (swejpl.h does the same). */
+struct swe_ctx;
+typedef struct swe_ctx swe_ctx;
+
 #define PREC_IAU_1976_CTIES          2.0 	/* J2000 +/- two centuries */
 #define PREC_IAU_2000_CTIES          2.0 	/* J2000 +/- two centuries */
 /* we use P03 for whole ephemeris */
