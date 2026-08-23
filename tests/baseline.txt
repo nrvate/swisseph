@@ -199,7 +199,7 @@ calc[0,9,7]                                    rf=260    0x1.ee6d513d30954p+3 -0
 calc[0,9,8]                                    rf=260    0x1.7f6f112aeb2d7p+7 0x1.04089e265595p+1 0x1.e81b76c226668p+4 0x1.8559640bfb942p-7 0x1.286fb1d6ff0c3p-10 -0x1.172d26a38c50dp-6
 calc[0,9,9]                                    rf=260    0x1.09eccf97e7b78p+7 0x1.f544f90bca27ep+3 0x1.f26c488aaaa5dp+4 -0x1.2fff5cd5b2f9cp-6 0x1.b04bebe261e7ap-8 -0x1.7dbfac300686ap-7
 calc[0,9,10]                                   rf=260    0x1.55c4603c694acp+7 0x0p+0 0x1.50cbf7deb263ep-9 -0x1.b1a0a6ac92922p-5 0x0p+0 0x0p+0
-calc[0,9,11]                                   rf=260    0x1.53f09ccd97373p+7 0x0p+0 0x1.4f4cd71b67915p-9 -0x1.c15c0b358db3p-3 0x0p+0 -0x1.c43378de8907fp-17
+calc[0,9,11]~illcond                           rf=260    0x1.53f09ccd97373p+7 0x0p+0 0x1.4f4cd71b67915p-9 -0x1.c15c0b358db3p-3 0x0p+0 -0x1.c43378de8907fp-17
 calc[0,9,12]                                   rf=260    0x1.0a3afbda9fdf4p+8 0x1.47e151274daf3p+2 0x1.63497c95bdd86p-9 0x1.cb26143264aa1p-4 -0x1.6961a8bda0d78p-10 0x0p+0
 calc[0,9,13]~illcond                           rf=260    0x1.0ed03297b42cdp+8 0x1.3a704dd489f7ap+2 0x1.641cf065f58dap-9 0x1.ba533baa183bcp+1 -0x1.a294c833f9581p-5 -0x1.120c2e3ce165cp-19
 calc[0,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -210,42 +210,26 @@ calc[0,9,18]                                   rf=260    0x1.5e1b4e419a40ep+8 -0
 calc[0,9,19]                                   rf=260    0x1.908437a3e4a39p+6 -0x1.3d8a53dd3dfb1p+4 0x1.e1baf478a307cp+0 -0x1.00b0911089eb7p-2 0x1.4c6cdbad76297p-9 0x1.0e9b1132694e4p-12
 calc[0,9,20]                                   rf=260    0x1.1ec3a2c906c04p+6 -0x1.4e039afc1633cp+1 0x1.6a60e5e69198fp+0 -0x1.d15f502c686b6p-3 0x1.f751b34013903p-5 0x1.b605e94b75662p-9
 calc[0,10,0]                                   rf=258    0x1.100278edab793p+8 0x1.a444cf17cb524p-12 0x1.f8f96ad50524fp-1 0x1.0377c4f52b9ecp+0 -0x1.42ffd51c615f7p-16 0x1.9de4bb1ac9778p-13
-calc[0,10,1]                                   rf=258    0x1.1d8617ac3161bp+8 0x1.20f78c8c25d39p+2 0x1.6383a639c9f4p-9 0x1.7cc66e57e6049p+3 -0x1.c911812b1ae8cp-2 -0x1.ef168661450a4p-18 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,2]                                   rf=258    0x1.11521de232a1ep+8 -0x1.00c58d2aa4356p+1 0x1.63766a01d303dp+0 0x1.c6003e582d333p+0 0x1.922ea68496ab7p-9 -0x1.9160cf1597561p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,3]                                   rf=258    0x1.eee19d023d397p+7 0x1.e8044772073a4p-2 0x1.7f2cbf0578dbdp+0 0x1.3e0a25442ade4p+0 -0x1.6d23cb801e498p-5 0x1.1ffa628d73dc4p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,4]                                   rf=258    0x1.5af93f2283ec4p+7 0x1.3cb2f391612ecp+1 0x1.294423271c819p+0 0x1.aacd3605b5a43p-2 0x1.adee00bbdf569p-7 -0x1.4b76f9397fd46p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,5]                                   rf=258    0x1.befc01f9a4bbcp+5 -0x1.ec09d3adc2d85p-3 0x1.188b6f69db53fp+2 -0x1.665526d7bb0f8p-4 0x1.8b0084f3312b5p-9 0x1.3ad52b42307b7p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,6]                                   rf=258    0x1.43e7836286b9p+6 -0x1.0b500eafbbbd8p-2 0x1.043ed55f1bae1p+3 -0x1.469f40712c4bdp-4 0x1.ff2a0ab21d9f8p-10 0x1.ae0428809bebbp-9 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,7]                                   rf=258    0x1.ee89623ff5c7fp+3 -0x1.0a9959e64f72ap-1 0x1.3437788c76c64p+4 -0x1.3ca01be4f4918p-10 0x1.2c1dd93028baap-11 0x1.0f0182b351f82p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,8]                                   rf=258    0x1.7f6b40b25c54fp+7 0x1.040913b80b095p+1 0x1.e81b09b144f28p+4 0x1.8538ca018b11ap-7 0x1.2871fe9cc7daap-10 -0x1.172ec8d2a39e2p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,9]                                   rf=258    0x1.09f52dc80475dp+7 0x1.f555272bc668fp+3 0x1.f2674b74b2a99p+4 -0x1.2fe5c5fd775a2p-6 0x1.b075ad5ccc2ffp-8 -0x1.7ddc0eacdce7cp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[0,10,1]                                   rf=258    0x1.1d8617ac3161bp+8 0x1.20f78c8c25d39p+2 0x1.6383a639c9f4p-9 0x1.7cc66e57e6049p+3 -0x1.c911812b1ae8cp-2 -0x1.ef168661450a4p-18 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,2]                                   rf=258    0x1.11521de232a1ep+8 -0x1.00c58d2aa4356p+1 0x1.63766a01d303dp+0 0x1.c6003e582d333p+0 0x1.922ea68496ab7p-9 -0x1.9160cf1597561p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,3]                                   rf=258    0x1.eee19d023d397p+7 0x1.e8044772073a4p-2 0x1.7f2cbf0578dbdp+0 0x1.3e0a25442ade4p+0 -0x1.6d23cb801e498p-5 0x1.1ffa628d73dc4p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,4]                                   rf=258    0x1.5af93f2283ec4p+7 0x1.3cb2f391612ecp+1 0x1.294423271c819p+0 0x1.aacd3605b5a43p-2 0x1.adee00bbdf569p-7 -0x1.4b76f9397fd46p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,5]                                   rf=258    0x1.befc01f9a4bbcp+5 -0x1.ec09d3adc2d85p-3 0x1.188b6f69db53fp+2 -0x1.665526d7bb0f8p-4 0x1.8b0084f3312b5p-9 0x1.3ad52b42307b7p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,6]                                   rf=258    0x1.43e7836286b9p+6 -0x1.0b500eafbbbd8p-2 0x1.043ed55f1bae1p+3 -0x1.469f40712c4bdp-4 0x1.ff2a0ab21d9f8p-10 0x1.ae0428809bebbp-9 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,7]                                   rf=258    0x1.ee89623ff5c7fp+3 -0x1.0a9959e64f72ap-1 0x1.3437788c76c64p+4 -0x1.3ca01be4f4918p-10 0x1.2c1dd93028baap-11 0x1.0f0182b351f82p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,8]                                   rf=258    0x1.7f6b40b25c54fp+7 0x1.040913b80b095p+1 0x1.e81b09b144f28p+4 0x1.8538ca018b11ap-7 0x1.2871fe9cc7daap-10 -0x1.172ec8d2a39e2p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,9]                                   rf=258    0x1.09f52dc80475dp+7 0x1.f555272bc668fp+3 0x1.f2674b74b2a99p+4 -0x1.2fe5c5fd775a2p-6 0x1.b075ad5ccc2ffp-8 -0x1.7ddc0eacdce7cp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[0,10,10]                                  rf=257    0x1.55c4603c694acp+7 0x0p+0 0x1.50cbf7deb263ep-9 -0x1.b1a0a6ac92922p-5 0x0p+0 0x0p+0
-calc[0,10,11]                                  rf=258    0x1.53f410dac2899p+7 0x0p+0 0x1.4f4e67a817de5p-9 -0x1.c2b2688eb84a3p-3 0x0p+0 -0x1.c99bbd4967b1ep-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[0,10,11]                                  rf=258    0x1.53f410dac2899p+7 0x0p+0 0x1.4f4e67a817de5p-9 -0x1.c2b2688eb84a3p-3 0x0p+0 -0x1.c99bbd4967b1ep-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[0,10,12]                                  rf=257    0x1.0a3afbda9fdf4p+8 0x1.47e151274daf3p+2 0x1.63497c95bdd86p-9 0x1.cb26143264aa1p-4 -0x1.6961a8bda0d78p-10 0x0p+0
-calc[0,10,13]                                  rf=258    0x1.0ecc1910bddfbp+8 0x1.3a772c8554f0dp+2 0x1.641cc0b9e916dp-9 0x1.bc57ac0c63699p+1 -0x1.a3b1898d32b36p-5 -0x1.1385806618875p-19 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[0,10,13]                                  rf=258    0x1.0ecc1910bddfbp+8 0x1.3a772c8554f0dp+2 0x1.641cc0b9e916dp-9 0x1.bc57ac0c63699p+1 -0x1.a3b1898d32b36p-5 -0x1.1385806618875p-19 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[0,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
 calc[0,10,15]                                  rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | Chiron's ephemeris is restricted to JD 1967601.5 - JD 3419437.5
-calc[0,10,16]                                  rf=258    0x1.aabb1c172b8b2p+7 0x1.3a7b6e9705aecp+4 0x1.692dbf3fb9a29p+4 0x1.08060925780ffp-5 0x1.5e3c8235018c3p-7 -0x1.886e361519ba5p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,17]                                  rf=258    0x1.37532a0c0bc5ep+8 -0x1.edfcf0bf4c9fep+2 0x1.b89121a3afbf1p+1 0x1.8dbdcc496be9fp-2 0x1.3d324d8576d44p-8 0x1.fef5143cbca5bp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,18]                                  rf=258    0x1.5e1b4ce31e905p+8 -0x1.a8bd4da958f17p+3 0x1.17795f91a1edep+1 0x1.258783c3ef1edp-2 -0x1.00b796287f64ap-4 0x1.1137b16a96a31p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,19]                                  rf=258    0x1.908454db52c15p+6 -0x1.3d8a53cf9e554p+4 0x1.e1bafd111b2aap+0 -0x1.00b0a87c63071p-2 0x1.4c43a512f5897p-9 0x1.0e835a867b8e7p-12 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[0,10,20]                                  rf=258    0x1.1ec3c51dbfd18p+6 -0x1.4e03e3354b2a7p+1 0x1.6a60d118c4005p+0 -0x1.d15fb695c79ebp-3 0x1.f750d15929ee6p-5 0x1.b602bd88c5ec7p-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[0,10,16]                                  rf=258    0x1.aabb1c172b8b2p+7 0x1.3a7b6e9705aecp+4 0x1.692dbf3fb9a29p+4 0x1.08060925780ffp-5 0x1.5e3c8235018c3p-7 -0x1.886e361519ba5p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,17]                                  rf=258    0x1.37532a0c0bc5ep+8 -0x1.edfcf0bf4c9fep+2 0x1.b89121a3afbf1p+1 0x1.8dbdcc496be9fp-2 0x1.3d324d8576d44p-8 0x1.fef5143cbca5bp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,18]                                  rf=258    0x1.5e1b4ce31e905p+8 -0x1.a8bd4da958f17p+3 0x1.17795f91a1edep+1 0x1.258783c3ef1edp-2 -0x1.00b796287f64ap-4 0x1.1137b16a96a31p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,19]                                  rf=258    0x1.908454db52c15p+6 -0x1.3d8a53cf9e554p+4 0x1.e1bafd111b2aap+0 -0x1.00b0a87c63071p-2 0x1.4c43a512f5897p-9 0x1.0e835a867b8e7p-12 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[0,10,20]                                  rf=258    0x1.1ec3c51dbfd18p+6 -0x1.4e03e3354b2a7p+1 0x1.6a60d118c4005p+0 -0x1.d15fb695c79ebp-3 0x1.f750d15929ee6p-5 0x1.b602bd88c5ec7p-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[1,0,0]                                    rf=2      0x1.1743aef55abfcp+8 -0x1.a7b592a5c6079p-14 0x1.f83bdd25ff7bbp-1 0x0p+0 0x0p+0 0x0p+0
 calc[1,0,1]                                    rf=2      0x1.06a280a1c837bp+7 -0x1.c8831b201ef95p+1 0x1.3c469ab903b07p-9 0x0p+0 0x0p+0 0x0p+0
 calc[1,0,2]                                    rf=2      0x1.1c3b9dcd030f9p+8 -0x1.02c3bf7c70c95p+1 0x1.5e43fb9605c6ap+0 0x0p+0 0x0p+0 0x0p+0
@@ -446,7 +430,7 @@ calc[1,9,7]                                    rf=260    0x1.643a025def039p+8 -0
 calc[1,9,8]                                    rf=260    0x1.cb509b6f00c4bp+7 0x1.aef309b6c21dp+0 0x1.eeeb82e4ed907p+4 0x1.bbd1acb5ca137p-6 0x1.3da3b0076ea4p-11 -0x1.acb3d565cf1b4p-7
 calc[1,9,9]                                    rf=260    0x1.62fd8d32ae77ap+7 0x1.158acfbb2a975p+4 0x1.dd4bd3605c5dfp+4 0x1.64b34a1a03054p-12 0x1.3ce2739c7ede9p-7 -0x1.0e3157218d4e5p-6
 calc[1,9,10]                                   rf=260    0x1.0c8abd338acf6p+8 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b1acf9632c608p-5 0x0p+0 0x0p+0
-calc[1,9,11]                                   rf=260    0x1.0d0332869c3f2p+8 0x0p+0 0x1.69d31d6520d31p-9 -0x1.f8099820a9bp-7 0x0p+0 -0x1.bf1e8d408d67bp-17
+calc[1,9,11]~illcond                           rf=260    0x1.0d0332869c3f2p+8 0x0p+0 0x1.69d31d6520d31p-9 -0x1.f8099820a9bp-7 0x0p+0 -0x1.bf1e8d408d67bp-17
 calc[1,9,12]                                   rf=260    0x1.192fbce2a6c93p+8 0x1.211503d94e32fp+0 0x1.63497c95bdd86p-9 0x1.c5f863b67ac21p-4 0x1.d6db075217912p-7 0x0p+0
 calc[1,9,13]~illcond                           rf=260    0x1.12c48f86d8512p+8 0x1.106d0244affa4p-1 0x1.69f8d7f8f7805p-9 -0x1.309b04168f902p+1 -0x1.be73a6bf6431fp-3 -0x1.df4a2efa14362p-17
 calc[1,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -457,42 +441,26 @@ calc[1,9,18]                                   rf=260    0x1.37afb44731804p+8 0x
 calc[1,9,19]                                   rf=260    0x1.880ef0e7e676p+7 0x1.3d093f1a2a05fp+0 0x1.a3822773346dap+1 0x1.5e207a8d84f53p-3 0x1.478f26a974127p-5 -0x1.de792d264741ap-7
 calc[1,9,20]                                   rf=260    0x1.26ca99ef63bafp+8 -0x1.12f50999c216dp+1 0x1.a78f133476798p+1 0x1.edb5ed0f01f6dp-2 -0x1.3e3c1950e9eb8p-6 0x1.27d3fdcbc91f9p-8
 calc[1,10,0]                                   rf=258    0x1.1743aef55abfbp+8 -0x1.a7b592a5c607ap-14 0x1.f83bdd25ff7bap-1 0x1.0404899bb25dep+0 -0x1.9095446d5ab67p-15 0x1.48bf6d123425fp-13
-calc[1,10,1]                                   rf=258    0x1.06a280a1c837bp+7 -0x1.c8831b201ef9ap+1 0x1.3c469ab903b07p-9 0x1.dd5988c99fd04p+3 -0x1.0491de391355dp+0 0x1.b7e4d561b04c7p-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,2]                                   rf=258    0x1.1c3b9dcd030f8p+8 -0x1.02c3bf7c70c96p+1 0x1.5e43fb9605c6ap+0 0x1.c14b8b6e21dbp+0 0x1.2f87b9d5aa1fcp-6 -0x1.308c0fd0db9c6p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,3]                                   rf=258    0x1.450cd0d6651cp+8 -0x1.8c1a30fca9acdp-1 0x1.a9668d3ef6537p-1 0x1.1a7e5d9dcdce6p+0 0x1.2a3f798296654p-4 -0x1.dd2887228d552p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,4]                                   rf=258    0x1.5e691b85bd277p+3 0x1.5a31a252f689bp-1 0x1.2edf138d9a2f2p+0 0x1.06a205e7b9934p-1 0x1.f9210abe994b6p-7 0x1.4291fc3e8594dp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,5]                                   rf=258    0x1.7a374d679c2eep+7 0x1.6c86ae61cce9p+0 0x1.5593a90c5f6f1p+2 0x1.3e7aa6ac798e8p-4 0x1.07471aa9cb9b5p-8 -0x1.0a055f9001692p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,6]                                   rf=258    0x1.1d467a8c34834p+6 -0x1.0ef7a43c6b417p+0 0x1.03892a46e96b1p+3 -0x1.15ccdeed131cep-4 0x1.67cd2be27372bp-9 0x1.00cf48f4c6716p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,7]                                   rf=258    0x1.643a9dab6404ep+8 -0x1.62fd372d249dbp-1 0x1.418e1e495f0efp+4 0x1.6045ea854dc85p-6 0x1.500d97cfcb8b7p-11 0x1.12ad715afd0d3p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,8]                                   rf=258    0x1.cb4e15dad9d84p+7 0x1.aef8596384addp+0 0x1.eeeb478e30d92p+4 0x1.bbc7fc8313a7p-6 0x1.3db210f56767bp-11 -0x1.acbb8e17be4e9p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,9]                                   rf=258    0x1.63054d7e904a5p+7 0x1.158945b337cd7p+4 0x1.dd4a51145db08p+4 0x1.6e49c90152c7fp-12 0x1.3ce117abc6c59p-7 -0x1.0e33d769de86ap-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[1,10,1]                                   rf=258    0x1.06a280a1c837bp+7 -0x1.c8831b201ef9ap+1 0x1.3c469ab903b07p-9 0x1.dd5988c99fd04p+3 -0x1.0491de391355dp+0 0x1.b7e4d561b04c7p-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,2]                                   rf=258    0x1.1c3b9dcd030f8p+8 -0x1.02c3bf7c70c96p+1 0x1.5e43fb9605c6ap+0 0x1.c14b8b6e21dbp+0 0x1.2f87b9d5aa1fcp-6 -0x1.308c0fd0db9c6p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,3]                                   rf=258    0x1.450cd0d6651cp+8 -0x1.8c1a30fca9acdp-1 0x1.a9668d3ef6537p-1 0x1.1a7e5d9dcdce6p+0 0x1.2a3f798296654p-4 -0x1.dd2887228d552p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,4]                                   rf=258    0x1.5e691b85bd277p+3 0x1.5a31a252f689bp-1 0x1.2edf138d9a2f2p+0 0x1.06a205e7b9934p-1 0x1.f9210abe994b6p-7 0x1.4291fc3e8594dp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,5]                                   rf=258    0x1.7a374d679c2eep+7 0x1.6c86ae61cce9p+0 0x1.5593a90c5f6f1p+2 0x1.3e7aa6ac798e8p-4 0x1.07471aa9cb9b5p-8 -0x1.0a055f9001692p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,6]                                   rf=258    0x1.1d467a8c34834p+6 -0x1.0ef7a43c6b417p+0 0x1.03892a46e96b1p+3 -0x1.15ccdeed131cep-4 0x1.67cd2be27372bp-9 0x1.00cf48f4c6716p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,7]                                   rf=258    0x1.643a9dab6404ep+8 -0x1.62fd372d249dbp-1 0x1.418e1e495f0efp+4 0x1.6045ea854dc85p-6 0x1.500d97cfcb8b7p-11 0x1.12ad715afd0d3p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,8]                                   rf=258    0x1.cb4e15dad9d84p+7 0x1.aef8596384addp+0 0x1.eeeb478e30d92p+4 0x1.bbc7fc8313a7p-6 0x1.3db210f56767bp-11 -0x1.acbb8e17be4e9p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,9]                                   rf=258    0x1.63054d7e904a5p+7 0x1.158945b337cd7p+4 0x1.dd4a51145db08p+4 0x1.6e49c90152c7fp-12 0x1.3ce117abc6c59p-7 -0x1.0e33d769de86ap-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[1,10,10]                                  rf=257    0x1.0c8abd338acf6p+8 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b1acf9632c608p-5 0x0p+0 0x0p+0
-calc[1,10,11]                                  rf=258    0x1.0d04bbd7f64p+8 0x0p+0 0x1.69d17f9da894bp-9 -0x1.5187ebf66264ep-6 0x0p+0 -0x1.c76173e3d1b7ep-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[1,10,11]                                  rf=258    0x1.0d04bbd7f64p+8 0x0p+0 0x1.69d17f9da894bp-9 -0x1.5187ebf66264ep-6 0x0p+0 -0x1.c76173e3d1b7ep-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[1,10,12]                                  rf=257    0x1.192fbce2a6c93p+8 0x1.211503d94e32fp+0 0x1.63497c95bdd86p-9 0x1.c5f863b67ac21p-4 0x1.d6db075217912p-7 0x0p+0
-calc[1,10,13]                                  rf=258    0x1.12c15fae866ep+8 0x1.0f90b5bc234cbp-1 0x1.69f6fc4a9edcdp-9 -0x1.3409ca0e9a2b3p+1 -0x1.c2aa97098b6edp-3 -0x1.e7c238cec073cp-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[1,10,13]                                  rf=258    0x1.12c15fae866ep+8 0x1.0f90b5bc234cbp-1 0x1.69f6fc4a9edcdp-9 -0x1.3409ca0e9a2b3p+1 -0x1.c2aa97098b6edp-3 -0x1.e7c238cec073cp-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[1,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
 calc[1,10,15]                                  rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | Chiron's ephemeris is restricted to JD 1967601.5 - JD 3419437.5
-calc[1,10,16]                                  rf=258    0x1.00be98cfdcf52p+8 0x1.0a081106631d7p+3 0x1.fe1a7c363f59bp+4 0x1.0d83011b7979cp-5 0x1.a0c9fc1facfc1p-13 -0x1.7e30fa51d84bap-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,17]                                  rf=258    0x1.4a4389cb94057p+5 -0x1.6a61a7136f906p+2 0x1.e61e35dbe73fdp+0 0x1.babf653f39e77p-6 0x1.77c5bdf5437a9p-4 0x1.5c389a48066d1p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,18]                                  rf=258    0x1.37afb39563a17p+8 0x1.ab525ff6e1943p+3 0x1.0d8a95507e6dcp+2 0x1.32056db93c0f7p-2 -0x1.37a6e12d00939p-4 0x1.a265cf12ceb9dp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,19]                                  rf=258    0x1.880ef07d4850cp+7 0x1.3d092ad3771dep+0 0x1.a3822fb5fa433p+1 0x1.5e2022c91bb2p-3 0x1.478eb73ae7502p-5 -0x1.de78ec10ca122p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[1,10,20]                                  rf=258    0x1.26ca98ed2d5d3p+8 -0x1.12f5128cf85eap+1 0x1.a78f1138a5d2ep+1 0x1.edb5b8394196ap-2 -0x1.3e3cfaa89ff87p-6 0x1.27d318c4fe275p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[1,10,16]                                  rf=258    0x1.00be98cfdcf52p+8 0x1.0a081106631d7p+3 0x1.fe1a7c363f59bp+4 0x1.0d83011b7979cp-5 0x1.a0c9fc1facfc1p-13 -0x1.7e30fa51d84bap-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,17]                                  rf=258    0x1.4a4389cb94057p+5 -0x1.6a61a7136f906p+2 0x1.e61e35dbe73fdp+0 0x1.babf653f39e77p-6 0x1.77c5bdf5437a9p-4 0x1.5c389a48066d1p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,18]                                  rf=258    0x1.37afb39563a17p+8 0x1.ab525ff6e1943p+3 0x1.0d8a95507e6dcp+2 0x1.32056db93c0f7p-2 -0x1.37a6e12d00939p-4 0x1.a265cf12ceb9dp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,19]                                  rf=258    0x1.880ef07d4850cp+7 0x1.3d092ad3771dep+0 0x1.a3822fb5fa433p+1 0x1.5e2022c91bb2p-3 0x1.478eb73ae7502p-5 -0x1.de78ec10ca122p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[1,10,20]                                  rf=258    0x1.26ca98ed2d5d3p+8 -0x1.12f5128cf85eap+1 0x1.a78f1138a5d2ep+1 0x1.edb5b8394196ap-2 -0x1.3e3cfaa89ff87p-6 0x1.27d318c4fe275p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[2,0,0]                                    rf=2      0x1.20fe866d77b41p+8 0x1.8f4def7a13ae3p-13 0x1.f7b8b8b25ccb6p-1 0x0p+0 0x0p+0 0x0p+0
 calc[2,0,1]                                    rf=2      0x1.39b05108e483ep+5 0x1.12ff87cc40cfdp+2 0x1.42ce49c5eb47ep-9 0x0p+0 0x0p+0 0x0p+0
 calc[2,0,2]                                    rf=2      0x1.09979c57d1014p+8 0x1.24ff652133612p+1 0x1.c475ab72993bfp-1 0x0p+0 0x0p+0 0x0p+0
@@ -693,7 +661,7 @@ calc[2,9,7]                                    rf=260    0x1.7b790f0fd4da6p+7 0x
 calc[2,9,8]                                    rf=260    0x1.9f95d4669044p+7 0x1.cec7665e519acp+0 0x1.e721d54f942e9p+4 0x1.6e7a2f4559bfdp-7 0x1.13e377a1bc9dp-10 -0x1.18c886fbdc18ap-6
 calc[2,9,9]                                    rf=260    0x1.3ecf30bf6f64dp+8 -0x1.5676e3303038fp+3 0x1.452481cb1a6efp+5 0x1.9fdc5f990cb66p-6 0x1.7c57d8bd7e69dp-10 0x1.30f6983918342p-7
 calc[2,9,10]                                   rf=260    0x1.5762db8afd987p+8 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b1b28050d2f29p-5 0x0p+0 0x0p+0
-calc[2,9,11]                                   rf=260    0x1.560f425ab92ep+8 0x0p+0 0x1.4c621ca889e5ap-9 -0x1.bd6d9fbb29913p-5 0x0p+0 0x1.3491317bfd406p-18
+calc[2,9,11]~illcond                           rf=260    0x1.560f425ab92ep+8 0x0p+0 0x1.4c621ca889e5ap-9 -0x1.bd6d9fbb29913p-5 0x0p+0 0x1.3491317bfd406p-18
 calc[2,9,12]                                   rf=260    0x1.ba50fd0763fb6p+7 -0x1.16c87c3db7dd7p+2 0x1.63497c95bdd87p-9 0x1.c98f1e7f92a4bp-4 -0x1.0147c1010a4d4p-7 0x0p+0
 calc[2,9,13]~illcond                           rf=260    0x1.f00601bd3943cp+7 -0x1.4646751736a8bp+2 0x1.5a0c65cdbcc89p-9 -0x1.68d9d349f8181p-1 0x1.d689a210c3761p-8 0x1.c3726423e6483p-17
 calc[2,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -704,43 +672,26 @@ calc[2,9,18]                                   rf=260    0x1.ec4baed077358p+7 0x
 calc[2,9,19]                                   rf=260    0x1.4f6c69a4f694ep+7 -0x1.bfe69cf3f6b36p+2 0x1.0995f0043ae7bp+1 -0x1.f78b52d693e45p-7 0x1.48843d8948d86p-6 -0x1.36445aecad42p-7
 calc[2,9,20]                                   rf=260    0x1.1d212828078b1p+8 -0x1.80f12ab3b9afap-3 0x1.9905b5672b05fp+1 0x1.0c3ca71ff239cp-1 -0x1.b14311170fd52p-6 -0x1.e89c3966847cfp-18
 calc[2,10,0]                                   rf=258    0x1.20fe866d77b41p+8 0x1.8f4def79d9717p-13 0x1.f7b8b8b25ccb5p-1 0x1.049b95c444a82p+0 0x1.2004ba080256bp-15 0x1.61f004068bd92p-14
-calc[2,10,1]                                   rf=258    0x1.39b05108e483ep+5 0x1.12ff87cc40cfep+2 0x1.42ce49c5eb47dp-9 0x1.ca06731329ebp+3 0x1.61848551a8e32p-1 -0x1.634d1d23f13d5p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,2]                                   rf=258    0x1.09979c57d1014p+8 0x1.24ff65213360ap+1 0x1.c475ab72993cp-1 0x1.2a2a3f678e824p-1 -0x1.469b3ee4411bp-3 0x1.3c1d77f72e08bp-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,3]                                   rf=258    0x1.10730714ac12dp+8 0x1.120ca7609b3b1p-6 0x1.9d05998752d55p+0 0x1.40c84e788499cp+0 -0x1.5a2caa15702ep-5 0x1.848c743e27bd8p-9 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,4]                                   rf=258    0x1.1e39ad6692df1p+8 -0x1.e5546e48f1bbcp-1 0x1.31ff9110c534cp+1 0x1.8eb7bf84c9625p-1 -0x1.7201d49240888p-8 -0x1.17675864f0101p-10 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,5]                                   rf=258    0x1.718f28ddd3cb4p+3 -0x1.41ed8c05bd08fp+0 0x1.40423909f6b9dp+2 0x1.d205b66d0c62dp-4 0x1.3271f699ffa15p-8 0x1.04bae41e0412ep-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,6]                                   rf=258    0x1.0d44d26392e1ap+7 0x1.27af2e3537025p+0 0x1.095d3541c3cc9p+3 -0x1.19dc7f96d7fa4p-4 0x1.56023c4c7b10ep-9 -0x1.d226739ea4816p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,7]                                   rf=258    0x1.7b7994252629fp+7 0x1.65bf5a2aa2548p-1 0x1.2363497f52c9fp+4 0x1.1fe8e080611cep-8 0x1.30d66766857fap-11 -0x1.160d6d6eb6dd6p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,8]                                   rf=258    0x1.9f94edc7bfdfep+7 0x1.cec9b14af7508p+0 0x1.e721bd72585b5p+4 0x1.6e7227593a551p-7 0x1.13e5e0fa88f79p-10 -0x1.18c8fde531441p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,9]                                   rf=258    0x1.3ed00fc67c813p+8 -0x1.567c5b007172cp+3 0x1.4525be80c1c46p+5 0x1.9fd754ba502b8p-6 0x1.7c7459f371401p-10 0x1.30fe20b54f2fap-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[2,10,1]                                   rf=258    0x1.39b05108e483ep+5 0x1.12ff87cc40cfep+2 0x1.42ce49c5eb47dp-9 0x1.ca06731329ebp+3 0x1.61848551a8e32p-1 -0x1.634d1d23f13d5p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,2]                                   rf=258    0x1.09979c57d1014p+8 0x1.24ff65213360ap+1 0x1.c475ab72993cp-1 0x1.2a2a3f678e824p-1 -0x1.469b3ee4411bp-3 0x1.3c1d77f72e08bp-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,3]                                   rf=258    0x1.10730714ac12dp+8 0x1.120ca7609b3b1p-6 0x1.9d05998752d55p+0 0x1.40c84e788499cp+0 -0x1.5a2caa15702ep-5 0x1.848c743e27bd8p-9 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,4]                                   rf=258    0x1.1e39ad6692df1p+8 -0x1.e5546e48f1bbcp-1 0x1.31ff9110c534cp+1 0x1.8eb7bf84c9625p-1 -0x1.7201d49240888p-8 -0x1.17675864f0101p-10 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,5]                                   rf=258    0x1.718f28ddd3cb4p+3 -0x1.41ed8c05bd08fp+0 0x1.40423909f6b9dp+2 0x1.d205b66d0c62dp-4 0x1.3271f699ffa15p-8 0x1.04bae41e0412ep-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,6]                                   rf=258    0x1.0d44d26392e1ap+7 0x1.27af2e3537025p+0 0x1.095d3541c3cc9p+3 -0x1.19dc7f96d7fa4p-4 0x1.56023c4c7b10ep-9 -0x1.d226739ea4816p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,7]                                   rf=258    0x1.7b7994252629fp+7 0x1.65bf5a2aa2548p-1 0x1.2363497f52c9fp+4 0x1.1fe8e080611cep-8 0x1.30d66766857fap-11 -0x1.160d6d6eb6dd6p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,8]                                   rf=258    0x1.9f94edc7bfdfep+7 0x1.cec9b14af7508p+0 0x1.e721bd72585b5p+4 0x1.6e7227593a551p-7 0x1.13e5e0fa88f79p-10 -0x1.18c8fde531441p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,9]                                   rf=258    0x1.3ed00fc67c813p+8 -0x1.567c5b007172cp+3 0x1.4525be80c1c46p+5 0x1.9fd754ba502b8p-6 0x1.7c7459f371401p-10 0x1.30fe20b54f2fap-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[2,10,10]                                  rf=257    0x1.5762db8afd987p+8 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b1b28050d2f29p-5 0x0p+0 0x0p+0
-calc[2,10,11]                                  rf=258    0x1.560f7060deecdp+8 0x0p+0 0x1.4c6217c180e39p-9 -0x1.9784fba686e4cp-5 0x0p+0 0x1.3479b49b881d1p-18 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[2,10,11]                                  rf=258    0x1.560f7060deecdp+8 0x0p+0 0x1.4c6217c180e39p-9 -0x1.9784fba686e4cp-5 0x0p+0 0x1.3479b49b881d1p-18 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[2,10,12]                                  rf=257    0x1.ba50fd0763fb6p+7 -0x1.16c87c3db7dd7p+2 0x1.63497c95bdd87p-9 0x1.c98f1e7f92a4bp-4 -0x1.0147c1010a4d4p-7 0x0p+0
-calc[2,10,13]                                  rf=258    0x1.eff914a27160fp+7 -0x1.46431d31fa23p+2 0x1.5a0f38e18d283p-9 -0x1.6a5376367fc88p-1 0x1.ca43c93fc87c7p-8 0x1.c4e1e95af6ef7p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[2,10,13]                                  rf=258    0x1.eff914a27160fp+7 -0x1.46431d31fa23p+2 0x1.5a0f38e18d283p-9 -0x1.6a5376367fc88p-1 0x1.ca43c93fc87c7p-8 0x1.c4e1e95af6ef7p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[2,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
-calc[2,10,15]                                  rf=258    0x1.49a4bd3b60083p+5 -0x1.0727acc6abd91p+1 0x1.e73570538b34cp+3 -0x1.76feb09a557ddp-7 0x1.2bfaaaf824802p-11 0x1.dddd699d6c524p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,16]                                  rf=258    0x1.0616669b6408ep+8 0x1.92067ded9b074p+3 0x1.bcaa5d91430a1p+4 0x1.3480365881ddep-5 0x1.c94fada50ed74p-10 -0x1.a58223ec9d373p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,17]                                  rf=258    0x1.335aeff9027p+7 0x1.9e05218bf3122p+3 0x1.c34b0e850404cp+0 -0x1.bbf28a38a3b67p-5 0x1.adf710c386c02p-4 -0x1.231cc14df235fp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,18]                                  rf=258    0x1.ec4baef632865p+7 0x1.8ff362e3c8fefp+4 0x1.c2d97f565e09bp+1 0x1.86d8e4ce93d85p-2 0x1.c70150e1435b8p-4 -0x1.9e2607b375e81p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,19]                                  rf=258    0x1.4f6c6a00e3808p+7 -0x1.bfe6a3db0a723p+2 0x1.0995f03fd8da7p+1 -0x1.f79236088a85ep-7 0x1.4884b72f4ad78p-6 -0x1.3644a0c5e1401p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[2,10,20]                                  rf=258    0x1.1d212825bb7ap+8 -0x1.80f1b19b6f70cp-3 0x1.9905b52d532ebp+1 0x1.0c3cbf341739fp-1 -0x1.b1427d96b8f25p-6 -0x1.e97a1141ebd6cp-18 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[2,10,15]                                  rf=258    0x1.49a4bd3b60083p+5 -0x1.0727acc6abd91p+1 0x1.e73570538b34cp+3 -0x1.76feb09a557ddp-7 0x1.2bfaaaf824802p-11 0x1.dddd699d6c524p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,16]                                  rf=258    0x1.0616669b6408ep+8 0x1.92067ded9b074p+3 0x1.bcaa5d91430a1p+4 0x1.3480365881ddep-5 0x1.c94fada50ed74p-10 -0x1.a58223ec9d373p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,17]                                  rf=258    0x1.335aeff9027p+7 0x1.9e05218bf3122p+3 0x1.c34b0e850404cp+0 -0x1.bbf28a38a3b67p-5 0x1.adf710c386c02p-4 -0x1.231cc14df235fp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,18]                                  rf=258    0x1.ec4baef632865p+7 0x1.8ff362e3c8fefp+4 0x1.c2d97f565e09bp+1 0x1.86d8e4ce93d85p-2 0x1.c70150e1435b8p-4 -0x1.9e2607b375e81p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,19]                                  rf=258    0x1.4f6c6a00e3808p+7 -0x1.bfe6a3db0a723p+2 0x1.0995f03fd8da7p+1 -0x1.f79236088a85ep-7 0x1.4884b72f4ad78p-6 -0x1.3644a0c5e1401p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[2,10,20]                                  rf=258    0x1.1d212825bb7ap+8 -0x1.80f1b19b6f70cp-3 0x1.9905b52d532ebp+1 0x1.0c3cbf341739fp-1 -0x1.b1427d96b8f25p-6 -0x1.e97a1141ebd6cp-18 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[3,0,0]                                    rf=2      0x1.182744342b6bap+8 0x1.bb4677417e9b1p-15 0x1.f76ead4a27abbp-1 0x0p+0 0x0p+0 0x0p+0
 calc[3,0,1]                                    rf=2      0x1.106aa9f94dde7p+8 0x1.1bb88be7a5b68p+0 0x1.42c3c8add6e17p-9 0x0p+0 0x0p+0 0x0p+0
 calc[3,0,2]                                    rf=2      0x1.02ff6fbfaee2p+8 0x1.205c58f520e41p+0 0x1.245e80508e55bp+0 0x0p+0 0x0p+0 0x0p+0
@@ -941,7 +892,7 @@ calc[3,9,7]                                    rf=260    0x1.f447456043ebap+7 0x
 calc[3,9,8]                                    rf=260    0x1.54e000d8f70c7p+6 -0x1.4cb49f2060b38p+0 0x1.ceb98e01bdca5p+4 -0x1.bda9b20fa7ecbp-6 0x1.65af34acee80dp-12 0x1.23f5f572bdb61p-8
 calc[3,9,9]                                    rf=260    0x1.2d016687f9007p+6 -0x1.38dc9f8a5b2efp+3 0x1.70a1a5283f353p+5 -0x1.1ae989f206481p-6 0x1.236f58580b829p-9 0x1.bdbc47cbe35a7p-8
 calc[3,9,10]                                   rf=260    0x1.03294b57d14ffp+8 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b167667a09acap-5 0x0p+0 0x0p+0
-calc[3,9,11]                                   rf=260    0x1.04446bee154fbp+8 0x0p+0 0x1.4600c901937a2p-9 -0x1.fe2161c4d6b3bp-7 0x0p+0 -0x1.423d86536b732p-20
+calc[3,9,11]~illcond                           rf=260    0x1.04446bee154fbp+8 0x0p+0 0x1.4600c901937a2p-9 -0x1.fe2161c4d6b3bp-7 0x0p+0 -0x1.423d86536b732p-20
 calc[3,9,12]                                   rf=260    0x1.34aa60c857215p+7 -0x1.3e64e8d150ad4p+2 0x1.63497c95bdd85p-9 0x1.cae01df8a2a2dp-4 -0x1.ee457f5ff7576p-9 0x0p+0
 calc[3,9,13]~illcond                           rf=260    0x1.118972ce33634p+7 -0x1.189103be4ea5dp+2 0x1.681adc5c97db9p-9 -0x1.250406303b54cp+1 0x1.ec7391e42cfa6p-4 -0x1.bd160e566538ep-23
 calc[3,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -952,43 +903,26 @@ calc[3,9,18]                                   rf=260    0x1.049d16582e1dcp+8 0x
 calc[3,9,19]                                   rf=260    0x1.24591ec9d34c7p+8 0x1.fddd01181bd2dp+2 0x1.e5d3e9ea6a245p+1 0x1.9b5faef6cb6a1p-2 -0x1.b9257dc114fa2p-6 0x1.3bfbcd7a87ae2p-11
 calc[3,9,20]                                   rf=260    0x1.155e478399af4p+4 -0x1.d3b81681c7ee7p+2 0x1.1bd7c26e64dd2p+1 0x1.95f87cda33e43p-3 0x1.e25dc04886ebcp-5 0x1.c15e8de41b0b2p-7
 calc[3,10,0]                                   rf=258    0x1.182744342b6bap+8 0x1.bb467741f324dp-15 0x1.f76ead4a27abbp-1 0x1.0514e316090f8p+0 0x1.32d5f2db9fdd9p-15 -0x1.31999217076e8p-18
-calc[3,10,1]                                   rf=258    0x1.106aa9f94dde7p+8 0x1.1bb88be7a5b68p+0 0x1.42c3c8add6e17p-9 0x1.ca54d56ba380bp+3 0x1.49649132e41bep+0 -0x1.b5b75d1370c32p-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,2]                                   rf=258    0x1.02ff6fbfaee2p+8 0x1.205c58f520e41p+0 0x1.245e80508e55bp+0 0x1.46cf40e52155p+0 -0x1.20fef6035c107p-3 0x1.18dd8937865b6p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,3]                                   rf=258    0x1.325fdd1eda86bp+8 -0x1.aedfd98892c15p+0 0x1.76efc70f3fd49p+0 0x1.3e569d420fcf5p+0 -0x1.c9404df5b299ep-8 -0x1.1dd3562023a99p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,4]                                   rf=258    0x1.1bde2586c1d2cp+8 -0x1.d9cfeb5946d49p-1 0x1.3352c4fe0f538p+1 0x1.8a7520a00c791p-1 -0x1.747fc0080ddc5p-8 -0x1.06e04ef04bc86p-11 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,5]                                   rf=258    0x1.e2459b42f7f8ap+7 0x1.a0e9c0d38a7e6p-1 0x1.873c6e8edde6p+2 0x1.90a23a1719c5ap-3 0x1.0593d79b1ee2cp-12 -0x1.55709a93a935ep-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,6]                                   rf=258    0x1.0bb780f272f59p+8 0x1.01f77f74c7663p+0 0x1.60ca189160fd3p+3 0x1.dc9c51d82afc3p-4 -0x1.81bb80d16c1d9p-11 -0x1.d94895055d96ap-9 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,7]                                   rf=258    0x1.f447546870966p+7 0x1.03a9dcd785977p-4 0x1.3d67b3636cbbdp+4 0x1.c580c2c83fdc1p-5 -0x1.0c546f274c6cbp-13 -0x1.149b005265316p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,8]                                   rf=258    0x1.54dff69a9a395p+6 -0x1.4cb55de5f6197p+0 0x1.ceb93f7f192bfp+4 -0x1.bdaa01e217dp-6 0x1.65beca2c4bc29p-12 0x1.23f7bd4c2242bp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,9]                                   rf=258    0x1.2d017d309e85ap+6 -0x1.38dcd62de62c9p+3 0x1.70a1da64b9a98p+5 -0x1.1ae9aee43c5e7p-6 0x1.236fc6ec74784p-9 0x1.bdbd72968369fp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[3,10,1]                                   rf=258    0x1.106aa9f94dde7p+8 0x1.1bb88be7a5b68p+0 0x1.42c3c8add6e17p-9 0x1.ca54d56ba380bp+3 0x1.49649132e41bep+0 -0x1.b5b75d1370c32p-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,2]                                   rf=258    0x1.02ff6fbfaee2p+8 0x1.205c58f520e41p+0 0x1.245e80508e55bp+0 0x1.46cf40e52155p+0 -0x1.20fef6035c107p-3 0x1.18dd8937865b6p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,3]                                   rf=258    0x1.325fdd1eda86bp+8 -0x1.aedfd98892c15p+0 0x1.76efc70f3fd49p+0 0x1.3e569d420fcf5p+0 -0x1.c9404df5b299ep-8 -0x1.1dd3562023a99p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,4]                                   rf=258    0x1.1bde2586c1d2cp+8 -0x1.d9cfeb5946d49p-1 0x1.3352c4fe0f538p+1 0x1.8a7520a00c791p-1 -0x1.747fc0080ddc5p-8 -0x1.06e04ef04bc86p-11 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,5]                                   rf=258    0x1.e2459b42f7f8ap+7 0x1.a0e9c0d38a7e6p-1 0x1.873c6e8edde6p+2 0x1.90a23a1719c5ap-3 0x1.0593d79b1ee2cp-12 -0x1.55709a93a935ep-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,6]                                   rf=258    0x1.0bb780f272f59p+8 0x1.01f77f74c7663p+0 0x1.60ca189160fd3p+3 0x1.dc9c51d82afc3p-4 -0x1.81bb80d16c1d9p-11 -0x1.d94895055d96ap-9 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,7]                                   rf=258    0x1.f447546870966p+7 0x1.03a9dcd785977p-4 0x1.3d67b3636cbbdp+4 0x1.c580c2c83fdc1p-5 -0x1.0c546f274c6cbp-13 -0x1.149b005265316p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,8]                                   rf=258    0x1.54dff69a9a395p+6 -0x1.4cb55de5f6197p+0 0x1.ceb93f7f192bfp+4 -0x1.bdaa01e217dp-6 0x1.65beca2c4bc29p-12 0x1.23f7bd4c2242bp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,9]                                   rf=258    0x1.2d017d309e85ap+6 -0x1.38dcd62de62c9p+3 0x1.70a1da64b9a98p+5 -0x1.1ae9aee43c5e7p-6 0x1.236fc6ec74784p-9 0x1.bdbd72968369fp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[3,10,10]                                  rf=257    0x1.03294b57d14ffp+8 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b167667a09acap-5 0x0p+0 0x0p+0
-calc[3,10,11]                                  rf=258    0x1.0444b2993601ap+8 0x0p+0 0x1.460094a2440e1p-9 -0x1.f0b5c366ec315p-7 0x0p+0 -0x1.448eae9660582p-20 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[3,10,11]                                  rf=258    0x1.0444b2993601ap+8 0x0p+0 0x1.460094a2440e1p-9 -0x1.f0b5c366ec315p-7 0x0p+0 -0x1.448eae9660582p-20 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[3,10,12]                                  rf=257    0x1.34aa60c857215p+7 -0x1.3e64e8d150ad4p+2 0x1.63497c95bdd85p-9 0x1.cae01df8a2a2dp-4 -0x1.ee457f5ff7576p-9 0x0p+0
-calc[3,10,13]                                  rf=258    0x1.11854692f0e99p+7 -0x1.1885ff5a2e978p+2 0x1.681be489d468fp-9 -0x1.23a2c1d2ca8eap+1 0x1.e9d25cc71c0cep-4 -0x1.4363c3d4460dcp-22 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[3,10,13]                                  rf=258    0x1.11854692f0e99p+7 -0x1.1885ff5a2e978p+2 0x1.681be489d468fp-9 -0x1.23a2c1d2ca8eap+1 0x1.e9d25cc71c0cep-4 -0x1.4363c3d4460dcp-22 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[3,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
-calc[3,10,15]                                  rf=258    0x1.02e566c3ef528p+8 0x1.3101632e43aefp+2 0x1.68446dcafb9b1p+3 0x1.cab030f195ddp-4 0x1.4774533a8d373p-8 -0x1.19ae0418cd76fp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,16]                                  rf=258    0x1.7c2b4522245ddp+6 -0x1.66f072faebbf2p+3 0x1.f90fc6f0ad844p+2 -0x1.47cc5853170adp-4 0x1.6985ab39bb607p-6 0x1.167f139e8a17cp-11 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,17]                                  rf=258    0x1.0f052bd9ab46ap+8 -0x1.02d427ec5d3f6p+0 0x1.e89849904c60ep+1 0x1.a025b2249a951p-2 -0x1.cca9893583e01p-6 -0x1.8f604fea8cf7fp-10 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,18]                                  rf=258    0x1.049d1650d4eebp+8 0x1.ac95b3082c4fcp+4 0x1.f363b2273beb9p+1 0x1.a803d33277639p-2 0x1.8229688a52d18p-5 -0x1.46d96d5e292eap-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,19]                                  rf=258    0x1.24591ec3da9eep+8 0x1.fddcfc6ae13c6p+2 0x1.e5d3eab2cc0d6p+1 0x1.9b5fdb83f4e64p-2 -0x1.b9249243a79a1p-6 0x1.3bf91989bf681p-11 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[3,10,20]                                  rf=258    0x1.155e481a1c83bp+4 -0x1.d3b81f394d2eap+2 0x1.1bd7c2f00390fp+1 0x1.95f8d89d6e167p-3 0x1.e25eb1b17438dp-5 0x1.c15ee3a5721f1p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[3,10,15]                                  rf=258    0x1.02e566c3ef528p+8 0x1.3101632e43aefp+2 0x1.68446dcafb9b1p+3 0x1.cab030f195ddp-4 0x1.4774533a8d373p-8 -0x1.19ae0418cd76fp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,16]                                  rf=258    0x1.7c2b4522245ddp+6 -0x1.66f072faebbf2p+3 0x1.f90fc6f0ad844p+2 -0x1.47cc5853170adp-4 0x1.6985ab39bb607p-6 0x1.167f139e8a17cp-11 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,17]                                  rf=258    0x1.0f052bd9ab46ap+8 -0x1.02d427ec5d3f6p+0 0x1.e89849904c60ep+1 0x1.a025b2249a951p-2 -0x1.cca9893583e01p-6 -0x1.8f604fea8cf7fp-10 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,18]                                  rf=258    0x1.049d1650d4eebp+8 0x1.ac95b3082c4fcp+4 0x1.f363b2273beb9p+1 0x1.a803d33277639p-2 0x1.8229688a52d18p-5 -0x1.46d96d5e292eap-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,19]                                  rf=258    0x1.24591ec3da9eep+8 0x1.fddcfc6ae13c6p+2 0x1.e5d3eab2cc0d6p+1 0x1.9b5fdb83f4e64p-2 -0x1.b9249243a79a1p-6 0x1.3bf91989bf681p-11 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[3,10,20]                                  rf=258    0x1.155e481a1c83bp+4 -0x1.d3b81f394d2eap+2 0x1.1bd7c2f00390fp+1 0x1.95f8d89d6e167p-3 0x1.e25eb1b17438dp-5 0x1.c15ee3a5721f1p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[4,0,0]                                    rf=2      0x1.185e4018ffd85p+8 0x1.dcce312211d82p-13 0x1.f776b81f073dbp-1 0x0p+0 0x0p+0 0x0p+0
 calc[4,0,1]                                    rf=2      0x1.bea136b62ec25p+7 0x1.4aef91272ab3ap+2 0x1.6094990459786p-9 0x0p+0 0x0p+0 0x0p+0
 calc[4,0,2]                                    rf=2      0x1.0fe35c5058179p+8 -0x1.fd50bc60183f4p-1 0x1.6a5bfb72dd75fp+0 0x0p+0 0x0p+0 0x0p+0
@@ -1189,7 +1123,7 @@ calc[4,9,7]                                    rf=260    0x1.3acf26cfdd049p+8 -0
 calc[4,9,8]                                    rf=260    0x1.2f31657ecc809p+8 0x1.e143255bae764p-3 0x1.f064716272952p+4 0x1.23639d151564fp-5 -0x1.d50ee027800dep-13 0x1.baba30c6b9b23p-8
 calc[4,9,9]                                    rf=260    0x1.f6e8cc31ad55fp+7 0x1.5b5dcf49f3aa1p+3 0x1.f107c42c778a9p+4 0x1.1ff956211ff82p-5 0x1.80a6e3bd476ecp-10 -0x1.03541c320f6d8p-7
 calc[4,9,10]                                   rf=260    0x1.f429a95fe587bp+6 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b1c7fd5bfb24ep-5 0x0p+0 0x0p+0
-calc[4,9,11]                                   rf=260    0x1.efd03581aab54p+6 0x0p+0 0x1.40850ceddf9a1p-9 -0x1.bd74d72fef919p-5 0x0p+0 0x1.84debf2016336p-17
+calc[4,9,11]~illcond                           rf=260    0x1.efd03581aab54p+6 0x0p+0 0x1.40850ceddf9a1p-9 -0x1.bd74d72fef919p-5 0x0p+0 0x1.84debf2016336p-17
 calc[4,9,12]                                   rf=260    0x1.0776d91e90c53p+8 0x1.b5b97d11037cep+1 0x1.63497c95bdd85p-9 0x1.c7ff8ab7d9e73p-4 -0x1.6922b2ca83314p-7 0x0p+0
 calc[4,9,13]~illcond                           rf=260    0x1.f9f4cc9fc77b5p+7 0x1.04d69d10cd31dp+2 0x1.63b566baf1b62p-9 0x1.a5833c569f622p+0 -0x1.8db59ab70b7c8p-4 0x1.45a62617b6fb2p-20
 calc[4,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -1200,43 +1134,26 @@ calc[4,9,18]                                   rf=260    0x1.0c1617ff5c51dp+7 -0
 calc[4,9,19]                                   rf=260    0x1.15feebdc41cd7p+8 0x1.2e6f14bc1c6ddp+3 0x1.056778d51560bp+2 0x1.7d4fbcc2f06d3p-2 -0x1.029b3fa27c62cp-7 -0x1.30f7261d8cee5p-9
 calc[4,9,20]                                   rf=260    0x1.ebf1733e3f962p+7 0x1.1020d5a602225p+2 0x1.73036a3de2a3bp+1 0x1.0a4d35db8f245p-1 -0x1.10793b255d4fp-7 -0x1.d0b82b8eda578p-8
 calc[4,10,0]                                   rf=258    0x1.185e4018ffd85p+8 0x1.dcce3121f4b58p-13 0x1.f776b81f073dcp-1 0x1.04f9a1f0a43cbp+0 -0x1.38a8908f9e6f4p-21 -0x1.ed8584c7ac97ap-18
-calc[4,10,1]                                   rf=258    0x1.bea136b62ec25p+7 0x1.4aef91272ab3cp+2 0x1.6094990459787p-9 0x1.80af6ab5aadfbp+3 -0x1.6c491f72382cep-3 0x1.37d02ed3f9b94p-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,2]                                   rf=258    0x1.0fe35c5058179p+8 -0x1.fd50bc60183cdp-1 0x1.6a5bfb72dd75fp+0 0x1.8e66ad2c82eaep+0 -0x1.8f55cf966590bp-4 0x1.2ec9bf2a07bccp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,3]                                   rf=258    0x1.e32139f143118p+7 0x1.087ece2a2ad7dp+1 0x1.233813d2786ebp+0 0x1.3583c9c29e201p+0 -0x1.cbf26cbd2d7aep-6 0x1.a90ee184eedbp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,4]                                   rf=258    0x1.47f675709570ap+8 -0x1.115afd9485b86p+0 0x1.d984e12cb7042p+0 0x1.8d25220b1aa94p-1 0x1.98cd657d371c4p-7 0x1.638543767be1p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,5]                                   rf=258    0x1.940c859130151p+4 -0x1.431efe543edaep+0 0x1.27c124feb1235p+2 0x1.4de518f400bbcp-5 0x1.530cd5f3957aep-8 0x1.fc95c6b66e8d2p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,6]                                   rf=258    0x1.432a595915a56p+5 -0x1.38f11d5d09e0ep+1 0x1.14e39edad302ep+3 -0x1.46cda5edc3defp-6 0x1.36da7294581fcp-8 0x1.d72e895ce2629p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,7]                                   rf=258    0x1.3acf247d3aa92p+8 -0x1.51114a6dd73bcp-1 0x1.4ba276168d727p+4 0x1.9c693231b8d5cp-5 0x1.0630e92563db7p-12 0x1.44ba20c22204dp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,8]                                   rf=258    0x1.2f316797b4248p+8 0x1.e1437e1f6993ap-3 0x1.f064527a319bap+4 0x1.2363a329657fp-5 -0x1.d5065a642aac4p-13 0x1.baba1abdb9151p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,9]                                   rf=258    0x1.f6e8d56d87007p+7 0x1.5b5e0c9debe05p+3 0x1.f107a5906f157p+4 0x1.1ff971500f493p-5 0x1.80a74e94faa4dp-10 -0x1.03544e33dba4p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[4,10,1]                                   rf=258    0x1.bea136b62ec25p+7 0x1.4aef91272ab3cp+2 0x1.6094990459787p-9 0x1.80af6ab5aadfbp+3 -0x1.6c491f72382cep-3 0x1.37d02ed3f9b94p-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,2]                                   rf=258    0x1.0fe35c5058179p+8 -0x1.fd50bc60183cdp-1 0x1.6a5bfb72dd75fp+0 0x1.8e66ad2c82eaep+0 -0x1.8f55cf966590bp-4 0x1.2ec9bf2a07bccp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,3]                                   rf=258    0x1.e32139f143118p+7 0x1.087ece2a2ad7dp+1 0x1.233813d2786ebp+0 0x1.3583c9c29e201p+0 -0x1.cbf26cbd2d7aep-6 0x1.a90ee184eedbp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,4]                                   rf=258    0x1.47f675709570ap+8 -0x1.115afd9485b86p+0 0x1.d984e12cb7042p+0 0x1.8d25220b1aa94p-1 0x1.98cd657d371c4p-7 0x1.638543767be1p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,5]                                   rf=258    0x1.940c859130151p+4 -0x1.431efe543edaep+0 0x1.27c124feb1235p+2 0x1.4de518f400bbcp-5 0x1.530cd5f3957aep-8 0x1.fc95c6b66e8d2p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,6]                                   rf=258    0x1.432a595915a56p+5 -0x1.38f11d5d09e0ep+1 0x1.14e39edad302ep+3 -0x1.46cda5edc3defp-6 0x1.36da7294581fcp-8 0x1.d72e895ce2629p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,7]                                   rf=258    0x1.3acf247d3aa92p+8 -0x1.51114a6dd73bcp-1 0x1.4ba276168d727p+4 0x1.9c693231b8d5cp-5 0x1.0630e92563db7p-12 0x1.44ba20c22204dp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,8]                                   rf=258    0x1.2f316797b4248p+8 0x1.e1437e1f6993ap-3 0x1.f064527a319bap+4 0x1.2363a329657fp-5 -0x1.d5065a642aac4p-13 0x1.baba1abdb9151p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,9]                                   rf=258    0x1.f6e8d56d87007p+7 0x1.5b5e0c9debe05p+3 0x1.f107a5906f157p+4 0x1.1ff971500f493p-5 0x1.80a74e94faa4dp-10 -0x1.03544e33dba4p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[4,10,10]                                  rf=257    0x1.f429a95fe587bp+6 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b1c7fd5bfb24ep-5 0x0p+0 0x0p+0
-calc[4,10,11]                                  rf=258    0x1.efd0f5f6a83fp+6 0x0p+0 0x1.408878893467dp-9 -0x1.c0572ef3689fbp-5 0x0p+0 0x1.83f38b1c1b748p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[4,10,11]                                  rf=258    0x1.efd0f5f6a83fp+6 0x0p+0 0x1.408878893467dp-9 -0x1.c0572ef3689fbp-5 0x0p+0 0x1.83f38b1c1b748p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[4,10,12]                                  rf=257    0x1.0776d91e90c53p+8 0x1.b5b97d11037cep+1 0x1.63497c95bdd85p-9 0x1.c7ff8ab7d9e73p-4 -0x1.6922b2ca83314p-7 0x0p+0
-calc[4,10,13]                                  rf=258    0x1.f9fd0431bc2efp+7 0x1.04c7143a73519p+2 0x1.63b64a4bf66d5p-9 0x1.a33aec627c9e1p+0 -0x1.8bcd1612498c2p-4 0x1.41bf48c47b835p-20 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[4,10,13]                                  rf=258    0x1.f9fd0431bc2efp+7 0x1.04c7143a73519p+2 0x1.63b64a4bf66d5p-9 0x1.a33aec627c9e1p+0 -0x1.8bcd1612498c2p-4 0x1.41bf48c47b835p-20 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[4,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
-calc[4,10,15]                                  rf=258    0x1.f73c2e766446ep+7 0x1.0497172de57a7p+2 0x1.553ba331c55c8p+3 0x1.d4341899eedc5p-4 0x1.9380101ce98fcp-8 -0x1.a5e3fb842555ep-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,16]                                  rf=258    0x1.aefb94351badap+7 0x1.81013ffc3d842p+4 0x1.e296cfa8ac526p+3 0x1.8b04026a2ac2p-5 0x1.87e7c2bb36383p-6 -0x1.7a8cf4a7a9c4cp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,17]                                  rf=258    0x1.70e7dec3c11e3p+7 0x1.7acd166af877p+3 0x1.20dfbd6af5a1fp+1 0x1.c1df74fac67f5p-3 0x1.37645ff37c379p-4 -0x1.9ed42d0cc16a3p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,18]                                  rf=258    0x1.0c16183cecfe9p+7 -0x1.82ce8d50e2bcp+5 0x1.6fe8e1bdbd4e2p+0 -0x1.90879049a4439p-3 -0x1.0d065ff96e122p-5 -0x1.7ec2f7c2b7a26p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,19]                                  rf=258    0x1.15feebd7d6215p+8 0x1.2e6f121c0e4bp+3 0x1.0567781184f3ep+2 0x1.7d4fdec4953adp-2 -0x1.029a6cdc3ef93p-7 -0x1.30f793813944fp-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[4,10,20]                                  rf=258    0x1.ebf173428c46ap+7 0x1.1020ce56f4a8ep+2 0x1.730369c0ccb9dp+1 0x1.0a4d45e3f2703p-1 -0x1.10780e5b37aeap-7 -0x1.d0b8ac80ba676p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[4,10,15]                                  rf=258    0x1.f73c2e766446ep+7 0x1.0497172de57a7p+2 0x1.553ba331c55c8p+3 0x1.d4341899eedc5p-4 0x1.9380101ce98fcp-8 -0x1.a5e3fb842555ep-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,16]                                  rf=258    0x1.aefb94351badap+7 0x1.81013ffc3d842p+4 0x1.e296cfa8ac526p+3 0x1.8b04026a2ac2p-5 0x1.87e7c2bb36383p-6 -0x1.7a8cf4a7a9c4cp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,17]                                  rf=258    0x1.70e7dec3c11e3p+7 0x1.7acd166af877p+3 0x1.20dfbd6af5a1fp+1 0x1.c1df74fac67f5p-3 0x1.37645ff37c379p-4 -0x1.9ed42d0cc16a3p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,18]                                  rf=258    0x1.0c16183cecfe9p+7 -0x1.82ce8d50e2bcp+5 0x1.6fe8e1bdbd4e2p+0 -0x1.90879049a4439p-3 -0x1.0d065ff96e122p-5 -0x1.7ec2f7c2b7a26p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,19]                                  rf=258    0x1.15feebd7d6215p+8 0x1.2e6f121c0e4bp+3 0x1.0567781184f3ep+2 0x1.7d4fdec4953adp-2 -0x1.029a6cdc3ef93p-7 -0x1.30f793813944fp-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[4,10,20]                                  rf=258    0x1.ebf173428c46ap+7 0x1.1020ce56f4a8ep+2 0x1.730369c0ccb9dp+1 0x1.0a4d45e3f2703p-1 -0x1.10780e5b37aeap-7 -0x1.d0b8ac80ba676p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[5,0,0]                                    rf=2      0x1.187e783ed816p+8 0x1.dafed1ea8a604p-13 0x1.f7769ac8d84a5p-1 0x0p+0 0x0p+0 0x0p+0
 calc[5,0,1]                                    rf=2      0x1.c19884d53ba4cp+7 0x1.496bb6c3e12d4p+2 0x1.60dfcdd0b7fe2p-9 0x0p+0 0x0p+0 0x0p+0
 calc[5,0,2]                                    rf=2      0x1.10148e6020dd4p+8 -0x1.01bba6ea454ep+0 0x1.6a8111eaea463p+0 0x0p+0 0x0p+0 0x0p+0
@@ -1437,7 +1354,7 @@ calc[5,9,7]                                    rf=260    0x1.3ad0be5b289b2p+8 -0
 calc[5,9,8]                                    rf=260    0x1.2f328565a4bfep+8 0x1.e1345977b56a8p-3 0x1.f067d3331f43fp+4 0x1.239bb387e159bp-5 -0x1.d471348ba75cfp-13 0x1.b88a0b7199aedp-8
 calc[5,9,9]                                    rf=260    0x1.f6eb04cafda3bp+7 0x1.5b5f4b259d2f4p+3 0x1.f103bb7db4e47p+4 0x1.1fb91c667038dp-5 0x1.8396819eea5c1p-10 -0x1.045af337166b7p-7
 calc[5,9,10]                                   rf=260    0x1.f422f7b0833fep+6 0x0p+0 0x1.50cbf7deb263ep-9 -0x1.b1c5a2c9c6d6cp-5 0x0p+0 0x0p+0
-calc[5,9,11]                                   rf=260    0x1.efc8dc3643f2p+6 0x0p+0 0x1.40b5a6812b9c2p-9 -0x1.c691f8397bd9p-5 0x0p+0 0x1.8e67787998748p-17
+calc[5,9,11]~illcond                           rf=260    0x1.efc8dc3643f2p+6 0x0p+0 0x1.40b5a6812b9c2p-9 -0x1.c691f8397bd9p-5 0x0p+0 0x1.8e67787998748p-17
 calc[5,9,12]                                   rf=260    0x1.077a5ddc019a9p+8 0x1.b58cdfb91b00dp+1 0x1.63497c95bdd85p-9 0x1.c8003ab7b487dp-4 -0x1.693f1f4f0883cp-7 0x0p+0
 calc[5,9,13]~illcond                           rf=260    0x1.fa5e858e07d75p+7 0x1.040e7ab3e6001p+2 0x1.63ba8a3d82d8ap-9 0x1.b24398a270146p+0 -0x1.9b2138d91503cp-4 0x1.5183c7fca1489p-20
 calc[5,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -1448,43 +1365,26 @@ calc[5,9,18]                                   rf=260    0x1.0c09b025048eep+7 -0
 calc[5,9,19]                                   rf=260    0x1.160ab0d2e45c1p+8 0x1.2e671c608e146p+3 0x1.0562bb0dfea04p+2 0x1.7d58298737518p-2 -0x1.017758c53c892p-7 -0x1.33a281753b526p-9
 calc[5,9,20]                                   rf=260    0x1.ec125325364cdp+7 0x1.100fff49356edp+2 0x1.72e6b1324286cp+1 0x1.0a444ecbcf195p-1 -0x1.10b1c19baf229p-7 -0x1.d1574039ebd6cp-8
 calc[5,10,0]                                   rf=258    0x1.187e783ed816p+8 0x1.dafed1eac4a3ap-13 0x1.f7769ac8d84a7p-1 0x1.04fa69c143c84p+0 -0x1.922dc4836947dp-20 -0x1.c9047c199b1f9p-18
-calc[5,10,1]                                   rf=258    0x1.c19884d53ba4cp+7 0x1.496bb6c3e12d6p+2 0x1.60dfcdd0b7fe2p-9 0x1.801d66c85890ep+3 -0x1.a508a823c6f6bp-3 0x1.2981d8ce432eep-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,2]                                   rf=258    0x1.10148e6020dd4p+8 -0x1.01bba6ea454ep+0 0x1.6a8111eaea463p+0 0x1.8e917eea35c98p+0 -0x1.8dbda81011764p-4 0x1.2a5cd9902270ep-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,3]                                   rf=258    0x1.e36da775d7633p+7 0x1.080ce63fd425fp+1 0x1.236c86d96c5aep+0 0x1.358cfcde3b591p+0 -0x1.ce83f7247d565p-6 0x1.a8d4b49704426p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,4]                                   rf=258    0x1.480ef952e9e92p+8 -0x1.10f60e92e0c19p+0 0x1.d9b0c12a94e84p+0 0x1.8d2596d2f725dp-1 0x1.98f8676054aeep-7 0x1.638a9d8ede0e8p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,5]                                   rf=258    0x1.94213cf2d0d6ep+4 -0x1.42f51f0f5f3f5p+0 0x1.27e08d401e2ccp+2 0x1.514fed8d8b93ep-5 0x1.52eed898a10cap-8 0x1.fcdeb43e158bp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,6]                                   rf=258    0x1.43255597cdba5p+5 -0x1.38dde7479cb9fp+1 0x1.14f22e3329e63p+3 -0x1.431a3ca4dbde3p-6 0x1.3711fb079d3f6p-8 0x1.d7cbec53539dp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,7]                                   rf=258    0x1.3ad0bc081f394p+8 -0x1.510d5272f1928p-1 0x1.4ba773285a8cfp+4 0x1.9cdc3eda301fp-5 0x1.052d6f26f485cp-12 0x1.43c4ce71b1469p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,8]                                   rf=258    0x1.2f32877e685a8p+8 0x1.e134b2541232dp-3 0x1.f067b44a8466dp+4 0x1.239bc3648844dp-5 -0x1.d4678f22701d3p-13 0x1.b889e8eedfc44p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,9]                                   rf=258    0x1.f6eb0e06dbd0fp+7 0x1.5b5f887a07425p+3 0x1.f1039ce1e275bp+4 0x1.1fb9303bf039bp-5 0x1.8397a01ef0e48p-10 -0x1.045b23ab37cbep-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[5,10,1]                                   rf=258    0x1.c19884d53ba4cp+7 0x1.496bb6c3e12d6p+2 0x1.60dfcdd0b7fe2p-9 0x1.801d66c85890ep+3 -0x1.a508a823c6f6bp-3 0x1.2981d8ce432eep-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,2]                                   rf=258    0x1.10148e6020dd4p+8 -0x1.01bba6ea454ep+0 0x1.6a8111eaea463p+0 0x1.8e917eea35c98p+0 -0x1.8dbda81011764p-4 0x1.2a5cd9902270ep-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,3]                                   rf=258    0x1.e36da775d7633p+7 0x1.080ce63fd425fp+1 0x1.236c86d96c5aep+0 0x1.358cfcde3b591p+0 -0x1.ce83f7247d565p-6 0x1.a8d4b49704426p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,4]                                   rf=258    0x1.480ef952e9e92p+8 -0x1.10f60e92e0c19p+0 0x1.d9b0c12a94e84p+0 0x1.8d2596d2f725dp-1 0x1.98f8676054aeep-7 0x1.638a9d8ede0e8p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,5]                                   rf=258    0x1.94213cf2d0d6ep+4 -0x1.42f51f0f5f3f5p+0 0x1.27e08d401e2ccp+2 0x1.514fed8d8b93ep-5 0x1.52eed898a10cap-8 0x1.fcdeb43e158bp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,6]                                   rf=258    0x1.43255597cdba5p+5 -0x1.38dde7479cb9fp+1 0x1.14f22e3329e63p+3 -0x1.431a3ca4dbde3p-6 0x1.3711fb079d3f6p-8 0x1.d7cbec53539dp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,7]                                   rf=258    0x1.3ad0bc081f394p+8 -0x1.510d5272f1928p-1 0x1.4ba773285a8cfp+4 0x1.9cdc3eda301fp-5 0x1.052d6f26f485cp-12 0x1.43c4ce71b1469p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,8]                                   rf=258    0x1.2f32877e685a8p+8 0x1.e134b2541232dp-3 0x1.f067b44a8466dp+4 0x1.239bc3648844dp-5 -0x1.d4678f22701d3p-13 0x1.b889e8eedfc44p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,9]                                   rf=258    0x1.f6eb0e06dbd0fp+7 0x1.5b5f887a07425p+3 0x1.f1039ce1e275bp+4 0x1.1fb9303bf039bp-5 0x1.8397a01ef0e48p-10 -0x1.045b23ab37cbep-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[5,10,10]                                  rf=257    0x1.f422f7b0833fep+6 0x0p+0 0x1.50cbf7deb263ep-9 -0x1.b1c5a2c9c6d6cp-5 0x0p+0 0x0p+0
-calc[5,10,11]                                  rf=258    0x1.efc9f1ddd45ffp+6 0x0p+0 0x1.40b8f4b00a694p-9 -0x1.ccc88c64c4961p-5 0x0p+0 0x1.8d65759e4c1f6p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[5,10,11]                                  rf=258    0x1.efc9f1ddd45ffp+6 0x0p+0 0x1.40b8f4b00a694p-9 -0x1.ccc88c64c4961p-5 0x0p+0 0x1.8d65759e4c1f6p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[5,10,12]                                  rf=257    0x1.077a5ddc019a9p+8 0x1.b58cdfb91b00dp+1 0x1.63497c95bdd85p-9 0x1.c8003ab7b487dp-4 -0x1.693f1f4f0883cp-7 0x0p+0
-calc[5,10,13]                                  rf=258    0x1.fa6621fbbf264p+7 0x1.04003f32a3197p+2 0x1.63bb5a50946bfp-9 0x1.b0137bf609786p+0 -0x1.995d0faddbab1p-4 0x1.4de577abff372p-20 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[5,10,13]                                  rf=258    0x1.fa6621fbbf264p+7 0x1.04003f32a3197p+2 0x1.63bb5a50946bfp-9 0x1.b0137bf609786p+0 -0x1.995d0faddbab1p-4 0x1.4de577abff372p-20 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[5,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
-calc[5,10,15]                                  rf=258    0x1.f7436785324b4p+7 0x1.04a38b54ab953p+2 0x1.5535188187e2bp+3 0x1.d3e15e72e6a32p-4 0x1.9442cd82abf9ap-8 -0x1.a7bfe6dddf2cep-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,16]                                  rf=258    0x1.aefe9f786cbbfp+7 0x1.810d59dd1e803p+4 0x1.e28b1c2d6a7ffp+3 0x1.89f377d7a8bc5p-5 0x1.885c6821fa667p-6 -0x1.7afeea93ab39cp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,17]                                  rf=258    0x1.70f5bc76dc911p+7 0x1.7b1a01d6b446ep+3 0x1.20ac88af9c215p+1 0x1.c0a3a9b42f8cap-3 0x1.37a92bbb71e87p-4 -0x1.9ebbc4978c941p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,18]                                  rf=258    0x1.0c09b0621065p+7 -0x1.82d6beff2924p+5 0x1.6fb9b290323f5p+0 -0x1.93567909bd58cp-3 -0x1.060457293d1bcp-5 -0x1.7dcec696d1b89p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,19]                                  rf=258    0x1.160ab0cea550ep+8 0x1.2e6719c4c210fp+3 0x1.0562ba4b13f8ep+2 0x1.7d584aa09b769p-2 -0x1.01767552d9d1dp-7 -0x1.33a2e3df778f9p-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[5,10,20]                                  rf=258    0x1.ec12532a1b724p+7 0x1.100ff807b6b7bp+2 0x1.72e6b0b549263p+1 0x1.0a445dea13af9p-1 -0x1.10b07e8c292bdp-7 -0x1.d157bc66a4691p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[5,10,15]                                  rf=258    0x1.f7436785324b4p+7 0x1.04a38b54ab953p+2 0x1.5535188187e2bp+3 0x1.d3e15e72e6a32p-4 0x1.9442cd82abf9ap-8 -0x1.a7bfe6dddf2cep-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,16]                                  rf=258    0x1.aefe9f786cbbfp+7 0x1.810d59dd1e803p+4 0x1.e28b1c2d6a7ffp+3 0x1.89f377d7a8bc5p-5 0x1.885c6821fa667p-6 -0x1.7afeea93ab39cp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,17]                                  rf=258    0x1.70f5bc76dc911p+7 0x1.7b1a01d6b446ep+3 0x1.20ac88af9c215p+1 0x1.c0a3a9b42f8cap-3 0x1.37a92bbb71e87p-4 -0x1.9ebbc4978c941p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,18]                                  rf=258    0x1.0c09b0621065p+7 -0x1.82d6beff2924p+5 0x1.6fb9b290323f5p+0 -0x1.93567909bd58cp-3 -0x1.060457293d1bcp-5 -0x1.7dcec696d1b89p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,19]                                  rf=258    0x1.160ab0cea550ep+8 0x1.2e6719c4c210fp+3 0x1.0562ba4b13f8ep+2 0x1.7d584aa09b769p-2 -0x1.01767552d9d1dp-7 -0x1.33a2e3df778f9p-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[5,10,20]                                  rf=258    0x1.ec12532a1b724p+7 0x1.100ff807b6b7bp+2 0x1.72e6b0b549263p+1 0x1.0a445dea13af9p-1 -0x1.10b07e8c292bdp-7 -0x1.d157bc66a4691p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[6,0,0]                                    rf=2      0x1.18bf6011b255ep+8 0x1.aefb8157328bcp-14 0x1.f779903680213p-1 0x0p+0 0x0p+0 0x0p+0
 calc[6,0,1]                                    rf=2      0x1.2aa2f4d9b0724p+4 0x1.b22b6469361d2p+1 0x1.4bceb0bbc0201p-9 0x0p+0 0x0p+0 0x0p+0
 calc[6,0,2]                                    rf=2      0x1.0e0f6c73c210fp+8 0x1.915e9b7a1fcacp+1 0x1.67292ab20527fp-1 0x0p+0 0x0p+0 0x0p+0
@@ -1685,7 +1585,7 @@ calc[6,9,7]                                    rf=260    0x1.55771d390861fp+7 0x
 calc[6,9,8]                                    rf=260    0x1.acd33169a69b2p+5 -0x1.c342a91ac5392p+0 0x1.d23c28a071cc7p+4 -0x1.197768279440ep-6 0x1.a538585d2effp-11 0x1.a0d88eb7e5d7cp-7
 calc[6,9,9]                                    rf=260    0x1.51887c5491932p+8 -0x1.962030d06b34bp+3 0x1.4f9bca8650e1cp+5 0x1.143cf89c18774p-6 0x1.e4cb9cbf45383p-9 0x1.e7c60fa2fab9cp-7
 calc[6,9,10]                                   rf=260    0x1.dbf656a0f4daep+7 0x0p+0 0x1.50cbf7deb264p-9 -0x1.b1dbe0ad175bap-5 0x0p+0 0x0p+0
-calc[6,9,11]                                   rf=260    0x1.deff881e20be5p+7 0x0p+0 0x1.41bcf9cbe7608p-9 0x1.04997cb8a5cf6p-6 0x0p+0 0x1.b241fe6ee547ep-18
+calc[6,9,11]~illcond                           rf=260    0x1.deff881e20be5p+7 0x0p+0 0x1.41bcf9cbe7608p-9 0x1.04997cb8a5cf6p-6 0x0p+0 0x1.b241fe6ee547ep-18
 calc[6,9,12]                                   rf=260    0x1.13a4a577e50c4p+7 -0x1.442b4724349cdp+2 0x1.63497c95bdd88p-9 0x1.cad56d7481b46p-4 -0x1.55974cb8ea7bep-9 0x0p+0
 calc[6,9,13]~illcond                           rf=260    0x1.b6b396d9be8bbp+6 -0x1.fdbd6f23fd50fp+1 0x1.5dd75fc9b33a7p-9 0x1.40e1f4d9712c4p+0 -0x1.1f9e835d53df7p-4 -0x1.06ce8c6a1d08cp-21
 calc[6,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -1696,43 +1596,26 @@ calc[6,9,18]                                   rf=260    0x1.dbd176e51f2aep+1 -0
 calc[6,9,19]                                   rf=260    0x1.317b373badfe6p+7 -0x1.70a77370acec9p+3 0x1.95fd948ae9516p+0 -0x1.168807a0b4af8p-5 0x1.3850b030b95ap-7 -0x1.de78662ad10d3p-8
 calc[6,9,20]                                   rf=260    0x1.4d10f945a7c21p+7 0x1.865920f83eacbp+2 0x1.d831fdc7e47bfp+0 0x1.9f72d3a7943d2p-4 0x1.25bead3ccc768p-4 -0x1.9f573f5282c95p-7
 calc[6,10,0]                                   rf=258    0x1.18bf6011b255dp+8 0x1.aefb8157328bcp-14 0x1.f779903680213p-1 0x1.04e4fe07ac219p+0 -0x1.367394a04ef26p-16 -0x1.7342fd8b3c3ddp-16
-calc[6,10,1]                                   rf=258    0x1.2aa2f4d9b0724p+4 0x1.b22b6469361d2p+1 0x1.4bceb0bbc0201p-9 0x1.afd30feeb570ap+3 -0x1.d82adcd556ab3p-1 0x1.f9acf1018b3c1p-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,2]                                   rf=258    0x1.0e0f6c73c210ep+8 0x1.915e9b7a1fcacp+1 0x1.67292ab20527fp-1 -0x1.ea1e48e3b85e8p-1 0x1.1601dcf2acf39p-4 0x1.7f09e26446b53p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,3]                                   rf=258    0x1.193f3cf2ca2f4p+8 -0x1.364b5a5c25777p-1 0x1.b5efe6b80f083p+0 0x1.4223ecf3eab8bp+0 -0x1.290a6fa871928p-5 -0x1.a374837b682eap-15 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,4]                                   rf=258    0x1.c76da8ce4cfbap+7 0x1.8b9ce2293d1b4p-1 0x1.018962f82907ep+1 0x1.4555d10cbe8eap-1 -0x1.e5db479ecf1c8p-8 -0x1.14d7fec3d821ap-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,5]                                   rf=258    0x1.e6c43c902d31cp+6 0x1.d512c5f22309ap-2 0x1.13e9b1bc5416fp+2 -0x1.e4754ff6d9ef4p-4 0x1.68836ddb4ff0cp-9 -0x1.608022b4e96bfp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,6]                                   rf=258    0x1.2992fd09f1b75p+8 -0x1.a0f33e74e026ep-3 0x1.5d8112249b6acp+3 0x1.d9af31564fc02p-4 -0x1.21ca29fef8dd6p-10 0x1.38ef7a212c62p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,7]                                   rf=258    0x1.55770cfdb775ep+7 0x1.92ce8c2b27195p-1 0x1.1ec8af654fedap+4 -0x1.83d67b244954dp-8 0x1.6e186ea065ddap-11 -0x1.09fe1da33e9a6p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,8]                                   rf=258    0x1.acd3d769c635ap+5 -0x1.c3461ed0330fdp+0 0x1.d23bf04013d4dp+4 -0x1.1977e84b697cbp-6 0x1.a537950b94fb6p-11 0x1.a0d7e0edc958cp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,9]                                   rf=258    0x1.518874e3b622bp+8 -0x1.961fc770f943ap+3 0x1.4f9c001c30c43p+5 0x1.143d11c4bafa3p-6 0x1.e4c89615d1e96p-9 0x1.e7c653a80b90dp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[6,10,1]                                   rf=258    0x1.2aa2f4d9b0724p+4 0x1.b22b6469361d2p+1 0x1.4bceb0bbc0201p-9 0x1.afd30feeb570ap+3 -0x1.d82adcd556ab3p-1 0x1.f9acf1018b3c1p-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,2]                                   rf=258    0x1.0e0f6c73c210ep+8 0x1.915e9b7a1fcacp+1 0x1.67292ab20527fp-1 -0x1.ea1e48e3b85e8p-1 0x1.1601dcf2acf39p-4 0x1.7f09e26446b53p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,3]                                   rf=258    0x1.193f3cf2ca2f4p+8 -0x1.364b5a5c25777p-1 0x1.b5efe6b80f083p+0 0x1.4223ecf3eab8bp+0 -0x1.290a6fa871928p-5 -0x1.a374837b682eap-15 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,4]                                   rf=258    0x1.c76da8ce4cfbap+7 0x1.8b9ce2293d1b4p-1 0x1.018962f82907ep+1 0x1.4555d10cbe8eap-1 -0x1.e5db479ecf1c8p-8 -0x1.14d7fec3d821ap-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,5]                                   rf=258    0x1.e6c43c902d31cp+6 0x1.d512c5f22309ap-2 0x1.13e9b1bc5416fp+2 -0x1.e4754ff6d9ef4p-4 0x1.68836ddb4ff0cp-9 -0x1.608022b4e96bfp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,6]                                   rf=258    0x1.2992fd09f1b75p+8 -0x1.a0f33e74e026ep-3 0x1.5d8112249b6acp+3 0x1.d9af31564fc02p-4 -0x1.21ca29fef8dd6p-10 0x1.38ef7a212c62p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,7]                                   rf=258    0x1.55770cfdb775ep+7 0x1.92ce8c2b27195p-1 0x1.1ec8af654fedap+4 -0x1.83d67b244954dp-8 0x1.6e186ea065ddap-11 -0x1.09fe1da33e9a6p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,8]                                   rf=258    0x1.acd3d769c635ap+5 -0x1.c3461ed0330fdp+0 0x1.d23bf04013d4dp+4 -0x1.1977e84b697cbp-6 0x1.a537950b94fb6p-11 0x1.a0d7e0edc958cp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,9]                                   rf=258    0x1.518874e3b622bp+8 -0x1.961fc770f943ap+3 0x1.4f9c001c30c43p+5 0x1.143d11c4bafa3p-6 0x1.e4c89615d1e96p-9 0x1.e7c653a80b90dp-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[6,10,10]                                  rf=257    0x1.dbf656a0f4daep+7 0x0p+0 0x1.50cbf7deb264p-9 -0x1.b1dbe0ad175bap-5 0x0p+0 0x0p+0
-calc[6,10,11]                                  rf=258    0x1.df000cb66cb64p+7 0x0p+0 0x1.41bba6bab3127p-9 0x1.bdf5f8abc2d8fp-7 0x0p+0 0x1.b3a55c594a26ep-18 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[6,10,11]                                  rf=258    0x1.df000cb66cb64p+7 0x0p+0 0x1.41bba6bab3127p-9 0x1.bdf5f8abc2d8fp-7 0x0p+0 0x1.b3a55c594a26ep-18 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[6,10,12]                                  rf=257    0x1.13a4a577e50c4p+7 -0x1.442b4724349cdp+2 0x1.63497c95bdd88p-9 0x1.cad56d7481b46p-4 -0x1.55974cb8ea7bep-9 0x0p+0
-calc[6,10,13]                                  rf=258    0x1.b6aec52099b25p+6 -0x1.fdaecc72c6768p+1 0x1.5dd778e506a76p-9 0x1.42c2df8e104ffp+0 -0x1.22b132c2c0a3ap-4 -0x1.ed4daebf6f146p-22 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[6,10,13]                                  rf=258    0x1.b6aec52099b25p+6 -0x1.fdaecc72c6768p+1 0x1.5dd778e506a76p-9 0x1.42c2df8e104ffp+0 -0x1.22b132c2c0a3ap-4 -0x1.ed4daebf6f146p-22 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[6,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
-calc[6,10,15]                                  rf=258    0x1.ed2cd81705cf7p+7 0x1.c31996667a589p+1 0x1.4ae791394cf3ep+3 0x1.d240f72d330cap-4 0x1.b855875a5cb1fp-8 -0x1.0320fb1140704p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,16]                                  rf=258    0x1.35cd60a2e3f35p+8 -0x1.2f3490a1d9bc5p+2 0x1.f0dd262b6b143p+4 0x1.04bdc4befaa9fp-5 -0x1.31ca91e5e6f92p-12 0x1.f78a743afa3b4p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,17]                                  rf=258    0x1.aa7d683e63981p+6 0x1.ba6c60e55c373p+2 0x1.a3dbe31e0dc76p+0 -0x1.dd8a137e1aa59p-3 0x1.216a8aca471aap-4 -0x1.ea4381f4b1d89p-10 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,18]                                  rf=258    0x1.dbd17c1b15988p+1 -0x1.5e01a5f936e09p+4 0x1.47dd995fa377dp+1 0x1.be997126c4eecp-3 0x1.e0da4abd41fb4p-9 0x1.5b3c662acd55dp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,19]                                  rf=258    0x1.317b3784f774cp+7 -0x1.70a779e09b803p+3 0x1.95fd97fab1972p+0 -0x1.168846857a888p-5 0x1.3850f889a27e7p-7 -0x1.de789693f456fp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[6,10,20]                                  rf=258    0x1.4d10f95b3b0e2p+7 0x1.86590f6ab787p+2 0x1.d8320109d89dfp+0 0x1.9f72c5be7e648p-4 0x1.25beca3f0479bp-4 -0x1.9f5757c77004p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[6,10,15]                                  rf=258    0x1.ed2cd81705cf7p+7 0x1.c31996667a589p+1 0x1.4ae791394cf3ep+3 0x1.d240f72d330cap-4 0x1.b855875a5cb1fp-8 -0x1.0320fb1140704p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,16]                                  rf=258    0x1.35cd60a2e3f35p+8 -0x1.2f3490a1d9bc5p+2 0x1.f0dd262b6b143p+4 0x1.04bdc4befaa9fp-5 -0x1.31ca91e5e6f92p-12 0x1.f78a743afa3b4p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,17]                                  rf=258    0x1.aa7d683e63981p+6 0x1.ba6c60e55c373p+2 0x1.a3dbe31e0dc76p+0 -0x1.dd8a137e1aa59p-3 0x1.216a8aca471aap-4 -0x1.ea4381f4b1d89p-10 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,18]                                  rf=258    0x1.dbd17c1b15988p+1 -0x1.5e01a5f936e09p+4 0x1.47dd995fa377dp+1 0x1.be997126c4eecp-3 0x1.e0da4abd41fb4p-9 0x1.5b3c662acd55dp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,19]                                  rf=258    0x1.317b3784f774cp+7 -0x1.70a779e09b803p+3 0x1.95fd97fab1972p+0 -0x1.168846857a888p-5 0x1.3850f889a27e7p-7 -0x1.de789693f456fp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[6,10,20]                                  rf=258    0x1.4d10f95b3b0e2p+7 0x1.86590f6ab787p+2 0x1.d8320109d89dfp+0 0x1.9f72c5be7e648p-4 0x1.25beca3f0479bp-4 -0x1.9f5757c77004p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[7,0,0]                                    rf=2      0x1.199f4d2e9c43dp+8 0x1.4654be991b311p-15 0x1.f7792e6d78818p-1 0x0p+0 0x0p+0 0x0p+0
 calc[7,0,1]                                    rf=2      0x1.56decd526ed57p+7 -0x1.247dc3b8440d3p-3 0x1.44d9d48de777bp-9 0x0p+0 0x0p+0 0x0p+0
 calc[7,0,2]                                    rf=2      0x1.21a1058b09817p+8 -0x1.10fb2c1a5cbbcp+1 0x1.6075d6197f6b2p+0 0x0p+0 0x0p+0 0x0p+0
@@ -1933,7 +1816,7 @@ calc[7,9,7]                                    rf=260    0x1.1bf09f8c117bcp+4 -0
 calc[7,9,8]                                    rf=260    0x1.4e90a4cf84bdp+7 0x1.edd74a19f3c39p-1 0x1.dca0113356c78p+4 -0x1.fbb8f94eef967p-8 0x1.5ecd8238f6916p-11 -0x1.0371ed64052f5p-6
 calc[7,9,9]                                    rf=260    0x1.032f5e52462afp+5 -0x1.0ea5d55167c8bp+4 0x1.84b8d3ce1586ep+5 -0x1.4cf57f8ccec53p-8 0x1.783de0b1e26cbp-8 0x1.01ab4ce4b4ee6p-6
 calc[7,9,10]                                   rf=260    0x1.5ee27e2dc5efbp+8 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b1ed3593ad634p-5 0x0p+0 0x0p+0
-calc[7,9,11]                                   rf=260    0x1.5dd3663d08033p+8 0x0p+0 0x1.566dcd7d19c9dp-9 0x1.148650ce0b817p-9 0x0p+0 -0x1.bac2a45079a92p-17
+calc[7,9,11]~illcond                           rf=260    0x1.5dd3663d08033p+8 0x0p+0 0x1.566dcd7d19c9dp-9 0x1.148650ce0b817p-9 0x0p+0 -0x1.bac2a45079a92p-17
 calc[7,9,12]                                   rf=260    0x1.8ab21d3d34a6bp+3 0x1.e2cec0bce4228p+0 0x1.63497c95bdd86p-9 0x1.c6413c46ed88fp-4 0x1.c1983b77e009ap-7 0x0p+0
 calc[7,9,13]~illcond                           rf=260    0x1.b259f5aac694bp+2 0x1.7b859f78186bdp+0 0x1.56d9f8f87c20fp-9 0x1.855f5932b99bp+1 0x1.09f7b1c2e1c13p-2 -0x1.9dad6e837f422p-17
 calc[7,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -1944,43 +1827,26 @@ calc[7,9,18]                                   rf=260    0x1.4abdab8e0e932p+8 0x
 calc[7,9,19]                                   rf=260    0x1.099d56fe9901bp+8 0x1.432cfab23e77cp+3 0x1.0cb0698a53d9ep+2 0x1.64beb23b4608bp-2 0x1.1d3e6a243782ap-7 -0x1.49d3c32ea312bp-8
 calc[7,9,20]                                   rf=260    0x1.e76daa22b4844p+5 -0x1.4795a537da817p+2 0x1.bf44f0d0fdf34p+0 -0x1.c71038b3262acp-4 0x1.ff44aefa4a3d7p-5 0x1.2154cb860bca1p-7
 calc[7,10,0]                                   rf=258    0x1.199f4d2e9c43dp+8 0x1.4654be9a0448dp-15 0x1.f7792e6d78819p-1 0x1.04dd18f23e646p+0 -0x1.7fa180d8ed9dep-15 -0x1.1be1a7cfe10f7p-17
-calc[7,10,1]                                   rf=258    0x1.56decd526ed57p+7 -0x1.247dc3b8440d3p-3 0x1.44d9d48de777bp-9 0x1.c1bd648957571p+3 -0x1.3f180e1782facp+0 -0x1.235526dc69ed4p-18 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,2]                                   rf=258    0x1.21a1058b09816p+8 -0x1.10fb2c1a5cbb5p+1 0x1.6075d6197f6b5p+0 0x1.a04fdb942e303p+0 -0x1.11a4f2d18e504p-6 -0x1.3cef59ecdf292p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,3]                                   rf=258    0x1.41458790529a8p+8 -0x1.d457b8f136357p+0 0x1.1e8f6da07e484p+0 0x1.339685f79605dp+0 0x1.85d1d1363f7e5p-6 -0x1.a24d0bc057149p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,4]                                   rf=258    0x1.def2be6dc768bp+4 0x1.f11a51f388852p-1 0x1.c202d5f2e7804p-1 0x1.a5ca5ce92fa1ep-2 0x1.35a611ac3968ap-6 0x1.26be2b1e9e4bep-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,5]                                   rf=258    0x1.929f5eb28bea9p+7 0x1.47c12276ccefap+0 0x1.61eac415d446dp+2 0x1.a9467e792c1d9p-4 0x1.e4c98d6cc3688p-9 -0x1.04e39e01dab01p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,6]                                   rf=258    0x1.9b60aa792fc2ep+7 0x1.369295336264fp+1 0x1.3b74399596069p+3 0x1.ce831aa77ae74p-5 0x1.0f8ce686e6b8dp-8 -0x1.07f882c30a7e3p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,7]                                   rf=258    0x1.1bf034fa04816p+4 -0x1.41f726bbe4bf1p-1 0x1.3d7836823a6a5p+4 0x1.61facca2e59f8p-8 0x1.4b2dfb7a4cf76p-11 0x1.185b1d9e3bd2ep-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,8]                                   rf=258    0x1.4e90ea1ec911p+7 0x1.eddac2f24e7c3p-1 0x1.dca0373f1f6acp+4 -0x1.fbb4950010332p-8 0x1.5ed36f8343ebbp-11 -0x1.037211f7a97f6p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,9]                                   rf=258    0x1.032e8e6b41101p+5 -0x1.0ea5dfa2b69cp+4 0x1.84b9406a635fap+5 -0x1.4cf11d522ed6cp-8 0x1.783df9567eb39p-8 0x1.01ab6fcac4c64p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[7,10,1]                                   rf=258    0x1.56decd526ed57p+7 -0x1.247dc3b8440d3p-3 0x1.44d9d48de777bp-9 0x1.c1bd648957571p+3 -0x1.3f180e1782facp+0 -0x1.235526dc69ed4p-18 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,2]                                   rf=258    0x1.21a1058b09816p+8 -0x1.10fb2c1a5cbb5p+1 0x1.6075d6197f6b5p+0 0x1.a04fdb942e303p+0 -0x1.11a4f2d18e504p-6 -0x1.3cef59ecdf292p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,3]                                   rf=258    0x1.41458790529a8p+8 -0x1.d457b8f136357p+0 0x1.1e8f6da07e484p+0 0x1.339685f79605dp+0 0x1.85d1d1363f7e5p-6 -0x1.a24d0bc057149p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,4]                                   rf=258    0x1.def2be6dc768bp+4 0x1.f11a51f388852p-1 0x1.c202d5f2e7804p-1 0x1.a5ca5ce92fa1ep-2 0x1.35a611ac3968ap-6 0x1.26be2b1e9e4bep-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,5]                                   rf=258    0x1.929f5eb28bea9p+7 0x1.47c12276ccefap+0 0x1.61eac415d446dp+2 0x1.a9467e792c1d9p-4 0x1.e4c98d6cc3688p-9 -0x1.04e39e01dab01p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,6]                                   rf=258    0x1.9b60aa792fc2ep+7 0x1.369295336264fp+1 0x1.3b74399596069p+3 0x1.ce831aa77ae74p-5 0x1.0f8ce686e6b8dp-8 -0x1.07f882c30a7e3p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,7]                                   rf=258    0x1.1bf034fa04816p+4 -0x1.41f726bbe4bf1p-1 0x1.3d7836823a6a5p+4 0x1.61facca2e59f8p-8 0x1.4b2dfb7a4cf76p-11 0x1.185b1d9e3bd2ep-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,8]                                   rf=258    0x1.4e90ea1ec911p+7 0x1.eddac2f24e7c3p-1 0x1.dca0373f1f6acp+4 -0x1.fbb4950010332p-8 0x1.5ed36f8343ebbp-11 -0x1.037211f7a97f6p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,9]                                   rf=258    0x1.032e8e6b41101p+5 -0x1.0ea5dfa2b69cp+4 0x1.84b9406a635fap+5 -0x1.4cf11d522ed6cp-8 0x1.783df9567eb39p-8 0x1.01ab6fcac4c64p-6 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[7,10,10]                                  rf=257    0x1.5ee27e2dc5efbp+8 0x0p+0 0x1.50cbf7deb263fp-9 -0x1.b1ed3593ad634p-5 0x0p+0 0x0p+0
-calc[7,10,11]                                  rf=258    0x1.5dd34450db763p+8 0x0p+0 0x1.566fc72e04ad3p-9 0x1.04b8755466749p-9 0x0p+0 -0x1.bb3ce16e2d63p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[7,10,11]                                  rf=258    0x1.5dd34450db763p+8 0x0p+0 0x1.566fc72e04ad3p-9 0x1.04b8755466749p-9 0x0p+0 -0x1.bb3ce16e2d63p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[7,10,12]                                  rf=257    0x1.8ab21d3d34a6bp+3 0x1.e2cec0bce4228p+0 0x1.63497c95bdd86p-9 0x1.c6413c46ed88fp-4 0x1.c1983b77e009ap-7 0x0p+0
-calc[7,10,13]                                  rf=258    0x1.b04a80d95219bp+2 0x1.7adde9b63987ep+0 0x1.56db949243347p-9 0x1.85088c55abda2p+1 0x1.09ab08fa3916cp-2 -0x1.9e54c4d4b41a3p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[7,10,13]                                  rf=258    0x1.b04a80d95219bp+2 0x1.7adde9b63987ep+0 0x1.56db949243347p-9 0x1.85088c55abda2p+1 0x1.09ab08fa3916cp-2 -0x1.9e54c4d4b41a3p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[7,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
-calc[7,10,15]                                  rf=258    0x1.e3f2173c9a4bbp+7 0x1.81352d345e18ap+1 0x1.40936ac8c6c64p+3 0x1.cd3ccef0712ffp-4 0x1.d2490d36c646ep-8 -0x1.30f3620063ec4p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,16]                                  rf=258    0x1.f5dcd84952127p+7 0x1.2f44427abe3e4p+4 0x1.6cbf07c364732p+4 0x1.839faa2b816f8p-5 0x1.5efbdd6131c16p-8 -0x1.9f75b973fa9d8p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,17]                                  rf=258    0x1.15ba7579d2917p+5 -0x1.7c87284339718p+2 0x1.220867f834f7dp+1 0x1.0008282f53c02p-4 0x1.35706aa65ac17p-4 0x1.893ff049b2e1ep-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,18]                                  rf=258    0x1.4abdab73bac7fp+8 0x1.62ad3bbc6359ep+2 0x1.e0b60aae763d1p+1 0x1.1e16cc7713ef6p-2 -0x1.7af2b60620c88p-4 0x1.4baf0e4a3a71ep-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,19]                                  rf=258    0x1.099d56f7ff27cp+8 0x1.432cfaa063573p+3 0x1.0cb06ab6ee772p+2 0x1.64bec5461a08ep-2 0x1.1d40e26254336p-7 -0x1.49d443935b655p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[7,10,20]                                  rf=258    0x1.e76da9dd1faecp+5 -0x1.4795a4607d2ebp+2 0x1.bf44ee0dfe5bfp+0 -0x1.c71061194a29ep-4 0x1.ff46061d561c7p-5 0x1.21551a022de6cp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[7,10,15]                                  rf=258    0x1.e3f2173c9a4bbp+7 0x1.81352d345e18ap+1 0x1.40936ac8c6c64p+3 0x1.cd3ccef0712ffp-4 0x1.d2490d36c646ep-8 -0x1.30f3620063ec4p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,16]                                  rf=258    0x1.f5dcd84952127p+7 0x1.2f44427abe3e4p+4 0x1.6cbf07c364732p+4 0x1.839faa2b816f8p-5 0x1.5efbdd6131c16p-8 -0x1.9f75b973fa9d8p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,17]                                  rf=258    0x1.15ba7579d2917p+5 -0x1.7c87284339718p+2 0x1.220867f834f7dp+1 0x1.0008282f53c02p-4 0x1.35706aa65ac17p-4 0x1.893ff049b2e1ep-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,18]                                  rf=258    0x1.4abdab73bac7fp+8 0x1.62ad3bbc6359ep+2 0x1.e0b60aae763d1p+1 0x1.1e16cc7713ef6p-2 -0x1.7af2b60620c88p-4 0x1.4baf0e4a3a71ep-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,19]                                  rf=258    0x1.099d56f7ff27cp+8 0x1.432cfaa063573p+3 0x1.0cb06ab6ee772p+2 0x1.64bec5461a08ep-2 0x1.1d40e26254336p-7 -0x1.49d443935b655p-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[7,10,20]                                  rf=258    0x1.e76da9dd1faecp+5 -0x1.4795a4607d2ebp+2 0x1.bf44ee0dfe5bfp+0 -0x1.c71061194a29ep-4 0x1.ff46061d561c7p-5 0x1.21551a022de6cp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[8,0,0]                                    rf=2      0x1.182b833526bdfp+8 0x1.6902d1276708ep-13 0x1.f82bad39cdcb4p-1 0x0p+0 0x0p+0 0x0p+0
 calc[8,0,1]                                    rf=2      0x1.39c7fa4b00f93p+8 0x1.4552f3bd11841p+2 0x1.607b72e17d329p-9 0x0p+0 0x0p+0 0x0p+0
 calc[8,0,2]                                    rf=2      0x1.0f50059136ac3p+8 -0x1.e251341d441eap-2 0x1.67efbcc190a4dp+0 0x0p+0 0x0p+0 0x0p+0
@@ -2181,7 +2047,7 @@ calc[8,9,7]                                    rf=260    0x1.296c99b838707p+8 -0
 calc[8,9,8]                                    rf=260    0x1.5434a3f32b5f5p+8 -0x1.12e3af6238fb9p-1 0x1.e7e31dc9b0cep+4 0x1.6f2f3344a7799p-6 0x1.9af74a4c994f4p-14 0x1.eb4c93ed16002p-7
 calc[8,9,9]                                    rf=260    0x1.1942bd0e47c51p+8 0x1.a0cde5423c623p+2 0x1.021ceea59eb6dp+5 0x1.2f493fa3eb74ep-5 -0x1.b7f7a60b36b92p-10 0x1.92e42916327dcp-11
 calc[8,9,10]                                   rf=260    0x1.c0952a0c65597p+7 0x0p+0 0x1.50cbf7deb264p-9 -0x1.b1c0665cc08f3p-5 0x0p+0 0x0p+0
-calc[8,9,11]                                   rf=260    0x1.c35acdbf371e5p+7 0x0p+0 0x1.5a5cfc05113bep-9 -0x1.5faa91e5b2e69p-3 0x0p+0 -0x1.f90a00a89d069p-17
+calc[8,9,11]~illcond                           rf=260    0x1.c35acdbf371e5p+7 0x0p+0 0x1.5a5cfc05113bep-9 -0x1.5faa91e5b2e69p-3 0x0p+0 -0x1.f90a00a89d069p-17
 calc[8,9,12]                                   rf=260    0x1.0f7fbc269aa5dp+8 0x1.e3e6e468af622p+1 0x1.63497c95bdd85p-9 0x1.c8849f9ddaf6fp-4 0x1.47c9ca4cd8ab7p-7 0x0p+0
 calc[8,9,13]~illcond                           rf=260    0x1.1ad4ca6f394bcp+8 0x1.11ae3ec5ba5fp+2 0x1.63406416b1d3cp-9 0x1.cf7144b76c3b4p+1 0x1.73faac22a4388p-3 -0x1.fa266f71f59eep-19
 calc[8,9,14]                                   rf=260    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
@@ -2192,43 +2058,26 @@ calc[8,9,18]                                   rf=260    0x1.652d815a432a6p+8 -0
 calc[8,9,19]                                   rf=260    0x1.60e6eaf92efd3p+8 -0x1.bc970eb4bb9e7p+2 0x1.27170979c0a56p+1 0x1.803d28c27cafp-2 -0x1.5c31dc302e375p-6 0x1.2f82a00e45a76p-7
 calc[8,9,20]                                   rf=260    0x1.0db7f0bf0484ap+6 -0x1.4f9030e60a28ap+2 0x1.aebe7edb71b23p+0 -0x1.402a035e9c1a1p-3 0x1.f855a03146e1fp-5 0x1.f9eb22c0d9699p-8
 calc[8,10,0]                                   rf=258    0x1.182b833526bdfp+8 0x1.6902d12749f03p-13 0x1.f82bad39cdcb5p-1 0x1.0447aabe14a69p+0 -0x1.35e98afcc5d3p-17 -0x1.a2388a38f0476p-14
-calc[8,10,1]                                   rf=258    0x1.39c7fa4b00f94p+8 0x1.4552f3bd1183ep+2 0x1.607b72e17d329p-9 0x1.82d6fc74b7cfdp+3 0x1.20a4a0e2be7c2p-5 -0x1.0cc08114d8c6cp-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,2]                                   rf=258    0x1.0f50059136ac2p+8 -0x1.e251341d441eap-2 0x1.67efbcc190a4cp+0 0x1.8c209ff9cf38ep+0 -0x1.c75c2eefea981p-4 0x1.b1ea89f031161p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,3]                                   rf=258    0x1.397ef7d101c38p+8 -0x1.e1e3c1e5b5da5p+0 0x1.4ea53a5512f43p+0 0x1.3a913ead4a9a9p+0 -0x1.33249369aee31p-9 -0x1.6a70c36b3913cp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,4]                                   rf=258    0x1.fc9091347f3c4p+7 -0x1.94b0a64044243p-6 0x1.33657001e178fp+1 0x1.6112f0d358a67p-1 -0x1.531604c4e2dfbp-7 -0x1.5496951bad4ap-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,5]                                   rf=258    0x1.563ebb4d9eb6ep+7 0x1.0a5efbd8aaa7p+0 0x1.3d9118f980461p+2 0x1.01934e3e3025ep-6 0x1.1de12b29560f3p-8 -0x1.e9655b6ad7b45p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,6]                                   rf=258    0x1.10f6a00158e11p+5 -0x1.46689dfa87048p+1 0x1.1d7f8186f77b3p+3 -0x1.25c34e240ee7p-7 0x1.2e689993aa342p-8 0x1.f108e422eced1p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,7]                                   rf=258    0x1.296c460acec8bp+8 -0x1.e1e2af52cd364p-2 0x1.46331a6fab3fdp+4 0x1.da0aa36238ec2p-5 -0x1.0582ff94599ap-17 0x1.57c2210a0d999p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,8]                                   rf=258    0x1.543550f788c4cp+8 -0x1.12f2876f90453p-1 0x1.e7e2e9c6bdb91p+4 0x1.6f2a6df88a5dp-6 0x1.9b44d965befa4p-14 0x1.eb50002b6414ep-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,9]                                   rf=258    0x1.1940e963f8db6p+8 0x1.a0ef0ab5c1105p+2 0x1.021bc1d48de42p+5 0x1.2f4991247f18dp-5 -0x1.b7c187302e52bp-10 0x1.91b103e27e0eep-11 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[8,10,1]                                   rf=258    0x1.39c7fa4b00f94p+8 0x1.4552f3bd1183ep+2 0x1.607b72e17d329p-9 0x1.82d6fc74b7cfdp+3 0x1.20a4a0e2be7c2p-5 -0x1.0cc08114d8c6cp-16 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,2]                                   rf=258    0x1.0f50059136ac2p+8 -0x1.e251341d441eap-2 0x1.67efbcc190a4cp+0 0x1.8c209ff9cf38ep+0 -0x1.c75c2eefea981p-4 0x1.b1ea89f031161p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,3]                                   rf=258    0x1.397ef7d101c38p+8 -0x1.e1e3c1e5b5da5p+0 0x1.4ea53a5512f43p+0 0x1.3a913ead4a9a9p+0 -0x1.33249369aee31p-9 -0x1.6a70c36b3913cp-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,4]                                   rf=258    0x1.fc9091347f3c4p+7 -0x1.94b0a64044243p-6 0x1.33657001e178fp+1 0x1.6112f0d358a67p-1 -0x1.531604c4e2dfbp-7 -0x1.5496951bad4ap-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,5]                                   rf=258    0x1.563ebb4d9eb6ep+7 0x1.0a5efbd8aaa7p+0 0x1.3d9118f980461p+2 0x1.01934e3e3025ep-6 0x1.1de12b29560f3p-8 -0x1.e9655b6ad7b45p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,6]                                   rf=258    0x1.10f6a00158e11p+5 -0x1.46689dfa87048p+1 0x1.1d7f8186f77b3p+3 -0x1.25c34e240ee7p-7 0x1.2e689993aa342p-8 0x1.f108e422eced1p-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,7]                                   rf=258    0x1.296c460acec8bp+8 -0x1.e1e2af52cd364p-2 0x1.46331a6fab3fdp+4 0x1.da0aa36238ec2p-5 -0x1.0582ff94599ap-17 0x1.57c2210a0d999p-8 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,8]                                   rf=258    0x1.543550f788c4cp+8 -0x1.12f2876f90453p-1 0x1.e7e2e9c6bdb91p+4 0x1.6f2a6df88a5dp-6 0x1.9b44d965befa4p-14 0x1.eb50002b6414ep-7 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,9]                                   rf=258    0x1.1940e963f8db6p+8 0x1.a0ef0ab5c1105p+2 0x1.021bc1d48de42p+5 0x1.2f4991247f18dp-5 -0x1.b7c187302e52bp-10 0x1.91b103e27e0eep-11 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[8,10,10]                                  rf=257    0x1.c0952a0c65597p+7 0x0p+0 0x1.50cbf7deb264p-9 -0x1.b1c0665cc08f3p-5 0x0p+0 0x0p+0
-calc[8,10,11]                                  rf=258    0x1.c358b00f42565p+7 0x0p+0 0x1.5a5c3ad3894ffp-9 -0x1.5fb0d5008515fp-3 0x0p+0 -0x1.f837ec0264f43p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[8,10,11]                                  rf=258    0x1.c358b00f42565p+7 0x0p+0 0x1.5a5c3ad3894ffp-9 -0x1.5fb0d5008515fp-3 0x0p+0 -0x1.f837ec0264f43p-17 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[8,10,12]                                  rf=257    0x1.0f7fbc269aa5dp+8 0x1.e3e6e468af622p+1 0x1.63497c95bdd85p-9 0x1.c8849f9ddaf6fp-4 0x1.47c9ca4cd8ab7p-7 0x0p+0
-calc[8,10,13]                                  rf=258    0x1.1ad631cccde84p+8 0x1.11b4336d10394p+2 0x1.633fdec5fbe9ep-9 0x1.ce9c912a2c509p+1 0x1.733caeadd1e45p-3 -0x1.fa6d3f91e3f54p-19 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[8,10,13]                                  rf=258    0x1.1ad631cccde84p+8 0x1.11b4336d10394p+2 0x1.633fdec5fbe9ep-9 0x1.ce9c912a2c509p+1 0x1.733caeadd1e45p-3 -0x1.fa6d3f91e3f54p-19 | SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc[8,10,14]                                  rf=257    0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0
-calc[8,10,15]                                  rf=258    0x1.52ce91dd93e1fp+8 0x1.529ee0b2ce20dp+2 0x1.0f2d2784e82bep+4 0x1.63e7f7d7f6812p-5 -0x1.6d99b775abce3p-8 0x1.049f8f5bdea8cp-6 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,16]                                  rf=258    0x1.3105dc5f20ce3p+8 0x1.3c37b866c1985p+1 0x1.f403b3f18c0cep+4 0x1.0b57d33c54cbcp-5 -0x1.1bac3e718497ap-9 0x1.e4d1d21a4587fp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,17]                                  rf=258    0x1.0610562f5d029p+8 0x1.cf4622e21c5bfp-2 0x1.ce18b9f7df191p+1 0x1.b482c6ac043e1p-2 -0x1.eb7f11a261b6fp-6 -0x1.dc5f864a70b69p-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,18]                                  rf=258    0x1.652d811652ef8p+8 -0x1.a646f1a226a95p+3 0x1.7d920d3978b0fp+1 0x1.ad1abf999fd5ap-3 -0x1.3bb6505cd427bp-5 0x1.95d8f931b363fp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,19]                                  rf=258    0x1.60e6ea8fa6261p+8 -0x1.bc97306ab466p+2 0x1.271704b4bf908p+1 0x1.803d4aec1c8c8p-2 -0x1.5c32789847d06p-6 0x1.2f82e87093e21p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
-calc[8,10,20]                                  rf=258    0x1.0db7f50b656b1p+6 -0x1.4f905ab8012abp+2 0x1.aebe77ce453b5p+0 -0x1.402a9a0c58c02p-3 0x1.f8551a1c539c5p-5 0x1.f9eb87ab1c70cp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' 
-trying Swiss Eph; 
+calc[8,10,15]                                  rf=258    0x1.52ce91dd93e1fp+8 0x1.529ee0b2ce20dp+2 0x1.0f2d2784e82bep+4 0x1.63e7f7d7f6812p-5 -0x1.6d99b775abce3p-8 0x1.049f8f5bdea8cp-6 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,16]                                  rf=258    0x1.3105dc5f20ce3p+8 0x1.3c37b866c1985p+1 0x1.f403b3f18c0cep+4 0x1.0b57d33c54cbcp-5 -0x1.1bac3e718497ap-9 0x1.e4d1d21a4587fp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,17]                                  rf=258    0x1.0610562f5d029p+8 0x1.cf4622e21c5bfp-2 0x1.ce18b9f7df191p+1 0x1.b482c6ac043e1p-2 -0x1.eb7f11a261b6fp-6 -0x1.dc5f864a70b69p-9 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,18]                                  rf=258    0x1.652d811652ef8p+8 -0x1.a646f1a226a95p+3 0x1.7d920d3978b0fp+1 0x1.ad1abf999fd5ap-3 -0x1.3bb6505cd427bp-5 0x1.95d8f931b363fp-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,19]                                  rf=258    0x1.60e6ea8fa6261p+8 -0x1.bc97306ab466p+2 0x1.271704b4bf908p+1 0x1.803d4aec1c8c8p-2 -0x1.5c32789847d06p-6 0x1.2f82e87093e21p-7 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
+calc[8,10,20]                                  rf=258    0x1.0db7f50b656b1p+6 -0x1.4f905ab8012abp+2 0x1.aebe77ce453b5p+0 -0x1.402a9a0c58c02p-3 0x1.f8551a1c539c5p-5 0x1.f9eb87ab1c70cp-8 | sun: SwissEph file 'de431.eph' not found in PATH '$EPHE/' trying Swiss Eph; 
 calc_ut[0,0]                                   rf=258    0x1.104f0279d40d6p+8 0x1.9f6ccf64be448p-12 0x1.f90110b1ddca4p-1 0x1.036f642afc7c4p+0 -0x1.7521509bf2dfcp-16 0x1.9fb809a1b139dp-13
 calc_ut[0,1]                                   rf=258    0x1.21092a61a752dp+8 0x1.17fc933badb6ap+2 0x1.63343250a2358p-9 0x1.7d2c52d0e989cp+3 -0x1.026bdd15a6869p-1 -0x1.22e504abf6258p-17
 calc_ut[0,2]                                   rf=258    0x1.11d82d070be47p+8 -0x1.009c9fae83d43p+1 0x1.62fdc21da9c0ep+0 0x1.c6e2f07b99727p+0 0x1.618c968954959p-8 -0x1.a05998522fa3ap-8
@@ -4926,16 +4775,16 @@ star[Polaris,5]~illcond                        rf=258    0x1.624f8ef32b703p+6 0x
 star[Polaris,6]~illcond                        rf=258    0x1.6524ce907efa6p+6 0x1.086f100a08563p+6 0x1.a16afd8598f37p+24 -0x1.50e382ab5714bp-16 0x1.559c0666335ccp-14 -0x1.122b23fab5p-7
 star[Polaris,7]~illcond                        rf=258    0x1.67ee9c5b17547p+6 0x1.08752326a90cfp+6 0x1.a16a5054bca1fp+24 -0x1.c00d0684c612cp-16 0x1.967d8e69e44c3p-14 -0x1.fd4102bee1p-8
 star[Polaris,8]~illcond                        rf=258    0x1.9a842cb629d2ap+6 0x1.08dfbaba9ec19p+6 0x1.a15e23a800ff4p+24 0x1.e065509eb2f11p-15 0x1.ad5a89de3615ep-14 -0x1.3c58070105p-7
-star[Galactic Center,0]~illcond                rf=258    0x1.c2761d0c8f73ap+7 -0x1.4d21cdecdb336p+2 0x1.896b3ce5525bep+30 0x1.1a3eff21e1d85p-13 0x1.1e8abedb1a452p-19 0x1.0a1852a5d834p-4
-starmag[Galactic Center]                       rf=0      0x1.f3feb851eb852p+9
-star[Galactic Center,1]~illcond                rf=258    0x1.de1b24513f939p+7 -0x1.55c441372058cp+2 0x1.896b3cd6caeap+30 0x1.e9feb8eda60d2p-14 -0x1.67ad809b40775p-18 -0x1.637f758473dep-2
-star[Galactic Center,2]~illcond                rf=258    0x1.0116065a7e2c9p+8 -0x1.60ed5f975ede6p+2 0x1.896b3cccad95cp+30 0x1.bbfdd85038839p-14 0x1.75570b9f82e4p-16 -0x1.0ff85ddbcc6p-2
-star[Galactic Center,3]~illcond                rf=258    0x1.097453022d933p+8 -0x1.6609a8c3f3d08p+2 0x1.896b3ccbbfcc1p+30 0x1.d8fc3280c2d42p-14 0x1.bdfda8553ca75p-18 0x1.07b88d29afap-5
-star[Galactic Center,4]~illcond                rf=258    0x1.0ad7995436d5bp+8 -0x1.66e2563c1078p+2 0x1.896b3ccbb359dp+30 0x1.0d1fc1eb449ap-14 0x1.09dd7d5d567f2p-16 0x1.e3d6a621fbcp-3
-star[Galactic Center,5]~illcond                rf=258    0x1.0ad799da71cb1p+8 -0x1.66e2512be1e08p+2 0x1.896b3ccbb2d4ap+30 0x1.12c4717fd472dp-14 0x1.0aa4492bb0e77p-16 0x1.d1a8b16bda4p-5
-star[Galactic Center,6]~illcond                rf=258    0x1.0b8c7c2d8bb09p+8 -0x1.674e80237917dp+2 0x1.896b3ccbb66eep+30 0x1.cd1bc520ffa92p-15 0x1.42405681b8bafp-16 -0x1.b4d88eb7e5cp-5
-star[Galactic Center,7]~illcond                rf=258    0x1.0c3e8013acb16p+8 -0x1.67ba80e97e963p+2 0x1.896b3ccbc04b1p+30 0x1.7fd20cc2562dp-15 0x1.f8f8a49c97172p-19 -0x1.825b74cca8p-12
-star[Galactic Center,8]~illcond                rf=258    0x1.18d958b4f68cdp+8 -0x1.6f438f26d51d4p+2 0x1.896b3ccecb145p+30 0x1.3d94ac556647fp-15 -0x1.debfb809ee8cp-22 -0x1.797f1746f5184p-2
+star[Galactic_Center,0]~illcond                rf=258    0x1.c2761d0c8f73ap+7 -0x1.4d21cdecdb336p+2 0x1.896b3ce5525bep+30 0x1.1a3eff21e1d85p-13 0x1.1e8abedb1a452p-19 0x1.0a1852a5d834p-4
+starmag[Galactic_Center]                       rf=0      0x1.f3feb851eb852p+9
+star[Galactic_Center,1]~illcond                rf=258    0x1.de1b24513f939p+7 -0x1.55c441372058cp+2 0x1.896b3cd6caeap+30 0x1.e9feb8eda60d2p-14 -0x1.67ad809b40775p-18 -0x1.637f758473dep-2
+star[Galactic_Center,2]~illcond                rf=258    0x1.0116065a7e2c9p+8 -0x1.60ed5f975ede6p+2 0x1.896b3cccad95cp+30 0x1.bbfdd85038839p-14 0x1.75570b9f82e4p-16 -0x1.0ff85ddbcc6p-2
+star[Galactic_Center,3]~illcond                rf=258    0x1.097453022d933p+8 -0x1.6609a8c3f3d08p+2 0x1.896b3ccbbfcc1p+30 0x1.d8fc3280c2d42p-14 0x1.bdfda8553ca75p-18 0x1.07b88d29afap-5
+star[Galactic_Center,4]~illcond                rf=258    0x1.0ad7995436d5bp+8 -0x1.66e2563c1078p+2 0x1.896b3ccbb359dp+30 0x1.0d1fc1eb449ap-14 0x1.09dd7d5d567f2p-16 0x1.e3d6a621fbcp-3
+star[Galactic_Center,5]~illcond                rf=258    0x1.0ad799da71cb1p+8 -0x1.66e2512be1e08p+2 0x1.896b3ccbb2d4ap+30 0x1.12c4717fd472dp-14 0x1.0aa4492bb0e77p-16 0x1.d1a8b16bda4p-5
+star[Galactic_Center,6]~illcond                rf=258    0x1.0b8c7c2d8bb09p+8 -0x1.674e80237917dp+2 0x1.896b3ccbb66eep+30 0x1.cd1bc520ffa92p-15 0x1.42405681b8bafp-16 -0x1.b4d88eb7e5cp-5
+star[Galactic_Center,7]~illcond                rf=258    0x1.0c3e8013acb16p+8 -0x1.67ba80e97e963p+2 0x1.896b3ccbc04b1p+30 0x1.7fd20cc2562dp-15 0x1.f8f8a49c97172p-19 -0x1.825b74cca8p-12
+star[Galactic_Center,8]~illcond                rf=258    0x1.18d958b4f68cdp+8 -0x1.6f438f26d51d4p+2 0x1.896b3ccecb145p+30 0x1.3d94ac556647fp-15 -0x1.debfb809ee8cp-22 -0x1.797f1746f5184p-2
 star[Alcyone,0]~illcond                        rf=258    0x1.260cada1da982p+4 0x1.e0509fbc03ce4p+1 0x1.84fd79708fb14p+24 -0x1.39412d82c5bf4p-15 0x1.ec7efded60befp-19 0x1.271ab8586717p-6
 starmag[Alcyone]                               rf=0      0x1.6f5c28f5c28f6p+1
 star[Alcyone,1]~illcond                        rf=258    0x1.019cdc927212ap+5 0x1.ec7fd6a6bc3f8p+1 0x1.8501e909679dp+24 -0x1.589f480d8f1cp-15 0x1.59df0f89a0377p-17 0x1.fbceba1cdc9ap-7
@@ -5090,28 +4939,22 @@ hel_ut[0,Mercury,3]                            rf=0      0x1.2b43e1bdbf27ep+21 0
 hel_ut[0,Mercury,4]                            rf=0      0x1.2b4d25f084beep+21 0x1.2b4d25fb9ca34p+21 0x1.2b4d260727d31p+21
 vislim[0,Mercury]                              rf=0      -0x1.a4fd12488a308p+2 0x1.09afee5cbcd1ep+4 0x1.8818800f1edd4p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 0x1.93ab530d489bep+2 0x1.ea79a8dfa0108p+7 -0x1.781bd97ee685ep-1
 helpheno[0,Mercury]                            rf=0      0x1.09afee5cbcd1ep+4 0x1.0a894e4f4a391p+4 0x1.09b6afc30c6dfp+4 0x1.8818800f1edd4p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.52ad9f04ce1b8p+1 -0x1.527793d2513bp+1 -0x1.10d0004177e4p+3 0x1.1d8a8721c5325p+3 0x1.049f5575197c6p-2 -0x1.56bca37c7ffbap+3
-hel_ut[0,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon
-
-hel_ut[0,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon
-
+hel_ut[0,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon 
+hel_ut[0,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon 
 hel_ut[0,Moon,3]                               rf=0      0x1.2b43014af0e54p+21 0x1.2b4301a2a50a3p+21 0x1.2b4301d8b67c2p+21
 hel_ut[0,Moon,4]                               rf=0      0x1.2b42e601bb158p+21 0x1.2b42e623cb031p+21 0x1.2b42e65f68676p+21
 vislim[0,Moon]                                 rf=0      -0x1.c2c0721dd0f3ep+2 0x1.93ab530d489bep+2 0x1.ea79a8dfa0108p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.68p+6 0x0p+0 -0x1.12b69ed1bcc8ep+3
 helpheno[0,Moon]                               rf=0      0x1.93ab530d489bep+2 0x1.9c0d1540c3774p+2 0x1.cd530cb8c199dp+2 0x1.ea79a8dfa0108p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.9e359af408dcbp+3 -0x1.8161be1e4c5dcp+3 -0x1.cdb8a35262c6p+5 0x1.d4114aa7477eep+5 0x1.049f5575197c6p-2 0x1.3abd262762762p+1
 hel_ut[0,Sirius,1]                             rf=0      0x1.2b4a154012dc8p+21 0x1.2b4a154d95b46p+21 0x1.2b4a155c47f4ap+21
 hel_ut[0,Sirius,2]                             rf=0      0x1.2b46ba6540e03p+21 0x1.2b46ba7621657p+21 0x1.2b46ba8337035p+21
-hel_ut[0,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius
-
-hel_ut[0,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius
-
+hel_ut[0,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius 
+hel_ut[0,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius 
 vislim[0,Sirius]                               rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
 helpheno[0,Sirius]                             rf=0      -0x1.d588d61ca4c6dp+5 -0x1.d588d61ca4c6dp+5 -0x1.d588d61c55283p+5 0x1.cab4237d1adap+3 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.37c5d39da808cp+6 -0x1.37c5d39d80397p+6 0x1.5a603dd335b16p+7 0x1.97e1b8c1ca00cp+6 0x1.049f5575197c6p-2 0x1.0f7fb49249249p+3
 hel_ut[0,Mars,1]                               rf=0      0x1.2b4aad45f6defp+21 0x1.2b4aad4d62336p+21 0x1.2b4aad53554e2p+21
 hel_ut[0,Mars,2]                               rf=0      0x1.2b45fa5fd2f3dp+21 0x1.2b45fa6818bc3p+21 0x1.2b45fa6f8a221p+21
-hel_ut[0,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars
-
-hel_ut[0,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars
-
+hel_ut[0,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars 
+hel_ut[0,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars 
 vislim[0,Mars]                                 rf=0      -0x1.503623d2a1282p+2 0x1.305e8d1309324p+4 0x1.11e267585e7b6p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 0x1.93ab530d489bep+2 0x1.ea79a8dfa0108p+7 0x1.09283d076c6abp+0
 helpheno[0,Mars]                               rf=0      0x1.305e8d1309324p+4 0x1.311b9e92edaa5p+4 0x1.3063a6e98b406p+4 0x1.11e267585e7b6p+7 0x1.3405a23d56955p+4 0x1.770b800b075fp+7 -0x1.d38a9526b188p-3 -0x1.d0fda9e5aa78p-3 0x1.94a462caa38e8p+5 0x1.94a524a92e7bep+5 0x1.049f5575197c6p-2 0x0p+0
 tav[0]                                         rf=0      0x1.9p+6
@@ -5128,28 +4971,22 @@ hel_ut[1,Mercury,3]                            rf=0      0x1.2b43d15b2a17p+21 0x
 hel_ut[1,Mercury,4]                            rf=0      0x1.2b458d0b98a09p+21 0x1.2b458d0c977d3p+21 0x1.2b458d0dccf6dp+21
 vislim[1,Mercury]                              rf=0      -0x1.93cbcb2dd240cp+2 0x1.7a677b18aa73ep+4 0x1.b6907427f7794p+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.69743bf7b9ffbp+2 0x1.0424956b1726p+8 -0x1.781f0660374bp-1
 helpheno[1,Mercury]                            rf=0      0x1.7a677b18aa73ep+4 0x1.7afc7f6fe48fcp+4 0x1.7a6df1aeed596p+4 0x1.b6907427f7794p+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.74779c1352b7cp+2 -0x1.745dc1ba4721cp+2 -0x1.bea146eac934p+2 0x1.2273916695661p+3 0x1.1388821bb0b31p-2 0x1.9177245d1745dp+3
-hel_ut[1,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon
-
-hel_ut[1,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon
-
+hel_ut[1,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon 
+hel_ut[1,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon 
 hel_ut[1,Moon,3]                               rf=0      0x1.2b4301102e24p+21 0x1.2b430159a9659p+21 0x1.2b4301911acb6p+21
 hel_ut[1,Moon,4]                               rf=0      0x1.2b42e537f4bd7p+21 0x1.2b42e55ef2d7bp+21 0x1.2b42e59ef2d7p+21
 vislim[1,Moon]                                 rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
 helpheno[1,Moon]                               rf=0      -0x1.69743bf7b9ffbp+2 -0x1.69743bf7b9ffbp+2 -0x1.2faa4062bb3dfp+2 0x1.0424956b1726p+8 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.18f1388db6d0ep+5 -0x1.11b7f91b16f8ap+5 -0x1.7eb7039634718p+5 0x1.c249a3f591049p+5 0x1.1388821bb0b31p-2 0x1.b88266db6db6ep+1
 hel_ut[1,Sirius,1]                             rf=0      0x1.2b4994e00fec7p+21 0x1.2b4994ec7ba1ep+21 0x1.2b4994fbd7ca8p+21
 hel_ut[1,Sirius,2]                             rf=0      0x1.2b4751b67fb93p+21 0x1.2b4751c593108p+21 0x1.2b4751d26bfffp+21
-hel_ut[1,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius
-
-hel_ut[1,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius
-
+hel_ut[1,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius 
+hel_ut[1,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius 
 vislim[1,Sirius]                               rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
 helpheno[1,Sirius]                             rf=0      -0x1.da05330549ba9p+5 -0x1.da05330549ba9p+5 -0x1.da053304fb051p+5 0x1.1d21291eb002cp+6 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.62e3f20a04a5cp+6 -0x1.62e3f209dd4bp+6 0x1.1a0ad561492e4p+7 0x1.6bf8d1e4bbb07p+6 0x1.1388821bb0b31p-2 0x1.1a2a88ccccccdp+3
 hel_ut[1,Mars,1]                               rf=0      0x1.2b4a94e79f1dp+21 0x1.2b4a94eb57cfdp+21 0x1.2b4a94f132a4cp+21
 hel_ut[1,Mars,2]                               rf=0      0x1.2b4629b8960bcp+21 0x1.2b4629bcda4fdp+21 0x1.2b4629bfc4b19p+21
-hel_ut[1,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars
-
-hel_ut[1,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars
-
+hel_ut[1,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars 
+hel_ut[1,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars 
 vislim[1,Mars]                                 rf=0      -0x1.14ffbc6a7e626p+2 0x1.592e6a75a05adp+5 0x1.34daa1e34fdb8p+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 -0x1.69743bf7b9ffbp+2 0x1.0424956b1726p+8 0x1.09273360fac25p+0
 helpheno[1,Mars]                               rf=0      0x1.592e6a75a05adp+5 0x1.59514845be9ep+5 0x1.593061fc952acp+5 0x1.34daa1e34fdb8p+7 0x1.d785621d7f21dp+4 0x1.a89b69f0a12fap+7 0x1.b5aee59b8327ap+3 0x1.b5b6c3b756676p+3 0x1.cf03203545508p+5 0x1.d72148e118064p+5 0x1.1388821bb0b31p-2 0x0p+0
 tav[1]                                         rf=0      0x1.9p+6
@@ -5166,28 +5003,22 @@ hel_ut[2,Mercury,3]                            rf=0      0x1.2b473b7ad46abp+21 0
 hel_ut[2,Mercury,4]                            rf=0      0x1.2b467f7fd137p+21 0x1.2b467f86db742p+21 0x1.2b467f8e225fep+21
 vislim[2,Mercury]                              rf=0      -0x1.68e3ab86345c6p+2 0x1.168beb4016675p+5 0x1.9326dd7b4c91p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 0x1.0f1a15c919c72p+6 0x1.1b281e200ccfp+5 -0x1.7816b37b515f3p-1
 helpheno[2,Mercury]                            rf=0      0x1.168beb4016675p+5 0x1.16bae424efcbcp+5 0x1.168ed1f9f1896p+5 0x1.9326dd7b4c91p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 0x1.0b43c4a4f134cp+3 0x1.0b4f5f8c5dbdp+3 0x1.0361a1e4abb8p+1 0x1.1302354808258p+3 0x1.d55e5770f0148p-3 0x1.7fcf495555555p+3
-hel_ut[2,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon
-
-hel_ut[2,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon
-
+hel_ut[2,Moon,1]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning first (event type 1) does not exist for the moon 
+hel_ut[2,Moon,2]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening last (event type 2) does not exist for the moon 
 hel_ut[2,Moon,3]                               rf=0      0x1.2b42fbfd052bap+21 0x1.2b42fc15faee1p+21 0x1.2b42fc24b9513p+21
 hel_ut[2,Moon,4]                               rf=0      0x1.2b42e6feed1adp+21 0x1.2b42e716d7ddbp+21 0x1.2b42e73f54431p+21
 vislim[2,Moon]                                 rf=0      -0x1.d16c542de458cp+1 0x1.0f1a15c919c72p+6 0x1.1b281e200ccfp+5 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 -0x1.68p+6 0x0p+0 -0x1.12fc6728d9c8ap+3
 helpheno[2,Moon]                               rf=0      0x1.0f1a15c919c72p+6 0x1.0f20c3eec766p+6 0x1.107799b37ade7p+6 0x1.1b281e200ccfp+5 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 0x1.4a79317b59742p+5 0x1.4d3439501ba2cp+5 0x1.0daddb7a6b874p+6 0x1.254eaa244a6ebp+6 0x1.d55e5770f0148p-3 0x1.4bf72675ea051p+0
 hel_ut[2,Sirius,1]                             rf=0      0x1.2b4817b1d406bp+21 0x1.2b4817b74dc49p+21 0x1.2b4817bc8ad4p+21
 hel_ut[2,Sirius,2]                             rf=0      0x1.2b48d3735876p+21 0x1.2b48d3803d885p+21 0x1.2b48d38a74e75p+21
-hel_ut[2,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius
-
-hel_ut[2,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius
-
+hel_ut[2,Sirius,3]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for sirius 
+hel_ut[2,Sirius,4]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for sirius 
 vislim[2,Sirius]                               rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
 helpheno[2,Sirius]                             rf=0      -0x1.c7489fc2fd204p+2 -0x1.c7489fc2fd204p+2 -0x1.c7489fbe34dc5p+2 0x1.ec8a79d686d14p+7 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 -0x1.0ca40e0f39be2p+5 -0x1.0ca40e0ea0b5ap+5 -0x1.1ee984914dd9ep+7 0x1.0807a18ce0d24p+7 0x1.d55e5770f0148p-3 -0x1.5985be7eda9cp-1
 hel_ut[2,Mars,1]                               rf=0      0x1.2b4b6f2425b25p+21 0x1.2b4b6f2ba33b1p+21 0x1.2b4b6f34fa147p+21
 hel_ut[2,Mars,2]                               rf=0      0x1.2b458bc7992f3p+21 0x1.2b458bd2195f8p+21 0x1.2b458bda65396p+21
-hel_ut[2,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars
-
-hel_ut[2,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars
-
+hel_ut[2,Mars,3]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | evening first (event type 3) does not exist for Mars 
+hel_ut[2,Mars,4]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 | morning last (event type 4) does not exist for Mars 
 vislim[2,Mars]                                 rf=-2     -0x1.9p+6 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | object is below local horizon
 helpheno[2,Mars]                               rf=0      -0x1.2d60753b8c2e8p+4 -0x1.2d60753b8c2e8p+4 -0x1.2d5b57a7b459cp+4 0x1.d787046889a54p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 -0x1.6a6b34b4a0316p+5 -0x1.6a68a5eab447p+5 -0x1.e228cef0bdb4p+3 0x1.79c05541143b2p+5 0x1.d55e5770f0148p-3 0x0p+0
 tav[2]                                         rf=0      0x1.9p+6

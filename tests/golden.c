@@ -20,16 +20,35 @@ static const char *EPHE = DEFAULT_EPHE;
 /* Per-thread output sink so N threads can each produce a full transcript. */
 static __thread FILE *OUT;
 
-/* serr may embed the absolute ephemeris path; strip it so baselines are
- * portable across machines and checkouts. */
+/* Normalise serr for the transcript.
+ *
+ * Two things have to go:
+ *  - the absolute ephemeris path, so baselines are portable across machines;
+ *  - embedded NEWLINES. The library emits multi-line messages such as
+ *    "...not found in PATH '...'\ntrying Swiss Eph; ", which broke the
+ *    one-row-per-line invariant this format depends on: 151 continuation
+ *    lines all keyed on the token "trying", so a comparator keyed by first
+ *    token silently collapsed them to one. Runs of whitespace become a
+ *    single space. */
 static void sanitize(char *d, size_t n, const char *s) {
   size_t el = strlen(EPHE), j = 0;
   for (size_t i = 0; s[i] && j + 8 < n; ) {
     if (el && strncmp(s + i, EPHE, el) == 0) {
       memcpy(d + j, "$EPHE", 5); j += 5; i += el;
+    } else if (s[i] == '\n' || s[i] == '\r' || s[i] == '\t' || s[i] == ' ') {
+      while (s[i] == '\n' || s[i] == '\r' || s[i] == '\t' || s[i] == ' ') i++;
+      d[j++] = ' ';
     } else d[j++] = s[i++];
   }
   d[j] = 0;
+}
+
+/* Row tags are whitespace-delimited keys in the transcript, so a tag may not
+ * contain a space. "Galactic Center" did: all nine of its rows shared the key
+ * "star[Galactic" and eight were silently dropped by the comparator -- and
+ * the ~illcond marker, which sits after the space, was never seen either. */
+static void notag_space(char *s) {
+  for (; *s; s++) if (*s == ' ') *s = '_';
 }
 
 /* Dates spanning the ephemeris range, incl. pre/post file boundaries. */
@@ -70,18 +89,38 @@ static const int32 FLAGS[] = {
  * Rather than teach cmpgolden.py a list of row/field coordinates -- which
  * would silently rot the moment FLAGS[] or a loop bound here changed -- the
  * rows tag THEMSELVES with this marker, and cmpgolden.py skips any row whose
- * tag contains it. Measured conditioning, +2 ULP on tjd at 3000-01-01:
+ * tag contains it.
  *
- *   SE_OSCU_APOG via Moshier   2.86    arcsec   <-- tagged
- *   SE_OSCU_APOG via SWIEPH    0.000012 arcsec
- *   SE_MEAN_APOG via Moshier   0.0000007 arcsec
- *   SE_MOON      via Moshier   0.000043 arcsec
+ * Which rows get tagged was decided by MEASUREMENT, not by guessing from the
+ * failures. Perturb the input tjd by +2 ULP and take the worst movement over
+ * all nine dates:
  *
- * i.e. the osculating lunar apogee under Moshier amplifies input noise by
- * ~1e9, and is 238,000x worse than the same body via SWIEPH. Deriving apse
- * direction from near-circular osculating elements is inherently unstable.
+ *   body         via Moshier          via SWIEPH        ratio
+ *   TRUE_NODE     1.42     arcsec      0.0000092         154,000x   <-- tagged
+ *   OSCU_APOG    17.4      arcsec      0.000012        1,440,000x   <-- tagged
+ *   MEAN_NODE     0.00000024           same                    1x
+ *   MEAN_APOG     0.00000072           same                    1x
+ *   INTP_APOG     0.0000205            same                    1x
+ *   INTP_PERG     0.00119              same                    1x
+ *   MOON          0.0000483            0.108
+ *
+ * Only the two OSCULATING lunar elements are affected, and only under
+ * Moshier: they are derived by solving Kepler elements from the Moon's
+ * analytic position and velocity, and recovering node/apse direction from a
+ * near-circular osculating orbit is inherently unstable. The mean and
+ * interpolated elements are analytic and identical either way.
+ *
+ * Also tagged: the fixed-star distance SPEED (field[5]), extracted by
+ * differencing a distance of ~1e7 AU to recover a quantity ~3e-10 of it.
  */
 #define ILLCOND "~illcond"
+
+/* Bodies whose values are not reproducible across math libraries when
+ * computed from Moshier -- see the measurements above. */
+static int is_illcond(int32 iflag, int ipl) {
+  return (iflag & SEFLG_MOSEPH)
+      && (ipl == SE_TRUE_NODE || ipl == SE_OSCU_APOG);
+}
 
 static void row(const char *tag, int32 rf, double *x, int n, const char *serr) {
   char cl[AS_MAXCH * 2];
@@ -99,7 +138,7 @@ static void planets(void) {
         serr[0] = 0; memset(x, 0, sizeof x);
         int32 rf = swe_calc(DATES[d], p, FLAGS[f], x, serr);
         snprintf(tag, sizeof tag, "calc[%zu,%zu,%d]%s", d, f, p,
-                 ((FLAGS[f] & SEFLG_MOSEPH) && p == SE_OSCU_APOG) ? ILLCOND : "");
+                 is_illcond(FLAGS[f], p) ? ILLCOND : "");
         row(tag, rf, x, 6, serr);
       }
 }
@@ -241,10 +280,12 @@ static void fixstars(void) {
        * distance of ~1e7 AU to recover a quantity ~3e-10 of it -- see the
        * ILLCOND note above and cmpgolden.py's header. */
       snprintf(tag, sizeof tag, "star[%s,%zu]%s", stars[s], d, ILLCOND);
+      notag_space(tag);
       row(tag, rf, x, 6, serr);
       double mag = 0; strcpy(nm, stars[s]);
       swe_fixstar2_mag(nm, &mag, serr);
       snprintf(tag, sizeof tag, "starmag[%s]", stars[s]);
+      notag_space(tag);
       if (d == 0) row(tag, 0, &mag, 1, NULL);
     }
 }

@@ -149,13 +149,25 @@ SETEST_MINLINES = 1000
 # the gate compares the library, not how make happened to be invoked.
 SCRUB = sed -f $(CURDIR)/scrub-ephe.sed
 
+# Both sides of the differential MUST be built with the same flags, and they
+# cannot be left to the root Makefile: the reference is built from an old
+# commit's checkout, which carries that commit's CFLAGS. When the C17
+# migration flipped the root CFLAGS to "-std=c17 -Wall -Wextra -O2 -g -fPIC",
+# this gate started comparing an -O2 build of HEAD against an -O0 build of
+# 3fd0f95 and reported a "change" that was pure optimisation noise
+# (0.00001923540096290257 vs 0.00001923540095976480).
+#
+# Pinned to -O0 for the same reason tests/baseline.txt is: a differential is
+# only meaningful when the only variable is the code.
+SETEST_CFLAGS = -O0 -g -fPIC -D_GNU_SOURCE
+
 setest-ref:
 	@rm -rf /tmp/se_ref_wt
 	@git -C .. worktree prune          # a killed run leaves a stale registration
 	@git -C .. worktree add -q /tmp/se_ref_wt $(REF)
 	@cp -n ../setest/t.exp ../setest/t.fix /tmp/se_ref_wt/setest/ 2>/dev/null || true
-	@$(MAKE) -C /tmp/se_ref_wt libswe.a >/dev/null 2>&1
-	@$(MAKE) -C /tmp/se_ref_wt/setest >/dev/null 2>&1
+	@$(MAKE) -B -C /tmp/se_ref_wt libswe.a CFLAGS="$(SETEST_CFLAGS)" >/dev/null 2>&1
+	@$(MAKE) -B -C /tmp/se_ref_wt/setest >/dev/null 2>&1
 	@cd /tmp/se_ref_wt/setest && SE_EPHE_PATH=$(EPHE_ABS) ./setest t 2>&1 | $(SCRUB) > $(SETEST_REF) || true
 	@git -C .. worktree remove --force /tmp/se_ref_wt 2>/dev/null || true
 	@git -C .. worktree prune
@@ -166,8 +178,11 @@ setest-ref:
 	 echo "setest reference captured from $(REF): $$lines lines"
 
 check-setest: $(SETEST_REF)
-	@$(MAKE) -C .. libswe.a >/dev/null 2>&1
-	@$(MAKE) -C ../setest >/dev/null 2>&1
+	# -B: the tree may already hold .o files built with the root CFLAGS
+	# (the C17 migration sets -O2 there); without a forced rebuild make
+	# would consider them up to date and the pin above would do nothing.
+	@$(MAKE) -B -C .. libswe.a CFLAGS="$(SETEST_CFLAGS)" >/dev/null 2>&1
+	@$(MAKE) -B -C ../setest >/dev/null 2>&1
 	@cd ../setest && SE_EPHE_PATH=$(EPHE_ABS) ./setest t 2>&1 | $(SCRUB) > ../tests/.setest_now.txt || true
 	@lines=$$(wc -l < .setest_now.txt); \
 	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
