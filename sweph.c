@@ -1429,10 +1429,11 @@ static void ctx_release(swe_ctx *ctx)
    * API in exactly the way it always has been. */
 }
 
+/* Releases this context's resources. Deliberately does NOT reset the
+ * shared configuration master -- see the note on swe_close() below. */
 void CALL_CONV swe_close_r(swe_ctx *ctx)
 {
   ctx_release(ctx);
-  swi_config_reset(ctx);
 #ifdef TRACE
 #define TRACE_CLOSE FALSE
   swi_open_trace(NULL);
@@ -1462,9 +1463,25 @@ void CALL_CONV swe_close_r(swe_ctx *ctx)
 
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
+/* swe_close() keeps its historical meaning: release everything the LIBRARY
+ * holds, the process-wide configuration master included.
+ *
+ * swe_close_r() deliberately does not do that second part, and the split
+ * is not cosmetic. swed is TLS, so every thread has its own default
+ * context whose ephemeris segments are freed only by a close ON THAT
+ * THREAD -- roughly 9 KB per worker, measured with LeakSanitizer. Before
+ * the split a worker had no way to release its own memory: the only close
+ * available also wiped the configuration every other thread was reading,
+ * so cleaning up after yourself broke your neighbours.
+ *
+ * A worker thread should now call swe_close_r(swi_default_ctx()) to
+ * release its own state, and swe_close() only when shutting the library
+ * down for the whole process. */
 void CALL_CONV swe_close(void)
 {
-  swe_close_r(swi_default_ctx());
+  swe_ctx *ctx = swi_default_ctx();
+  swe_close_r(ctx);
+  swi_config_reset(ctx);
 }
 
 /* sets ephemeris file path. 

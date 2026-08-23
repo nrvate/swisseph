@@ -80,6 +80,22 @@ swe_ctx *swe_ctx_new(void);              /* NULL on allocation failure */
 void     swe_ctx_free(swe_ctx *ctx);     /* closes files, frees caches */
 ```
 
+### 3.0.1 `swe_close()` vs `swe_close_r()` — they differ on purpose
+
+`swe_close_r(ctx)` releases that context's resources. `swe_close()` does that
+*and* resets the process-wide configuration master.
+
+The split is not cosmetic. `swed` is TLS, so every thread has its own default
+context whose ephemeris segments are freed only by a close **on that thread**
+— about 9 KB per worker, measured with LeakSanitizer. Before the split a
+worker thread had no way to release its own memory: the only close available
+also wiped the configuration every other thread was reading, so cleaning up
+after yourself broke your neighbours.
+
+    worker thread, done with the library:   swe_close_r(swi_default_ctx());
+    whole process shutting the library down: swe_close();
+
+
 Opaque deliberately. `struct swe_data` is 23 KB of implementation detail that
 has changed shape twice already this month; exposing it would freeze that.
 

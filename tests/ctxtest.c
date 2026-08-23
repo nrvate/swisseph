@@ -31,6 +31,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "swephexp.h"
+#include "sweph.h"   /* swi_default_ctx(), for the free-the-default no-op check */
 
 /* Same shim as threadshim.c: MSVC has no <pthread.h>, and this test must
  * run on the Windows job to be worth anything. */
@@ -127,6 +128,16 @@ static thr_ret_t THR_CALL probe_default(void *arg)
   (void) arg;
   swe_calc_ut(TJD, SE_MOON, IFLAG | SEFLG_SIDEREAL | SEFLG_TOPOCTR,
               g_probe, serr);
+  /* Each thread has its OWN default context (swed is TLS), and its
+   * ephemeris segments are released only by a close ON THAT THREAD --
+   * about 9 KB per worker, measured with LeakSanitizer.
+   *
+   * swe_close_r(), not swe_close(): the latter also resets the shared
+   * configuration master, which would wipe exactly the state the second
+   * probe below is here to read. That distinction is why the two are
+   * separate; before they were, a worker could not release its own memory
+   * without breaking every other thread. */
+  swe_close_r(swi_default_ctx());
   return (thr_ret_t) 0;
 }
 
@@ -287,6 +298,14 @@ int main(int argc, char **argv)
   /* swe_ctx_free() must tolerate NULL and must refuse the default context
    * rather than freeing memory it does not own. */
   swe_ctx_free(NULL);
+  swe_ctx_free(swi_default_ctx());   /* must be a no-op, not a free() */
+
+  /* Release the DEFAULT context too, so this binary is clean under
+   * LeakSanitizer and can serve as a leak gate. Without it LSan reports
+   * ~9 KB still held by the default context's ephemeris segments at exit
+   * -- which looked at first like swe_ctx_free() failing to release, and
+   * is not: an isolated new/compute/free/close sequence is clean. */
+  swe_close();
 
   printf("%s\n", failures ? "FAIL" : "PASS");
   return failures != 0;

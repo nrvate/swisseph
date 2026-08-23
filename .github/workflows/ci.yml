@@ -270,6 +270,27 @@ jobs:
              ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
              -o golden_asan -lm -ldl -lpthread
           env -u SE_EPHE_PATH ./golden_asan --ephe ../$EPHE > /dev/null
+      # LeakSanitizer on the context API. swe_ctx_free() must release what
+      # the context allocated, and each thread must be able to release its
+      # own TLS default state -- 9 KB per worker otherwise.
+      - name: AddressSanitizer + LeakSanitizer -- context API
+        run: |
+          cd tests
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=address,undefined -I.. ctxtest.c \
+             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
+             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+             -o ctxtest_asan -lm -ldl -lpthread
+          env -u SE_EPHE_PATH ASAN_OPTIONS=detect_leaks=1 ./ctxtest_asan --ephe ../$EPHE
+      # ThreadSanitizer on the context API: two contexts driven from two
+      # threads at once must report no races between them.
+      - name: ThreadSanitizer -- independent contexts
+        run: |
+          cd tests
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. ctxtest.c \
+             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
+             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+             -o ctxtest_tsan -lm -ldl -lpthread
+          env -u SE_EPHE_PATH ./ctxtest_tsan --ephe ../$EPHE
 
   # ---------------------------------------------------------------------
   # Dialects. The library floats on whatever -std= the local cc defaults to,
