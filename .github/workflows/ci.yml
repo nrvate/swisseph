@@ -22,7 +22,10 @@ name: CI
 
 on:
   push:
-    branches: [ master, threadsafe ]
+    # main is the default branch; legacy-master is the pristine upstream
+    # tree and deliberately has no CI. threadsafe stays as the granular
+    # history of the transformation and keeps running the gates.
+    branches: [ main, threadsafe ]
   pull_request:
   workflow_dispatch:
 
