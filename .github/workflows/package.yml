@@ -279,31 +279,48 @@ jobs:
             findstr /C:"280" swe_smoke.txt >nul || ( echo FAIL: no plausible position & exit /b 1 )
           )
           echo both CLIs produce a plausible Sun position
-      - name: ABI -- nothing upstream exported may disappear
+      - name: ABI -- build the upstream baseline DLL
         shell: cmd
         run: |
           rem Windows exports are a DIFFERENT set from Linux: __declspec(dllexport)
           rem on the swe_* declarations means the DLL exposes the public API only,
-          rem not internal globals. So "nothing was removed" has to be asked here
-          rem too, against a DLL built from the pristine upstream tree.
+          rem not the internal globals Linux exports. So "nothing was removed" has
+          rem to be asked here too, against a DLL built from the pristine upstream
+          rem tree.
           rem
-          rem Built with cl /LD directly rather than msbuild: the upstream tree's
-          rem .vcxproj files cannot build at all (no sweconfig.c, retired toolset),
-          rem which is why they were repaired on this branch.
-          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat" >nul
-          git fetch -q --depth=1 origin legacy-master || exit /b 1
-          for /f %%h in ('git rev-parse FETCH_HEAD') do set BASE=%%h
-          git worktree add -q ..\base %BASE% || exit /b 1
-          pushd ..\base
-          cl /nologo /LD /DMAKE_DLL /DWIN32 /D_WINDOWS /DNDEBUG /D_CRT_SECURE_NO_WARNINGS ^
-             swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c ^
-             /Fe:base.dll >nul || exit /b 1
-          dumpbin /exports base.dll | findstr /R "swe_" > ..\swisseph\base_exports.txt
-          popd
-          dumpbin /exports windows\projects\out\x64\Release\swedll64.dll | findstr /R "swe_" > new_exports.txt
-          for /f %%n in ('type base_exports.txt ^| find /c "swe_"') do echo baseline exports: %%n
-          for /f %%n in ('type new_exports.txt  ^| find /c "swe_"') do echo current  exports: %%n
-          powershell -Command "$b=(Select-String -Path base_exports.txt -Pattern 'swe_[a-z_0-9]+' -AllMatches).Matches.Value | Sort-Object -Unique; $n=(Select-String -Path new_exports.txt -Pattern 'swe_[a-z_0-9]+' -AllMatches).Matches.Value | Sort-Object -Unique; $gone=$b | Where-Object { $n -notcontains $_ }; if ($gone) { Write-Host 'ABI FAIL: removed relative to upstream:'; $gone | ForEach-Object { Write-Host \"  $_\" }; exit 1 }; Write-Host \"ABI ok: nothing removed, $(($n | Where-Object { $b -notcontains $_ }).Count) added\"" || exit /b 1
+          rem cl /LD directly, not msbuild: the upstream .vcxproj files cannot
+          rem build at all (no sweconfig.c, a toolset retired in VS2019), which is
+          rem exactly why they were repaired on this branch.
+          rem
+          rem Nothing is redirected to nul here. The first version of this step
+          rem swallowed its output and failed with exit 255 and no clue why.
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          git fetch --depth=1 origin legacy-master || exit /b 1
+          git worktree add ..\upstream-base FETCH_HEAD || exit /b 1
+          cd ..\upstream-base
+          cl /nologo /LD /DMAKE_DLL /DWIN32 /D_WINDOWS /DNDEBUG /D_CRT_SECURE_NO_WARNINGS swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c /Fe:base.dll || exit /b 1
+          dumpbin /exports base.dll > "%GITHUB_WORKSPACE%\base_exports.txt" || exit /b 1
+          cd "%GITHUB_WORKSPACE%"
+          dumpbin /exports windows\projects\out\x64\Release\swedll64.dll > new_exports.txt || exit /b 1
+      - name: ABI -- nothing upstream exported may disappear
+        shell: pwsh
+        run: |
+          function Exports($f) {
+            (Select-String -Path $f -Pattern '\bswe_[a-z_0-9]+' -AllMatches).Matches.Value |
+              Sort-Object -Unique
+          }
+          $base = Exports base_exports.txt
+          $new  = Exports new_exports.txt
+          Write-Host "upstream DLL exports: $($base.Count)   current DLL exports: $($new.Count)"
+          if ($base.Count -lt 50) { Write-Error "baseline looks wrong ($($base.Count) exports)"; exit 1 }
+          $gone = $base | Where-Object { $new -notcontains $_ }
+          if ($gone) {
+            Write-Host "ABI FAIL: removed relative to upstream:"
+            $gone | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+          $added = ($new | Where-Object { $base -notcontains $_ }).Count
+          Write-Host "ABI ok: nothing removed, $added symbol(s) added since upstream"
 
       - name: Assemble package
         shell: pwsh
