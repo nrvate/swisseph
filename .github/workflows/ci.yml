@@ -57,7 +57,7 @@ jobs:
     name: linux / gcc (reference, bit-exact)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Versions
         run: gcc --version && make --version | head -1
@@ -137,7 +137,7 @@ jobs:
       EPHE: ephe
       TOL: 1e-5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -160,7 +160,7 @@ jobs:
     name: linux / clang
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - run: clang --version
       - name: Build + numerical check (tolerance, not diff)
@@ -187,7 +187,7 @@ jobs:
     name: macos / clang
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - run: cc --version
       # This is an ASSERTION, not a diagnostic.
@@ -228,7 +228,7 @@ jobs:
     name: windows / msvc (SRWLOCK backend)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       # Deliberately NOT ilammy/msvc-dev-cmd: it targets Node 20 (deprecated)
       # and is a third-party action sitting in the build path. The runners
@@ -264,7 +264,7 @@ jobs:
     name: linux / tsan + asan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: ThreadSanitizer -- threaded golden must report zero races
         run: |
@@ -318,7 +318,7 @@ jobs:
     name: linux / C dialects
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Library must build at c99 / c11 / c17
         run: |
@@ -348,7 +348,7 @@ jobs:
     name: linux / exported symbols
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Compare exported symbols against the upstream base
         run: |
@@ -403,7 +403,7 @@ jobs:
     name: linux / setest differential
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - run: sudo apt-get update && sudo apt-get install -y libssl-dev
       - name: Capture reference from 3fd0f95, compare against HEAD

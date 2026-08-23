@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-22.04
     name: linux / package
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -100,7 +100,7 @@ jobs:
           ( cd $pkg && { shasum -a 256 -c SHA256SUMS >/dev/null || sha256sum -c SHA256SUMS >/dev/null; } ) \
             || { echo "FAIL: checksums do not verify"; exit 1; }
           echo "package verified"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: swisseph-linux
           path: pkg/swisseph-linux
@@ -121,7 +121,7 @@ jobs:
     runs-on: macos-latest
     name: macos / package
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -202,7 +202,7 @@ jobs:
           ( cd $pkg && { shasum -a 256 -c SHA256SUMS >/dev/null || sha256sum -c SHA256SUMS >/dev/null; } ) \
             || { echo "FAIL: checksums do not verify"; exit 1; }
           echo "package verified"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: swisseph-macos
           path: pkg/swisseph-macos
@@ -231,7 +231,7 @@ jobs:
     runs-on: windows-latest
     name: windows / package
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -422,7 +422,7 @@ jobs:
           $r = ($all | Where-Object { $_ -match "_r$" }).Count
           Write-Host "context API present: $r _r entry points exported"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: swisseph-windows
           path: pkg/swisseph-windows
@@ -447,7 +447,7 @@ jobs:
     runs-on: ubuntu-latest
     name: android / package
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -497,7 +497,7 @@ jobs:
           ( cd $pkg && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
             xargs sha256sum > SHA256SUMS )
           cat $pkg/SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: swisseph-android
           path: pkg/swisseph-android
