@@ -429,16 +429,35 @@ jobs:
           # towards the public API.
           if (Test-Path "$pkg/include/swephlib.h") { Write-Error "internal header shipped"; exit 1 }
 
-          # The whole point of this fork: the DLL must export the context API.
-          # A DLL built from stale sources would pass every check above.
-          $dumpbin = (Get-ChildItem "C:/Program Files*/Microsoft Visual Studio/*/*/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" |
-                      Select-Object -First 1).FullName
-          $exports = & $dumpbin /exports "$pkg/bin/x64/swedll64.dll" | Out-String
-          foreach ($sym in "swe_ctx_new","swe_ctx_free","swe_calc_ut_r","swe_close_r","swe_set_topo_r") {
-            if ($exports -notmatch $sym) { Write-Error "swedll64.dll does not export $sym"; exit 1 }
+          # The whole point of this fork: the DLL must export the context
+          # API. A DLL built from stale sources -- which is exactly what the
+          # prebuilt 2.10.03 binaries removed from this tree were -- would
+          # pass every other check in this job.
+          $dumpbin = (Get-Command dumpbin -ErrorAction SilentlyContinue).Source
+          if (-not $dumpbin) {
+            $dumpbin = (Get-ChildItem -Path "C:\Program Files*\Microsoft Visual Studio" -Recurse `
+                          -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+                        Select-Object -First 1).FullName
           }
-          $n = ([regex]::Matches($exports, "swe_[a-z_0-9]+_r\b")).Count
-          Write-Host "swedll64.dll exports the context API ($n _r entry points)"
+          if (-not $dumpbin) { Write-Error "dumpbin not found -- cannot verify exports"; exit 1 }
+          Write-Host "dumpbin: $dumpbin"
+
+          $exports = & $dumpbin /exports "$pkg/bin/x64/swedll64.dll" 2>&1 | Out-String
+          $all = [regex]::Matches($exports, "\bswe_[a-z_0-9]+") | ForEach-Object { $_.Value } | Sort-Object -Unique
+          Write-Host "swedll64.dll exports $($all.Count) swe_* symbols"
+          if ($all.Count -lt 100) {
+            # Guard against the check silently passing on empty output.
+            Write-Host $exports
+            Write-Error "implausibly few exports -- dumpbin output above"; exit 1
+          }
+          foreach ($sym in "swe_ctx_new","swe_ctx_free","swe_calc_ut_r","swe_close_r","swe_set_topo_r") {
+            if ($all -notcontains $sym) {
+              Write-Host ($all -join " ")
+              Write-Error "swedll64.dll does not export $sym"; exit 1
+            }
+          }
+          $r = ($all | Where-Object { $_ -match "_r$" }).Count
+          Write-Host "context API present: $r _r entry points exported"
 
       - uses: actions/upload-artifact@v4
         with:
