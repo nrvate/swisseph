@@ -49,7 +49,7 @@ Beyond those two, the dominant themes across every file are:
 |---|---|---|
 | Unsafe string handling (`sprintf`/`strcpy`/`strcat`, 0 `snprintf`) | ~930 call sites repo-wide | everywhere, worst in `swetest.c` (153), `swevents.c` (62+), `sweph.c` (127 `strcpy` alone) |
 | ~~No optimization flag in the shipped build~~ | **fixed on `threadsafe`**: `-std=c17 -Wall -Wextra -Werror -O2 -g -fPIC`, plus opt-in `-flto` | `Makefile` |
-| ~~No CI~~ | **fixed on `threadsafe`**: 10 jobs — gcc/clang/macOS/MSVC, TSan+ASan+LSan, dialects, ABI, LTO, setest differential | `.github/workflows/ci.yml` |
+| ~~No CI~~ | **fixed on `threadsafe`**: 9 jobs — gcc/clang/macOS/MSVC, TSan+ASan+LSan, dialects, ABI, LTO, setest differential | `.github/workflows/ci.yml` |
 | `#define`-only public constants, 0 enums | 330 macros, 0 `enum` | `swephexp.h` |
 | `goto`-based control flow | 9 files, up to 115 in one file (`sweph.c`) | see per-section counts below |
 | Dead / `#if 0`'d code | 47 regions, ~500 lines, across `swehel.c`, `swephlib.c`, `swecl.c`, `swehouse.c` | see per-section |

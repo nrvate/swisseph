@@ -126,7 +126,15 @@ not own.
 make                # -std=c17 -Wall -Wextra -Werror -O2
 make LTO=1          # + link-time optimisation, see below
 make -C tests check-golden   # bit-exact regression gate
+make -C tests check-ci       # every gate, under CI's exact toolchain (needs docker)
 ```
+
+`check-ci` exists because a development machine is usually not the CI
+machine. It runs the whole gate set inside `ubuntu:24.04`, which carries the
+same gcc the runner reports. Two bugs on this branch passed every local gate
+and failed CI — an uninitialised read only newer gcc diagnoses, and a
+gcc-only `__attribute__` that MSVC rejects — so if you are about to push,
+run this rather than trusting a green local run.
 
 - **`LTO=1`** is opt-in. Measured at about **5% faster** on the Moshier Moon
   path and bit-identical to plain `-O2` across all 5201 golden rows on gcc 11.4.
