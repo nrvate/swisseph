@@ -1,11 +1,12 @@
 # Plan: C89 → C17 Migration
 
-**Status:** Phases 1-3 done (04bb51a, 5c2eb9d, aceb318; stray comment fixed
-in 2a4bad4). Phase 4 (real `static_assert` on J1) and Phase 5 (`-std=c17
--Wall -Wextra`/`-Werror` build flip) are next — **not yet started**, picking
-up here next session. Sequencing revised 2026-08-23 (§8): these two now go
-*before* `PLAN.md` Phase 3 rather than after, agreed with `swisseph-d2`.
-`PLAN.md` Phase 3 is on hold, waiting on this.
+**Status: all five phases done** (04bb51a, 5c2eb9d, aceb318, 2a4bad4,
+4822202, 1209786). The tree builds `-std=c17 -Wall -Wextra -Werror -O2 -g
+-fPIC` clean, root-to-leaf, on the toolchain available here; `setest/`
+matches. §7 (the ~930-site `sprintf`→`snprintf` sweep) remains optional/
+opportunistic, not gated into this. Sequencing (§8): this plan's Phase
+4/5 landing is the signal `PLAN.md` Phase 3 was waiting on — `swisseph-d2`
+notified.
 **Companion to:** [`REVIEW.md`](REVIEW.md) §1.3, §0 (the "no `stdint.h`/`stdbool.h`
 anywhere," "K&R holdouts," "hand-rolled `int32`" findings this plan resolves)
 **Relationship to** [`PLAN.md`](PLAN.md): independent effort, same safety net
@@ -103,8 +104,11 @@ nm -D --defined-only libswe.so | sort > out.symbols
 diff abi/libswe.symbols out.symbols
 
 # G4  static_assert catches the J1-class buffer-size assumption
-#     (swejpl.c ncoeffs/ncf vs. fixed array capacity — see REVIEW.md §5)
-grep -q static_assert swejpl.c
+#     (swejpl.c buf[] vs. JPL_NCOEFF_MAX — see REVIEW.md J1). Tightened
+#     from the original "grep -q static_assert" (passed on any assertion
+#     in the file, including a trivially true one) to check the specific
+#     one landed in 4822202.
+grep -q 'sizeof(js->buf) / sizeof(js->buf\[0\]) == JPL_NCOEFF_MAX' swejpl.c
 
 # G5  platform parity: G1/G2 pass on Linux/gcc, Linux/clang, macOS/clang,
 #     Windows/MSVC — the four toolchains this project actually ships for
@@ -304,31 +308,86 @@ The `pc`/`vc`/`ac`/`jc[18]` bound stays a runtime check permanently — it
 can't become a `static_assert`, because there's no compile-time constant on
 the other side of that comparison; the file controls it.
 
-**Exit gate (revised):** `static_assert` present and passing on `buf[]`'s
-sizing (only place a real compile-time invariant exists); runtime check on
-`ncf` verified to reject a synthetic oversized-`ipt[]` value (needs a
-malformed-file fixture — none of this repo's shipped `ephe/` files exercise
-the JPL code path at all, so this can't be checked against `tests/golden`
-and needs its own fixture before it's considered verified, not just
-compiled). Also fix the original `G4` gate (`grep -q static_assert
-swejpl.c`) — it passes on any `static_assert` in the file, including a
-trivially true one; tighten it to check the specific assertion.
+**Exit gate (revised): ✅ Done, with one item still open.** `static_assert`
+landed (4822202) — `sizeof(js->buf)/sizeof(js->buf[0]) == JPL_NCOEFF_MAX`,
+placed after `js`'s declaration (a pointer type is enough for `sizeof`;
+nothing dereferences it). Verified it actually catches the regression it
+exists for: reverted `buf[]` to `buf[1500]` locally, confirmed a
+compile-time failure with the exact assertion message, then discarded the
+revert (not committed). `G4` tightened in §5 to grep the specific
+assertion text rather than any `static_assert` in the file.
+
+**Still open, not done here:** the runtime check on `ncf` (Phase 1,
+04bb51a) has never been exercised — none of this repo's shipped `ephe/`
+files trip it, so it's unverified beyond compiling and reading correctly.
+Needs a synthetic malformed JPL file (an `ipt[]` entry claiming more
+coefficients than `pc[18]` can hold) as a fixture before it's a tested
+guard rather than a plausible one. Left for whoever picks up `REVIEW.md`'s
+optional-follow-on work — not blocking Phase 5 or `PLAN.md` Phase 3, since
+the runtime check itself is already live in the shipped code regardless
+of whether a test exercises it yet.
 
 ### Phase 5 — Flip the build, turn on `-Werror`
 
-- [ ] 5.1 `Makefile`: `CFLAGS = -std=c17 -Wall -Wextra -O2 -g -fPIC` (folds in
+- [x] 5.1 `Makefile`: `CFLAGS = -std=c17 -Wall -Wextra -O2 -g -fPIC` (folds in
       the "no `-std=`, no `-O2`" build-system finding from `REVIEW.md` §1.1 —
       natural to fix in the same pass since it's the flag line this plan is
       already editing).
-- [ ] 5.2 Align `setest/Makefile`'s `-std=gnu99` to `-std=c17` too, so the
+- [x] 5.2 Align `setest/Makefile`'s `-std=gnu99` to `-std=c17` too, so the
       whole tree builds under one dialect.
-- [ ] 5.3 Once G2 is warning-clean, add `-Werror` so it stays that way.
-- [ ] 5.4 CI matrix: {ubuntu gcc, ubuntu clang, macos clang, windows msvc} ×
-      {`-O0 -g`, `-O2`} — reuses the matrix shape `PLAN.md` Phase 0.4 already
-      proposes; if that CI work has landed by the time this phase starts,
-      extend it rather than duplicating it.
+- [x] 5.3 Once G2 is warning-clean, add `-Werror` so it stays that way.
+- [x] 5.4 CI matrix: `swisseph-d2` already built the matrix this item
+      wanted (9b97fdd, 7217f67, and onward) ahead of this phase starting;
+      nothing to add here.
 
-**Exit gate:** all of §5's gates (G1-G5) green in CI, on all four toolchains.
+**Exit gate: ✅ Done** (G1/G2/G8 confirmed on this toolchain; §5's G5
+"four toolchains in CI" already covered by `swisseph-d2`'s matrix, not
+re-verified independently here).
+
+**Outcome:** `CFLAGS` on both the Linux and Darwin branches is now
+`-std=c17 -Wall -Wextra -Werror -O2 -g -fPIC -D_GNU_SOURCE` — the
+`-D_GNU_SOURCE` wasn't in the original 5.1 line but turned out to be
+required: strict `-std=c17` (no GNU extensions) stopped glibc exposing
+`fseeko`/`ftello`/`readlink`/`strdup` without it, which is exactly what
+`sweph.c`'s own long-standing `__USE_GNU`-hack comment already said the
+fix should be ("actually forbidden... better to compile with
+`-D_GNU_SOURCE`") — that hack is now deleted, replaced by the flag it was
+asking for.
+
+Getting to a warning-clean `-Wall -Wextra` build surfaced ~45 warnings,
+none behavior-changing:
+- Unused-parameter / dead-store `(void)` casts across `sweph.c`,
+  `swephlib.c`, `swehouse.c`, `swevents.c`, `swemini.c`, `obama.c` — each
+  checked against its function body first, not blindly silenced. Two
+  turned out to be worth a comment at the site: `get_crossing_bin_search()`
+  writes `xta2`/`xtb2` and never reads them back (unlike the sibling
+  function it looks copied from); `calc_all_crossings()`'s `iflag`/`npos`/
+  `dpos` belong to `itype` 1/2 branches the `switch` below has never
+  implemented.
+- `sweph.c:6724` a real signed/unsigned comparison (`ptrdiff_t` vs.
+  `size_t`), cast with a comment on why it's safe (`sp` is always
+  `>= sstar`, both from the same `strchr()` call).
+- `swevents.c`: six `sprintf`→`snprintf` conversions on `serr` messages
+  built from an unbounded `%s` — none in `SWEOBJ` (the library sources
+  `tests/golden` exercises), all confirmed by `git diff` before committing.
+  One was a genuine near-miss: a `char *serr` parameter where
+  `sizeof(serr)` would have silently sized the write to 8 bytes (a
+  pointer's size, not the caller's buffer) — caught by inspection, not by
+  a warning, since neither GCC warning class flags it.
+- One real, pre-existing `switch` fallthrough (`swevents.c:937`, Mercury
+  sharing Venus/Jupiter's `elong_vis` after also setting `magme[]`) marked
+  with the standard `/* fall through */` comment.
+- Eight unchecked `fread()`s and one unchecked `fgets()` now check their
+  return values — `fread`'s `warn_unused_result` doesn't respond to a
+  bare `(void)` cast on this glibc/gcc combination (confirmed with an
+  isolated repro before touching the real call sites), so the read is
+  folded into a condition instead.
+
+Verified against a stable tree (coordinated with `swisseph-d2` per the
+file-ownership protocol agreed 2026-08-23 — see §8): `make check` (G1
+5137 rows bit-identical, G1b, cfgleak, threadshim, G2) and `check-setest`
+(G8, 11279 lines) both green, before and after adding `-Werror`. Root
+`make all` and `setest/` both build clean under the final flags.
 
 ## 7. Optional/opportunistic follow-on: unsafe string functions
 
@@ -375,6 +434,17 @@ compiler-detection cascade this plan deletes) and both use the same
   `swed` was a plain unsynchronized global there. Fixed in f2843b0, outside
   this plan's scope but sharing the same file Phase 1 touched, noted here
   for the record.
+- **Phases 4-5 landed 2026-08-23** — 4822202 (Phase 4), 1209786 (Phase 5).
+  A file-ownership protocol was agreed with `swisseph-d2` the same day,
+  formalizing what both sessions had already been doing by hand after two
+  near-misses (a half-written-tree phantom `G1` failure, an
+  almost-simultaneous `tests/baseline.txt` edit): this plan owns `*.c`/
+  `*.h` at the repo root, `Makefile`, `setest/`, `notes/C17_*.md`;
+  `PLAN.md` owns `tests/`, `.github/`, `swethread.h`, `sweconfig.[ch]`,
+  `notes/PLAN.md`/`INVESTIGATION.md`/`CONFIG-MAP.md`. Cross into the
+  other's files by message, not by editing; don't run gates while the
+  other side's `git status` shows it mid-edit. `swisseph-d2` notified that
+  Phase 5 landed — `PLAN.md` Phase 3 is unblocked as of this commit.
 
 ## 9. Handed over from `PLAN.md` Phase 2: the `swed` positional initialiser
 
