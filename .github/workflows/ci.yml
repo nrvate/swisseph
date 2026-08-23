@@ -373,6 +373,24 @@ jobs:
             findstr /C:"280" swe_smoke.txt >nul || ( echo FAIL: no plausible position & exit /b 1 )
           )
           echo both CLIs produce a plausible Sun position
+      - name: Diagnose DLL exports
+        shell: cmd
+        run: |
+          rem Direct evidence rather than inference: does the compiler
+          rem actually see __declspec(dllexport), and does the linker record
+          rem an export directory?
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat" >nul
+          echo === does the preprocessor apply dllexport with MAKE_DLL? ===
+          cl /nologo /EP /I. /DWIN32 /DNDEBUG /D_WINDOWS /DMAKE_DLL sweph.c > pp.txt 2>nul
+          findstr /C:"dllexport" pp.txt | find /c "dllexport"
+          echo === is _SWEDLL_H defined (which would hide every declaration)? ===
+          findstr /C:"swe_ctx_new" pp.txt | find /c "swe_ctx_new"
+          echo === export directory in the DLL? ===
+          dumpbin /headers windows\projects\out\x64\Release\swedll64.dll | findstr /I "Export directory"
+          echo === import library contents ===
+          dir windows\projects\out\x64\Release\swedll64.lib
+          dumpbin /exports windows\projects\out\x64\Release\swedll64.lib | findstr /C:"swe_calc" | find /c "swe_calc"
+
       - name: Assemble package
         shell: pwsh
         run: |
