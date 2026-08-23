@@ -51,6 +51,9 @@
 !/tests/Makefile
 !/tests/baseline.txt
 !/tests/*.baseline
+# Stand-in Windows headers. Deliberately not `!/tests/*.h` -- the root
+# sweph.h has been copied into tests/ by accident before, and shipped.
+!/tests/winstub/
 
 # Python bytecode (tools/)
 __pycache__/

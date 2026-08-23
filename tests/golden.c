@@ -945,6 +945,6 @@ int main(int argc, char **argv) {
   fprintf(stderr, "%d/%d threads matched the main-thread transcript%s\n",
           nthreads - bad, nthreads, setup ? " (--per-thread-setup)" : "");
   swe_close();
-#endif  /* !_WIN32 */
   return bad ? 1 : 0;
+#endif  /* !_WIN32 */
 }

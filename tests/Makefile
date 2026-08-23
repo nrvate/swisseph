@@ -185,13 +185,25 @@ bench-run: bench
 # MSVC reported.
 WINMACROS = -DIN= -DOUT= -DOPTIONAL= -DFAR= -DNEAR=
 
+# winstub/ is a handful of stand-in Windows headers -- just enough for a
+# Linux compiler to PARSE the `#if defined(_WIN32)` branches. Nothing links
+# against them. See tests/winstub/windows.h for the rationale.
+WINPATH = -D_WIN32 -D__stdcall= '-D__declspec(x)=' -Iwinstub
+
 check-winmacros:
-	@echo "G13: no collision with windows.h annotation macros"
+	@echo "G13: Windows code paths, checked without Windows"
 	@rc=0; \
 	for f in $(wildcard *.c) $(SWE) ../swetest.c ../swevents.c ../swemini.c; do \
 	  $(CC) -fsyntax-only -std=c17 -D_GNU_SOURCE $(WINMACROS) -I.. -I. $$f 2>/tmp/wm.$$$$ \
-	    || { echo "  FAIL: $$f"; head -4 /tmp/wm.$$$$ | sed 's/^/      /'; rc=1; }; \
-	done; rm -f /tmp/wm.$$$$; \
+	    || { echo "  FAIL (macro collision): $$f"; head -4 /tmp/wm.$$$$ | sed 's/^/      /'; rc=1; }; \
+	done; \
+	echo "  annotation macros (IN/OUT/OPTIONAL/FAR/NEAR)  OK"; \
+	for f in golden.c ctxtest.c threadshim.c; do \
+	  $(CC) -fsyntax-only -std=c17 -D_GNU_SOURCE $(WINPATH) -I.. -I. $$f 2>/tmp/wm.$$$$ \
+	    || { echo "  FAIL (_WIN32 path): $$f"; head -4 /tmp/wm.$$$$ | sed 's/^/      /'; rc=1; }; \
+	done; \
+	echo "  _WIN32 branches parse                         OK"; \
+	rm -f /tmp/wm.$$$$; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G13 FAIL"; exit 1; }
 
 # check-ci: run the gate set under the CI runner's exact toolchain.
