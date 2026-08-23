@@ -151,6 +151,7 @@ clean:
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge \
+        check-winmacros \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
@@ -165,6 +166,33 @@ bench: bench.c $(wildcard ../*.c)
 
 bench-run: bench
 	@./bench --ephe $(EPHE) --rep $(REP)
+
+# G13: identifiers must not collide with the Windows annotation macros.
+#
+# windows.h defines IN, OUT, OPTIONAL and friends as EMPTY macros -- they are
+# SAL parameter annotations in winnt.h. A variable called OUT therefore
+# vanishes on MSVC: `FILE *OUT;` becomes `FILE *;` and every `fprintf(OUT,
+# ...)` becomes `fprintf(, ...)`.
+#
+# That is exactly what happened to tests/golden.c, and the resulting ~30
+# cascading errors all pointed at fprintf call sites and looked like a
+# broken thread-local. It cost four push-and-wait CI cycles to find, because
+# nothing here could reproduce an MSVC-only failure.
+#
+# This does reproduce it, in about a second and with no Windows: define the
+# macros the way winnt.h does and see whether the sources still parse.
+# Verified against the broken revision -- 20 errors, at the same two lines
+# MSVC reported.
+WINMACROS = -DIN= -DOUT= -DOPTIONAL= -DFAR= -DNEAR=
+
+check-winmacros:
+	@echo "G13: no collision with windows.h annotation macros"
+	@rc=0; \
+	for f in $(wildcard *.c) $(SWE) ../swetest.c ../swevents.c ../swemini.c; do \
+	  $(CC) -fsyntax-only -std=c17 -D_GNU_SOURCE $(WINMACROS) -I.. -I. $$f 2>/tmp/wm.$$$$ \
+	    || { echo "  FAIL: $$f"; head -4 /tmp/wm.$$$$ | sed 's/^/      /'; rc=1; }; \
+	done; rm -f /tmp/wm.$$$$; \
+	[ $$rc -eq 0 ] && echo "PASS" || { echo "G13 FAIL"; exit 1; }
 
 # check-ci: run the gate set under the CI runner's exact toolchain.
 #

@@ -128,6 +128,11 @@ jobs:
       # default context. Two hand audits missed cases; this cannot.
       - name: No internal calls to legacy entry points
         run: make -C tests check-bridge
+      # G13. Catches windows.h annotation-macro collisions (IN, OUT, ...)
+      # on Linux, in a second, instead of four push-and-wait cycles against
+      # the MSVC job.
+      - name: No collision with windows.h annotation macros
+        run: make -C tests check-winmacros
       - name: Threading shim
         run: make -C tests check-threadshim
 

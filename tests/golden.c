@@ -45,19 +45,18 @@
 #define DEFAULT_EPHE "../ephe"
 static const char *EPHE = DEFAULT_EPHE;
 
-/* Per-thread output sink so N threads can each produce a full transcript.
+/* Per-thread output sink, so N workers can each produce a full transcript.
+ *
+ * Named TRANSCRIPT, not OUT. `windows.h` defines OUT as an EMPTY macro --
+ * it is one of the SAL parameter annotations in winnt.h -- so on MSVC the
+ * declaration below expanded to `__declspec(thread) FILE *;` and every use
+ * `fprintf(TRANSCRIPT, ...)` became `fprintf(, ...)`. That produced a C2059 here
+ * and around thirty cascading errors at the call sites, all of which look
+ * like a broken thread-local and are nothing of the kind.
  *
  * TLS rather than a bare __thread: that spelling is GCC/clang only, and
- * MSVC wants __declspec(thread). sweodef.h picks the right one per
- * compiler and this file gets it through swephexp.h.
- *
- * No `static`: MSVC rejects `static __declspec(thread) FILE *OUT;` with
- * C2059. The library's own thread-locals are declared without it --
- * `TLS struct swe_ctx swed`, `TLS FILE *swi_fp_trace_c` -- and those do
- * compile under MSVC, so this follows the form already proven to work.
- * This program is a single translation unit, so the external linkage that
- * costs is of no consequence. */
-TLS FILE *OUT;
+ * sweodef.h already picks __declspec(thread) for MSVC. */
+static TLS FILE *TRANSCRIPT;
 
 /* Normalise serr for the transcript.
  *
@@ -170,15 +169,15 @@ static void emit_version(void) {
   char sv[AS_MAXCH];
   swe_version(sv);
   fprintf(stderr, "swe_version=%s\n", sv);
-  fprintf(OUT, "# swe_version=<not compared; see stderr>\n");
+  fprintf(TRANSCRIPT, "# swe_version=<not compared; see stderr>\n");
 }
 
 static void row(const char *tag, int32 rf, double *x, int n, const char *serr) {
   char cl[AS_MAXCH * 2];
-  fprintf(OUT, "%-46s rf=%-6d", tag, rf);
-  for (int i = 0; i < n; i++) fprintf(OUT, " %a", x[i]);
-  if (serr && *serr) { sanitize(cl, sizeof cl, serr); fprintf(OUT, " | %s", cl); }
-  fprintf(OUT, "\n");
+  fprintf(TRANSCRIPT, "%-46s rf=%-6d", tag, rf);
+  for (int i = 0; i < n; i++) fprintf(TRANSCRIPT, " %a", x[i]);
+  if (serr && *serr) { sanitize(cl, sizeof cl, serr); fprintf(TRANSCRIPT, " | %s", cl); }
+  fprintf(TRANSCRIPT, "\n");
 }
 
 static void planets(void) {
@@ -264,10 +263,10 @@ static void houses(void) {
         int rc = swe_houses_ex2(DATES[d], SEFLG_SWIEPH, lats[la], 8.55,
                                 *h, cusp, ascmc, csp, asp, NULL);
         snprintf(tag, sizeof tag, "hsys[%c,%zu,%zu]", *h, la, d);
-        fprintf(OUT, "%-46s rc=%-4d", tag, rc);
-        for (int i = 0; i < 13; i++) fprintf(OUT, " %a", cusp[i]);
-        for (int i = 0; i < 10; i++) fprintf(OUT, " %a", ascmc[i]);
-        fprintf(OUT, "\n");
+        fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
+        for (int i = 0; i < 13; i++) fprintf(TRANSCRIPT, " %a", cusp[i]);
+        for (int i = 0; i < 10; i++) fprintf(TRANSCRIPT, " %a", ascmc[i]);
+        fprintf(TRANSCRIPT, "\n");
       }
 }
 
@@ -295,9 +294,9 @@ static void sunshine(void) {
         int rc = swe_houses_armc_ex2(armcs[am], lats[la], eps, 'I',
                                      cusp, ascmc, csp, asp, serr);
         snprintf(tag, sizeof tag, "sun_set[%d]", step);
-        fprintf(OUT, "%-46s rc=%-4d", tag, rc);
-        for (int k = 0; k < 13; k++) fprintf(OUT, " %a", cusp[k]);
-        fprintf(OUT, " | dec=%a %s\n", ascmc[9], serr);
+        fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
+        for (int k = 0; k < 13; k++) fprintf(TRANSCRIPT, " %a", cusp[k]);
+        fprintf(TRANSCRIPT, " | dec=%a %s\n", ascmc[9], serr);
 
         /* (b) sentinel 99 -> takes the READ branch, must recover (a)'s value */
         memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
@@ -307,16 +306,16 @@ static void sunshine(void) {
         rc = swe_houses_armc_ex2(armcs[am], lats[la], eps, 'I',
                                  cusp, ascmc, csp, asp, serr);
         snprintf(tag, sizeof tag, "sun_recall[%d]", step);
-        fprintf(OUT, "%-46s rc=%-4d", tag, rc);
-        for (int k = 0; k < 13; k++) fprintf(OUT, " %a", cusp[k]);
-        fprintf(OUT, " | dec=%a %s\n", ascmc[9], serr);
+        fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
+        for (int k = 0; k < 13; k++) fprintf(TRANSCRIPT, " %a", cusp[k]);
+        fprintf(TRANSCRIPT, " | dec=%a %s\n", ascmc[9], serr);
         step++;
       }
   /* out-of-range declination must still be rejected */
   memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc); serr[0]=0;
   ascmc[9] = 45.0;
   int rc = swe_houses_armc_ex2(0.0, 47.37, eps, 'I', cusp, ascmc, NULL, NULL, serr);
-  fprintf(OUT, "%-46s rc=%-4d | %s\n", "sun_badrange", rc, serr);
+  fprintf(TRANSCRIPT, "%-46s rc=%-4d | %s\n", "sun_badrange", rc, serr);
 }
 
 static void fixstars(void) {
@@ -492,18 +491,18 @@ static void misc(void) {
   char tag[256], buf[AS_MAXCH], serr[AS_MAXCH];
   for (int sid = 0; sid <= 47; sid++) {
     const char *nm = swe_get_ayanamsa_name(sid);
-    fprintf(OUT, "%-46s %s\n",
+    fprintf(TRANSCRIPT, "%-46s %s\n",
             (snprintf(tag, sizeof tag, "ayanname[%d]", sid), tag),
             nm ? nm : "(null)");
   }
   for (int p = SE_SUN; p <= SE_VESTA; p++) {
     buf[0] = 0; swe_get_planet_name(p, buf);
-    fprintf(OUT, "%-46s %s\n",
+    fprintf(TRANSCRIPT, "%-46s %s\n",
             (snprintf(tag, sizeof tag, "plname[%d]", p), tag), buf);
   }
   const char *hs = "PKORCAEVXHTBGWMNQLIUSDFY";
   for (const char *h = hs; *h; h++)
-    fprintf(OUT, "%-46s %s\n",
+    fprintf(TRANSCRIPT, "%-46s %s\n",
             (snprintf(tag, sizeof tag, "hname[%c]", *h), tag), swe_house_name(*h));
   /* degree splitting across rounding modes */
   for (int i = 0; i < 6; i++) {
@@ -512,7 +511,7 @@ static void misc(void) {
                         SE_SPLIT_DEG_ROUND_DEG, SE_SPLIT_DEG_ZODIACAL,
                         SE_SPLIT_DEG_NAKSHATRA};
     swe_split_deg(123.456789 + i, fl[i], &ideg, &imin, &isec, &dsecfr, &isgn);
-    fprintf(OUT, "%-46s %d %d %d %a %d\n",
+    fprintf(TRANSCRIPT, "%-46s %d %d %d %a %d\n",
             (snprintf(tag, sizeof tag, "splitdeg[%d]", i), tag),
             ideg, imin, isec, dsecfr, isgn);
   }
@@ -522,7 +521,7 @@ static void misc(void) {
     swe_utc_to_jd(y, 6, 15, 12, 30, 30.5, SE_GREG_CAL, dret, serr);
     swe_jdet_to_utc(dret[0], SE_GREG_CAL, &iy, &im, &id, &ih, &mi, &sec);
     jd = swe_julday(y, 6, 15, 12.5, SE_GREG_CAL);
-    fprintf(OUT, "%-46s %a %a %a %d-%d-%d %d:%d:%a\n",
+    fprintf(TRANSCRIPT, "%-46s %a %a %a %d-%d-%d %d:%d:%a\n",
             (snprintf(tag, sizeof tag, "utc[%d]", y), tag),
             dret[0], dret[1], jd, iy, im, id, ih, mi, sec);
   }
@@ -533,13 +532,13 @@ static void misc(void) {
     swe_azalt(2451545.0, SE_ECL2HOR, geo, 1013.25, 15.0, xin, xaz);
     double r = swe_refrac_extended(xin[1], 400, 1013.25, 15.0, 0.0065,
                                    SE_TRUE_TO_APP, xout);
-    fprintf(OUT, "%-46s %a %a %a | %a %a\n",
+    fprintf(TRANSCRIPT, "%-46s %a %a %a | %a %a\n",
             (snprintf(tag, sizeof tag, "azalt[%d]", i), tag),
             xaz[0], xaz[1], xaz[2], r, xout[0]);
   }
   /* library path: value is machine-specific, so assert only its shape */
   buf[0] = 0; swe_get_library_path(buf);
-  fprintf(OUT, "%-46s len_nonzero=%d terminated=%d\n", "libpath",
+  fprintf(TRANSCRIPT, "%-46s len_nonzero=%d terminated=%d\n", "libpath",
           buf[0] != '\0', memchr(buf, '\0', AS_MAXCH) != NULL);
 }
 
@@ -588,7 +587,7 @@ static void suite_compute_only(void) {
         row(tag, rf, x, 6, serr);
       }
     }
-    fprintf(OUT, "%-46s %a\n", "inherit_tidacc", swe_get_tid_acc());
+    fprintf(TRANSCRIPT, "%-46s %a\n", "inherit_tidacc", swe_get_tid_acc());
   }
 }
 
@@ -709,7 +708,7 @@ static void coverage(void) {
     *sdet = '\0';
     swe_get_astro_models(NULL, sdet, 0);
     { char cl[AS_MAXCH * 4]; sanitize(cl, sizeof cl, sdet);
-      fprintf(OUT, "%-46s rf=%-6d | %s\n", "cov:astro_models", 0, cl); }
+      fprintf(TRANSCRIPT, "%-46s rf=%-6d | %s\n", "cov:astro_models", 0, cl); }
   }
 
   /* --- eclipse/occultation searches the eclipses() section skips ------
@@ -868,13 +867,13 @@ struct targ { int id; char *buf; size_t len; int setup; };
 #if !defined(_WIN32)
 static thr_ret_t THR_CALL thread_suite(void *p) {
   struct targ *a = p;
-  OUT = open_memstream(&a->buf, &a->len);
+  TRANSCRIPT = open_memstream(&a->buf, &a->len);
   /* a->setup mirrors what a well-behaved caller does on a worker thread.
    * 0 = configure only on the main thread (the pyswisseph pattern).
    * 1 = re-apply configuration on every worker thread (today's workaround). */
   if (a->setup) swe_set_ephe_path((char *)EPHE);
   suite_compute_only();
-  fclose(OUT);
+  fclose(TRANSCRIPT);
   return NULL;
 }
 #endif  /* !_WIN32 */
@@ -893,7 +892,7 @@ int main(int argc, char **argv) {
   swe_set_ephe_path((char *)EPHE);
 
   if (nthreads <= 0) {                 /* baseline mode: dump to stdout */
-    OUT = stdout;
+    TRANSCRIPT = stdout;
     suite();
     swe_close();
     return 0;
