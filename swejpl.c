@@ -137,8 +137,9 @@ static_assert(sizeof(((struct jpl_save *) 0)->buf)
 
 static int state (swe_ctx *ctx, double et, int32 *list, int do_bary, 
 		  double *pv, double *pvsun, double *nut, char *serr);
-static int interp(struct jpl_save *js, double *buf, double t, double intv,
-		  int32 ncfin, int32 ncmin, int32 nain, int32 ifl, double *pv);
+static int interp(struct jpl_save *js, const double * SWI_RESTRICT buf,
+		  double t, double intv, int32 ncfin, int32 ncmin, int32 nain,
+		  int32 ifl, double * SWI_RESTRICT pv);
 static int32 fsizer(swe_ctx *ctx, char *serr);
 static void reorder(char *x, int size, int number);
 static int read_const_jpl(swe_ctx *ctx, double *ss, char *serr);
@@ -494,13 +495,26 @@ int swi_pleph(swe_ctx *ctx, double et, int ntarg, int ncent, double *rrd, char *
  *      pv   d.p. interpolated quantities requested. 
  *           assumed dimension is pv(ncm,fl). 
  */
-static int interp(struct jpl_save *js, double *buf, double t, double intv,
-		  int32 ncfin, int32 ncmin, int32 nain, int32 ifl, double *pv)
+/* buf and pv are restrict, and so are the four Chebyshev arrays.
+ *
+ * Checked, not assumed (notes/C17_PERFORMANCE.md section 4.1): this
+ * function reads and writes ONLY js->pc/vc/ac/jc and the scalars
+ * np/nv/nac/njk/twot. It never touches js->buf or js->pv, so although
+ * `buf` points into js->buf[] and `pv` is js->pv at the state() call
+ * sites, neither is reachable through js from in here, and the four
+ * Chebyshev arrays are distinct members that cannot overlap either.
+ *
+ * The inner loop is pv[i] += pc[j] * buf[...]; without restrict the
+ * compiler must reload pc[j] after every store to pv[i].
+ */
+static int interp(struct jpl_save *js, const double * SWI_RESTRICT buf,
+		  double t, double intv, int32 ncfin, int32 ncmin, int32 nain,
+		  int32 ifl, double * SWI_RESTRICT pv)
 {
-  double *pc = js->pc;
-  double *vc = js->vc;
-  double *ac = js->ac;
-  double *jc = js->jc;
+  double * SWI_RESTRICT pc = js->pc;
+  double * SWI_RESTRICT vc = js->vc;
+  double * SWI_RESTRICT ac = js->ac;
+  double * SWI_RESTRICT jc = js->jc;
   int ncf = (int) ncfin;
   int ncm = (int) ncmin;
   int na = (int) nain;

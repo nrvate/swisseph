@@ -92,13 +92,37 @@ the pointers are never the same array in practice.
 
 | Function | Location | Why it matters |
 |---|---|---|
-| `interp()` | `swejpl.c:472` | **Headline candidate.** Every JPL planet/nutation/libration lookup goes through this; `buf`/`pv` verified distinct at all call sites (`swejpl.c:824,831,844,849`). Inner loop is `ncf`(~10-15 terms) × `ncm`(2-3) × up to 4 derivative orders — the hottest loop in the file. |
+| `interp()` | `swejpl.c:497` | **Headline candidate — but see the warning below.** Every JPL planet/nutation/libration lookup goes through this; `buf`/`pv` verified distinct at all call sites (`swejpl.c:824,831,844,849`). Inner loop is `ncf`(~10-15 terms) × `ncm`(2-3) × up to 4 derivative orders — the hottest loop in the file. |
 | `swi_cross_prod()` | `swephlib.c:160` | All 5 call sites keep output separate from inputs. Small body, but genuinely alias-free. |
 | `swi_trop_ra2sid_lon_sosy()` | `sweph.c:3335` | All 7 call sites pass distinct `xin`/`xout`. **Do not confuse with its sibling below.** |
 | `swi_osc_el_plan()` | `swemplan.c:579` | `xp` accumulates from `xearth`/`xsun`, never aliased with either. |
 | `embofs()` | `sweph.c:5089` | Called with distinct plan-data arrays every Earth-position call — payoff is call frequency, not loop size. |
 | `calc_center_body()` | `sweph.c:2469` | `xcom` never equals `xx` at either call site. |
 | `denormalize_positions()`/`calc_speed()` | `sweph.c:6010,6026` | Three genuinely distinct arrays, but this is the `SFLG_SPEED3` slow-path explicitly commented "for test only" — low real-world payoff. |
+
+> ### ⚠ `interp()` is unreachable in this checkout, and therefore untested
+>
+> `interp()` is only reached through `swi_pleph()`, which `jplplan()` calls
+> only once a JPL `.eph` file is open. This repository ships `.se1` files
+> and no `.eph` at all, so:
+>
+> * **`interp()` executes zero times** in `tests/bench` *and* in the entire
+>   5137-row `tests/golden` suite. Measured, not inferred: a `fprintf` at
+>   the top of the function fires 0 times for both.
+> * The `restrict` annotation therefore **cannot be shown to speed anything
+>   up here**, and no such claim is made. It was applied because it is
+>   correct and benefits users who do supply `de431.eph` — not on measured
+>   evidence.
+> * More seriously: **the whole JPL reading path has no numerical
+>   regression coverage.** G1's bit-exactness says nothing about it, and
+>   `tests/jplguard.c` only exercises header *rejection*. Phase 3c
+>   restructured `interp()` and `state()` — moving seven statics into
+>   `struct jpl_save` — with G1 green throughout and not one line of that
+>   code ever executed.
+>
+> This gap is tracked as G10 in PLAN.md; it wants a synthetic `.eph`
+> fixture that actually computes, extending what `jplguard.c` already does
+> for headers.
 
 **Explicitly excluded — confirmed aliased in real use, `restrict` would be UB:**
 

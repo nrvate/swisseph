@@ -114,6 +114,28 @@
 #define TLS
 #endif
 
+/* restrict, spelled portably.
+ *
+ * C99 and later have `restrict`; MSVC spells it `__restrict` and accepts
+ * that in C mode at every version this library targets. Anything older
+ * gets nothing, which is always correct -- restrict is a promise to the
+ * compiler, never a requirement.
+ *
+ * Only ever apply this where the no-alias property has been checked at
+ * EVERY call site. Several plausible-looking candidates in this library are
+ * genuinely called with aliased pointers (swi_cartpol/swi_polcart in place,
+ * swi_coortrf2 in place); annotating those would be undefined behaviour
+ * rather than an optimisation. See notes/C17_PERFORMANCE.md section 4.1.
+ */
+#if defined(_MSC_VER)
+# define SWI_RESTRICT __restrict
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+# define SWI_RESTRICT restrict
+#else
+# define SWI_RESTRICT
+#endif
+
+
 #ifdef _WIN32		/* Microsoft VC 5.0 does not define MSDOS anymore */
 # undef MSDOS
 # define MSDOS MY_TRUE
