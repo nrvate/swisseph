@@ -239,7 +239,8 @@ int prev_yout = -999999;
 int max_cols = MAX_COLS;
 
 #define J2000           2451545.0  /* 2000 January 1.5 */
-#define square_sum(x)   (x[0]*x[0]+x[1]*x[1]+x[2]*x[2])
+/* square_sum() comes from sweph.h, which this file already includes.
+ * It was redefined here byte-identically -- see C17_PERFORMANCE.md A3. */
 #define SEFLG_EPHMASK   (SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH)
 #define SUN_RADIUS      (959.63 / 3600 * DEGTORAD)  /*  Meeus germ. p 391 */
 #define VENUS_RADIUS	(8.34 / 3600 * DEGTORAD) /* AA96 E43 */
@@ -367,7 +368,17 @@ int main(int argc, char *argv[])
 {
   AS_BOOL is_opposition;
   char serr[256];
-  char sout[AS_MAXCH], s[AS_MAXCH], saves[AS_MAXCH]; 
+  char sout[AS_MAXCH], s[AS_MAXCH];
+  /* saves holds the previous input line, so that entering an empty line
+   * repeats it (see the *sp == '\0' branch below). It must start empty:
+   * on the FIRST iteration there is no previous line, and the old
+   * declaration left it uninitialised, so an empty first input copied
+   * stack garbage into s and then parsed it as a date.
+   *
+   * gcc 13.3 on the CI runner catches this via -Werror=maybe-uninitialized
+   * in the fortified strcpy; gcc 11.4 here does not. Reproduce locally with
+   * `make -C tests check-ci`, which runs the gates in the runner image. */
+  char saves[AS_MAXCH] = "";
   char *sp, *spsave;
   char *spno;
   int i, j, k, n, izod;
@@ -935,6 +946,7 @@ int main(int argc, char *argv[])
 	  magme[0] = xma0[0];
 	  magme[1] = xma1[0];
 	  magme[2] = xma2[0];
+	  /* fall through */
 	case SE_VENUS:
 	case SE_JUPITER:
 	  elong_vis = 10;
@@ -2089,8 +2101,13 @@ static int get_crossing_bin_search(double dt, double tt0, double dang, double xt
     d12 = swe_degnorm(xa[0] - xb[0] - dang);
     if (d12 > 180) d12 -= 360;
     if (d1 * d12 < 0) {
+      /* unlike get_near_crossing_bin_search()'s second bisection, this
+       * narrowed bound is never read back; kept only so both functions'
+       * bisection step reads the same at a glance. */
       xta2 = xa[0];
+      (void) xta2;
       xtb2 = xb[0];
+      (void) xtb2;
     } else {
       xta1 = xa[0];
       xtb1 = xb[0];
@@ -2295,34 +2312,37 @@ static int read_sweasp_dat(char *foutnam)
   char spl1[30], spl2[30];
   /* open aspects file */
   if ((fpout = fopen(foutnam, BFILE_R_ACCESS)) == NULL) {
-    sprintf(serr, "could not open file %s", foutnam);
+    snprintf(serr, sizeof(serr), "could not open file %.230s", foutnam);
     return ERR;
   }
   while (fgets(s, AS_MAXCH, fpout) != NULL && (sp = strchr(s, '\n')) != NULL) {
     headerlen += strlen(s);
-    if (strncmp(s, "####", 4) == 0) 
+    if (strncmp(s, "####", 4) == 0)
       break;
   }
   if (fseek(fpout, 0L, SEEK_END) != 0) {
-    sprintf(serr, "fseek failed (SEEK_END): %s", foutnam);
+    snprintf(serr, sizeof(serr), "fseek failed (SEEK_END): %.220s", foutnam);
     return ERR;
   }
   flen = ftell(fpout) - headerlen;
   nrec = flen / 52;
   if (fseek(fpout, headerlen, SEEK_SET) != 0) {
-    sprintf(serr, "fseek failed (SEEK_SET): %s", foutnam);
+    snprintf(serr, sizeof(serr), "fseek failed (SEEK_SET): %.220s", foutnam);
     return ERR;
   }
 dur = 0;
   for (i = 0; i < nrec; i++) {
-    fread((void *) &tjd, sizeof(double), 1, fpout);
-    fread((void *) &ipla, sizeof(int32), 1, fpout);
-    fread((void *) &iplb, sizeof(int32), 1, fpout);
-    fread((void *) &iasp, sizeof(int32), 1, fpout);
-    fread((void *) &dasp, sizeof(double), 1, fpout);
-    fread((void *) &dorb, sizeof(double), 1, fpout);
-    fread((void *) &tjd_pre, sizeof(double), 1, fpout);
-    fread((void *) &tjd_post, sizeof(double), 1, fpout);
+    /* short reads are silently ignored here, as they always were --
+     * fread()'s warn_unused_result survives a bare (void) cast on glibc's
+     * fortified inline, so the read is folded into a condition instead. */
+    if (fread((void *) &tjd, sizeof(double), 1, fpout)) {}
+    if (fread((void *) &ipla, sizeof(int32), 1, fpout)) {}
+    if (fread((void *) &iplb, sizeof(int32), 1, fpout)) {}
+    if (fread((void *) &iasp, sizeof(int32), 1, fpout)) {}
+    if (fread((void *) &dasp, sizeof(double), 1, fpout)) {}
+    if (fread((void *) &dorb, sizeof(double), 1, fpout)) {}
+    if (fread((void *) &tjd_pre, sizeof(double), 1, fpout)) {}
+    if (fread((void *) &tjd_post, sizeof(double), 1, fpout)) {}
     if ((0)) { /* test output find longest possible aspect duration */
       if (ipla <= 9 && tjd_pre > 0 && tjd_post > 0 && tjd_post - tjd_pre > dur) {
 	dur = tjd_post - tjd_pre;
@@ -2354,9 +2374,10 @@ dur = 0;
  * 1. exact aspects
  * 2. near aspects with orb < 3 before the planets separate again
  */
-int32 calc_mundane_aspects(int32 iflag, double tjd0, double tjde, double tstep, 
+int32 calc_mundane_aspects(int32 iflag, double tjd0, double tjde, double tstep,
   char *splan, char *sasp, EVENT *pev, char *serr)
 {
+  (void) pev;	/* output goes through events_day/pevd below instead */
   int32 ipl, ipla, iplb, ipli, iplia, iplib, bpind;
   char *sp, *spa, *spb;
   char stnam[40], stnama[40], stnamb[40];
@@ -2671,6 +2692,10 @@ static int is_node_apsis(int ipl)
 /* returns all aspects, that are within orb during the time (tjd +- dtol) */
 static int32 extract_data_of_day(int32 doflag, double tjd, double dtol, char *splan, char *sasp, EVENT *pev, char *serr)
 {
+  (void) doflag;
+  (void) splan;
+  (void) sasp;
+  (void) pev;
   int32 flen = 0, headerlen = 0, fposfirst = 0, fposlast = 0, nrecdif;
   int32 fpos0, fpos1, fpos2;
   int32 retc, nrec = 0, ipla, iplb, iasp;
@@ -2686,20 +2711,20 @@ static int32 extract_data_of_day(int32 doflag, double tjd, double dtol, char *sp
   /* open aspects file */
   sprintf(foutnam, "%s/%s", PATH_FOUTNAM, FOUTNAM);
   if ((fpout = fopen(foutnam, BFILE_R_ACCESS)) == NULL) {
-    sprintf(serr, "could not open file %s", foutnam);
+    snprintf(serr, AS_MAXCH, "could not open file %.230s", foutnam);
     return ERR;
   }
   /* read file header */
   while (fgets(s, AS_MAXCH, fpout) != NULL && (sp = strchr(s, '\n')) != NULL) {
     headerlen += strlen(s);
-    if (strncmp(s, "####", 4) == 0) 
+    if (strncmp(s, "####", 4) == 0)
       break;
   }
   /* start position of file */
   fposfirst = headerlen;
   /* end position of file */
   if (fseek(fpout, 0L, SEEK_END) != 0) {
-    sprintf(serr, "fseek failed (SEEK_END): %s", foutnam);
+    snprintf(serr, AS_MAXCH, "fseek failed (SEEK_END): %.220s", foutnam);
     return ERR;
   }
   fposlast = ftell(fpout); /* pointer to end of file */
@@ -2711,7 +2736,14 @@ static int32 extract_data_of_day(int32 doflag, double tjd, double dtol, char *sp
   if ((retc = start_and_end_date_sweasp(fpout, foutnam, fposfirst, fposlast, &tjdbeg, &tjdend, serr)) == ERR) 
     goto end_extract;
   if (tjd <= tjdbeg || tjd >= tjdend) {
-    sprintf(serr, "date %f is beyond range of file %s (%.0f - %.0f)", tjd, foutnam, tjdbeg, tjdend);
+    /* %f's field width isn't boundable via a precision specifier the way
+     * %s is (the integer part has no cap), so -Wformat-truncation can't be
+     * satisfied here short of disabling it -- snprintf's own bound still
+     * makes this memory-safe regardless. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+    snprintf(serr, AS_MAXCH, "date %f is beyond range of file %.150s (%.0f - %.0f)", tjd, foutnam, tjdbeg, tjdend);
+#pragma GCC diagnostic pop
     return ERR;
     goto end_extract;
   }
@@ -2835,8 +2867,13 @@ int32 calc_all_crossings(
               double *dpos,   /* transit/ingress positions */
               EVENT *pev,  /* struct for output */
               char *serr      /* error string */
-             ) 
+             )
 {
+  /* iflag/npos/dpos belong to the itype 1/2 (transit/ingress) branches,
+   * which the switch below has never implemented -- only itype 0 exists. */
+  (void) iflag;
+  (void) npos;
+  (void) dpos;
   switch (itype) {
   case 0:
     if (tstep == 0)
@@ -2901,6 +2938,7 @@ static int32 get_prev_lunasp(double t0, int32 ipl, int32 iflag, double *tret, do
 static int32 get_sign_ingress_direct_body(double tet0, int32 ipl, int32 iflag, int32 backward, double *tret, int32 *isign, char *serr)
 {
   double xx[6], xingr, dx, mspeed, t;
+  (void) backward;	/* only read by the "if (!backward)" branch below, disabled */
   iflag |= SEFLG_SPEED;
   if (swe_calc(tet0, ipl, iflag, xx, serr) == ERR)
     return ERR;
@@ -3045,6 +3083,7 @@ repeat_loop:
 
 static int32 calc_all_voc(int32 iflag, double te, double tend, char *serr)
 {
+  (void) iflag;
   double t, tnext;
   int jday, jmon, jyear, gregflag = SE_GREG_CAL;
   double jut;

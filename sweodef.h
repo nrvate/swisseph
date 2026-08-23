@@ -7,7 +7,7 @@
    and must be kept compatible. Everything not used in SwissEph
    has been deleted.
 
-   Does auto-detection of MSDOS (TURBO_C or MS_C),  HPUNIX, Linux.
+   Does auto-detection of MSDOS (MS_C), HPUNIX, Linux.
    Must be extended for more portability; there should be a way
    to detect byte order and file system type.
    
@@ -82,9 +82,30 @@
  *
  * Sun Studio C/C++, IBM XL C/C++, GNU C and Intel C/C++ (Linux systems) -> __thread
  * Borland, VC++ -> __declspec(thread)
+ *
+ * The __APPLE__ exclusion is gone. It dated from a time when Apple's
+ * toolchain had no __thread; clang has supported it since Xcode 8 /
+ * macOS 10.7. While it stood, `swed` -- 23 KB of caches, open FILE*s and
+ * configuration -- was a plain process-wide global on macOS, so every
+ * swe_calc() on every thread wrote the same pldat[]/savedat[]/fidat[]
+ * with no synchronisation whatsoever. See notes/INVESTIGATION.md section 3.
+ * CI caught that it was still live: the macos job prints what TLS expands
+ * to, and it printed nothing.
+ *
+ * The bare-WIN32 exclusion is gone too, and NOT replaced by _WIN32.
+ * Read the condition carefully: defining the symbol DISABLES thread-local
+ * storage. The __declspec(thread) branch below exists specifically for
+ * MSVC and is only reachable while WIN32 is undefined -- so switching this
+ * to _WIN32, which MSVC always defines, would have removed TLS from every
+ * Windows build rather than fixing anything. Nothing in the tree defines
+ * bare WIN32, so MSVC was getting __declspec(thread) by luck; now it gets
+ * it by construction.
+ *
+ * TLSOFF and DOS32 are kept: TLSOFF is the documented escape hatch, and
+ * DOS32 genuinely has no thread-local storage.
  */
-#if !defined(TLSOFF) && !defined( __APPLE__ ) && !defined(WIN32) && !defined(DOS32)
-#if defined( __GNUC__ ) || defined( __CYGWIN__ ) 
+#if !defined(TLSOFF) && !defined(DOS32)
+#if defined( __GNUC__ ) || defined( __CYGWIN__ )
 #define TLS     __thread
 #else
 #define TLS     __declspec(thread)
@@ -92,6 +113,28 @@
 #else
 #define TLS
 #endif
+
+/* restrict, spelled portably.
+ *
+ * C99 and later have `restrict`; MSVC spells it `__restrict` and accepts
+ * that in C mode at every version this library targets. Anything older
+ * gets nothing, which is always correct -- restrict is a promise to the
+ * compiler, never a requirement.
+ *
+ * Only ever apply this where the no-alias property has been checked at
+ * EVERY call site. Several plausible-looking candidates in this library are
+ * genuinely called with aliased pointers (swi_cartpol/swi_polcart in place,
+ * swi_coortrf2 in place); annotating those would be undefined behaviour
+ * rather than an optimisation. See notes/C17_PERFORMANCE.md section 4.1.
+ */
+#if defined(_MSC_VER)
+# define SWI_RESTRICT __restrict
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+# define SWI_RESTRICT restrict
+#else
+# define SWI_RESTRICT
+#endif
+
 
 #ifdef _WIN32		/* Microsoft VC 5.0 does not define MSDOS anymore */
 # undef MSDOS
@@ -111,43 +154,15 @@
 # define MS_VC
 #endif
 
-#ifdef WIN32		/* Microsoft VC 5.0 does not define MSDOS anymore */
-# define MSDOS MY_TRUE
-#endif
-
-#ifdef MSDOS	/* already defined by some DOS compilers */
+#if defined(WIN32) && !defined(_WIN32)	/* Microsoft VC 5.0 does not define MSDOS anymore */
 # undef MSDOS
 # define MSDOS MY_TRUE
 #endif
 
-#ifdef __TURBOC__	/* defined by  turboc */
-# ifndef MSDOS
-#   define MSDOS MY_TRUE
-# endif
-# define TURBO_C
-#endif
-
-#ifdef __SC__	/* defined by  Symantec C */
-# ifndef MSDOS
-#   define MSDOS MY_TRUE
-# endif
-# define SYMANTEC_C
-#endif
-
-#ifdef __WATCOMC__	/* defined by  WatcomC */
-# ifndef MSDOS
-#   define MSDOS MY_TRUE
-# endif
-# define WATCOMC
-#endif
-
-
 #ifdef MSDOS
 #  define HPUNIX MY_FALSE
 #  define INTEL_BYTE_ORDER 1
-#  ifndef TURBO_C
-#    define MS_C	/* assume Microsoft C compiler */
-#  endif
+#  define MS_C	/* assume Microsoft C compiler */
 # define UNIX_FS MY_FALSE
 #else
 #  define MSDOS MY_FALSE
@@ -168,19 +183,7 @@
 #  include <unistd.h>
 #endif
 
-/*
- * if we have 16-bit ints, we define INT_16; we will need %ld to printf an int32
- * if we have 64-bit long, we define LONG_64
- * If none is defined, we have int = long = 32 bit, and use %d to printf an int32
- */
-#include <limits.h>
-#if INT_MAX < 40000
-# define INT_16
-#else
-# if LONG_MAX > INT_MAX
-#   define LONG_64
-# endif
-#endif
+/* int = long = 32 bit is assumed throughout; use %d to printf an int32. */
 
 #ifdef BYTE_ORDER
 #ifdef LITTLE_ENDIAN
@@ -190,38 +193,27 @@
 #endif
 #endif
 
-#ifdef INT_16
-  typedef long	int32;
-  typedef unsigned long	uint32;
-  typedef int	int16;
-  typedef double  REAL8;  /* real with at least 64 bit precision */
-  typedef long    INT4;   /* signed integer with at least 32 bit precision */
-  typedef unsigned long UINT4;
-                          /* unsigned integer with at least 32 bit precision */
-  typedef int     AS_BOOL;
-  typedef unsigned int UINT2;	/* unsigned 16 bits */
-# define ABS4	labs		/* abs function for long */ 
-#else
-  typedef int	int32;
-  typedef long long	int64;
-  typedef unsigned int	uint32;
-  typedef short	int16;
-  typedef double  REAL8;  /* real with at least 64 bit precision */
-  typedef int     INT4;   /* signed integer with at least 32 bit precision */
-  typedef unsigned int UINT4; 
-			/* unsigned integer with at least 32 bit precision */
-  typedef int     AS_BOOL;
-  typedef unsigned short UINT2;	/* unsigned 16 bits */
-  # define ABS4	abs		/* abs function for long */
-#endif
+#include <stdint.h>
+#include <stdbool.h>
 
-#if MSDOS 
-# ifdef TURBO_C
-#   include <alloc.h>		/* MSC needs malloc ! */
-# else
-#   include <malloc.h>
-# endif
-# define SIGALRM SIGINT
+  /* Real fixed-width types since C17_MIGRATION.md Phase 2. Names kept
+   * identical to the pre-C11 hand-rolled versions for source/ABI
+   * compatibility -- only the underlying type changed. */
+  typedef int32_t	int32;
+  typedef int64_t	int64;
+  typedef uint32_t	uint32;
+  typedef int16_t	int16;
+  typedef double  REAL8;  /* real with at least 64 bit precision */
+  typedef int32_t INT4;   /* signed integer with at least 32 bit precision */
+  typedef uint32_t UINT4;
+			/* unsigned integer with at least 32 bit precision */
+  typedef bool     AS_BOOL;
+  typedef uint16_t UINT2;	/* unsigned 16 bits */
+  # define ABS4	abs		/* abs function for long */
+
+#if MSDOS
+#  include <malloc.h>
+#  define SIGALRM SIGINT
 #endif
 
 #ifndef TRUE 

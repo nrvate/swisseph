@@ -1,0 +1,581 @@
+# Reusable packaging workflow.
+#
+# Called by ci.yml on every push and by release.yml on a tag. ONE definition,
+# so the artifacts a release ships are byte-for-byte the ones CI has been
+# building all along.
+#
+# That is not a stylistic preference. This repository already had two build
+# definitions for Windows -- a zip of .vcxproj files nobody built and a CI
+# job invoking cl directly -- and the unbuilt one silently rotted for a
+# decade. Duplicating build logic between CI and release is the same trap
+# with a slower fuse.
+name: package
+
+on:
+  workflow_call:
+
+# Building and uploading artifacts needs no write access to the repository.
+permissions:
+  contents: read
+
+jobs:
+
+  # ---------------------------------------------------------------------
+  # Linux package. Same shape as windows/package: build, smoke-test,
+  # verify the shared library really exports the context API, then assemble
+  # something with a manifest.
+  #
+  # The export check is not ceremony. On Windows the DLL built, ran and
+  # passed both smoke tests while exporting NOTHING -- every project was
+  # writing its objects to one shared directory, so the DLL was linked from
+  # objects compiled without MAKE_DLL. Only an explicit "is swe_ctx_new in
+  # there?" caught it.
+  # ---------------------------------------------------------------------
+  linux-package:
+    # ubuntu-22.04, NOT ubuntu-latest. Binaries link against the glibc they
+    # are built on, and glibc is forward- but not backward-compatible: a
+    # package built on 24.04 (glibc 2.39) refuses to start on 22.04, Debian
+    # 12 or RHEL 9 with
+    #   version `GLIBC_2.38' not found (required by ./bin/swetest)
+    # Found by unpacking a real artifact and running it, not by reading the
+    # workflow. Building on the oldest supported runner costs nothing and
+    # makes the package usable on everything newer.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    name: linux / package
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Build
+        run: |
+          make -B all libswe.a libswe.so
+          ls -la libswe.a libswe.so swetest swevents swemini
+      - name: Smoke-test the CLI
+        run: |
+          # -emos is the Moshier ephemeris: self-contained, so no .se1 files
+          # are needed. Exit status alone proves little -- swetest prints
+          # "illegal option" and carries on -- so the output is checked too.
+          out=$(./swetest -b1.1.2020 -p0 -fPl -emos 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "illegal option" && { echo "FAIL: argument rejected"; exit 1; }
+          # The Sun's ecliptic longitude on 2020-01-01 is about 280 degrees.
+          echo "$out" | grep -qE "^Sun +280\." || { echo "FAIL: no plausible Sun position"; exit 1; }
+          echo "swetest produces a plausible Sun position"
+      - name: Shared library must export the context API
+        run: |
+          syms=$(nm -D --defined-only libswe.so | awk '$2=="T"{print $3}' | grep "^swe_" | sort -u)
+          n=$(echo "$syms" | grep -c .)
+          echo "libswe.so exports $n swe_* symbols"
+          [ "$n" -ge 100 ] || { echo "FAIL: implausibly few exports"; exit 1; }
+          for s in swe_ctx_new swe_ctx_free swe_calc_ut_r swe_close_r swe_set_topo_r; do
+            echo "$syms" | grep -qx "$s" || { echo "FAIL: $s not exported"; exit 1; }
+          done
+          echo "context API present: $(echo "$syms" | grep -c '_r$') _r entry points"
+      - name: Assemble package
+        run: |
+          pkg=pkg/swisseph-linux
+          mkdir -p $pkg/bin $pkg/lib $pkg/include
+          cp swetest swevents swemini            $pkg/bin/
+          cp libswe.a libswe.so                $pkg/lib/
+          # PUBLIC headers only. swephlib.h declares internal swi_* functions
+          # and swephexp.h does not include it.
+          cp swephexp.h sweodef.h swedate.h swehouse.h swedll.h $pkg/include/
+          cp LICENSE THREADING.md                $pkg/
+          cp packaging/unix-README.md            $pkg/README.md
+          # find -printf is GNU-only; sed keeps this working on macOS.
+          # shasum ships on macOS, sha256sum on Linux -- try both.
+          ( cd $pkg && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs shasum -a 256 > SHA256SUMS 2>/dev/null ||
+            find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs sha256sum > SHA256SUMS )
+          cat $pkg/SHA256SUMS
+      - name: Verify the package
+        run: |
+          pkg=pkg/swisseph-linux
+          for f in bin/swetest lib/libswe.a lib/libswe.so include/swephexp.h \
+                   LICENSE README.md SHA256SUMS; do
+            [ -f "$pkg/$f" ] || { echo "FAIL: missing from package: $f"; exit 1; }
+          done
+          [ -f "$pkg/include/swephlib.h" ] && { echo "FAIL: internal header shipped"; exit 1; }
+          ( cd $pkg && { shasum -a 256 -c SHA256SUMS >/dev/null || sha256sum -c SHA256SUMS >/dev/null; } ) \
+            || { echo "FAIL: checksums do not verify"; exit 1; }
+          echo "package verified"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: swisseph-linux
+          path: pkg/swisseph-linux
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # macOS package. Same shape as windows/package: build, smoke-test,
+  # verify the shared library really exports the context API, then assemble
+  # something with a manifest.
+  #
+  # The export check is not ceremony. On Windows the DLL built, ran and
+  # passed both smoke tests while exporting NOTHING -- every project was
+  # writing its objects to one shared directory, so the DLL was linked from
+  # objects compiled without MAKE_DLL. Only an explicit "is swe_ctx_new in
+  # there?" caught it.
+  # ---------------------------------------------------------------------
+  macos-package:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    name: macos / package
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: "Build (universal: arm64 + x86_64)"
+        run: |
+          # macos-latest is Apple silicon, so a plain build ships arm64 only
+          # and every Intel Mac gets nothing it can load. Build both slices.
+          make -B all libswe.a libswe.dylib EXTRA_CFLAGS="-arch arm64 -arch x86_64"
+          ls -la libswe.a libswe.dylib swetest swevents swemini
+      - name: Both architectures must be present
+        run: |
+          # `ar` archiving fat objects and clang's multi-arch driver both
+          # fail quietly enough to ship a half-universal package, so assert
+          # the slices rather than trusting the build.
+          rc=0
+          for f in libswe.dylib swetest swevents swemini; do
+            archs=$(lipo -archs "$f")
+            printf '  %-14s %s\n' "$f" "$archs"
+            for a in arm64 x86_64; do
+              case " $archs " in *" $a "*) ;; *) echo "  FAIL: $f lacks $a"; rc=1;; esac
+            done
+          done
+          # A static archive is not a Mach-O file, so lipo cannot read it.
+          # Ask a member instead -- extracted somewhere else, since the
+          # build's own sweph.o is sitting in this directory.
+          d=$(mktemp -d) && cp libswe.a "$d/" && ( cd "$d" && ar x libswe.a sweph.o )
+          archs=$(lipo -archs "$d/sweph.o"); rm -rf "$d"
+          printf '  %-14s %s (member sweph.o)\n' libswe.a "$archs"
+          for a in arm64 x86_64; do
+            case " $archs " in *" $a "*) ;; *) echo "  FAIL: libswe.a lacks $a"; rc=1;; esac
+          done
+          [ $rc -eq 0 ] || exit 1
+          echo "universal: arm64 + x86_64 in every shipped binary"
+      - name: Smoke-test the CLI
+        run: |
+          # -emos is the Moshier ephemeris: self-contained, so no .se1 files
+          # are needed. Exit status alone proves little -- swetest prints
+          # "illegal option" and carries on -- so the output is checked too.
+          out=$(./swetest -b1.1.2020 -p0 -fPl -emos 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "illegal option" && { echo "FAIL: argument rejected"; exit 1; }
+          # The Sun's ecliptic longitude on 2020-01-01 is about 280 degrees.
+          echo "$out" | grep -qE "^Sun +280\." || { echo "FAIL: no plausible Sun position"; exit 1; }
+          echo "swetest produces a plausible Sun position"
+      - name: Shared library must export the context API
+        run: |
+          syms=$(nm -gU libswe.dylib | sed 's/^.* _//;s/^_//' | grep "^swe_" | sort -u)
+          n=$(echo "$syms" | grep -c .)
+          echo "libswe.dylib exports $n swe_* symbols"
+          [ "$n" -ge 100 ] || { echo "FAIL: implausibly few exports"; exit 1; }
+          for s in swe_ctx_new swe_ctx_free swe_calc_ut_r swe_close_r swe_set_topo_r; do
+            echo "$syms" | grep -qx "$s" || { echo "FAIL: $s not exported"; exit 1; }
+          done
+          echo "context API present: $(echo "$syms" | grep -c '_r$') _r entry points"
+      - name: ABI -- nothing upstream exported may disappear
+        run: |
+          set -e
+          SRC="sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c
+               sweph.c swephlib.c swecl.c swehel.c"
+          nm -gU libswe.dylib | sed 's/^.* _//;s/^_//' | sort -u > /tmp/new.sym
+          # The Linux abi job asks the same question, but only for Linux. The
+          # export set is decided per platform, so "nothing was removed" has
+          # to be established where the linker actually decides it.
+          git fetch -q --depth=1 origin legacy-master
+          git worktree add -q /tmp/base "$(git rev-parse FETCH_HEAD)"
+          ( cd /tmp/base && cc -dynamiclib -fPIC -D_GNU_SOURCE -o /tmp/base.dylib \
+              $(for f in $SRC; do [ -f "$f" ] && printf '%s ' "$f"; done) -lm )
+          nm -gU /tmp/base.dylib | sed 's/^.* _//;s/^_//' | sort -u > /tmp/base.sym
+          removed=$(comm -23 /tmp/base.sym /tmp/new.sym)
+          if [ -n "$removed" ]; then
+            echo "ABI FAIL: symbol(s) removed relative to upstream:"; echo "$removed" | sed 's/^/  /'; exit 1
+          fi
+          echo "ABI ok: nothing removed, $(comm -13 /tmp/base.sym /tmp/new.sym | grep -c . || true) added"
+
+      - name: Assemble package
+        run: |
+          pkg=pkg/swisseph-macos
+          mkdir -p $pkg/bin $pkg/lib $pkg/include
+          cp swetest swevents swemini            $pkg/bin/
+          cp libswe.a libswe.dylib                $pkg/lib/
+          # PUBLIC headers only. swephlib.h declares internal swi_* functions
+          # and swephexp.h does not include it.
+          cp swephexp.h sweodef.h swedate.h swehouse.h swedll.h $pkg/include/
+          cp LICENSE THREADING.md                $pkg/
+          cp packaging/unix-README.md            $pkg/README.md
+          # find -printf is GNU-only; sed keeps this working on macOS.
+          # shasum ships on macOS, sha256sum on Linux -- try both.
+          ( cd $pkg && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs shasum -a 256 > SHA256SUMS 2>/dev/null ||
+            find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs sha256sum > SHA256SUMS )
+          cat $pkg/SHA256SUMS
+      - name: Verify the package
+        run: |
+          pkg=pkg/swisseph-macos
+          for f in bin/swetest lib/libswe.a lib/libswe.dylib include/swephexp.h \
+                   LICENSE README.md SHA256SUMS; do
+            [ -f "$pkg/$f" ] || { echo "FAIL: missing from package: $f"; exit 1; }
+          done
+          [ -f "$pkg/include/swephlib.h" ] && { echo "FAIL: internal header shipped"; exit 1; }
+          ( cd $pkg && { shasum -a 256 -c SHA256SUMS >/dev/null || sha256sum -c SHA256SUMS >/dev/null; } ) \
+            || { echo "FAIL: checksums do not verify"; exit 1; }
+          echo "package verified"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: swisseph-macos
+          path: pkg/swisseph-macos
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # Windows package. Builds the MSVC solution and assembles a distributable
+  # zip -- DLLs, import libs, static libs, CLI tools, headers.
+  #
+  # The project files in windows/projects/ are AUTHORITATIVE: this job
+  # builds them, so they cannot rot the way the tree's other unbuilt code
+  # did (interp(), swethread.h tier 5, sweephe4.c -- all unreachable, all
+  # broken by the time anyone looked).
+  #
+  # They needed real repair to get here. As shipped in windows/sweph.zip
+  # they used PlatformToolset v140_xp (removed in VS2019+), the Windows 8.1
+  # SDK, an OutDir hardcoded to the original author's S: drive, and none of
+  # the 15 listed sweconfig.c -- the file this branch added and the library
+  # now requires.
+  #
+  # Each project is built at the platform its NAME implies. Building the
+  # whole solution at one platform would happily produce a 64-bit
+  # "swedll32.dll".
+  # ---------------------------------------------------------------------
+  windows-package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    name: windows / package
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Locate MSBuild
+        shell: cmd
+        run: |
+          rem vswhere instead of microsoft/setup-msbuild@v2. That action still
+          rem targets Node 20, which GitHub has deprecated, and it does nothing
+          rem this job cannot do itself -- vswhere is already used in the ABI
+          rem step to find the compiler, and ships with every Visual Studio
+          rem installer. One fewer third-party action, and no runtime to age out.
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe`) do (
+            echo %%~dpi>> "%GITHUB_PATH%"
+            echo found: %%i
+          )
+      - name: Build Win32 projects
+        shell: cmd
+        run: |
+          cd windows\projects
+          for %%p in (swedll32 swelib32 swetest swete32 swewin32 swedlltrm32 swedlltrs32) do (
+            msbuild %%p.vcxproj /p:Configuration=Release /p:Platform=Win32 /v:minimal /nologo || exit /b 1
+          )
+      - name: Build x64 projects
+        shell: cmd
+        run: |
+          cd windows\projects
+          for %%p in (swedll64 swelib64 swetest64 swete64 swewin64 swedlltrm64 swedlltrs64) do (
+            msbuild %%p.vcxproj /p:Configuration=Release /p:Platform=x64 /v:minimal /nologo || exit /b 1
+          )
+      - name: Show what was built
+        shell: cmd
+        run: dir /s /b windows\projects\out
+      - name: Smoke-test the CLI
+        shell: cmd
+        run: |
+          rem cmd, not pwsh: PowerShell splits -b1.1.2020 into "-b1" and
+          rem ".1.2020" before the program sees it, and swetest then reports
+          rem "illegal option .1.2020".
+          rem
+          rem -emos is the Moshier ephemeris -- self-contained, so no .se1
+          rem files are needed. Exit status alone proves little: swetest
+          rem prints "illegal option" and carries on, which is how the first
+          rem version of this step verified nothing at all.
+          setlocal enabledelayedexpansion
+          for %%e in ("out\x64\Release\swetest64.exe" "out\Win32\Release\swetest.exe") do (
+            echo --- %%~e
+            windows\projects\%%~e -b1.1.2020 -p0 -fPl -emos > swe_smoke.txt 2>&1
+            if errorlevel 1 ( type swe_smoke.txt & echo FAIL: nonzero exit & exit /b 1 )
+            type swe_smoke.txt
+            findstr /C:"illegal option" swe_smoke.txt >nul && ( echo FAIL: argument rejected & exit /b 1 )
+            rem The Sun's ecliptic longitude on 2020-01-01 is about 280 deg.
+            findstr /C:"280" swe_smoke.txt >nul || ( echo FAIL: no plausible position & exit /b 1 )
+          )
+          echo both CLIs produce a plausible Sun position
+      - name: ABI -- build the upstream baseline DLL
+        shell: cmd
+        run: |
+          rem Windows exports are a DIFFERENT set from Linux: __declspec(dllexport)
+          rem on the swe_* declarations means the DLL exposes the public API only,
+          rem not the internal globals Linux exports. So "nothing was removed" has
+          rem to be asked here too, against a DLL built from the pristine upstream
+          rem tree.
+          rem
+          rem cl /LD directly, not msbuild: the upstream .vcxproj files cannot
+          rem build at all (no sweconfig.c, a toolset retired in VS2019), which is
+          rem exactly why they were repaired on this branch.
+          rem
+          rem Nothing is redirected to nul here. The first version of this step
+          rem swallowed its output and failed with exit 255 and no clue why.
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          git fetch --depth=1 origin legacy-master || exit /b 1
+          git worktree add ..\upstream-base FETCH_HEAD || exit /b 1
+          cd ..\upstream-base
+          cl /nologo /LD /DMAKE_DLL /DWIN32 /D_WINDOWS /DNDEBUG /D_CRT_SECURE_NO_WARNINGS swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c /Fe:base.dll || exit /b 1
+          dumpbin /exports base.dll > "%GITHUB_WORKSPACE%\base_exports.txt" || exit /b 1
+          cd "%GITHUB_WORKSPACE%"
+          dumpbin /exports windows\projects\out\x64\Release\swedll64.dll > new_exports.txt || exit /b 1
+      - name: ABI -- nothing upstream exported may disappear
+        shell: pwsh
+        run: |
+          function Exports($f) {
+            (Select-String -Path $f -Pattern '\bswe_[a-z_0-9]+' -AllMatches).Matches.Value |
+              Sort-Object -Unique
+          }
+          $base = Exports base_exports.txt
+          $new  = Exports new_exports.txt
+          Write-Host "upstream DLL exports: $($base.Count)   current DLL exports: $($new.Count)"
+          if ($base.Count -lt 50) { Write-Error "baseline looks wrong ($($base.Count) exports)"; exit 1 }
+          $gone = $base | Where-Object { $new -notcontains $_ }
+          if ($gone) {
+            Write-Host "ABI FAIL: removed relative to upstream:"
+            $gone | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+          $added = ($new | Where-Object { $base -notcontains $_ }).Count
+          Write-Host "ABI ok: nothing removed, $added symbol(s) added since upstream"
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          $out = "windows/projects/out"
+          $pkg = "pkg/swisseph-windows"
+          New-Item -ItemType Directory -Force -Path `
+            "$pkg/bin/x64","$pkg/bin/Win32","$pkg/lib/x64","$pkg/lib/Win32",
+            "$pkg/include","$pkg/diagnostic/x64","$pkg/diagnostic/Win32",
+            "$pkg/samples/x64","$pkg/samples/Win32" | Out-Null
+
+          foreach ($p in "x64","Win32") {
+            $r = "$out/$p/Release"
+            $suffix = if ($p -eq "x64") { "64" } else { "32" }
+            $tsuffix = if ($p -eq "x64") { "64" } else { "" }
+            # The library and the CLI: what most people want.
+            Copy-Item "$r/swedll$suffix.dll" "$pkg/bin/$p/"
+            Copy-Item "$r/swetest$tsuffix.exe" "$pkg/bin/$p/"
+            Copy-Item "$r/swedll$suffix.lib","$r/swelib$suffix.lib" "$pkg/lib/$p/"
+            # TRACE=1 and TRACE=2 builds of the DLL. Diagnostic tools, not
+            # drop-in replacements: they write a replayable swetrace.c as
+            # they run. Separated so nobody ships one by accident.
+            Copy-Item "$r/swedlltrs$suffix.dll","$r/swedlltrm$suffix.dll" "$pkg/diagnostic/$p/"
+            Copy-Item "$r/swedlltrs$suffix.lib","$r/swedlltrm$suffix.lib" "$pkg/diagnostic/$p/"
+            # Sample programs.
+            Copy-Item "$r/swete$suffix.exe","$r/swewin$suffix.exe" "$pkg/samples/$p/"
+          }
+
+          # PUBLIC headers only. swephlib.h is internal -- swephexp.h does
+          # not include it -- and shipping it invites callers to reach past
+          # the API this fork spent its effort making safe.
+          Copy-Item swephexp.h,sweodef.h,swedate.h,swehouse.h,swedll.h "$pkg/include"
+          Copy-Item LICENSE,THREADING.md "$pkg"
+          Copy-Item packaging/windows-README.md "$pkg/README.md"
+
+          Push-Location $pkg
+          $sums = Get-ChildItem -Recurse -File | ForEach-Object {
+            $rel = [IO.Path]::GetRelativePath((Get-Location).Path, $_.FullName) -replace "\\","/"
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $rel
+          } | Sort-Object
+          # LF, no BOM, trailing newline -- deliberately NOT Set-Content, which
+          # writes CRLF. `sha256sum -c` and `shasum -c` take the \r as part of
+          # the filename, so a CRLF sums file fails on every single line, on
+          # Linux, on macOS, and in Git Bash on Windows itself. The file whose
+          # only job is to be checkable has to be checkable.
+          [IO.File]::WriteAllText(
+            (Join-Path (Get-Location).Path "SHA256SUMS"),
+            ($sums -join "`n") + "`n",
+            (New-Object Text.UTF8Encoding $false))
+          Pop-Location
+          Get-Content "$pkg/SHA256SUMS"
+
+      - name: Verify the package
+        shell: pwsh
+        run: |
+          $pkg = "pkg/swisseph-windows"
+          foreach ($f in @("bin/x64/swedll64.dll","bin/x64/swetest64.exe",
+                           "bin/Win32/swedll32.dll","bin/Win32/swetest.exe",
+                           "lib/x64/swedll64.lib","lib/x64/swelib64.lib",
+                           "include/swephexp.h","LICENSE","README.md","SHA256SUMS")) {
+            if (!(Test-Path "$pkg/$f")) { Write-Error "missing from package: $f"; exit 1 }
+          }
+          # An internal header must NOT be in a package meant to steer people
+          # towards the public API.
+          if (Test-Path "$pkg/include/swephlib.h") { Write-Error "internal header shipped"; exit 1 }
+
+          # Re-check every hash, the way a recipient would. Linux and macOS
+          # run `sha256sum -c`; this job used only to Test-Path the file,
+          # which is why it shipped a CRLF sums file that failed to verify
+          # on every line, on every platform, for as long as it existed.
+          Push-Location $pkg
+          # Absolute: Push-Location moves PowerShell's location, not the .NET
+          # process working directory, so a bare relative path here resolves
+          # against the repo root instead of the package.
+          $raw = [IO.File]::ReadAllText((Join-Path (Get-Location).Path "SHA256SUMS"))
+          if ($raw -match "`r") { Write-Host "SHA256SUMS contains CR -- must be LF-only"; $bad = 1 }
+          else { $bad = 0 }
+          $n = 0
+          foreach ($line in ($raw -split "`n" | Where-Object { $_ -ne "" })) {
+            if ($line -match "^([0-9a-f]{64})  (.+)$") {
+              $want = $Matches[1]; $rel = $Matches[2]; $n++
+              if (-not (Test-Path -LiteralPath $rel)) { Write-Host "listed but missing: $rel"; $bad++ }
+              elseif ((Get-FileHash -LiteralPath $rel -Algorithm SHA256).Hash.ToLower() -ne $want) {
+                Write-Host "hash mismatch: $rel"; $bad++
+              }
+            } else { Write-Host "unparseable line: '$line'"; $bad++ }
+          }
+          # SHA256SUMS does not list itself, so the package holds one more.
+          $files = (Get-ChildItem -Recurse -File | Measure-Object).Count - 1
+          if ($n -ne $files) { Write-Host "SHA256SUMS covers $n of $files files"; $bad++ }
+          Pop-Location
+          if ($bad -ne 0) { Write-Error "SHA256SUMS did not verify"; exit 1 }
+          Write-Host "SHA256SUMS: $n/$files files verify, LF endings"
+
+          # The whole point of this fork: the DLL must export the context
+          # API. A DLL built from stale sources -- which is exactly what the
+          # prebuilt 2.10.03 binaries removed from this tree were -- would
+          # pass every other check in this job.
+          # Take dumpbin from VC\Tools\MSVC, newest first. NOT whatever is
+          # on PATH: Get-Command found a 2017-era copy under
+          # SDK\ScopeCppSDK\vc15 which printed only a section summary for a
+          # DLL built by the current toolset, and reported no exports at all.
+          # The DLL was fine -- an import library had been generated, which
+          # only happens when there ARE exports.
+          $dumpbin = (Get-ChildItem -Path "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC" `
+                        -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -match "Hostx64\\x64" } |
+                      Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $dumpbin) { Write-Error "dumpbin not found under VC\Tools\MSVC"; exit 1 }
+          Write-Host "dumpbin: $dumpbin"
+
+          $exports = & $dumpbin /exports "$pkg/bin/x64/swedll64.dll" 2>&1 | Out-String
+          $all = [regex]::Matches($exports, "\bswe_[a-z_0-9]+") | ForEach-Object { $_.Value } | Sort-Object -Unique
+          Write-Host "swedll64.dll exports $($all.Count) swe_* symbols"
+          if ($all.Count -lt 100) {
+            # Guard against the check silently passing on empty output.
+            Write-Host $exports
+            Write-Error "implausibly few exports -- dumpbin output above"; exit 1
+          }
+          foreach ($sym in "swe_ctx_new","swe_ctx_free","swe_calc_ut_r","swe_close_r","swe_set_topo_r") {
+            if ($all -notcontains $sym) {
+              Write-Host ($all -join " ")
+              Write-Error "swedll64.dll does not export $sym"; exit 1
+            }
+          }
+          $r = ($all | Where-Object { $_ -match "_r$" }).Count
+          Write-Host "context API present: $r _r entry points exported"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: swisseph-windows
+          path: pkg/swisseph-windows
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # Android JNI package. The one platform whose prebuilt binaries sat in the
+  # tree with nothing able to rebuild them -- contrib/android/libs held four
+  # libswe-2.10.03.so, stamped with upstream's version and containing none
+  # of this branch's work.
+  #
+  # The build was broken here too, and in the same way as the MSVC projects:
+  # Android.mk did not list sweconfig.c, and sweconfig.h and swethread.h had
+  # no symlink in jni/, so the module could not compile, let alone link.
+  #
+  # This is a JNI library, not a general libswe: LOCAL_CFLAGS sets
+  # -fvisibility=hidden, so it exports the Java_* entry points and keeps the
+  # swe_* API internal. That is deliberate and the export check below
+  # matches it.
+  # ---------------------------------------------------------------------
+  android-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    name: android / package
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Show the NDK the runner provides
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          "$ANDROID_NDK_HOME/ndk-build" --version | head -2
+      - name: Build all ABIs
+        run: |
+          cd contrib/android
+          "$ANDROID_NDK_HOME/ndk-build" NDK_PROJECT_PATH=. NDK_APPLICATION_MK=jni/Application.mk
+          find libs obj -name '*.so' | sort
+      - name: Verify the JNI library
+        run: |
+          cd contrib/android
+          abis=$(ls libs)
+          echo "ABIs built: $abis"
+          n=$(echo "$abis" | grep -c .)
+          [ "$n" -ge 4 ] || { echo "FAIL: expected 4 ABIs, got $n"; exit 1; }
+          # Expected count comes from the header, not a magic number: every
+          # JNIEXPORT declared in swejni.h must actually be exported. A
+          # first attempt hardcoded ">= 100" and failed at the real value of
+          # 94 -- a threshold picked by guessing tests the guess, not the
+          # library.
+          want=$(grep -c 'JNIEXPORT' jni/swejni.h)
+          echo "swejni.h declares $want JNIEXPORT entry points"
+          nm="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          for abi in $abis; do
+            so=$(ls libs/$abi/*.so)
+            # -fvisibility=hidden means a missing source links quietly with
+            # too few entry points rather than failing outright.
+            j=$("$nm" --defined-only --dynamic "$so" | grep -c "Java_") || true
+            echo "  $abi: $(basename $so), $j Java_* entry points"
+            [ "$j" -eq "$want" ] || { echo "FAIL: $abi exports $j, expected $want"; exit 1; }
+          done
+      - name: Assemble package
+        run: |
+          pkg=pkg/swisseph-android
+          mkdir -p $pkg/jni
+          cp -r contrib/android/libs/* $pkg/jni/
+          cp contrib/android/jni/swejni.h $pkg/
+          cp LICENSE THREADING.md $pkg/
+          cp packaging/android-README.md $pkg/README.md
+          ( cd $pkg && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
+            xargs sha256sum > SHA256SUMS )
+          cat $pkg/SHA256SUMS
+          # Round-trip it, as linux and macos do. Generating a sums file and
+          # never checking it is how the Windows job shipped one with CRLF
+          # line endings that failed to verify on every line.
+          ( cd $pkg && sha256sum -c SHA256SUMS >/dev/null ) \
+            || { echo "FAIL: SHA256SUMS does not verify"; exit 1; }
+          echo "SHA256SUMS: $(wc -l < $pkg/SHA256SUMS) files verify"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: swisseph-android
+          path: pkg/swisseph-android
+          if-no-files-found: error

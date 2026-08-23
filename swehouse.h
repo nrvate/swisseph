@@ -86,8 +86,10 @@ struct houses {
 #define HOUSES 	struct houses
 #define VERY_SMALL	1E-10
 
-#define degtocs(x)    (d2l((x) * DEG))
-#define cstodeg(x)    (double)((x) * CS2DEG)
+/* degtocs()/cstodeg() were defined here and called from nowhere in any
+ * shipped .c file (notes/C17_PERFORMANCE.md A5). Removed rather than
+ * converted: a helper with no callers has no interface to preserve. d2l(),
+ * DEG and CS2DEG all remain, and are used elsewhere. */
 
 #define sind(x) sin((x) * DEGTORAD)
 #define cosd(x) cos((x) * DEGTORAD)

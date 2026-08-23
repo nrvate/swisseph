@@ -1,0 +1,121 @@
+# Tag a release.
+#
+#   git tag v2.10.03-ts.1 && git push origin v2.10.03-ts.1
+#
+# The tag IS the source of truth. GitHub generates the source tarballs from
+# it automatically, so nothing here hand-builds a source archive that could
+# drift from the tree -- which is precisely how windows/sweph.zip came to
+# contain a second, older copy of this library.
+#
+# Binaries come from package.yml, the same workflow CI runs on every push,
+# so a release cannot ship artifacts built by a different recipe.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build a release for'
+        required: true
+
+# Never cancel a release mid-publish -- a half-uploaded release is worse than
+# a slow one. Queued, not cancelled.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    uses: ./.github/workflows/package.yml
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The tag, not the branch -- so a workflow_dispatch for an older
+          # tag checks that tag's SE_VERSION below, not main's.
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/
+      - name: The tag must match SE_VERSION
+        run: |
+          # swe_version() is what a caller sees at runtime, and the tag is
+          # what they downloaded. If those disagree, every bug report after
+          # it cites the wrong version. Cheap to check, miserable to undo:
+          # a published release cannot be re-pointed at a different commit.
+          ver="${{ github.event.inputs.tag || github.ref_name }}"
+          src=$(sed -n 's/^#define SE_VERSION *"\([^"]*\)".*/\1/p' sweph.h)
+          [ -n "$src" ] || { echo "FAIL: could not read SE_VERSION from sweph.h"; exit 1; }
+          [ "$ver" = "v$src" ] || {
+            echo "FAIL: tag is $ver but SE_VERSION is $src -- expected tag v$src"; exit 1; }
+          echo "tag $ver matches SE_VERSION $src"
+      - name: Collect the built packages
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - name: Name, archive and checksum
+        run: |
+          ver="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "version=$ver" >> "$GITHUB_ENV"
+          mkdir -p dist
+          for p in artifacts/*/; do
+            name=$(basename "$p")            # swisseph-linux, -macos, -windows
+            case "$name" in
+              swisseph-windows) ( cd "$p" && zip -qr "../../dist/$name-$ver.zip" . ) ;;
+              *)                tar czf "dist/$name-$ver.tar.gz" -C "$p" . ;;
+            esac
+          done
+          ( cd dist && sha256sum * > SHA256SUMS )
+          ls -la dist
+          cat dist/SHA256SUMS
+      - name: Sanity-check what we are about to publish
+        run: |
+          # Never publish an empty or partial release: a packaging job that
+          # silently produced nothing would otherwise become a release with
+          # no binaries in it.
+          n=$(ls dist | grep -cE '\.(tar\.gz|zip)$')
+          [ "$n" -eq 4 ] || { echo "FAIL: expected 4 platform archives, found $n"; ls dist; exit 1; }
+          for p in linux macos windows android; do
+            ls dist | grep -q "swisseph-$p-" || { echo "FAIL: no archive for $p"; exit 1; }
+          done
+          echo "4 platform archives present"
+      - name: Publish
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+          body: |
+            Thread-safe Swiss Ephemeris — ${{ github.event.inputs.tag || github.ref_name }}
+
+            Binaries below are built by CI from this tag; nothing is checked
+            into the repository. Verify with `SHA256SUMS`.
+
+            | archive | contents |
+            |---|---|
+            | `swisseph-linux-*.tar.gz` | `libswe.so`, `libswe.a`, `swetest`, headers |
+            | `swisseph-macos-*.tar.gz` | `libswe.dylib`, `libswe.a`, `swetest`, headers |
+            | `swisseph-windows-*.zip` | `swedll{32,64}.dll` + import libs, static libs, `swetest`, headers |
+            | `swisseph-android-*.tar.gz` | JNI library for every ABI the NDK builds, plus `swejni.h` |
+
+            Ephemeris data is **not** included — it has its own release
+            cadence. Without it the library uses the built-in Moshier
+            ephemeris, which needs no files.
+
+            See `THREADING.md` in any archive for what differs from upstream
+            and how to use independent contexts.

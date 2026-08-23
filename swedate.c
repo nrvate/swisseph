@@ -84,7 +84,7 @@
 # include "swephexp.h"
 # include "sweph.h"
 
-static TLS AS_BOOL init_leapseconds_done = FALSE;
+/* moved to ctx->leapsec_done / ctx->leap_seconds (Phase 3c) */
 
 
 int CALL_CONV swe_date_conversion(int y,
@@ -273,7 +273,12 @@ void CALL_CONV swe_utc_time_zone(
 /* Leap seconds were inserted at the end of the following days:*/
 #define NLEAP_SECONDS 27 // ignoring end mark '0'
 #define NLEAP_SECONDS_SPACE 100
-static TLS int leap_seconds[NLEAP_SECONDS_SPACE] = {
+/* The built-in leap-second table. Was a TLS mutable array; init_leapsec()
+ * EXTENDS it at runtime from seleapsec.txt, so the working copy is
+ * per-context (ctx->leap_seconds) while the built-in values stay a single
+ * shared constant. Splitting it this way means the defaults cannot be
+ * corrupted by one context's file load. */
+static const int leap_seconds_builtin[NLEAP_SECONDS_SPACE] = {
 19720630,
 19721231,
 19731231,
@@ -308,7 +313,18 @@ static TLS int leap_seconds[NLEAP_SECONDS_SPACE] = {
 
 /* Read additional leap second dates from external file, if given.
  */
-static int init_leapsec(void)
+/* Takes a context because it reads ctx->ephepath to find seleapsec.txt.
+ *
+ * Its other state -- leapsec_done and leap_seconds[] -- now lives in the
+ * context too (Phase 3c); the built-in values stay in a shared const. */
+/* Seed ctx->leap_seconds from the built-in table. Exposed so context
+ * creation can do it too, not only the lazy init_leapsec() path. */
+void swi_seed_leap_table(swe_ctx *ctx)
+{
+  memcpy(ctx->leap_seconds, leap_seconds_builtin, sizeof(ctx->leap_seconds));
+}
+
+static int init_leapsec(swe_ctx *ctx)
 {
   FILE *fp;
   int ndat, ndat_last;
@@ -316,12 +332,14 @@ static int init_leapsec(void)
   int i;
   char s[AS_MAXCH];
   char *sp;
-  if (!init_leapseconds_done) {
-    init_leapseconds_done = TRUE;
+  if (!ctx->leapsec_done) {
+    ctx->leapsec_done = TRUE;
+    /* seed the working copy; the file below only ever EXTENDS it */
+    memcpy(ctx->leap_seconds, leap_seconds_builtin, sizeof(ctx->leap_seconds));
     tabsiz = NLEAP_SECONDS;
-    ndat_last = leap_seconds[NLEAP_SECONDS - 1];
+    ndat_last = ctx->leap_seconds[NLEAP_SECONDS - 1];
     /* no error message if file is missing */
-    if ((fp = swi_fopen(-1, "seleapsec.txt", swed.ephepath, NULL)) == NULL)
+    if ((fp = swi_fopen(ctx, -1, "seleapsec.txt", ctx->ephepath, NULL)) == NULL)
       return NLEAP_SECONDS; 
     while(fgets(s, AS_MAXCH, fp) != NULL) {
       sp = s;
@@ -335,17 +353,17 @@ static int init_leapsec(void)
       /* table space is limited. no error msg, if exceeded */
       if (tabsiz >= NLEAP_SECONDS_SPACE)
         return tabsiz;
-      leap_seconds[tabsiz] = ndat;
+      ctx->leap_seconds[tabsiz] = ndat;
       tabsiz++;
     }
-    if (tabsiz > NLEAP_SECONDS) leap_seconds[tabsiz] = 0; /* end mark */
+    if (tabsiz > NLEAP_SECONDS) ctx->leap_seconds[tabsiz] = 0; /* end mark */
     fclose(fp);
     return tabsiz;
   }
   /* find table size */
   tabsiz = 0;
   for (i = 0; i < NLEAP_SECONDS_SPACE; i++) {
-    if (leap_seconds[i] == 0) 
+    if (ctx->leap_seconds[i] == 0) 
       break;
     else
       tabsiz++;
@@ -372,7 +390,7 @@ static int init_leapsec(void)
  *   the leap seconds table (or the Swiss Ephemeris version) is not updated
  *   for a long time.
 */
-int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr)
+int32 CALL_CONV swe_utc_to_jd_r(swe_ctx *ctx, int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr)
 {
   double tjd_ut1, tjd_et, tjd_et_1972, dhour, d;
   int iyear2, imonth2, iday2;
@@ -401,7 +419,7 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
    */
   if (tjd_ut1 < J1972) {
     dret[1] = swe_julday(iyear, imonth, iday, dhour, gregflag);
-    dret[0] = dret[1] + swe_deltat_ex(dret[1], -1, NULL);
+    dret[0] = dret[1] + swe_deltat_ex_r(ctx, dret[1], -1, NULL);
     return OK;
   }
   /* 
@@ -414,11 +432,11 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
   /* 
    * number of leap seconds since 1972: 
    */
-  tabsiz_nleap = init_leapsec();
+  tabsiz_nleap = init_leapsec(swi_default_ctx());
   nleap = NLEAP_INIT; /* initial difference between UTC and TAI in 1972 */
   ndat = iyear * 10000 + imonth * 100 + iday;
   for (i = 0; i < tabsiz_nleap; i++) {
-    if (ndat <= leap_seconds[i])
+    if (ndat <= ctx->leap_seconds[i])
       break;
     nleap++;
   }
@@ -428,10 +446,10 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
    * input time as UT1, not as UTC. How do we find out? 
    * Check, if delta_t - nleap - 32.184 > 0.9
    */
-  d = swe_deltat_ex(tjd_ut1, -1, NULL) * 86400.0;
+  d = swe_deltat_ex_r(ctx, tjd_ut1, -1, NULL) * 86400.0;
   if (d - (double) nleap - 32.184 >= 1.0) {
     dret[1] = tjd_ut1 + dhour / 24.0;
-    dret[0] = dret[1] + swe_deltat_ex(dret[1], -1, NULL);
+    dret[0] = dret[1] + swe_deltat_ex_r(ctx, dret[1], -1, NULL);
     return OK;
   }
   /* 
@@ -440,7 +458,7 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
   if (dsec >= 60) {
     j = 0;
     for (i = 0; i < tabsiz_nleap; i++) {
-      if (ndat == leap_seconds[i]) {
+      if (ndat == ctx->leap_seconds[i]) {
 	j = 1;
 	break;
       }
@@ -461,12 +479,19 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
   /* ET (TT) */
   tjd_et_1972 = J1972 + (32.184 + NLEAP_INIT) / 86400.0;
   tjd_et = tjd_et_1972 + d + ((double) (nleap - NLEAP_INIT)) / 86400.0;
-  d = swe_deltat_ex(tjd_et, -1, NULL);
-  tjd_ut1 = tjd_et - swe_deltat_ex(tjd_et - d, -1, NULL);
-  tjd_ut1 = tjd_et - swe_deltat_ex(tjd_ut1, -1, NULL);
+  d = swe_deltat_ex_r(ctx, tjd_et, -1, NULL);
+  tjd_ut1 = tjd_et - swe_deltat_ex_r(ctx, tjd_et - d, -1, NULL);
+  tjd_ut1 = tjd_et - swe_deltat_ex_r(ctx, tjd_ut1, -1, NULL);
   dret[0] = tjd_et;
   dret[1] = tjd_ut1;
   return OK;
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr)
+{
+  return swe_utc_to_jd_r(swi_default_ctx(), iyear, imonth, iday, ihour, imin, dsec, gregflag, dret, serr);
 }
 
 /*
@@ -483,7 +508,7 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
  *   the leap seconds table (or the Swiss Ephemeris version) has not been
  *   updated for a long time.
  */
-void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec) 
+void CALL_CONV swe_jdet_to_utc_r(swe_ctx *ctx, double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
 {
   int i;
   int second_60 = 0;
@@ -493,9 +518,9 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
    * if tjd_et is before 1 jan 1972 UTC, return UT1
    */
   tjd_et_1972 = J1972 + (32.184 + NLEAP_INIT) / 86400.0; 
-  d = swe_deltat_ex(tjd_et, -1, NULL);
-  tjd_ut = tjd_et - swe_deltat_ex(tjd_et - d, -1, NULL);
-  tjd_ut = tjd_et - swe_deltat_ex(tjd_ut, -1, NULL);
+  d = swe_deltat_ex_r(ctx, tjd_et, -1, NULL);
+  tjd_ut = tjd_et - swe_deltat_ex_r(ctx, tjd_et - d, -1, NULL);
+  tjd_ut = tjd_et - swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
   if (tjd_et < tjd_et_1972) {
     swe_revjul(tjd_ut, gregflag, iyear, imonth, iday, &d);
     *ihour = (int32) d;
@@ -509,24 +534,24 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
    * minimum number of leap seconds since 1972; we may be missing one leap
    * second
    */
-  tabsiz_nleap = init_leapsec();
+  tabsiz_nleap = init_leapsec(swi_default_ctx());
   swe_revjul(tjd_ut-1, SE_GREG_CAL, &iyear2, &imonth2, &iday2, &d);
   ndat = iyear2 * 10000 + imonth2 * 100 + iday2;
   nleap = 0; 
   for (i = 0; i < tabsiz_nleap; i++) {
-    if (ndat <= leap_seconds[i])
+    if (ndat <= ctx->leap_seconds[i])
       break;
     nleap++;
   }
   /* date of potentially missing leapsecond */
   if (nleap < tabsiz_nleap) {
-    i = leap_seconds[nleap];
+    i = ctx->leap_seconds[nleap];
     iyear2 = i / 10000;
     imonth2 = (i % 10000) / 100;;
     iday2 = i % 100;
     tjd = swe_julday(iyear2, imonth2, iday2, 0, SE_GREG_CAL);
     swe_revjul(tjd+1, SE_GREG_CAL, &iyear2, &imonth2, &iday2, &d);
-    swe_utc_to_jd(iyear2,imonth2,iday2, 0, 0, 0, SE_GREG_CAL, dret, NULL);
+    swe_utc_to_jd_r(ctx, iyear2,imonth2,iday2, 0, 0, 0, SE_GREG_CAL, dret, NULL);
     d = tjd_et - dret[0];
     if (d >= 0) {
       nleap++;
@@ -550,8 +575,8 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
    * input time as UT1, not as UTC. How do we find out? 
    * Check, if delta_t - nleap - 32.184 > 0.9
    */
-  d = swe_deltat_ex(tjd_et, -1, NULL);
-  d = swe_deltat_ex(tjd_et - d, -1, NULL);
+  d = swe_deltat_ex_r(ctx, tjd_et, -1, NULL);
+  d = swe_deltat_ex_r(ctx, tjd_et - d, -1, NULL);
   if (d * 86400.0 - (double) (nleap + NLEAP_INIT) - 32.184 >= 1.0) {
     swe_revjul(tjd_et - d, SE_GREG_CAL, iyear, imonth, iday, &d);
     *ihour = (int32) d;
@@ -564,6 +589,13 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
     tjd = swe_julday(*iyear, *imonth, *iday, 0, SE_GREG_CAL);
     swe_revjul(tjd, gregflag, iyear, imonth, iday, &d);
   }
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
+{
+  swe_jdet_to_utc_r(swi_default_ctx(), tjd_et, gregflag, iyear, imonth, iday, ihour, imin, dsec);
 }
 
 /*
@@ -580,9 +612,16 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
  *   the leap seconds table (or the Swiss Ephemeris version) has not been
  *   updated for a long time.
  */
-void CALL_CONV swe_jdut1_to_utc(double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec) 
+void CALL_CONV swe_jdut1_to_utc_r(swe_ctx *ctx, double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
 {
-  double tjd_et = tjd_ut + swe_deltat_ex(tjd_ut, -1, NULL);
-  swe_jdet_to_utc(tjd_et, gregflag, iyear, imonth, iday, ihour, imin, dsec);
+  double tjd_et = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
+  swe_jdet_to_utc_r(ctx, tjd_et, gregflag, iyear, imonth, iday, ihour, imin, dsec);
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+void CALL_CONV swe_jdut1_to_utc(double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
+{
+  swe_jdut1_to_utc_r(swi_default_ctx(), tjd_ut, gregflag, iyear, imonth, iday, ihour, imin, dsec);
 }
 

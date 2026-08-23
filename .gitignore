@@ -1,0 +1,75 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# ndk-build output.
+/contrib/android/libs/
+/contrib/android/obj/
+
+# MSVC build output. windows/projects/*.vcxproj write here; see
+# windows/projects/README.md.
+/windows/projects/out/
+/windows/projects/obj/
+*.vcxproj.user
+
+# bin/ -- output of the swetests/sweventss targets.
+#
+# These were tracked, which was ordinary practice when this codebase was
+# written. But `make all` rewrites them on every build, so the tree was
+# dirty after every gate run and a rebuilt binary could ride along in a
+# commit unnoticed. They are regenerable from source; the prebuilt Windows
+# and Android binaries are not, and remain tracked.
+/bin/
+
+# Built executables (Makefile targets)
+/swetest
+/swetests
+/swevents
+/swemini
+/obama
+
+# Test harness build products.
+#
+# Listed by name, this list went stale three times in a row: bench, ctxtest
+# and jplcalc were each committed as ~1.2 MB executables because adding a
+# test and remembering to extend an ignore list are two separate acts. The
+# binaries are extensionless, so the *.o/*.a rules above never caught them.
+#
+# Allow-list instead: everything under tests/ is ignored unless it is a
+# recognised source or fixture type. A new test binary is then ignored on
+# the day it first builds, with nothing to remember.
+/tests/*
+!/tests/*.c
+!/tests/*.py
+!/tests/*.sed
+!/tests/*.md
+!/tests/Makefile
+!/tests/baseline.txt
+!/tests/*.baseline
+# Stand-in Windows headers. Deliberately not `!/tests/*.h` -- the root
+# sweph.h has been copied into tests/ by accident before, and shipped.
+!/tests/winstub/
+
+# Python bytecode (tools/)
+__pycache__/
+*.pyc
+
+# setest build products (generated_tests.c is produced by setest/Makefile)
+/setest/setest
+/setest/setestx
+/setest/generated_tests.c
+/tests/.out.txt
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*~
+
+# macOS
+.DS_Store

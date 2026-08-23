@@ -68,6 +68,7 @@
   #define _FILE_OFFSET_BITS 64
 #endif
 
+#include <assert.h>
 #include <string.h>
 #include "swephexp.h"
 #include "sweph.h"
@@ -91,6 +92,12 @@
 
 #define DEBUG_DO_SHOW	FALSE
 
+/* fsizer(ctx) rejects any ksize outside [1000, 5000] (see below); js->ncoeffs is
+ * ksize/2, so this is that bound restated as a coefficient count. buf[]
+ * must hold at least this many doubles, or a file at the legal upper edge
+ * of ksize overflows it. */
+#define JPL_NCOEFF_MAX 2500
+
 /*
  * local globals
  */
@@ -99,26 +106,43 @@ struct jpl_save {
   char *jplfpath;
   FILE *jplfptr;
   short do_reorder;
-  double eh_cval[400]; 
+  double eh_cval[400];
   double eh_ss[3], eh_au, eh_emrat;
   int32 eh_denum, eh_ncon, eh_ipt[39];
   char ch_cnam[6*400];
   double pv[78];
   double pvsun[6];
-  double buf[1500];
+  double buf[JPL_NCOEFF_MAX];
   double pc[18], vc[18], ac[18], jc[18];
   short do_km;
+  /* Phase 3c: state that used to sit in `static TLS` slots beside js.
+   * It is all per-open-file, so its lifetime belongs to js and not to a
+   * parallel set of globals that survive swi_close_jpl_file(). */
+  int32 irecsz;         /* record size in bytes, = 4 * ksize   */
+  int32 ncoeffs;        /* doubles per record, = ksize / 2     */
+  int32 nrl;            /* record currently buffered in buf[]  */
+  int    np, nv, nac, njk;  /* Chebyshev degrees already built in */
+  double twot;              /* pc[]/vc[]/ac[]/jc[]; keyed off pc[1] */
 };
 
-static TLS struct jpl_save *js;
 
-static int state (double et, int32 *list, int do_bary, 
+/* C17_MIGRATION.md Phase 4 / REVIEW.md J1: buf[]'s declared size and
+ * JPL_NCOEFF_MAX are independently editable (buf[] just happens to be
+ * *declared* in terms of the macro today); this fails to compile if a
+ * future edit ever lets them drift apart the way buf[1500] vs. a real
+ * need for 2500 coefficients did before this was fixed. */
+static_assert(sizeof(((struct jpl_save *) 0)->buf)
+            / sizeof(((struct jpl_save *) 0)->buf[0]) == JPL_NCOEFF_MAX,
+    "buf[] must hold exactly JPL_NCOEFF_MAX doubles -- see REVIEW.md J1");
+
+static int state (swe_ctx *ctx, double et, int32 *list, int do_bary, 
 		  double *pv, double *pvsun, double *nut, char *serr);
-static int interp(double *buf, double t, double intv, int32 ncfin, 
-		  int32 ncmin, int32 nain, int32 ifl, double *pv);
-static int32 fsizer(char *serr);
+static int interp(struct jpl_save *js, const double * SWI_RESTRICT buf,
+		  double t, double intv, int32 ncfin, int32 ncmin, int32 nain,
+		  int32 ifl, double * SWI_RESTRICT pv);
+static int32 fsizer(swe_ctx *ctx, char *serr);
 static void reorder(char *x, int size, int number);
-static int read_const_jpl(double *ss, char *serr);
+static int read_const_jpl(swe_ctx *ctx, double *ss, char *serr);
 
 /* information about eh_ipt[] and buf[]
 DE200	DE102		  	DE403
@@ -182,12 +206,13 @@ DE200	DE102		  	DE403
  * the number of single precision words in a record. 
  * RETURN: ksize (record size of ephemeris data)
  * jplfptr is opened on return.
- * note 26-aug-2008: now record size is computed by fsizer(), not 
+ * note 26-aug-2008: now record size is computed by fsizer(ctx), not 
  * set to a fixed value depending as in previous releases. The caller of
- * fsizer() will verify by data comparison whether it computed correctly.
+ * fsizer(ctx) will verify by data comparison whether it computed correctly.
  */
-static int32 fsizer(char *serr)
+static int32 fsizer(swe_ctx *ctx, char *serr)
 {
+  struct jpl_save *js = ctx->jpl;
   /* Local variables */
   int32 ncon; 
   double emrat;
@@ -197,7 +222,7 @@ static int32 fsizer(char *serr)
   int32 ksize, lpt[3];
   char ttl[6*14*3];	
   size_t nrd; /* unused, removes compile warnings */
-  if ((js->jplfptr = swi_fopen(SEI_FILE_PLANET, js->jplfname, js->jplfpath, serr)) == NULL) {
+  if ((js->jplfptr = swi_fopen(ctx, SEI_FILE_PLANET, js->jplfname, js->jplfpath, serr)) == NULL) {
     return NOT_AVAILABLE;
   }
   /* ttl = ephemeris title, e.g.
@@ -319,7 +344,7 @@ static int32 fsizer(char *serr)
       return ERR;
   }
 #endif
-  if (ksize < 1000 || ksize > 5000) {
+  if (ksize < 1000 || ksize > JPL_NCOEFF_MAX * 2) {
     if (serr != NULL)
       sprintf(serr, "JPL ephemeris file does not provide valid ksize (%d)", ksize);/**/
     return NOT_AVAILABLE;
@@ -359,8 +384,9 @@ static int32 fsizer(char *serr)
  *            The option is available to have the units in km and km/sec. 
  *            For this, set do_km=TRUE (default FALSE). 
  */
-int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
+int swi_pleph(swe_ctx *ctx, double et, int ntarg, int ncent, double *rrd, char *serr)
 {
+  struct jpl_save *js = ctx->jpl;
   int i, retc;
   int32 list[12];
   double *pv = js->pv;
@@ -375,7 +401,7 @@ int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
   if (ntarg == J_NUT) {
     if (js->eh_ipt[34] > 0) {
       list[10] = 2;
-      return(state(et, list, FALSE, pv, pvsun, rrd, serr));
+      return(state(ctx, et, list, FALSE, pv, pvsun, rrd, serr));
     } else {
       if (serr != NULL) 
 	sprintf(serr,"No nutations on the JPL ephemeris file;");
@@ -385,7 +411,7 @@ int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
   if (ntarg == J_LIB) {
     if (js->eh_ipt[37] > 0) {
       list[11] = 2;
-      if ((retc = state(et, list, FALSE, pv, pvsun, rrd, serr)) != OK)
+      if ((retc = state(ctx, et, list, FALSE, pv, pvsun, rrd, serr)) != OK)
 	return (retc);
       for (i = 0; i < 6; ++i) 
 	rrd[i] = pv[i + 60];
@@ -413,7 +439,7 @@ int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
     list[J_MOON] = 2;
   if (ncent == J_EMB) 	/* EMB needs Earth */
     list[J_EARTH] = 2;
-  if ((retc = state(et, list, TRUE, pv, pvsun, rrd, serr)) != OK)
+  if ((retc = state(ctx, et, list, TRUE, pv, pvsun, rrd, serr)) != OK)
     return (retc);
   if (ntarg == J_SUN || ncent == J_SUN) {
     for (i = 0; i < 6; ++i) 
@@ -469,18 +495,26 @@ int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr)
  *      pv   d.p. interpolated quantities requested. 
  *           assumed dimension is pv(ncm,fl). 
  */
-static int interp(double *buf, double t, double intv, int32 ncfin, 
-		  int32 ncmin, int32 nain, int32 ifl, double *pv)
+/* buf and pv are restrict, and so are the four Chebyshev arrays.
+ *
+ * Checked, not assumed (notes/C17_PERFORMANCE.md section 4.1): this
+ * function reads and writes ONLY js->pc/vc/ac/jc and the scalars
+ * np/nv/nac/njk/twot. It never touches js->buf or js->pv, so although
+ * `buf` points into js->buf[] and `pv` is js->pv at the state() call
+ * sites, neither is reachable through js from in here, and the four
+ * Chebyshev arrays are distinct members that cannot overlap either.
+ *
+ * The inner loop is pv[i] += pc[j] * buf[...]; without restrict the
+ * compiler must reload pc[j] after every store to pv[i].
+ */
+static int interp(struct jpl_save *js, const double * SWI_RESTRICT buf,
+		  double t, double intv, int32 ncfin, int32 ncmin, int32 nain,
+		  int32 ifl, double * SWI_RESTRICT pv)
 {
-  /* Initialized data */
-  static TLS int np, nv;
-  static TLS int nac;
-  static TLS int njk;
-  static TLS double twot = 0.;
-  double *pc = js->pc;
-  double *vc = js->vc;
-  double *ac = js->ac;
-  double *jc = js->jc;
+  double * SWI_RESTRICT pc = js->pc;
+  double * SWI_RESTRICT vc = js->vc;
+  double * SWI_RESTRICT ac = js->ac;
+  double * SWI_RESTRICT jc = js->jc;
   int ncf = (int) ncfin;
   int ncm = (int) ncmin;
   int na = (int) nain;
@@ -509,21 +543,21 @@ static int interp(double *buf, double t, double intv, int32 ncfin,
    *  contains the value of tc on the previous call.) 
    */
   if (tc != pc[1]) {
-    np = 2;
-    nv = 3;
-    nac = 4;
-    njk = 5;
+    js->np = 2;
+    js->nv = 3;
+    js->nac = 4;
+    js->njk = 5;
     pc[1] = tc;
-    twot = tc + tc;
+    js->twot = tc + tc;
   }
   /*
    *  be sure that at least 'ncf' polynomials have been evaluated 
    *  and are stored in the array 'pc'. 
    */
-  if (np < ncf) {
-    for (i = np; i < ncf; ++i) 
-      pc[i] = twot * pc[i - 1] - pc[i - 2];
-    np = ncf;
+  if (js->np < ncf) {
+    for (i = js->np; i < ncf; ++i) 
+      pc[i] = js->twot * pc[i - 1] - pc[i - 2];
+    js->np = ncf;
   }
   /*  interpolate to get position for each component */
   for (i = 0; i < ncm; ++i) {
@@ -538,11 +572,11 @@ static int interp(double *buf, double t, double intv, int32 ncfin,
    *       derivative polynomials have been generated and stored. 
    */
   bma = (na + na) / intv;
-  vc[2] = twot + twot;
-  if (nv < ncf) {
-    for (i = nv; i < ncf; ++i) 
-      vc[i] = twot * vc[i - 1] + pc[i - 1] + pc[i - 1] - vc[i - 2];
-    nv = ncf;
+  vc[2] = js->twot + js->twot;
+  if (js->nv < ncf) {
+    for (i = js->nv; i < ncf; ++i) 
+      vc[i] = js->twot * vc[i - 1] + pc[i - 1] + pc[i - 1] - vc[i - 2];
+    js->nv = ncf;
   }
   /*       interpolate to get velocity for each component */
   for (i = 0; i < ncm; ++i) {
@@ -557,10 +591,10 @@ static int interp(double *buf, double t, double intv, int32 ncfin,
   /*       re-do if necessary */
   bma2 = bma * bma;
   ac[3] = pc[1] * 24.;
-  if (nac < ncf) {
-    nac = ncf;
-    for (i = nac; i < ncf; ++i) 
-      ac[i] = twot * ac[i - 1] + vc[i - 1] * 4. - ac[i - 2];
+  if (js->nac < ncf) {
+    js->nac = ncf;
+    for (i = js->nac; i < ncf; ++i) 
+      ac[i] = js->twot * ac[i - 1] + vc[i - 1] * 4. - ac[i - 2];
   }
   /*       get acceleration for each component */
   for (i = 0; i < ncm; ++i) {
@@ -575,10 +609,10 @@ static int interp(double *buf, double t, double intv, int32 ncfin,
   /*       re-do if necessary */
   bma3 = bma * bma2;
   jc[4] = pc[1] * 192.;
-  if (njk < ncf) {
-    njk = ncf;
-    for (i = njk; i < ncf; ++i) 
-      jc[i] = twot * jc[i - 1] + ac[i - 1] * 6. - jc[i - 2];
+  if (js->njk < ncf) {
+    js->njk = ncf;
+    for (i = js->njk; i < ncf; ++i) 
+      jc[i] = js->twot * jc[i - 1] + ac[i - 1] * 6. - jc[i - 2];
   }
   /*       get jerk for each component */
   for (i = 0; i < ncm; ++i) {
@@ -649,9 +683,10 @@ static int interp(double *buf, double t, double intv, int32 ncfin,
  |            default value = FALSE  (km determines time unit 
  |            for nutations and librations.  angle unit is always radians.)
  */
-static int state(double et, int32 *list, int do_bary, 
+static int state(swe_ctx *ctx, double et, int32 *list, int do_bary, 
 	  double *pv, double *pvsun, double *nut, char *serr)
 {
+  struct jpl_save *js = ctx->jpl;
   int i, j, k;
   int32 nseg;
   off_t64 flen, nb;
@@ -662,16 +697,16 @@ static int state(double et, int32 *list, int do_bary,
   double et_mn, et_fr;
   int32 *ipt = js->eh_ipt;
   char ch_ttl[252];
-  static TLS int32 irecsz;
-  static TLS int32 nrl, lpt[3], ncoeffs;
+  int32 lpt[3];   /* local scratch: written, reordered and copied into
+                   * ipt[] entirely within the init block below */
   size_t nrd; /* unused, removes compile warnings */
   if (js->jplfptr == NULL) {
-    ksize = fsizer(serr); /* the number of single precision words in a record */
+    ksize = fsizer(ctx, serr); /* the number of single precision words in a record */
     nrecl = 4;
     if (ksize == NOT_AVAILABLE)
       return NOT_AVAILABLE;
-    irecsz = nrecl * ksize; 	/* record size in bytes */
-    ncoeffs = ksize / 2;	/* # of coefficients, doubles */
+    js->irecsz = nrecl * ksize; 	/* record size in bytes */
+    js->ncoeffs = ksize / 2;	/* # of coefficients, doubles */
     /* ttl = ephemeris title, e.g.
      * "JPL Planetary Ephemeris DE404/LE404
      *  Start Epoch: JED=   625296.5-3001 DEC 21 00:00:00
@@ -720,27 +755,59 @@ static int state(double et, int32 *list, int do_bary,
     if (js->do_reorder)
       reorder((char *) &lpt[0], sizeof(int32), 3);
     /* cval[]:  other constants in next record */
-    FSEEK(js->jplfptr, (off_t64) (1L * irecsz), 0);
+    FSEEK(js->jplfptr, (off_t64) (1L * js->irecsz), 0);
     nrd = fread((void *) &js->eh_cval[0], sizeof(double), 400, js->jplfptr);
     if (nrd != 400) return NOT_AVAILABLE;
     if (js->do_reorder)
       reorder((char *) &js->eh_cval[0], sizeof(double), 400);
     /* new 26-aug-2008: verify correct block size */
-    for (i = 0; i < 3; ++i) 
+    for (i = 0; i < 3; ++i)
       ipt[i + 36] = lpt[i];
-    nrl = 0;
+    /* ipt[i*3+1] (i = 0..12: 10 planets, sun, nutation, libration) is the
+     * per-body coefficient count ("ncf" in interp()). It is read straight
+     * from the file with no independent bound, but interp() uses it to
+     * index js->pc/vc/ac/jc[], each fixed at 18 entries -- a file claiming
+     * more overflows them. Reject up front rather than corrupting memory
+     * on the first interp() call. */
+    for (i = 0; i < 13; ++i) {
+      if (ipt[i * 3 + 1] > (int32) (sizeof(js->pc) / sizeof(js->pc[0]))) {
+	if (serr != NULL)
+	  sprintf(serr, "JPL ephemeris file has an invalid coefficient count (%d) for body %d", (int) ipt[i * 3 + 1], i);
+	return NOT_AVAILABLE;
+      }
+    }
+    js->nrl = 0;
     /* is file length correct? */
     /* file length */
     FSEEK(js->jplfptr, (off_t64) 0L, SEEK_END);
     flen = FTELL(js->jplfptr);
     /* # of segments in file */
     nseg = (int32) ((js->eh_ss[1] - js->eh_ss[0]) / js->eh_ss[2]);	
-    /* sum of all cheby coeffs of all planets and segments */
-    for(i = 0, nb = 0; i < 13; i++) {		
+    /* sum of all cheby coeffs of all planets and segments.
+     *
+     * The (off_t64) cast is load-bearing. ipt[] and nseg are int32 and k is
+     * int, so without it each term is evaluated entirely in 32-bit and only
+     * then widened into the 64-bit nb -- and each term is
+     * ncf * na * k * nseg, all four of which come from the file header.
+     *
+     * ncf is bounded to 18 by the check above and nseg to 14609851 by the
+     * ss[] plausibility test, but na has no bound at all, so na >= 3 already
+     * overflows: 18 * 3 * 3 * 14609851 = 2366795862 > INT_MAX. Measured, at
+     * ncf=18 and nseg at its maximum, 12 of the 13 terms wrap and nb comes
+     * out at -21560193300 instead of 29979414252.
+     *
+     * A negative nb happens to fail the comparison below and reject the
+     * file, so this is fail-safe rather than exploitable as far as has been
+     * shown -- but nb is the expected file length, and it is the check
+     * immediately below that indirectly bounds interp()'s base offset and
+     * na. Computing it in a type that silently wraps is not a foundation to
+     * leave that resting on.
+     */
+    for(i = 0, nb = 0; i < 13; i++) {
       k = 3;
       if (i == 11)
 	k = 2;
-      nb += (ipt[i*3+1] * ipt[i*3+2]) * k * nseg;
+      nb += (off_t64) ipt[i*3+1] * ipt[i*3+2] * k * nseg;
     }
     /* add start and end epochs of segments */
     nb += 2 * nseg; 
@@ -753,21 +820,26 @@ static int state(double et, int32 *list, int do_bary,
       && flen - nb != ksize * nrecl
       ) {
       if (serr != NULL) {
-	sprintf(serr, "JPL ephemeris file is mutilated; length = %d instead of %d.", (unsigned int) flen, (unsigned int) nb);
+	/* flen and nb are off_t64. Casting them to (unsigned int) and printing
+	 * with %d truncated both to 32 bits, so a large expected length was
+	 * reported as a negative number -- which is how the nb overflow above
+	 * disguised itself: the diagnostic looked like the arithmetic bug even
+	 * after the arithmetic was correct. Print them at full width. */
+	sprintf(serr, "JPL ephemeris file is mutilated; length = %lld instead of %lld.", (long long) flen, (long long) nb);
 	if (strlen(serr) + strlen(js->jplfname) < AS_MAXCH - 1) {
-	  sprintf(serr, "JPL ephemeris file %s is mutilated; length = %d instead of %d.", js->jplfname, (unsigned int) flen, (unsigned int) nb);
+	  sprintf(serr, "JPL ephemeris file %s is mutilated; length = %lld instead of %lld.", js->jplfname, (long long) flen, (long long) nb);
 	}
       }
       return(NOT_AVAILABLE);
     }
     /* check if start and end dates in segments are the same as in 
      * file header */
-    FSEEK(js->jplfptr, (off_t64) (2L * irecsz), 0);
+    FSEEK(js->jplfptr, (off_t64) (2L * js->irecsz), 0);
     nrd = fread((void *) &ts[0], sizeof(double), 2, js->jplfptr);
     if (nrd != 2) return NOT_AVAILABLE;
     if (js->do_reorder)
       reorder((char *) &ts[0], sizeof(double), 2);
-    FSEEK(js->jplfptr, (off_t64) ((nseg + 2 - 1) * ((off_t64) irecsz)), 0);
+    FSEEK(js->jplfptr, (off_t64) ((nseg + 2 - 1) * ((off_t64) js->irecsz)), 0);
     nrd = fread((void *) &ts[2], sizeof(double), 2, js->jplfptr);
     if (nrd != 2) return NOT_AVAILABLE;
     if (js->do_reorder)
@@ -796,14 +868,14 @@ static int state(double et, int32 *list, int do_bary,
     --nr;	/* end point of ephemeris, use last record */
   t = (et_mn - ((nr - 2) * js->eh_ss[2] + js->eh_ss[0]) + et_fr) / js->eh_ss[2];
   /* read correct record if not in core */
-  if (nr != nrl) {
-    nrl = nr;
-    if (FSEEK(js->jplfptr, (off_t64) (nr * ((off_t64) irecsz)), 0) != 0) {
+  if (nr != js->nrl) {
+    js->nrl = nr;
+    if (FSEEK(js->jplfptr, (off_t64) (nr * ((off_t64) js->irecsz)), 0) != 0) {
       if (serr != NULL) 
 	sprintf(serr, "Read error in JPL eph. at %f\n", et);
       return NOT_AVAILABLE;
     }
-    for (k = 1; k <= ncoeffs; ++k) {
+    for (k = 1; k <= js->ncoeffs; ++k) {
       if ( fread((void *) &buf[k - 1], sizeof(double), 1, js->jplfptr) != 1) {
 	if (serr != NULL) 
 	  sprintf(serr, "Read error in JPL eph. at %f\n", et);
@@ -820,15 +892,20 @@ static int state(double et, int32 *list, int do_bary,
     intv = js->eh_ss[2];
     aufac = 1. / js->eh_au;
   }
+  /* ipt[i*3] (base offset into buf[]) and ipt[i*3+2] (na, sub-intervals)
+   * feed every interp() call below and are file-controlled with no direct
+   * bound, unlike ncf (checked above). They stay inside buf[]'s js->ncoeffs
+   * today only indirectly, via the ksize bound plus the file-length
+   * identity check in the block above -- not verified independently. */
   /*   interpolate ssbary sun */
-  interp(&buf[(int) ipt[30] - 1], t, intv, ipt[31], 3L, ipt[32], 2L, pvsun);
+  interp(js, &buf[(int) ipt[30] - 1], t, intv, ipt[31], 3L, ipt[32], 2L, pvsun);
   for (i = 0; i < 6; ++i) {
     pvsun[i] *= aufac;
   }
   /*   check and interpolate whichever bodies are requested */
   for (i = 0; i < 10; ++i) {
     if (list[i] > 0) {
-      interp(&buf[(int) ipt[i * 3] - 1], t, intv, ipt[i * 3 + 1], 3L,
+      interp(js, &buf[(int) ipt[i * 3] - 1], t, intv, ipt[i * 3 + 1], 3L,
 	     ipt[i * 3 + 2], list[i], &pv[i * 6]);
       for (j = 0; j < 6; ++j) {
 	if (i < 9 && ! do_bary) {
@@ -841,12 +918,12 @@ static int state(double et, int32 *list, int do_bary,
   }
   /*       do nutations if requested (and if on file) */
   if (list[10] > 0 && ipt[34] > 0) {
-    interp(&buf[(int) ipt[33] - 1], t, intv, ipt[34], 2L, ipt[35],
+    interp(js, &buf[(int) ipt[33] - 1], t, intv, ipt[34], 2L, ipt[35],
 	     list[10], nut);
   }
   /*       get librations if requested (and if on file) */
   if (list[11] > 0 && ipt[37] > 0) {
-    interp(&buf[(int) ipt[36] - 1], t, intv, ipt[37], 3L, ipt[38], list[1],
+    interp(js, &buf[(int) ipt[36] - 1], t, intv, ipt[37], 3L, ipt[38], list[1],
 	    &pv[60]);
   }
   return OK;
@@ -856,10 +933,11 @@ static int state(double et, int32 *list, int do_bary,
  *  this entry obtains the constants from the ephemeris file 
  *  call state to initialize the ephemeris and read in the constants 
  */
-static int read_const_jpl(double *ss,  char *serr)
+static int read_const_jpl(swe_ctx *ctx, double *ss,  char *serr)
 {
+  struct jpl_save *js = ctx->jpl;
   int i, retc;
-  retc = state(0.0, NULL, FALSE, NULL, NULL, NULL, serr);
+  retc = state(ctx, 0.0, NULL, FALSE, NULL, NULL, NULL, serr);
   if (retc != OK)
     return (retc);
   for (i = 0; i < 3; i++)
@@ -907,8 +985,9 @@ static void reorder(char *x, int size, int number)
   }
 }
 
-void swi_close_jpl_file(void)
+void swi_close_jpl_file(swe_ctx *ctx)
 {
+  struct jpl_save *js = ctx->jpl;
   if (js != NULL) {
     if (js->jplfptr != NULL)
       fclose(js->jplfptr);
@@ -917,17 +996,18 @@ void swi_close_jpl_file(void)
     if (js->jplfpath != NULL) 
       FREE((void *) js->jplfpath);
     FREE((void *) js);
-    js = NULL;
+    ctx->jpl = NULL;
   }
 }
 
-int swi_open_jpl_file(double *ss, char *fname, char *fpath, char *serr)
+int swi_open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *serr)
 {
   int retc = OK;
+  struct jpl_save *js = ctx->jpl;
   /* if open, return */
   if (js != NULL && js->jplfptr != NULL)
     return OK;
-  if ((js = (struct jpl_save *) CALLOC(1, sizeof(struct jpl_save))) == NULL
+  if ((js = ctx->jpl = (struct jpl_save *) CALLOC(1, sizeof(struct jpl_save))) == NULL
     || (js->jplfname = (char *) MALLOC(strlen(fname)+1)) == NULL
     || (js->jplfpath = (char *) MALLOC(strlen(fpath)+1)) == NULL
     ) {
@@ -937,9 +1017,9 @@ int swi_open_jpl_file(double *ss, char *fname, char *fpath, char *serr)
   }
   strcpy(js->jplfname, fname);
   strcpy(js->jplfpath, fpath);
-  retc = read_const_jpl(ss, serr);
+  retc = read_const_jpl(ctx, ss, serr);
   if (retc != OK) 
-    swi_close_jpl_file();
+    swi_close_jpl_file(ctx);
   else {
     /* intializations for function interpol() */
     js->pc[0] = 1;
@@ -951,8 +1031,8 @@ int swi_open_jpl_file(double *ss, char *fname, char *fpath, char *serr)
   return retc;
 }
 
-int32 swi_get_jpl_denum(void)
+int32 swi_get_jpl_denum(swe_ctx *ctx)
 {
-  return js->eh_denum;
+  return ctx->jpl->eh_denum;
 }
 

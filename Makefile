@@ -34,7 +34,7 @@ OS := $(shell uname)
 ifeq ($(OS), Darwin)
   # macOS settings
   CC               = cc
-  CFLAGS           = -g -Wall -fPIC
+  CFLAGS           = -std=c17 -Wall -Wextra -Werror -O2 -g -fPIC -D_GNU_SOURCE
   LIBS             = -lm
   DYLIB_FLAG       = -dynamiclib
   DYLIB_EXT        = dylib
@@ -42,7 +42,7 @@ ifeq ($(OS), Darwin)
 else
   # Assume Linux settings
   CC               = cc
-  CFLAGS           = -g -Wall -fPIC
+  CFLAGS           = -std=c17 -Wall -Wextra -Werror -O2 -g -fPIC -D_GNU_SOURCE
   LIBS             = -lm -ldl
   DYLIB_FLAG       = -shared
   DYLIB_EXT        = so
@@ -51,8 +51,45 @@ else
   DYNAMIC_LINK_FLAGS= -Wl,-Bdynamic
 endif
 
+# Link-time optimisation. OPT-IN: `make LTO=1`.
+#
+# Measured on gcc 11.4 -O2 (tests/bench, 3 interleaved runs, median of 5):
+#
+#   moon         -5.0%     swemmoon.c calling swephlib.c helpers across TUs
+#   calc-moseph  -2.6%
+#   jpl-interp   -1.3%     within the benchmark's +/-2-3% noise floor
+#   calc-swieph  -0.8%     "
+#   houses       -1.3%     "
+#
+# Only the Moshier Moon path clears the noise floor convincingly, which is
+# what notes/C17_PERFORMANCE.md section 4.4 predicted: this is a 10-object
+# library and cross-TU inlining is the only way -O2 can reach helpers like
+# swi_coortrf2 (64 cross-file call sites).
+#
+# Output is BIT-IDENTICAL to plain -O2 across all 5137 golden rows on gcc
+# 13 -- verified, not assumed.
+#
+# Not enabled by default for two reasons: clang, macOS and MSVC parity is
+# unverified here (no clang on the machine this was measured on -- the CI
+# lto job exists to close that), and changing default build flags for a
+# library that other people package is the maintainer's call, not a
+# side effect of a performance patch.
+ifeq ($(LTO),1)
+  CFLAGS += -flto
+  LIBS   += -flto
+endif
+
+# Appended to every compile and link. Lets a caller add flags without
+# restating the whole list -- CFLAGS is assigned, not ?=, so overriding it
+# from the command line drops -std=c17 -Werror and the rest along with it.
+#
+# The release packaging uses it for macOS universal binaries:
+#   make EXTRA_CFLAGS="-arch arm64 -arch x86_64"
+EXTRA_CFLAGS ?=
+CFLAGS += $(EXTRA_CFLAGS)
+
 # Object files for the Swiss Ephemeris library
-SWEOBJ = swedate.o swehouse.o swejpl.o swemmoon.o swemplan.o sweph.o \
+SWEOBJ = swedate.o swehouse.o swejpl.o swemmoon.o swemplan.o sweph.o sweconfig.o \
          swephlib.o swecl.o swehel.o
 
 # Define overall targets. On Linux, include the static swetests target.
@@ -76,6 +113,18 @@ swetest: swetest.o libswe.a
 ifeq ($(STATIC_SUPPORTED),true)
 swetests: swetest.o $(SWEOBJ)
 	$(CC) $(CFLAGS) $(STATIC_LINK_FLAGS) -o swetests swetest.o $(SWEOBJ) $(DYNAMIC_LINK_FLAGS) $(LIBS)
+	@# mkdir -p: bin/ is no longer in the repository at all.
+	@#
+	@# bin/swetest and bin/swevents used to be tracked -- normal practice
+	@# when this codebase was written -- but `make all` REWRITES them, so
+	@# every build dirtied the working tree and invited a rebuilt binary
+	@# into a commit. They are build output of this Makefile and are now
+	@# ignored. The prebuilt Windows and Android binaries are NOT: nothing
+	@# here regenerates those, so they stay tracked.
+	@#
+	@# This also fixed a real CI failure -- the runner's sparse checkout had
+	@# no bin/, so the bare cp took `make all` down with it.
+	mkdir -p bin
 	cp swetests bin/swetest
 endif
 
@@ -86,6 +135,7 @@ swevents: swevents.o $(SWEOBJ)
 # Build sweventss, statically compiled
 sweventss: swevents.o $(SWEOBJ)
 	$(CC) $(CFLAGS) $(STATIC_LINK_FLAGS) -o sweventss swevents.o $(SWEOBJ) $(DYNAMIC_LINK_FLAGS) $(LIBS)
+	mkdir -p bin
 	cp sweventss  bin/swevents
 
 # Build swemini
@@ -101,8 +151,13 @@ libswe.a: $(SWEOBJ)
 	ar r libswe.a $(SWEOBJ)
 
 # Create a shared library
+# CFLAGS and LIBS belong on this line as much as on any other. Without
+# them the shared library is the one artifact built with different flags
+# from everything around it: -flto never reached it under LTO=1, macOS
+# universal builds silently produced a host-only dylib from fat objects,
+# and it recorded no dependency on libm or libdl.
 libswe.$(DYLIB_EXT): $(SWEOBJ)
-	$(CC) $(DYLIB_FLAG) -o libswe.$(DYLIB_EXT) $(SWEOBJ)
+	$(CC) $(CFLAGS) $(DYLIB_FLAG) -o libswe.$(DYLIB_EXT) $(SWEOBJ) $(LIBS)
 
 # Test targets (requires a "setest" subdirectory with its own Makefile)
 test:

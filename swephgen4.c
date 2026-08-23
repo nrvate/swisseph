@@ -82,11 +82,10 @@ double	max_err[EP_CALC_N];	/* remember maximum error */
 AS_BOOL verbose = FALSE;
 char errtext[AS_MAXCH];
 
-int split(w, m, min, sec)
-int32	w;	/* position in seconds/m */
-int	m;	/* factor for seconds */
-short	*min,	/* storage for degrees and minutes */
-	*sec;	/* storage for seconds * m */
+int split(int32 w,	/* position in seconds/m */
+	  int m,	/* factor for seconds */
+	  short *min,	/* storage for degrees and minutes */
+	  short *sec)	/* storage for seconds * m */
 {
   if (w >= 0) {
     *sec = w % (60 * m);
@@ -165,8 +164,7 @@ int eph4_pack (int32 jd, double (*l)[NDB], double ecliptic[],
 
 
 /*************************************/
-char *degstr (t)
-double t;
+char *degstr (double t)
 {
   static char a[20];	/* must survive call */
   double min, sec;
@@ -183,7 +181,7 @@ double t;
 } /* degstr */
 
 /********************************************************/
-int eph_test()
+int eph_test(void)
 {
   char cal;
   int  p, jday, jmon, jyear;

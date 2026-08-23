@@ -73,7 +73,7 @@ static double Asc1(double, double, double, double);
 static double AscDash(double, double, double, double);
 static double Asc2(double, double, double, double);
 static int CalcH(double th, double fi, double ekl, char hsy, struct houses *hsp);
-static int sidereal_houses_ecl_t0(double tjde, 
+static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -84,7 +84,7 @@ static int sidereal_houses_ecl_t0(double tjde,
 			   double *cusp_speed,
 			   double *ascmc_speed,
 			   char *serr);
-static int sidereal_houses_trad(double tjde, 
+static int sidereal_houses_trad(swe_ctx *ctx, double tjde, 
 			   int32 iflag,
                            double armc, 
                            double eps, 
@@ -96,7 +96,7 @@ static int sidereal_houses_trad(double tjde,
 			   double *cusp_speed,
 			   double *ascmc_speed,
 			   char *serr);
-static int sidereal_houses_ssypl(double tjde, 
+static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -127,7 +127,7 @@ static void test_Asc1();
  * ascmc[6] = coasc2		* "co-ascendant" (M. Munkasey) *
  * ascmc[7] = polasc		* "polar ascendant" (M. Munkasey) *
  */
-int CALL_CONV swe_houses(double tjd_ut,
+int CALL_CONV swe_houses_r(swe_ctx *ctx, double tjd_ut,
 				double geolat,
 				double geolon,
 				int hsys,
@@ -136,25 +136,26 @@ int CALL_CONV swe_houses(double tjd_ut,
 {
   int i, retc = 0;
   double armc, eps, nutlo[2];
-  double tjde = tjd_ut + swe_deltat_ex(tjd_ut, -1, NULL);
-  eps = swi_epsiln(tjde, 0) * RADTODEG;
-  swi_nutation(tjde, 0, nutlo);
+  double tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
+  eps = swi_epsiln(ctx, tjde, 0) * RADTODEG;
+  swi_nutation(ctx, tjde, 0, nutlo);
   for (i = 0; i < 2; i++)
     nutlo[i] *= RADTODEG;
-  armc = swe_degnorm(swe_sidtime0(tjd_ut, eps + nutlo[1], nutlo[0]) * 15 + geolon);
+  armc = swe_degnorm(swe_sidtime0_r(ctx, tjd_ut, eps + nutlo[1], nutlo[0]) * 15 + geolon);
   if (toupper(hsys) ==  'I') {	// compute sun declination for sunshine houses
     int flags = SEFLG_SPEED| SEFLG_EQUATORIAL;
     double xp[6];
-    int result = swe_calc_ut(tjd_ut, SE_SUN, flags, xp, NULL);
+    int result = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, flags, xp, NULL);
     if (result < 0) {
       // in case of failure, Porphyry houses
-      result = swe_houses_armc_ex2(armc, geolat, eps + nutlo[1], 'O', cusp, ascmc, NULL, NULL, NULL);
+      result = swe_houses_armc_ex2_r(ctx, armc, geolat, eps + nutlo[1], 'O', cusp, ascmc, NULL, NULL, NULL);
       return ERR;
     }
     ascmc[9] = xp[1];	// declination in ascmc[9];
   }
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count <= TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_HOUSES*/\n", swi_fp_trace_c);
@@ -169,12 +170,38 @@ int CALL_CONV swe_houses(double tjd_ut,
       fflush(swi_fp_trace_c);
     }
   }
+  swi_trace_unlock();
 #endif
-  retc = swe_houses_armc_ex2(armc, geolat, eps + nutlo[1], hsys, cusp, ascmc, NULL, NULL, NULL);
+  retc = swe_houses_armc_ex2_r(ctx, armc, geolat, eps + nutlo[1], hsys, cusp, ascmc, NULL, NULL, NULL);
   return retc;
 }
 
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+int CALL_CONV swe_houses(double tjd_ut,
+				double geolat,
+				double geolon,
+				int hsys,
+				double *cusp,
+				double *ascmc)
+{
+  return swe_houses_r(swi_default_ctx(), tjd_ut, geolat, geolon, hsys, cusp, ascmc);
+}
+
 // For explanation see function swe_houses_ex2() below.
+int CALL_CONV swe_houses_ex_r(swe_ctx *ctx, double tjd_ut,
+                                int32 iflag, 
+				double geolat,
+				double geolon,
+				int hsys,
+				double *cusp,
+				double *ascmc)
+{
+  return swe_houses_ex2_r(ctx, tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc, NULL, NULL, NULL);
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
 int CALL_CONV swe_houses_ex(double tjd_ut,
                                 int32 iflag, 
 				double geolat,
@@ -183,7 +210,7 @@ int CALL_CONV swe_houses_ex(double tjd_ut,
 				double *cusp,
 				double *ascmc)
 {
-  return swe_houses_ex2(tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc, NULL, NULL, NULL);
+  return swe_houses_ex_r(swi_default_ctx(), tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc);
 }
 
 /* 
@@ -204,7 +231,7 @@ int CALL_CONV swe_houses_ex(double tjd_ut,
  * ascmc_speed[0...10] speeds (daily motions) of the additional points.
  * serr           error message or warning
  */
-int CALL_CONV swe_houses_ex2(double tjd_ut,
+int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
                                 int32 iflag, 
 				double geolat,
 				double geolon,
@@ -217,8 +244,8 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
 {
   int i, retc = 0;
   double armc, eps_mean, nutlo[2];
-  double tjde = tjd_ut + swe_deltat_ex(tjd_ut, iflag, NULL);
-  struct sid_data *sip = &swed.sidd;
+  double tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL);
+  struct sid_data *sip = &ctx->sidd;
   double xp[6];
   int retc_makr = 0;
   int ito;
@@ -226,10 +253,10 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
     ito = 36;
   else
     ito = 12;
-  if ((iflag & SEFLG_SIDEREAL) && !swed.ayana_is_set)
-    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
-  eps_mean = swi_epsiln(tjde, 0) * RADTODEG;
-  swi_nutation(tjde, 0, nutlo);
+  if ((iflag & SEFLG_SIDEREAL) && !ctx->ayana_is_set)
+    SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
+  eps_mean = swi_epsiln(ctx, tjde, 0) * RADTODEG;
+  swi_nutation(ctx, tjde, 0, nutlo);
   for (i = 0; i < 2; i++)
     nutlo[i] *= RADTODEG;
   if (iflag & SEFLG_NONUT) {
@@ -238,6 +265,7 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
   }
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count <= TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_HOUSES_EX*/\n", swi_fp_trace_c);
@@ -253,13 +281,14 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
       fflush(swi_fp_trace_c);
     }
   }
+  swi_trace_unlock();
 #endif
     /*houses_to_sidereal(tjde, geolat, hsys, eps, cusp, ascmc, iflag);*/
-  armc = swe_degnorm(swe_sidtime0(tjd_ut, eps_mean + nutlo[1], nutlo[0]) * 15 + geolon);
+  armc = swe_degnorm(swe_sidtime0_r(ctx, tjd_ut, eps_mean + nutlo[1], nutlo[0]) * 15 + geolon);
 //fprintf(stderr, "armc=%f, iflag=%d\n", armc, iflag);
   if (toupper(hsys) ==  'I') {	// compute sun declination for sunshine houses
     int flags = SEFLG_SPEED| SEFLG_EQUATORIAL;
-    retc_makr = swe_calc_ut(tjd_ut, SE_SUN, flags, xp, NULL);
+    retc_makr = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, flags, xp, NULL);
     if (retc_makr < 0) {
       // in case of failure, provide Porphyry houses
       hsys = (int) 'O';
@@ -268,13 +297,13 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
   }
   if (iflag & SEFLG_SIDEREAL) { 
     if (sip->sid_mode & SE_SIDBIT_ECL_T0)
-      retc = sidereal_houses_ecl_t0(tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+      retc = sidereal_houses_ecl_t0(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
     else if (sip->sid_mode & SE_SIDBIT_SSY_PLANE)
-      retc = sidereal_houses_ssypl(tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+      retc = sidereal_houses_ssypl(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
     else
-      retc = sidereal_houses_trad(tjde, iflag, armc, eps_mean + nutlo[1], nutlo[0], geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+      retc = sidereal_houses_trad(ctx, tjde, iflag, armc, eps_mean + nutlo[1], nutlo[0], geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
   } else {
-    retc = swe_houses_armc_ex2(armc, geolat, eps_mean + nutlo[1], hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+    retc = swe_houses_armc_ex2_r(ctx, armc, geolat, eps_mean + nutlo[1], hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
     if (toupper(hsys) ==  'I') 	
       ascmc[9] = xp[1];	// declination in ascmc[9];
   }
@@ -287,6 +316,22 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
   if (retc_makr < 0)
     return retc_makr;
   return retc;
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+int CALL_CONV swe_houses_ex2(double tjd_ut,
+                                int32 iflag, 
+				double geolat,
+				double geolon,
+				int hsys,
+				double *cusp,
+				double *ascmc,
+			        double *cusp_speed,
+				double *ascmc_speed,
+				char *serr)
+{
+  return swe_houses_ex2_r(swi_default_ctx(), tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
 }
 
 /*
@@ -315,7 +360,7 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
  * 6. subtract this distance from all house cusps.
  * 7. subtract ayanamsa_t0 from all house cusps.
  */
-static int sidereal_houses_ecl_t0(double tjde, 
+static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -331,14 +376,14 @@ static int sidereal_houses_ecl_t0(double tjde,
   double x[6], xvpx[6], x2[6], epst0, xnorm[6];
   double rxy, rxyz, c2, epsx, sgn, fac, dvpx, dvpxe;
   double armcx;
-  struct sid_data *sip = &swed.sidd;
+  struct sid_data *sip = &ctx->sidd;
   int ito;
   if (toupper(hsys) == 'G')
     ito = 36;
   else
     ito = 12;
   /* epsilon at t0 */
-  epst0 = swi_epsiln(sip->t0, 0);
+  epst0 = swi_epsiln(ctx, sip->t0, 0);
   /* cartesian coordinates of an imaginary moving body on the
    * the mean ecliptic of t0; we take the vernal point: */
   x[0] = x[4] = 1; 
@@ -347,10 +392,10 @@ static int sidereal_houses_ecl_t0(double tjde,
   swi_coortrf(x, x, -epst0);
   swi_coortrf(x+3, x+3, -epst0);
   /* to tjd_et */
-  swi_precess(x, sip->t0, 0, J_TO_J2000);
-  swi_precess(x, tjde, 0, J2000_TO_J);
-  swi_precess(x+3, sip->t0, 0, J_TO_J2000);
-  swi_precess(x+3, tjde, 0, J2000_TO_J);
+  swi_precess(ctx, x, sip->t0, 0, J_TO_J2000);
+  swi_precess(ctx, x, tjde, 0, J2000_TO_J);
+  swi_precess(ctx, x+3, sip->t0, 0, J_TO_J2000);
+  swi_precess(ctx, x+3, tjde, 0, J2000_TO_J);
   /* to true equator of tjd_et */
   swi_coortrf(x, x, (eps - nutlo[1]) * DEGTORAD);
   swi_coortrf(x+3, x+3, (eps - nutlo[1]) * DEGTORAD);
@@ -381,7 +426,7 @@ static int sidereal_houses_ecl_t0(double tjde,
   /* auxiliary armc */
   armcx = swe_degnorm(armc - dvpx);        /* 3 */
   /* compute axes and houses: */
-  retc = swe_houses_armc_ex2(armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
   /* distance between auxiliary vernal point and
    * vernal point of t0 (a section on the sidereal plane) */
   dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
@@ -422,7 +467,7 @@ static int sidereal_houses_ecl_t0(double tjde,
  * 8. subtract ayanamsa_t0 from all house cusps.
  * 9. subtract ayanamsa_2000 from all house cusps.
  */
-static int sidereal_houses_ssypl(double tjde, 
+static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -438,13 +483,13 @@ static int sidereal_houses_ssypl(double tjde,
   double x[6], x0[6], xvpx[6], x2[6], xnorm[6];
   double rxy, rxyz, c2, epsx, eps2000, sgn, fac, dvpx, dvpxe, x00;
   double armcx;
-  struct sid_data *sip = &swed.sidd;
+  struct sid_data *sip = &ctx->sidd;
   int ito;
   if (toupper(hsys) == 'G')
     ito = 36;
   else
     ito = 12;
-  eps2000 = swi_epsiln(J2000, 0);
+  eps2000 = swi_epsiln(ctx, J2000, 0);
   /* cartesian coordinates of the zero point on the
    * the solar system rotation plane */
   x[0] = x[4] = 1; 
@@ -459,8 +504,8 @@ static int sidereal_houses_ssypl(double tjde,
   swi_coortrf(x, x, -eps2000);
   swi_coortrf(x+3, x+3, -eps2000);
   /* to mean equator of t */
-  swi_precess(x, tjde, 0, J2000_TO_J);
-  swi_precess(x+3, tjde, 0, J2000_TO_J);
+  swi_precess(ctx, x, tjde, 0, J2000_TO_J);
+  swi_precess(ctx, x+3, tjde, 0, J2000_TO_J);
   /* to true equator of t */
   swi_coortrf(x, x, (eps - nutlo[1]) * DEGTORAD);
   swi_coortrf(x+3, x+3, (eps - nutlo[1]) * DEGTORAD);
@@ -491,7 +536,7 @@ static int sidereal_houses_ssypl(double tjde,
   /* auxiliary armc */
   armcx = swe_degnorm(armc - dvpx);        /* 3 */
   /* compute axes and houses: */
-  retc = swe_houses_armc_ex2(armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
   /* distance between the auxiliary vernal point at t and
    * the sidereal zero point of 2000 at t
    * (a section on the sidereal plane).
@@ -505,7 +550,7 @@ static int sidereal_houses_ssypl(double tjde,
   x0[1] = x0[2] = 0; 
   /* zero point of t0 in J2000 system */
   if (sip->t0 != J2000)
-    swi_precess(x0, sip->t0, 0, J_TO_J2000);
+    swi_precess(ctx, x0, sip->t0, 0, J_TO_J2000);
   /* zero point to ecliptic 2000 */
   swi_coortrf(x0, x0, eps2000);
   /* to solar system plane */
@@ -532,7 +577,7 @@ static int sidereal_houses_ssypl(double tjde,
 }
 
 /* common simplified procedure */
-static int sidereal_houses_trad(double tjde,
+static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
 			   int32 iflag,
                            double armc, 
                            double eps, 
@@ -550,9 +595,10 @@ static int sidereal_houses_trad(double tjde,
   int ito;
   int ihs = toupper(hsys);
   int ihs2 = ihs;
+  (void) nutl;	/* unused */
 // ay = swe_get_ayanamsa(tjde);
 //fprintf(stderr, "ay=%f\n", ay);
-  retc = swe_get_ayanamsa_ex(tjde, iflag, &ay, NULL);
+  retc = swe_get_ayanamsa_ex_r(ctx, tjde, iflag, &ay, NULL);
 //fprintf(stderr, "ay=%f\n", ay);
 //fprintf(stderr, "nutl=%f\n", nutl);
   if (ihs == 'G')
@@ -563,7 +609,7 @@ static int sidereal_houses_trad(double tjde,
     ihs2 = 'E';
 //fprintf(stderr, "armc=%f\n", armc);
 //if (hsys == 'P') fprintf(stderr, "ay=%f, t=%f %c", ay, tjde, (char) hsys);
-  retc = swe_houses_armc_ex2(armc, lat, eps, ihs2, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+  retc = swe_houses_armc_ex2_r(ctx, armc, lat, eps, ihs2, cusp, ascmc, cusp_speed, ascmc_speed, serr);
 //if (hsys == 'P') fprintf(stderr, "  h1=%f", cusp[1]);
   for (i = 1; i <= ito; i++) {
     //cusp[i] = swe_degnorm(cusp[i] - ay - nutl);
@@ -587,6 +633,18 @@ static int sidereal_houses_trad(double tjde,
 }
 
 // For explanation see function swe_houses_armc_ex2() below.
+int CALL_CONV swe_houses_armc_r(swe_ctx *ctx, double armc,
+				double geolat,
+				double eps,
+				int hsys,
+				double *cusp,
+				double *ascmc)
+{
+  return swe_houses_armc_ex2_r(ctx, armc, geolat, eps, hsys, cusp, ascmc, NULL, NULL, NULL);
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
 int CALL_CONV swe_houses_armc(
 				double armc,
 				double geolat,
@@ -595,7 +653,7 @@ int CALL_CONV swe_houses_armc(
 				double *cusp,
 				double *ascmc)
 {
-  return swe_houses_armc_ex2(armc, geolat, eps, hsys, cusp, ascmc, NULL, NULL, NULL);
+  return swe_houses_armc_r(swi_default_ctx(), armc, geolat, eps, hsys, cusp, ascmc);
 }
 
 /* 
@@ -619,8 +677,7 @@ int CALL_CONV swe_houses_armc(
  * ascmc_speed[0...10] speeds (daily motions) of the additional points.
  * serr           error message or warning
  */
-int CALL_CONV swe_houses_armc_ex2(
-				double armc,
+int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
 				double geolat,
 				double eps,
 				int hsys,
@@ -633,7 +690,12 @@ int CALL_CONV swe_houses_armc_ex2(
   struct houses h, hm1, hp1;
   int i, retc = 0, rm1, rp1;
   int ito;
-  static double saved_sundec = 99;
+  /* Sunshine houses: remembers the last solar declination supplied by the
+   * caller, so that a later call may pass the sentinel 99 to recall it.
+   * Must be thread-local -- otherwise concurrent callers recall each
+   * other's declination and silently produce wrong charts.
+   * TODO(phase3c): move into the ephemeris context. */
+  /* was a TLS static; now ctx->saved_sundec (Phase 3c) */
   if (toupper(hsys) == 'G')
     ito = 36;
   else
@@ -648,10 +710,10 @@ int CALL_CONV swe_houses_armc_ex2(
   if (toupper(hsys) ==  'I') {	// declination for sunshine houses
     if (ascmc[9] == 99) {
       h.sundec = 0;
-      if (saved_sundec != 99) h.sundec = saved_sundec;
+      if (ctx->saved_sundec != 99) h.sundec = ctx->saved_sundec;
     } else {
       h.sundec = ascmc[9];
-      saved_sundec = h.sundec;
+      ctx->saved_sundec = h.sundec;
     }
     if (h.sundec < -24 || h.sundec > 24) {
       sprintf(serr, "House system I (Sunshine) needs valid Sun declination in ascmc[9]");
@@ -723,6 +785,7 @@ int CALL_CONV swe_houses_armc_ex2(
   }
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count <= TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_HOUSES_ARMC_EX2*/\n", swi_fp_trace_c);
@@ -760,6 +823,7 @@ int CALL_CONV swe_houses_armc_ex2(
       fflush(swi_fp_trace_out);
     }
   }
+  swi_trace_unlock();
 #endif
 #if 0 
 /* for test of swe_house_pos(). 
@@ -767,7 +831,7 @@ int CALL_CONV swe_houses_armc_ex2(
 for (i = 1; i <=12; i++) {
   double x[6];
   x[0] = cusp[i]; x[1] = 0; x[2] = 1;
-  cusp[i] = (swe_house_pos(armc, geolat, eps, hsys, x, NULL) - 1) * 30;
+  cusp[i] = (swe_house_pos_r(ctx, armc, geolat, eps, hsys, x, NULL) - 1) * 30;
 }
 #endif
   return retc;
@@ -2213,8 +2277,7 @@ static double fix_asc_polar(double asc, double armc, double eps, double geolat)
  *   equal, Porphyry, Alcabitius, Koch, Krusinski (all others should work).
  * The Swiss Ephemeris currently does not handle these cases.
  */
-double CALL_CONV swe_house_pos(
-	double armc, double geolat, double eps, int hsys, double *xpin, char *serr)
+double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, double eps, int hsys, double *xpin, char *serr)
 {
   double xp[6], xeq[6], ra, de, mdd, mdn, sad, san;
   double hpos, sinad, ad, a, admc, adp, samc, asc, mc, acmc, tant;
@@ -2235,7 +2298,7 @@ double CALL_CONV swe_house_pos(
 		  // which we do not know. If it sees ascmc[9] == 99, it uses
 		  // the one is saved from last call. can lead to bugs, but can 
 		  // also solve many problems.
-    if (swe_houses_armc_ex2(armc, geolat, eps, hsys, hcusp, ascmc, NULL, NULL, serr) == ERR) {
+    if (swe_houses_armc_ex2_r(ctx, armc, geolat, eps, hsys, hcusp, ascmc, NULL, NULL, serr) == ERR) {
       if (serr != NULL)
 	sprintf(serr, "swe_house_pos(): failed for system %c", hsys);
     } else {
@@ -2834,7 +2897,7 @@ double CALL_CONV swe_house_pos(
     break;
   default:
     hpos = 0;
-    if (swe_houses_armc_ex2(armc, geolat, eps, hsys, hcusp, ascmc, NULL, NULL, serr) == ERR) {
+    if (swe_houses_armc_ex2_r(ctx, armc, geolat, eps, hsys, hcusp, ascmc, NULL, NULL, serr) == ERR) {
       if (serr != NULL)
 	sprintf(serr, "swe_house_pos(): failed for system %c", hsys);
       break;
@@ -2873,6 +2936,14 @@ double CALL_CONV swe_house_pos(
     break;
   }
   return hpos;
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+double CALL_CONV swe_house_pos(
+	double armc, double geolat, double eps, int hsys, double *xpin, char *serr)
+{
+  return swe_house_pos_r(swi_default_ctx(), armc, geolat, eps, hsys, xpin, serr);
 }
 
 static int sunshine_init(double lat, double dec, double xh[])
@@ -3140,4 +3211,21 @@ static int sunshine_solution_treindl(double ramc, double lat, double ecl, struct
     }
   }
   return retval;
+}
+
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+int CALL_CONV swe_houses_armc_ex2(
+				double armc,
+				double geolat,
+				double eps,
+				int hsys,
+				double *cusp,
+				double *ascmc,
+				double *cusp_speed,
+				double *ascmc_speed,
+				char *serr)
+{
+  return swe_houses_armc_ex2_r(swi_default_ctx(), armc, geolat, eps, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
 }

@@ -688,7 +688,8 @@ static char *infoexamp = "\n\
 #endif
 
 #define J2000           2451545.0  /* 2000 January 1.5 */
-#define square_sum(x)   (x[0]*x[0]+x[1]*x[1]+x[2]*x[2])
+/* square_sum() comes from sweph.h, which this file already includes.
+ * It was redefined here byte-identically -- see C17_PERFORMANCE.md A3. */
 #define SEFLG_EPHMASK   (SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH)
 
 #define BIT_ROUND_SEC   1
@@ -3977,11 +3978,17 @@ static char *hms(double x, int32 iflag)
 
 static void do_printf(char *info)
 {
-#ifdef _WINDOWS
-  fprintf(fp, info);
-#else
-  fputs(info,stdout);
-#endif
+  /* The #ifdef _WINDOWS branch here read `fprintf(fp, info)`. There is no
+   * `fp` in this file -- the only one is a local in
+   * swe_get_named_ast_list(), 170 lines away -- so that branch has never
+   * compiled. It was simply never reached until sweodef.h began defining
+   * _WINDOWS whenever _WIN32 is set, which turned it on for console builds
+   * too, and nothing built swetest.c on Windows to notice.
+   *
+   * It was also `fprintf(dst, info)` with `info` as the FORMAT string, so
+   * any '%' in a message would have been read as a conversion. stdout is
+   * correct for a console program either way. */
+  fputs(info, stdout);
 }
 
 /* make_ephemeris_path().
@@ -4140,12 +4147,26 @@ static char *our_strcpy(char *to, char *from)
   return to;
 }
 
-#if TRUE
+/* NOT available in a USE_DLL build.
+ *
+ * This reads the asteroid-name file through swi_fopen() and the context's
+ * ephepath -- both swi_-internal, and the DLL exports only the public swe_
+ * API. So swete32/swete64, which are exactly this program linked against
+ * the DLL, have never been able to link: at the branch base the same line
+ * read swi_fopen(-1, SE_ASTNAMFILE, swed.ephepath, serr), equally internal.
+ *
+ * Guarded rather than "fixed" because there is no public entry point that
+ * opens a file relative to the ephemeris path. The upstream comment below
+ * -- that this belongs in the library, not in a sample program -- is the
+ * actual resolution.
+ */
+#ifndef USE_DLL
 // this function should move to swephlib.c in next release
 int swe_get_named_ast_list(int amax, int *iarr, char*serr) 
 {
   char si[AS_MAXCH], *sp;
-  FILE *fp = swi_fopen(-1, SE_ASTNAMFILE, swed.ephepath, serr);
+  swe_ctx *ctx = swi_default_ctx();
+  FILE *fp = swi_fopen(ctx, -1, SE_ASTNAMFILE, ctx->ephepath, serr);
   int nast = 0;
   if (fp == NULL) return ERR;
   while (fgets(si, AS_MAXCH, fp) != NULL) {
@@ -4160,9 +4181,24 @@ int swe_get_named_ast_list(int amax, int *iarr, char*serr)
   return nast;
 }
 
+#endif /* USE_DLL */
+
 int print_asteroids(double tjd, double dref, double orb)
 {
-  int i, rc, nast, amax = 30000;
+#ifdef USE_DLL
+  /* see the note on swe_get_named_ast_list() above */
+  (void) tjd; (void) dref; (void) orb;
+  printf("\nlisting named asteroids needs the asteroid-name file, which is\n"
+         "read through a library-internal entry point not exported by the\n"
+         "DLL. Use the statically linked swetest instead.\n");
+  return ERR;
+#else
+  /* amax was a plain int, making arr[] a variable-length array. GCC
+   * accepts VLAs; MSVC's C compiler does not, so swetest.c could not be
+   * built on Windows at all. An enum constant keeps the value in one place
+   * and is a constant expression. */
+  enum { amax = 30000 };
+  int i, rc, nast;
   int arr[amax];
   char serr[AS_MAXCH];
   char si[AS_MAXCH];
@@ -4193,5 +4229,5 @@ int print_asteroids(double tjd, double dref, double orb)
     }
   }
   return OK;
+#endif /* USE_DLL */
 }
-#endif

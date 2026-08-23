@@ -58,6 +58,29 @@
   for promoting such software, products or services.
 */
 
+/* swe_ctx is defined in sweph.h, which this header does not include -- and
+ * swetest.c/swevents.c include this one first. An incomplete type is all the
+ * prototypes below need, so forward-declare it (swejpl.h does the same). */
+#include <math.h>       /* floor(), for swi_mods3600() below */
+#include "swethread.h" /* SWI_INLINE */
+
+struct swe_ctx;
+typedef struct swe_ctx swe_ctx;
+
+/* Reduce an angle in arcseconds modulo a full circle (1296000").
+ *
+ * Was a macro in swemplan.c substituting its argument TWICE -- the classic
+ * SQR(x++) shape (notes/C17_PERFORMANCE.md A2). Every call today passes
+ * plain arithmetic, so nothing is broken, but the hazard is live: one
+ * future mods3600(next_value()) would silently evaluate it twice.
+ *
+ * swemmoon.c had already made its own copy a real function, independently.
+ * This is that function, shared, so the two cannot drift. */
+SWI_INLINE double swi_mods3600(double x)
+{
+  return x - 1296000.0 * floor(x / 1296000.0);
+}
+
 #define PREC_IAU_1976_CTIES          2.0 	/* J2000 +/- two centuries */
 #define PREC_IAU_2000_CTIES          2.0 	/* J2000 +/- two centuries */
 /* we use P03 for whole ephemeris */
@@ -107,38 +130,39 @@ extern void swi_polcart_sp(double *l, double *x);
 extern void swi_polcart(double *l, double *x);
 
 /* GCRS to J2000 */
-extern void swi_bias(double *x, double tjd, int32 iflag, AS_BOOL backward);
+extern void swi_bias(swe_ctx *ctx, double *x, double tjd, int32 iflag, AS_BOOL backward);
 extern void swi_get_eop_time_range(void);
 /* GCRS to FK5 */
 extern void swi_icrs2fk5(double *x, int32 iflag, AS_BOOL backward);
 
 /* precession */
-extern int swi_precess(double *R, double J, int32 iflag, int direction );
-extern void swi_precess_speed(double *xx, double t, int32 iflag, int direction);
+extern int swi_precess(swe_ctx *ctx, double *R, double J, int32 iflag, int direction );
+extern void swi_precess_speed(swe_ctx *ctx, double *xx, double t, int32 iflag, int direction);
 
-extern int32 swi_guess_ephe_flag(void);
+extern int32 swi_guess_ephe_flag(swe_ctx *ctx);
 
 /* from sweph.c, light deflection, aberration, etc. */
-extern void swi_deflect_light(double *xx, double dt, int32 iflag);
+extern void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag);
 extern void swi_aberr_light(double *xx, double *xe, int32 iflag);
-extern int swi_plan_for_osc_elem(int32 iflag, double tjd, double *xx);
-extern int swi_trop_ra2sid_lon(double *xin, double *xout, double *xoutr, int32 iflag);
-extern int swi_trop_ra2sid_lon_sosy(double *xin, double *xout, int32 iflag);
-extern int swi_get_observer(double tjd, int32 iflag, 
+extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *xx);
+extern int swi_trop_ra2sid_lon(swe_ctx *ctx, double *xin, double *xout, double *xoutr, int32 iflag);
+extern int swi_trop_ra2sid_lon_sosy(swe_ctx *ctx, const double * SWI_RESTRICT xin,
+                                    double * SWI_RESTRICT xout, int32 iflag);
+extern int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag, 
 	AS_BOOL do_save, double *xobs, char *serr);
-extern void swi_force_app_pos_etc(void);
+extern void swi_force_app_pos_etc(swe_ctx *ctx);
 
 /* obliquity of ecliptic */
-extern void swi_check_ecliptic(double tjd, int32 iflag);
-extern double swi_epsiln(double J, int32 iflag);
+extern void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag);
+extern double swi_epsiln(swe_ctx *ctx, double J, int32 iflag);
 extern void swi_ldp_peps(double J, double *dpre, double *deps);
 
 /* nutation */
-extern void swi_check_nutation(double tjd, int32 iflag);
-extern int swi_nutation(double J, int32 iflag, double *nutlo);
-extern void swi_nutate(double *xx, int32 iflag, AS_BOOL backward);
+extern void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag);
+extern int swi_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo);
+extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 
-extern void swi_mean_lunar_elements(double tjd, 
+extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 
 							 double *node, double *dnode, 
 							 double *peri, double *dperi);
 /* */
@@ -160,13 +184,15 @@ extern void swi_gen_filename(double tjd, int ipli, char *fname);
 
 /* cyclic redundancy checksum (CRC), 32 bit */
 extern uint32 swi_crc32(unsigned char *buf, int len);
+extern void swi_seed_leap_table(swe_ctx *ctx);
+extern void swi_seed_dt_table(swe_ctx *ctx);
 
 extern int swi_cutstr(char *s, char *cutlist, char *cpos[], int nmax);
 extern char *swi_right_trim(char *s);
 
 extern double swi_kepler(double E, double M, double ecce);
 
-extern char *swi_get_fict_name(int32 ipl, char *s);
+extern char *swi_get_fict_name(swe_ctx *ctx, int32 ipl, char *s);
 
 extern void swi_FK4_FK5(double *xp, double tjd);
 
@@ -177,10 +203,20 @@ extern double swi_deltat_ephe(double tjd_ut, int32 epheflag);
 
 #ifdef TRACE
 #  define TRACE_COUNT_MAX         10000
-  extern TLS FILE *swi_fp_trace_c;
-  extern TLS FILE *swi_fp_trace_out;
-  extern TLS int32 swi_trace_count;
+  /* Process-wide, not per-thread: see the comment on the definitions in
+   * swephlib.c. Read or written only while holding the trace lock. */
+  extern FILE *swi_fp_trace_c;
+  extern FILE *swi_fp_trace_out;
+  extern int32 swi_trace_count;
   extern void swi_open_trace(char *serr);
+  /* Bracket one whole trace record, so concurrent threads cannot shred
+   * each other's output. swi_open_trace() takes and releases the lock for
+   * its own work (the counter bump and the lazy fopen); every record
+   * emission takes it again around the writes themselves. Records are
+   * emitted both with and without a preceding swi_open_trace(), so the
+   * bracketing has to live at the record, not be handed over from open. */
+  extern void swi_trace_lock(void);
+  extern void swi_trace_unlock(void);
   static const char *fname_trace_c = "swetrace.c";
   static const char *fname_trace_out = "swetrace.txt";
 #ifdef FORCE_IFLAG

@@ -65,6 +65,12 @@
 
 #include "sweodef.h"
 
+/* The prototypes below name swe_ctx, but this header does not include
+ * sweph.h (sweph.h includes this one). An incomplete type is all a
+ * prototype needs, so forward-declare it here. */
+struct swe_ctx;
+typedef struct swe_ctx swe_ctx;
+
 #define J_MERCURY	0	/* jpl body indices, modified by Alois */
 #define J_VENUS		1	/* now they start at 0 and not at 1 */
 #define J_EARTH		2
@@ -87,17 +93,17 @@
  * ntarg can be all of the above, ncent all except J_NUT and J_LIB.
  * Librations and Nutations are not affected by ncent.
  */
-extern int swi_pleph(double et, int ntarg, int ncent, double *rrd, char *serr);
+extern int swi_pleph(swe_ctx *ctx, double et, int ntarg, int ncent, double *rrd, char *serr);
 
 /*
  * read the ephemeris constants. ss[0..2] returns start, end and granule size.
  * If do_show is TRUE, a list of constants is printed to stdout.
  */
-extern void swi_close_jpl_file(void);
+extern void swi_close_jpl_file(swe_ctx *ctx);
 
-extern int swi_open_jpl_file(double *ss, char *fname, char *fpath, char *serr);
+extern int swi_open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *serr);
 
-extern int32 swi_get_jpl_denum(void);
+extern int32 swi_get_jpl_denum(swe_ctx *ctx);
 
 extern void swi_IERS_FK5(double *xin, double *xout, int dir);
 

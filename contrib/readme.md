@@ -31,7 +31,8 @@ An interface for Delphi (Pascal code) to call Swiss Ephemeris functions.
 projectPF_VS2017.zip	5-oct-2017 
 contributed by Pierre Fontaine
 Project files from Visual Studio 2017
-Should be unpacked after unpacking sweph.zip within the 'src' directory
+Predates windows/projects/, which now holds the MSVC build system as
+ordinary files; sweph.zip no longer exists
 In the directory 'projectPF' you have a global solution 'sweph.sln' with
 the different 'vcxproj' files to build the dlls.
 

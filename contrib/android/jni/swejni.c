@@ -1,7 +1,7 @@
 /*
  * Author    Yura Krymlov
  * Created   2021-02
- * Version   2.10.03
+ * Version   2.10.03-ts.1
  */
  
 #include "swephexp.h"

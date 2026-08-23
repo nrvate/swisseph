@@ -23,7 +23,7 @@ test:	all
 #INCL = -I../sweph
 INCL = -I..
 
-CFLAGS = -std=gnu99 -fms-extensions -g -Wall -pthread -fPIC 
+CFLAGS = -std=c17 -fms-extensions -g -Wall -pthread -fPIC
 LIBS = ../libswe.a -lm  
 LIBSX = ../libswe.a -lm  
 CC=gcc	

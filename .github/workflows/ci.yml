@@ -1,0 +1,468 @@
+name: CI
+
+# Shared safety net for both in-flight plans:
+#   notes/PLAN.md          section 0.4  (thread-safety)
+#   notes/C17_MIGRATION.md section 6, Phase 5.4  (C17 migration)
+# Both call for the same matrix; whichever landed it first was to build it
+# for both. This is it.
+#
+# The gates themselves live in tests/Makefile and are NOT duplicated here --
+# this workflow only supplies the toolchains and platforms that cannot be
+# reached from a single dev box.
+#
+# On the numerical gate specifically:
+#   tests/baseline.txt is pinned to gcc -O0. That is the ONLY configuration
+#   where a bit-exact diff is meaningful. Measured on this tree, gcc -O0 vs
+#   -O2 already differs in 224 values across 65 of 5127 rows -- median
+#   2.2e-15, max 7.6e-08 deg (0.00027 arcsec), all in the speed fields,
+#   which are finite-differenced and so amplify rounding.
+#   So: gcc -O0 runs `check-golden` (bit-exact); every other toolchain runs
+#   tests/cmpgolden.py with a tolerance instead. Using diff there would fail
+#   for reasons that have nothing to do with our changes.
+
+on:
+  push:
+    # main is the default branch; legacy-master is the pristine upstream
+    # tree and deliberately has no CI. threadsafe stays as the granular
+    # history of the transformation and keeps running the gates.
+    branches: [ main, threadsafe ]
+  pull_request:
+  workflow_dispatch:
+
+# One run per ref. push and pull_request both fire for a branch with an open
+# PR, so every push was running all 13 jobs TWICE; superseded runs are now
+# cancelled instead of racing the new one to the same conclusion.
+concurrency:
+  # head_ref, not ref: for a pull_request github.ref is refs/pull/N/merge
+  # while the push that created it is refs/heads/<branch>, so keying on
+  # ref put them in DIFFERENT groups and both still ran. head_ref is the
+  # source branch for a PR and empty otherwise, so the two collapse.
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: nothing here writes to the repository. release.yml asks
+# for contents: write separately, because it actually publishes.
+permissions:
+  contents: read
+
+env:
+  # ephe/ is tracked in-repo (379 MB). sat/ (227 MB) and ep4/ (25 MB) are
+  # not opened by any gate -- verified with strace -- so they are excluded
+  # to keep checkout sane.
+  EPHE: ephe
+  # Measured, not picked. A cross-toolchain difference below ~1e-5 deg is
+  # indistinguishable from the values' own input-noise floor: perturbing tjd
+  # by +2 ULP already moves the worst non-ill-conditioned row (Moon, Moshier,
+  # longitude speed, year +3000) by 8.7e-06 deg/day. 1e-5 deg is 0.036
+  # arcsec, ~30x tighter than the library's quoted positional accuracy.
+  # Real regressions are caught by check-golden, which is bit-exact.
+  TOL: 1e-5
+
+jobs:
+  # Build the distributable packages for all three desktop platforms.
+  # Defined once, in package.yml, and called again by release.yml so a
+  # release ships exactly what CI has been building.
+  package:
+    uses: ./.github/workflows/package.yml
+
+  # ---------------------------------------------------------------------
+  # The reference configuration. This is the one that owns baseline.txt,
+  # and the only job allowed to assert bit-exactness.
+  # ---------------------------------------------------------------------
+  linux-gcc:
+    name: linux / gcc (reference, bit-exact)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - name: Versions
+        run: gcc --version && make --version | head -1
+      # This is an ASSERTION, not a diagnostic.
+      # The __APPLE__ exclusion in sweodef.h survived all of Phase 1 and
+      # Phase 2 unnoticed, leaving swed a plain process-wide global on macOS
+      # -- 23 KB of caches and open FILE*s shared across threads with no
+      # synchronisation. It was found only because an earlier version of this
+      # job PRINTED the expansion and a human read it. Fail the build instead.
+      - name: TLS must be a real thread-local here
+        run: |
+          printf '#include "sweodef.h"\nTLS int probe;\n' > /tmp/p.c
+          exp=$(cc -E -I. /tmp/p.c | tail -1)
+          echo "TLS expands to: $exp"
+          case "$exp" in
+            *__thread*|*__declspec*) echo "ok" ;;
+            *) echo "FAIL: TLS is empty -- swed would be a shared global"; exit 1 ;;
+          esac
+      - name: Build library
+        run: make libswe.a
+      - name: G1 numerical no-op (bit-exact, the pinned config)
+        run: make -C tests check-golden EPHE=../$EPHE
+      - name: G1b -O2 within tolerance
+        run: make -C tests check-golden-O2 EPHE=../$EPHE TOL=$TOL
+      - name: G2 config propagates to worker threads
+        run: make -C tests check-threads EPHE=../$EPHE
+      - name: Per-thread-setup still works
+        run: make -C tests check-threads-workaround EPHE=../$EPHE
+      - name: Race and leak gates
+        run: |
+          make -C tests check-sunrace  EPHE=../$EPHE
+          make -C tests check-glprace  EPHE=../$EPHE
+          make -C tests check-cfgleak  EPHE=../$EPHE
+      # REVIEW.md J1. Runs under ASan; the ncf guard is a runtime check on a
+      # file-supplied value, so a static_assert cannot cover it.
+      - name: JPL header guards (malformed-file fixtures)
+        run: make -C tests check-jplguard EPHE=../$EPHE
+
+      # G10. jplguard covers header REJECTION; this covers the reader
+      # actually computing. Bit-exact, so reference toolchain only --
+      # same rule as check-golden.
+      - name: JPL reader numerical baseline
+        run: make -C tests check-jplcalc
+
+      # G11. gcc/clang pick tier 3 at every -std=, so tiers 4 and 5 are
+      # built by nothing else. Tier 5 had already rotted unbuildable.
+      - name: swethread.h backends all build and compute
+        run: make -C tests check-threadtiers EPHE=../$EPHE
+
+      # G12. A bare swe_X() from inside the library silently uses the
+      # default context. Two hand audits missed cases; this cannot.
+      - name: No internal calls to legacy entry points
+        run: make -C tests check-bridge
+      # G13. Catches windows.h annotation-macro collisions (IN, OUT, ...)
+      # on Linux, in a second, instead of four push-and-wait cycles against
+      # the MSVC job.
+      - name: No collision with windows.h annotation macros
+        run: make -C tests check-winmacros
+      - name: Threading shim
+        run: make -C tests check-threadshim
+
+      # G4. The only gate that can tell whether swe_ctx_new() does anything:
+      # a swe_X_r() ignoring its context argument passes G1 and G2 both.
+      - name: Independent contexts
+        run: make -C tests check-ctx EPHE=../$EPHE
+
+      # G9. Behaviour gates link only libswe.a and tests/, so nothing here
+      # ever compiled swetest.c/swevents.c or any TRACE build. Phase 3 broke
+      # `make all` for three phases with every other gate green.
+      - name: Sample programs and TRACE build
+        run: make -C tests check-build
+
+  # ---------------------------------------------------------------------
+  # LTO parity. `make LTO=1` is opt-in and was measured only on gcc 13,
+  # where it is bit-identical to plain -O2 and worth ~5% on the Moshier
+  # Moon path. This job exists to prove it does not change results under a
+  # second toolchain before anyone considers making it the default.
+  # ---------------------------------------------------------------------
+  lto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EPHE: ephe
+      TOL: 1e-5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/ephe/sat/
+            !/ephe/ep4/
+      - name: Build with LTO
+        run: make LTO=1 libswe.a
+      - name: Golden within tolerance
+        run: make -C tests LTO=1 check-golden-O2 EPHE=../$EPHE TOL=$TOL
+      - name: JPL reader baseline
+        run: make -C tests LTO=1 check-jplcalc
+      - name: Independent contexts
+        run: make -C tests LTO=1 check-ctx EPHE=../$EPHE
+
+  # ---------------------------------------------------------------------
+  # Second compiler, same platform. Catches gcc-specific assumptions.
+  # ---------------------------------------------------------------------
+  linux-clang:
+    name: linux / clang
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - run: clang --version
+      - name: Build + numerical check (tolerance, not diff)
+        run: |
+          make -C tests golden CC=clang EPHE=../$EPHE
+          (cd tests && env -u SE_EPHE_PATH ./golden --ephe ../$EPHE > out_clang.txt)
+          python3 tests/cmpgolden.py tests/baseline.txt tests/out_clang.txt --abs=$TOL --verbose
+      - name: Thread gates
+        run: |
+          make -C tests check-threads              CC=clang EPHE=../$EPHE
+          make -C tests check-threads-workaround   CC=clang EPHE=../$EPHE
+          make -C tests check-sunrace CC=clang EPHE=../$EPHE
+          make -C tests check-glprace CC=clang EPHE=../$EPHE
+          make -C tests check-cfgleak CC=clang EPHE=../$EPHE
+          make -C tests check-threadshim CC=clang
+
+  # ---------------------------------------------------------------------
+  # macOS. Historically the platform where TLS silently compiled to nothing
+  # (sweodef.h excluded __APPLE__), which inverted the library's threading
+  # behaviour -- see notes/INVESTIGATION.md section 3. Nobody has been able
+  # to run these gates there.
+  # ---------------------------------------------------------------------
+  macos:
+    name: macos / clang
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - run: cc --version
+      # This is an ASSERTION, not a diagnostic.
+      # The __APPLE__ exclusion in sweodef.h survived all of Phase 1 and
+      # Phase 2 unnoticed, leaving swed a plain process-wide global on macOS
+      # -- 23 KB of caches and open FILE*s shared across threads with no
+      # synchronisation. It was found only because an earlier version of this
+      # job PRINTED the expansion and a human read it. Fail the build instead.
+      - name: TLS must be a real thread-local here
+        run: |
+          printf '#include "sweodef.h"\nTLS int probe;\n' > /tmp/p.c
+          exp=$(cc -E -I. /tmp/p.c | tail -1)
+          echo "TLS expands to: $exp"
+          case "$exp" in
+            *__thread*|*__declspec*) echo "ok" ;;
+            *) echo "FAIL: TLS is empty -- swed would be a shared global"; exit 1 ;;
+          esac
+      - name: Build + numerical check (tolerance)
+        run: |
+          make -C tests golden EPHE=../$EPHE
+          (cd tests && env -u SE_EPHE_PATH ./golden --ephe ../$EPHE > out_macos.txt)
+          python3 tests/cmpgolden.py tests/baseline.txt tests/out_macos.txt --abs=$TOL --verbose
+      - name: Thread gates
+        run: |
+          make -C tests check-threads            EPHE=../$EPHE
+          make -C tests check-threads-workaround EPHE=../$EPHE
+          make -C tests check-sunrace EPHE=../$EPHE
+          make -C tests check-glprace EPHE=../$EPHE
+          make -C tests check-cfgleak EPHE=../$EPHE
+          make -C tests check-threadshim
+
+  # ---------------------------------------------------------------------
+  # Windows / MSVC. The only way to exercise swethread.h's SRWLOCK backend,
+  # which has never been run -- it is unreachable on Linux and macOS, and
+  # was explicitly NOT claimed working in the Phase 2.1 commit.
+  # ---------------------------------------------------------------------
+  windows-msvc:
+    name: windows / msvc (SRWLOCK backend)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      # Deliberately NOT ilammy/msvc-dev-cmd: it targets Node 20 (deprecated)
+      # and is a third-party action sitting in the build path. The runners
+      # ship Visual Studio, and the installer ships vswhere to locate it, so
+      # call vcvars64.bat directly. One step, because vcvars sets environment
+      # that does not survive between steps.
+      - name: Build and check under MSVC
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          @echo on
+          cl /nologo /c /W3 /DWIN32_LEAN_AND_MEAN sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c || exit /b 1
+
+          echo #include "sweodef.h" > tlsp.c
+          echo TLS int probe; >> tlsp.c
+          cl /nologo /EP /I. tlsp.c > tlsout.txt || exit /b 1
+          findstr /C:"__declspec(thread)" tlsout.txt >nul || (echo FAIL: TLS is empty on MSVC & exit /b 1)
+          echo ok: TLS is __declspec^(thread^)
+
+          echo #include "swethread.h" > probe.c
+          echo #include ^<stdio.h^> >> probe.c
+          echo int main(void){ printf("backend=%%s\n", SWI_THREAD_BACKEND); return 0; } >> probe.c
+          cl /nologo probe.c || exit /b 1
+          probe.exe || exit /b 1
+
+          cl /nologo /I. tests\threadshim.c || exit /b 1
+          threadshim.exe || exit /b 1
+      - name: Numerical transcript under MSVC
+        shell: cmd
+        run: |
+          rem Windows had NO numerical verification at all. This job compiled
+          rem objects and ran a TLS probe; windows-package smoke-tested swetest
+          rem for "the Sun is near 280 degrees". A DLL producing wrong numbers
+          rem would have shipped with every check green.
+          rem
+          rem golden.c could not be built here until now because it hardcoded
+          rem <pthread.h>. It uses a portable thread shim as of this change; its
+          rem --threads mode needs POSIX open_memstream and stays excluded on
+          rem Windows, where threadshim and ctxtest already cover SRWLOCK.
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /I. /D_CRT_SECURE_NO_WARNINGS tests\golden.c sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c /Fe:golden_msvc.exe || exit /b 1
+          golden_msvc.exe --ephe %EPHE% > msvc.txt || exit /b 1
+          for /f %%n in ('type msvc.txt ^| find /c /v ""') do echo transcript rows: %%n
+      - name: Compare against the reference transcript
+        shell: bash
+        run: |
+          # Tolerance, not diff: MSVC and gcc differ in the last bits of
+          # floating point, so bit-exactness ACROSS compilers is not a
+          # meaningful requirement. 1e-5 is the bound check-golden-O2 already
+          # uses, measured against the values' own conditioning.
+          rows=$(wc -l < msvc.txt)
+          [ "$rows" -gt 5000 ] || { echo "FAIL: only $rows rows -- golden did not run"; exit 1; }
+          python3 tests/cmpgolden.py tests/baseline.txt msvc.txt --abs=$TOL
+
+  # ---------------------------------------------------------------------
+  # Sanitizers. TSan needs ASLR off on some kernels, hence setarch -R.
+  # ---------------------------------------------------------------------
+  sanitizers:
+    name: linux / tsan + asan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - name: ThreadSanitizer -- threaded golden must report zero races
+        run: |
+          cd tests
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. golden.c \
+             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
+             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+             -o golden_tsan -lm -ldl -lpthread
+          setarch -R env TSAN_OPTIONS=halt_on_error=0 ./golden_tsan --ephe ../$EPHE --threads 4 > /dev/null 2> tsan.log || true
+          n=$(grep -c "WARNING: ThreadSanitizer" tsan.log || true)
+          echo "races reported: $n"; sed -n '1,40p' tsan.log
+          test "$n" -eq 0
+      - name: ThreadSanitizer -- shim and sunshine race
+        run: |
+          make -C tests check-threadshim-tsan
+          make -C tests check-sunrace-tsan EPHE=../$EPHE
+      - name: AddressSanitizer -- single-threaded golden
+        run: |
+          cd tests
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=address,undefined -I.. golden.c \
+             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
+             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+             -o golden_asan -lm -ldl -lpthread
+          env -u SE_EPHE_PATH ./golden_asan --ephe ../$EPHE > /dev/null
+      # LeakSanitizer on the context API. swe_ctx_free() must release what
+      # the context allocated, and each thread must be able to release its
+      # own TLS default state -- 9 KB per worker otherwise.
+      - name: AddressSanitizer + LeakSanitizer -- context API
+        run: |
+          cd tests
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=address,undefined -I.. ctxtest.c \
+             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
+             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+             -o ctxtest_asan -lm -ldl -lpthread
+          env -u SE_EPHE_PATH ASAN_OPTIONS=detect_leaks=1 ./ctxtest_asan --ephe ../$EPHE
+      # ThreadSanitizer on the context API: two contexts driven from two
+      # threads at once must report no races between them.
+      - name: ThreadSanitizer -- independent contexts
+        run: |
+          cd tests
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. ctxtest.c \
+             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
+             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+             -o ctxtest_tsan -lm -ldl -lpthread
+          env -u SE_EPHE_PATH ./ctxtest_tsan --ephe ../$EPHE
+  # so pin each explicitly. C89 is EXPECTED to fail (58 errors on this tree,
+  # long before either plan started) -- asserted as a known-fail so that if
+  # the C17 migration ever makes it pass, we hear about it.
+  # ---------------------------------------------------------------------
+  dialects:
+    name: linux / C dialects
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - name: Library must build at c99 / c11 / c17
+        run: |
+          for std in c99 gnu99 c11 gnu11 c17 gnu17; do
+            echo "--- $std ---"
+            for f in sweconfig swedate swehouse swejpl swemmoon swemplan sweph swephlib swecl swehel; do
+              cc -std=$std -D_GNU_SOURCE -c -o /dev/null $f.c
+            done
+          done
+      - name: C89 is expected to fail (pre-existing, not ours)
+        run: |
+          n=0
+          for f in sweconfig swedate swehouse swejpl swemmoon swemplan sweph swephlib swecl swehel; do
+            n=$((n + $(cc -std=c89 -D_GNU_SOURCE -c -o /dev/null $f.c 2>&1 | grep -c "error:" || true)))
+          done
+          echo "c89 errors: $n"
+          if [ "$n" -eq 0 ]; then
+            echo "c89 now builds clean -- that is good news, update this job"; exit 1
+          fi
+      - name: swethread.h across every backend it can select
+        run: make -C tests check-threadshim-all
+
+  # ---------------------------------------------------------------------
+  # ABI. Additions are fine; removals and type changes are not.
+  # ---------------------------------------------------------------------
+  abi:
+    name: linux / exported symbols
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - name: Compare exported symbols against the upstream base
+        run: |
+          set -e
+          SRC="sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c
+               sweph.c swephlib.c swecl.c swehel.c"
+          cc -shared -fPIC -D_GNU_SOURCE -o /tmp/new.so $SRC -lm -ldl
+          nm -D --defined-only /tmp/new.so | awk '{print $3}' | sort -u > /tmp/new.sym
+
+          # legacy-master is the pristine upstream tree this fork started
+          # from. The old base was HEAD~1, which meant this gate only ever
+          # compared ONE commit's delta -- a symbol dropped three commits
+          # earlier would have sailed straight through. The question worth
+          # asking is whether the fork has removed anything upstream
+          # exported, and that needs a fixed baseline.
+          git fetch -q --depth=1 origin legacy-master
+          base=$(git rev-parse FETCH_HEAD)
+          echo "baseline: $base (origin/legacy-master)"
+          git worktree add -q /tmp/base "$base"
+          ( cd /tmp/base && cc -shared -fPIC -D_GNU_SOURCE -o /tmp/base.so \
+              $(for f in $SRC; do [ -f "$f" ] && printf '%s ' "$f"; done) -lm -ldl )
+          nm -D --defined-only /tmp/base.so | awk '{print $3}' | sort -u > /tmp/base.sym
+
+          # Compare NAMES, not "type name". Five internal tables became const
+          # on this branch and so moved from .data to .rodata; nm reports them
+          # as R instead of D. Nothing was removed -- but the old pairwise
+          # comparison read a section change as a deletion and failed the
+          # gate. A symbol moving into read-only memory is an improvement.
+          removed=$(comm -23 /tmp/base.sym /tmp/new.sym)
+          if [ -n "$removed" ]; then
+            echo "ABI FAIL: symbol(s) removed relative to upstream:"
+            echo "$removed" | sed 's/^/  /'
+            exit 1
+          fi
+          added=$(comm -13 /tmp/base.sym /tmp/new.sym | grep -c . || true)
+          echo "ABI ok: nothing removed, $added symbol(s) added since upstream"
+
+          # Informational: report where a retained symbol changed section, so
+          # a genuine type change is still visible without failing the build.
+          nm -D --defined-only /tmp/base.so | awk '{print $3, $2}' | sort > /tmp/base.tn
+          nm -D --defined-only /tmp/new.so  | awk '{print $3, $2}' | sort > /tmp/new.tn
+          join /tmp/base.tn /tmp/new.tn | awk '$2!=$3{print "  note: "$1" "$2" -> "$3}'
+
+  # ---------------------------------------------------------------------
+  # Upstream's own suite, used as a DIFFERENTIAL gate. It cannot be
+  # pass/fail: t.exp was generated against the JPL ephemeris (de431.eph),
+  # which this repo does not ship, so ~2730 assertions fail and the binary
+  # aborts in suite_08_eclipses on pristine 3fd0f95 too. What must hold is
+  # that its output is byte-identical before and after our changes.
+  # ---------------------------------------------------------------------
+  setest-differential:
+    name: linux / setest differential
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: Capture reference from 3fd0f95, compare against HEAD
+        run: |
+          make -C tests setest-ref REF=origin/legacy-master EPHE=../$EPHE
+          make -C tests check-setest EPHE=../$EPHE

@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Compare two golden transcripts numerically rather than byte-for-byte.
+
+Bit-exact `diff` is the right gate WITHIN one build configuration, and that
+is what `make check-golden` uses. It is the wrong gate ACROSS configurations:
+gcc -O0 and gcc -O2 legitimately disagree in the last bits, because the
+speed components are finite-differenced (evaluate at t +/- dt, subtract),
+which amplifies rounding, and -O2 is free to contract into FMA or reassociate.
+
+Measured on this tree, gcc -O0 vs -O2: 224 values across 65 rows differ,
+median 2.2e-15 (pure ULP), max 7.6e-08 degrees = 0.00027 arcsec, all in
+speed fields. Well under the library's own accuracy, but not zero.
+
+So: use `diff` to prove a code change is a no-op at fixed flags, and use
+this to prove a *build* change stays within tolerance.
+
+KNOWN CROSS-PLATFORM DIVERGENCE
+-------------------------------
+Two quantities in this suite are numerically ill-conditioned: a change of a
+couple of ULP in the INPUT moves the output by arcseconds. They are perfectly
+reproducible for a fixed binary -- so they stay in the bit-exact baseline --
+but they are NOT reproducible across math libraries, and are skipped here.
+
+golden.c tags those rows itself with "~illcond"; this script skips any row
+whose tag contains it. The tag travels in the transcript rather than living
+as a coordinate list here, so it cannot rot when golden.c's loops change.
+
+  SE_OSCU_APOG via Moshier -- the osculating lunar apogee. Measured with
+  +2 ULP on tjd at 3000-01-01: longitude moves 2.86 arcsec. The same body
+  via SWIEPH moves 0.000012 arcsec, SE_MEAN_APOG via Moshier 0.0000007.
+  So it amplifies input noise by ~1e9 and is 238,000x worse than SWIEPH.
+  Deriving apse direction from near-circular osculating elements is
+  inherently unstable.
+
+  fixed-star distance speed (field[5]) -- extracted by differencing a
+  distance of ~1e7 AU to recover a quantity ~3e-10 of it. Polaris: distance
+  2.74e+07 AU, distance speed -8.37e-03.
+
+Measured, macOS/clang vs the gcc -O0 baseline: 17401 values differ across
+3754 of 5127 rows, but the median is 5.7e-14 -- ULP noise from a different
+libm -- and the only values exceeding 1e-6 belong to those two groups.
+
+Skipping them does NOT stop a real regression being caught: the gcc -O0 job
+compares them bit-exactly with diff, where they ARE reproducible. Pass
+--no-skip to include them here anyway.
+
+Usage:  cmpgolden.py A.txt B.txt [--abs 1e-6] [--verbose] [--no-skip]
+Exit 0 if every value agrees within tolerance, 1 otherwise.
+"""
+import sys
+
+
+def load(path):
+    rows = {}
+    for ln in open(path):
+        f = ln.split()
+        if not f:
+            continue
+        rows[f[0]] = [x for x in f[1:] if x.startswith(("0x", "-0x"))]
+    return rows
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    opts = [a for a in sys.argv[1:] if a.startswith("--")]
+    if len(args) != 2:
+        print(__doc__)
+        return 2
+    tol = 1e-6
+    for o in opts:
+        if o.startswith("--abs="):
+            tol = float(o.split("=", 1)[1])
+    verbose = "--verbose" in opts
+    skip_illcond = "--no-skip" not in opts
+
+    a, b = load(args[0]), load(args[1])
+
+    only_a = set(a) - set(b)
+    only_b = set(b) - set(a)
+    if only_a or only_b:
+        print(f"FAIL: row sets differ ({len(only_a)} only in A, {len(only_b)} only in B)")
+        for k in list(only_a)[:5]:
+            print(f"  only in A: {k}")
+        for k in list(only_b)[:5]:
+            print(f"  only in B: {k}")
+        return 1
+
+    diffs = []
+    shape = 0
+    skipped = 0
+    for k in a:
+        if len(a[k]) != len(b[k]):
+            shape += 1
+            continue
+        for i, (x, y) in enumerate(zip(a[k], b[k])):
+            if x == y:
+                continue
+            # Rows that golden.c tagged as numerically ill-conditioned.
+            # The tag lives in the transcript, not in a coordinate list here,
+            # so it cannot drift when golden.c's loops or FLAGS[] change.
+            if skip_illcond and "~illcond" in k:
+                skipped += 1
+                continue
+            fx, fy = float.fromhex(x), float.fromhex(y)
+            diffs.append((abs(fx - fy), k, i, fx, fy))
+
+    if shape:
+        print(f"FAIL: {shape} rows have a different number of values")
+        return 1
+
+    if skipped:
+        print(f"note: skipped {skipped} value(s) in rows golden.c tagged "
+              f"~illcond -- not reproducible across libm, see header "
+              f"(--no-skip to include)")
+    if not diffs:
+        print(f"PASS: transcripts are bit-identical ({len(a)} rows)")
+        return 0
+
+    diffs.sort(reverse=True)
+    worst = diffs[0][0]
+    med = diffs[len(diffs) // 2][0]
+    over = [d for d in diffs if d[0] > tol]
+
+    print(f"{len(diffs)} values differ across "
+          f"{len(set(d[1] for d in diffs))} of {len(a)} rows")
+    print(f"  max abs diff : {worst:.3e}   ({worst * 3600:.3e} arcsec if degrees)")
+    print(f"  median       : {med:.3e}")
+    print(f"  tolerance    : {tol:.3e}")
+
+    if verbose or over:
+        # print ALL offenders when there are any -- the first CI run showed
+        # only the top 8 and left us guessing whether the rest matched
+        show = over if over else diffs[:8]
+        for ad, k, i, fx, fy in (show if verbose else show[:8]):
+            flag = "  <-- OVER" if ad > tol else ""
+            print(f"    {k:26s} field[{i}]  {fx:+.12e} vs {fy:+.12e}  d={ad:.2e}{flag}")
+
+    if over:
+        print(f"FAIL: {len(over)} value(s) exceed tolerance {tol:.3e}")
+        return 1
+    print(f"PASS: all differences within {tol:.3e}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

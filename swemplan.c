@@ -66,16 +66,15 @@
 
 #define TIMESCALE 3652500.0
 
-#define mods3600(x) ((x) - 1.296e6 * floor ((x)/1.296e6))
 
 #define FICT_GEO 1
 #define KGAUSS_GEO 0.0000298122353216 /* Earth only */
 /* #define KGAUSS_GEO 0.00002999502129737  Earth + Moon */
 
-static void embofs_mosh(double J, double *xemb);
+static void embofs_mosh(swe_ctx *ctx, double J, double *xemb);
 static int check_t_terms(double t, char *sinp, double *doutp);
 
-static int read_elements_file(int32 ipl, double tjd, 
+static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd, 
   double *tjd0, double *tequ, 
   double *mano, double *sema, double *ecce, 
   double *parg, double *node, double *incl,
@@ -126,16 +125,18 @@ static const struct plantbl *planets[] =
   &plu404
 };
 
-static TLS double ss[9][24];
-static TLS double cc[9][24];
+/* were TLS statics; now ctx->plan_ss / ctx->plan_cc (Phase 3c).
+ * Renamed on the way in: swemmoon.c has its own ss/cc of a different
+ * shape, and identical names for different arrays in one struct would
+ * be a trap. */
 
-static void sscc (int k, double arg, int n);
+static void sscc (swe_ctx *ctx, int k, double arg, int n);
 
-int swi_moshplan2 (double J, int iplm, double *pobj)
+int swi_moshplan2 (swe_ctx *ctx, double J, int iplm, double *pobj)
 {
   int i, j, k, m, k1, ip, np, nt;
-  signed char *p;
-  double *pl, *pb, *pr;
+  const signed char *p;
+  const double *pl, *pb, *pr;
   double su, cu, sv, cv, T;
   double t, sl, sb, sr;
   const struct plantbl *plan = planets[iplm];
@@ -146,8 +147,8 @@ int swi_moshplan2 (double J, int iplm, double *pobj)
     {
       if ((j = plan->max_harmonic[i]) > 0)
 	{
-	  sr = (mods3600 (freqs[i] * T) + phases[i]) * STR;
-	  sscc (i, sr, j);
+	  sr = (swi_mods3600(freqs[i] * T) + phases[i]) * STR;
+	  sscc (ctx, i, sr, j);
 	}
     }
 
@@ -177,7 +178,7 @@ int swi_moshplan2 (double J, int iplm, double *pobj)
 	    {
 	      cu = cu * T + *pl++;
 	    }
-	  sl +=  mods3600 (cu);
+	  sl +=  swi_mods3600(cu);
 	  /* Latitude polynomial. */
 	  cu = *pb++;
 	  for (ip = 0; ip < nt; ip++)
@@ -209,10 +210,10 @@ int swi_moshplan2 (double J, int iplm, double *pobj)
 	      if (j < 0)
 		k = -k;
 	      k -= 1;
-	      su = ss[m][k];	/* sin(k*angle) */
+	      su = ctx->plan_ss[m][k];	/* sin(k*angle) */
 	      if (j < 0)
 		su = -su;
-	      cu = cc[m][k];
+	      cu = ctx->plan_cc[m][k];
 	      if (k1 == 0)
 		{		/* set first angle */
 		  sv = su;
@@ -273,7 +274,7 @@ int swi_moshplan2 (double J, int iplm, double *pobj)
  * xe		                       earth's
  * serr		error string
  */
-int swi_moshplan(double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr) 
+int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr) 
 {
   int i;
   int do_earth = FALSE;
@@ -282,10 +283,10 @@ int swi_moshplan(double tjd, int ipli, AS_BOOL do_save, double *xpret, double *x
   double dt; 
   char s[AS_MAXCH];
   int iplm = pnoint2msh[ipli];
-  struct plan_data *pdp = &swed.pldat[ipli];
-  struct plan_data *pedp = &swed.pldat[SEI_EARTH];
-  double seps2000 = swed.oec2000.seps;
-  double ceps2000 = swed.oec2000.ceps;
+  struct plan_data *pdp = &ctx->pldat[ipli];
+  struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
+  double seps2000 = ctx->oec2000.seps;
+  double ceps2000 = ctx->oec2000.ceps;
   if (do_save) {
     xp = pdp->x;
     xe = pedp->x;
@@ -312,20 +313,20 @@ int swi_moshplan(double tjd, int ipli, AS_BOOL do_save, double *xpret, double *x
       xe = pedp->x;
     } else {
       /* emb */
-      swi_moshplan2(tjd, pnoint2msh[SEI_EMB], xe); /* emb hel. ecl. 2000 polar */ 
+      swi_moshplan2(ctx, tjd, pnoint2msh[SEI_EMB], xe); /* emb hel. ecl. 2000 polar */ 
       swi_polcart(xe, xe);			  /* to cartesian */
       swi_coortrf2(xe, xe, -seps2000, ceps2000);/* and equator 2000 */
-      embofs_mosh(tjd, xe);		  /* emb -> earth */
+      embofs_mosh(ctx, tjd, xe);		  /* emb -> earth */
       if (do_save) {
 	pedp->teval = tjd;		  
 	pedp->xflgs = -1;
 	pedp->iephe = SEFLG_MOSEPH;
       }
       /* one more position for speed. */
-      swi_moshplan2(tjd - PLAN_SPEED_INTV, pnoint2msh[SEI_EMB], x2); 
+      swi_moshplan2(ctx, tjd - PLAN_SPEED_INTV, pnoint2msh[SEI_EMB], x2); 
       swi_polcart(x2, x2);
       swi_coortrf2(x2, x2, -seps2000, ceps2000);
-      embofs_mosh(tjd - PLAN_SPEED_INTV, x2);/**/
+      embofs_mosh(ctx, tjd - PLAN_SPEED_INTV, x2);/**/
       for (i = 0; i <= 2; i++) 
 	dx[i] = (xe[i] - x2[i]) / PLAN_SPEED_INTV;
       /* store speed */
@@ -346,7 +347,7 @@ int swi_moshplan(double tjd, int ipli, AS_BOOL do_save, double *xpret, double *x
     if (tjd == pdp->teval && pdp->iephe == SEFLG_MOSEPH) {
       xp = pdp->x;
     } else { 
-      swi_moshplan2(tjd, iplm, xp); 
+      swi_moshplan2(ctx, tjd, iplm, xp); 
       swi_polcart(xp, xp);
       swi_coortrf2(xp, xp, -seps2000, ceps2000);
       if (do_save) {
@@ -363,7 +364,7 @@ int swi_moshplan(double tjd, int ipli, AS_BOOL do_save, double *xpret, double *x
       dt = LIGHTTIME_AUNIT * sqrt(square_sum(dx));   
     #endif
       dt = PLAN_SPEED_INTV;
-      swi_moshplan2(tjd - dt, iplm, x2); 
+      swi_moshplan2(ctx, tjd - dt, iplm, x2); 
       swi_polcart(x2, x2);
       swi_coortrf2(x2, x2, -seps2000, ceps2000);
       for (i = 0; i <= 2; i++) 
@@ -384,26 +385,26 @@ int swi_moshplan(double tjd, int ipli, AS_BOOL do_save, double *xpret, double *x
 /* Prepare lookup table of sin and cos ( i*Lj )
  * for required multiple angles
  */
-static void sscc (int k, double arg, int n)
+static void sscc (swe_ctx *ctx, int k, double arg, int n)
 {
   double cu, su, cv, sv, s;
   int i;
 
   su = sin (arg);
   cu = cos (arg);
-  ss[k][0] = su;		/* sin(L) */
-  cc[k][0] = cu;		/* cos(L) */
+  ctx->plan_ss[k][0] = su;		/* sin(L) */
+  ctx->plan_cc[k][0] = cu;		/* cos(L) */
   sv = 2.0 * su * cu;
   cv = cu * cu - su * su;
-  ss[k][1] = sv;		/* sin(2L) */
-  cc[k][1] = cv;
+  ctx->plan_ss[k][1] = sv;		/* sin(2L) */
+  ctx->plan_cc[k][1] = cv;
   for (i = 2; i < n; i++)
     {
       s = su * cv + cu * sv;
       cv = cu * cv - su * sv;
       sv = s;
-      ss[k][i] = sv;		/* sin( i+1 L ) */
-      cc[k][i] = cv;
+      ctx->plan_ss[k][i] = sv;		/* sin( i+1 L ) */
+      ctx->plan_cc[k][i] = cv;
     }
 }
 
@@ -413,13 +414,14 @@ static void sscc (int k, double arg, int n)
  * J = Julian day number
  * xemb = rectangular equatorial coordinates of Earth
  */
-static void embofs_mosh(double tjd, double *xemb) 
+/* reads ctx->oec */
+static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb) 
 {
   double T, M, a, L, B, p;
   double smp, cmp, s2mp, c2mp, s2d, c2d, sf, cf;
   double s2f, sx, cx, xyz[6];
-  double seps = swed.oec.seps;
-  double ceps = swed.oec.ceps;
+  double seps = ctx->oec.seps;
+  double ceps = ctx->oec.ceps;
   int i;
   /* Short series for position of the Moon
    */
@@ -485,7 +487,7 @@ static void embofs_mosh(double tjd, double *xemb)
   /* Convert to equatorial */
   swi_coortrf2(xyz, xyz, -seps, ceps);
   /* Precess to equinox of J2000.0 */
-  swi_precess(xyz, tjd, 0, J_TO_J2000);/**/
+  swi_precess(ctx, xyz, tjd, 0, J_TO_J2000);/**/
   /* now emb -> earth */
   for (i = 0; i <= 2; i++)
     xemb[i] -= xyz[i] / (EARTH_MOON_MRAT + 1.0);
@@ -510,9 +512,9 @@ static const char *plan_fict_nam[SE_NFICT_ELEM] =
    "Leverrier", "Adams",
    "Lowell", "Pickering",};
 
-char *swi_get_fict_name(int32 ipl, char *snam) 
+char *swi_get_fict_name(swe_ctx *ctx, int32 ipl, char *snam) 
 {
-  if (read_elements_file(ipl, 0, NULL, NULL, 
+  if (read_elements_file(ctx, ipl, 0, NULL, NULL, 
        NULL, NULL, NULL, NULL, NULL, NULL, 
        snam, NULL, NULL) == ERR)
     strcpy(snam, "name not found");
@@ -576,7 +578,12 @@ static const double plan_oscu_elem[SE_NFICT_ELEM][8] = {
  * ipli 	body number in planetary data structure
  * iflag	flags
  */
-int swi_osc_el_plan(double tjd, double *xp, int ipl, int ipli, double *xearth, double *xsun, char *serr)
+/* restrict: xp accumulates from xearth and xsun and is never either of
+ * them -- both call sites (sweph.c:1131, :3702) pass three distinct
+ * plan_data vectors or three distinct locals. */
+int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
+                    int ipl, int ipli, const double * SWI_RESTRICT xearth,
+                    const double * SWI_RESTRICT xsun, char *serr)
 {
   double pqr[9], x[6];
   double eps, K, fac, rho, cose, sine;
@@ -584,14 +591,14 @@ int swi_osc_el_plan(double tjd, double *xp, int ipl, int ipli, double *xearth, d
   double tjd0, tequ, mano, sema, ecce, parg, node, incl, dmot;
   double cosnode, sinnode, cosincl, sinincl, cosparg, sinparg;
   double M, E;
-  struct plan_data *pedp = &swed.pldat[SEI_EARTH];
-  struct plan_data *pdp = &swed.pldat[ipli];
+  struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
+  struct plan_data *pdp = &ctx->pldat[ipli];
   int32 fict_ifl = 0;
   int i;
   /* orbital elements, either from file or, if file not found,
    * from above built-in set  
    */
-  if (read_elements_file(ipl, tjd, &tjd0, &tequ, 
+  if (read_elements_file(ctx, ipl, tjd, &tjd0, &tequ, 
        &mano, &sema, &ecce, &parg, &node, &incl, 
        NULL, &fict_ifl, serr) == ERR)
     return ERR;
@@ -664,13 +671,13 @@ int swi_osc_el_plan(double tjd, double *xp, int ipl, int ipli, double *xearth, d
   xp[4] = pqr[3] * x[3] + pqr[4] * x[4];
   xp[5] = pqr[6] * x[3] + pqr[7] * x[4];
   /* transformation to equator */
-  eps = swi_epsiln(tequ, 0);
+  eps = swi_epsiln(ctx, tequ, 0);
   swi_coortrf(xp, xp, -eps);
   swi_coortrf(xp+3, xp+3, -eps);
   /* precess to J2000 */
   if (tequ != J2000) {
-    swi_precess(xp, tequ, 0, J_TO_J2000);
-    swi_precess(xp+3, tequ, 0, J_TO_J2000);
+    swi_precess(ctx, xp, tequ, 0, J_TO_J2000);
+    swi_precess(ctx, xp+3, tequ, 0, J_TO_J2000);
   }
   /* to solar system barycentre */
   if (fict_ifl & FICT_GEO) {
@@ -691,7 +698,7 @@ int swi_osc_el_plan(double tjd, double *xp, int ipl, int ipli, double *xearth, d
 
 #if 1
 /* note: input parameter tjd is required for T terms in elements */
-static int read_elements_file(int32 ipl, double tjd, 
+static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd, 
   double *tjd0, double *tequ, 
   double *mano, double *sema, double *ecce, 
   double *parg, double *node, double *incl,
@@ -704,7 +711,7 @@ static int read_elements_file(int32 ipl, double tjd,
   AS_BOOL elem_found = FALSE;
   double tt = 0;
   /* -1, because file information is not saved, file is always closed */
-  if ((fp = swi_fopen(-1, SE_FICTFILE, swed.ephepath, serr)) == NULL) {
+  if ((fp = swi_fopen(ctx, -1, SE_FICTFILE, ctx->ephepath, serr)) == NULL) {
     /* file does not exist, use built-in bodies */
     if (ipl >= SE_NFICT_ELEM) {
       if (serr != NULL)

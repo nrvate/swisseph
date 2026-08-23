@@ -62,7 +62,10 @@
  * move over from swephexp.h
  */
 
-#define SE_VERSION      "2.10.03" 
+/* Fork version. Upstream is 2.10.03; the "-ts.N" suffix marks the
+ * thread-safe fork, so swe_version() cannot report a number that
+ * implies upstream behaviour this library no longer has. */
+#define SE_VERSION      "2.10.03-ts.1" 
 
 #define J2000           2451545.0  	/* 2000 January 1.5 */
 #define B1950           2433282.42345905  	/* 1950 January 0.923 */
@@ -187,6 +190,10 @@
 #define SEI_FILE_REORD  	2
 
 #define SEI_FILE_NMAXPLAN	50
+/* Largest planet count a .se1 file header may declare. Distinct from
+ * SEI_FILE_NMAXPLAN, which is the capacity of fdp->ipl[]; the static_assert
+ * at the check site in sweph.c ties the two together. */
+#define SEI_FILE_MAXPLAN	20
 #define SEI_FILE_EFPOSBEGIN      500
 
 #define SE_FILE_SUFFIX	"se1"
@@ -194,6 +201,14 @@
 #define SEI_NEPHFILES   7
 #define SEI_CURR_FPOS   -1
 #define SEI_NMODELS 8
+
+/* Forward declaration of the ephemeris context.
+ *
+ * The full definition is ~700 lines below, but the swi_* prototypes between
+ * here and there already need to name the type, so declare it up front. An
+ * incomplete type is all a prototype requires. See notes/PHASE3-API.md. */
+struct swe_ctx;
+typedef struct swe_ctx swe_ctx;
 
 #define SEI_ECL_GEOALT_MAX   25000.0
 #define SEI_ECL_GEOALT_MIN   (-500.0)
@@ -305,8 +320,32 @@
 
 #define SE_LAPSE_RATE        0.0065  /* deg K / m, for refraction */
 
-#define square_sum(x)   (x[0]*x[0]+x[1]*x[1]+x[2]*x[2])
-#define dot_prod(x,y)   (x[0]*y[0]+x[1]*y[1]+x[2]*y[2])
+/* swi_gen_t for the config-tracking fields in swe_ctx, and SWI_INLINE for
+ * the two helpers immediately below. */
+#include "swethread.h"
+
+/* Functions, not macros (notes/C17_PERFORMANCE.md A3/A4).
+ *
+ * The macro forms were `(x[0]*x[0]+...)` with no parentheses around x, so
+ * the argument had to be a bare identifier: square_sum(a+1) would have
+ * parsed as a + 1[0]. Call sites were already working around it --
+ * swecl.c:5489 and sweph.c:5673 write square_sum((xpos[i]+3)) with an
+ * extra pair of parens for exactly this reason.
+ *
+ * They were also independently redefined, byte-identical, in swevents.c
+ * and swetest.c, both of which already include this header.
+ *
+ * The argument order is unchanged, so the arithmetic is bit-identical;
+ * -O2 inlines these to the same code the macro produced. */
+SWI_INLINE double square_sum(const double *x)
+{
+  return x[0]*x[0] + x[1]*x[1] + x[2]*x[2];
+}
+
+SWI_INLINE double dot_prod(const double *x, const double *y)
+{
+  return x[0]*y[0] + x[1]*y[1] + x[2]*y[2];
+}
 
 #define PNOINT2JPL {J_EARTH, J_MOON, J_MERCURY, J_VENUS, J_MARS, J_JUPITER, J_SATURN, J_URANUS, J_NEPTUNE, J_PLUTO, J_SUN, }
 
@@ -663,28 +702,30 @@ struct plan_data {
 #define STR             4.8481368110953599359e-6 /* radians per arc second */
 
 /* moon, s. moshmoon.c */
-extern int swi_mean_node(double jd, double *x, char *serr);
-extern int swi_mean_apog(double jd, double *x, char *serr);
-extern int swi_moshmoon(double tjd, AS_BOOL do_save, double *xpm, char *serr) ;
-extern int swi_moshmoon2(double jd, double *x);
-extern int swi_intp_apsides(double J, double *pol, int ipli);
+extern int swi_mean_node(swe_ctx *ctx, double jd, double *x, char *serr);
+extern int swi_mean_apog(swe_ctx *ctx, double jd, double *x, char *serr);
+extern int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpm, char *serr) ;
+extern int swi_moshmoon2(swe_ctx *ctx, double jd, double *x);
+extern int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli);
 
 /* planets, s. moshplan.c */
-extern int swi_moshplan(double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr);
-extern int swi_moshplan2(double J, int iplm, double *pobj);
-extern int swi_osc_el_plan(double tjd, double *xp, int ipl, int ipli, double *xearth, double *xsun, char *serr);
-extern FILE *swi_fopen(int ifno, char *fname, char *ephepath, char *serr);
-extern int32 swi_init_swed_if_start(void);
-extern int32 swi_set_tid_acc(double tjd_ut, int32 iflag, int32 denum, char *serr);
-extern int32 swi_get_tid_acc(double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
+extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr);
+extern int swi_moshplan2(swe_ctx *ctx, double J, int iplm, double *pobj);
+extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
+                           int ipl, int ipli, const double * SWI_RESTRICT xearth,
+                           const double * SWI_RESTRICT xsun, char *serr);
+extern FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char *serr);
+extern int32 swi_init_swed_if_start(swe_ctx *ctx);
+extern int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr);
+extern int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
 
-extern int32 swi_get_ayanamsa_ex(double tjd_et, int32 iflag, double *daya, char *serr);
+extern int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr);
 extern int32 swi_get_ayanamsa_ex_ut(double tjd_ut, int32 iflag, double *daya, char *serr);
-extern int32 swi_get_ayanamsa_with_speed(double tjd_et, int32 iflag, double *daya, char *serr);
+extern int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr);
 
 extern double swi_armc_to_mc(double armc, double eps);
 
-extern int32 swi_get_denum(int32 ipli, int32 iflag);
+extern int32 swi_get_denum(swe_ctx *ctx, int32 ipli, int32 iflag);
 
 
 /* nutation */
@@ -698,10 +739,13 @@ struct nut {
 struct plantbl {
   char max_harmonic[9];
   char max_power_of_t;
-  signed char *arg_tbl;
-  double *lon_tbl;
-  double *lat_tbl;
-  double *rad_tbl;
+  /* These point at the static perturbation tables in swemptab.h, which are
+   * read-only. const-qualified so they land in .rodata rather than .data:
+   * shared between processes, and provably never written. */
+  const signed char *arg_tbl;
+  const double *lon_tbl;
+  const double *lat_tbl;
+  const double *rad_tbl;
   double distance;
 };
 
@@ -787,9 +831,99 @@ struct interpol {
   double nut_deps0, nut_deps1, nut_deps2;
 };
 
-/* if this is changed, then also update initialisation in sweph.c */
-struct swe_data {
+/* Scratch state for the Moshier lunar theory (swemmoon.c).
+ *
+ * These 27 values were file-scope TLS statics used as IMPLICIT PARAMETERS:
+ * moon1(ctx) sets them, moon2(ctx)/moon3(ctx)/moon4(ctx) read and refine them, and
+ * mean_elements(ctx) fills them in first. Fourteen functions share them without
+ * any of it appearing in a signature.
+ *
+ * Bundling them here is what lets a context own its lunar scratch, so two
+ * contexts can be mid-lunar-calculation at once. The names are kept exactly
+ * as they were -- l, B, T, T2, SWELP -- because they match the published
+ * theory's notation, and renaming them would make the code harder to check
+ * against the source it implements.
+ */
+struct moon_state {
+  double ss[5][8], cc[5][8];
+  double l;             /* Moon's ecliptic longitude */
+  double B;             /* ecliptic latitude         */
+  double moonpol[3];
+  double SWELP, M, MP, D, NF, T, T2, T3, T4;
+  double f, g, Ve, Ea, Ma, Ju, Sa, cg, sg, l1, l2, l3, l4;
+};
+
+/* Memo caches for the heliacal code (swehel.c).
+ *
+ * Thirteen function-local TLS statics. They are grouped by OWNING FUNCTION
+ * rather than flattened, because the names collide: alts_last and
+ * sunra_last each existed three times -- in kOZ(), ka() and Deltam() -- and
+ * tjdsv twice, in call_swe_calc() and fast_magnitude(). Each was a distinct
+ * variable that merely shared a name with the others, so flattening them
+ * into one struct would have silently merged three separate caches into
+ * one and produced wrong answers with nothing failing to compile.
+ */
+struct hel_state {
+  struct { double tjdsv[3], xsv[3][6]; int32 iflagsv[3]; } calc;
+  struct { double dmag; char star_save[AS_MAXCH]; }        starmag;
+  struct { double tjdlast, ralast; }                       sunra;
+  struct { double koz_last, alts_last, sunra_last; }       koz;
+  struct { double alts_last, sunra_last, ka_last; }        ka;
+  struct { double alts_last, alto_last, sunra_last, deltam_last; } deltam;
+  struct { double tjdsv[3], dmagsv[3]; int32 helflagsv[3]; } fastmag;
+};
+
+/* Memo caches for sweph.c.
+ *
+ * Grouped per owning function for the same reason as struct hel_state:
+ * the names are reused across functions and each occurrence was a distinct
+ * variable. slast_starname existed FOUR times -- in swe_fixstar2,
+ * swe_fixstar2_mag, swe_fixstar and swe_fixstar_mag -- last_stardata and
+ * slast_stardata twice each, and the xearth/xsun light-time scratch twice.
+ * Merging any of those pairs would make one lookup return another's cached
+ * star, silently.
+ */
+struct sweph_state {
+  struct { int force_flag, force_flag_checked; int32 iflag_forced; } calcflag;
+  struct { int32 nutflag; }                                          nut;
+  struct { double xearth[6], xearth_dt[6], xsun[6], xsun_dt[6]; }     fx_struct;
+  struct { double xearth[6], xearth_dt[6], xsun[6], xsun_dt[6]; }     fx_record;
+  struct { char slast_starname[AS_MAXCH]; struct fixed_star last_stardata; } fs2;
+  struct { char slast_starname[AS_MAXCH]; struct fixed_star last_stardata; } fs2mag;
+  struct { char slast_stardata[AS_MAXCH], slast_starname[AS_MAXCH]; } fs1;
+  struct { char slast_stardata[AS_MAXCH], slast_starname[AS_MAXCH]; } fs1mag;
+};
+
+/* THE EPHEMERIS CONTEXT.
+ *
+ * Everything the library remembers between calls: configuration, caches,
+ * open files, scratch. Historically this was `struct swe_data`, existing
+ * exactly once as the global `swed`. Phase 3 (notes/PHASE3-API.md) turns it
+ * into a handle callers can hold several of, so that N threads can compute
+ * with N independent configurations -- which is the one thing Phase 2's
+ * shared-config design deliberately cannot provide.
+ *
+ * `swe_data` is retained as an alias below: it appears in no public header,
+ * but the rename is gratuitous churn for anyone tracking upstream.
+ *
+ * Renaming the type is all that happens here. `swed` is still the same
+ * single TLS instance, and the legacy API still resolves to it. What
+ * changes later is only how it is REACHED -- see swi_default_ctx().
+ *
+ * if this is changed, then also update initialisation in sweph.c */
+struct swe_ctx {
+  /* Phase 3d: this context's relationship to the shared config master.
+   * These were TLS in sweconfig.c, which tied the tracking to the thread
+   * rather than to the context -- so two contexts on one thread shared one
+   * cfg_local and could not hold independent configurations, which is the
+   * entire point of Phase 3. */
+  swi_gen_t cfg_seen;      /* master generation this context last adopted  */
+  int32     cfg_local;     /* groups this context set itself and now owns  */
+  AS_BOOL   cfg_applying;  /* re-entrancy guard while a setter is applying */
   AS_BOOL ephe_path_is_set;
+  struct jpl_save *jpl;   /* Phase 3c: the open JPL file and every scrap of
+                           * state derived from its header. Opaque here;
+                           * defined in swejpl.c. NULL when closed. */
   AS_BOOL jpl_file_is_open;
   FILE *fixfp;		/* fixed stars file pointer */
   char ephepath[AS_MAXCH];
@@ -822,16 +956,29 @@ struct swe_data {
   double *deps;
   int32 timeout;
   int32 astro_models[SEI_NMODELS];
+  /* Atmospheric lapse rate for refraction, set by swe_set_lapse_rate().
+   * Was a file-scope static in swecl.c; moved here because it is
+   * configuration and Phase 2 needs every config field in one place.
+   * (Historical note: swed's initialiser in sweph.c used to be positional
+   * and required this field to sit immediately after astro_models, or its
+   * SE_LAPSE_RATE default would have been silently zeroed. C17_MIGRATION.md
+   * Phase 2 replaced it with a designated initializer, which removed that
+   * ordering constraint -- this field's position is no longer load-bearing.) */
+  double const_lapse_rate;
   AS_BOOL do_interpolate_nut;
   struct interpol interpol;
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;
   struct plan_data pldat[SEI_NPLANETS];
-#if 0
-  struct node_data nddat[SEI_NNODE_ETC];
-#else
+  /* nddat is deliberately the heavier plan_data, not node_data.
+   *
+   * Every access does touch only node_data's five members, so the leaner
+   * struct would fit -- but app_pos_rest() takes a struct plan_data * and
+   * is called with both pldat[] and nddat[] entries, so narrowing this
+   * means refactoring a hot shared helper to save 912 B out of a 34,800 B
+   * context. Kept as plan_data on purpose; see notes/C17_PERFORMANCE.md
+   * section 4.2. */
   struct plan_data nddat[SEI_NNODE_ETC];
-#endif
   struct save_positions savedat[SE_NPLANETS+1];
   struct epsilon oec;
   struct epsilon oec2000;
@@ -840,10 +987,77 @@ struct swe_data {
   struct nut nutv;
   struct topo_data topd;
   struct sid_data sidd;
-  AS_BOOL n_fixstars_real;   // real number of fixed stars in sefstars.txt
-  AS_BOOL n_fixstars_named;  // number of fixed stars with tradtional name
-  AS_BOOL n_fixstars_records;// number of fixed stars records in fixed_stars
+  /* Were AS_BOOL until C17_MIGRATION.md Phase 2 -- a pre-existing mistype,
+   * harmless for decades because AS_BOOL and int32 were both plain `int`.
+   * Made AS_BOOL a real bool (Phase 2, stdbool.h) and every fixed-star
+   * lookup broke: load_all_fixed_stars(ctx) correctly counted e.g. 1141 stars,
+   * but storing 1141 into a _Bool truncates to 1, so every subsequent
+   * bsearch() ran over 1 record instead of the real array. Caught by
+   * tests/golden's fixed-star rows, not by inspection. */
+  int32 n_fixstars_real;     // real number of fixed stars in sefstars.txt
+  int32 n_fixstars_named;    // number of fixed stars with tradtional name
+  int32 n_fixstars_records;  // number of fixed stars records in fixed_stars
   struct fixed_star *fixed_stars;
+  /* Moshier lunar theory scratch -- see struct moon_state above. */
+  struct moon_state moon;
+
+  /* --- Phase 3c: former file-scope TLS statics ---------------------- */
+
+  /* swemplan.c: sin/cos of multiple angles, rebuilt per call by sscc().
+   * Same role as moon.ss/cc but a different theory and a different shape,
+   * so deliberately not shared with it. */
+  double plan_ss[9][24], plan_cc[9][24];
+
+  /* swehouse.c: last solar declination handed to swe_houses_armc_ex2(),
+   * recalled when a caller passes the sentinel 99. 99 means "none yet", so
+   * zero would be a real declination and wrong. Set in swed's designated
+   * initialiser (sweph.c) and in swi_init_swed_if_start(), which memsets
+   * before filling in non-zero defaults. */
+  double saved_sundec;
+
+  /* swehel.c memo caches -- see struct hel_state above. */
+  struct hel_state hel;
+
+  /* sweph.c memo caches -- see struct sweph_state above. */
+  struct sweph_state sp;
+
+  /* swedate.c: leap-second table. The built-in values live in a shared
+   * const (leap_seconds_builtin); this is the working copy, because
+   * init_leapsec() extends it from seleapsec.txt. NLEAP_SECONDS_SPACE is
+   * 100 -- kept literal here because the macro is private to swedate.c. */
+  /* swephlib.c: Delta-T working copy, seeded from dt_builtin and extended
+   * from swe_deltat.txt. TABSIZ_SPACE is 509; literal here because the
+   * macro is private to swephlib.c. */
+  double  dt[509];
+
+  int     leap_seconds[100];
+  AS_BOOL leapsec_done;
 };
 
-extern TLS struct swe_data swed;
+/* swe_ctx is forward-declared near the top of this header, next to
+ * SEI_NMODELS, because the swi_* prototypes above need to name it.
+ *
+ * Historical name. Nothing public uses it, but keeping it spares anyone
+ * tracking upstream a rename they did not ask for. */
+#define swe_data swe_ctx
+
+/* The default context: the one the legacy, contextless API resolves to.
+ *
+ * Still the same TLS instance it has always been. Phase 3d makes the legacy
+ * shims call swi_default_ctx() instead of naming `swed` directly, at which
+ * point this becomes a process-wide context kept in sync by sweconfig.c --
+ * preserving Phase 2's semantics for every caller who never migrates.
+ * See notes/PHASE3-API.md section 4. */
+extern TLS struct swe_ctx swed;
+
+/* Returns the default context. Exists from the start so call sites can be
+ * converted incrementally: a function that has been given a `ctx` parameter
+ * is called with swi_default_ctx() until its callers have one of their own. */
+extern swe_ctx *swi_default_ctx(void);
+
+/* Shared configuration layer. Included here, after struct sid_data and
+ * SEI_NMODELS, because struct swe_config embeds both. */
+#include "sweconfig.h"
+
+extern AS_BOOL swi_config_begin_apply(swe_ctx *ctx);
+extern void    swi_config_end_apply(swe_ctx *ctx, AS_BOOL was);
