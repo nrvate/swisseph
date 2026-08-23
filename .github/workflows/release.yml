@@ -41,10 +41,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # The tag, not the branch -- so a workflow_dispatch for an older
+          # tag checks that tag's SE_VERSION below, not main's.
+          ref: ${{ github.event.inputs.tag || github.ref }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /*
             !/ephe/
+      - name: The tag must match SE_VERSION
+        run: |
+          # swe_version() is what a caller sees at runtime, and the tag is
+          # what they downloaded. If those disagree, every bug report after
+          # it cites the wrong version. Cheap to check, miserable to undo:
+          # a published release cannot be re-pointed at a different commit.
+          ver="${{ github.event.inputs.tag || github.ref_name }}"
+          src=$(sed -n 's/^#define SE_VERSION *"\([^"]*\)".*/\1/p' sweph.h)
+          [ -n "$src" ] || { echo "FAIL: could not read SE_VERSION from sweph.h"; exit 1; }
+          [ "$ver" = "v$src" ] || {
+            echo "FAIL: tag is $ver but SE_VERSION is $src -- expected tag v$src"; exit 1; }
+          echo "tag $ver matches SE_VERSION $src"
       - name: Collect the built packages
         uses: actions/download-artifact@v8
         with:
