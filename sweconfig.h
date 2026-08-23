@@ -191,6 +191,11 @@ extern void swi_config_claim(swe_ctx *ctx, int32 groups);
  * this thread last synced, adopt it. One atomic load in the common case. */
 extern void swi_config_sync(swe_ctx *ctx);
 
+/* One-shot adoption of the published configuration, for swe_ctx_new().
+ * swi_config_sync() refuses non-default contexts on purpose; this is the
+ * single point where a fresh context inherits. */
+extern void swi_config_inherit(swe_ctx *ctx);
+
 /* Re-arm the master from the compile-time defaults. Used by swe_close(). */
 extern void swi_config_reset(swe_ctx *ctx);
 

@@ -735,7 +735,130 @@ ext_def(int32) swe_fixstar2_ut(char *star, double tjd_ut, int32 iflag,
 ext_def(int32) swe_fixstar2_mag(char *star, double *mag, char *serr);
 
 /* close Swiss Ephemeris */
+/* ------------------------------------------------------------------
+ * Explicit contexts (Phase 3d).
+ *
+ * A swe_ctx holds one complete, independent library state: configuration,
+ * caches and open files. Two contexts can hold two different sidereal
+ * modes, ephemeris paths or observer positions at the same time, which the
+ * process-wide API cannot.
+ *
+ * THREADING: a swe_ctx may be used by ONE thread at a time. Concurrent
+ * calls on the SAME context are undefined. Different contexts are fully
+ * independent and take no locks between them. This is the FILE * contract.
+ *
+ * swe_ctx_new() inherits the configuration currently published through the
+ * process-wide setters, so it behaves as callers expect after
+ * swe_set_ephe_path(). It returns NULL if allocation fails.
+ *
+ * swe_ctx_free(NULL) is a no-op, as is freeing the process-wide default
+ * context returned to legacy callers.
+ *
+ * The struct is opaque on purpose: it is ~23 KB of implementation detail.
+ * ---------------------------------------------------------------------- */
+struct swe_ctx;
+typedef struct swe_ctx swe_ctx;
+
+ext_def( swe_ctx * ) swe_ctx_new(void);
+ext_def( void )      swe_ctx_free(swe_ctx *ctx);
+
 ext_def( void ) swe_close(void);
+
+/* ------------------------------------------------------------------
+ * Context-taking variants (Phase 3d).
+ *
+ * One per entry point that carries library state. The 30 entry points
+ * that are already pure -- swe_degnorm, swe_julday, swe_cotrans and the
+ * rest -- have no _r form, because a context argument would be noise.
+ *
+ * Each swe_X_r(ctx, ...) takes the same arguments as swe_X(...) with a
+ * context first, and each swe_X(...) is now exactly
+ * swe_X_r(swi_default_ctx(), ...). The legacy names keep the semantics
+ * and the ABI they always had.
+ *
+ * _r rather than _ex: _ex and _ex2 are already upstream's suffixes for
+ * "extended signature", so swe_calc_ut_ex would read as a third variant
+ * of swe_calc_ut_ex2 rather than as a reentrant form.
+ * ---------------------------------------------------------------------- */
+ext_def( void ) swe_azalt_r(swe_ctx *ctx, double tjd_ut, int32 calc_flag, double *geopos, double atpress, double attemp, double *xin, double *xaz);
+ext_def( void ) swe_azalt_rev_r(swe_ctx *ctx, double tjd_ut, int32 calc_flag, double *geopos, double *xin, double *xout);
+ext_def( int32 ) swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr);
+ext_def( int32 ) swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag, double *xx, char *serr);
+ext_def( int32 ) swe_calc_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, double *xx, char *serr);
+ext_def( void ) swe_close_r(swe_ctx *ctx);
+ext_def( double ) swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *serr);
+ext_def( double ) swe_deltat_r(swe_ctx *ctx, double tjd);
+ext_def( int32 ) swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr);
+ext_def( int32 ) swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag, double *xx, char *serr);
+ext_def( int32 ) swe_fixstar2_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag, double *xx, char *serr);
+ext_def( int32 ) swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr);
+ext_def( int32 ) swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag, double *xx, char *serr);
+ext_def( int32 ) swe_fixstar_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag, double *xx, char *serr);
+ext_def( int32 ) swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut, int32 ipl, char *starname, int32 iflag, int32 imeth, double *geopos, double atpress, double attemp, double *dgsect, char *serr);
+ext_def( void ) swe_get_astro_models_r(swe_ctx *ctx, char *samod, char *sdet, int32 iflag);
+ext_def( int32 ) swe_get_ayanamsa_ex_r(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr);
+ext_def( int32 ) swe_get_ayanamsa_ex_ut_r(swe_ctx *ctx, double tjd_ut, int32 iflag, double *daya, char *serr);
+ext_def( double ) swe_get_ayanamsa_r(swe_ctx *ctx, double tjd_et);
+ext_def( double ) swe_get_ayanamsa_ut_r(swe_ctx *ctx, double tjd_ut);
+ext_def( const char * ) swe_get_current_file_data_r(swe_ctx *ctx, int ifno, double *tfstart, double *tfend, int *denum);
+ext_def( int32 ) swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dret, char *serr);
+ext_def( char * ) swe_get_planet_name_r(swe_ctx *ctx, int ipl, char *s);
+ext_def( double ) swe_get_tid_acc_r(swe_ctx *ctx);
+ext_def( int32 ) swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr);
+ext_def( int32 ) swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr);
+ext_def( int32 ) swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret);
+ext_def( int32 ) swe_helio_cross_r(swe_ctx *ctx, int ipl, double x2cross, double jd_et, int iflag, int dir, double *jd_cross, char *serr);
+ext_def( int32 ) swe_helio_cross_ut_r(swe_ctx *ctx, int ipl, double x2cross, double jd_ut, int iflag, int dir, double *jd_cross, char *serr);
+ext_def( double ) swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, double eps, int hsys, double *xpin, char *serr);
+ext_def( int ) swe_houses_armc_ex2_r(swe_ctx *ctx, double armc, double geolat, double eps, int hsys, double *cusp, double *ascmc, double *cusp_speed, double *ascmc_speed, char *serr);
+ext_def( int ) swe_houses_armc_r(swe_ctx *ctx, double armc, double geolat, double eps, int hsys, double *cusp, double *ascmc);
+ext_def( int ) swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut, int32 iflag, double geolat, double geolon, int hsys, double *cusp, double *ascmc, double *cusp_speed, double *ascmc_speed, char *serr);
+ext_def( int ) swe_houses_ex_r(swe_ctx *ctx, double tjd_ut, int32 iflag, double geolat, double geolon, int hsys, double *cusp, double *ascmc);
+ext_def( int ) swe_houses_r(swe_ctx *ctx, double tjd_ut, double geolat, double geolon, int hsys, double *cusp, double *ascmc);
+ext_def( void ) swe_jdet_to_utc_r(swe_ctx *ctx, double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec);
+ext_def( void ) swe_jdut1_to_utc_r(swe_ctx *ctx, double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec);
+ext_def( int32 ) swe_lat_to_lmt_r(swe_ctx *ctx, double tjd_lat, double geolon, double *tjd_lmt, char *serr);
+ext_def( int32 ) swe_lmt_to_lat_r(swe_ctx *ctx, double tjd_lmt, double geolon, double *tjd_lat, char *serr);
+ext_def( int32 ) swe_lun_eclipse_how_r(swe_ctx *ctx, double tjd_ut, int32 ifl, double *geopos, double *attr, char *serr);
+ext_def( int32 ) swe_lun_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ifl, double *geopos, double *tret, double *attr, int32 backward, char *serr);
+ext_def( int32 ) swe_lun_eclipse_when_r(swe_ctx *ctx, double tjd_start, int32 ifl, int32 ifltype, double *tret, int32 backward, char *serr);
+ext_def( int32 ) swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl, int32 ifltype, double *tret, int32 backward, char *serr);
+ext_def( int32 ) swe_lun_occult_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl, double *geopos, double *tret, double *attr, int32 backward, char *serr);
+ext_def( int32 ) swe_lun_occult_where_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname, int32 ifl, double *geopos, double *attr, char *serr);
+ext_def( double ) swe_mooncross_node_r(swe_ctx *ctx, double jd_et, int flag, double *xlon, double *xla, char *serr);
+ext_def( double ) swe_mooncross_node_ut_r(swe_ctx *ctx, double jd_ut, int flag, double *xlon, double *xla, char *serr);
+ext_def( double ) swe_mooncross_r(swe_ctx *ctx, double x2cross, double jd_et, int flag, char *serr);
+ext_def( double ) swe_mooncross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr);
+ext_def( int32 ) swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, int32 method, double *xnasc, double *xndsc, double *xperi, double *xaphe, char *serr);
+ext_def( int32 ) swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, int32 method, double *xnasc, double *xndsc, double *xperi, double *xaphe, char *serr);
+ext_def( int32 ) swe_pheno_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, double *attr, char *serr);
+ext_def( int32 ) swe_pheno_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, double *attr, char *serr);
+ext_def( int32 ) swe_rise_trans_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname, int32 epheflag, int32 rsmi, double *geopos, double atpress, double attemp, double *tret, char *serr);
+ext_def( int32 ) swe_rise_trans_true_hor_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname, int32 epheflag, int32 rsmi, double *geopos, double atpress, double attemp, double horhgt, double *tret, char *serr);
+ext_def( void ) swe_set_astro_models_r(swe_ctx *ctx, char *samod, int32 iflag);
+ext_def( void ) swe_set_delta_t_userdef_r(swe_ctx *ctx, double dt);
+ext_def( void ) swe_set_ephe_path_r(swe_ctx *ctx, const char *path);
+ext_def( void ) swe_set_interpolate_nut_r(swe_ctx *ctx, AS_BOOL do_interpolate);
+ext_def( void ) swe_set_jpl_file_r(swe_ctx *ctx, const char *fname);
+ext_def( void ) swe_set_lapse_rate_r(swe_ctx *ctx, double lapse_rate);
+ext_def( void ) swe_set_sid_mode_r(swe_ctx *ctx, int32 sid_mode, double t0, double ayan_t0);
+ext_def( void ) swe_set_tid_acc_r(swe_ctx *ctx, double t_acc);
+ext_def( void ) swe_set_topo_r(swe_ctx *ctx, double geolon, double geolat, double geoalt);
+ext_def( double ) swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut);
+ext_def( double ) swe_sidtime_r(swe_ctx *ctx, double tjd_ut);
+ext_def( int32 ) swe_sol_eclipse_how_r(swe_ctx *ctx, double tjd_ut, int32 ifl, double *geopos, double *attr, char *serr);
+ext_def( int32 ) swe_sol_eclipse_when_glob_r(swe_ctx *ctx, double tjd_start, int32 ifl, int32 ifltype, double *tret, int32 backward, char *serr);
+ext_def( int32 ) swe_sol_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ifl, double *geopos, double *tret, double *attr, int32 backward, char *serr);
+ext_def( int32 ) swe_sol_eclipse_where_r(swe_ctx *ctx, double tjd_ut, int32 ifl, double *geopos, double *attr, char *serr);
+ext_def( double ) swe_solcross_r(swe_ctx *ctx, double x2cross, double jd_et, int flag, char *serr);
+ext_def( double ) swe_solcross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr);
+ext_def( void ) swe_split_deg_r(swe_ctx *ctx, double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn);
+ext_def( int32 ) swe_time_equ_r(swe_ctx *ctx, double tjd_ut, double *E, char *serr);
+ext_def( int32 ) swe_topo_arcus_visionis_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr);
+ext_def( int32 ) swe_utc_to_jd_r(swe_ctx *ctx, int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr);
+ext_def( int32 ) swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr);
+
+
 
 /* set directory path of ephemeris files */
 ext_def( void ) swe_set_ephe_path(const char *path);

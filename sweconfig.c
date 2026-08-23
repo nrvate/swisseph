@@ -238,6 +238,24 @@ void swi_config_publish(swe_ctx *ctx, int32 groups)
 {
   struct swe_config tmp;
 
+  /* Only the process-wide default context publishes.
+   *
+   * The master exists so that threads SHARING the default context see each
+   * other's swe_set_*() calls -- that is all of Phase 2. An explicit
+   * context created with swe_ctx_new() is independent by contract
+   * (notes/PHASE3-API.md section 3.1), so swe_set_topo_r(myctx, ...) must
+   * change myctx and nothing else. Without this test the _r setters would
+   * have inherited the publish and broadcast a private context's
+   * configuration to every other one -- the exact leak Phase 2 fixed for
+   * internal callers, reintroduced through the new API.
+   *
+   * The group is still claimed below, so this context stops tracking the
+   * master for it either way. */
+  if (ctx != swi_default_ctx()) {
+    ctx->cfg_local |= groups;
+    return;
+  }
+
   /* Nested call: a setter invoked from inside another setter, or from
    * swi_init_swed_if_start(ctx), which calls swe_set_tid_acc(). Only the
    * outermost call publishes.
@@ -283,6 +301,17 @@ void swi_config_sync(swe_ctx *ctx)
 
   if (ctx->cfg_applying)             /* re-entered from inside a setter */
     return;
+  /* Same reasoning as swi_config_publish(): only the default context
+   * tracks the master. An explicit context inherits the configuration once,
+   * at swe_ctx_new(), and is its own from then on -- otherwise a later
+   * swe_set_sid_mode() on the main thread would silently retune every
+   * context that had not overridden that group, which is precisely the
+   * independence Phase 3 promises.
+   *
+   * swe_ctx_new() therefore cannot use this function to inherit; it calls
+   * swi_config_inherit() below. */
+  if (ctx != swi_default_ctx())
+    return;
   g = swi_gen_load(&cfg_master.generation);
   if (g == 0)                   /* nobody has published anything yet */
     return;
@@ -298,6 +327,33 @@ void swi_config_sync(swe_ctx *ctx)
    * caches, and must not run with cfg_mutex held. */
   ctx->cfg_applying = TRUE;
   swi_config_apply(ctx, &tmp, SWI_CFG_ALL & ~ctx->cfg_local);
+  ctx->cfg_applying = FALSE;
+  ctx->cfg_seen = g;
+}
+
+/*======================================================================
+ * One-shot adoption of the master, for swe_ctx_new().
+ *
+ * swi_config_sync() deliberately refuses to act on a non-default context;
+ * this is the single point where a fresh one takes the current published
+ * configuration on. It claims nothing: the new context has expressed no
+ * opinion of its own yet.
+ *====================================================================*/
+void swi_config_inherit(swe_ctx *ctx)
+{
+  struct swe_config tmp;
+  swi_gen_t g;
+
+  g = swi_gen_load(&cfg_master.generation);
+  if (g == 0)                   /* nobody has published anything yet */
+    return;
+  swi_mutex_lock(&cfg_mutex);
+  tmp = cfg_master;
+  g   = cfg_master.generation;
+  swi_mutex_unlock(&cfg_mutex);
+
+  ctx->cfg_applying = TRUE;     /* applying must not publish back */
+  swi_config_apply(ctx, &tmp, SWI_CFG_ALL);
   ctx->cfg_applying = FALSE;
   ctx->cfg_seen = g;
 }

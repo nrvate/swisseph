@@ -2716,11 +2716,8 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   return iflag;
 }
 
-double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
+double CALL_CONV swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *serr)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
   double deltat;
   if (ctx->delta_t_userdef_is_set)
     return ctx->delta_t_userdef;
@@ -2730,13 +2727,24 @@ double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
   return deltat;
 }
 
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
+{
+  return swe_deltat_ex_r(swi_default_ctx(), tjd, iflag, serr);
+}
+
+double CALL_CONV swe_deltat_r(swe_ctx *ctx, double tjd)
+{
+  int32 iflag = swi_guess_ephe_flag(ctx);
+  return swe_deltat_ex_r(ctx, tjd, iflag, NULL); /* with default tidal acceleration/default ephemeris */
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_deltat(double tjd)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
-  int32 iflag = swi_guess_ephe_flag(ctx);
-  return swe_deltat_ex(tjd, iflag, NULL); /* with default tidal acceleration/default ephemeris */
+  return swe_deltat_r(swi_default_ctx(), tjd);
 }
 
 /* The tabulated values of deltaT, in hundredths of a second,
@@ -3187,12 +3195,16 @@ static double adjust_for_tidacc(double ans, double Y, double tid_acc, double tid
 }
 
 /* returns tidal acceleration used in swe_deltat() and swe_deltat_ex() */
+double CALL_CONV swe_get_tid_acc_r(swe_ctx *ctx)
+{
+  return ctx->tid_acc;
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_get_tid_acc(void)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
-  return ctx->tid_acc;
+  return swe_get_tid_acc_r(swi_default_ctx());
 }
 
 /* function sets tidal acceleration of the Moon.
@@ -3201,11 +3213,8 @@ double CALL_CONV swe_get_tid_acc(void)
  *   of the Moon will be set consistent with that ephemeris.
  * - SE_TIDAL_AUTOMATIC, 
  */
-void CALL_CONV swe_set_tid_acc(double t_acc)
+void CALL_CONV swe_set_tid_acc_r(swe_ctx *ctx, double t_acc)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
   if (t_acc == SE_TIDAL_AUTOMATIC) {
     ctx->tid_acc = SE_TIDAL_DEFAULT;
     ctx->is_tid_acc_manual = FALSE;
@@ -3217,11 +3226,15 @@ void CALL_CONV swe_set_tid_acc(double t_acc)
   swi_config_publish(ctx, SWI_CFG_TIDACC);
 }
 
-void CALL_CONV swe_set_delta_t_userdef(double dt)
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+void CALL_CONV swe_set_tid_acc(double t_acc)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
+  swe_set_tid_acc_r(swi_default_ctx(), t_acc);
+}
+
+void CALL_CONV swe_set_delta_t_userdef_r(swe_ctx *ctx, double dt)
+{
   if (dt == SE_DELTAT_AUTOMATIC) {
     ctx->delta_t_userdef_is_set = FALSE; 
   } else {
@@ -3229,6 +3242,13 @@ void CALL_CONV swe_set_delta_t_userdef(double dt)
     ctx->delta_t_userdef = dt;
   }
   swi_config_publish(ctx, SWI_CFG_DELTAT);
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+void CALL_CONV swe_set_delta_t_userdef(double dt)
+{
+  swe_set_delta_t_userdef_r(swi_default_ctx(), dt);
 }
 
 int32 swi_guess_ephe_flag(swe_ctx *ctx)
@@ -3340,7 +3360,7 @@ static double sidtime_long_term(swe_ctx *ctx, double tjd_ut, double eps, double 
   double dlon, xs[6], xobl[6], dhour, nutlo[2];
   double dlt = AUNIT / CLIGHT / 86400.0;
   double t, t2, t3;
-  tjd_et = tjd_ut + swe_deltat_ex(tjd_ut, -1, NULL);
+  tjd_et = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
   t = (tjd_et - J2000) / 365250.0;
   t2 = t * t; t3 = t * t2;
   /* mean longitude of earth J2000 */
@@ -3350,7 +3370,7 @@ static double sidtime_long_term(swe_ctx *ctx, double tjd_ut, double eps, double 
   xs[0] = dlon * DEGTORAD; xs[1] = 0; xs[2] = 1;
   /* to mean equator J2000, cartesian */
   xobl[0] = 23.45; xobl[1] = 23.45;
-  xobl[1] = swi_epsiln(ctx, J2000 + swe_deltat_ex(J2000, -1, NULL), 0) * RADTODEG;
+  xobl[1] = swi_epsiln(ctx, J2000 + swe_deltat_ex_r(ctx, J2000, -1, NULL), 0) * RADTODEG;
   swi_polcart(xs, xs);
   swi_coortrf(xs, xs, -xobl[1] * DEGTORAD);
   /* precess to mean equinox of date */
@@ -3513,11 +3533,8 @@ static double sidtime_non_polynomial_part(double tt)
 #define SIDT_LTERM_T1  2469807.5  /* 1 Jan 2050  */
 #define SIDT_LTERM_OFS0   (0.000378172 / 15.0)
 #define SIDT_LTERM_OFS1   (0.001385646 / 15.0)
-double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
+double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
   double jd0;    	/* Julian day at midnight Universal Time */
   double secs;   	/* Time of day, UT seconds since UT midnight */
   double eqeq, jd, tu, tt, msday, jdrel;
@@ -3556,7 +3573,7 @@ double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
     /*  ERA-based expression for Greenwich Sidereal Time (GST) based 
      *  on the IAU 2006 precession */
     jdrel = tjd - J2000;
-    tt = (tjd + swe_deltat_ex(tjd, -1, NULL) - J2000) / 36525.0;
+    tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
     gmst = swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
     gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
     dadd = sidtime_non_polynomial_part(tt);
@@ -3565,7 +3582,7 @@ double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
     gmst = gmst / 15.0 * 3600.0;
   /* sidt_model == SEMOD_SIDT_IAU_2006, older standards according to precession model */
   } else if (sidt_model == SEMOD_SIDT_IAU_2006) {
-    tt = (jd0 + swe_deltat_ex(jd0, -1, NULL) - J2000)/36525.0; /* TT in centuries after J2000 */
+    tt = (jd0 + swe_deltat_ex_r(ctx, jd0, -1, NULL) - J2000)/36525.0; /* TT in centuries after J2000 */
     gmst = (((-0.000000002454*tt - 0.00000199708)*tt - 0.0000002926)*tt + 0.092772110)*tt*tt + 307.4771013*(tt-tu) + 8640184.79447825*tu + 24110.5493771;
     /* mean solar days per sidereal day at date tu;
      * for the derivative of gmst, we can assume UT1 =~ TT */
@@ -3612,11 +3629,15 @@ sidtime_done:
   return gmst;
 }
 
-void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
+  return swe_sidtime0_r(swi_default_ctx(), tjd, eps, nut);
+}
+
+void CALL_CONV swe_set_interpolate_nut_r(swe_ctx *ctx, AS_BOOL do_interpolate)
+{
   if (ctx->do_interpolate_nut == do_interpolate) {
     swi_config_claim(ctx, SWI_CFG_NUT);
     return;
@@ -3636,27 +3657,38 @@ void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
   swi_config_publish(ctx, SWI_CFG_NUT);
 }
 
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
+{
+  swe_set_interpolate_nut_r(swi_default_ctx(), do_interpolate);
+}
+
 /* sidereal time, without eps and nut as parameters.
  * tjd must be UT !!!
  * for more informsation, see comment with swe_sidtime0()
  */
-double CALL_CONV swe_sidtime(double tjd_ut)
+double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
   int i;
   double eps, nutlo[2], tsid;
   double tjde;
   /* delta t adjusted to default tidal acceleration of the moon */
-  tjde = tjd_ut + swe_deltat_ex(tjd_ut, -1, NULL); 
+  tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL); 
   swi_init_swed_if_start(ctx);
   eps = swi_epsiln(ctx, tjde, 0) * RADTODEG;
   swi_nutation(ctx, tjde, 0, nutlo);
   for (i = 0; i < 2; i++)
     nutlo[i] *= RADTODEG;
-  tsid = swe_sidtime0(tjd_ut, eps + nutlo[1], nutlo[0]);
+  tsid = swe_sidtime0_r(ctx, tjd_ut, eps + nutlo[1], nutlo[0]);
   return tsid;
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+double CALL_CONV swe_sidtime(double tjd_ut)
+{
+  return swe_sidtime_r(swi_default_ctx(), tjd_ut);
 }
 
 /* SWISSEPH
@@ -4120,11 +4152,8 @@ static void split_deg_nakshatra(swe_ctx *ctx, double ddeg, int32 roundflag, int3
  *              or +/- sign
  *  
  *********************************************************/
-void CALL_CONV swe_split_deg(double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn)
+void CALL_CONV swe_split_deg_r(swe_ctx *ctx, double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
   double dadd = 0;
   *isgn = 1;
   if (ddeg < 0) {
@@ -4202,6 +4231,13 @@ double swi_kepler(double E, double M, double ecce)
     }
   }
   return E;
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+void CALL_CONV swe_split_deg(double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn)
+{
+  swe_split_deg_r(swi_default_ctx(), ddeg, roundflag, ideg, imin, isec, dsecfr, isgn);
 }
 
 void swi_FK4_FK5(double *xp, double tjd)
@@ -4297,11 +4333,8 @@ S4 SEMOD_SIDT_LONGTERM
 # define AMODELS_SE_1_80    "4,9,9,4,3,0,0,1"  /* note sid. time (S)! */
 # define AMODELS_SE_2_00    "4,9,9,4,3,0,0,4"
 # define AMODELS_SE_2_06    "5,9,9,4,3,0,0,4"
-void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
+void CALL_CONV swe_set_astro_models_r(swe_ctx *ctx, char *samod, int32 iflag)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
   AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
   double dversion;
   char s[30], *sp;
@@ -4325,32 +4358,39 @@ void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
     } else if (dversion >= 2.00) {
       set_astro_models(ctx, AMODELS_SE_2_00);
       if (swi_get_denum(ctx, SEI_SUN, iflag) == 431) 
-        swe_set_tid_acc(SE_TIDAL_DE406);
+        swe_set_tid_acc_r(ctx, SE_TIDAL_DE406);
     } else if (dversion >= 1.80) {
       set_astro_models(ctx, AMODELS_SE_1_80);
-      swe_set_tid_acc(SE_TIDAL_DE406);
+      swe_set_tid_acc_r(ctx, SE_TIDAL_DE406);
     } else if (dversion >= 1.78) {
       set_astro_models(ctx, AMODELS_SE_1_78);
-      swe_set_tid_acc(SE_TIDAL_DE406);
+      swe_set_tid_acc_r(ctx, SE_TIDAL_DE406);
     } else if (dversion >= 1.77) {
       set_astro_models(ctx, AMODELS_SE_1_77);
-      swe_set_tid_acc(SE_TIDAL_DE406);
+      swe_set_tid_acc_r(ctx, SE_TIDAL_DE406);
     } else if (dversion >= 1.72) {
       set_astro_models(ctx, AMODELS_SE_1_72);
-      swe_set_tid_acc(-25.7376);
+      swe_set_tid_acc_r(ctx, -25.7376);
     } else if (dversion >= 1.70) {
       set_astro_models(ctx, AMODELS_SE_1_70);
-      swe_set_tid_acc(-25.7376);
+      swe_set_tid_acc_r(ctx, -25.7376);
     } else if (dversion >= 1.64) {
       set_astro_models(ctx, AMODELS_SE_1_64);
-      swe_set_tid_acc(-25.7376);
+      swe_set_tid_acc_r(ctx, -25.7376);
     } else {
       set_astro_models(ctx, AMODELS_SE_1_00);
-      swe_set_tid_acc(-25.7376);
+      swe_set_tid_acc_r(ctx, -25.7376);
     }
   }
   swi_config_end_apply(ctx, swi_cfg_was);
   swi_config_publish(ctx, SWI_CFG_SID);
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+void CALL_CONV swe_set_astro_models(char *samod, int32 iflag)
+{
+  swe_set_astro_models_r(swi_default_ctx(), samod, iflag);
 }
 
 /* function for inhouse testing only */
@@ -4520,11 +4560,8 @@ static void get_sidt_model(int sidtmod, char *s)
 }
 
 /* function for inhouse testing only */
-void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
+void CALL_CONV swe_get_astro_models_r(swe_ctx *ctx, char *samod, char *sdet, int32 iflag)
 {
-  /* bridge to the default context; 3d replaces this with a
-   * swe_ctx * parameter on the _r variant. */
-  swe_ctx *ctx = swi_default_ctx();
   int i, imod;
   int *pmodel = &(ctx->astro_models[0]);
   char s[AS_MAXCH], samod0[AS_MAXCH];
@@ -4532,7 +4569,7 @@ void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
   if (samod != NULL) {
     if (strchr(samod, '+') != NULL)
       list_all_models = TRUE;
-    swe_set_astro_models(samod, iflag);
+    swe_set_astro_models_r(ctx, samod, iflag);
   }
   *samod0 = '\0';
   for (i = 0; i < NSE_MODELS; i++) {
@@ -4571,7 +4608,7 @@ void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
   if (sdet != NULL) {
     /* JPL ephemeris number and tidal acceleration used with it */
     sprintf(sdet + strlen(sdet), "JPL eph. %d; tidal acc. Moon used by SE: %.4f\n", 
-      swi_get_denum(ctx, SEI_SUN, iflag), swe_get_tid_acc());
+      swi_get_denum(ctx, SEI_SUN, iflag), swe_get_tid_acc_r(ctx));
     if (iflag & SEFLG_JPLEPH) {
       if (iflag & SEFLG_JPLHOR) 
 	strcat(sdet, "JPL Horizons method:\n");
@@ -4604,7 +4641,7 @@ void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
     /* swetest parameters */
     sprintf(sdet + strlen(sdet), "swetest parameters:      D P P N B J J S\n");
     sprintf(sdet + strlen(sdet), "                    -amod%s", samod0);
-    sprintf(sdet + strlen(sdet), " -tidacc%f", swe_get_tid_acc());
+    sprintf(sdet + strlen(sdet), " -tidacc%f", swe_get_tid_acc_r(ctx));
     strcat(sdet, "\n");
     /* list all available astronomical models */
     if (!list_all_models) {
@@ -4660,6 +4697,13 @@ void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
       }
     }
   }
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
+{
+  swe_get_astro_models_r(swi_default_ctx(), samod, sdet, iflag);
 }
 
 char *swi_strcpy(char *to, char *from)
