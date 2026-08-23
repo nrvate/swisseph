@@ -486,7 +486,14 @@ check-setest: $(SETEST_REF)
 	# would consider them up to date and the pin above would do nothing.
 	@$(MAKE) -B -C .. libswe.a CFLAGS="$(SETEST_CFLAGS)" >/dev/null 2>&1
 	@$(MAKE) -B -C ../setest >/dev/null 2>&1
-	@cd ../setest && SE_EPHE_PATH=$(EPHE_ABS) ./setest t 2>&1 | $(SCRUB) > ../tests/.setest_now.txt || true
+	# ⚠️ SE_EPHE_FALLBACK=1: this gate asks whether our changes altered
+	# UPSTREAM's numerical behaviour, so it has to run upstream's suite under
+	# upstream's rules. setest requests ephemerides the machine may not have
+	# and expects numbers back; under this fork's strict default it reads
+	# zeros and every comparison fails -- which says nothing about the
+	# arithmetic this gate exists to protect. The strict default is tested by
+	# check-golden and G15 instead.
+	@cd ../setest && SE_EPHE_PATH=$(EPHE_ABS) SE_EPHE_FALLBACK=1 ./setest t 2>&1 | $(SCRUB) > ../tests/.setest_now.txt || true
 	@lines=$$(wc -l < .setest_now.txt); \
 	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
 	   echo "G8 FAIL: setest produced only $$lines lines -- it did not run"; \

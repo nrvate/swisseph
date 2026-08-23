@@ -718,6 +718,8 @@ extern FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char
 extern int32 swi_init_swed_if_start(swe_ctx *ctx);
 /* "JPL" / "Swiss (.se1)" / "Moshier", for error messages. */
 extern const char *swi_ephe_name(int32 epheflag);
+/* SE_EPHE_FALLBACK, read fresh -- see swe_set_ephe_fallback(). */
+extern AS_BOOL swi_env_ephe_fallback(void);
 extern int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr);
 extern int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
 

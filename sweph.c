@@ -1250,8 +1250,15 @@ static void ctx_init_defaults(swe_ctx *ctx)
   ctx->tid_acc          = SE_TIDAL_DEFAULT;
   ctx->is_tid_acc_manual = FALSE;
   /* Strict by default, and stated rather than left to calloc: a caller who
-   * asks for an ephemeris either gets it or gets an error. See sweph.h. */
-  ctx->ephe_fallback    = FALSE;
+   * asks for an ephemeris either gets it or gets an error. See sweph.h.
+   *
+   * SE_EPHE_FALLBACK=1 restores upstream's behaviour without touching the
+   * caller. That matters for programs that cannot be recompiled or edited --
+   * upstream's own setest suite is one: it asks for ephemerides the machine
+   * may not have and expects numbers back, so under the strict default it
+   * reads zeros and fails. An environment switch lets such a program run
+   * unmodified while everything else stays strict. */
+  ctx->ephe_fallback    = swi_env_ephe_fallback();
   /* The two builtin tables are working copies, not statics, since Phase 3c.
    * A context that never reaches init_dt()/init_leapsec() would otherwise
    * read them as zeros -- which is how a 2.71 arcsec Delta-T regression got
@@ -1329,6 +1336,11 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
     strcpy(ctx->jplfnam, SE_FNAME_DFT);
     /* the memset above would leave this 0.0, not the 0.0065 default */
     ctx->const_lapse_rate = SE_LAPSE_RATE;
+    /* Same reason, and the same hazard: the memset clears the fallback
+     * policy, so re-read it here. FALSE (strict) is what zero already means;
+     * this is what makes SE_EPHE_FALLBACK reach the default context, which
+     * never passes through ctx_init_defaults(). */
+    ctx->ephe_fallback = swi_env_ephe_fallback();
     swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
     ctx->swed_is_initialised = TRUE;
     swi_config_end_apply(ctx, swi_cfg_was);
@@ -1682,6 +1694,15 @@ void load_dpsi_deps(swe_ctx *ctx)
   fclose(fp);
 }
 
+/* SE_EPHE_FALLBACK=1 restores upstream's silent substitution without touching
+ * the caller -- for programs that cannot be recompiled. Anything other than
+ * unset, empty, or "0" enables it. */
+AS_BOOL swi_env_ephe_fallback(void)
+{
+  const char *sp = getenv("SE_EPHE_FALLBACK");
+  return (sp != NULL && *sp != '\0' && *sp != '0') ? TRUE : FALSE;
+}
+
 /* The name of an ephemeris flag, for error messages. Not a lookup table:
  * SEFLG_JPLEPH/SWIEPH/MOSEPH are separate bits, not an index. */
 const char *swi_ephe_name(int32 epheflag)
@@ -1710,6 +1731,12 @@ const char *swi_ephe_name(int32 epheflag)
  * still reported in the return flag either way. */
 void CALL_CONV swe_set_ephe_fallback_r(swe_ctx *ctx, int allow)
 {
+  /* ⚠️ Initialise FIRST. swi_init_swed_if_start() memsets the whole context
+   * on a fresh start, so setting the flag before the library has started
+   * would be silently erased by the first swe_calc() -- the setter would
+   * appear to work and do nothing. Every other setter here calls it for the
+   * same reason. */
+  swi_init_swed_if_start(ctx);
   ctx->ephe_fallback = allow ? TRUE : FALSE;
 }
 
