@@ -579,7 +579,12 @@ static const double plan_oscu_elem[SE_NFICT_ELEM][8] = {
  * ipli 	body number in planetary data structure
  * iflag	flags
  */
-int swi_osc_el_plan(swe_ctx *ctx, double tjd, double *xp, int ipl, int ipli, double *xearth, double *xsun, char *serr)
+/* restrict: xp accumulates from xearth and xsun and is never either of
+ * them -- both call sites (sweph.c:1131, :3702) pass three distinct
+ * plan_data vectors or three distinct locals. */
+int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
+                    int ipl, int ipli, const double * SWI_RESTRICT xearth,
+                    const double * SWI_RESTRICT xsun, char *serr)
 {
   double pqr[9], x[6];
   double eps, K, fac, rho, cose, sine;

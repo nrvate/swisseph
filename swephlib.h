@@ -129,7 +129,8 @@ extern void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag);
 extern void swi_aberr_light(double *xx, double *xe, int32 iflag);
 extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *xx);
 extern int swi_trop_ra2sid_lon(swe_ctx *ctx, double *xin, double *xout, double *xoutr, int32 iflag);
-extern int swi_trop_ra2sid_lon_sosy(swe_ctx *ctx, double *xin, double *xout, int32 iflag);
+extern int swi_trop_ra2sid_lon_sosy(swe_ctx *ctx, const double * SWI_RESTRICT xin,
+                                    double * SWI_RESTRICT xout, int32 iflag);
 extern int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag, 
 	AS_BOOL do_save, double *xobs, char *serr);
 extern void swi_force_app_pos_etc(swe_ctx *ctx);

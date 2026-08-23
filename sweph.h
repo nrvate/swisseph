@@ -680,7 +680,9 @@ extern int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli);
 /* planets, s. moshplan.c */
 extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr);
 extern int swi_moshplan2(swe_ctx *ctx, double J, int iplm, double *pobj);
-extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double *xp, int ipl, int ipli, double *xearth, double *xsun, char *serr);
+extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
+                           int ipl, int ipli, const double * SWI_RESTRICT xearth,
+                           const double * SWI_RESTRICT xsun, char *serr);
 extern FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char *serr);
 extern int32 swi_init_swed_if_start(swe_ctx *ctx);
 extern int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr);

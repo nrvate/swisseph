@@ -305,7 +305,9 @@ written specifically to survive being compiled as C89 today.
 > | item | status | measured effect |
 > |---|---|---|
 > | `restrict` on `interp()` | landed | **unmeasurable here** — `interp()` executes 0 times in this checkout (see §4.1 warning). Kept because it is correct. |
-> | `-flto` | landed, **opt-in** (`make LTO=1`) | `moon` **−5.0%**, `calc-moseph` −2.6%; everything else inside the ±2–3% noise floor. Bit-identical to plain `-O2` across all 5137 golden rows on gcc 13. |
+> | `restrict` on `embofs`, `calc_center_body`, `swi_osc_el_plan`, `swi_trop_ra2sid_lon_sosy` | landed | `moon` **−3.6% to −5.6%** across two A/B rounds, `calc-moseph` −1.7% to −2.9%; nothing elsewhere. Call the Moon figure "a few percent" — the estimate is not stable enough to quote precisely. |
+| `restrict` on `swi_cross_prod` | **declined** | see below |
+| `-flto` | landed, **opt-in** (`make LTO=1`) | `moon` **−5.0%**, `calc-moseph` −2.6%; everything else inside the ±2–3% noise floor. Bit-identical to plain `-O2` across all 5137 golden rows on gcc 13. |
 >
 > LTO is not on by default: clang/macOS/MSVC parity is unverified (no clang
 > on the machine these were measured on — the CI `lto` job exists to close
@@ -315,6 +317,19 @@ written specifically to survive being compiled as C89 today.
 > Only `moon` clears the noise floor convincingly, and that is exactly what
 > §4.4 predicted: cross-TU inlining is the only way `-O2` reaches helpers
 > like `swi_coortrf2` from `swemmoon.c`.
+
+> #### `swi_cross_prod` is deliberately NOT annotated
+>
+> §4.1 lists it as verified safe. Re-checking the call sites, five of the
+> seven are `swi_cross_prod(x, x+3, xnorm)` — `a` and `b` are adjacent
+> three-element slices of one array. That is legal under `restrict` today,
+> since `a[0..2]` and `b[0..2]` do not overlap, but it is one line away from
+> undefined behaviour: any future edit reading `a[3]` makes the program
+> silently wrong rather than merely slower.
+>
+> The body is three lines of arithmetic with no loop, so `restrict` buys
+> essentially nothing. Accepting a fragile aliasing precondition for an
+> unmeasurable gain is a bad trade, and the annotation is declined.
 
 **Tier 1 — real performance, do first, low risk:**
 - `restrict` on `interp()` and the 6 verified-safe functions (§4.1)

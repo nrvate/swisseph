@@ -198,7 +198,7 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
 		   double *xp, double *xpe, double *xps, char *serr);
 static void rot_back(swe_ctx *ctx, int ipl);
 static int read_const(swe_ctx *ctx, int ifno, char *serr);
-static void embofs(double *xemb, double *xmoon);
+static void embofs(double * SWI_RESTRICT xemb, const double * SWI_RESTRICT xmoon);
 static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, char *serr);
 static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, char *serr);
 static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr);
@@ -2626,7 +2626,12 @@ int32 swi_get_denum(swe_ctx *ctx, int32 ipli, int32 iflag)
   return SE_DE_NUMBER;
 }
 
-static int calc_center_body(int32 ipli, int32 iflag, double *xx, double *xcom, char *serr)
+/* restrict: xx is the caller's working vector and xcom is either
+ * ctx->pldat[SEI_ANYBODY].x (sweph.c:2697) or app_pos_etc_plan's local
+ * xcom[6] (sweph.c:2876, declared at :2657 alongside xx[6]). Never the
+ * same object. */
+static int calc_center_body(int32 ipli, int32 iflag, double * SWI_RESTRICT xx,
+                            const double * SWI_RESTRICT xcom, char *serr)
 {
   int i;
   (void) serr;
@@ -3528,7 +3533,13 @@ int swi_trop_ra2sid_lon(swe_ctx *ctx, double *xin, double *xout, double *xoutr, 
  * xout 	ecliptical sidereal position
  * xoutr 	equatorial sidereal position
  */
-int swi_trop_ra2sid_lon_sosy(swe_ctx *ctx, double *xin, double *xout, int32 iflag)
+/* restrict: all 7 call sites pass distinct arrays -- verified, including
+ * sweph.c:6847 and :8134, where xxsv[6] and x[6] are separate locals
+ * declared together at sweph.c:6638. Note this is NOT true of the
+ * sibling swi_trop_ra2sid_lon(), which IS called with input and output
+ * aliased; see notes/C17_PERFORMANCE.md section 4.1. */
+int swi_trop_ra2sid_lon_sosy(swe_ctx *ctx, const double * SWI_RESTRICT xin,
+                             double * SWI_RESTRICT xout, int32 iflag)
 {
   double x[6], x0[6], corr;
   int i;
@@ -5282,7 +5293,9 @@ static void rot_back(swe_ctx *ctx, int ipli)
  *                                                  earth (output)
  * xmoon= geocentric position or velocity vector of moon
  */
-static void embofs(double *xemb, double *xmoon)
+/* restrict: the only two call sites are embofs(xpe, xpm) and
+ * embofs(xpe+3, xpm+3) at sweph.c:2101,2109 -- distinct arrays. */
+static void embofs(double * SWI_RESTRICT xemb, const double * SWI_RESTRICT xmoon)
 {
   int i;
   for (i = 0; i <= 2; i++)
