@@ -64,6 +64,21 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: artifacts
+      - name: Restore the executable bit
+        run: |
+          # actions/upload-artifact does not carry unix file modes, so every
+          # binary arrives here 0644 and `tar czf` records that faithfully.
+          # v2.10.03-ts.1 shipped exactly that: extract the tarball, run
+          # ./bin/swetest, get "Permission denied".
+          #
+          # Only the CLI tools need +x. Shared libraries stay 0644, which is
+          # what distributions ship (Debian policy 8.1) and what the loader
+          # wants -- it maps them, it does not execute them.
+          for d in artifacts/*/bin; do
+            [ -d "$d" ] || continue
+            find "$d" -type f -exec chmod 0755 {} +
+            find "$d" -type f -printf '  %M %p\n'
+          done
       - name: Name, archive and checksum
         run: |
           ver="${{ github.event.inputs.tag || github.ref_name }}"
@@ -90,6 +105,18 @@ jobs:
             ls dist | grep -q "swisseph-$p-" || { echo "FAIL: no archive for $p"; exit 1; }
           done
           echo "4 platform archives present"
+
+          # Read the mode back out of the archive, not off the disk: the
+          # tarball is what people download, and it is the only place the
+          # 0644 bug was visible.
+          for p in linux macos; do
+            mode=$(tar tvzf dist/swisseph-$p-*.tar.gz | awk '$NF ~ /bin\/swetest$/ {print $1}')
+            case "$mode" in
+              -rwxr-xr-x) echo "  $p bin/swetest $mode" ;;
+              "")         echo "FAIL: no bin/swetest in the $p archive"; exit 1 ;;
+              *)          echo "FAIL: $p bin/swetest is $mode, not executable"; exit 1 ;;
+            esac
+          done
       - name: Publish
         uses: softprops/action-gh-release@v3
         with:
