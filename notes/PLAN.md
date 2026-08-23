@@ -474,3 +474,147 @@ G1 golden bit-identical ......... PASS
    threads --per-thread-setup ... PASS  8/8
 G2 threads, no per-thread setup .. FAIL  0/8   <- expected; Phase 2 fixes this
 ```
+
+---
+
+## 14. Impact of REVIEW.md on Phase 2
+
+[REVIEW.md](REVIEW.md) is a separate modernization/performance survey. Most of
+it is orthogonal to thread-safety, but **four items change Phase 2 before we
+start**. Each was verified against the source rather than taken on trust.
+
+### 14.1 A second cache-invalidation trigger — `sweph.c:389-403` ✅ verified
+
+§2 flags this as a perf issue. It is more than that. `swecalc()` contains:
+
+```c
+if (swed.last_epheflag != epheflag) {
+  free_planets();
+  if (ipl != SE_ECL_NUT) {
+    if (swed.jpl_file_is_open) { swi_close_jpl_file(); ... }
+    for (i = 0; i < SEI_NEPHFILES; i++) {
+      if (swed.fidat[i].fptr != NULL) fclose(swed.fidat[i].fptr);
+      memset(&swed.fidat[i], 0, sizeof(struct file_data));
+    }
+    swed.last_epheflag = epheflag;
+  }
+}
+```
+
+§7.2 wrinkle 1 accounted only for `swe_set_ephe_path()` closing `fidat[]`.
+**This is a second, independent path that closes every ephemeris file**, keyed
+on `swed.last_epheflag`. Phase 2 must decide whether `last_epheflag` is
+config (shared) or per-thread derived state — it is currently written by both
+`swe_set_ephe_path()` and `swecalc()`. Getting this wrong means either a
+thread closing files it should keep, or stale files surviving a config change.
+
+### 14.2 `swe_set_ephe_path()` calls `swe_calc()` — the recursion is concrete ✅ verified
+
+`sweph.c:1350`:
+
+```c
+iflag = SEFLG_SWIEPH|SEFLG_J2000|SEFLG_TRUEPOS|SEFLG_ICRS;
+swed.last_epheflag = 2;
+swe_calc(J2000, SE_MOON, iflag, xx, serr);
+if (swed.fidat[SEI_FILE_MOON].fptr != NULL)
+  swi_set_tid_acc(0, 0, swed.fidat[SEI_FILE_MOON].sweph_denum, NULL);
+```
+
+This upgrades §7.2 wrinkle 6 from a general caution to a named hazard with an
+exact call path:
+
+```
+swe_set_ephe_path()  [takes cfg mutex]
+  -> swe_calc()
+    -> swi_init_swed_if_start()  [our sync hook]
+      -> swi_sync_config()       [takes cfg mutex]   *** DEADLOCK ***
+```
+
+Worse, it means **setting the ephemeris path mutates `tid_acc`** — another
+config field — as a side effect, via `swi_set_tid_acc()`. So config sync can
+itself write config. The design must:
+
+- use a per-thread "already syncing" flag so the hook is a no-op re-entrantly,
+  and never take the mutex recursively;
+- treat the `tid_acc` write from `swi_set_tid_acc()` as a *derived* update
+  that must not bump the global generation (or it will ping-pong between
+  threads forever);
+- account for the cost: a lazy sync that re-runs `swe_set_ephe_path()` pays a
+  full Moon `swe_calc()` **per thread**.
+
+Today the recursion is harmless only because `swed.ephe_path_is_set = TRUE` is
+set at `sweph.c:1325`, *before* the `swe_calc()` at 1350.
+
+### 14.3 No `-O2` anywhere — and the baseline is not optimisation-stable ✅ measured
+
+§1.1 notes the shipped `Makefile` has no `-O` flag at all. Following that up
+exposed a gap in **our own gates**: everything had been tested at `-O0`.
+
+Measured, gcc `-O0` vs `-O2` on this tree:
+
+```
+224 values differ across 65 of 5127 rows
+  median   2.220e-15   (pure ULP noise)
+  max      7.634e-08 deg = 0.00027 arcsec
+```
+
+All in `field[3..5]` — the **speed** components, which are finite-differenced
+(evaluate at `t ± dt`, subtract). That amplifies rounding, and `-O2` may
+contract to FMA or reassociate. The magnitude is far below the library's own
+accuracy, but it is **not zero**.
+
+Consequences, now implemented:
+
+- **G1 bit-exactness is only valid at fixed build flags.** `baseline.txt` is
+  pinned to `gcc -O0` (the `CFLAGS` in `tests/Makefile`).
+- Cross-configuration comparison needs tolerance, not `diff`. Added
+  `tests/cmpgolden.py` and gate **G1b** (`make check-golden-O2`, default
+  tolerance 1e-6). Verified it fails at `--abs=1e-20`.
+- This matters specifically for Phase 2, which introduces atomics and memory
+  ordering — behaviour there genuinely varies with optimisation level, so the
+  `-O2` gate must exist *before* the work, not after.
+
+### 14.4 No `stdint.h`/`stdbool.h`; hand-rolled `int32` — affects the shim
+
+§1.3: zero uses of `<stdint.h>`/`<stdbool.h>`; fixed-width types are
+hand-rolled in `sweodef.h:193-216` with legacy 16-bit-compiler branches, and
+`AS_BOOL` is `typedef int`. So the Phase 2 shim **cannot assume C11**:
+
+- the generation counter cannot simply be `uint64_t` / `_Atomic`;
+- `<stdatomic.h>` may not be available on the compilers this codebase still
+  targets;
+- the `swi_mutex`/`swi_atomic` shim (§7.3 step 2.1) must degrade to
+  compiler builtins (`__atomic_*` / `__sync_*`), then to a mutex-guarded
+  fallback, then to no-ops under `-DSWE_NO_THREADS`.
+
+### 14.5 Verified NOT blocking
+
+- **J1, JPL buffer overflow (`swejpl.c`)** — the review is right that `ncoeffs`
+  (up to 2500) and `ncf` (unbounded, read from the file header) are trusted
+  against `double buf[1500]` and `pc/vc/ac/jc[18]`. That is a genuine
+  memory-safety bug and worth fixing, but `swejpl.c` state is TLS and Phase 2
+  does not touch it. Route to Phase 3, or fix standalone — it does not gate
+  config propagation.
+- **S1, the "Sheoran" branch — the review overstates this.** The dead branches
+  at `sweph.c:6772` and `6799` are genuinely unreachable, but each copies a
+  **byte-identical** record to the branch that subsumes it, so the fallthrough
+  returns *the same data*, not the wrong data. Checked against our own
+  coverage: the modes produce clearly distinct ayanamsa at J2000 —
+  Pushya (29) 22.727°, Sheoran (39) 25.234°, GalEqu (32) 30.076°,
+  GalEqu-mid-Mula (33) 23.409° — so the "wrong star record" consequence does
+  not manifest. It is dead code to delete for clarity, not a correctness bug.
+- `sweph.h:606-607` "stale externs" — already inside a `/* ... */` comment
+  block. Harmless; delete when convenient.
+- Everything else in REVIEW.md — unsafe strings, goto density, missing enums,
+  duplicated house/eclipse loops — is real maintainability debt but orthogonal
+  to config propagation. It should not be swept into Phase 2, which needs to
+  stay small and reviewable to be shippable.
+
+### 14.6 Revised Phase 2 entry checklist
+
+- [x] G1b `-O2` gate exists and passes (§14.3)
+- [x] setest differential gate G8 exists and passes
+- [ ] `swi_mutex`/`swi_atomic` shim designed against pre-C11 constraints (§14.4)
+- [ ] `last_epheflag` classified as config vs. derived state (§14.1)
+- [ ] Re-entrancy design for `swe_set_ephe_path -> swe_calc -> sync` (§14.2)
+- [ ] Decide whether `swi_set_tid_acc()`'s derived write bumps the generation

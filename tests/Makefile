@@ -41,11 +41,31 @@ baseline: golden
 	env -u SE_EPHE_PATH ./golden --ephe $(EPHE) > baseline.txt
 	@echo "baseline.txt: $$(wc -l < baseline.txt) rows"
 
-# G1: numerical no-op
+# G1: numerical no-op.
+#
+# Bit-exact, and therefore only meaningful at FIXED build flags. baseline.txt
+# is pinned to the CFLAGS above (gcc -O0). Changing optimisation level or
+# compiler legitimately perturbs the last bits -- speed components are
+# finite-differenced, which amplifies rounding -- so use check-golden-O2 /
+# cmpgolden.py for cross-configuration comparison instead of this target.
 check-golden: golden baseline.txt
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) > .out.txt
 	@diff -q baseline.txt .out.txt && echo "G1 PASS: output bit-identical" \
 	  || { echo "G1 FAIL: numerical regression"; diff baseline.txt .out.txt | head -20; exit 1; }
+
+# G1b: the library must also behave at -O2, which is what a release build
+# would use (the shipped root Makefile has no -O flag at all). Compared with
+# tolerance, not diff: measured gcc -O0 vs -O2 divergence on this tree is
+# 224 values / 65 rows, median 2.2e-15, max 7.6e-08 deg = 0.00027 arcsec.
+TOL ?= 1e-6
+
+golden_O2: golden.c $(SWE)
+	$(CC) -O2 -g -D_GNU_SOURCE -I.. $^ -o $@ $(LIBS)
+
+check-golden-O2: golden_O2 baseline.txt
+	@env -u SE_EPHE_PATH ./golden_O2 --ephe $(EPHE) > .out_O2.txt
+	@./cmpgolden.py baseline.txt .out_O2.txt --abs=$(TOL) \
+	  && echo "G1b PASS: -O2 within $(TOL)" || { echo "G1b FAIL"; exit 1; }
 
 # G2: every thread reproduces the main-thread transcript with NO per-thread setup
 check-threads: golden
@@ -57,12 +77,12 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-golden check-sunrace check-glprace check-threads-workaround check-threads
+check: check-golden check-golden-O2 check-sunrace check-glprace check-threads-workaround check-threads
 
 clean:
-	rm -f golden golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .setest_now.txt
+	rm -f golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
-.PHONY: setest-ref check-setest all baseline check check-golden check-sunrace check-sunrace-tsan \
+.PHONY: setest-ref check-setest all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-threads check-threads-workaround clean
 
 # G8: upstream's own suite (setest/, 13 MB of expectations).

@@ -21,6 +21,8 @@
 /tests/sunrace_tsan
 /tests/glprace
 /tests/glprace_tsan
+/tests/golden_O2
+/tests/.out_O2.txt
 /tests/.setest_now.txt
 
 # setest build products (generated_tests.c is produced by setest/Makefile)
