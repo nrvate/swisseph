@@ -1,0 +1,29 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Built executables (Makefile targets)
+/swetest
+/swetests
+/swevents
+/swemini
+/obama
+
+# Test harness build products (extensionless, so not caught by the rules above)
+/tests/golden
+/tests/golden_tsan
+/tests/.out.txt
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*~
+
+# macOS
+.DS_Store
