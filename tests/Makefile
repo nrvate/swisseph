@@ -5,7 +5,7 @@ CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
 LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
 
-all: golden sunrace glprace
+all: golden sunrace glprace threadshim
 
 golden: golden.c $(SWE)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
@@ -32,6 +32,30 @@ check-sunrace-tsan: sunrace_tsan
 # swe_get_library_path(): buffer bounds + no shared Dl_info static
 check-glprace: glprace
 	@./glprace
+
+# swethread.h primitives. No libswe dependency -- header-only.
+threadshim: threadshim.c ../swethread.h
+	$(CC) $(CFLAGS) threadshim.c -o $@ $(LIBS)
+
+threadshim_tsan: threadshim.c ../swethread.h
+	$(CC) $(CFLAGS) -fsanitize=thread threadshim.c -o $@ $(LIBS)
+
+check-threadshim: threadshim
+	@./threadshim
+
+# Every backend swethread.h can select, plus the C89 dialect floor.
+# Backend 2 (Windows SRWLOCK) is unreachable here and needs MSVC/mingw CI.
+check-threadshim-all: threadshim.c ../swethread.h
+	@set -e; for cfg in "-DSWE_NO_THREADS" "" "-std=gnu11 -DSWE_PREFER_C11_ATOMICS" \
+	                    "-std=c99 -U__ATOMIC_SEQ_CST" "-std=c89"; do \
+	  printf "  %-34s " "cc $$cfg"; \
+	  $(CC) $$cfg -O2 -D_GNU_SOURCE -I.. threadshim.c -o .ts_cfg $(LIBS) 2>/dev/null \
+	    && ./.ts_cfg | grep -E '^PASS|^FAIL' | tr -d '\n' && echo \
+	    || { echo "BUILD FAIL"; exit 1; }; \
+	done; rm -f .ts_cfg
+
+check-threadshim-tsan: threadshim_tsan
+	@setarch -R env TSAN_OPTIONS=halt_on_error=0 ./threadshim_tsan
 
 golden_tsan: golden.c $(SWE)
 	$(CC) $(CFLAGS) -fsanitize=thread $^ -o $@ $(LIBS)
@@ -77,12 +101,13 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-golden check-golden-O2 check-sunrace check-glprace check-threads-workaround check-threads
+check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-threads-workaround check-threads
 
 clean:
-	rm -f golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
-.PHONY: setest-ref check-setest all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
+.PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
+        check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-threads check-threads-workaround clean
 
 # G8: upstream's own suite (setest/, 13 MB of expectations).

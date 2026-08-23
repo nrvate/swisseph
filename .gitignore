@@ -21,6 +21,9 @@
 /tests/sunrace_tsan
 /tests/glprace
 /tests/glprace_tsan
+/tests/threadshim
+/tests/threadshim_tsan
+/tests/.ts_cfg
 /tests/golden_O2
 /tests/.out_O2.txt
 /tests/.setest_now.txt
