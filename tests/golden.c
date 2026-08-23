@@ -158,6 +158,54 @@ static void houses(void) {
       }
 }
 
+/* Sunshine houses (hsys 'I') carry cross-call state in saved_sundec.
+ * swe_houses_ex2() always supplies ascmc[9] itself, so it only ever WRITES
+ * that state; the read path is reachable only by calling
+ * swe_houses_armc_ex2() directly with ascmc[9] == 99.  Both branches are
+ * pinned here, in a fixed order, because the read path's result depends on
+ * what the preceding call stored. */
+static void sunshine(void) {
+  double cusp[37], ascmc[10], csp[37], asp[10]; char serr[AS_MAXCH]; char tag[256];
+  const double decs[] = {23.44, -23.44, 0.0, 12.5, -8.25};
+  const double lats[] = {0.0, 47.37, 60.0, -33.9};
+  const double armcs[] = {0.0, 90.0, 180.0, 271.3};
+  const double eps = 23.4392911;
+  int step = 0;
+  for (size_t i = 0; i < sizeof(decs)/sizeof(decs[0]); i++)
+    for (size_t la = 0; la < sizeof(lats)/sizeof(lats[0]); la++)
+      for (size_t am = 0; am < sizeof(armcs)/sizeof(armcs[0]); am++) {
+        /* (a) explicit declination -> takes the WRITE branch */
+        memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
+        memset(csp,0,sizeof csp);   memset(asp,0,sizeof asp);
+        serr[0] = 0;
+        ascmc[9] = decs[i];
+        int rc = swe_houses_armc_ex2(armcs[am], lats[la], eps, 'I',
+                                     cusp, ascmc, csp, asp, serr);
+        snprintf(tag, sizeof tag, "sun_set[%d]", step);
+        fprintf(OUT, "%-46s rc=%-4d", tag, rc);
+        for (int k = 0; k < 13; k++) fprintf(OUT, " %a", cusp[k]);
+        fprintf(OUT, " | dec=%a %s\n", ascmc[9], serr);
+
+        /* (b) sentinel 99 -> takes the READ branch, must recover (a)'s value */
+        memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
+        memset(csp,0,sizeof csp);   memset(asp,0,sizeof asp);
+        serr[0] = 0;
+        ascmc[9] = 99;
+        rc = swe_houses_armc_ex2(armcs[am], lats[la], eps, 'I',
+                                 cusp, ascmc, csp, asp, serr);
+        snprintf(tag, sizeof tag, "sun_recall[%d]", step);
+        fprintf(OUT, "%-46s rc=%-4d", tag, rc);
+        for (int k = 0; k < 13; k++) fprintf(OUT, " %a", cusp[k]);
+        fprintf(OUT, " | dec=%a %s\n", ascmc[9], serr);
+        step++;
+      }
+  /* out-of-range declination must still be rejected */
+  memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc); serr[0]=0;
+  ascmc[9] = 45.0;
+  int rc = swe_houses_armc_ex2(0.0, 47.37, eps, 'I', cusp, ascmc, NULL, NULL, serr);
+  fprintf(OUT, "%-46s rc=%-4d | %s\n", "sun_badrange", rc, serr);
+}
+
 static void fixstars(void) {
   char serr[AS_MAXCH]; double x[6]; char tag[256]; char nm[AS_MAXCH];
   const char *stars[] = {"Aldebaran","Regulus","Sirius","Spica","Antares",
@@ -249,6 +297,7 @@ static void suite(void) {
   sidereal();
   topo();
   houses();
+  sunshine();
   fixstars();
   timeconv();
   eclipses();
