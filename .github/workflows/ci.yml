@@ -46,6 +46,21 @@ jobs:
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Versions
         run: gcc --version && make --version | head -1
+      # This is an ASSERTION, not a diagnostic.
+      # The __APPLE__ exclusion in sweodef.h survived all of Phase 1 and
+      # Phase 2 unnoticed, leaving swed a plain process-wide global on macOS
+      # -- 23 KB of caches and open FILE*s shared across threads with no
+      # synchronisation. It was found only because an earlier version of this
+      # job PRINTED the expansion and a human read it. Fail the build instead.
+      - name: TLS must be a real thread-local here
+        run: |
+          printf '#include "sweodef.h"\nTLS int probe;\n' > /tmp/p.c
+          exp=$(cc -E -I. /tmp/p.c | tail -1)
+          echo "TLS expands to: $exp"
+          case "$exp" in
+            *__thread*|*__declspec*) echo "ok" ;;
+            *) echo "FAIL: TLS is empty -- swed would be a shared global"; exit 1 ;;
+          esac
       - name: Build library
         run: make libswe.a
       - name: G1 numerical no-op (bit-exact, the pinned config)
@@ -101,15 +116,21 @@ jobs:
       - uses: actions/checkout@v4
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - run: cc --version
-      # Deliberately first: on the initial CI run this job died at the
-      # numerical step, so we never learned what TLS expands to here -- which
-      # is the single most valuable thing this job reports (notes/
-      # INVESTIGATION.md section 3: sweodef.h used to exclude __APPLE__,
-      # silently turning swed into a shared global on macOS).
-      - name: Is TLS actually enabled here?
+      # This is an ASSERTION, not a diagnostic.
+      # The __APPLE__ exclusion in sweodef.h survived all of Phase 1 and
+      # Phase 2 unnoticed, leaving swed a plain process-wide global on macOS
+      # -- 23 KB of caches and open FILE*s shared across threads with no
+      # synchronisation. It was found only because an earlier version of this
+      # job PRINTED the expansion and a human read it. Fail the build instead.
+      - name: TLS must be a real thread-local here
         run: |
           printf '#include "sweodef.h"\nTLS int probe;\n' > /tmp/p.c
-          echo "TLS expands to:"; cc -E -I. /tmp/p.c | tail -1
+          exp=$(cc -E -I. /tmp/p.c | tail -1)
+          echo "TLS expands to: $exp"
+          case "$exp" in
+            *__thread*|*__declspec*) echo "ok" ;;
+            *) echo "FAIL: TLS is empty -- swed would be a shared global"; exit 1 ;;
+          esac
       - name: Build + numerical check (tolerance)
         run: |
           make -C tests golden EPHE=../$EPHE
@@ -140,6 +161,14 @@ jobs:
         shell: cmd
         run: |
           cl /nologo /c /W3 /DWIN32_LEAN_AND_MEAN sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c
+      - name: TLS must be a real thread-local here (MSVC)
+        shell: cmd
+        run: |
+          echo #include "sweodef.h" > tlsp.c
+          echo TLS int probe; >> tlsp.c
+          cl /nologo /EP /I. tlsp.c > tlsout.txt
+          type tlsout.txt | findstr /C:"__declspec(thread)" >nul || (echo FAIL: TLS is empty on MSVC & exit /b 1)
+          echo ok: TLS is __declspec(thread)
       - name: Which swethread backend did MSVC select?
         shell: cmd
         run: |

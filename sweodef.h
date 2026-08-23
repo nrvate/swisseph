@@ -82,9 +82,30 @@
  *
  * Sun Studio C/C++, IBM XL C/C++, GNU C and Intel C/C++ (Linux systems) -> __thread
  * Borland, VC++ -> __declspec(thread)
+ *
+ * The __APPLE__ exclusion is gone. It dated from a time when Apple's
+ * toolchain had no __thread; clang has supported it since Xcode 8 /
+ * macOS 10.7. While it stood, `swed` -- 23 KB of caches, open FILE*s and
+ * configuration -- was a plain process-wide global on macOS, so every
+ * swe_calc() on every thread wrote the same pldat[]/savedat[]/fidat[]
+ * with no synchronisation whatsoever. See notes/INVESTIGATION.md section 3.
+ * CI caught that it was still live: the macos job prints what TLS expands
+ * to, and it printed nothing.
+ *
+ * The bare-WIN32 exclusion is gone too, and NOT replaced by _WIN32.
+ * Read the condition carefully: defining the symbol DISABLES thread-local
+ * storage. The __declspec(thread) branch below exists specifically for
+ * MSVC and is only reachable while WIN32 is undefined -- so switching this
+ * to _WIN32, which MSVC always defines, would have removed TLS from every
+ * Windows build rather than fixing anything. Nothing in the tree defines
+ * bare WIN32, so MSVC was getting __declspec(thread) by luck; now it gets
+ * it by construction.
+ *
+ * TLSOFF and DOS32 are kept: TLSOFF is the documented escape hatch, and
+ * DOS32 genuinely has no thread-local storage.
  */
-#if !defined(TLSOFF) && !defined( __APPLE__ ) && !defined(WIN32) && !defined(DOS32)
-#if defined( __GNUC__ ) || defined( __CYGWIN__ ) 
+#if !defined(TLSOFF) && !defined(DOS32)
+#if defined( __GNUC__ ) || defined( __CYGWIN__ )
 #define TLS     __thread
 #else
 #define TLS     __declspec(thread)
