@@ -138,7 +138,7 @@ extern void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag);
 extern int swi_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo);
 extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 
-extern void swi_mean_lunar_elements(double tjd, 
+extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 
 							 double *node, double *dnode, 
 							 double *peri, double *dperi);
 /* */
@@ -160,6 +160,7 @@ extern void swi_gen_filename(double tjd, int ipli, char *fname);
 
 /* cyclic redundancy checksum (CRC), 32 bit */
 extern uint32 swi_crc32(unsigned char *buf, int len);
+extern void swi_seed_leap_table(swe_ctx *ctx);
 
 extern int swi_cutstr(char *s, char *cutlist, char *cpos[], int nmax);
 extern char *swi_right_trim(char *s);

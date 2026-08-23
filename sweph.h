@@ -977,6 +977,11 @@ struct swe_ctx {
    * const (leap_seconds_builtin); this is the working copy, because
    * init_leapsec() extends it from seleapsec.txt. NLEAP_SECONDS_SPACE is
    * 100 -- kept literal here because the macro is private to swedate.c. */
+  /* swephlib.c: Delta-T working copy, seeded from dt_builtin and extended
+   * from swe_deltat.txt. TABSIZ_SPACE is 509; literal here because the
+   * macro is private to swephlib.c. */
+  double  dt[509];
+
   int     leap_seconds[100];
   AS_BOOL leapsec_done;
 };

@@ -5205,7 +5205,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
   if ((method == 0 || (method & SE_NODBIT_MEAN)) &&
         ((ipl >= SE_SUN && ipl <= SE_NEPTUNE) || ipl == SE_EARTH)) {
     if (ipl == SE_MOON) {
-      swi_mean_lunar_elements(tjd_et, &xna[0], &xna[3], &xpe[0], &xpe[3]);
+      swi_mean_lunar_elements(ctx, tjd_et, &xna[0], &xna[3], &xpe[0], &xpe[3]);
       incl = MOON_MEAN_INCL;
       vincl = 0;
       ecce = MOON_MEAN_ECC;

@@ -317,6 +317,13 @@ static const int leap_seconds_builtin[NLEAP_SECONDS_SPACE] = {
  *
  * Its other state -- leapsec_done and leap_seconds[] -- now lives in the
  * context too (Phase 3c); the built-in values stay in a shared const. */
+/* Seed ctx->leap_seconds from the built-in table. Exposed so context
+ * creation can do it too, not only the lazy init_leapsec() path. */
+void swi_seed_leap_table(swe_ctx *ctx)
+{
+  memcpy(ctx->leap_seconds, leap_seconds_builtin, sizeof(ctx->leap_seconds));
+}
+
 static int init_leapsec(swe_ctx *ctx)
 {
   FILE *fp;
