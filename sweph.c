@@ -60,6 +60,7 @@
 */
 
 
+#include <assert.h>
 #include <string.h>
 #include <ctype.h>
 #if MSDOS
@@ -160,7 +161,18 @@ static const char * const ayanamsa_name[] = {
 };
 static const int pnoint2jpl[]   = PNOINT2JPL;
 
-static const int pnoext2int[] = {SEI_SUN, SEI_MOON, SEI_MERCURY, SEI_VENUS, SEI_MARS, SEI_JUPITER, SEI_SATURN, SEI_URANUS, SEI_NEPTUNE, SEI_PLUTO, 0, 0, 0, 0, SEI_EARTH, SEI_CHIRON, SEI_PHOLUS, SEI_CERES, SEI_PALLAS, SEI_JUNO, SEI_VESTA, };
+/* Indices 10-13 (SE_MEAN_NODE/TRUE_NODE/MEAN_APOG/OSCU_APOG) and 21-22
+ * (SE_INTP_APOG/INTP_PERG) are 0 placeholders, not real SEI_* indices --
+ * those bodies live in swed.nddat[], not swed.pldat[], and are dispatched
+ * to their own branches before any code indexes this array with them.
+ * 21-22 were missing entirely until C17_PERFORMANCE.md's B1 finding: the
+ * array had 21 entries against SE_NPLANETS == 23, latent because nothing
+ * currently reaches pnoext2int[21] or [22] -- one branch-reorder away
+ * from a real out-of-bounds read. The static_assert below is what would
+ * have caught it. */
+static const int pnoext2int[] = {SEI_SUN, SEI_MOON, SEI_MERCURY, SEI_VENUS, SEI_MARS, SEI_JUPITER, SEI_SATURN, SEI_URANUS, SEI_NEPTUNE, SEI_PLUTO, 0, 0, 0, 0, SEI_EARTH, SEI_CHIRON, SEI_PHOLUS, SEI_CERES, SEI_PALLAS, SEI_JUNO, SEI_VESTA, 0, 0, };
+static_assert(sizeof(pnoext2int) / sizeof(pnoext2int[0]) == SE_NPLANETS,
+    "pnoext2int[] must cover every SE_* body number 0..SE_NPLANETS-1 -- see C17_PERFORMANCE.md B1");
 
 static int32 swecalc(double tjd, int ipl, int iplmoon, int32 iflag, double *x, char *serr);
 static int do_fread(void *targ, int size, int count, int corrsize, 
