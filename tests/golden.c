@@ -45,8 +45,12 @@
 #define DEFAULT_EPHE "../ephe"
 static const char *EPHE = DEFAULT_EPHE;
 
-/* Per-thread output sink so N threads can each produce a full transcript. */
-static __thread FILE *OUT;
+/* Per-thread output sink so N threads can each produce a full transcript.
+ *
+ * TLS, not a bare __thread: that spelling is GCC/clang only and MSVC wants
+ * __declspec(thread). sweodef.h already picks the right one per compiler,
+ * and this file gets it via swephexp.h. */
+static TLS FILE *OUT;
 
 /* Normalise serr for the transcript.
  *
