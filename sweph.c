@@ -6648,10 +6648,6 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
    ************************************************/
   if (!(iflag & SEFLG_NONUT))
     swi_nutate(x, iflag, FALSE);
-if ((0)) {
-  double r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
-  printf("%.17f %.17f %f\n", x[0]/r, x[1]/r, x[2]/r);
-}
   /************************************************
    * transformation to ecliptic.                  *
    * with sidereal calc. this will be overwritten *
@@ -7873,10 +7869,6 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
    ************************************************/
   if (!(iflag & SEFLG_NONUT))
     swi_nutate(x, iflag, FALSE);
-if ((0)) {
-  double r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
-  printf("%.17f %.17f %f\n", x[0]/r, x[1]/r, x[2]/r);
-}
   /************************************************
    * transformation to ecliptic.                  *
    * with sidereal calc. this will be overwritten *
