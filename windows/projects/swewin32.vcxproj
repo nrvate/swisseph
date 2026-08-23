@@ -100,10 +100,10 @@
       <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <OutputFile>.\..\..\bin/swewin32.exe</OutputFile>
+      <OutputFile>$(OutDir)swewin32.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>.\..\..\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>.\..\..\bin/swewin32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swewin32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
@@ -112,7 +112,7 @@
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>.\..\..\bin/swewin32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swewin32.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -138,17 +138,17 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </ClCompile>
     <Link>
-      <OutputFile>.\..\..\bin/swewin32.exe</OutputFile>
+      <OutputFile>$(OutDir)swewin32.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>.\..\..\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>.\..\..\bin/swewin32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swewin32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <Midl>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>.\..\..\bin/swewin32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swewin32.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>
@@ -173,10 +173,10 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <OutputFile>..\..\bin\swewin32.exe</OutputFile>
+      <OutputFile>$(OutDir)swewin32.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>.\Debug/swewin32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swewin32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
@@ -185,7 +185,7 @@
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>.\Debug/swewin32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swewin32.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -209,17 +209,17 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <OutputFile>..\..\bin\swewin32.exe</OutputFile>
+      <OutputFile>$(OutDir)swewin32.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>.\Debug/swewin32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swewin32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <Midl>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>.\Debug/swewin32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swewin32.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>

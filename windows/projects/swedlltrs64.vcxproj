@@ -100,12 +100,12 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <OutputFile>.\Debug/swedlltrs64.dll</OutputFile>
+      <OutputFile>$(OutDir)swedlltrs64.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>.\Debug/swedlltrs64.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swedlltrs64.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <ImportLibrary>.\Debug/swedlltrs64.lib</ImportLibrary>
+      <ImportLibrary>$(OutDir)swedlltrs64.lib</ImportLibrary>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
@@ -113,7 +113,7 @@
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>.\Debug/swedlltrs64.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedlltrs64.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -137,18 +137,18 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <OutputFile>.\Debug/swedlltrs64.dll</OutputFile>
+      <OutputFile>$(OutDir)swedlltrs64.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>.\Debug/swedlltrs64.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swedlltrs64.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <ImportLibrary>.\Debug/swedlltrs64.lib</ImportLibrary>
+      <ImportLibrary>$(OutDir)swedlltrs64.lib</ImportLibrary>
     </Link>
     <Midl>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>.\Debug/swedlltrs64.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedlltrs64.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>
@@ -176,7 +176,7 @@
       <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <OutputFile>..\..\bin\swedlltrs64.dll</OutputFile>
+      <OutputFile>$(OutDir)swedlltrs64.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SubSystem>Windows</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
@@ -186,7 +186,7 @@
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>.\Release/swedlltrs64.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedlltrs64.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -212,7 +212,7 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </ClCompile>
     <Link>
-      <OutputFile>..\..\bin\swedlltrs64.dll</OutputFile>
+      <OutputFile>$(OutDir)swedlltrs64.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SubSystem>Windows</SubSystem>
     </Link>
@@ -220,7 +220,7 @@
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>.\Release/swedlltrs64.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedlltrs64.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>

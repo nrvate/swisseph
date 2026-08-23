@@ -106,14 +106,14 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <OutputFile>.\..\bin/swete64.exe</OutputFile>
+      <OutputFile>$(OutDir)swete64.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <ProgramDatabaseFile>.\..\bin/swete64.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swete64.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\bin/swete64.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swete64.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -140,13 +140,13 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <OutputFile>.\..\bin/swete64.exe</OutputFile>
+      <OutputFile>$(OutDir)swete64.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <ProgramDatabaseFile>.\..\bin/swete64.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swete64.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\bin/swete64.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swete64.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>
@@ -173,15 +173,15 @@
       <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <OutputFile>.\..\..\bin/swete64.exe</OutputFile>
+      <OutputFile>$(OutDir)swete64.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>.\..\..\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>.\..\..\bin/swete64.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swete64.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\..\bin/swete64.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swete64.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -207,14 +207,14 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </ClCompile>
     <Link>
-      <OutputFile>.\..\..\bin/swete64.exe</OutputFile>
+      <OutputFile>$(OutDir)swete64.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>.\..\..\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>.\..\..\bin/swete64.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swete64.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\..\bin/swete64.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swete64.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>

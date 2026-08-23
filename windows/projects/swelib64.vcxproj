@@ -93,7 +93,7 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Lib>
-      <OutputFile>.\Debug\swelib64.lib</OutputFile>
+      <OutputFile>$(OutDir)swelib64.lib</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </Lib>
     <ResourceCompile>
@@ -117,7 +117,7 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Lib>
-      <OutputFile>.\Debug\swelib64.lib</OutputFile>
+      <OutputFile>$(OutDir)swelib64.lib</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </Lib>
     <ResourceCompile>
@@ -145,7 +145,7 @@
       <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath)</AdditionalIncludeDirectories>
     </ClCompile>
     <Lib>
-      <OutputFile>.\..\..\bin\swelib64.lib</OutputFile>
+      <OutputFile>$(OutDir)swelib64.lib</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </Lib>
     <ResourceCompile>
@@ -170,7 +170,7 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </ClCompile>
     <Lib>
-      <OutputFile>.\..\..\bin\swelib64.lib</OutputFile>
+      <OutputFile>$(OutDir)swelib64.lib</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </Lib>
     <ResourceCompile>

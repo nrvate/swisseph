@@ -109,7 +109,7 @@
       <GenerateMapFile>true</GenerateMapFile>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\bin/swetest.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swetest.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -138,14 +138,14 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>odbc32.lib;odbccp32.lib;..\..\bin\swelib32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>.\..\bin/swetest.exe</OutputFile>
+      <OutputFile>$(OutDir)swetest.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <ProgramDatabaseFile>.\..\bin/swetest.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swetest.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
       <IgnoreSpecificDefaultLibraries>libc.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\bin/swetest.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swetest.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>
@@ -175,15 +175,15 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>odbc32.lib;odbccp32.lib;swelib32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>.\..\..\bin/swetest.exe</OutputFile>
+      <OutputFile>$(OutDir)swetest.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>.\..\..\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>.\..\..\bin/swetest.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swetest.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\..\bin/swetest.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swetest.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -210,14 +210,14 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>odbc32.lib;odbccp32.lib;swelib32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>.\..\..\bin/swetest.exe</OutputFile>
+      <OutputFile>$(OutDir)swetest.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>.\..\..\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>.\..\..\bin/swetest.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swetest.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\..\bin/swetest.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swetest.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>

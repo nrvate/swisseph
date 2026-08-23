@@ -103,11 +103,11 @@
       <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <OutputFile>s:\devlop\sweph\bin/swedll32.dll</OutputFile>
+      <OutputFile>$(OutDir)$(OutDir)swedll32.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <ProgramDatabaseFile>s:\devlop\sweph\bin/swedll32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)$(OutDir)swedll32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <ImportLibrary>s:\devlop\sweph\bin/swedll32.lib</ImportLibrary>
+      <ImportLibrary>$(OutDir)$(OutDir)swedll32.lib</ImportLibrary>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
@@ -115,7 +115,7 @@
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>s:\devlop\sweph\bin/swedll32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)$(OutDir)swedll32.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -144,17 +144,17 @@
       <CallingConvention>Cdecl</CallingConvention>
     </ClCompile>
     <Link>
-      <OutputFile>s:\devlop\sweph\bin/swedll32.dll</OutputFile>
+      <OutputFile>$(OutDir)$(OutDir)swedll32.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <ProgramDatabaseFile>s:\devlop\sweph\bin/swedll32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)$(OutDir)swedll32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <ImportLibrary>s:\devlop\sweph\bin/swedll32.lib</ImportLibrary>
+      <ImportLibrary>$(OutDir)$(OutDir)swedll32.lib</ImportLibrary>
     </Link>
     <Midl>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>s:\devlop\sweph\bin/swedll32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)$(OutDir)swedll32.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>
@@ -182,12 +182,12 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <OutputFile>.\Debug/swedll32.dll</OutputFile>
+      <OutputFile>$(OutDir)swedll32.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>.\Debug/swedll32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swedll32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <ImportLibrary>.\Debug/swedll32.lib</ImportLibrary>
+      <ImportLibrary>$(OutDir)swedll32.lib</ImportLibrary>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
@@ -195,7 +195,7 @@
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>.\Debug/swedll32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedll32.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -223,18 +223,18 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <OutputFile>.\Debug/swedll32.dll</OutputFile>
+      <OutputFile>$(OutDir)swedll32.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>.\Debug/swedll32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swedll32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <ImportLibrary>.\Debug/swedll32.lib</ImportLibrary>
+      <ImportLibrary>$(OutDir)swedll32.lib</ImportLibrary>
     </Link>
     <Midl>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>.\Debug/swedll32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedll32.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>

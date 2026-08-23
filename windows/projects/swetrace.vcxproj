@@ -103,14 +103,14 @@
       <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <OutputFile>.\..\bin/swetrace.exe</OutputFile>
+      <OutputFile>$(OutDir)swetrace.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <ProgramDatabaseFile>.\..\bin/swetrace.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swetrace.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\bin/swetrace.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swetrace.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -136,13 +136,13 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <OutputFile>.\..\bin/swetrace.exe</OutputFile>
+      <OutputFile>$(OutDir)swetrace.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <ProgramDatabaseFile>.\..\bin/swetrace.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swetrace.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\bin/swetrace.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swetrace.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>
@@ -170,15 +170,15 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>swelib32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>.\..\..\bin/swetrace.exe</OutputFile>
+      <OutputFile>$(OutDir)swetrace.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>.\..\..\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>.\..\..\bin/swetrace.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swetrace.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\..\bin/swetrace.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swetrace.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -205,14 +205,14 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>swelib32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>.\..\..\bin/swetrace.exe</OutputFile>
+      <OutputFile>$(OutDir)swetrace.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>.\..\..\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>.\..\..\bin/swetrace.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swetrace.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
     </Link>
     <Midl>
-      <TypeLibraryName>.\..\..\bin/swetrace.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swetrace.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>

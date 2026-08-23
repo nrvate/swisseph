@@ -97,12 +97,12 @@
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <OutputFile>.\Debug/swedlltrm32.dll</OutputFile>
+      <OutputFile>$(OutDir)swedlltrm32.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>.\Debug/swedlltrm32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swedlltrm32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <ImportLibrary>.\Debug/swedlltrm32.lib</ImportLibrary>
+      <ImportLibrary>$(OutDir)swedlltrm32.lib</ImportLibrary>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <Midl>
@@ -110,7 +110,7 @@
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>.\Debug/swedlltrm32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedlltrm32.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -134,18 +134,18 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <OutputFile>.\Debug/swedlltrm32.dll</OutputFile>
+      <OutputFile>$(OutDir)swedlltrm32.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>.\Debug/swedlltrm32.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)swedlltrm32.pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <ImportLibrary>.\Debug/swedlltrm32.lib</ImportLibrary>
+      <ImportLibrary>$(OutDir)swedlltrm32.lib</ImportLibrary>
     </Link>
     <Midl>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>.\Debug/swedlltrm32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedlltrm32.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>
@@ -173,7 +173,7 @@
       <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <OutputFile>..\..\bin\swedlltrm32.dll</OutputFile>
+      <OutputFile>$(OutDir)swedlltrm32.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SubSystem>Windows</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
@@ -183,7 +183,7 @@
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>.\Release/swedlltrm32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedlltrm32.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ResourceCompile>
@@ -209,7 +209,7 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </ClCompile>
     <Link>
-      <OutputFile>..\..\bin\swedlltrm32.dll</OutputFile>
+      <OutputFile>$(OutDir)swedlltrm32.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SubSystem>Windows</SubSystem>
     </Link>
@@ -217,7 +217,7 @@
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>.\Release/swedlltrm32.tlb</TypeLibraryName>
+      <TypeLibraryName>$(OutDir)swedlltrm32.tlb</TypeLibraryName>
       <HeaderFileName>
       </HeaderFileName>
     </Midl>
