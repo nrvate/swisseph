@@ -334,26 +334,26 @@ int32 CALL_CONV swe_calc(double tjd, int ipl, int32 iflag,
    * FORCE_IFLAG and then running the application with this DLL (we had no
    * source code of the application itself).
    */
-  static TLS int force_flag = 0;
-  static TLS int32 iflag_forced = 0;
-  static TLS int force_flag_checked = 0;
+  /* moved to ctx->sp.calcflag (Phase 3c) */
+  /* moved to ctx->sp.calcflag (Phase 3c) */
+  /* moved to ctx->sp.calcflag (Phase 3c) */
   FILE *fp;
   char s[AS_MAXCH], *sp;
   memset(x, 0, sizeof(double) * 6);
   /* if the following file exists, flag is read from it and or'ed into iflag */
-  if (!force_flag_checked) {
+  if (!ctx->sp.calcflag.force_flag_checked) {
     if ((fp = fopen(fname_force_flg, BFILE_R_ACCESS)) != NULL) {
-      force_flag = 1;
+      ctx->sp.calcflag.force_flag = 1;
       fgets(s, AS_MAXCH, fp);
       if ((sp = strchr(s, '\n')) != NULL)
 	*sp = '\0';
-      iflag_forced = atol(s);
+      ctx->sp.calcflag.iflag_forced = atol(s);
       fclose(fp);
     }
-    force_flag_checked = 1;
+    ctx->sp.calcflag.force_flag_checked = 1;
   }
-  if (force_flag)
-    iflag |= iflag_forced;
+  if (ctx->sp.calcflag.force_flag)
+    iflag |= ctx->sp.calcflag.iflag_forced;
 #endif
   swi_open_trace(serr);
   trace_swe_calc(1, tjd, ipl, iflag, xx, NULL);
@@ -6102,9 +6102,9 @@ void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag)
 void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
 {
   int32 speedf1, speedf2;
-  static TLS int32 nutflag = 0;
+  /* moved to ctx->sp.nut (Phase 3c) */
   double t;
-  speedf1 = nutflag & SEFLG_SPEED;
+  speedf1 = ctx->sp.nut.nutflag & SEFLG_SPEED;
   speedf2 = iflag & SEFLG_SPEED;
   if (!(iflag & SEFLG_NONUT)
 	&& (tjd != ctx->nut.tnut || tjd == 0
@@ -6113,7 +6113,7 @@ void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
     ctx->nut.tnut = tjd;
     ctx->nut.snut = sin(ctx->nut.nutlo[1]);
     ctx->nut.cnut = cos(ctx->nut.nutlo[1]);
-    nutflag = iflag;
+    ctx->sp.nut.nutflag = iflag;
     nut_matrix(&ctx->nut, &ctx->oec);
     if (iflag & SEFLG_SPEED) {
       /* once more for 'speed' of nutation, which is needed for 
@@ -6482,7 +6482,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   double ra_pm, de_pm, ra, de, t;
   double daya[2], rdist;
   double x[6], xxsv[6], xobs[6], xobs_dt[6], *xpo = NULL, *xpo_dt = NULL;
-  static TLS double xearth[6], xearth_dt[6], xsun[6], xsun_dt[6];
+  /* moved to ctx->sp.fx_struct (Phase 3c) */
   double dt = PLAN_SPEED_INTV * 0.1;
   int32 epheflag, iflgsave;
   struct epsilon *oe = &ctx->oec2000;
@@ -6569,10 +6569,10 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
    * for parallax, light deflection, and aberration,
    ****************************************************/
   if (!(iflag & SEFLG_BARYCTR) && (!(iflag & SEFLG_HELCTR) || !(iflag & SEFLG_MOSEPH))) {
-    if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, xearth_dt, xearth_dt, xsun_dt, NULL, serr)) != OK) {
+    if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, ctx->sp.fx_struct.xearth_dt, ctx->sp.fx_struct.xearth_dt, ctx->sp.fx_struct.xsun_dt, NULL, serr)) != OK) {
       return ERR;
     }
-    if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, xearth, xearth, xsun, NULL, serr)) != OK) {
+    if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xsun, NULL, serr)) != OK) {
       return ERR;
     }
   }
@@ -6587,14 +6587,14 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
       return ERR;
     /* barycentric position of observer */
     for (i = 0; i <= 5; i++) {
-      xobs[i] = xobs[i] + xearth[i];	
-      xobs_dt[i] = xobs_dt[i] + xearth_dt[i];	
+      xobs[i] = xobs[i] + ctx->sp.fx_struct.xearth[i];	
+      xobs_dt[i] = xobs_dt[i] + ctx->sp.fx_struct.xearth_dt[i];	
     }
   } else if (!(iflag & SEFLG_BARYCTR) && (!(iflag & SEFLG_HELCTR) || !(iflag & SEFLG_MOSEPH))) {
     /* barycentric position of geocenter */
     for (i = 0; i <= 5; i++) {
-      xobs[i] = xearth[i];
-      xobs_dt[i] = xearth_dt[i];
+      xobs[i] = ctx->sp.fx_struct.xearth[i];
+      xobs_dt[i] = ctx->sp.fx_struct.xearth_dt[i];
     }
   }
   /************************************
@@ -6605,8 +6605,8 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     xpo = NULL;		/* no parallax, if moshier and heliocentric */
     xpo_dt = NULL;	/* no parallax, if moshier and heliocentric */
   } else if (iflag & SEFLG_HELCTR) {
-    xpo = xsun;//psdp->x;
-    xpo_dt = xsun_dt; 
+    xpo = ctx->sp.fx_struct.xsun;//psdp->x;
+    xpo_dt = ctx->sp.fx_struct.xsun_dt; 
   } else if (iflag & SEFLG_BARYCTR) {
     xpo = NULL;		/* no parallax, if barycentric */
     xpo_dt = NULL;	/* no parallax, if moshier and heliocentric */
@@ -6891,8 +6891,8 @@ int32 CALL_CONV swe_fixstar2(char *star, double tjd, int32 iflag,
   AS_BOOL is_builtin_star = FALSE;
   char sstar[SWI_STAR_LENGTH + 1];
   //static TLS char slast_stardata[AS_MAXCH];
-  static TLS char slast_starname[AS_MAXCH];
-  static TLS struct fixed_star last_stardata;
+  /* moved to ctx->sp.fs2 (Phase 3c) */
+  /* moved to ctx->sp.fs2 (Phase 3c) */
   char srecord[AS_MAXCH + 20];	/* 20 byte for SE_STARFILE */
   int retc;
   struct fixed_star stardata;
@@ -6907,9 +6907,9 @@ int32 CALL_CONV swe_fixstar2(char *star, double tjd, int32 iflag,
   if (retc == ERR)
     goto return_err;
   /* star elements from last call: */
-  if (ctx->n_fixstars_records > 0 && strcmp(slast_starname, sstar) == 0) {
+  if (ctx->n_fixstars_records > 0 && strcmp(ctx->sp.fs2.slast_starname, sstar) == 0) {
  //   strcpy(srecord, slast_stardata);
-    stardata = last_stardata;
+    stardata = ctx->sp.fs2.last_stardata;
     goto found;
   }
   if (get_builtin_star(star, sstar, srecord)) {
@@ -6927,8 +6927,8 @@ int32 CALL_CONV swe_fixstar2(char *star, double tjd, int32 iflag,
   /******************************************************/
   found:
   //strcpy(slast_stardata, srecord);
-  last_stardata = stardata;
-  strcpy(slast_starname, sstar);
+  ctx->sp.fs2.last_stardata = stardata;
+  strcpy(ctx->sp.fs2.slast_starname, sstar);
   if ((retc = fixstar_calc_from_struct(ctx, &stardata, tjd, iflag, star, xx, serr)) == ERR)
     goto return_err;
 #ifdef TRACE
@@ -6987,8 +6987,8 @@ int32 CALL_CONV swe_fixstar2_mag(char *star, double *mag, char *serr)
   swe_ctx *ctx = swi_default_ctx();
   char sstar[SWI_STAR_LENGTH + 1];
   //static TLS char slast_stardata[AS_MAXCH];
-  static TLS char slast_starname[AS_MAXCH];
-  static TLS struct fixed_star last_stardata;
+  /* moved to ctx->sp.fs2mag (Phase 3c) */
+  /* moved to ctx->sp.fs2mag (Phase 3c) */
   int retc;
   struct fixed_star stardata;
   if (serr != NULL)
@@ -6998,9 +6998,9 @@ int32 CALL_CONV swe_fixstar2_mag(char *star, double *mag, char *serr)
   if (retc == ERR)
     goto return_err;
   /* star elements from last call: */
-  if (ctx->n_fixstars_records > 0 && strcmp(slast_starname, sstar) == 0) {
+  if (ctx->n_fixstars_records > 0 && strcmp(ctx->sp.fs2mag.slast_starname, sstar) == 0) {
  //   strcpy(srecord, slast_stardata);
-    stardata = last_stardata;
+    stardata = ctx->sp.fs2mag.last_stardata;
     goto found;
   }
   retc = search_star_in_list(ctx, sstar, &stardata, serr);
@@ -7008,8 +7008,8 @@ int32 CALL_CONV swe_fixstar2_mag(char *star, double *mag, char *serr)
     goto return_err;
   /******************************************************/
   found:
-  last_stardata = stardata;
-  strcpy(slast_starname, sstar);
+  ctx->sp.fs2mag.last_stardata = stardata;
+  strcpy(ctx->sp.fs2mag.slast_starname, sstar);
   *mag = stardata.mag;
   sprintf(star, "%s,%s", stardata.starname, stardata.starbayer);
   return OK;
@@ -7710,7 +7710,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   struct fixed_star stardata;
   double daya, rdist;
   double x[6], xxsv[6], xobs[6], xobs_dt[6], *xpo = NULL, *xpo_dt = NULL;
-  static TLS double xearth[6], xearth_dt[6], xsun[6], xsun_dt[6];
+  /* moved to ctx->sp.fx_record (Phase 3c) */
   double dt = PLAN_SPEED_INTV * 0.1;
   int32 epheflag, iflgsave;
   // char s[AS_MAXCH];
@@ -7799,10 +7799,10 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
    * for parallax, light deflection, and aberration,
    ****************************************************/
   if (!(iflag & SEFLG_BARYCTR) && (!(iflag & SEFLG_HELCTR) || !(iflag & SEFLG_MOSEPH))) {
-    if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, xearth_dt, xearth_dt, xsun_dt, NULL, serr)) != OK) {
+    if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, ctx->sp.fx_record.xearth_dt, ctx->sp.fx_record.xearth_dt, ctx->sp.fx_record.xsun_dt, NULL, serr)) != OK) {
       return ERR;
     }
-    if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, xearth, xearth, xsun, NULL, serr)) != OK) {
+    if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xsun, NULL, serr)) != OK) {
       return ERR;
     }
   }
@@ -7817,14 +7817,14 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
       return ERR;
     /* barycentric position of observer */
     for (i = 0; i <= 5; i++) {
-      xobs[i] = xobs[i] + xearth[i];	
-      xobs_dt[i] = xobs_dt[i] + xearth_dt[i];	
+      xobs[i] = xobs[i] + ctx->sp.fx_record.xearth[i];	
+      xobs_dt[i] = xobs_dt[i] + ctx->sp.fx_record.xearth_dt[i];	
     }
   } else if (!(iflag & SEFLG_BARYCTR) && (!(iflag & SEFLG_HELCTR) || !(iflag & SEFLG_MOSEPH))) {
     /* barycentric position of geocenter */
     for (i = 0; i <= 5; i++) {
-      xobs[i] = xearth[i];
-      xobs_dt[i] = xearth_dt[i];
+      xobs[i] = ctx->sp.fx_record.xearth[i];
+      xobs_dt[i] = ctx->sp.fx_record.xearth_dt[i];
     }
   }
   /************************************
@@ -7835,8 +7835,8 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     xpo = NULL;		/* no parallax, if moshier and heliocentric */
     xpo_dt = NULL;	/* no parallax, if moshier and heliocentric */
   } else if (iflag & SEFLG_HELCTR) {
-    xpo = xsun;//psdp->x;
-    xpo_dt = xsun_dt; 
+    xpo = ctx->sp.fx_record.xsun;//psdp->x;
+    xpo_dt = ctx->sp.fx_record.xsun_dt; 
   } else if (iflag & SEFLG_BARYCTR) {
     xpo = NULL;		/* no parallax, if barycentric */
     xpo_dt = NULL;	/* no parallax, if moshier and heliocentric */
@@ -7988,8 +7988,8 @@ int32 CALL_CONV swe_fixstar(char *star, double tjd, int32 iflag,
   swe_ctx *ctx = swi_default_ctx();
   int i;
   char sstar[SWI_STAR_LENGTH + 1];
-  static TLS char slast_stardata[AS_MAXCH];
-  static TLS char slast_starname[AS_MAXCH];
+  /* moved to ctx->sp.fs1 (Phase 3c) */
+  /* moved to ctx->sp.fs1 (Phase 3c) */
   char srecord[AS_MAXCH + 20], *sp;	/* 20 byte for SE_STARFILE */
   int retc;
   if (serr != NULL)
@@ -8010,8 +8010,8 @@ int32 CALL_CONV swe_fixstar(char *star, double tjd, int32 iflag,
       *sp = '\0';
   }
   /* star elements from last call: */
-  if (*slast_stardata != '\0' && strcmp(slast_starname, sstar) == 0) {
-    strcpy(srecord, slast_stardata);
+  if (*ctx->sp.fs1.slast_stardata != '\0' && strcmp(ctx->sp.fs1.slast_starname, sstar) == 0) {
+    strcpy(srecord, ctx->sp.fs1.slast_stardata);
     goto found;
   }
   if (get_builtin_star(star, sstar, srecord)) {
@@ -8027,8 +8027,8 @@ int32 CALL_CONV swe_fixstar(char *star, double tjd, int32 iflag,
   if ((retc = swi_fixstar_load_record(ctx, star, srecord, NULL, NULL, NULL, serr)) != OK)
     goto return_err;
   found:
-  strcpy(slast_stardata, srecord);
-  strcpy(slast_starname, sstar);
+  strcpy(ctx->sp.fs1.slast_stardata, srecord);
+  strcpy(ctx->sp.fs1.slast_starname, sstar);
   if ((retc = swi_fixstar_calc_from_record(ctx, srecord, tjd, iflag, star, xx, serr)) == ERR)
     goto return_err;
 #ifdef TRACE
@@ -8086,8 +8086,8 @@ int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
    * swe_ctx * parameter on the _r variant. */
   swe_ctx *ctx = swi_default_ctx();
   char sstar[SWI_STAR_LENGTH + 1];
-  static TLS char slast_stardata[AS_MAXCH];
-  static TLS char slast_starname[AS_MAXCH];
+  /* moved to ctx->sp.fs1mag (Phase 3c) */
+  /* moved to ctx->sp.fs1mag (Phase 3c) */
   char srecord[AS_MAXCH + 20], *sp;	/* 20 byte for SE_STARFILE */
   struct fixed_star stardata;
   int retc;
@@ -8106,8 +8106,8 @@ int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
       *sp = '\0';
   }
   /* star elements from last call: */
-  if (*slast_stardata != '\0' && strcmp(slast_starname, sstar) == 0) {
-    strcpy(srecord, slast_stardata);
+  if (*ctx->sp.fs1mag.slast_stardata != '\0' && strcmp(ctx->sp.fs1mag.slast_starname, sstar) == 0) {
+    strcpy(srecord, ctx->sp.fs1mag.slast_stardata);
     retc = fixstar_cut_string(ctx, srecord, star, &stardata, serr);
     if (retc == ERR) goto return_err;
     // magnitude V
@@ -8124,8 +8124,8 @@ int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
   if ((retc = swi_fixstar_load_record(ctx, star, srecord, NULL, NULL, dparams, serr)) != OK)
     goto return_err;
   found:
-  strcpy(slast_stardata, srecord);
-  strcpy(slast_starname, sstar);
+  strcpy(ctx->sp.fs1mag.slast_stardata, srecord);
+  strcpy(ctx->sp.fs1mag.slast_starname, sstar);
   *mag = dparams[7];
   return OK;
   return_err:

@@ -840,6 +840,27 @@ struct hel_state {
   struct { double tjdsv[3], dmagsv[3]; int32 helflagsv[3]; } fastmag;
 };
 
+/* Memo caches for sweph.c.
+ *
+ * Grouped per owning function for the same reason as struct hel_state:
+ * the names are reused across functions and each occurrence was a distinct
+ * variable. slast_starname existed FOUR times -- in swe_fixstar2,
+ * swe_fixstar2_mag, swe_fixstar and swe_fixstar_mag -- last_stardata and
+ * slast_stardata twice each, and the xearth/xsun light-time scratch twice.
+ * Merging any of those pairs would make one lookup return another's cached
+ * star, silently.
+ */
+struct sweph_state {
+  struct { int force_flag, force_flag_checked; int32 iflag_forced; } calcflag;
+  struct { int32 nutflag; }                                          nut;
+  struct { double xearth[6], xearth_dt[6], xsun[6], xsun_dt[6]; }     fx_struct;
+  struct { double xearth[6], xearth_dt[6], xsun[6], xsun_dt[6]; }     fx_record;
+  struct { char slast_starname[AS_MAXCH]; struct fixed_star last_stardata; } fs2;
+  struct { char slast_starname[AS_MAXCH]; struct fixed_star last_stardata; } fs2mag;
+  struct { char slast_stardata[AS_MAXCH], slast_starname[AS_MAXCH]; } fs1;
+  struct { char slast_stardata[AS_MAXCH], slast_starname[AS_MAXCH]; } fs1mag;
+};
+
 /* THE EPHEMERIS CONTEXT.
  *
  * Everything the library remembers between calls: configuration, caches,
@@ -948,6 +969,9 @@ struct swe_ctx {
 
   /* swehel.c memo caches -- see struct hel_state above. */
   struct hel_state hel;
+
+  /* sweph.c memo caches -- see struct sweph_state above. */
+  struct sweph_state sp;
 };
 
 /* swe_ctx is forward-declared near the top of this header, next to
