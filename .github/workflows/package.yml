@@ -374,10 +374,19 @@ jobs:
           Copy-Item packaging/windows-README.md "$pkg/README.md"
 
           Push-Location $pkg
-          Get-ChildItem -Recurse -File | ForEach-Object {
+          $sums = Get-ChildItem -Recurse -File | ForEach-Object {
             $rel = [IO.Path]::GetRelativePath((Get-Location).Path, $_.FullName) -replace "\\","/"
             "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $rel
-          } | Sort-Object | Set-Content SHA256SUMS -Encoding ascii
+          } | Sort-Object
+          # LF, no BOM, trailing newline -- deliberately NOT Set-Content, which
+          # writes CRLF. `sha256sum -c` and `shasum -c` take the \r as part of
+          # the filename, so a CRLF sums file fails on every single line, on
+          # Linux, on macOS, and in Git Bash on Windows itself. The file whose
+          # only job is to be checkable has to be checkable.
+          [IO.File]::WriteAllText(
+            (Join-Path (Get-Location).Path "SHA256SUMS"),
+            ($sums -join "`n") + "`n",
+            (New-Object Text.UTF8Encoding $false))
           Pop-Location
           Get-Content "$pkg/SHA256SUMS"
 
@@ -394,6 +403,31 @@ jobs:
           # An internal header must NOT be in a package meant to steer people
           # towards the public API.
           if (Test-Path "$pkg/include/swephlib.h") { Write-Error "internal header shipped"; exit 1 }
+
+          # Re-check every hash, the way a recipient would. Linux and macOS
+          # run `sha256sum -c`; this job used only to Test-Path the file,
+          # which is why it shipped a CRLF sums file that failed to verify
+          # on every line, on every platform, for as long as it existed.
+          Push-Location $pkg
+          $raw = [IO.File]::ReadAllText("SHA256SUMS")
+          if ($raw -match "`r") { Write-Host "SHA256SUMS contains CR -- must be LF-only"; $bad = 1 }
+          else { $bad = 0 }
+          $n = 0
+          foreach ($line in ($raw -split "`n" | Where-Object { $_ -ne "" })) {
+            if ($line -match "^([0-9a-f]{64})  (.+)$") {
+              $want = $Matches[1]; $rel = $Matches[2]; $n++
+              if (-not (Test-Path -LiteralPath $rel)) { Write-Host "listed but missing: $rel"; $bad++ }
+              elseif ((Get-FileHash -LiteralPath $rel -Algorithm SHA256).Hash.ToLower() -ne $want) {
+                Write-Host "hash mismatch: $rel"; $bad++
+              }
+            } else { Write-Host "unparseable line: '$line'"; $bad++ }
+          }
+          # SHA256SUMS does not list itself, so the package holds one more.
+          $files = (Get-ChildItem -Recurse -File | Measure-Object).Count - 1
+          if ($n -ne $files) { Write-Host "SHA256SUMS covers $n of $files files"; $bad++ }
+          Pop-Location
+          if ($bad -ne 0) { Write-Error "SHA256SUMS did not verify"; exit 1 }
+          Write-Host "SHA256SUMS: $n/$files files verify, LF endings"
 
           # The whole point of this fork: the DLL must export the context
           # API. A DLL built from stale sources -- which is exactly what the
@@ -505,6 +539,12 @@ jobs:
           ( cd $pkg && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort |
             xargs sha256sum > SHA256SUMS )
           cat $pkg/SHA256SUMS
+          # Round-trip it, as linux and macos do. Generating a sums file and
+          # never checking it is how the Windows job shipped one with CRLF
+          # line endings that failed to verify on every line.
+          ( cd $pkg && sha256sum -c SHA256SUMS >/dev/null ) \
+            || { echo "FAIL: SHA256SUMS does not verify"; exit 1; }
+          echo "SHA256SUMS: $(wc -l < $pkg/SHA256SUMS) files verify"
       - uses: actions/upload-artifact@v7
         with:
           name: swisseph-android
