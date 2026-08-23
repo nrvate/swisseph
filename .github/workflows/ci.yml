@@ -29,6 +29,18 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One run per ref. push and pull_request both fire for a branch with an open
+# PR, so every push was running all 13 jobs TWICE; superseded runs are now
+# cancelled instead of racing the new one to the same conclusion.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: nothing here writes to the repository. release.yml asks
+# for contents: write separately, because it actually publishes.
+permissions:
+  contents: read
+
 env:
   # ephe/ is tracked in-repo (379 MB). sat/ (227 MB) and ep4/ (25 MB) are
   # not opened by any gate -- verified with strace -- so they are excluded
@@ -56,6 +68,7 @@ jobs:
   linux-gcc:
     name: linux / gcc (reference, bit-exact)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
@@ -133,6 +146,7 @@ jobs:
   # ---------------------------------------------------------------------
   lto:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       EPHE: ephe
       TOL: 1e-5
@@ -159,6 +173,7 @@ jobs:
   linux-clang:
     name: linux / clang
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
@@ -186,6 +201,7 @@ jobs:
   macos:
     name: macos / clang
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
@@ -227,6 +243,7 @@ jobs:
   windows-msvc:
     name: windows / msvc (SRWLOCK backend)
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
@@ -263,6 +280,7 @@ jobs:
   sanitizers:
     name: linux / tsan + asan
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
@@ -317,6 +335,7 @@ jobs:
   dialects:
     name: linux / C dialects
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
@@ -347,6 +366,7 @@ jobs:
   abi:
     name: linux / exported symbols
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
@@ -402,11 +422,12 @@ jobs:
   setest-differential:
     name: linux / setest differential
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0, sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - run: sudo apt-get update && sudo apt-get install -y libssl-dev
       - name: Capture reference from 3fd0f95, compare against HEAD
         run: |
-          make -C tests setest-ref REF=3fd0f95 EPHE=../$EPHE
+          make -C tests setest-ref REF=origin/legacy-master EPHE=../$EPHE
           make -C tests check-setest EPHE=../$EPHE

@@ -341,10 +341,10 @@ check-build:
 #
 # It IS a strong DIFFERENTIAL gate: whatever it prints must be byte-identical
 # before and after our changes. Usage:
-#     make setest-ref REF=3fd0f95     # capture reference output once
+#     make setest-ref REF=origin/legacy-master   # capture reference once
 #     make check-setest               # compare current tree against it
 SETEST_REF ?= /tmp/setest_ref.txt
-REF        ?= 3fd0f95
+REF        ?= origin/legacy-master
 
 # EPHE is relative to tests/ by default. Both setest runs below cd elsewhere
 # -- one into a throwaway worktree under /tmp -- so a relative EPHE would

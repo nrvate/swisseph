@@ -21,6 +21,12 @@ on:
         description: 'Existing tag to build a release for'
         required: true
 
+# Never cancel a release mid-publish -- a half-uploaded release is worse than
+# a slow one. Queued, not cancelled.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -31,6 +37,7 @@ jobs:
   release:
     needs: package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:

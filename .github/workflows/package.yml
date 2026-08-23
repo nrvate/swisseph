@@ -14,6 +14,10 @@ name: package
 on:
   workflow_call:
 
+# Building and uploading artifacts needs no write access to the repository.
+permissions:
+  contents: read
+
 jobs:
 
   # ---------------------------------------------------------------------
@@ -37,6 +41,7 @@ jobs:
     # workflow. Building on the oldest supported runner costs nothing and
     # makes the package usable on everything newer.
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     name: linux / package
     steps:
       - uses: actions/checkout@v7
@@ -119,6 +124,7 @@ jobs:
   # ---------------------------------------------------------------------
   macos-package:
     runs-on: macos-latest
+    timeout-minutes: 30
     name: macos / package
     steps:
       - uses: actions/checkout@v7
@@ -229,6 +235,7 @@ jobs:
   # ---------------------------------------------------------------------
   windows-package:
     runs-on: windows-latest
+    timeout-minutes: 45
     name: windows / package
     steps:
       - uses: actions/checkout@v7
@@ -445,6 +452,7 @@ jobs:
   # ---------------------------------------------------------------------
   android-package:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     name: android / package
     steps:
       - uses: actions/checkout@v7
