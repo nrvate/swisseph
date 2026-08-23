@@ -4,6 +4,7 @@ SWE      = ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c .
 CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
 LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
+REP     ?= 7
 
 all: golden sunrace glprace threadshim cfgleak jplguard
 
@@ -139,12 +140,25 @@ check-threads-workaround: golden
 check: check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
-	rm -f ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx clean
+
+# Benchmark for notes/C17_PERFORMANCE.md.
+#
+# NOT a gate -- it is a measuring instrument, and wall-clock on a shared
+# machine is not a pass/fail signal. Built at -O2 regardless of CFLAGS,
+# since a claim about codegen measured at -O0 is meaningless.
+BENCH_CFLAGS = -O2 -g -D_GNU_SOURCE -I..
+
+bench: bench.c $(wildcard ../*.c)
+	$(CC) $(BENCH_CFLAGS) bench.c $(SWE) -o $@ $(LIBS)
+
+bench-run: bench
+	@./bench --ephe $(EPHE) --rep $(REP)
 
 # G4: two swe_ctx handles are genuinely independent.
 #

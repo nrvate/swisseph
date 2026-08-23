@@ -302,12 +302,25 @@ output), but **insufficient**, because this is the first plan that actually
 claims speed improvements. `tests/golden` proves "didn't break it," not
 "made it faster."
 
-- [ ] Add a `tests/bench` target: wall-clock (median of N runs) for the
-      workloads these findings target specifically — a tight loop of
-      `swe_calc()` calls that exercise `interp()` (JPL ephemeris) heavily,
-      and a loop exercising `swi_coortrf2`/`swi_cartpol`/`swi_polcart` (the
-      LTO/const candidates).
-- [ ] Record baseline numbers *before* landing anything in this plan.
+- [x] `tests/bench` (`make -C tests bench-run`). Median of N runs, plus min
+      and the spread, at `-O2` regardless of `CFLAGS` — a claim about codegen
+      measured at `-O0` is meaningless.
+- [x] **Baseline recorded**, gcc 13 `-O2`, this machine, median of 7:
+
+      | workload | median (s) | note |
+      |---|---|---|
+      | calc-swieph | 0.2937 | planets from `.se1` |
+      | calc-moseph | 0.7589 | Moshier, no file IO |
+      | jpl-interp  | 0.4612 | `interp()`-heavy — §4.1's target |
+      | moon        | 0.5430 | `swemmoon.c` |
+      | houses      | 0.5138 | **control**: §4.1 must not move this |
+
+      **Resolution: about ±2–3%.** Medians reproduce across runs to ~2% and
+      the within-run spread is 3–7%. This instrument can support a claim of
+      ">5% faster"; it cannot support "1% faster", and no commit should
+      claim one. The first version of the benchmark ran each workload in
+      3–70 ms with up to 50% spread, where the noise was an order of
+      magnitude larger than any effect being measured.
 - [ ] Each Tier 1 item lands as its own commit with a before/after number in
       the commit message — if a change doesn't move the number, say so
       rather than keeping it on faith that it should have helped.
