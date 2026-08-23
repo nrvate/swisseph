@@ -158,6 +158,7 @@ int CALL_CONV swe_houses(double tjd_ut,
   }
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count <= TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_HOUSES*/\n", swi_fp_trace_c);
@@ -172,6 +173,7 @@ int CALL_CONV swe_houses(double tjd_ut,
       fflush(swi_fp_trace_c);
     }
   }
+  swi_trace_unlock();
 #endif
   retc = swe_houses_armc_ex2(armc, geolat, eps + nutlo[1], hsys, cusp, ascmc, NULL, NULL, NULL);
   return retc;
@@ -246,6 +248,7 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
   }
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count <= TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_HOUSES_EX*/\n", swi_fp_trace_c);
@@ -261,6 +264,7 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
       fflush(swi_fp_trace_c);
     }
   }
+  swi_trace_unlock();
 #endif
     /*houses_to_sidereal(tjde, geolat, hsys, eps, cusp, ascmc, iflag);*/
   armc = swe_degnorm(swe_sidtime0(tjd_ut, eps_mean + nutlo[1], nutlo[0]) * 15 + geolon);
@@ -740,6 +744,7 @@ int CALL_CONV swe_houses_armc_ex2(
   }
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count <= TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_HOUSES_ARMC_EX2*/\n", swi_fp_trace_c);
@@ -777,6 +782,7 @@ int CALL_CONV swe_houses_armc_ex2(
       fflush(swi_fp_trace_out);
     }
   }
+  swi_trace_unlock();
 #endif
 #if 0 
 /* for test of swe_house_pos(). 

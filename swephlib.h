@@ -185,10 +185,20 @@ extern double swi_deltat_ephe(double tjd_ut, int32 epheflag);
 
 #ifdef TRACE
 #  define TRACE_COUNT_MAX         10000
-  extern TLS FILE *swi_fp_trace_c;
-  extern TLS FILE *swi_fp_trace_out;
-  extern TLS int32 swi_trace_count;
+  /* Process-wide, not per-thread: see the comment on the definitions in
+   * swephlib.c. Read or written only while holding the trace lock. */
+  extern FILE *swi_fp_trace_c;
+  extern FILE *swi_fp_trace_out;
+  extern int32 swi_trace_count;
   extern void swi_open_trace(char *serr);
+  /* Bracket one whole trace record, so concurrent threads cannot shred
+   * each other's output. swi_open_trace() takes and releases the lock for
+   * its own work (the counter bump and the lazy fopen); every record
+   * emission takes it again around the writes themselves. Records are
+   * emitted both with and without a preceding swi_open_trace(), so the
+   * bracketing has to live at the record, not be handed over from open. */
+  extern void swi_trace_lock(void);
+  extern void swi_trace_unlock(void);
   static const char *fname_trace_c = "swetrace.c";
   static const char *fname_trace_out = "swetrace.txt";
 #ifdef FORCE_IFLAG

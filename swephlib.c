@@ -84,9 +84,24 @@
 
 #ifdef TRACE
 void swi_open_trace(char *serr);
-TLS FILE *swi_fp_trace_c = NULL;
-TLS FILE *swi_fp_trace_out = NULL;
-TLS int32 swi_trace_count = 0;
+/* Phase 3c. These were TLS, which gave every thread its OWN FILE* on the
+ * SAME path. The trace is a replayable C program describing the whole
+ * process, so per-thread handles were wrong twice over: N buffered streams
+ * appending to one file shred each other's records, and the TRACE_COUNT_MAX
+ * cap silently became per-thread rather than per-run.
+ *
+ * They are process-wide now, and swi_trace_lock/unlock serialise whole
+ * records. A plain mutex is safe here because the only thing done under it
+ * is fprintf to these two streams -- no trace emitter re-enters the library
+ * (the swe_calc( occurrences inside them are string literals being written
+ * to the replay file, not calls). */
+swi_mutex_t swi_trace_mutex = SWI_MUTEX_INIT;
+FILE *swi_fp_trace_c = NULL;
+FILE *swi_fp_trace_out = NULL;
+int32 swi_trace_count = 0;
+
+void swi_trace_lock(void)   { swi_mutex_lock(&swi_trace_mutex); }
+void swi_trace_unlock(void) { swi_mutex_unlock(&swi_trace_mutex); }
 #endif
 
 static int init_dt(swe_ctx *ctx);
@@ -2679,6 +2694,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   }
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count < TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_DELTAT*/\n", swi_fp_trace_c);
@@ -2694,6 +2710,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
       fflush(swi_fp_trace_out);
     }
   }
+  swi_trace_unlock();
 #endif
   *deltat = ans / 86400.0;
   return iflag;
@@ -3282,6 +3299,7 @@ int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, cha
   retc = swi_get_tid_acc(ctx, tjd_ut, iflag, denum, &denumret, &(ctx->tid_acc), serr);
 #if TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count < TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_SET_TID_ACC*/\n", swi_fp_trace_c);
@@ -3296,6 +3314,7 @@ int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, cha
       fflush(swi_fp_trace_out);
     }
   }
+  swi_trace_unlock();
 #endif
   return retc;
 }
@@ -3571,6 +3590,7 @@ double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
 sidtime_done:
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count < TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_SIDTIME0*/\n", swi_fp_trace_c);
@@ -3587,6 +3607,7 @@ sidtime_done:
       fflush(swi_fp_trace_out);
     }
   }
+  swi_trace_unlock();
 #endif
   return gmst;
 }
@@ -4666,6 +4687,7 @@ char *swi_strcpy(char *to, char *from)
 #ifdef TRACE
 void swi_open_trace(char *serr)
 {
+  swi_trace_lock();
   swi_trace_count++;
   if (swi_trace_count >= TRACE_COUNT_MAX) {
     if (swi_trace_count == TRACE_COUNT_MAX) { 
@@ -4676,6 +4698,7 @@ void swi_open_trace(char *serr)
       if (swi_fp_trace_c != NULL)
 	fprintf(swi_fp_trace_c, "/* trace stopped, %d calls exceeded. */\n", TRACE_COUNT_MAX);
     }
+    swi_trace_unlock();
     return;
   }
   if (swi_fp_trace_c == NULL) {
@@ -4735,5 +4758,6 @@ void swi_open_trace(char *serr)
       }
     }
   }
+  swi_trace_unlock();
 }
 #endif

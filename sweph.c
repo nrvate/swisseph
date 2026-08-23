@@ -1326,6 +1326,7 @@ void CALL_CONV swe_close(void)
 #ifdef TRACE
 #define TRACE_CLOSE FALSE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_fp_trace_c != NULL) {
     if (swi_trace_count < TRACE_COUNT_MAX) {
       fputs("\n/*SWE_CLOSE*/\n", swi_fp_trace_c);
@@ -1335,6 +1336,7 @@ void CALL_CONV swe_close(void)
 #endif
       fflush(swi_fp_trace_c);
     }
+  swi_trace_unlock();
 #if TRACE_CLOSE
     fclose(swi_fp_trace_c);
 #endif
@@ -1395,6 +1397,7 @@ void CALL_CONV swe_set_ephe_path(const char *path)
   } 
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count < TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_SET_EPHE_PATH*/\n", swi_fp_trace_c);
@@ -1419,6 +1422,7 @@ void CALL_CONV swe_set_ephe_path(const char *path)
       fflush(swi_fp_trace_out);
     }
   }
+  swi_trace_unlock();
 #endif
   swi_config_end_apply(swi_cfg_was);
   swi_config_publish(SWI_CFG_PATH);
@@ -1557,6 +1561,7 @@ void CALL_CONV swe_set_jpl_file(const char *fname)
   }
 #ifdef TRACE
   swi_open_trace(NULL);
+  swi_trace_lock();
   if (swi_trace_count < TRACE_COUNT_MAX) {
     if (swi_fp_trace_c != NULL) {
       fputs("\n/*SWE_SET_JPL_FILE*/\n", swi_fp_trace_c);
@@ -1576,6 +1581,7 @@ void CALL_CONV swe_set_jpl_file(const char *fname)
       fflush(swi_fp_trace_out);
     }
   }
+  swi_trace_unlock();
 #endif
   swi_config_end_apply(swi_cfg_was);
   swi_config_publish(SWI_CFG_PATH);
@@ -7213,8 +7219,11 @@ const char *CALL_CONV swe_get_ayanamsa_name(int32 isidmode)
 #ifdef TRACE
 static void trace_swe_calc(int swtch, double tjd, int ipl, int32 iflag, double *xx, char *serr)
 {
-  if (swi_trace_count >= TRACE_COUNT_MAX)
+  swi_trace_lock();
+  if (swi_trace_count >= TRACE_COUNT_MAX) {
+    swi_trace_unlock();
     return;
+  }
   switch(swtch) {
     case 1:
       if (swi_fp_trace_c != NULL) {
@@ -7249,12 +7258,16 @@ static void trace_swe_calc(int swtch, double tjd, int ipl, int32 iflag, double *
     default:
       break;
   }
+  swi_trace_unlock();
 }
 
 static void trace_swe_fixstar(int swtch, char *star, double tjd, int32 iflag, double *xx, char *serr)
 {
-  if (swi_trace_count >= TRACE_COUNT_MAX)
+  swi_trace_lock();
+  if (swi_trace_count >= TRACE_COUNT_MAX) {
+    swi_trace_unlock();
     return;
+  }
   switch(swtch) {
   case 1:
     if (swi_fp_trace_c != NULL) {
@@ -7289,12 +7302,16 @@ static void trace_swe_fixstar(int swtch, char *star, double tjd, int32 iflag, do
   default:
     break;
   }
+  swi_trace_unlock();
 }
 
 static void trace_swe_get_planet_name(int swtch, int ipl, char *s)
 {
-  if (swi_trace_count >= TRACE_COUNT_MAX)
+  swi_trace_lock();
+  if (swi_trace_count >= TRACE_COUNT_MAX) {
+    swi_trace_unlock();
     return;
+  }
   switch(swtch) {
     case 1:
       if (swi_fp_trace_c != NULL) {
@@ -7319,6 +7336,7 @@ static void trace_swe_get_planet_name(int swtch, int ipl, char *s)
     default:
       break;
   }
+  swi_trace_unlock();
 }
 
 #endif
