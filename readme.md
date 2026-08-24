@@ -149,11 +149,12 @@ that leaned on a silent fallback now sees `ERR` where it used to get numbers.
 
 ## What is verified
 
-Every change is gated on a bit-exact transcript — **12657 rows** of C99 `%a`
+Every change is gated on a bit-exact transcript — **12669 rows** of C99 `%a`
 hex floats compared byte for byte, so no test has to pick a tolerance. The
 transcript sweeps 120 pseudo-random dates spanning roughly 1400 years across
 three ephemeris flag sets and every major body, recording longitude, latitude,
-distance and all three speed components.
+distance and all three speed components. Where a call fails, the error string
+is pinned too, so a message cannot change without a row changing.
 
 Eleven gates run on every push (`make -C tests check`), covering bit-exactness,
 cross-thread agreement, context independence, configuration leaks, two specific

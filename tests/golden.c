@@ -73,9 +73,8 @@ static void sanitize(char *d, size_t n, const char *s) {
   for (size_t i = 0; s[i] && j + 8 < n; ) {
     if (el && strncmp(s + i, EPHE, el) == 0) {
       memcpy(d + j, "$EPHE", 5); j += 5; i += el;
-    } else if (s[i] == '\n' || s[i] == '\r' || s[i] == '\t' || s[i] == ' ') {
-      while (s[i] == '\n' || s[i] == '\r' || s[i] == '\t' || s[i] == ' ') i++;
-      d[j++] = ' ';
+    } else if (s[i] == '\n' || s[i] == '\r' || s[i] == '\t') {
+      d[j++] = ' '; i++;
     } else d[j++] = s[i++];
   }
   d[j] = 0;
@@ -869,6 +868,34 @@ static void coverage(void) {
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();
     swe_set_ephe_path((char *) EPHE);
+
+    /* Error strings from the star lookups. The transcript pins serr, but
+     * only for the messages some row happens to reach -- and none reached
+     * these, so the bounded-string sweep respelt "star  not found" with one
+     * space and every gate stayed green. Both entry points, because they
+     * fail through different code: swe_fixstar() scans the file, while
+     * swe_fixstar2() searches the parsed list. The 250-character name is
+     * the input that reaches the bare message, the branch that gives up on
+     * appending the name. */
+    { static const char *bad[] = { "NoSuchStar", "NoSuchStar%", ",noSuchBayer", "99999", "" };
+      char st[AS_MAXCH], tg[64];
+      for (size_t b = 0; b < sizeof bad / sizeof *bad; b++) {
+        snprintf(tg, sizeof tg, "cov:starerr[%zu,v1]", b);
+        strcpy(st, bad[b]); *serr = 0;
+        rf = swe_fixstar(st, 2451545.0, SEFLG_SWIEPH, x, serr);
+        row(tg, rf, NULL, 0, serr);
+        snprintf(tg, sizeof tg, "cov:starerr[%zu,v2]", b);
+        strcpy(st, bad[b]); *serr = 0;
+        rf = swe_fixstar2(st, 2451545.0, SEFLG_SWIEPH, x, serr);
+        row(tg, rf, NULL, 0, serr);
+      }
+      memset(st, 'q', 250); st[250] = '\0'; *serr = 0;
+      rf = swe_fixstar(st, 2451545.0, SEFLG_SWIEPH, x, serr);
+      row("cov:starerr[long,v1]", rf, NULL, 0, serr);
+      memset(st, 'q', 250); st[250] = '\0'; *serr = 0;
+      rf = swe_fixstar2(st, 2451545.0, SEFLG_SWIEPH, x, serr);
+      row("cov:starerr[long,v2]", rf, NULL, 0, serr);
+    }
 
     /* Entry points the transcript had never reached: swe_date_conversion(),
      * the v1 swe_fixstar_mag(), and the fictitious bodies. The last group

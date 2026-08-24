@@ -2740,9 +2740,8 @@ FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char *serr)
     if (fp != NULL) 
       return fp;
   }
-  snprintf(s, sizeof(s), "SwissEph file '%.230s' not found in PATH '%.230s'", fname, ephepath);
   if (serr != NULL)
-    snprintf(serr, AS_MAXCH, "%s", s);
+    snprintf(serr, AS_MAXCH, "SwissEph file '%.100s' not found in PATH '%.100s'", fname, ephepath);
   return NULL;
 }
 
