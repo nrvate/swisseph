@@ -167,19 +167,32 @@ jobs:
       - name: Non-LTO build (readme documents LTO=0)
         run: make clean && make LTO=0 all
 
-      # -Wformat-truncation, and the value-range analysis behind several other
-      # warnings, depend on the optimisation level. The library ships at -O2
-      # and every job here builds it that way, but tests/ compiles the same
-      # sources at -O0 -- so a diagnostic that only fires at -O0 was reachable
-      # by every gate and asserted by none. Two landed that way before this
-      # step existed. -O1 and -O3 are NOT gated: both report a pre-existing
-      # -Wmaybe-uninitialized on nutlo in swephlib.c that predates the fork's
-      # CI, so gating them would mean starting red.
-      - name: -O0 must also be -Werror clean
+      # -Wformat-truncation, -Wmaybe-uninitialized and the value-range
+      # analysis behind them all depend on the optimisation level, and the
+      # two compilers disagree about which they report. The library ships at
+      # -O2 and every other job builds it that way, but tests/ compiles the
+      # same sources at -O0, so a diagnostic that fires only at -O0 was
+      # reachable by every gate and asserted by none. Two landed that way
+      # before this step existed, and widening it to the other levels found
+      # five more. Every source the tree builds, both compilers, -O0 through
+      # -Os. sweephe4.c and swephgen4.c are in the list although no target
+      # builds them -- that is exactly why they rot.
+      - name: Warning-free under both compilers at every -O level
         run: |
-          for f in sweconfig swedate swehouse swejpl swemmoon swemplan sweph \
-                   swephlib swecl swehel swetest swevents swemini obama; do
-            cc -std=c17 -Wall -Wextra -Werror -O0 -g -fPIC -D_GNU_SOURCE -c -o /dev/null $f.c
+          set -e
+          for cc in gcc clang; do
+            for O in 0 1 2 3 s; do
+              for f in sweconfig swedate swehouse swejpl swemmoon swemplan sweph \
+                       swephlib swecl swehel swetest swevents swemini obama \
+                       sweephe4 swephgen4; do
+                $cc -std=c17 -Wall -Wextra -Werror -O$O -g -fPIC -D_GNU_SOURCE \
+                    -c -o /dev/null $f.c
+              done
+              for f in tests/*.c; do
+                $cc -std=c17 -Wall -Wextra -Werror -O$O -g -D_GNU_SOURCE -I. -Itests \
+                    -c -o /dev/null $f
+              done
+            done
           done
 
   # ---------------------------------------------------------------------
