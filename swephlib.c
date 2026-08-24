@@ -4716,25 +4716,11 @@ void CALL_CONV swe_get_astro_models(char *samod, char *sdet, int32 iflag)
   swe_get_astro_models_r(swi_default_ctx(), samod, sdet, iflag);
 }
 
+/* strcpy() that tolerates overlapping buffers -- callers use it to delete
+ * characters in place, swi_strcpy(sp, sp + 1). That is memmove(). */
 char *swi_strcpy(char *to, char *from)
 {
-  char *sp, s[AS_MAXCH];
-  if (*from == '\0') {
-    *to = '\0';
-    return to;
-  }
-  if (strlen(from) < AS_MAXCH) {
-    strcpy(s, from);
-    strcpy(to, s);
-  } else {
-    sp = strdup(from);
-    if (sp == NULL) {
-      strcpy(to, from);
-    } else {
-      strcpy(to, sp);
-      free(sp);
-    }
-  }
+  memmove(to, from, strlen(from) + 1);
   return to;
 }
 
