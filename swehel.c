@@ -705,7 +705,6 @@ static int32 ObjectLoc(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *dat
   return OK;
 }
 
-
 /*###################################################################
 ' LatA [rad]
 ' LongA [rad]
@@ -2800,7 +2799,6 @@ static int32 time_limit_invisible(swe_ctx *ctx, double tjd, double *dgeo, double
   return OK;
 }
 
-
 static int32 get_heliacal_details(swe_ctx *ctx, double tday, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 TypeEvent, int32 helflag, double *dret, char *serr)
 {
   int32 i, retval, direct;
@@ -2909,9 +2907,10 @@ static int32 heliacal_ut_vis_lim(swe_ctx *ctx, double tjd_start, double *dgeo, d
    * types x AVKIND off and all four kinds entered the old branch zero
    * times.
    *
-   * What stood here was ~50 lines calling get_asc_obl_with_sun() and
-   * get_acronychal_day(), both removed with it. The guard stays so that if
-   * the reasoning above is ever wrong the caller finds out, instead of
+   * What stood here called get_asc_obl_with_sun() -- which has other
+   * callers and stays -- and get_acronychal_day(), which had none and went
+   * with this branch, taking azalt_cart() with it. The guard stays so that
+   * if the reasoning above is ever wrong the caller finds out, instead of
    * silently getting the heliacal answer to an acronychal question.
    */
   } else {

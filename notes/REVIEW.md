@@ -51,8 +51,8 @@ Measured with gcov on the golden run, worst first: **`swephlib.c` 74.6%**
 (was 62.3%), **`swehouse.c` 68.4%** (was 57.6%), **`swecl.c` 70.0%** (was
 63.9%), `swejpl.c` 67.3%, `swedate.c` 71.1%, `sweph.c` 74.8%.
 
-Two crashes and one unreachable branch came out of closing the first part of
-that gap — see Closed — and all three were in code no gate ran. That is the
+Three bugs and one unreachable branch came out of closing the first part of
+that gap — see Closed — and every one was in code no gate ran. That is the
 argument for the rest of it. Functions still at zero:
 
 - `sweph.c`: `meff` — the gravitational-deflection mass term, which needs a

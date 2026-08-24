@@ -227,6 +227,18 @@ static void row(const char *tag, int32 rf, double *x, int n, const char *serr) {
   fprintf(TRANSCRIPT, "\n");
 }
 
+/* Put astro_models[] back to the library defaults.
+ *
+ * swe_set_astro_models("") is the documented way to do it, but the argument
+ * is `char *` rather than `const char *`, so every caller needs a writable
+ * buffer for an empty string. Five coverage blocks below select a model and
+ * have to undo it; this is that line, once. */
+static void reset_astro_models(void) {
+  char sam[AS_MAXCH];
+  sam[0] = '\0';
+  swe_set_astro_models(sam, 0);
+}
+
 static void planets(void) {
   char serr[AS_MAXCH]; double x[6]; char tag[256];
   for (size_t d = 0; d < NDATES; d++)
@@ -875,7 +887,7 @@ static void coverage(void) {
      * what is already in force -- so this exercises the setter without
      * moving any row computed afterwards. Verified: the 5137 pre-existing
      * baseline rows are byte-identical with and without this call. */
-    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    reset_astro_models();
     *serr = 0; rf = swe_calc(2451545.0, SE_SUN, SEFLG_SWIEPH, x, serr);
     row("cov:set_astro_models", rf, x, 6, serr);
 
@@ -907,7 +919,7 @@ static void coverage(void) {
       snprintf(tag, sizeof tag, "cov:nutmodel[%d]", nm);
       row(tag, 0, x, 1, "");
     }
-    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    reset_astro_models();
 
     /* Changing the nutation model has to reach a position already computed
      * for that instant. swi_check_nutation() keeps the computed nutation
@@ -924,7 +936,7 @@ static void coverage(void) {
       swe_set_astro_models(sam, 0); }
     *serr = 0; rf = swe_calc(2451545.0, SE_MOON, SEFLG_SWIEPH, x, serr);
     row("cov:nutswitch[after]", rf, x, 6, serr);
-    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    reset_astro_models();
 
     /* The five delta-t models, all at ONE instant. Same two jobs as the
      * nutation rows above: the models had no coverage -- nothing computed
@@ -938,7 +950,7 @@ static void coverage(void) {
      * below 948 the 1984 model switches to Borkowski. SE_MODEL_DELTAT is
      * index 0, so the model string is just the number. */
     for (int dm = SEMOD_DELTAT_STEPHENSON_MORRISON_1984;
-	 dm <= SEMOD_DELTAT_STEPHENSON_ETC_2016; dm++) {
+         dm <= SEMOD_DELTAT_STEPHENSON_ETC_2016; dm++) {
       char sam[AS_MAXCH], tag[64];
       snprintf(sam, sizeof sam, "%d", dm);
       swe_set_astro_models(sam, 0);
@@ -946,7 +958,7 @@ static void coverage(void) {
       snprintf(tag, sizeof tag, "cov:deltatmodel[%d]", dm);
       row(tag, 0, x, 1, "");
     }
-    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    reset_astro_models();
 
     /* swe_set_jpl_file() only records a name; no .eph is shipped with this
      * repository, so the observable effect is what happens when the file is
@@ -975,7 +987,12 @@ static void coverage(void) {
      * written), permissive answers from the Swiss files and says so in
      * serr, with the ephemeris bit in the return flag showing what actually
      * produced the numbers. Flip the default and [strict] starts returning
-     * a position; make the setter a no-op and [fallback] stops. */
+     * a position; make the setter a no-op and [fallback] stops.
+     *
+     * [strict] repeats cov:set_jpl_file above on purpose. That row exists
+     * to record the refusal; this one exists to sit next to [fallback], so
+     * the same request answered two ways reads as a pair rather than as two
+     * facts fifteen lines apart. */
     { char jf[AS_MAXCH]; strcpy(jf, "de431.eph"); swe_set_jpl_file(jf); }
     x[0] = swe_get_ephe_fallback();
     row("cov:ephe_fallback[default]", 0, x, 1, "");
@@ -996,27 +1013,25 @@ static void coverage(void) {
      * nothing. It reaches osc_iterate_min_dist()/osc_iterate_max_dist(),
      * which were likewise unreached. Mars for an ordinary planet and the
      * Moon because it takes the geocentric branch. */
-    { int ipl2;
-      for (ipl2 = 0; ipl2 < 2; ipl2++) {
-	int32 p = ipl2 ? SE_MOON : SE_MARS;
-	*serr = 0;
-	rf = swe_orbit_max_min_true_distance(2451545.0, p, SEFLG_SWIEPH,
-					     &x[0], &x[1], &x[2], serr);
-	snprintf(tag, sizeof tag, "cov:orbit_max_min[%d]", (int) p);
-	row(tag, rf, x, 3, serr);
+    {
+      const int32 opl[] = { SE_MARS, SE_MOON };
+      for (size_t o = 0; o < sizeof(opl)/sizeof(opl[0]); o++) {
+        *serr = 0;
+        rf = swe_orbit_max_min_true_distance(2451545.0, opl[o], SEFLG_SWIEPH,
+                                             &x[0], &x[1], &x[2], serr);
+        snprintf(tag, sizeof tag, "cov:orbit_max_min[%d]", (int) opl[o]);
+        row(tag, rf, x, 3, serr);
       }
     }
 
     /* SE_INTP_APOG and SE_INTP_PERG, the interpolated lunar apsides. The
      * planet loop stops at SE_VESTA (20) and these are 21 and 22, so
      * intp_apsides() was never called. */
-    { int32 p;
-      for (p = SE_INTP_APOG; p <= SE_INTP_PERG; p++) {
-	*serr = 0;
-	rf = swe_calc(2451545.0, p, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
-	snprintf(tag, sizeof tag, "cov:intp_apsides[%d]", (int) p);
-	row(tag, rf, x, 6, serr);
-      }
+    for (int32 p = SE_INTP_APOG; p <= SE_INTP_PERG; p++) {
+      *serr = 0;
+      rf = swe_calc(2451545.0, p, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+      snprintf(tag, sizeof tag, "cov:intp_apsides[%d]", (int) p);
+      row(tag, rf, x, 6, serr);
     }
 
     /* The three sidereal house branches. houses() reaches only the
@@ -1033,22 +1048,21 @@ static void coverage(void) {
     {
       double cusp[37], ascmc[10], csp[37], asp[10];
       const struct { int32 bit; const char *name; } sid[] = {
-	{ 0,                   "trad"  },
-	{ SE_SIDBIT_ECL_T0,    "eclt0" },
-	{ SE_SIDBIT_SSY_PLANE, "ssypl" },
+        { 0,                   "trad"  },
+        { SE_SIDBIT_ECL_T0,    "eclt0" },
+        { SE_SIDBIT_SSY_PLANE, "ssypl" },
       };
-      size_t s;
-      for (s = 0; s < sizeof(sid)/sizeof(sid[0]); s++) {
-	memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
-	memset(csp,0,sizeof csp);   memset(asp,0,sizeof asp);
-	ascmc[9] = 99;
-	swe_set_sid_mode(SE_SIDM_LAHIRI | sid[s].bit, 0, 0);
-	int rc = swe_houses_ex2(2451545.0, SEFLG_SWIEPH | SEFLG_SIDEREAL,
-				47.37, 8.55, 'P', cusp, ascmc, csp, asp, NULL);
-	snprintf(tag, sizeof tag, "cov:hsys_sid[%s]", sid[s].name);
-	fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
-	for (int i = 0; i < 13; i++) fprintf(TRANSCRIPT, " %a", cusp[i]);
-	fprintf(TRANSCRIPT, "\n");
+      for (size_t s = 0; s < sizeof(sid)/sizeof(sid[0]); s++) {
+        memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
+        memset(csp,0,sizeof csp);   memset(asp,0,sizeof asp);
+        ascmc[9] = 99;
+        swe_set_sid_mode(SE_SIDM_LAHIRI | sid[s].bit, 0, 0);
+        int rc = swe_houses_ex2(2451545.0, SEFLG_SWIEPH | SEFLG_SIDEREAL,
+                                47.37, 8.55, 'P', cusp, ascmc, csp, asp, NULL);
+        snprintf(tag, sizeof tag, "cov:hsys_sid[%s]", sid[s].name);
+        fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
+        for (int i = 0; i < 13; i++) fprintf(TRANSCRIPT, " %a", cusp[i]);
+        fprintf(TRANSCRIPT, "\n");
       }
       swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
     }
@@ -1080,18 +1094,16 @@ static void coverage(void) {
      * swi_invalidate_models(), so asking for the same body at the same
      * instant really does recompute rather than answering from the save
      * area -- which is what makes one date enough. */
-    { int32 pm;
-      for (pm = SEMOD_PREC_IAU_1976; pm <= SEMOD_PREC_NEWCOMB; pm++) {
-	char sam[AS_MAXCH];
-	snprintf(sam, sizeof sam, "0,%d,%d", (int) pm, (int) pm);
-	swe_set_astro_models(sam, 0);
-	*serr = 0;
-	rf = swe_calc(625307.5, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
-	snprintf(tag, sizeof tag, "cov:precmodel[%d]", (int) pm);
-	row(tag, rf, x, 6, serr);
-      }
-      { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    for (int32 pm = SEMOD_PREC_IAU_1976; pm <= SEMOD_PREC_NEWCOMB; pm++) {
+      char sam[AS_MAXCH];
+      snprintf(sam, sizeof sam, "0,%d,%d", (int) pm, (int) pm);
+      swe_set_astro_models(sam, 0);
+      *serr = 0;
+      rf = swe_calc(625307.5, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+      snprintf(tag, sizeof tag, "cov:precmodel[%d]", (int) pm);
+      row(tag, rf, x, 6, serr);
     }
+    reset_astro_models();
 
     /* The small public conversions. Every one of these is exported, and
      * every one had zero coverage: nothing in the suite called them, so
@@ -1119,12 +1131,14 @@ static void coverage(void) {
       for (int i = 0; i < 6; i++) fprintf(TRANSCRIPT, " %a", x[i]);
       for (int i = 0; i < 6; i++) fprintf(TRANSCRIPT, " %a", xpn[i]);
       fprintf(TRANSCRIPT, " %a %a %a",
-	      (double) swe_csroundsec(cs), (double) swe_d2l(1234.567),
-	      (double) swe_day_of_week(2451545.0));
-      { char cl[AS_MAXCH * 2]; sanitize(cl, sizeof cl, ts);
-	fprintf(TRANSCRIPT, " | %s", cl);
-	sanitize(cl, sizeof cl, ls); fprintf(TRANSCRIPT, " %s", cl);
-	sanitize(cl, sizeof cl, ds); fprintf(TRANSCRIPT, " %s", cl); }
+              (double) swe_csroundsec(cs), (double) swe_d2l(1234.567),
+              (double) swe_day_of_week(2451545.0));
+      {
+        char cl[AS_MAXCH * 2];
+        sanitize(cl, sizeof cl, ts); fprintf(TRANSCRIPT, " | %s", cl);
+        sanitize(cl, sizeof cl, ls); fprintf(TRANSCRIPT, " %s", cl);
+        sanitize(cl, sizeof cl, ds); fprintf(TRANSCRIPT, " %s", cl);
+      }
       fprintf(TRANSCRIPT, "\n");
     }
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
