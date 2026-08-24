@@ -177,13 +177,29 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-version check-threadshim check-jplreal check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
+# Everything the linux-gcc CI job asserts, minus what needs the network or
+# docker. It used to be eleven of these, and the seven it left out -- G4, G9,
+# G10, G11, G12, G13 and G8 -- ran only in CI or by name, so a green
+# `make check` locally was weaker than a green CI run and did not say so.
+# The six added here are all local; a cold run goes from ~10s to ~40s and an
+# incremental one is unchanged, because the cost is compilation that caches.
+check: check-version check-threadshim check-jplreal check-golden check-golden-O2 \
+       check-sunrace check-glprace check-cfgleak check-jplguard \
+       check-threads-workaround check-threads \
+       check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
+       check-build
+
+# check plus the differential, which needs a worktree of legacy-master and so
+# a network fetch on a fresh clone. check-ci is separate again: it needs
+# docker, and re-runs the gates under the CI toolchain rather than adding new
+# ones.
+check-all: check check-setest
 
 clean:
 	rm -f jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
-        check-threadshim-tsan all baseline check check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
+        check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge \
         check-winmacros check-jplreal orderprobe \
