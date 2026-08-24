@@ -666,14 +666,6 @@ static void pre_pequ(double tjd, double *veq)
     veq[2] = 0;
 }
 
-#if 0
-static void swi_cross_prod(double *a, double *b, double *x)
-{
-  x[0] = a[1] * b[2] - a[2] * b[1];
-  x[1] = a[2] * b[0] - a[0] * b[2];
-  x[2] = a[0] * b[1] - a[1] * b[0];
-}
-#endif
 
 /* precession matrix */
 static void pre_pmat(double tjd, double *rp)
@@ -1067,50 +1059,6 @@ static int precess_1(double *R, double J, int direction, int prec_method)
     Z =  ((((((-0.00000000013*T - 0.0000003040)*T - 0.000005708)*T + 0.01801752)*T + 0.3023262)*T + 2306.080472)*T + 2.72767)*DEGTORAD/3600;
     z =  ((((((-0.00000000005*T - 0.0000002486)*T - 0.000028276)*T + 0.01826676)*T + 1.0956768)*T + 2306.076070)*T - 2.72767)*DEGTORAD/3600;
     TH = ((((((0.000000000009*T + 0.00000000036)*T -0.0000001127)*T - 0.000007291)*T - 0.04182364)*T - 0.4266980)*T + 2004.190936)*T*DEGTORAD/3600;
-#if 0
-  } else if (prec_method == SEMOD_PREC_NEWCOMB) {
-    double t1 = (J2000 - 2415020.3135) / 36524.2199;
-    double T = (J - J2000) / 36524.2199;
-    double T2 = T * T; double T3 = T2 * T;
-    Z = (2304.250 + 1.396 * t1) * T + 0.302 * T2 + 0.0179 * T3;
-    z = (2304.250 + 1.396 * t1) * T + 1.093 * T2 + 0.0192 * T3;
-    TH =(2004.682 - 0.853 * t1) * T - 0.426 * T2 - 0.0416 * T3;
-    Z *= (DEGTORAD/3600.0);
-    z *= (DEGTORAD/3600.0);
-    TH *= (DEGTORAD/3600.0);
-#endif
-#if 0
-  // from Newcomb, "Compendium" (1906), pp. 245f., relative to 1850
-/* } else if (prec_method == SEMOD_PREC_NEWCOMB) {
-    double cties = 36524.2198782; // trop. centuries
-    double T = (J - B1850) / cties;
-    double T2 = T * T; double T3 = T2 * T;
-    double Z1 = 2303.56;
-    Z = 2303.56 * T + 0.3023 * T2 + 0.018 * T3;
-    z = 2303.55 * T + 1.094 * T2 + 0.018 * T3;
-    TH = 2005.11 * T - 0.43 * T2 - 0.041 * T3;
-    Z *= (DEGTORAD/3600.0);
-    z *= (DEGTORAD/3600.0);
-    TH *= (DEGTORAD/3600.0);
-*/
-#endif
-#if 0
-  // Newcomb from Expl. supp. 61 pg. 38 
-  // "Andoyar (Woolard and Clemence) expressions":
-  } else if (prec_method == SEMOD_PREC_NEWCOMB) {
-    double mills = 365242.198782; // trop. millennia
-    double t1 = (J2000 - B1850) / mills;
-    double t2 = (J - B1850) / mills;
-    double T = t2 - t1;
-    double T2 = T * T; double T3 = T2 * T;
-    double Z1 = 23035.545 + 139.720 * t1 + 0.060 * t1 * t1;
-    Z = Z1 * T + (30.240 - 0.270 * t1) * T2 + 17.995 * T3;
-    z = Z1 * T + (109.480 - 0.390 * t1) * T2 + 18.325 * T3;
-    TH = (20051.12 - 85.29 * t1 - 0.37 * t1 * t1) * T + (-42.65 - 0.37 * t1) * T2 - 41.80 * T3;
-    Z *= (DEGTORAD/3600.0);
-    z *= (DEGTORAD/3600.0);
-    TH *= (DEGTORAD/3600.0);
-#endif
 #if 1
   // Newcomb according to Kinoshita 1975, very close to ExplSuppl/Andoyer;
   // one additional digit.
@@ -1124,22 +1072,6 @@ static int precess_1(double *R, double J, int direction, int prec_method)
     Z = Z1 * T + (30.242 - 0.269 * t1) * T2 + 17.996 * T3;
     z = Z1 * T + (109.478 - 0.387 * t1) * T2 + 18.324 * T3;
     TH = (20051.125 - 85.294 * t1 - 0.365 * t1 * t1) * T + (-42.647 - 0.365 * t1) * T2 - 41.802 * T3;
-    Z *= (DEGTORAD/3600.0);
-    z *= (DEGTORAD/3600.0);
-    TH *= (DEGTORAD/3600.0);
-#endif
-#if 0
-  // from Lieske, "Expressions for the Precession Quantities..." (1967), p. 20
-  } else if (prec_method == SEMOD_PREC_NEWCOMB) {
-    double cties = 36524.2198782; // trop. centuries
-    double t1 = (J2000 - J1900) / cties;
-    double t2 = (J - J1900) / cties;
-    double T = t2 - t1;
-    double T2 = T * T; double T3 = T2 * T;
-    double Z1 = 2304.253 + 1.3972 * t1 + 0.000125 * t1 * t1;
-    Z = Z1 * T + (0.3023 - 0.000211 * t1) * T2 + 0.0180 * T3;
-    z = Z1 * T + (1.0949 - 0.00046 * t1) * T2 + 0.0183 * T3;
-    TH = (2004.684 - 0.8532 * t1 - 0.000317 * t1 * t1) * T + (-0.4266 - 0.00032 * t1) * T2 - 0.0418 * T3;
     Z *= (DEGTORAD/3600.0);
     z *= (DEGTORAD/3600.0);
     TH *= (DEGTORAD/3600.0);
@@ -2106,9 +2038,6 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
       deps = bessel(ctx->deps, n + 1, J2 - ctx->eop_tjd_beg);
       nutlo[0] += dpsi / 3600.0 * DEGTORAD;
       nutlo[1] += deps / 3600.0 * DEGTORAD;
-#if 0
-      printf("tjd=%f, dpsi=%f, deps=%f\n", J, dpsi * 1000, deps * 1000);
-#endif
     } else {
       nutlo[0] += DPSI_IAU1980_TJD0 / 3600.0 * DEGTORAD;
       nutlo[1] += DEPS_IAU1980_TJD0 / 3600.0 * DEGTORAD;
@@ -2218,13 +2147,6 @@ static void swi_approx_jplhor(swe_ctx *ctx, double *x, double tjd, int32 iflag, 
 /* GCRS to J2000 */
 void swi_bias(swe_ctx *ctx, double *x, double tjd, int32 iflag, AS_BOOL backward)
 {
-#if 0
-  double DAS2R = 1.0 / 3600.0 * DEGTORAD;
-  double dpsi_bias = -0.041775 * DAS2R;
-  double deps_bias = -0.0068192 * DAS2R;
-  double dra0 = -0.0146 * DAS2R;
-  double deps2000 = 84381.448 * DAS2R; 
-#endif
   double xx[6], rb[3][3];
   int i;
   int bias_model = ctx->astro_models[SE_MODEL_BIAS];
@@ -2263,17 +2185,6 @@ void swi_bias(swe_ctx *ctx, double *x, double tjd, int32 iflag, AS_BOOL backward
     rb[2][2] = +0.9999999999999962;
   }
 /*#endif*/
-#if 0
-rb[0][0] = +0.9999999999999968;
-rb[1][0] = +0.0000000000000000;
-rb[2][0] = +0.0000000805621715;
-rb[0][1] = -0.0000000000000027;
-rb[1][1] = +0.9999999999999994;
-rb[2][1] = +0.0000000330604145;
-rb[0][2] = -0.0000000805621715;
-rb[1][2] = -0.0000000330604145;
-rb[2][2] = +0.9999999999999962; 
-#endif
   if (backward) {
     swi_approx_jplhor(ctx, x, tjd, iflag, TRUE);
     for (i = 0; i <= 2; i++) {
@@ -2305,12 +2216,6 @@ rb[2][2] = +0.9999999999999962;
 /* GCRS to FK5 */
 void swi_icrs2fk5(double *x, int32 iflag, AS_BOOL backward)
 {
-#if 0
-  double DAS2R = 1.0 / 3600.0 * DEGTORAD;
-  double dra0 = -0.0229 * DAS2R;
-  double dxi0 =  0.0091 * DAS2R;
-  double det0 = -0.0199 * DAS2R;
-#endif
   double xx[6], rb[3][3];
   int i;
   rb[0][0] = +0.9999999999999928;
@@ -3779,12 +3684,6 @@ void swi_gen_filename(double tjd, int ipli, char *fname)
     icty -=1;
   while(icty % ncties != 0)
     icty--;
-#if 0
-  if (icty < BEG_YEAR / 100)
-    icty = BEG_YEAR / 100;
-  if (icty >= END_YEAR / 100)
-    icty = END_YEAR / 100 - ncties;
-#endif
   /* B.C. or A.D. */
   if (icty < 0) 
     strcat(fname, "m");
@@ -3792,10 +3691,6 @@ void swi_gen_filename(double tjd, int ipli, char *fname)
     strcat(fname, "_");
   icty = abs(icty);
   sprintf(fname + strlen(fname), "%02d.%s", icty, SE_FILE_SUFFIX);
-#if 0
-  printf("fname  %s\n", fname); 
-  fflush(stdout);
-#endif
 }
 
 /**************************************************************
