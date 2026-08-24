@@ -726,6 +726,10 @@ extern AS_BOOL swi_env_ephe_fallback(void);
 #define FORGET_DENUM TRUE
 #define KEEP_DENUM   FALSE
 extern void swi_close_ephe_files(swe_ctx *ctx, AS_BOOL forget_denum);
+/* swemplan.c: one non-comment line of seorbel.txt, kept verbatim in the
+ * context (see swe_ctx.fict_lines). */
+struct fict_line { int32 iline; char s[AS_MAXCH]; };
+extern void swi_free_fict_lines(swe_ctx *ctx);
 extern int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr);
 extern int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
 
@@ -1019,6 +1023,12 @@ struct swe_ctx {
   int32 n_fixstars_named;    // number of fixed stars with tradtional name
   int32 n_fixstars_records;  // number of fixed stars records in fixed_stars
   struct fixed_star *fixed_stars;
+  /* seorbel.txt, read once per context. The text, not parsed numbers: the
+   * elements carry T terms evaluated against tjd on every call. Dropped
+   * whenever the ephemeris path can change. NULL until first use, and left
+   * NULL when the file is absent so the built-in table is used as before. */
+  struct fict_line *fict_lines;
+  int32 n_fict_lines;
   /* Moshier lunar theory scratch -- see struct moon_state above. */
   struct moon_state moon;
 

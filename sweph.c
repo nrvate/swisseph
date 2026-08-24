@@ -1366,6 +1366,7 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
     fclose(ctx->fixfp);
     ctx->fixfp = NULL;
   }
+  swi_free_fict_lines(ctx);
   swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
   ctx->is_old_starfile = FALSE;
   ctx->i_saved_planet_name = 0;
@@ -1403,6 +1404,7 @@ static void ctx_release(swe_ctx *ctx)
     fclose(ctx->fixfp);
     ctx->fixfp = NULL;
   }
+  swi_free_fict_lines(ctx);
   SWI_CFG_LOCAL(ctx, swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC));
   ctx->geopos_is_set = FALSE;
   ctx->ayana_is_set = FALSE;
@@ -2505,10 +2507,10 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
     /* if tjd is beyond file range, close old file.
      * if new asteroid, close old file. */
     if (tjd < fdp->tfstart || tjd > fdp->tfend
-      || (ipl == SEI_ANYBODY && ipli != pdp->ibdy)) { 	
+      || (ipl == SEI_ANYBODY && ipli != pdp->ibdy)) {
       fclose(fdp->fptr);
       fdp->fptr = NULL;
-      if (pdp->refep != NULL) 
+      if (pdp->refep != NULL)
 	free((void *) pdp->refep);
       pdp->refep = NULL;
       if (pdp->segp != NULL)
@@ -6839,12 +6841,12 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
   if (iflag & SEFLG_SIDEREAL && !ctx->ayana_is_set)
     SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
-  /****************************************** 
-   * obliquity of ecliptic 2000 and of date * 
+  /******************************************
+   * obliquity of ecliptic 2000 and of date *
    ******************************************/
   swi_check_ecliptic(ctx, tjd, iflag);
   /******************************************
-   * nutation                               * 
+   * nutation                               *
    ******************************************/
   swi_check_nutation(ctx, tjd, iflag);
   sprintf(star, "%s,%s", stardata->starname, stardata->starbayer);

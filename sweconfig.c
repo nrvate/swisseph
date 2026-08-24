@@ -173,6 +173,7 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
       ctx->jpl_file_is_open = FALSE;
     }
     swi_close_ephe_files(ctx, FORGET_DENUM);
+    swi_free_fict_lines(ctx);
     ctx->last_epheflag = 0;
   }
   if (geo_changed)
