@@ -179,9 +179,10 @@ See [THREADING.md](THREADING.md) for the gate-by-gate detail.
 | `legacy-master` | pristine upstream tree, no CI, kept for merges from upstream |
 
 `notes/` holds the working notes from the transformation: the plan, the
-investigation, the configuration map, the API design and the review. They are a
-historical record and are dated accordingly, not a description of the current
-tree.
+investigation, the configuration map and the API design. They are a historical
+record and are dated accordingly, not a description of the current tree. The
+exception is `notes/REVIEW.md`, which is kept current: what is still worth
+doing in the library code, what was decided against and why, and what closed.
 
 **Versioning.** `SE_VERSION` in `sweph.h` is the only place the version is
 written down; everything else derives from it.
