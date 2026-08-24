@@ -144,12 +144,6 @@ endif
 swevents: swevents.o $(SWEOBJ)
 	$(CC) $(CFLAGS) -o swevents swevents.o $(SWEOBJ) $(LIBS)
 
-# Build sweventss, statically compiled
-sweventss: swevents.o $(SWEOBJ)
-	$(CC) $(CFLAGS) $(STATIC_LINK_FLAGS) -o sweventss swevents.o $(SWEOBJ) $(DYNAMIC_LINK_FLAGS) $(LIBS)
-	mkdir -p bin
-	cp sweventss  bin/swevents
-
 # Build swemini
 swemini: swemini.o libswe.a
 	$(CC) $(CFLAGS) -o swemini swemini.o -L. -lswe $(LIBS)
@@ -284,7 +278,6 @@ clean:
 
 # Dependency rules
 swecl.o: swejpl.h sweodef.h swephexp.h swedll.h sweph.h swephlib.h
-sweclips.o: sweodef.h swephexp.h swedll.h
 swedate.o: swephexp.h sweodef.h swedll.h
 swehel.o: swephexp.h sweodef.h swedll.h
 swehouse.o: swephexp.h sweodef.h swedll.h swephlib.h swehouse.h

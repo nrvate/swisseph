@@ -4,6 +4,9 @@ house and (simple) aspect calculation
 
 *******************************************************/
 
+#ifndef SWEHOUSE_H
+#define SWEHOUSE_H
+
 /* Copyright (C) 1997 - 2021 Astrodienst AG, Switzerland.  All rights reserved.
 
   License conditions
@@ -98,3 +101,5 @@ struct houses {
 #define acosd(x) (acos(x) * RADTODEG)
 #define atand(x) (atan(x) * RADTODEG)
 #define atan2d(y, x) (atan2(y, x) * RADTODEG)
+
+#endif /* SWEHOUSE_H */
