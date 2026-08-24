@@ -36,11 +36,12 @@ on:
 # PR, so every push was running all 13 jobs TWICE; superseded runs are now
 # cancelled instead of racing the new one to the same conclusion.
 concurrency:
-  # head_ref, not ref: for a pull_request github.ref is refs/pull/N/merge
-  # while the push that created it is refs/heads/<branch>, so keying on
-  # ref put them in DIFFERENT groups and both still ran. head_ref is the
-  # source branch for a PR and empty otherwise, so the two collapse.
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  # Both halves must reduce to the bare branch name. head_ref is the source
+  # branch of a pull_request and empty otherwise; the fallback has to be
+  # ref_name ("work"), not ref ("refs/heads/work") -- with ref the two
+  # events landed in different groups and every push still ran all 13 jobs
+  # twice, which is what this block was added to stop.
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 # Least privilege: nothing here writes to the repository. release.yml asks
