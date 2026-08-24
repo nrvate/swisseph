@@ -358,11 +358,6 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       /* one more position for speed. 
        * the following dt gives good speed for light-time correction
        */
-    #if 0
-      for (i = 0; i <= 2; i++) 
-	dx[i] = xp[i] - pedp->x[i];
-      dt = LIGHTTIME_AUNIT * sqrt(square_sum(dx));   
-    #endif
       dt = PLAN_SPEED_INTV;
       swi_moshplan2(ctx, tjd - dt, iplm, x2); 
       swi_polcart(x2, x2);
