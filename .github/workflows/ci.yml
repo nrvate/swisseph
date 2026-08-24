@@ -168,10 +168,10 @@ jobs:
         run: make clean && make LTO=0 all
 
   # ---------------------------------------------------------------------
-  # LTO parity. `make LTO=1` is opt-in and was measured only on gcc 13,
-  # where it is bit-identical to plain -O2 and worth ~5% on the Moshier
-  # Moon path. This job exists to prove it does not change results under a
-  # second toolchain before anyone considers making it the default.
+  # LTO parity. LTO is the default build as of ts.5 -- it is bit-identical
+  # to plain -O2 and worth ~5% on the Moshier Moon path. This job keeps that
+  # claim honest across all three toolchains; the reference job builds
+  # LTO=0, the configuration the readme also documents.
   # ---------------------------------------------------------------------
   lto:
     name: lto / ${{ matrix.name }}
@@ -185,17 +185,10 @@ jobs:
           - { name: clang,       os: ubuntu-latest, cc: clang }
           - { name: apple-clang, os: macos-latest,  cc: cc    }
     env:
-      EPHE: ephe
-      TOL: 1e-5
       CC: ${{ matrix.cc }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/ephe/sat/
-            !/ephe/ep4/
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Build with LTO
         run: make LTO=1 CC=$CC libswe.a
       - name: Golden within tolerance
@@ -316,18 +309,18 @@ jobs:
 
           cl /nologo /I. tests\threadshim.c || exit /b 1
           threadshim.exe || exit /b 1
+      # Windows had NO numerical verification at all. This job compiled
+      # objects and ran a TLS probe; windows-package smoke-tested swetest for
+      # "the Sun is near 280 degrees". A DLL producing wrong numbers would
+      # have shipped with every check green.
+      #
+      # golden.c could not be built here until it stopped hardcoding
+      # <pthread.h>. It uses a portable thread shim now; its --threads mode
+      # needs POSIX open_memstream and stays excluded on Windows, where
+      # threadshim and ctxtest already cover SRWLOCK.
       - name: Numerical transcript under MSVC
         shell: cmd
         run: |
-          rem Windows had NO numerical verification at all. This job compiled
-          rem objects and ran a TLS probe; windows-package smoke-tested swetest
-          rem for "the Sun is near 280 degrees". A DLL producing wrong numbers
-          rem would have shipped with every check green.
-          rem
-          rem golden.c could not be built here until now because it hardcoded
-          rem <pthread.h>. It uses a portable thread shim as of this change; its
-          rem --threads mode needs POSIX open_memstream and stays excluded on
-          rem Windows, where threadshim and ctxtest already cover SRWLOCK.
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
           cl /nologo /I. /D_CRT_SECURE_NO_WARNINGS tests\golden.c sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c /Fe:golden_msvc.exe || exit /b 1
           golden_msvc.exe --ephe %EPHE% > msvc.txt || exit /b 1
@@ -409,6 +402,9 @@ jobs:
           cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. ctxtest.c \
              obj-thread/*.o -o ctxtest_tsan -lm -ldl -lpthread
           env -u SE_EPHE_PATH ./ctxtest_tsan --ephe ../$EPHE
+
+  # ---------------------------------------------------------------------
+  # Dialects. The library floats on whatever -std= the local cc defaults to,
   # so pin each explicitly. C89 is EXPECTED to fail (58 errors on this tree,
   # long before either plan started) -- asserted as a known-fail so that if
   # the C17 migration ever makes it pass, we hear about it.
