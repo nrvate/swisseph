@@ -869,6 +869,36 @@ static void coverage(void) {
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();
     swe_set_ephe_path((char *) EPHE);
+
+    /* Entry points the transcript had never reached: swe_date_conversion(),
+     * the v1 swe_fixstar_mag(), and the fictitious bodies. The last group
+     * reads its elements from seorbel.txt through a per-context cache; these
+     * rows are what holds that cache to the file's exact contents. */
+    for (int y = -1000; y <= 2000; y += 1000) {
+      double tjd = 0; *serr = 0;
+      rf = swe_date_conversion(y, 3, 21, 12.5, 'g', &tjd);
+      snprintf(tag, sizeof tag, "cov:date_conversion[%d]", y);
+      row(tag, rf, &tjd, 1, serr);
+    }
+    { const char *st3[] = {"Sirius", "Aldebaran", "Polaris"};
+      for (size_t s = 0; s < 3; s++) {
+        char st[AS_MAXCH]; double mag = 0; strcpy(st, st3[s]); *serr = 0;
+        rf = swe_fixstar_mag(st, &mag, serr);
+        snprintf(tag, sizeof tag, "cov:fixstar_mag[%s]", st3[s]);
+        row(tag, rf, &mag, 1, serr);
+      } }
+    for (int ipl = SE_FICT_OFFSET; ipl <= SE_FICT_OFFSET + 16; ipl++) {
+      char nm[AS_MAXCH];
+      for (size_t d = 0; d < NDATES; d += 4) {
+        *serr = 0; memset(x, 0, sizeof x);
+        rf = swe_calc(DATES[d], ipl, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+        snprintf(tag, sizeof tag, "cov:fict[%d,%zu]", ipl, d);
+        row(tag, rf, x, 6, serr);
+      }
+      swe_get_planet_name(ipl, nm);
+      snprintf(tag, sizeof tag, "cov:fictname[%d]", ipl);
+      row(tag, 0, x, 0, nm);
+    }
   }
 }
 

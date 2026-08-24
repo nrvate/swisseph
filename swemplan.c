@@ -697,21 +697,73 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
 }
 
 #if 1
+void swi_free_fict_lines(swe_ctx *ctx)
+{
+  free(ctx->fict_lines);
+  ctx->fict_lines = NULL;
+  ctx->n_fict_lines = 0;
+}
+
+/* Read seorbel.txt once into ctx->fict_lines: every line that the per-body
+ * scan below used to consider, after the same whitespace and comment
+ * stripping. ERR when the file cannot be opened, with serr set by swi_fopen
+ * exactly as before, so the built-in table is reached the same way. */
+static int load_fict_lines(swe_ctx *ctx, char *serr)
+{
+  FILE *fp;
+  char s[AS_MAXCH], *sp;
+  int iline = 0, n = 0, cap = 0;
+  struct fict_line *lines = NULL;
+  /* -1: file information is not saved, the file is closed again below */
+  if ((fp = swi_fopen(ctx, -1, SE_FICTFILE, ctx->ephepath, serr)) == NULL)
+    return ERR;
+  while (fgets(s, AS_MAXCH, fp) != NULL) {
+    iline++;
+    sp = s;
+    while(*sp == ' ' || *sp == '\t')
+      sp++;
+    swi_strcpy(s, sp);
+    if (*s == '#' || *s == '\r' || *s == '\n' || *s == '\0')
+      continue;
+    if ((sp = strchr(s, '#')) != NULL)
+      *sp = '\0';
+    if (n == cap) {
+      struct fict_line *p = realloc(lines, (size_t) (cap + 16) * sizeof *lines);
+      if (p == NULL) {
+        free(lines);
+        fclose(fp);
+        if (serr != NULL)
+          sprintf(serr, "out of memory reading %s", SE_FICTFILE);
+        return ERR;
+      }
+      lines = p;
+      cap += 16;
+    }
+    lines[n].iline = iline;
+    strcpy(lines[n].s, s);
+    n++;
+  }
+  fclose(fp);
+  if (lines == NULL)		/* empty file: still "loaded", not "absent" */
+    lines = malloc(sizeof *lines);
+  ctx->fict_lines = lines;
+  ctx->n_fict_lines = n;
+  return OK;
+}
+
 /* note: input parameter tjd is required for T terms in elements */
-static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd, 
-  double *tjd0, double *tequ, 
-  double *mano, double *sema, double *ecce, 
+static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
+  double *tjd0, double *tequ,
+  double *mano, double *sema, double *ecce,
   double *parg, double *node, double *incl,
   char *pname, int32 *fict_ifl, char *serr)
 {
-  int i, iline, iplan, retc, ncpos;
-  FILE *fp = NULL;
+  int i, k, iplan, retc, ncpos;
   char s[AS_MAXCH], *sp;
   char *cpos[20], serri[AS_MAXCH];
   AS_BOOL elem_found = FALSE;
   double tt = 0;
-  /* -1, because file information is not saved, file is always closed */
-  if ((fp = swi_fopen(ctx, -1, SE_FICTFILE, ctx->ephepath, serr)) == NULL) {
+  if (ctx->fict_lines == NULL && load_fict_lines(ctx, serr) == ERR) {
     /* file does not exist, use built-in bodies */
     if (ipl >= SE_NFICT_ELEM) {
       if (serr != NULL)
@@ -738,29 +790,14 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
       strcpy(pname, plan_fict_nam[ipl]);
     return OK;
   }
-  /* 
-   * find elements in file 
+  /*
+   * find elements in the cached file
    */
-  iline = 0;
   iplan = -1;
-  while (fgets(s, AS_MAXCH, fp) != NULL) {
-    iline++;
-    sp = s;
-    while(*sp == ' ' || *sp == '\t')
-      sp++;
-    swi_strcpy(s, sp);
-    if (*s == '#')
-      continue;
-    if (*s == '\r')
-      continue;
-    if (*s == '\n')
-      continue;
-    if (*s == '\0')
-      continue;
-    if ((sp = strchr(s, '#')) != NULL)
-      *sp = '\0';
+  for (k = 0; k < ctx->n_fict_lines; k++) {
+    strcpy(s, ctx->fict_lines[k].s);	/* swi_cutstr() writes into it */
     ncpos = swi_cutstr(s, ",", cpos, 20);
-    sprintf(serri, "error in file %s, line %7.0f:", SE_FICTFILE, (double) iline);
+    sprintf(serri, "error in file %s, line %7.0f:", SE_FICTFILE, (double) ctx->fict_lines[k].iline);
     if (ncpos < 9) {
       if (serr != NULL) {
         sprintf(serr, "%s nine elements required", serri);
@@ -912,10 +949,8 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     goto return_err;
   }
-  fclose(fp);
   return OK;
 return_err:
-  fclose(fp);
   return ERR;
 }
 #endif

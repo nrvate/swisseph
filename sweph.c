@@ -1366,6 +1366,7 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
     fclose(ctx->fixfp);
     ctx->fixfp = NULL;
   }
+  swi_free_fict_lines(ctx);
   swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
   ctx->is_old_starfile = FALSE;
   ctx->i_saved_planet_name = 0;
@@ -1403,6 +1404,7 @@ static void ctx_release(swe_ctx *ctx)
     fclose(ctx->fixfp);
     ctx->fixfp = NULL;
   }
+  swi_free_fict_lines(ctx);
   SWI_CFG_LOCAL(ctx, swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC));
   ctx->geopos_is_set = FALSE;
   ctx->ayana_is_set = FALSE;
@@ -1506,11 +1508,9 @@ void CALL_CONV swe_close(void)
 void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
 {
   AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
-  int i, iflag;
+  int i;
   char s[AS_MAXCH];
-  char serr[AS_MAXCH];
   char *sp;
-  double xx[6];
   /* The path is changing: the next open may find a different generation of
    * files, so their DE numbers go with them. */
   swi_close_keep_topo_etc(ctx, FORGET_DENUM);
@@ -1533,14 +1533,24 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
     strcat(s, DIR_GLUE);
   strcpy(ctx->ephepath, s);
 //swe_set_interpolate_nut(TRUE);
-  /* try to open lunar ephemeris, in order to get DE number and set
-   * tidal acceleration of the Moon */
-  iflag = SEFLG_SWIEPH|SEFLG_J2000|SEFLG_TRUEPOS|SEFLG_ICRS;
+  /* Open the lunar ephemeris file for J2000 and read its header, to learn
+   * the DE number and set the tidal acceleration of the Moon. Upstream ran
+   * a full swe_calc() of the Moon for this, which also opened the planet
+   * file and filled the save area; the header is all that is used. */
   ctx->last_epheflag = 2;
-  swe_calc_r(ctx, J2000, SE_MOON, iflag, xx, serr);
-  if (ctx->fidat[SEI_FILE_MOON].fptr != NULL) {
-    swi_set_tid_acc(ctx, 0, 0, ctx->fidat[SEI_FILE_MOON].sweph_denum, NULL);
-  } 
+  {
+    struct file_data *fdp = &ctx->fidat[SEI_FILE_MOON];
+    char fname[AS_MAXCH];
+    swi_gen_filename(J2000, SEI_MOON, fname);
+    if ((fdp->fptr = swi_fopen(ctx, SEI_FILE_MOON, fname, ctx->ephepath, NULL)) != NULL) {
+      if (read_const(ctx, SEI_FILE_MOON, NULL) != OK) {
+        fclose(fdp->fptr);
+        memset((void *) fdp, 0, sizeof(struct file_data));
+      }
+    }
+    if (fdp->fptr != NULL)
+      swi_set_tid_acc(ctx, 0, 0, fdp->sweph_denum, NULL);
+  }
 #ifdef TRACE
   swi_open_trace(NULL);
   swi_trace_lock();
@@ -2505,10 +2515,10 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
     /* if tjd is beyond file range, close old file.
      * if new asteroid, close old file. */
     if (tjd < fdp->tfstart || tjd > fdp->tfend
-      || (ipl == SEI_ANYBODY && ipli != pdp->ibdy)) { 	
+      || (ipl == SEI_ANYBODY && ipli != pdp->ibdy)) {
       fclose(fdp->fptr);
       fdp->fptr = NULL;
-      if (pdp->refep != NULL) 
+      if (pdp->refep != NULL)
 	free((void *) pdp->refep);
       pdp->refep = NULL;
       if (pdp->segp != NULL)
@@ -6839,12 +6849,12 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
   if (iflag & SEFLG_SIDEREAL && !ctx->ayana_is_set)
     SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
-  /****************************************** 
-   * obliquity of ecliptic 2000 and of date * 
+  /******************************************
+   * obliquity of ecliptic 2000 and of date *
    ******************************************/
   swi_check_ecliptic(ctx, tjd, iflag);
   /******************************************
-   * nutation                               * 
+   * nutation                               *
    ******************************************/
   swi_check_nutation(ctx, tjd, iflag);
   sprintf(star, "%s,%s", stardata->starname, stardata->starbayer);
@@ -7113,11 +7123,23 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
     strcpy(searchkey, sstar);
     len = (int) (strlen(sstar) - 1);
     searchkey[len] = '\0';
-    for (i = 0; i < ndata; i++) {
-      if (strncmp(stardatabegp[i].skey, sstar, len) == 0) {
-        *stardata = stardatabegp[i];
-	return OK;
+    /* The list is sorted by skey (strcmp), so every key with this prefix is
+     * contiguous and the first of them is the lower bound -- the same
+     * element the linear scan this replaces returned first. */
+    {
+      int lo = 0, hi = ndata;
+      while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (strncmp(stardatabegp[mid].skey, sstar, len) < 0)
+          lo = mid + 1;
+        else
+          hi = mid;
       }
+      i = lo;
+    }
+    if (i < ndata && strncmp(stardatabegp[i].skey, sstar, len) == 0) {
+      *stardata = stardatabegp[i];
+      return OK;
     }
     if (serr != NULL)
       sprintf(serr, "error, swe_fixstar(): star search string %s did not match", sstar);

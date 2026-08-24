@@ -4,7 +4,7 @@ TESTSUITE(8,"Eclipses")
 
 double jd, xxtret[10], xxgeopos[3], xxattr[20];
 double geolat, geolon, altitude;
-char serr[255], star[100];;
+char serr[AS_MAXCH], star[100];
 int rc, ipl;
 swe_set_ephe_path(NULL);
 

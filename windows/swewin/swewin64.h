@@ -15,7 +15,7 @@
 #define MK_FP32(x)			(x)
 #define MK_LOCAL32(a) 			((void far *) a)
 #define PASS_WORD_AS_POINTER(i) 	((LPSTR)(WORD)(i))
-#define AllocAlias16(a) 		((DWORD)(LPSTR)(a))
+#define AllocAlias16(a) 		((LPARAM)(LPSTR)(a))
 #define FreeAlias16(a)
 #ifdef __WINDOWS_386__
 #define _EXPORT

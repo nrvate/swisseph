@@ -157,11 +157,20 @@ jobs:
   # second toolchain before anyone considers making it the default.
   # ---------------------------------------------------------------------
   lto:
-    runs-on: ubuntu-latest
+    name: lto / ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gcc,         os: ubuntu-latest, cc: gcc   }
+          - { name: clang,       os: ubuntu-latest, cc: clang }
+          - { name: apple-clang, os: macos-latest,  cc: cc    }
     env:
       EPHE: ephe
       TOL: 1e-5
+      CC: ${{ matrix.cc }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -171,13 +180,13 @@ jobs:
             !/ephe/sat/
             !/ephe/ep4/
       - name: Build with LTO
-        run: make LTO=1 libswe.a
+        run: make LTO=1 CC=$CC libswe.a
       - name: Golden within tolerance
-        run: make -C tests LTO=1 check-golden-O2 EPHE=../$EPHE TOL=$TOL
+        run: make -C tests LTO=1 CC=$CC check-golden-O2 EPHE=../$EPHE TOL=$TOL
       - name: JPL reader baseline
-        run: make -C tests LTO=1 check-jplcalc
+        run: make -C tests LTO=1 CC=$CC check-jplcalc
       - name: Independent contexts
-        run: make -C tests LTO=1 check-ctx EPHE=../$EPHE
+        run: make -C tests LTO=1 CC=$CC check-ctx EPHE=../$EPHE
 
   # ---------------------------------------------------------------------
   # Second compiler, same platform. Catches gcc-specific assumptions.

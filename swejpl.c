@@ -286,6 +286,12 @@ static int32 fsizer(swe_ctx *ctx, char *serr)
   if (nrd != 1) return NOT_AVAILABLE;
   if (js->do_reorder)
     reorder((char *) &numde, sizeof(int32), 1);
+  /* Keep what was just parsed: state() used to read the same header a
+   * second time to get these. */
+  js->eh_ncon  = ncon;
+  js->eh_au    = au;
+  js->eh_emrat = emrat;
+  js->eh_denum = numde;
   /* read librations */
   nrd = fread(&lpt[0], sizeof(int32), 3, js->jplfptr);
   if (nrd != 3) return NOT_AVAILABLE;
@@ -696,64 +702,17 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
   int32 nr;
   double et_mn, et_fr;
   int32 *ipt = js->eh_ipt;
-  char ch_ttl[252];
-  int32 lpt[3];   /* local scratch: written, reordered and copied into
-                   * ipt[] entirely within the init block below */
   size_t nrd; /* unused, removes compile warnings */
   if (js->jplfptr == NULL) {
+    /* fsizer() parses the whole first record -- title, constant names,
+     * ss[], ncon, au, emrat, ipt[] including the librations, denum -- into
+     * js->eh_*. It used to be read a second time here. */
     ksize = fsizer(ctx, serr); /* the number of single precision words in a record */
     nrecl = 4;
     if (ksize == NOT_AVAILABLE)
       return NOT_AVAILABLE;
     js->irecsz = nrecl * ksize; 	/* record size in bytes */
     js->ncoeffs = ksize / 2;	/* # of coefficients, doubles */
-    /* ttl = ephemeris title, e.g.
-     * "JPL Planetary Ephemeris DE404/LE404
-     *  Start Epoch: JED=   625296.5-3001 DEC 21 00:00:00
-     *  Final Epoch: JED=  2817168.5 3001 JAN 17 00:00:00c */
-    nrd = fread((void *) ch_ttl, 1, 252, js->jplfptr);
-    if (nrd != 252) return NOT_AVAILABLE;
-    /* cnam = names of constants */
-    nrd = fread((void *) js->ch_cnam, 1, 2400, js->jplfptr);
-    if (nrd != 2400) return NOT_AVAILABLE;
-    /* ss[0] = start epoch of ephemeris
-     * ss[1] = end epoch
-     * ss[2] = segment size in days */
-    nrd = fread((void *) &js->eh_ss[0], sizeof(double), 3, js->jplfptr);
-    if (nrd != 3) return NOT_AVAILABLE;
-    if (js->do_reorder)
-      reorder((char *) &js->eh_ss[0], sizeof(double), 3);
-    /* ncon = number of constants */
-    nrd = fread((void *) &js->eh_ncon, sizeof(int32), 1, js->jplfptr);
-    if (nrd != 1) return NOT_AVAILABLE;
-    if (js->do_reorder)
-      reorder((char *) &js->eh_ncon, sizeof(int32), 1);
-    /* au = astronomical unit */
-    nrd = fread((void *) &js->eh_au, sizeof(double), 1, js->jplfptr);
-    if (nrd != 1) return NOT_AVAILABLE;
-    if (js->do_reorder)
-      reorder((char *) &js->eh_au, sizeof(double), 1);
-    /* emrat = earth moon mass ratio */
-    nrd = fread((void *) &js->eh_emrat, sizeof(double), 1, js->jplfptr);
-    if (nrd != 1) return NOT_AVAILABLE;
-    if (js->do_reorder)
-      reorder((char *) &js->eh_emrat, sizeof(double), 1);
-    /* ipt[i+0]: coefficients of planet i start at buf[ipt[i+0]-1] 
-     * ipt[i+1]: number of coefficients (interpolation order - 1)
-     * ipt[i+2]: number of intervals in segment */
-    nrd = fread((void *) &ipt[0], sizeof(int32), 36, js->jplfptr);
-    if (nrd != 36) return NOT_AVAILABLE;
-    if (js->do_reorder)
-      reorder((char *) &ipt[0], sizeof(int32), 36);
-    /* numde = number of jpl ephemeris "404" with de404 */
-    nrd = fread((void *) &js->eh_denum, sizeof(int32), 1, js->jplfptr);
-    if (nrd != 1) return NOT_AVAILABLE;
-    if (js->do_reorder)
-      reorder((char *) &js->eh_denum, sizeof(int32), 1);
-    nrd = fread((void *) &lpt[0], sizeof(int32), 3, js->jplfptr);
-    if (nrd != 3) return NOT_AVAILABLE;
-    if (js->do_reorder)
-      reorder((char *) &lpt[0], sizeof(int32), 3);
     /* cval[]:  other constants in next record */
     FSEEK(js->jplfptr, (off_t64) (1L * js->irecsz), 0);
     nrd = fread((void *) &js->eh_cval[0], sizeof(double), 400, js->jplfptr);
@@ -761,8 +720,6 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
     if (js->do_reorder)
       reorder((char *) &js->eh_cval[0], sizeof(double), 400);
     /* new 26-aug-2008: verify correct block size */
-    for (i = 0; i < 3; ++i)
-      ipt[i + 36] = lpt[i];
     /* ipt[i*3+1] (i = 0..12: 10 planets, sun, nutation, libration) is the
      * per-body coefficient count ("ncf" in interp()). It is read straight
      * from the file with no independent bound, but interp() uses it to

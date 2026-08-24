@@ -4,7 +4,7 @@ TESTSUITE(6,"Houses functions")
 
 double cusps[37],ascmc[10], jd_ut, geolat, geolon, armc,xx[6];
 double cusp_speed[37], ascmc_speed[10];
-char serr[255], *sp;
+char serr[AS_MAXCH], *sp;
 int rc, ihsy;
 swe_close();
 swe_set_ephe_path(NULL);
