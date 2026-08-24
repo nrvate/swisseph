@@ -18,25 +18,16 @@ or two, and verify.
 
 ## 1. Open — correctness
 
-- **Variable-length text into fixed buffers, ~50 sites.** The library has
-  222 `strcpy`, 62 `strcat`, 153 `sprintf`, 1 `snprintf`. Almost all copy a
-  literal or a value whose length the code fixes; those are fine. The ones
-  that can overflow are where outside text enters `AS_MAXCH`:
-  - 38 `sprintf(serr, …%s…)` sites inserting a file name, star name or the
-    ephemeris path — a minority are `strlen`-guarded. One is a clean caller
-    overflow: `swecl.c` `"annular occulation do not exist for object %d %s"`
-    with the caller's unbounded `starname`.
-  - filename assembly: `ephepath` (up to 256) + name into `s[AS_MAXCH]` in
-    `swi_fopen`, `swi_gen_filename`, `swe_set_ephe_path_r`.
-  - entry-point copies of caller strings: `swe_fixstar*` (`sstar`), the
-    `star` argument of the eclipse/occultation functions.
-  - `swevents.c:389,456` (sample): `char fname[80]` filled from `argv` for
-    `-ejpl<name>`, no length check.
-
-  Fix is `snprintf`/a bounded append at those sites only. Bit-exact by
-  construction: every input that does not overflow today prints the same
-  bytes; inputs that do overflow today are undefined behaviour. The other
-  ~390 sites are style and stay as they are.
+- **Bounded strings, remainder of the original survey.** The ~50
+  variable-length sites that could overflow `AS_MAXCH` are done
+  (see Closed). What is left is style, not safety: the other ~390
+  `strcpy`/`strcat`/`sprintf` sites copy literals or fixed-length
+  values and stay as they are. Two small leftovers worth a commit:
+  - `swevents.c` `-ejpl<name>`: `char fname[80]` filled from `argv`
+    (sample program, not the library).
+  - `swe_set_ephe_path_r` / `swi_gen_filename`: filename assembly is
+    `strlen`-guarded today; `snprintf` would make the bound structural
+    rather than checked at each site.
 
 ## 2. Open — performance, bit-exact
 
@@ -60,24 +51,8 @@ or two, and verify.
 
 ## 3. Open — hygiene, bit-exact by construction
 
-One commit, verified by the gates and `make -C tests check-build`:
+Verified by the gates and `make -C tests check-build`:
 
-- `MOSH_MOON_200` is defined nowhere yet gates ~600 lines of an alternate
-  DE200-fit lunar theory in `swemmoon.c`. Delete, or state in a comment that
-  it is kept as reference.
-- 47 `#if 0` regions (~500 lines) across `swehel.c`, `swephlib.c`,
-  `swecl.c`, `swehouse.c`, incl. the full duplicate `get_asc_obl_old`, plus
-  two runtime-dead `if ((0))` blocks in `swehel.c`. Three scripted edits
-  landed *inside* these on `threadsafe` and silently did nothing — the cost
-  is real.
-- Always-true `#if 1 … #endif` wrappers in `sweph.c` (8 sites).
-- Stale `extern struct epsilon oec2000, oec;` in `sweph.h` — no such symbols
-  exist.
-- `swehouse.h` has no include guard.
-- `Makefile`: dependency rule for a `sweclips.o` that does not exist;
-  `sweventss` defined but not in `ALL_TARGETS`.
-- `mods3600` defined twice (macro in `swemplan.c`, function in
-  `swemmoon.c`).
 - `swephgen4.c`: the last two K&R definitions in the tree; it and
   `sweephe4.c` include no standard headers directly. Neither is built by any
   target, which is why nothing has noticed.
@@ -120,8 +95,9 @@ Worth doing only as their own rollup, with G1/G8 as the proof:
 - **`pow(x, 2)` → `x*x`**: not guaranteed bit-identical.
 - **`swe_version()`'s `strcpy`**: a 12-character literal into a buffer the
   API defines as `AS_MAXCH`.
-- **The JPL reader's `sprintf` error strings**: the two that insert a file
-  name are length-guarded; the other ten are fixed text plus numbers.
+- **The JPL reader's other `sprintf` error strings**: now `snprintf` with the
+  file name precision-limited (`cd266f9`); the remaining ten are fixed text
+  plus numbers, left alone as style.
 - **`SunRA()` under `SIMULATE_VICTORVB`**: the high-precision branch is
   never compiled and the monthly approximation is used. Upstream behaviour;
   changing it moves results.
@@ -153,3 +129,9 @@ Worth doing only as their own rollup, with G1/G8 as the proof:
 | `seorbel.txt` reopened and re-tokenised per fictitious-body call | `ace33c4`, per-context line cache; `cov:fict` rows |
 | `swi_strcpy` hand-rolled `memmove` with a `strdup` fallback | `bd4b843` |
 | setest aborted with a stack smash; G8 depended on path length | `dobs[5]` in `suite_09`, fixed on ts.5; reference runs our harness |
+| ~50 variable-length `sprintf(serr, …%s…)` sites overflowing `AS_MAXCH` (incl. the `starname` caller overflow in `swe_lun_occult_when_glob`) | `cd266f9`, `snprintf` + precision limits; `2607947` fixes two null-char escape typos it introduced |
+| `MOSH_MOON_200` dead DE200 lunar theory (~415 lines, `swemmoon.c`) | `ed33133`; macro was defined nowhere |
+| `#if 0` regions, no `#else` (369 lines: `swehel`, `swephlib`, `swecl`, `swehouse`) | `3b9d090`; `#if 0/#else` config choices kept |
+| 8 always-true `#if 1` wrappers in `sweph.c` (one with dead `#else`) | `8aab6fc` |
+| 2 runtime-dead `if ((0))` blocks in `swehel.c` + variables they left unused | `e2f45fc` |
+| `swehouse.h` no include guard; phantom `sweclips.o` rule; orphan `sweventss` target | `8dcd53d` |
