@@ -3160,7 +3160,13 @@ static int32 heliacal_ut(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, doub
 int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
 {
   int32 retval, Planet;
-  char ObjectName[AS_MAXCH], serr[AS_MAXCH], s[AS_MAXCH];
+  /* serr starts empty because it is read as well as written: the Moon
+   * branch below hands it to MoonEventJDut() without clearing it first and
+   * then copies it out if it is non-empty, and a callee that succeeds is
+   * not obliged to write anything. Uninitialised, that copied whatever the
+   * stack held -- past the end of the buffer if no NUL turned up inside
+   * it, into the caller's serr_ret. */
+  char ObjectName[AS_MAXCH], serr[AS_MAXCH] = "", s[AS_MAXCH];
   double tjd0 = JDNDaysUTStart, tjd, dsynperiod, tjdmax, tadd;
   int32 MaxCountSynodicPeriod = MAX_COUNT_SYNPER;
   char *sevent[7] = {"", "morning first", "evening last", "evening first", "morning last", "acronychal rising", "acronychal setting"};
