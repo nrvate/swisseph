@@ -706,51 +706,6 @@ static int32 ObjectLoc(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *dat
 }
 
 /*###################################################################
-' JDNDaysUT [Days]
-' dgeo [array: longitude, latitude, eye height above sea m]
-' TempE [C]
-' PresE [mbar]
-' ObjectName [-]
-' Angle (0 = TopoAlt, 1 = Azi, 2=Topo Declination, 3=Topo Rectascension, 4=AppAlt,5=Geo Declination, 6=Geo Rectascension)
-' ObjectLoc [deg]
- */
-static int32 azalt_cart(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, char *ObjectName, int32 helflag, double *dret, char *serr)
-{
-  double x[6], xin[3], xaz[3], tjd_tt;
-  int32 Planet;
-  int32 epheflag;
-  int32 iflag = SEFLG_EQUATORIAL;
-  epheflag = helflag & (SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH);
-  iflag |= epheflag;
-  if (!(helflag & SE_HELFLAG_HIGH_PRECISION))
-    iflag |= SEFLG_NONUT | SEFLG_TRUEPOS;
-  iflag = iflag | SEFLG_TOPOCTR;
-  tjd_tt = JDNDaysUT + swe_deltat_ex_r(ctx, JDNDaysUT, epheflag, serr);
-  Planet = DeterObject(ObjectName);
-  if (Planet != -1) {
-    if (swe_calc_r(ctx, tjd_tt, Planet, iflag, x, serr) == ERR)
-      return ERR;
-  } else {
-    if (call_swe_fixstar(ctx, ObjectName, tjd_tt, iflag, x, serr) == ERR)
-      return ERR;
-  }
-  xin[0] = x[0];
-  xin[1] = x[1];
-  swe_azalt_r(ctx, JDNDaysUT, SE_EQU2HOR, dgeo, datm[0], datm[1], xin, xaz);
-  dret[0] = xaz[0];
-  dret[1] = xaz[1]; /* true altitude */
-  dret[2] = xaz[2]; /* apparent altitude */
-  /* also return cartesian coordinates, for apparent altitude */
-  xaz[1] = xaz[2];
-  xaz[2] = 1;
-  swi_polcart(xaz, xaz);
-  dret[3] = xaz[0];
-  dret[4] = xaz[1];
-  dret[5] = xaz[2];
-  return OK;
-}
-
-/*###################################################################
 ' LatA [rad]
 ' LongA [rad]
 ' LatB [rad]
@@ -2147,7 +2102,13 @@ static int32 heliacal_ut_arc_vis(swe_ctx *ctx, double JDNDaysUTStart, double *dg
 {
   double x[6];
   double xin[2];
-  double xaz[2];
+  /* swe_azalt() writes THREE doubles -- azimuth, true altitude, apparent
+   * altitude -- and this was xaz[2], so all four calls below wrote eight
+   * bytes past the end of it. Reachable straight from swe_heliacal_ut()
+   * with any SE_HELFLAG_AVKIND_* flag; ASan reports it as a
+   * stack-buffer-overflow in swe_azalt_r(). Every other caller in the tree
+   * already declares [3] or [6]. */
+  double xaz[3];
   double dang[3];
   double objectmagn = 0, maxlength, DayStep;
   double JDNDaysUT, JDNDaysUTfinal, JDNDaysUTstep, JDNDaysUTstepoud, JDNarcvisUT, tjd_tt, tret, OudeDatum, JDNDaysUTinp = JDNDaysUTStart, JDNDaysUTtijd;
@@ -2450,6 +2411,19 @@ static int32 find_conjunct_sun(swe_ctx *ctx, double tjd_start, int32 ipl, int32 
   if (ipl >= SE_MARS && TypeEvent >= 3)
     daspect = 180;
   i = (TypeEvent - 1) / 2 + ipl * 2;
+  /* tcon[] holds two conjunction epochs each for the Sun through Neptune
+   * and stops there, but ipl arrives from DeterObject(), which maps a
+   * numeric object name to SE_AST_OFFSET + that number. So
+   * swe_heliacal_ut(..., "433", ...) indexed tcon[20866] and read whatever
+   * happened to follow the table -- undefined, build-dependent, and a SEGV
+   * as soon as the address is not mapped. There is no epoch to seed the
+   * search with for those bodies, so say so rather than iterate from a
+   * number that means nothing. */
+  if (ipl < 0 || i < 0 || (size_t) i >= sizeof(tcon) / sizeof(tcon[0])) {
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "heliacal events are not available for object no. %d: no conjunction epoch is tabulated for it\n", (int) ipl);
+    return ERR;
+  }
   tjd0 = tcon[i];
   dsynperiod = get_synodic_period(ipl);
   tjdcon = tjd0 + ((floor) ((tjd_start - tjd0) / dsynperiod) + 1) * dsynperiod;
@@ -2825,70 +2799,6 @@ static int32 time_limit_invisible(swe_ctx *ctx, double tjd, double *dgeo, double
   return OK;
 }
 
-static int32 get_acronychal_day(swe_ctx *ctx, double tjd, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, int32 TypeEvent, double *thel, char *serr) {
-  double tret, tret_dark, darr[30], dtret;
-  /* x[6], xaz[6], alto, azio, alto_dark, azio_dark;*/
-  int32 retval, is_rise_or_set, direct;
-  int32 ipl = DeterObject(ObjectName);
-  helflag |= SE_HELFLAG_VISLIM_PHOTOPIC;
-  /*int32 epheflag = helflag & (SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH);*/
-  /* int32 iflag = epheflag | SEFLG_EQUATORIAL | SEFLG_TOPOCTR;*/
-  if (TypeEvent == 3 || TypeEvent == 5) {
-    is_rise_or_set = SE_CALC_RISE; 
-    /* tret = tjdc - 3;
-    if (ipl >= SE_MARS)
-      tret = tjdc - 3;*/
-    direct = -1;
-  } else {
-    is_rise_or_set = SE_CALC_SET; 
-    /*tret = tjdc + 3;
-    if (ipl >= SE_MARS)
-      tret = tjdc + 3;*/
-    direct = 1;
-  }
-  dtret = 999;
-#if 0
-  while (fabs(dtret) > 0.5) {
-#else
-  while (fabs(dtret) > 0.5 / 1440.0) {
-#endif
-    tjd += 0.7 * direct;
-    if (direct < 0) tjd -= 1;
-    retval = my_rise_trans(ctx, tjd, ipl, ObjectName, is_rise_or_set, helflag, dgeo, datm, &tjd, serr);
-    if (retval == ERR) return ERR;
-    retval = swe_vis_limit_mag_r(ctx, tjd, dgeo, datm, dobs, ObjectName, helflag, darr, serr);
-    if (retval == ERR) return ERR;
-    while(darr[0] < darr[7]) {
-      tjd += 10.0 / 1440.0 * -direct;
-      retval = swe_vis_limit_mag_r(ctx, tjd, dgeo, datm, dobs, ObjectName, helflag, darr, serr);
-      if (retval == ERR) return ERR;
-    }
-    retval = time_limit_invisible(ctx, tjd, dgeo, datm, dobs, ObjectName, helflag | SE_HELFLAG_VISLIM_DARK, direct, &tret_dark, serr);
-    if (retval == ERR) return ERR;
-    retval = time_limit_invisible(ctx, tjd, dgeo, datm, dobs, ObjectName, helflag | SE_HELFLAG_VISLIM_NOMOON, direct, &tret, serr);
-    if (retval == ERR) return ERR;
-#if 0
-    if (azalt_cart(ctx, tret_dark, dgeo, datm, ObjectName, helflag, darr, serr) == ERR)
-      return ERR;
-    if (azalt_cart(ctx, tret, dgeo, datm, ObjectName, helflag, darr+6, serr) == ERR)
-      return ERR;
-    dtret = acos(swi_dot_prod_unit(darr+3, darr+9)) / DEGTORAD;
-#else
-    dtret = fabs(tret - tret_dark);
-#endif
-  }
-  if (azalt_cart(ctx, tret, dgeo, datm, "sun", helflag, darr, serr) == ERR)
-    return ERR;
-  *thel = tret;
-  if (darr[1] < -12) {
-    sprintf(serr, "acronychal rising/setting not available, %f", darr[1]);
-    return OK;
-  } else {
-    sprintf(serr, "solar altitude, %f", darr[1]);
-  }
-  return OK;
-}
-
 static int32 get_heliacal_details(swe_ctx *ctx, double tday, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 TypeEvent, int32 helflag, double *dret, char *serr)
 {
   int32 i, retval, direct;
@@ -2984,24 +2894,31 @@ static int32 heliacal_ut_vis_lim(swe_ctx *ctx, double tjd_start, double *dgeo, d
     retval = get_heliacal_day(ctx, tjd, dgeo, datm, dobs, ObjectName, helflag2, TypeEvent, &tday, serr); 
     if (retval != OK)
       goto swe_heliacal_err;
-  /* 
-   * acronychal event
+  /*
+   * acronychal event -- unreachable, and now says so.
+   *
+   * Getting here needs helflag without SE_HELFLAG_AVKIND (with it, the
+   * dispatcher calls heliacal_ut_arc_vis() instead of this function),
+   * TypeEvent > 2, and an object that is neither Mercury nor Venus. But
+   * swe_heliacal_ut_r() has already refused TypeEvent 3 and 4 for
+   * Planet == -1 or Planet >= SE_MARS on this path, refused acronychal 5
+   * and 6 outright, sent the Moon to MoonEventJDut(), and refused the Sun
+   * at entry. Nothing is left, and a sweep of 11 object classes x 6 event
+   * types x AVKIND off and all four kinds entered the old branch zero
+   * times.
+   *
+   * What stood here called get_asc_obl_with_sun() -- which has other
+   * callers and stays -- and get_acronychal_day(), which had none and went
+   * with this branch, taking azalt_cart() with it. The guard stays so that
+   * if the reasoning above is ever wrong the caller finds out, instead of
+   * silently getting the heliacal answer to an acronychal question.
    */
   } else {
-    if (1 || ipl == -1) {
-      /*retval = get_asc_obl_acronychal(tjd, ipl, ObjectName, helflag2, TypeEvent, dgeo, &tjd, serr);*/
-      retval = get_asc_obl_with_sun(ctx, tjd, ipl, ObjectName, helflag, TypeEvent, 0, dgeo, &tjd, serr);
-      if (retval != OK)
-	goto swe_heliacal_err;
-    } else {
-      /* find date of conjunction of object with sun */
-      if ((retval = find_conjunct_sun(ctx, tjd, ipl, helflag, TypeEvent, &tjd, serr)) == ERR)
-	goto swe_heliacal_err;
-    }
-    tday = tjd;
-    retval = get_acronychal_day(ctx, tjd, dgeo, datm, dobs, ObjectName, helflag2, TypeEvent, &tday, serr);
-    if (retval != OK)
-      goto swe_heliacal_err;
+    /* serr here is this function's own AS_MAXCH buffer, not the caller's
+     * serr_ret, so it is never NULL and must not be tested for it. */
+    snprintf(serr, AS_MAXCH, "internal: acronychal event %d reached the visibility-limit search, which cannot compute it\n", (int) TypeEvent);
+    retval = ERR;
+    goto swe_heliacal_err;
   }
   dret[0] = tday;
   if (!(helflag & SE_HELFLAG_NO_DETAILS)) {

@@ -4355,6 +4355,8 @@ hsys[Y,5,5]                                    rc=0    0x0p+0 0x1.a7bd0bd5bbbc8p
 hsys[Y,5,6]                                    rc=0    0x0p+0 0x1.a2141e3a74d42p+7 0x1.e58097c69741ep+7 0x1.0af80f7564f5fp+8 0x1.1fe7d42ac6d5ap+8 0x1.38275172f5b4ep+8 0x1.5ae6236d251f8p+8 0x1.d0a0f1d3a6a19p+4 0x1.065efe180a30ep+6 0x1.62e419710cdacp+6 0x1.af9f50ab1b567p+6 0x1.03b848d077c62p+7 0x1.4573c796b7311p+7 0x1.a2141e3a74d43p+7 0x1.af9f50ab1b567p+6 0x1.b5989eee93986p+6 0x1.9ae2d2298065ap+3 0x1.91fdf856c26bap+7 0x1.88afde05f25d1p+7 0x1.cd0620715f0cap+7 0x1.057ef02f92e8ap+4 0x0p+0 0x0p+0
 hsys[Y,5,7]                                    rc=0    0x0p+0 0x1.a48de48960b9p+7 0x1.e7464bfb9a0ap+7 0x1.0bbba4b835d5ap+8 0x1.20b947f4f12a8p+8 0x1.39313908f7353p+8 0x1.5c4320566bdfdp+8 0x1.e46f244b05c82p+4 0x1.0a479a7b7ad49p+6 0x1.6637437ce0074p+6 0x1.b2e51fd3c4a9ep+6 0x1.05914529c455ap+7 0x1.47c9bab885e99p+7 0x1.a48de48960b8fp+7 0x1.b2e51fd3c4a9ep+6 0x1.b918b7db3267cp+6 0x1.ad65796961e6ap+3 0x1.93dbbeb55147bp+7 0x1.8a27fc476de14p+7 0x1.d05a80f049719p+7 0x1.113fe23b6f09dp+4 0x0p+0 0x0p+0
 hsys[Y,5,8]                                    rc=0    0x0p+0 0x1.a1dde27781256p+7 0x1.e549ae4d877d4p+7 0x1.0aea3bc33945p+8 0x1.1fe8925f97ff7p+8 0x1.3831831a411f7p+8 0x1.5ae582778898ep+8 0x1.ceef13bc092b1p+4 0x1.05dc4b5c23e78p+6 0x1.62a2a280ab7cdp+6 0x1.afa2497e5ffddp+6 0x1.03d5d0935271ap+7 0x1.458a4190efaf5p+7 0x1.a1dde27781258p+7 0x1.afa2497e5ffddp+6 0x1.b58aae3b395bfp+6 0x1.9b2e86086221ep+3 0x1.91ed647748ff4p+7 0x1.88adacbb541f4p+7 0x1.cc344ea22e1a4p+7 0x1.056d65daa0f9cp+4 0x0p+0 0x0p+0
+hsys_makransky[0]                              rc=0    0x0p+0 0x1.7617e1c053ce6p+7 0x1.ac25947c17ed8p+7 0x1.e73982bf1a588p+7 0x1.16bdc1f1621b7p+8 0x1.38c7376694a98p+8 0x1.54b418f87f03p+8 0x1.c2fc380a79ccp+2 0x1.883bcacc4f964p+4 0x1.9f5c29b400e9cp+5 0x1.8af707c5886ddp+6 0x1.1f9fb7428813fp+7 0x1.53c214ecfb47fp+7
+hsys_makransky[1]                              rc=-1   0x0p+0 0x1.6fdf21e3335f5p+7 0x1.af13428db8fc8p+7 0x1.ee4763383e99bp+7 0x1.16bdc1f1621b7p+8 0x1.3323b19c1f4cep+8 0x1.4f89a146dc7e4p+8 0x1.f7c878ccd7dp+1 0x1.1c4d0a36e3f2p+5 0x1.0c8ec6707d338p+6 0x1.8af707c5886ddp+6 0x1.fc8ec6707d337p+6 0x1.3713428db8fc8p+7
 sun_set[0]                                     rc=0    0x0p+0 0x1.68p+6 0x1.d7a46729e463p+6 0x1.27a331ffa16afp+7 0x1.68p+7 0x1.a85cce005e951p+7 0x1.e42dcc6b0dce8p+7 0x1.0ep+8 0x1.29e919ca7918cp+8 0x1.47d198ffd0b57p+8 0x0p+0 0x1.017338017a545p+5 0x1.f0b731ac373ap+5 | dec=0x1.770a3d70a3d71p+4 
 sun_recall[0]                                  rc=0    0x0p+0 0x1.68p+6 0x1.d7a46729e463p+6 0x1.27a331ffa16afp+7 0x1.68p+7 0x1.a85cce005e951p+7 0x1.e42dcc6b0dce8p+7 0x1.0ep+8 0x1.29e919ca7918cp+8 0x1.47d198ffd0b57p+8 0x0p+0 0x1.017338017a545p+5 0x1.f0b731ac373ap+5 | dec=0x1.770a3d70a3d71p+4 
 sun_set[1]                                     rc=0    0x0p+0 0x1.68p+7 0x1.a85cce005e951p+7 0x1.e42dcc6b0dce8p+7 0x1.0ep+8 0x1.29e919ca7918cp+8 0x1.47d198ffd0b57p+8 0x0p+0 0x1.017338017a548p+5 0x1.f0b731ac373a2p+5 0x1.68p+6 0x1.d7a46729e462fp+6 0x1.27a331ffa16afp+7 | dec=0x1.770a3d70a3d71p+4 
@@ -4834,6 +4836,11 @@ vislim[2,Mars]                                 rf=-2     -0x1.9p+6 0x0p+0 0x0p+0
 helpheno[2,Mars]                               rf=0      -0x1.2d60753b8c2e8p+4 -0x1.2d60753b8c2e8p+4 -0x1.2d5b57a7b459cp+4 0x1.d787046889a54p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 -0x1.6a6b34b4a0316p+5 -0x1.6a68a5eab447p+5 -0x1.e228cef0bdb4p+3 0x1.79c05541143b2p+5 0x1.d55e5770f0148p-3 0x0p+0
 tav[2]                                         rf=0      0x1.9p+6
 helangle[2]                                    rf=0      0x1.bcp+1 0x1.2933cp+3 -0x1.74678p+2
+hel_avkind[mars,vr]                            rf=0      0x1.2b4aad4b1837ep+21 0x0p+0 0x0p+0
+hel_avkind[mars,acro]                          rf=0      0x1.2b537a95bf8e3p+21 0x0p+0 0x0p+0
+hel_avkind[mars,min7]                          rf=0      0x1.2b4aad7138c9fp+21 0x0p+0 0x0p+0
+hel_avkind[moon,vr]                            rf=0      0x1.2b4301bf97fb3p+21 0x0p+0 0x0p+0
+hel_asteroid[433]                              rf=-1     0x1.2b42c8p+21 0x0p+0 0x0p+0 | heliacal events are not available for object no. 10433: no conjunction epoch is tabulated for it 
 ayanname[0]                                    Fagan/Bradley
 ayanname[1]                                    Lahiri
 ayanname[2]                                    De Luce
@@ -5022,6 +5029,31 @@ cov:deltatmodel[3]                             rf=0      0x1.28b5c6913068fp-6
 cov:deltatmodel[4]                             rf=0      0x1.297deb82bbb0dp-6
 cov:deltatmodel[5]                             rf=0      0x1.17a66e4bc4716p-6
 cov:set_jpl_file                               rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | JPL ephemeris is not available for jd 2451545.0000; falling back to Swiss (.se1) would answer with lower precision. Install the data files, or call swe_set_ephe_fallback(1) to allow the substitution.
+cov:ephe_fallback[default]                     rf=0      0x0p+0
+cov:ephe_fallback[strict]                      rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | JPL ephemeris is not available for jd 2451545.0000; falling back to Swiss (.se1) would answer with lower precision. Install the data files, or call swe_set_ephe_fallback(1) to allow the substitution.
+cov:ephe_fallback[set]                         rf=0      0x1p+0
+cov:ephe_fallback[fallback]                    rf=2      0x1.47f675709570ap+8 -0x1.115afd9485b86p+0 0x1.d984e12cb7042p+0 0x0p+0 0x0p+0 0x0p+0 | SwissEph file 'de431.eph' not found in PATH '$EPHE/'  trying Swiss Eph; 
+cov:ephe_fallback[restored]                    rf=0      0x0p+0
+cov:orbit_max_min[4]                           rf=0      0x1.5687a474eb27cp+1 0x1.7dc4150ebd56cp-2 0x1.d9802fa236f15p+0
+cov:orbit_max_min[1]                           rf=0      0x1.63b64a74ea48bp-9 0x1.3974b9e0a29e3p-9 0x1.609c3bc0c6b4ap-9
+cov:intp_apsides[21]                           rf=258    0x1.0329f88526fe9p+8 0x1.d7b06037803ddp+1 0x1.6422667804c36p-9 -0x1.049e47c0a9f48p-6 0x1.9e01e9e9ba964p-9 -0x1.d09f120a55712p-24
+cov:intp_apsides[22]                           rf=258    0x1.6f92d9d098fd2p+6 -0x1.63869c19bcfc9p+1 0x1.3901f647631p-9 0x1.1e3eaed7b5f47p-1 0x1.5d385787d9979p-5 0x1.1dc71e248cdfdp-21
+cov:hsys_sid[trad]                             rc=0    0x0p+0 0x1.9e4114f8d2ba2p+3 0x1.5f607abde37b2p+5 0x1.029946ec896a4p+6 0x1.4ebe1c76ea736p+6 0x1.a79f735b9914ep+6 0x1.15b06559c0973p+7 0x1.81e4114f8d2bap+7 0x1.bfd81eaf78dedp+7 0x1.e94ca37644b53p+7 0x1.07af871dba9cep+8 0x1.1de7dcd6e6454p+8 0x1.3ed832ace04b9p+8
+cov:hsys_sid[eclt0]                            rc=0    0x0p+0 0x1.9e9041362e166p+3 0x1.5f6def2fa2348p+5 0x1.029c02134374ap+6 0x1.4ebd711c9f1e1p+6 0x1.a79c49ec0c8b4p+6 0x1.15af62af72c5cp+7 0x1.81e9041362e16p+7 0x1.bfdb7bcbe88d2p+7 0x1.e94e0109a1ba5p+7 0x1.07af5c4727c79p+8 0x1.1de7127b0322ep+8 0x1.3ed7b157b962fp+8
+cov:hsys_sid[ssypl]                            rc=0    0x0p+0 0x1.232920d76feep+3 0x1.5574a76329768p+5 0x1.01a2c61327034p+6 0x1.4ec480d46a858p+6 0x1.a5dfba541a7bap+6 0x1.118b69dda07bbp+7 0x1.7a32920d76fedp+7 0x1.bd5d29d8ca5d9p+7 0x1.e8d1630993819p+7 0x1.07b120351aa16p+8 0x1.1d77ee95069efp+8 0x1.3cc5b4eed03dfp+8
+cov:sid_ssy_plane                              rf=65858  0x1.302094294769cp+8 -0x1.6edb0b1f73dfap-5 0x1.d984e12cb7044p+0 0x1.8cd58f2a317d1p-1 0x1.d6f13d3c5c5f9p-6 0x1.63854377b01fdp-8
+cov:precmodel[1]                               rf=258    0x1.733c98fb771a3p+7 0x1.4f5c2ed4f9056p+0 0x1.86527aabfa554p+0 0x1.519cacde52c29p-1 -0x1.8f3764f8d8e86p-8 -0x1.20fef9e777ec7p-7
+cov:precmodel[2]                               rf=258    0x1.733803720b4b6p+7 0x1.4d85dcd1a5f27p+0 0x1.86527aabfa555p+0 0x1.519c45a3dadf4p-1 -0x1.9794d7dd3dccfp-8 -0x1.20fef9e53721ep-7
+cov:precmodel[3]                               rf=258    0x1.733806938a715p+7 0x1.4d85f040e800ap+0 0x1.86527aabfa555p+0 0x1.519c45993540ap-1 -0x1.97979a2ca0abdp-8 -0x1.20fef9e62cf0fp-7
+cov:precmodel[4]                               rf=258    0x1.733806963d6bap+7 0x1.4d8540ebabfaep+0 0x1.86527aabfa556p+0 0x1.519c457f1e6b4p-1 -0x1.97982739d30bep-8 -0x1.20fef9e6295fep-7
+cov:precmodel[5]                               rf=258    0x1.7339ffa3a6fcep+7 0x1.4d856587fc83cp+0 0x1.86527aabfa556p+0 0x1.519c458cc9214p-1 -0x1.979650e7a8105p-8 -0x1.20fef9e4a747p-7
+cov:precmodel[6]                               rf=258    0x1.7301f8699fc26p+7 0x1.5a16be19d6da1p+0 0x1.86527aabfa557p+0 0x1.519d8fdf3ac66p-1 -0x1.ad946887a2306p-8 -0x1.20fef9e50d014p-7
+cov:precmodel[7]                               rf=258    0x1.7337cb417769cp+7 0x1.4d33a2356921ep+0 0x1.86527aabfa553p+0 0x1.519c376010d61p-1 -0x1.9840c51c302cdp-8 -0x1.20fef9e5fd944p-7
+cov:precmodel[8]                               rf=258    0x1.73378a88226c5p+7 0x1.4d8ee8cd369cap+0 0x1.86527aabfa557p+0 0x1.519c47ece7cc2p-1 -0x1.975c0c9064812p-8 -0x1.20fef9e3e7209p-7
+cov:precmodel[9]                               rf=258    0x1.733699092dcdap+7 0x1.4d8e2b0b5ea4bp+0 0x1.86527aabfa555p+0 0x1.519c4f9e0594ep-1 -0x1.965c4d5f353b5p-8 -0x1.20fef9e4fefb6p-7
+cov:precmodel[10]                              rf=258    0x1.7337fc4ceb6fbp+7 0x1.4d83b29bf6412p+0 0x1.86527aabfa556p+0 0x1.519c453da22e5p-1 -0x1.979aa4da2cd39p-8 -0x1.20fef9e48c568p-7
+cov:precmodel[11]                              rf=258    0x1.73420e3968542p+7 0x1.4f0f50e930d5bp+0 0x1.86527aabfa556p+0 0x1.519cb1245f4c3p-1 -0x1.8c1cd5a0e3946p-8 -0x1.20fef9e63f2cfp-7
+cov:conversions                                rf=0      0x0p+0 0x1.8f76410887cf2p+2 0x1.4p+4 0x1.5f9p+19 0x1.5f9p+19 0x1.ed02fp+26 0x1.eb8ebbfd24e73p+6 -0x1.d6ce8ea32abc6p+2 0x1.8p+0 0x1.2c28f459af8edp-7 0x1.0d62c62b2bb1bp-8 0x1.3a92a30553261p-12 0x1.2d6a8p+20 0x1.34cp+10 0x1.4p+2 | 03:25:46 3E25'46  3°25'45
 cov:order_swiss_alone                          rf=258    0x1.104f0279d40d6p+8 0x1.9f6ccf64be448p-12 0x1.f90110b1ddca4p-1 0x1.036f642afc7c4p+0 -0x1.7521509bf2dfcp-16 0x1.9fb809a1b139dp-13
 cov:order_swiss_after_moseph                   rf=258    0x1.104f0279d40d6p+8 0x1.9f6ccf64be448p-12 0x1.f90110b1ddca4p-1 0x1.036f642afc7c4p+0 -0x1.7521509bf2dfcp-16 0x1.9fb809a1b139dp-13
 cov:order_moseph_alone                         rf=260    0x1.104e365ebc0d9p+8 0x1.a91a5672993a1p-12 0x1.f900f994354f6p-1 0x1.036f8e5a8add8p+0 -0x1.6c835f7f52366p-16 0x1.9fab02011c375p-13

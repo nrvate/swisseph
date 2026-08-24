@@ -227,6 +227,18 @@ static void row(const char *tag, int32 rf, double *x, int n, const char *serr) {
   fprintf(TRANSCRIPT, "\n");
 }
 
+/* Put astro_models[] back to the library defaults.
+ *
+ * swe_set_astro_models("") is the documented way to do it, but the argument
+ * is `char *` rather than `const char *`, so every caller needs a writable
+ * buffer for an empty string. Five coverage blocks below select a model and
+ * have to undo it; this is that line, once. */
+static void reset_astro_models(void) {
+  char sam[AS_MAXCH];
+  sam[0] = '\0';
+  swe_set_astro_models(sam, 0);
+}
+
 static void planets(void) {
   char serr[AS_MAXCH]; double x[6]; char tag[256];
   for (size_t d = 0; d < NDATES; d++)
@@ -315,6 +327,27 @@ static void houses(void) {
         for (int i = 0; i < 10; i++) fprintf(TRANSCRIPT, " %a", ascmc[i]);
         fprintf(TRANSCRIPT, "\n");
       }
+
+  /* Sunshine houses have two solutions and the letter picks between them:
+   * 'I' is Treindl's, lowercase 'i' is Makransky's. The table above is
+   * uppercase throughout, so sunshine_solution_makransky() -- 40 lines,
+   * and the only one of the two that can fail into Porphyry -- was never
+   * run. Latitudes either side of the polar circle, because that failure
+   * is the interesting half. */
+  {
+    const double plat[] = { 47.37, 75.0 };
+    for (size_t la = 0; la < sizeof(plat)/sizeof(plat[0]); la++) {
+      memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
+      memset(csp,0,sizeof csp);   memset(asp,0,sizeof asp);
+      ascmc[9] = 99;
+      int rc = swe_houses_ex2(DATES[0], SEFLG_SWIEPH, plat[la], 8.55,
+                              'i', cusp, ascmc, csp, asp, NULL);
+      snprintf(tag, sizeof tag, "hsys_makransky[%zu]", la);
+      fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
+      for (int i = 0; i < 13; i++) fprintf(TRANSCRIPT, " %a", cusp[i]);
+      fprintf(TRANSCRIPT, "\n");
+    }
+  }
 }
 
 /* Sunshine houses (hsys 'I') carry cross-call state in saved_sundec.
@@ -528,6 +561,51 @@ static void heliacal(void) {
                             -1, 0, 100, 120, 20, dret, serr);
     snprintf(tag, sizeof tag, "helangle[%zu]", g);
     row(tag, rf, dret, 3, serr);
+  }
+
+  /* The OTHER heliacal strategy. Everything above leaves SE_HELFLAG_AVKIND
+   * clear, which sends swe_heliacal_ut() down heliacal_ut_vis_lim(); the
+   * arcus-visionis walk in heliacal_ut_arc_vis() -- and moon_event_arc_vis()
+   * and get_acronychal_day() with it -- had no coverage at all. That is the
+   * branch with the twice-per-step ObjectLoc() evaluation, so the whole
+   * "half of these calls are duplicates" argument was being made about code
+   * no gate ran.
+   *
+   * One site, because the point is reaching the branch rather than
+   * re-sweeping the sky. The objects are not interchangeable here:
+   * acronychal events are remapped onto the arcus-visionis walk only for
+   * Planet >= SE_MARS or a fixed star, so Venus never reaches
+   * get_acronychal_day() however the flags are set, and the Moon has its
+   * own entry point in moon_event_arc_vis(). VR and MIN7 differ again
+   * inside, on the solar depression they search to. */
+  {
+    double dgeo[3] = { sites[0][0], sites[0][1], sites[0][2] };
+    const struct { const char *obj; int32 ev, kind; const char *tag; } av[] = {
+      { "Mars",  SE_HELIACAL_RISING,   SE_HELFLAG_AVKIND_VR,   "mars,vr"    },
+      { "Mars",  SE_ACRONYCHAL_RISING, SE_HELFLAG_AVKIND_VR,   "mars,acro"  },
+      { "Mars",  SE_HELIACAL_RISING,   SE_HELFLAG_AVKIND_MIN7, "mars,min7"  },
+      { "Moon",  SE_EVENING_FIRST,     SE_HELFLAG_AVKIND_VR,   "moon,vr"    },
+    };
+    for (size_t k = 0; k < sizeof(av)/sizeof(av[0]); k++) {
+      memset(dret, 0, sizeof dret); serr[0] = 0; strcpy(obj, av[k].obj);
+      int32 rf = swe_heliacal_ut(2451545.0, dgeo, datm, dobs, obj, av[k].ev,
+                                 SEFLG_SWIEPH | av[k].kind, dret, serr);
+      snprintf(tag, sizeof tag, "hel_avkind[%s]", av[k].tag);
+      row(tag, rf, dret, 3, serr);
+    }
+
+    /* An object named by number. DeterObject() maps it to SE_AST_OFFSET +
+     * the number, and find_conjunct_sun() then indexed its 18-entry table
+     * of conjunction epochs at ipl * 2 -- tcon[20866] for this one. It read
+     * whatever followed the table: undefined, different per build, and a
+     * SEGV as soon as the address was not mapped. Found by sweeping every
+     * object class against every event type under ASan, which nothing had
+     * done because the AVKIND half of this file had no coverage at all.
+     * The row pins the refusal that replaced it. */
+    memset(dret, 0, sizeof dret); serr[0] = 0; strcpy(obj, "433");
+    int32 rfa = swe_heliacal_ut(2451545.0, dgeo, datm, dobs, obj,
+                                SE_HELIACAL_RISING, SEFLG_SWIEPH, dret, serr);
+    row("hel_asteroid[433]", rfa, dret, 3, serr);
   }
 }
 
@@ -809,7 +887,7 @@ static void coverage(void) {
      * what is already in force -- so this exercises the setter without
      * moving any row computed afterwards. Verified: the 5137 pre-existing
      * baseline rows are byte-identical with and without this call. */
-    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    reset_astro_models();
     *serr = 0; rf = swe_calc(2451545.0, SE_SUN, SEFLG_SWIEPH, x, serr);
     row("cov:set_astro_models", rf, x, 6, serr);
 
@@ -841,7 +919,7 @@ static void coverage(void) {
       snprintf(tag, sizeof tag, "cov:nutmodel[%d]", nm);
       row(tag, 0, x, 1, "");
     }
-    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    reset_astro_models();
 
     /* Changing the nutation model has to reach a position already computed
      * for that instant. swi_check_nutation() keeps the computed nutation
@@ -858,7 +936,7 @@ static void coverage(void) {
       swe_set_astro_models(sam, 0); }
     *serr = 0; rf = swe_calc(2451545.0, SE_MOON, SEFLG_SWIEPH, x, serr);
     row("cov:nutswitch[after]", rf, x, 6, serr);
-    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    reset_astro_models();
 
     /* The five delta-t models, all at ONE instant. Same two jobs as the
      * nutation rows above: the models had no coverage -- nothing computed
@@ -872,7 +950,7 @@ static void coverage(void) {
      * below 948 the 1984 model switches to Borkowski. SE_MODEL_DELTAT is
      * index 0, so the model string is just the number. */
     for (int dm = SEMOD_DELTAT_STEPHENSON_MORRISON_1984;
-	 dm <= SEMOD_DELTAT_STEPHENSON_ETC_2016; dm++) {
+         dm <= SEMOD_DELTAT_STEPHENSON_ETC_2016; dm++) {
       char sam[AS_MAXCH], tag[64];
       snprintf(sam, sizeof sam, "%d", dm);
       swe_set_astro_models(sam, 0);
@@ -880,7 +958,7 @@ static void coverage(void) {
       snprintf(tag, sizeof tag, "cov:deltatmodel[%d]", dm);
       row(tag, 0, x, 1, "");
     }
-    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    reset_astro_models();
 
     /* swe_set_jpl_file() only records a name; no .eph is shipped with this
      * repository, so the observable effect is what happens when the file is
@@ -892,6 +970,179 @@ static void coverage(void) {
     row("cov:set_jpl_file", rf, x, 6, serr);
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();                          /* drop the failed JPL attempt */
+    swe_set_ephe_path((char *) EPHE);
+
+    /* swe_set_ephe_fallback(), and the refusal it exists to switch off.
+     *
+     * This is the fork's defining behavioural break -- upstream quietly
+     * answers from a weaker ephemeris than you asked for, and this fork
+     * refuses unless you say otherwise -- and until these rows the SWITCH
+     * had no coverage at all. Only the SE_EPHE_FALLBACK environment
+     * variable was ever exercised, by G8, and only as a means of making
+     * upstream's own suite runnable. swe_set_ephe_fallback() could have
+     * been a no-op and every gate would have stayed green.
+     *
+     * The pair is one request asked twice. de431.eph is not shipped, so
+     * SEFLG_JPLEPH cannot be honoured: strict refuses (rf=-1, nothing
+     * written), permissive answers from the Swiss files and says so in
+     * serr, with the ephemeris bit in the return flag showing what actually
+     * produced the numbers. Flip the default and [strict] starts returning
+     * a position; make the setter a no-op and [fallback] stops.
+     *
+     * [strict] repeats cov:set_jpl_file above on purpose. That row exists
+     * to record the refusal; this one exists to sit next to [fallback], so
+     * the same request answered two ways reads as a pair rather than as two
+     * facts fifteen lines apart. */
+    { char jf[AS_MAXCH]; strcpy(jf, "de431.eph"); swe_set_jpl_file(jf); }
+    x[0] = swe_get_ephe_fallback();
+    row("cov:ephe_fallback[default]", 0, x, 1, "");
+    *serr = 0; rf = swe_calc(2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr);
+    row("cov:ephe_fallback[strict]", rf, x, 6, serr);
+
+    swe_set_ephe_fallback(1);
+    x[0] = swe_get_ephe_fallback();
+    row("cov:ephe_fallback[set]", 0, x, 1, "");
+    *serr = 0; rf = swe_calc(2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr);
+    row("cov:ephe_fallback[fallback]", rf, x, 6, serr);
+
+    swe_set_ephe_fallback(0);
+    x[0] = swe_get_ephe_fallback();
+    row("cov:ephe_fallback[restored]", 0, x, 1, "");
+
+    /* swe_orbit_max_min_true_distance() -- public, and until now called by
+     * nothing. It reaches osc_iterate_min_dist()/osc_iterate_max_dist(),
+     * which were likewise unreached. Mars for an ordinary planet and the
+     * Moon because it takes the geocentric branch. */
+    {
+      const int32 opl[] = { SE_MARS, SE_MOON };
+      for (size_t o = 0; o < sizeof(opl)/sizeof(opl[0]); o++) {
+        *serr = 0;
+        rf = swe_orbit_max_min_true_distance(2451545.0, opl[o], SEFLG_SWIEPH,
+                                             &x[0], &x[1], &x[2], serr);
+        snprintf(tag, sizeof tag, "cov:orbit_max_min[%d]", (int) opl[o]);
+        row(tag, rf, x, 3, serr);
+      }
+    }
+
+    /* SE_INTP_APOG and SE_INTP_PERG, the interpolated lunar apsides. The
+     * planet loop stops at SE_VESTA (20) and these are 21 and 22, so
+     * intp_apsides() was never called. */
+    for (int32 p = SE_INTP_APOG; p <= SE_INTP_PERG; p++) {
+      *serr = 0;
+      rf = swe_calc(2451545.0, p, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+      snprintf(tag, sizeof tag, "cov:intp_apsides[%d]", (int) p);
+      row(tag, rf, x, 6, serr);
+    }
+
+    /* The three sidereal house branches. houses() reaches only the
+     * tropical path because it passes SEFLG_SWIEPH and nothing else;
+     * sidereal_houses_trad(), _ecl_t0() and _ssypl() all need
+     * SEFLG_SIDEREAL, and the last two need a bit on the sidereal mode.
+     *
+     * These live HERE rather than in houses() because houses() is part of
+     * suite_compute_only(), the subset the worker threads run, and its
+     * contract is that a worker calls no setter at all --
+     * swe_set_sid_mode() publishes to the shared config master, so a
+     * worker doing it changes what every thread that has not claimed the
+     * group computes. Putting them there cost two of eight threads on G2. */
+    {
+      double cusp[37], ascmc[10], csp[37], asp[10];
+      const struct { int32 bit; const char *name; } sid[] = {
+        { 0,                   "trad"  },
+        { SE_SIDBIT_ECL_T0,    "eclt0" },
+        { SE_SIDBIT_SSY_PLANE, "ssypl" },
+      };
+      for (size_t s = 0; s < sizeof(sid)/sizeof(sid[0]); s++) {
+        memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
+        memset(csp,0,sizeof csp);   memset(asp,0,sizeof asp);
+        ascmc[9] = 99;
+        swe_set_sid_mode(SE_SIDM_LAHIRI | sid[s].bit, 0, 0);
+        int rc = swe_houses_ex2(2451545.0, SEFLG_SWIEPH | SEFLG_SIDEREAL,
+                                47.37, 8.55, 'P', cusp, ascmc, csp, asp, NULL);
+        snprintf(tag, sizeof tag, "cov:hsys_sid[%s]", sid[s].name);
+        fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
+        for (int i = 0; i < 13; i++) fprintf(TRANSCRIPT, " %a", cusp[i]);
+        fprintf(TRANSCRIPT, "\n");
+      }
+      swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+    }
+
+    /* Sidereal positions projected onto the solar-system plane. The
+     * sidereal section elsewhere never sets SE_SIDBIT_SSY_PLANE, so
+     * swi_trop_ra2sid_lon_sosy() -- a distinct projection, not a variant of
+     * the traditional one -- was never entered. */
+    swe_set_sid_mode(SE_SIDM_LAHIRI | SE_SIDBIT_SSY_PLANE, 0, 0);
+    *serr = 0;
+    rf = swe_calc(2451545.0, SE_MARS, SEFLG_SWIEPH | SEFLG_SIDEREAL | SEFLG_SPEED, x, serr);
+    row("cov:sid_ssy_plane", rf, x, 6, serr);
+    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+
+    /* The eleven precession models. SEMOD_PREC_DEFAULT is VONDRAK_2011, so
+     * the other ten were arithmetic nothing ran -- precess_2() alone is 76
+     * lines at zero coverage, and the Owen 1990 chain
+     * (owen_pre_matrix/epsiln_owen_1986/get_owen_t0_icof) another 78.
+     * Precession is under every position this library returns, which makes
+     * it the worst place to have untested branches.
+     *
+     * -3000, because swi_epsiln() and swi_precess() both check |T| against
+     * a per-model century limit and use the SHORT-term model inside it; a
+     * date near J2000 would take the same branch whatever is configured.
+     * Both model slots are set to the same value so the dispatch is
+     * unambiguous. SE_MODEL_PREC_LONGTERM is index 1 and _SHORTTERM is 2.
+     *
+     * swe_set_astro_models() clears savedat[] through
+     * swi_invalidate_models(), so asking for the same body at the same
+     * instant really does recompute rather than answering from the save
+     * area -- which is what makes one date enough. */
+    for (int32 pm = SEMOD_PREC_IAU_1976; pm <= SEMOD_PREC_NEWCOMB; pm++) {
+      char sam[AS_MAXCH];
+      snprintf(sam, sizeof sam, "0,%d,%d", (int) pm, (int) pm);
+      swe_set_astro_models(sam, 0);
+      *serr = 0;
+      rf = swe_calc(625307.5, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+      snprintf(tag, sizeof tag, "cov:precmodel[%d]", (int) pm);
+      row(tag, rf, x, 6, serr);
+    }
+    reset_astro_models();
+
+    /* The small public conversions. Every one of these is exported, and
+     * every one had zero coverage: nothing in the suite called them, so
+     * they could have returned anything. swe_cs2lonlatstr() and its two
+     * neighbours format into a caller-supplied buffer, which is where this
+     * codebase's bugs have lived.
+     *
+     * One row, because the interesting property is that the values are
+     * what they were, not that thirteen separate rows exist. */
+    {
+      char ts[AS_MAXCH], ls[AS_MAXCH], ds[AS_MAXCH];
+      double xpo[6] = {123.456, 12.345, 1.5, 0.01, 0.002, 0.0003}, xpn[6];
+      centisec cs = 1234567;
+      swe_cotrans_sp(xpo, xpn, 23.4392911);
+      swe_cs2timestr(cs, ':', FALSE, ts);
+      swe_cs2lonlatstr(cs, 'E', 'W', ls);
+      swe_cs2degstr(cs, ds);
+      x[0] = swe_deg_midp(350.0, 10.0);
+      x[1] = swe_rad_midp(6.1, 0.1);
+      x[2] = swe_difdegn(10.0, 350.0);
+      x[3] = (double) swe_difcsn(360000, 129240000);
+      x[4] = (double) swe_difcs2n(360000, 129240000);
+      x[5] = (double) swe_csnorm(-360000);
+      fprintf(TRANSCRIPT, "%-46s rf=%-6d", "cov:conversions", 0);
+      for (int i = 0; i < 6; i++) fprintf(TRANSCRIPT, " %a", x[i]);
+      for (int i = 0; i < 6; i++) fprintf(TRANSCRIPT, " %a", xpn[i]);
+      fprintf(TRANSCRIPT, " %a %a %a",
+              (double) swe_csroundsec(cs), (double) swe_d2l(1234.567),
+              (double) swe_day_of_week(2451545.0));
+      {
+        char cl[AS_MAXCH * 2];
+        sanitize(cl, sizeof cl, ts); fprintf(TRANSCRIPT, " | %s", cl);
+        sanitize(cl, sizeof cl, ls); fprintf(TRANSCRIPT, " %s", cl);
+        sanitize(cl, sizeof cl, ds); fprintf(TRANSCRIPT, " %s", cl);
+      }
+      fprintf(TRANSCRIPT, "\n");
+    }
+    { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
+    swe_close();
     swe_set_ephe_path((char *) EPHE);
 
     /* ⛔ Order independence: the same Swiss request must answer the same

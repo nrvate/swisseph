@@ -116,6 +116,15 @@ void swi_invalidate_models(swe_ctx *ctx)
 {
   ctx->nut.tnut = 0;
   ctx->nutv.tnut = 0;
+  /* Same story one function along: swi_check_ecliptic() keys the obliquity
+   * on tjd alone -- oec on `teps != tjd`, oec2000 on `teps != J2000` -- and
+   * no precession model appears in either. Without this, changing
+   * SE_MODEL_PREC_LONGTERM and asking again about an instant already
+   * computed returned the previous model's obliquity. It showed up as
+   * epsiln_owen_1986() staying at zero coverage while a row that selects
+   * SEMOD_PREC_OWEN_1990 sat right next to it. */
+  ctx->oec.teps = 0;
+  ctx->oec2000.teps = 0;
   swi_force_app_pos_etc(ctx);
 }
 
