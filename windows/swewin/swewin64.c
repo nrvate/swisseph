@@ -133,9 +133,14 @@ static struct pd {
 static void init_data(void);
 static char *progname ="Swisseph Test Program";
 
-DLGPROC about_proc( HWND, unsigned, WPARAM, LPARAM );
-DLGPROC inp_setup_proc( HWND, unsigned, WPARAM, LPARAM );
-long FAR WindowProc( HWND, unsigned, UINT, LONG );
+/* The Win32 callback types, not the Win16 ones this file was written
+ * against. A dialog procedure IS a DLGPROC; it does not return one. On x64
+ * the old spellings were real bugs, not style: LONG truncates the 64-bit
+ * LRESULT that DefWindowProc returns, and casting the procedure pointers
+ * hid a signature mismatch from the compiler. */
+INT_PTR CALLBACK about_proc( HWND, UINT, WPARAM, LPARAM );
+INT_PTR CALLBACK inp_setup_proc( HWND, UINT, WPARAM, LPARAM );
+LRESULT CALLBACK WindowProc( HWND, UINT, WPARAM, LPARAM );
 static int swisseph(char *buf);
 static char *dms(double x, int32 iflag);
 static void do_print(char *target, char *info);
@@ -161,7 +166,7 @@ extern char FAR *pgmptr;
 static char *zod_nam[] = {"ar", "ta", "ge", "cn", "le", "vi", 
                           "li", "sc", "sa", "cp", "aq", "pi"};
 
-long WinMain( HINSTANCE this_inst, HINSTANCE prev_inst, LPSTR cmdline,
+int WINAPI WinMain( HINSTANCE this_inst, HINSTANCE prev_inst, LPSTR cmdline,
                     int cmdshow )
 /*******************************/
 {
@@ -178,7 +183,7 @@ long WinMain( HINSTANCE this_inst, HINSTANCE prev_inst, LPSTR cmdline,
     if( !prev_inst ) {
 #endif
         wndclass.style          = CS_HREDRAW | CS_VREDRAW;
-        wndclass.lpfnWndProc    = (LPVOID) WindowProc;
+        wndclass.lpfnWndProc    = WindowProc;
         wndclass.cbClsExtra     = 0;
         wndclass.cbWndExtra     = 6 * sizeof( DWORD );
         wndclass.hInstance      = this_inst;
@@ -217,18 +222,17 @@ long WinMain( HINSTANCE this_inst, HINSTANCE prev_inst, LPSTR cmdline,
     }
     /* close open files and free allocated space */
     swe_close();
-    return((long) msg.wParam );
+    return((int) msg.wParam );
 } /* WinMain */
 
 /*
  * WindowProc - handle messages for the main application window
  */
-LONG FAR PASCAL WindowProc( HWND window_handle, unsigned msg,
-                                     UINT wparam, LONG lparam )
+LRESULT CALLBACK WindowProc( HWND window_handle, UINT msg,
+                                     WPARAM wparam, LPARAM lparam )
 /*************************************************************/
 {
-    DLGPROC             proc;
-    HANDLE              inst_handle;
+    HINSTANCE           inst_handle;
     WORD                cmd;
     /*
      * now process the message
@@ -246,7 +250,6 @@ LONG FAR PASCAL WindowProc( HWND window_handle, unsigned msg,
         case MENU_ABOUT:
             inst_handle = GET_HINST( window_handle );
             DialogBox( inst_handle,"AboutBx", window_handle, about_proc );
-            FreeProcInstance( proc );
             break;
         case MENU_EXIT:
             SendMessage( window_handle, WM_CLOSE, 0, 0L );
@@ -254,7 +257,6 @@ LONG FAR PASCAL WindowProc( HWND window_handle, unsigned msg,
         case MENU_CALC:
             inst_handle = GET_HINST( window_handle );
             DialogBox( inst_handle, "DATABX", window_handle, inp_setup_proc );
-            FreeProcInstance( proc );
             SendMessage( window_handle, WM_CLOSE, 0, 0L );
             break;
         }
@@ -273,7 +275,7 @@ LONG FAR PASCAL WindowProc( HWND window_handle, unsigned msg,
 /*
  * about_proc -  processes messages for the about dialogue.
  */
-DLGPROC  about_proc( HWND window_handle, unsigned msg,
+INT_PTR CALLBACK about_proc( HWND window_handle, UINT msg,
                                 WPARAM wparam, LPARAM lparam )
 /********************************************************/
 {
@@ -282,14 +284,14 @@ DLGPROC  about_proc( HWND window_handle, unsigned msg,
     switch( msg ) {
     case WM_INITDIALOG:
         
-        return((DLGPROC) TRUE );
+        return( TRUE );
     case WM_CLOSE :
         EndDialog( window_handle, TRUE );
-        return((DLGPROC) TRUE );
+        return( TRUE );
     case WM_COMMAND:
         if( LOWORD( wparam ) == IDOK ) {
             EndDialog( window_handle, TRUE );
-            return((DLGPROC) TRUE );
+            return( TRUE );
         }
         break;
     }
@@ -299,7 +301,7 @@ DLGPROC  about_proc( HWND window_handle, unsigned msg,
 /*
  * Input
  */
-DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
+INT_PTR CALLBACK inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
 /*************************************************************************/
 {
     WORD        cmd;
@@ -314,37 +316,37 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
         old_pd = pd;
         for (i = j = 0; i < 2; i++) {
           if (strcmp(lat_n_s[i], pd.lat_n_s) == 0) j = i;
-          SendDlgItemMessage( hdlg, COMBO_N_S, CB_ADDSTRING, 0, (DWORD)(LPSTR) lat_n_s[i]);
+          SendDlgItemMessage( hdlg, COMBO_N_S, CB_ADDSTRING, 0, (LPARAM)(LPSTR) lat_n_s[i]);
         }
         SendDlgItemMessage( hdlg, COMBO_N_S, CB_SETCURSEL, j, 0);
         for (i = j = 0; i < 2; i++) {
           if (strcmp(lon_e_w[i], pd.lon_e_w) == 0) j = i;
-          SendDlgItemMessage( hdlg, COMBO_E_W, CB_ADDSTRING, 0, (DWORD)(LPSTR) lon_e_w[i]);
+          SendDlgItemMessage( hdlg, COMBO_E_W, CB_ADDSTRING, 0, (LPARAM)(LPSTR) lon_e_w[i]);
         }
         SendDlgItemMessage( hdlg, COMBO_E_W, CB_SETCURSEL, j, 0);
         for (i = j = 0; i < 2; i++) {
           if (strcmp(etut[i], pd.etut) == 0) j = i;
-          SendDlgItemMessage( hdlg, COMBO_ET_UT, CB_ADDSTRING, 0, (DWORD)(LPSTR) etut[i]);
+          SendDlgItemMessage( hdlg, COMBO_ET_UT, CB_ADDSTRING, 0, (LPARAM)(LPSTR) etut[i]);
         }
         SendDlgItemMessage( hdlg, COMBO_ET_UT, CB_SETCURSEL, j, 0);
         for (i = j = 0; i < NEPHE; i++) {
           if (strcmp(ephe[i], pd.ephe) == 0) j = i;
-          SendDlgItemMessage( hdlg, COMBO_EPHE, CB_ADDSTRING, 0, (DWORD)(LPSTR) ephe[i]);
+          SendDlgItemMessage( hdlg, COMBO_EPHE, CB_ADDSTRING, 0, (LPARAM)(LPSTR) ephe[i]);
         }
         SendDlgItemMessage( hdlg, COMBO_EPHE, CB_SETCURSEL, j, 0);
         for (i = j = 0; i < NPLANSEL; i++) {
           if (strcmp(plansel[i], pd.plansel) == 0) j = i;
-          SendDlgItemMessage( hdlg, COMBO_PLANSEL, CB_ADDSTRING, 0, (DWORD)(LPSTR) plansel[i]);
+          SendDlgItemMessage( hdlg, COMBO_PLANSEL, CB_ADDSTRING, 0, (LPARAM)(LPSTR) plansel[i]);
         }
         SendDlgItemMessage( hdlg, COMBO_PLANSEL, CB_SETCURSEL, j, 0);
         for (i = j = 0; i < NCENTERS; i++) {
           if (strcmp(ctr[i], pd.ctr) == 0) j = i;
-          SendDlgItemMessage( hdlg, COMBO_CENTER, CB_ADDSTRING, 0, (DWORD)(LPSTR) ctr[i]);
+          SendDlgItemMessage( hdlg, COMBO_CENTER, CB_ADDSTRING, 0, (LPARAM)(LPSTR) ctr[i]);
         }
         SendDlgItemMessage( hdlg, COMBO_CENTER, CB_SETCURSEL, j, 0);
         for (i = j = 0; i < NHSYS; i++) {
           if (strcmp(hsysname[i], pd.hsysname) == 0) j = i;
-          SendDlgItemMessage( hdlg, COMBO_HSYS, CB_ADDSTRING, 0, (DWORD)(LPSTR) hsysname[i]);
+          SendDlgItemMessage( hdlg, COMBO_HSYS, CB_ADDSTRING, 0, (LPARAM)(LPSTR) hsysname[i]);
         }
         SendDlgItemMessage( hdlg, COMBO_HSYS, CB_SETCURSEL, j, 0);
         /* set date */
@@ -362,51 +364,51 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
         SetDlgItemText( hdlg, EDIT_LATS, itoa(pd.lat_sec, s, 10));
         SetDlgItemText( hdlg, EDIT_ALT, ltoa(pd.alt, s, 10));
         SetDlgItemText( hdlg, EDIT_ASTNO, pd.sast);
-        return((DLGPROC) TRUE );
+        return( TRUE );
     case WM_CLOSE :
         EndDialog( hdlg, TRUE );
-        return((DLGPROC) TRUE );
+        return( TRUE );
     case WM_COMMAND :
         cmd = LOWORD( wparam );
         switch( cmd ) {
         case PB_EXIT :
             pd = old_pd;
             EndDialog( hdlg, 0 );
-            return((DLGPROC) TRUE );
+            return( TRUE );
         case PB_DOIT :     
             buf = (char *)calloc(BUFLEN, sizeof(char));
             swisseph(buf);
             SetDlgItemText(hdlg, EDIT_OUTPUT2, buf);
             free(buf);
-            return((DLGPROC) TRUE );
+            return( TRUE );
         case COMBO_ET_UT:
             i = (int) SendDlgItemMessage(hdlg, COMBO_ET_UT, CB_GETCURSEL, 0, 0);
             strcpy(pd.etut, etut[i]);
-            return (DLGPROC) TRUE;
+            return TRUE;
         case COMBO_N_S:
             i = (int) SendDlgItemMessage( hdlg, COMBO_N_S, CB_GETCURSEL, 0, 0);
             strcpy(pd.lat_n_s, lat_n_s[i]);
-            return (DLGPROC) TRUE;
+            return TRUE;
         case COMBO_E_W:
             i = (int) SendDlgItemMessage( hdlg, COMBO_E_W, CB_GETCURSEL, 0, 0);
             strcpy(pd.lon_e_w, lon_e_w[i]);
-            return (DLGPROC) TRUE;
+            return TRUE;
         case COMBO_EPHE:
             i = (int) SendDlgItemMessage( hdlg, COMBO_EPHE, CB_GETCURSEL, 0, 0);
             strcpy(pd.ephe, ephe[i]);
-            return (DLGPROC) TRUE;
+            return TRUE;
         case COMBO_PLANSEL:
             i = (int) SendDlgItemMessage( hdlg, COMBO_PLANSEL, CB_GETCURSEL, 0, 0);
             strcpy(pd.plansel, plansel[i]);
-            return (DLGPROC) TRUE;
+            return TRUE;
         case COMBO_CENTER:
             i = (int) SendDlgItemMessage( hdlg, COMBO_CENTER, CB_GETCURSEL, 0, 0);
             strcpy(pd.ctr, ctr[i]);
-            return (DLGPROC) TRUE;
+            return TRUE;
         case COMBO_HSYS:
             i = (int) SendDlgItemMessage( hdlg, COMBO_HSYS, CB_GETCURSEL, 0, 0);
             strcpy(pd.hsysname, hsysname[i]);
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_DAY:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -415,7 +417,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_MONTH:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -424,7 +426,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_YEAR:
             GetDlgItemText( hdlg, cmd, s, 6);
             if (*s != '\0') {
@@ -434,7 +436,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
                 SetDlgItemText( hdlg, cmd, "");
             }
             pd.year = atoi(s);
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_HOUR:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -443,7 +445,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_MINUTE:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -452,7 +454,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_SECOND:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -461,7 +463,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_LONG:
             GetDlgItemText( hdlg, cmd, s, 4);
             if (*s != '\0') {
@@ -470,7 +472,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_LONGM:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -479,7 +481,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_LONGS:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -488,7 +490,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_LAT:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -497,7 +499,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_LATM:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -506,7 +508,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_LATS:
             GetDlgItemText( hdlg, cmd, s, 3);
             if (*s != '\0') {
@@ -515,7 +517,7 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
               else
                 SetDlgItemText( hdlg, cmd, "");
             }
-            return (DLGPROC) TRUE;
+            return TRUE;
         case EDIT_ALT:
             GetDlgItemText( hdlg, cmd, s, 10);
             if (*s != '\0') {
@@ -525,12 +527,12 @@ DLGPROC inp_setup_proc( HWND hdlg, UINT message, WPARAM wparam, LPARAM lparam )
                 SetDlgItemText( hdlg, cmd, "");
             }
             pd.alt = atol(s);
-            return (DLGPROC) TRUE;
+            return TRUE;
 		case EDIT_ASTNO:
 		    GetDlgItemText( hdlg, cmd, s, 50);
 			strcpy(pd.sast, s);
 	        /*SetDlgItemText( hdlg, cmd, pd.sast);*/
-		    return (DLGPROC) TRUE;
+		    return TRUE;
         }
         return( FALSE );
     }
