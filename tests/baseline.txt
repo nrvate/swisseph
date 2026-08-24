@@ -4834,6 +4834,11 @@ vislim[2,Mars]                                 rf=-2     -0x1.9p+6 0x0p+0 0x0p+0
 helpheno[2,Mars]                               rf=0      -0x1.2d60753b8c2e8p+4 -0x1.2d60753b8c2e8p+4 -0x1.2d5b57a7b459cp+4 0x1.d787046889a54p+6 0x1.a775f42db4344p+4 0x1.9b41ea8a71eecp+6 -0x1.6a6b34b4a0316p+5 -0x1.6a68a5eab447p+5 -0x1.e228cef0bdb4p+3 0x1.79c05541143b2p+5 0x1.d55e5770f0148p-3 0x0p+0
 tav[2]                                         rf=0      0x1.9p+6
 helangle[2]                                    rf=0      0x1.bcp+1 0x1.2933cp+3 -0x1.74678p+2
+hel_avkind[mars,vr]                            rf=0      0x1.2b4aad4b1837ep+21 0x0p+0 0x0p+0
+hel_avkind[mars,acro]                          rf=0      0x1.2b537a95bf8e3p+21 0x0p+0 0x0p+0
+hel_avkind[mars,min7]                          rf=0      0x1.2b4aad7138c9fp+21 0x0p+0 0x0p+0
+hel_avkind[moon,vr]                            rf=0      0x1.2b4301bf97fb3p+21 0x0p+0 0x0p+0
+hel_asteroid[433]                              rf=-1     0x1.2b42c8p+21 0x0p+0 0x0p+0 | heliacal events are not available for object no. 10433: no conjunction epoch is tabulated for it 
 ayanname[0]                                    Fagan/Bradley
 ayanname[1]                                    Lahiri
 ayanname[2]                                    De Luce
@@ -5022,6 +5027,13 @@ cov:deltatmodel[3]                             rf=0      0x1.28b5c6913068fp-6
 cov:deltatmodel[4]                             rf=0      0x1.297deb82bbb0dp-6
 cov:deltatmodel[5]                             rf=0      0x1.17a66e4bc4716p-6
 cov:set_jpl_file                               rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | JPL ephemeris is not available for jd 2451545.0000; falling back to Swiss (.se1) would answer with lower precision. Install the data files, or call swe_set_ephe_fallback(1) to allow the substitution.
+cov:ephe_fallback[default]                     rf=0      0x0p+0
+cov:ephe_fallback[strict]                      rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | JPL ephemeris is not available for jd 2451545.0000; falling back to Swiss (.se1) would answer with lower precision. Install the data files, or call swe_set_ephe_fallback(1) to allow the substitution.
+cov:ephe_fallback[set]                         rf=0      0x1p+0
+cov:ephe_fallback[fallback]                    rf=2      0x1.47f675709570ap+8 -0x1.115afd9485b86p+0 0x1.d984e12cb7042p+0 0x0p+0 0x0p+0 0x0p+0 | SwissEph file 'de431.eph' not found in PATH '$EPHE/'  trying Swiss Eph; 
+cov:ephe_fallback[restored]                    rf=0      0x0p+0
+cov:orbit_max_min[4]                           rf=0      0x1.5687a474eb27cp+1 0x1.7dc4150ebd56cp-2 0x1.d9802fa236f15p+0
+cov:orbit_max_min[1]                           rf=0      0x1.63b64a74ea48bp-9 0x1.3974b9e0a29e3p-9 0x1.609c3bc0c6b4ap-9
 cov:order_swiss_alone                          rf=258    0x1.104f0279d40d6p+8 0x1.9f6ccf64be448p-12 0x1.f90110b1ddca4p-1 0x1.036f642afc7c4p+0 -0x1.7521509bf2dfcp-16 0x1.9fb809a1b139dp-13
 cov:order_swiss_after_moseph                   rf=258    0x1.104f0279d40d6p+8 0x1.9f6ccf64be448p-12 0x1.f90110b1ddca4p-1 0x1.036f642afc7c4p+0 -0x1.7521509bf2dfcp-16 0x1.9fb809a1b139dp-13
 cov:order_moseph_alone                         rf=260    0x1.104e365ebc0d9p+8 0x1.a91a5672993a1p-12 0x1.f900f994354f6p-1 0x1.036f8e5a8add8p+0 -0x1.6c835f7f52366p-16 0x1.9fab02011c375p-13

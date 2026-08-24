@@ -529,6 +529,51 @@ static void heliacal(void) {
     snprintf(tag, sizeof tag, "helangle[%zu]", g);
     row(tag, rf, dret, 3, serr);
   }
+
+  /* The OTHER heliacal strategy. Everything above leaves SE_HELFLAG_AVKIND
+   * clear, which sends swe_heliacal_ut() down heliacal_ut_vis_lim(); the
+   * arcus-visionis walk in heliacal_ut_arc_vis() -- and moon_event_arc_vis()
+   * and get_acronychal_day() with it -- had no coverage at all. That is the
+   * branch with the twice-per-step ObjectLoc() evaluation, so the whole
+   * "half of these calls are duplicates" argument was being made about code
+   * no gate ran.
+   *
+   * One site, because the point is reaching the branch rather than
+   * re-sweeping the sky. The objects are not interchangeable here:
+   * acronychal events are remapped onto the arcus-visionis walk only for
+   * Planet >= SE_MARS or a fixed star, so Venus never reaches
+   * get_acronychal_day() however the flags are set, and the Moon has its
+   * own entry point in moon_event_arc_vis(). VR and MIN7 differ again
+   * inside, on the solar depression they search to. */
+  {
+    double dgeo[3] = { sites[0][0], sites[0][1], sites[0][2] };
+    const struct { const char *obj; int32 ev, kind; const char *tag; } av[] = {
+      { "Mars",  SE_HELIACAL_RISING,   SE_HELFLAG_AVKIND_VR,   "mars,vr"    },
+      { "Mars",  SE_ACRONYCHAL_RISING, SE_HELFLAG_AVKIND_VR,   "mars,acro"  },
+      { "Mars",  SE_HELIACAL_RISING,   SE_HELFLAG_AVKIND_MIN7, "mars,min7"  },
+      { "Moon",  SE_EVENING_FIRST,     SE_HELFLAG_AVKIND_VR,   "moon,vr"    },
+    };
+    for (size_t k = 0; k < sizeof(av)/sizeof(av[0]); k++) {
+      memset(dret, 0, sizeof dret); serr[0] = 0; strcpy(obj, av[k].obj);
+      int32 rf = swe_heliacal_ut(2451545.0, dgeo, datm, dobs, obj, av[k].ev,
+                                 SEFLG_SWIEPH | av[k].kind, dret, serr);
+      snprintf(tag, sizeof tag, "hel_avkind[%s]", av[k].tag);
+      row(tag, rf, dret, 3, serr);
+    }
+
+    /* An object named by number. DeterObject() maps it to SE_AST_OFFSET +
+     * the number, and find_conjunct_sun() then indexed its 18-entry table
+     * of conjunction epochs at ipl * 2 -- tcon[20866] for this one. It read
+     * whatever followed the table: undefined, different per build, and a
+     * SEGV as soon as the address was not mapped. Found by sweeping every
+     * object class against every event type under ASan, which nothing had
+     * done because the AVKIND half of this file had no coverage at all.
+     * The row pins the refusal that replaced it. */
+    memset(dret, 0, sizeof dret); serr[0] = 0; strcpy(obj, "433");
+    int32 rfa = swe_heliacal_ut(2451545.0, dgeo, datm, dobs, obj,
+                                SE_HELIACAL_RISING, SEFLG_SWIEPH, dret, serr);
+    row("hel_asteroid[433]", rfa, dret, 3, serr);
+  }
 }
 
 /* Name lookups and small conversions. swe_get_ayanamsa_name() in particular
@@ -892,6 +937,56 @@ static void coverage(void) {
     row("cov:set_jpl_file", rf, x, 6, serr);
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();                          /* drop the failed JPL attempt */
+    swe_set_ephe_path((char *) EPHE);
+
+    /* swe_set_ephe_fallback(), and the refusal it exists to switch off.
+     *
+     * This is the fork's defining behavioural break -- upstream quietly
+     * answers from a weaker ephemeris than you asked for, and this fork
+     * refuses unless you say otherwise -- and until these rows the SWITCH
+     * had no coverage at all. Only the SE_EPHE_FALLBACK environment
+     * variable was ever exercised, by G8, and only as a means of making
+     * upstream's own suite runnable. swe_set_ephe_fallback() could have
+     * been a no-op and every gate would have stayed green.
+     *
+     * The pair is one request asked twice. de431.eph is not shipped, so
+     * SEFLG_JPLEPH cannot be honoured: strict refuses (rf=-1, nothing
+     * written), permissive answers from the Swiss files and says so in
+     * serr, with the ephemeris bit in the return flag showing what actually
+     * produced the numbers. Flip the default and [strict] starts returning
+     * a position; make the setter a no-op and [fallback] stops. */
+    { char jf[AS_MAXCH]; strcpy(jf, "de431.eph"); swe_set_jpl_file(jf); }
+    x[0] = swe_get_ephe_fallback();
+    row("cov:ephe_fallback[default]", 0, x, 1, "");
+    *serr = 0; rf = swe_calc(2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr);
+    row("cov:ephe_fallback[strict]", rf, x, 6, serr);
+
+    swe_set_ephe_fallback(1);
+    x[0] = swe_get_ephe_fallback();
+    row("cov:ephe_fallback[set]", 0, x, 1, "");
+    *serr = 0; rf = swe_calc(2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr);
+    row("cov:ephe_fallback[fallback]", rf, x, 6, serr);
+
+    swe_set_ephe_fallback(0);
+    x[0] = swe_get_ephe_fallback();
+    row("cov:ephe_fallback[restored]", 0, x, 1, "");
+
+    /* swe_orbit_max_min_true_distance() -- public, and until now called by
+     * nothing. It reaches osc_iterate_min_dist()/osc_iterate_max_dist(),
+     * which were likewise unreached. Mars for an ordinary planet and the
+     * Moon because it takes the geocentric branch. */
+    { int ipl2;
+      for (ipl2 = 0; ipl2 < 2; ipl2++) {
+	int32 p = ipl2 ? SE_MOON : SE_MARS;
+	*serr = 0;
+	rf = swe_orbit_max_min_true_distance(2451545.0, p, SEFLG_SWIEPH,
+					     &x[0], &x[1], &x[2], serr);
+	snprintf(tag, sizeof tag, "cov:orbit_max_min[%d]", (int) p);
+	row(tag, rf, x, 3, serr);
+      }
+    }
+    { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
+    swe_close();
     swe_set_ephe_path((char *) EPHE);
 
     /* ⛔ Order independence: the same Swiss request must answer the same

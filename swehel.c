@@ -2147,7 +2147,13 @@ static int32 heliacal_ut_arc_vis(swe_ctx *ctx, double JDNDaysUTStart, double *dg
 {
   double x[6];
   double xin[2];
-  double xaz[2];
+  /* swe_azalt() writes THREE doubles -- azimuth, true altitude, apparent
+   * altitude -- and this was xaz[2], so all four calls below wrote eight
+   * bytes past the end of it. Reachable straight from swe_heliacal_ut()
+   * with any SE_HELFLAG_AVKIND_* flag; ASan reports it as a
+   * stack-buffer-overflow in swe_azalt_r(). Every other caller in the tree
+   * already declares [3] or [6]. */
+  double xaz[3];
   double dang[3];
   double objectmagn = 0, maxlength, DayStep;
   double JDNDaysUT, JDNDaysUTfinal, JDNDaysUTstep, JDNDaysUTstepoud, JDNarcvisUT, tjd_tt, tret, OudeDatum, JDNDaysUTinp = JDNDaysUTStart, JDNDaysUTtijd;
@@ -2450,6 +2456,19 @@ static int32 find_conjunct_sun(swe_ctx *ctx, double tjd_start, int32 ipl, int32 
   if (ipl >= SE_MARS && TypeEvent >= 3)
     daspect = 180;
   i = (TypeEvent - 1) / 2 + ipl * 2;
+  /* tcon[] holds two conjunction epochs each for the Sun through Neptune
+   * and stops there, but ipl arrives from DeterObject(), which maps a
+   * numeric object name to SE_AST_OFFSET + that number. So
+   * swe_heliacal_ut(..., "433", ...) indexed tcon[20866] and read whatever
+   * happened to follow the table -- undefined, build-dependent, and a SEGV
+   * as soon as the address is not mapped. There is no epoch to seed the
+   * search with for those bodies, so say so rather than iterate from a
+   * number that means nothing. */
+  if (ipl < 0 || i < 0 || (size_t) i >= sizeof(tcon) / sizeof(tcon[0])) {
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "heliacal events are not available for object no. %d: no conjunction epoch is tabulated for it\n", (int) ipl);
+    return ERR;
+  }
   tjd0 = tcon[i];
   dsynperiod = get_synodic_period(ipl);
   tjdcon = tjd0 + ((floor) ((tjd_start - tjd0) / dsynperiod) + 1) * dsynperiod;
