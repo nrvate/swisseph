@@ -1062,6 +1062,71 @@ static void coverage(void) {
     rf = swe_calc(2451545.0, SE_MARS, SEFLG_SWIEPH | SEFLG_SIDEREAL | SEFLG_SPEED, x, serr);
     row("cov:sid_ssy_plane", rf, x, 6, serr);
     swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+
+    /* The eleven precession models. SEMOD_PREC_DEFAULT is VONDRAK_2011, so
+     * the other ten were arithmetic nothing ran -- precess_2() alone is 76
+     * lines at zero coverage, and the Owen 1990 chain
+     * (owen_pre_matrix/epsiln_owen_1986/get_owen_t0_icof) another 78.
+     * Precession is under every position this library returns, which makes
+     * it the worst place to have untested branches.
+     *
+     * -3000, because swi_epsiln() and swi_precess() both check |T| against
+     * a per-model century limit and use the SHORT-term model inside it; a
+     * date near J2000 would take the same branch whatever is configured.
+     * Both model slots are set to the same value so the dispatch is
+     * unambiguous. SE_MODEL_PREC_LONGTERM is index 1 and _SHORTTERM is 2.
+     *
+     * swe_set_astro_models() clears savedat[] through
+     * swi_invalidate_models(), so asking for the same body at the same
+     * instant really does recompute rather than answering from the save
+     * area -- which is what makes one date enough. */
+    { int32 pm;
+      for (pm = SEMOD_PREC_IAU_1976; pm <= SEMOD_PREC_NEWCOMB; pm++) {
+	char sam[AS_MAXCH];
+	snprintf(sam, sizeof sam, "0,%d,%d", (int) pm, (int) pm);
+	swe_set_astro_models(sam, 0);
+	*serr = 0;
+	rf = swe_calc(625307.5, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+	snprintf(tag, sizeof tag, "cov:precmodel[%d]", (int) pm);
+	row(tag, rf, x, 6, serr);
+      }
+      { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+    }
+
+    /* The small public conversions. Every one of these is exported, and
+     * every one had zero coverage: nothing in the suite called them, so
+     * they could have returned anything. swe_cs2lonlatstr() and its two
+     * neighbours format into a caller-supplied buffer, which is where this
+     * codebase's bugs have lived.
+     *
+     * One row, because the interesting property is that the values are
+     * what they were, not that thirteen separate rows exist. */
+    {
+      char ts[AS_MAXCH], ls[AS_MAXCH], ds[AS_MAXCH];
+      double xpo[6] = {123.456, 12.345, 1.5, 0.01, 0.002, 0.0003}, xpn[6];
+      centisec cs = 1234567;
+      swe_cotrans_sp(xpo, xpn, 23.4392911);
+      swe_cs2timestr(cs, ':', FALSE, ts);
+      swe_cs2lonlatstr(cs, 'E', 'W', ls);
+      swe_cs2degstr(cs, ds);
+      x[0] = swe_deg_midp(350.0, 10.0);
+      x[1] = swe_rad_midp(6.1, 0.1);
+      x[2] = swe_difdegn(10.0, 350.0);
+      x[3] = (double) swe_difcsn(360000, 129240000);
+      x[4] = (double) swe_difcs2n(360000, 129240000);
+      x[5] = (double) swe_csnorm(-360000);
+      fprintf(TRANSCRIPT, "%-46s rf=%-6d", "cov:conversions", 0);
+      for (int i = 0; i < 6; i++) fprintf(TRANSCRIPT, " %a", x[i]);
+      for (int i = 0; i < 6; i++) fprintf(TRANSCRIPT, " %a", xpn[i]);
+      fprintf(TRANSCRIPT, " %a %a %a",
+	      (double) swe_csroundsec(cs), (double) swe_d2l(1234.567),
+	      (double) swe_day_of_week(2451545.0));
+      { char cl[AS_MAXCH * 2]; sanitize(cl, sizeof cl, ts);
+	fprintf(TRANSCRIPT, " | %s", cl);
+	sanitize(cl, sizeof cl, ls); fprintf(TRANSCRIPT, " %s", cl);
+	sanitize(cl, sizeof cl, ds); fprintf(TRANSCRIPT, " %s", cl); }
+      fprintf(TRANSCRIPT, "\n");
+    }
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();
     swe_set_ephe_path((char *) EPHE);
