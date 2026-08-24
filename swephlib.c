@@ -546,12 +546,23 @@ static const double xyper[5][NPER_PEQU] = {
   {1558.515853, 7774.939698, -2219.534038, -2523.969396, 247.850422, -846.485643, -1393.124055, 368.526116, 749.045012, 444.704518, 235.934465, 374.049623, -171.33018, -22.899655}
 };
 
-void swi_ldp_peps(double tjd, double *dpre, double *deps)
+void swi_ldp_peps(swe_ctx *ctx, double tjd, double *dpre, double *deps)
 {
   int i;
   int npol = NPOL_PEPS;
   int nper = NPER_PEPS;
   double t, p, q, w, a, s, c;
+  /* Pure function of tjd, and asked for the same few epochs over and over.
+   * See struct ldp_peps_memo. */
+  for (i = 0; i < SWI_LDP_PEPS_SLOTS; i++) {
+    if (ctx->ldp_peps.slot[i].used && ctx->ldp_peps.slot[i].tjd == tjd) {
+      if (dpre != NULL)
+	*dpre = ctx->ldp_peps.slot[i].dpre;
+      if (deps != NULL)
+	*deps = ctx->ldp_peps.slot[i].deps;
+      return;
+    }
+  }
   t = (tjd - J2000) / 36525.0;
   p = 0;
   q = 0;
@@ -574,6 +585,13 @@ void swi_ldp_peps(double tjd, double *dpre, double *deps)
   /* both to radians */
   p *= AS2R;
   q *= AS2R;
+  /* Both are stored whichever one the caller wanted, so a caller asking
+   * only for deps still primes the slot for one asking only for dpre. */
+  ctx->ldp_peps.slot[ctx->ldp_peps.next].tjd = tjd;
+  ctx->ldp_peps.slot[ctx->ldp_peps.next].dpre = p;
+  ctx->ldp_peps.slot[ctx->ldp_peps.next].deps = q;
+  ctx->ldp_peps.slot[ctx->ldp_peps.next].used = TRUE;
+  ctx->ldp_peps.next = (ctx->ldp_peps.next + 1) % SWI_LDP_PEPS_SLOTS;
   /* return */
   if (dpre != NULL)
     *dpre = p;
@@ -950,7 +968,7 @@ double swi_epsiln(swe_ctx *ctx, double J, int32 iflag)
     eps *= DEGTORAD;
 //fprintf(stderr, "epso=%.17f\n", eps);
   } else { /* SEMOD_PREC_VONDRAK_2011 */
-    swi_ldp_peps(J, NULL, &eps);
+    swi_ldp_peps(ctx, J, NULL, &eps);
     if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model != SEMOD_JPLHORA_2) {
       tofs = (J - DCOR_EPS_JPL_TJD0) / 365.25;
       dofs = OFFSET_EPS_JPLHORIZONS;
@@ -3397,11 +3415,15 @@ static const int stfarg[SIDTNTERM * SIDTNARG] = {
    1,   0,  -2,   0,  -3,   0,   0,   0,   0,   0,   0,   0,   0,   0,
    1,   0,  -2,   0,  -1,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 };
-static double sidtime_non_polynomial_part(double tt)
+static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
 {
   int i, j;
   double delm[SIDTNARG];
   double dadd, darg;
+  /* Pure function of tt, and called repeatedly at one instant.
+   * See struct sidt_memo. */
+  if (ctx->sidt_np.valid && ctx->sidt_np.tt == tt)
+    return ctx->sidt_np.dadd;
   /* L Mean anomaly of the Moon.*/
   delm[0] = swe_radnorm(2.35555598 + 8328.6914269554 * tt);
   /* LSU Mean anomaly of the Sun.*/
@@ -3433,6 +3455,9 @@ static double sidtime_non_polynomial_part(double tt)
     dadd += stcf[i * 2] * sin(darg) + stcf[i * 2 + 1] * cos(darg);
   }
   dadd /= (3600.0 * 1000000.0);
+  ctx->sidt_np.tt = tt;
+  ctx->sidt_np.dadd = dadd;
+  ctx->sidt_np.valid = TRUE;
   return dadd;
 }
 
@@ -3491,7 +3516,7 @@ double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut
     tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
     gmst = swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
     gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
-    dadd = sidtime_non_polynomial_part(tt);
+    dadd = sidtime_non_polynomial_part(ctx, tt);
     gmst = swe_degnorm(gmst + dadd);
     /*printf("gmst iers=%f \n", gmst);*/
     gmst = gmst / 15.0 * 3600.0;

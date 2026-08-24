@@ -155,7 +155,7 @@ extern void swi_force_app_pos_etc(swe_ctx *ctx);
 /* obliquity of ecliptic */
 extern void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag);
 extern double swi_epsiln(swe_ctx *ctx, double J, int32 iflag);
-extern void swi_ldp_peps(double J, double *dpre, double *deps);
+extern void swi_ldp_peps(swe_ctx *ctx, double J, double *dpre, double *deps);
 
 /* nutation */
 extern void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag);
