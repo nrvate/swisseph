@@ -950,8 +950,9 @@ struct nut_memo {
  *
  * ctx->dt[], the tabulated delta-t, is the fourth input and is not in the
  * key: it has exactly two writers, swi_seed_dt_table() at context creation
- * and init_dt() on first use, and both empty the memo instead. That keeps a
- * 220-entry table out of a comparison made 135,204 times.
+ * and init_dt() on first use, and both call dt_memo_clear() instead. That
+ * keeps a 220-entry table out of a comparison made 135,204 times. G18
+ * (tests/dtmemo.c) is what holds them to it.
  *
  * Four slots. Measured hit rate 36% at one slot, 76.8% at two, 80.5% at
  * three and 80.6% from four on -- the callers work two or three nearby

@@ -3087,25 +3087,27 @@ static double deltat_espenak_meeus_1620(double tjd, double tid_acc)
 /* Read delta t values from external file.
 * record structure: year(whitespace)delta_t in 0.01 sec.
 */
+/* The delta-t table is an input to calc_deltat()'s memo that is deliberately
+ * NOT in its key -- comparing 220 entries on every one of 135,204 calls to
+ * catch a change that happens at most twice in a context's life is the wrong
+ * trade. Every writer of ctx->dt[] empties the memo instead, and both of
+ * them are in this file: swi_seed_dt_table() below and init_dt(). Keep it
+ * that way, or this has to stop being static. See struct dt_memo. */
+static void dt_memo_clear(swe_ctx *ctx)
+{
+  int i;
+  for (i = 0; i < SWI_DT_MEMO_SLOTS; i++)
+    ctx->dt_np.slot[i].used = FALSE;
+  ctx->dt_np.next = 0;
+}
+
 /* calc_deltat() reads ctx->dt[0] (swephlib.c:2622, 2645) on paths that never
  * call init_dt(), and the table used to be statically initialised, so dt[0]
  * was always 124.00. Exposed so context creation seeds it too. */
 void swi_seed_dt_table(swe_ctx *ctx)
 {
   memcpy(ctx->dt, dt_builtin, sizeof(ctx->dt));
-  swi_dt_memo_clear(ctx);
-}
-
-/* The delta-t table is an input to calc_deltat()'s memo that is deliberately
- * NOT in its key -- comparing 220 entries on every one of 135,204 calls to
- * catch a change that happens at most twice in a context's life is the wrong
- * trade. Both writers empty the memo instead; see struct dt_memo. */
-void swi_dt_memo_clear(swe_ctx *ctx)
-{
-  int i;
-  for (i = 0; i < SWI_DT_MEMO_SLOTS; i++)
-    ctx->dt_np.slot[i].used = FALSE;
-  ctx->dt_np.next = 0;
+  dt_memo_clear(ctx);
 }
 
 static int init_dt(swe_ctx *ctx)
@@ -3124,7 +3126,7 @@ if (!ctx->init_dt_done) {
    * ctx->dt[iy] as zeros. */
   memcpy(ctx->dt, dt_builtin, sizeof(ctx->dt));
   /* Anything already memoised was computed against the previous table. */
-  swi_dt_memo_clear(ctx);
+  dt_memo_clear(ctx);
   /* no error message if file is missing */
   if ((fp = swi_fopen(ctx, -1, "swe_deltat.txt", ctx->ephepath, NULL)) == NULL
     && (fp = swi_fopen(ctx, -1, "sedeltat.txt", ctx->ephepath, NULL)) == NULL)
