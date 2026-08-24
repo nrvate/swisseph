@@ -1577,6 +1577,15 @@ void CALL_CONV swe_set_ephe_path(const char *path)
   swe_set_ephe_path_r(swi_default_ctx(), path);
 }
 
+/* Column offsets into a line of the IERS finals file (eop_finals.txt, the
+ * "finals.all" product). The format is fixed-width, so every field is read
+ * by position. */
+#define IERS_FINALS_COL_MJD		7
+#define IERS_FINALS_COL_DPSI_BULL_A	99
+#define IERS_FINALS_COL_DEPS_BULL_A	118
+#define IERS_FINALS_COL_DPSI_BULL_B	168
+#define IERS_FINALS_COL_DEPS_BULL_B	178
+
 void load_dpsi_deps(swe_ctx *ctx)
 {
   FILE *fp;
@@ -1629,7 +1638,7 @@ void load_dpsi_deps(swe_ctx *ctx)
   if (fp == NULL) 
     return; /* return without error as existence of file is not mandatory */
   while (fgets(s, AS_MAXCH, fp) != NULL) {
-    mjd = atoi(s + 7);
+    mjd = atoi(s + IERS_FINALS_COL_MJD);
     if (mjd + TJDOFS <= ctx->eop_tjd_end)
       continue;
     if (n >= SWE_DATA_DPSI_DEPS)
@@ -1643,12 +1652,12 @@ void load_dpsi_deps(swe_ctx *ctx)
       return;
     }
     /* dpsi, deps Bulletin B */
-    dpsi = atof(s + 168);
-    deps = atof(s + 178);
+    dpsi = atof(s + IERS_FINALS_COL_DPSI_BULL_B);
+    deps = atof(s + IERS_FINALS_COL_DEPS_BULL_B);
     if (dpsi == 0) {
       /* try dpsi, deps Bulletin A */
-      dpsi = atof(s + 99);
-      deps = atof(s + 118);
+      dpsi = atof(s + IERS_FINALS_COL_DPSI_BULL_A);
+      deps = atof(s + IERS_FINALS_COL_DEPS_BULL_A);
     }
     if (dpsi == 0) {
       ctx->eop_dpsi_loaded = 2;
@@ -4965,9 +4974,15 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr)
     smsg = "c";
     goto file_damage;
   }
-  /**************************************** 
+  /****************************************
    * orbital elements, if single asteroid *
    ****************************************/
+  /* Column offsets into an astorb.dat element line, counted from the end of
+   * the MPC number and name, which is variable-length. */
+#define ASTORB_COL_H	35
+#define ASTORB_COL_G	42
+#define ASTORB_COL_DIAM	51
+#define ASTORB_LEN_DIAM	7
   if (ifno == SEI_FILE_ANY_AST) {
     sp = fgets(s, AS_MAXCH * 2, fp);
     if (sp == NULL || strstr(sp, "\r\n") == NULL) {
@@ -4985,12 +5000,12 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr)
     /* save elements, they are required for swe_plan_pheno() */
     strcpy(ctx->astelem, s);
     /* required for magnitude */
-    ctx->ast_H = atof(s + 35 + i);
-    ctx->ast_G = atof(s + 42 + i);
+    ctx->ast_H = atof(s + ASTORB_COL_H + i);
+    ctx->ast_G = atof(s + ASTORB_COL_G + i);
     if (ctx->ast_G == 0) ctx->ast_G = 0.15;
     /* diameter in kilometers, not always given: */
-    strncpy(s2, s+51+i, 7);
-    *(s2 + 7) = '\0';
+    strncpy(s2, s + ASTORB_COL_DIAM + i, ASTORB_LEN_DIAM);
+    *(s2 + ASTORB_LEN_DIAM) = '\0';
     ctx->ast_diam = atof(s2);
     if (ctx->ast_diam == 0) {
       /* estimate the diameter from magnitude; assume albedo = 0.15 */
