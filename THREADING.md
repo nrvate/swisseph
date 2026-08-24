@@ -136,11 +136,12 @@ and failed CI — an uninitialised read only newer gcc diagnoses, and a
 gcc-only `__attribute__` that MSVC rejects — so if you are about to push,
 run this rather than trusting a green local run.
 
-- **`LTO=1`** is opt-in. Measured at about **5% faster** on the Moshier Moon
-  path and bit-identical to plain `-O2` across the whole golden transcript on
-  gcc 11.4 (5137 rows as the transcript then stood; it is 12657 today).
-  It is not the default because parity on clang/macOS/MSVC has not been
-  confirmed — the CI `lto` job exists to close that.
+- **LTO is on by default** (`make LTO=0` turns it off). Measured at about
+  **5% faster** on the Moshier Moon path and bit-identical to plain `-O2`
+  across the whole golden transcript on gcc 11.4 (5137 rows as the transcript
+  then stood; it is 12657 today). The CI `lto` job runs the transcript under
+  gcc, clang and Apple clang with `-flto`, all within the 1e-5 cross-toolchain
+  tolerance; MSVC builds through the `.vcxproj` files and is not affected.
 - **`-DSWE_NO_THREADS`** compiles the threading primitives to no-ops for
   single-threaded or embedded builds. No pthread dependency at all.
 - The threading shim selects one of five backends automatically (Windows

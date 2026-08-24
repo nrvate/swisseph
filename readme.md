@@ -54,7 +54,7 @@ tag and only exist in releases.
 ```sh
 make                    # -std=c17 -Wall -Wextra -Werror -O2
 make libswe.so          # or libswe.dylib on macOS
-make LTO=1              # optional, see THREADING.md
+make LTO=0              # without link-time optimisation, see THREADING.md
 ```
 
 Ephemeris data files are **not** included and have their own release cadence —

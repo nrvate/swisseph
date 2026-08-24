@@ -51,7 +51,7 @@ else
   DYNAMIC_LINK_FLAGS= -Wl,-Bdynamic
 endif
 
-# Link-time optimisation. OPT-IN: `make LTO=1`.
+# Link-time optimisation. ON by default; `make LTO=0` turns it off.
 #
 # Measured on gcc 11.4 -O2 (tests/bench, 3 interleaved runs, median of 5):
 #
@@ -69,11 +69,15 @@ endif
 # Output is BIT-IDENTICAL to plain -O2 across all 5137 golden rows on gcc
 # 13 -- verified, not assumed.
 #
-# Not enabled by default for two reasons: clang, macOS and MSVC parity is
-# unverified here (no clang on the machine this was measured on -- the CI
-# lto job exists to close that), and changing default build flags for a
-# library that other people package is the maintainer's call, not a
-# side effect of a performance patch.
+# On by default since the CI lto job runs the golden transcript under
+# gcc, clang and Apple clang with -flto, all within the 1e-5 cross-toolchain
+# tolerance. MSVC builds through the .vcxproj files and is not affected.
+# tests/Makefile keeps its own LTO opt-in, so the bit-exact G1 reference
+# build stays plain -O0.
+#
+# A libswe.a of LTO objects needs a plugin-aware ar (GNU binutils and Apple
+# ar both are). If yours is not: make LTO=0.
+LTO ?= 1
 ifeq ($(LTO),1)
   CFLAGS += -flto
   LIBS   += -flto
