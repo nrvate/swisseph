@@ -283,19 +283,31 @@ jobs:
             echo %%~dpi>> "%GITHUB_PATH%"
             echo found: %%i
           )
+      # ⚠️ MultiProcessorCompilation is set in NONE of the .vcxproj files, so cl
+      # compiled one .c at a time -- 43 files per platform, 86 per run, on a
+      # 4-core runner using one core, and the two build steps were 78s of a 118s
+      # job. Four of these projects (swedll, swelib, swedlltrm, swedlltrs) each
+      # compile the SAME ten library sources, so most of that was the same work
+      # done four times, serially.
+      #
+      # ⭐ Passed on the command line rather than edited into the project files:
+      # those are upstream's, they are what a Windows user opens in Visual
+      # Studio, and how fast OUR ci builds is not their business.
+      # UseMultiToolTask lets MSBuild schedule the compilations itself, which is
+      # what makes /MP behave when a project is driven per-file.
       - name: Build Win32 projects
         shell: cmd
         run: |
           cd windows\projects
           for %%p in (swedll32 swelib32 swetest swete32 swewin32 swedlltrm32 swedlltrs32) do (
-            msbuild %%p.vcxproj /p:Configuration=Release /p:Platform=Win32 /v:minimal /nologo || exit /b 1
+            msbuild %%p.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:MultiProcessorCompilation=true /p:UseMultiToolTask=true /m /v:minimal /nologo || exit /b 1
           )
       - name: Build x64 projects
         shell: cmd
         run: |
           cd windows\projects
           for %%p in (swedll64 swelib64 swetest64 swete64 swewin64 swedlltrm64 swedlltrs64) do (
-            msbuild %%p.vcxproj /p:Configuration=Release /p:Platform=x64 /v:minimal /nologo || exit /b 1
+            msbuild %%p.vcxproj /p:Configuration=Release /p:Platform=x64 /p:MultiProcessorCompilation=true /p:UseMultiToolTask=true /m /v:minimal /nologo || exit /b 1
           )
       - name: Show what was built
         shell: cmd
