@@ -138,7 +138,7 @@ run this rather than trusting a green local run.
 
 - **`LTO=1`** is opt-in. Measured at about **5% faster** on the Moshier Moon
   path and bit-identical to plain `-O2` across the whole golden transcript on
-  gcc 11.4 (5137 rows as the transcript then stood; it is 12582 today).
+  gcc 11.4 (5137 rows as the transcript then stood; it is 12657 today).
   It is not the default because parity on clang/macOS/MSVC has not been
   confirmed — the CI `lto` job exists to close that.
 - **`-DSWE_NO_THREADS`** compiles the threading primitives to no-ops for
@@ -152,15 +152,18 @@ run this rather than trusting a green local run.
 
 ## What is verified
 
-Every change is gated on a bit-exact transcript: **12582 rows** of C99 `%a` hex
+Every change is gated on a bit-exact transcript: **12657 rows** of C99 `%a` hex
 floats, compared byte for byte, so no test ever has to pick a tolerance.
 
 The transcript is not a handful of spot checks. It sweeps 120 pseudo-random
 dates spanning roughly 1400 years (JD 2086302.5 to 2597641.5) across three
 ephemeris flag sets — Swiss, Moshier and equatorial — for every body from the
 Sun to Vesta, recording ecliptic longitude and latitude, distance, and all
-three speed components. A further 64 rows exercise the entry points the sweep
-does not reach, so no exported function is entirely unwitnessed.
+three speed components. A further 5097 rows — houses under every system,
+sidereal modes, topocentric positions, eclipses and occultations, heliacal
+events, fixed stars, fictitious bodies, date and time conversions, and a
+coverage block for the remaining entry points — reach what the sweep does not,
+so no exported function is entirely unwitnessed.
 
 | Gate | What it proves |
 |---|---|

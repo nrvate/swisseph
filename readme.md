@@ -149,7 +149,7 @@ that leaned on a silent fallback now sees `ERR` where it used to get numbers.
 
 ## What is verified
 
-Every change is gated on a bit-exact transcript — **12582 rows** of C99 `%a`
+Every change is gated on a bit-exact transcript — **12657 rows** of C99 `%a`
 hex floats compared byte for byte, so no test has to pick a tolerance. The
 transcript sweeps 120 pseudo-random dates spanning roughly 1400 years across
 three ephemeris flag sets and every major body, recording longitude, latitude,
