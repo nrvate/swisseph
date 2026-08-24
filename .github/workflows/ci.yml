@@ -343,16 +343,20 @@ jobs:
       # have shipped with every check green.
       #
       # golden.c could not be built here until it stopped hardcoding
-      # <pthread.h>. It uses a portable thread shim now; its --threads mode
-      # needs POSIX open_memstream and stays excluded on Windows, where
-      # threadshim and ctxtest already cover SRWLOCK.
-      - name: Numerical transcript under MSVC
+      # <pthread.h>; it uses a portable thread shim now. --threads was still
+      # excluded because capturing each worker's transcript called POSIX
+      # open_memstream(); that is a temp file in standard C now, so G2 -- the
+      # gate this whole file exists for -- finally runs on the platform whose
+      # threading backend nothing else exercises end to end.
+      - name: Numerical transcript and G2 under MSVC
         shell: cmd
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
           cl /nologo /I. /D_CRT_SECURE_NO_WARNINGS tests\golden.c sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c /Fe:golden_msvc.exe || exit /b 1
           golden_msvc.exe --ephe %EPHE% > msvc.txt || exit /b 1
           for /f %%n in ('type msvc.txt ^| find /c /v ""') do echo transcript rows: %%n
+          golden_msvc.exe --ephe %EPHE% --threads 4 > nul || exit /b 1
+          golden_msvc.exe --ephe %EPHE% --threads 4 --per-thread-setup > nul || exit /b 1
       - name: Compare against the reference transcript
         shell: bash
         run: |

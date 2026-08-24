@@ -1003,27 +1003,53 @@ static void suite(void) {
 
 struct targ { int id; char *buf; size_t len; int setup; };
 
-/* The --threads path (G2) needs open_memstream() to capture each worker's
- * transcript, and MSVC has no such function. The single-threaded transcript
- * -- the numerical check that matters most, and the reason this file exists
- * -- is portable, so only the threaded mode is excluded on Windows.
+/* Capturing each worker's transcript used to call open_memstream(), which is
+ * POSIX and has no MSVC equivalent, so G2 -- the gate this file exists for --
+ * did not run on Windows at all. A per-thread temp file is standard C and
+ * hands the comparison below exactly what it wants, a->buf and a->len. One
+ * implementation for every platform, so Windows exercises the same path.
  *
- * G2 still runs on Linux and macOS. Windows' SRWLOCK backend is covered by
- * tests/threadshim.c and tests/ctxtest.c, both of which already build there.
- */
-#if !defined(_WIN32)
+ * "w+b": no newline translation, so the bytes are the bytes on either side. */
+static FILE *capture_open(int id, char *path, size_t n) {
+  snprintf(path, n, ".golden_capture_%d.tmp", id);
+  return fopen(path, "w+b");
+}
+
+static void capture_close(struct targ *a, FILE *f, const char *path) {
+  long end;
+  fflush(f);
+  end = ftell(f);
+  a->len = end > 0 ? (size_t) end : 0;
+  a->buf = malloc(a->len + 1);
+  if (a->buf != NULL) {
+    rewind(f);
+    a->len = fread(a->buf, 1, a->len, f);
+    a->buf[a->len] = '\0';
+  } else {
+    a->len = 0;
+  }
+  fclose(f);
+  remove(path);
+}
+
 static thr_ret_t THR_CALL thread_suite(void *p) {
   struct targ *a = p;
-  TRANSCRIPT = open_memstream(&a->buf, &a->len);
+  char path[64];
+  FILE *f = capture_open(a->id, path, sizeof path);
+  if (f == NULL) {
+    fprintf(stderr, "could not open capture file %s\n", path);
+    a->buf = NULL; a->len = 0;
+    return (thr_ret_t) 0;
+  }
+  TRANSCRIPT = f;
   /* a->setup mirrors what a well-behaved caller does on a worker thread.
    * 0 = configure only on the main thread (the pyswisseph pattern).
    * 1 = re-apply configuration on every worker thread (today's workaround). */
   if (a->setup) swe_set_ephe_path((char *)EPHE);
   suite_compute_only();
-  fclose(TRANSCRIPT);
-  return NULL;
+  capture_close(a, f, path);
+  return (thr_ret_t) 0;
 }
-#endif  /* !_WIN32 */
 
 int main(int argc, char **argv) {
   int nthreads = 0, setup = 0;
@@ -1054,11 +1080,6 @@ int main(int argc, char **argv) {
   swe_set_tid_acc(-25.85);
 
   struct targ ref = { -1, NULL, 0, 0 };
-#if defined(_WIN32)
-  fprintf(stderr, "--threads is POSIX-only (needs open_memstream); "
-                  "use tests/threadshim and tests/ctxtest on Windows\n");
-  return 2;
-#else
   thread_suite(&ref);
 
   struct targ *a = calloc(nthreads, sizeof *a);
@@ -1070,9 +1091,10 @@ int main(int argc, char **argv) {
   for (int i = 0; i < nthreads; i++) thr_join(t[i]);
 
   if (getenv("SE_DUMP")) {
-    FILE *f = fopen("/tmp/ref.txt","w"); fwrite(ref.buf,1,ref.len,f); fclose(f);
-    for (int i = 0; i < nthreads; i++) { char p[64]; snprintf(p,sizeof p,"/tmp/thr%d.txt",i);
-      f=fopen(p,"w"); fwrite(a[i].buf,1,a[i].len,f); fclose(f); }
+    /* relative, not /tmp: this has to land somewhere on Windows too */
+    FILE *f = fopen("golden_ref.txt","wb"); fwrite(ref.buf,1,ref.len,f); fclose(f);
+    for (int i = 0; i < nthreads; i++) { char p[64]; snprintf(p,sizeof p,"golden_thr%d.txt",i);
+      f=fopen(p,"wb"); fwrite(a[i].buf,1,a[i].len,f); fclose(f); }
   }
   int bad = 0;
   for (int i = 0; i < nthreads; i++) {
@@ -1093,5 +1115,4 @@ int main(int argc, char **argv) {
           nthreads - bad, nthreads, setup ? " (--per-thread-setup)" : "");
   swe_close();
   return bad ? 1 : 0;
-#endif  /* !_WIN32 */
 }

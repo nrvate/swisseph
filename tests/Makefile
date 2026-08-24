@@ -197,6 +197,9 @@ check-all: check check-setest
 
 clean:
 	rm -f jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	@# golden --threads captures each worker through a temp file and removes
+	@# it; these only survive a crash. golden_* are the SE_DUMP output.
+	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
