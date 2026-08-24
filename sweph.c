@@ -1508,11 +1508,9 @@ void CALL_CONV swe_close(void)
 void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
 {
   AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
-  int i, iflag;
+  int i;
   char s[AS_MAXCH];
-  char serr[AS_MAXCH];
   char *sp;
-  double xx[6];
   /* The path is changing: the next open may find a different generation of
    * files, so their DE numbers go with them. */
   swi_close_keep_topo_etc(ctx, FORGET_DENUM);
@@ -1535,14 +1533,24 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
     strcat(s, DIR_GLUE);
   strcpy(ctx->ephepath, s);
 //swe_set_interpolate_nut(TRUE);
-  /* try to open lunar ephemeris, in order to get DE number and set
-   * tidal acceleration of the Moon */
-  iflag = SEFLG_SWIEPH|SEFLG_J2000|SEFLG_TRUEPOS|SEFLG_ICRS;
+  /* Open the lunar ephemeris file for J2000 and read its header, to learn
+   * the DE number and set the tidal acceleration of the Moon. Upstream ran
+   * a full swe_calc() of the Moon for this, which also opened the planet
+   * file and filled the save area; the header is all that is used. */
   ctx->last_epheflag = 2;
-  swe_calc_r(ctx, J2000, SE_MOON, iflag, xx, serr);
-  if (ctx->fidat[SEI_FILE_MOON].fptr != NULL) {
-    swi_set_tid_acc(ctx, 0, 0, ctx->fidat[SEI_FILE_MOON].sweph_denum, NULL);
-  } 
+  {
+    struct file_data *fdp = &ctx->fidat[SEI_FILE_MOON];
+    char fname[AS_MAXCH];
+    swi_gen_filename(J2000, SEI_MOON, fname);
+    if ((fdp->fptr = swi_fopen(ctx, SEI_FILE_MOON, fname, ctx->ephepath, NULL)) != NULL) {
+      if (read_const(ctx, SEI_FILE_MOON, NULL) != OK) {
+        fclose(fdp->fptr);
+        memset((void *) fdp, 0, sizeof(struct file_data));
+      }
+    }
+    if (fdp->fptr != NULL)
+      swi_set_tid_acc(ctx, 0, 0, fdp->sweph_denum, NULL);
+  }
 #ifdef TRACE
   swi_open_trace(NULL);
   swi_trace_lock();
