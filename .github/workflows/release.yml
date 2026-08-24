@@ -1,7 +1,21 @@
 # Tag a release.
 #
-#   make bump VERSION=X.Y.Z-ts.N      # if the version is changing
+#   make bump VERSION=X.Y.Z-ts.N      # on a branch: main is protected
+#   # ... open the PR, get it merged ...
+#   git checkout main && git pull --ff-only
 #   v=v$(make -s version) && git tag $v && git push origin $v
+#
+# TAG THE MERGED COMMIT, not the branch you bumped on. main takes squash
+# merges, so the commit that lands is a NEW one and the branch tip you were
+# sitting on never becomes part of main's history. Tag that tip and the
+# release ships the right bytes -- the trees are identical, and the
+# SE_VERSION check below still passes -- but `git describe` on main cannot
+# see the tag, `git log v<prev>..v<this>` does not work, and the release
+# cites a commit nobody can reach from main. v2.10.03-ts.6 was tagged that
+# way; it was left alone rather than re-pointed, because moving a tag a
+# published release refers to is worse than the navigation it fixes.
+#
+# The two lines above are the fix: land it first, then tag what landed.
 #
 # The tag IS the source of truth. GitHub generates the source tarballs from
 # it automatically, so nothing here hand-builds a source archive that could
