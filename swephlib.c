@@ -3692,7 +3692,7 @@ void swi_gen_filename(double tjd, int ipli, char *fname)
   else 
     strcat(fname, "_");
   icty = abs(icty);
-  snprintf(fname + strlen(fname), AS_MAXCH - strlen(fname), "%02d.%s", icty, SE_FILE_SUFFIX);
+  sprintf(fname + strlen(fname), "%02d.%s", icty, SE_FILE_SUFFIX);
 }
 
 /**************************************************************

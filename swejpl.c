@@ -826,9 +826,13 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
   t = (et_mn - ((nr - 2) * js->eh_ss[2] + js->eh_ss[0]) + et_fr) / js->eh_ss[2];
   /* read correct record if not in core */
   if (nr != js->nrl) {
-    js->nrl = nr;
+    /* nrl says which record buf[] holds, and a failed read leaves buf[]
+     * holding neither the old record nor the new one -- fread() keeps the
+     * bytes of a short read. Mark it empty until the read has succeeded;
+     * record numbers start at 2, so 0 is the sentinel set at open. */
+    js->nrl = 0;
     if (FSEEK(js->jplfptr, (off_t64) (nr * ((off_t64) js->irecsz)), 0) != 0) {
-      if (serr != NULL) 
+      if (serr != NULL)
 	sprintf(serr, "Read error in JPL eph. at %f\n", et);
       return NOT_AVAILABLE;
     }
@@ -839,6 +843,7 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
     }
     if (js->do_reorder)
       reorder((char *) buf, sizeof(double), js->ncoeffs);
+    js->nrl = nr;
   }
   if (js->do_km) {
     intv = js->eh_ss[2] * 86400.;

@@ -98,13 +98,6 @@ jobs:
           esac
       - name: Build library
         run: make libswe.a
-      # readme.md documents `make LTO=0`, and nothing built it. -flto defers
-      # gcc's -Wformat-truncation analysis, so a set of snprintf calls that
-      # cannot fit their own format string compiled clean by default and
-      # failed -Werror the moment LTO came off. Every other job here is
-      # LTO=1, so this is the only place that would catch it.
-      - name: Non-LTO build (readme documents LTO=0)
-        run: make clean && make LTO=0 all && make clean
       - name: G1 numerical no-op (bit-exact, the pinned config)
         run: make -C tests check-golden EPHE=../$EPHE
       - name: G1b -O2 within tolerance
@@ -156,6 +149,15 @@ jobs:
       # `make all` for three phases with every other gate green.
       - name: Sample programs and TRACE build
         run: make -C tests check-build
+
+      # readme.md documents `make LTO=0`, and nothing built it. -flto defers
+      # gcc's -Wformat-truncation analysis, so a set of snprintf calls that
+      # could not fit their own format string compiled clean by default and
+      # failed -Werror the moment LTO came off. Every other build here is
+      # LTO=1, so this is the only place that would catch it. Last, because
+      # it starts by discarding the objects every step above it built.
+      - name: Non-LTO build (readme documents LTO=0)
+        run: make clean && make LTO=0 all
 
   # ---------------------------------------------------------------------
   # LTO parity. `make LTO=1` is opt-in and was measured only on gcc 13,

@@ -4888,12 +4888,19 @@ return_error_gns:
   return ERR;
 }
 
+/* Column offsets into an astorb.dat element line, counted from the end of
+ * the MPC number and name, which is variable-length. */
+#define ASTORB_COL_H	35
+#define ASTORB_COL_G	42
+#define ASTORB_COL_DIAM	51
+#define ASTORB_LEN_DIAM	7
+
 /* SWISSEPH
  * reads constants on ephemeris file
  * ifno         file #
  * serr         error string
  */
-static int read_const(swe_ctx *ctx, int ifno, char *serr) 
+static int read_const(swe_ctx *ctx, int ifno, char *serr)
 { 
   char *c, c2, *sp;
   char s[AS_MAXCH*2], s2[AS_MAXCH];
@@ -4977,12 +4984,6 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr)
   /****************************************
    * orbital elements, if single asteroid *
    ****************************************/
-  /* Column offsets into an astorb.dat element line, counted from the end of
-   * the MPC number and name, which is variable-length. */
-#define ASTORB_COL_H	35
-#define ASTORB_COL_G	42
-#define ASTORB_COL_DIAM	51
-#define ASTORB_LEN_DIAM	7
   if (ifno == SEI_FILE_ANY_AST) {
     sp = fgets(s, AS_MAXCH * 2, fp);
     if (sp == NULL || strstr(sp, "\r\n") == NULL) {
