@@ -18,24 +18,11 @@ or two, and verify.
 
 ## 1. Open — correctness
 
-- **Bounded strings, remainder of the original survey.** The ~50
-  variable-length sites that could overflow `AS_MAXCH` are done
-  (see Closed). What is left is style, not safety: the other ~390
-  `strcpy`/`strcat`/`sprintf` sites copy literals or fixed-length
-  values and stay as they are. Two small leftovers worth a commit:
-  - `swevents.c` `-ejpl<name>`: `char fname[80]` filled from `argv`
-    (sample program, not the library).
-  - `swe_set_ephe_path_r` / `swi_gen_filename`: filename assembly is
-    `strlen`-guarded today; `snprintf` would make the bound structural
-    rather than checked at each site.
+Nothing open. The bounded-strings sweep is finished and its fallout is
+repaired; see Closed.
 
 ## 2. Open — performance, bit-exact
 
-- **Per-double `fread()` in the JPL record read** (`swejpl.c`, the `state()`
-  record loop): up to ~1,000 `fread`+`reorder` calls per 32/64-day record
-  instead of one bulk read and one reorder pass. Same bytes, same doubles;
-  G10/G15 prove it. The bulk-read idiom already exists in the same file
-  (the `eh_cval` read).
 - **Heliacal `ObjectLoc()` recomputed for the same instant**: called 5× in a
   row by `swe_heliacal_pheno_ut` and twice per step (directly and via
   `DeterTAV`) in the visibility search — order of 1,500–3,000 ephemeris
@@ -51,13 +38,7 @@ or two, and verify.
 
 ## 3. Open — hygiene, bit-exact by construction
 
-Verified by the gates and `make -C tests check-build`:
-
-- `swephgen4.c`: the last two K&R definitions in the tree; it and
-  `sweephe4.c` include no standard headers directly. Neither is built by any
-  target, which is why nothing has noticed.
-- IERS bulletin parsing in `load_dpsi_deps()` uses bare column offsets
-  (`atoi(s + 7)`, `atof(s + 168)`, …); name them.
+Nothing open; see Closed.
 
 ## 4. Open — larger refactors, gate-verifiable
 
@@ -135,3 +116,8 @@ Worth doing only as their own rollup, with G1/G8 as the proof:
 | 8 always-true `#if 1` wrappers in `sweph.c` (one with dead `#else`) | `8aab6fc` |
 | 2 runtime-dead `if ((0))` blocks in `swehel.c` + variables they left unused | `e2f45fc` |
 | `swehouse.h` no include guard; phantom `sweclips.o` rule; orphan `sweventss` target | `8dcd53d` |
+| `%.230s` precisions from `cd266f9` overflowed the fixed text, so `make LTO=0` failed under `-Werror=format-truncation` (21 diagnostics; CI never builds `LTO=0`) | `c4f35f4`; every precision sized so the worst case fits 255. Also the six `read_elements_file()` sites and `swi_gen_filename`'s century suffix that the sweep skipped, and the last two callers (`swe_set_ephe_path_r`, `swevents -ejpl`) |
+| `cd266f9` changed 255 lines but only 99 ignoring whitespace: re-indented blocks in `swecl`/`swemplan`/`swehel`/`sweph`, backslashes appended to two comments, `'\t'` written as a literal tab, `"star  not found"` silently respelt | `df454c8` |
+| Per-double `fread()` in the JPL record read | `24b6f19`, one bulk read + one reorder; 20,000 record-crossing `swe_calc()` calls 0.46 s → 0.16 s |
+| `#if 0` region `3b9d090` missed because it is indented (`swemplan.c`) | `ca68bc9` |
+| Bare column offsets in the IERS finals and astorb parsers; `degstr()` `sprintf` into `char[20]` | `8e5f794`; `swephgen4.c`/`sweephe4.c` now clean under `-Werror`, and the K&R definitions listed here were already gone |
