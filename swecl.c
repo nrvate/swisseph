@@ -1656,7 +1656,7 @@ int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32
     ifltype2 = (ifltype & ~(SE_ECL_NONCENTRAL | SE_ECL_CENTRAL));
     if (ifltype2 == SE_ECL_ANNULAR || ifltype == SE_ECL_ANNULAR_TOTAL) {
       if (serr != NULL)
-	snprintf(serr, AS_MAXCH, "annular occulation do not exist for object %d %.230s\n", ipl, starname);
+	snprintf(serr, AS_MAXCH, "annular occulation do not exist for object %d %.190s\n", ipl, starname);
       return ERR;
     }
   }
@@ -1686,7 +1686,7 @@ next_try:
    * will never allow it. */
   if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
     if (serr != NULL)
-      snprintf(serr, AS_MAXCH, "occultation never occurs: star %.230s has ecl. lat. %.1f", starname, ls[1]);
+      snprintf(serr, AS_MAXCH, "occultation never occurs: star %.150s has ecl. lat. %.1f", starname, ls[1]);
     return ERR;
   }
   if (swe_calc_r(ctx, t, SE_MOON, ifl, lm, serr) == ERR)
@@ -2519,7 +2519,7 @@ static int32 occult_when_loc(
        * will never allow it. */
       if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
         if (serr != NULL)
-          snprintf(serr, AS_MAXCH, "occultation never occurs: star %.230s has ecl. lat. %.1f", starname, ls[1]);
+          snprintf(serr, AS_MAXCH, "occultation never occurs: star %.150s has ecl. lat. %.1f", starname, ls[1]);
         return ERR;
       }
   if (swe_calc_r(ctx, t, SE_MOON, iflaggeo, lm, serr) == ERR)

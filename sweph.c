@@ -1498,22 +1498,26 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
   swi_close_keep_topo_etc(ctx, FORGET_DENUM);
   swi_init_swed_if_start(ctx);
   ctx->ephe_path_is_set = TRUE;
-  /* environment variable SE_EPHE_PATH has priority */
-  if ((sp = getenv("SE_EPHE_PATH")) != NULL 
+  /* environment variable SE_EPHE_PATH has priority. The length tests are
+   * upstream's: a path with no room left for a file name is dropped for the
+   * default rather than silently truncated. They do not bound the file name
+   * -- swi_fopen() checks that itself, per path element. snprintf here only
+   * makes the copy structurally safe. */
+  if ((sp = getenv("SE_EPHE_PATH")) != NULL
     && strlen(sp) != 0
     && strlen(sp) <= AS_MAXCH-1-13) {
-    strcpy(s, sp);
+    snprintf(s, AS_MAXCH, "%s", sp);
   } else if (path == NULL || *path == '\0') {
-    strcpy(s, SE_EPHE_PATH);
+    snprintf(s, AS_MAXCH, "%s", SE_EPHE_PATH);
   } else if (strlen(path) <= AS_MAXCH-1-13) {
-    strcpy(s, path);
+    snprintf(s, AS_MAXCH, "%s", path);
   } else {
-    strcpy(s, SE_EPHE_PATH);
+    snprintf(s, AS_MAXCH, "%s", SE_EPHE_PATH);
   }
   i = (int) strlen(s);
   if (*(s + i - 1) != *DIR_GLUE && *s != '\0')
     strcat(s, DIR_GLUE);
-  strcpy(ctx->ephepath, s);
+  snprintf(ctx->ephepath, AS_MAXCH, "%s", s);
 //swe_set_interpolate_nut(TRUE);
   /* Open the lunar ephemeris file for J2000 and read its header, to learn
    * the DE number and set the tidal acceleration of the Moon. Upstream ran
@@ -4802,7 +4806,7 @@ static int get_new_segment(swe_ctx *ctx, double tjd, int ipli, int ifno, char *s
       if (serr != NULL) {
 	snprintf(serr, AS_MAXCH, "error in ephemeris file: %d coefficients instead of %d. ", nco, pdp->ncoe);
 	if (strlen(serr) + strlen(fdp->fnam) < AS_MAXCH - 1) {
-	  snprintf(serr, AS_MAXCH, "error in ephemeris file %.230s: %d coefficients instead of %d. ", fdp->fnam, nco, pdp->ncoe);
+	  snprintf(serr, AS_MAXCH, "error in ephemeris file %.180s: %d coefficients instead of %d. ", fdp->fnam, nco, pdp->ncoe);
 	}
       }
       free(pdp->segp);
@@ -4949,7 +4953,7 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr)
     *sp = tolower((int) *sp);
   if (strcmp(s2, s) != 0) {
     if (serr != NULL) {
-      snprintf(serr, AS_MAXCH, "Ephemeris file name '%.230s' wrong; rename '%.230s' ", s2, s);
+      snprintf(serr, AS_MAXCH, "Ephemeris file name '%.100s' wrong; rename '%.100s' ", s2, s);
     }
     goto return_error;
   }
@@ -5294,7 +5298,7 @@ static int do_fread(swe_ctx *ctx, void *trg, int size, int count, int corrsize, 
       if (serr != NULL) {
 	strcpy(serr, "Ephemeris file is damaged (1). ");
 	if (strlen(serr) + strlen(ctx->fidat[ifno].fnam) < AS_MAXCH - 1) {
-	  snprintf(serr, AS_MAXCH, "Ephemeris file %.230s is damaged (2).", ctx->fidat[ifno].fnam);
+	  snprintf(serr, AS_MAXCH, "Ephemeris file %.220s is damaged (2).", ctx->fidat[ifno].fnam);
 	}
       }
       return(ERR);
@@ -5305,7 +5309,7 @@ static int do_fread(swe_ctx *ctx, void *trg, int size, int count, int corrsize, 
       if (serr != NULL) {
 	strcpy(serr, "Ephemeris file is damaged (3). ");
 	if (strlen(serr) + strlen(ctx->fidat[ifno].fnam) < AS_MAXCH - 1) {
-	  snprintf(serr, AS_MAXCH, "Ephemeris file %.230s is damaged (4).", ctx->fidat[ifno].fnam);
+	  snprintf(serr, AS_MAXCH, "Ephemeris file %.220s is damaged (4).", ctx->fidat[ifno].fnam);
 	}
       }
       return(ERR);
@@ -9094,7 +9098,7 @@ int32 CALL_CONV swe_helio_cross_r(swe_ctx *ctx, int ipl, double x2cross, double 
   ) {
     char snam[AS_MAXCH];
     swe_get_planet_name_r(ctx, ipl, snam);
-    if (serr != NULL) snprintf(serr, AS_MAXCH, "swe_helio_cross: not possible for object %d = %.230s", ipl, snam);
+    if (serr != NULL) snprintf(serr, AS_MAXCH, "swe_helio_cross: not possible for object %d = %.190s", ipl, snam);
     return ERR;
   }
   if (swe_calc_r(ctx, jd_et, ipl, flag, x, serr) < 0) 
@@ -9147,7 +9151,7 @@ int32 CALL_CONV swe_helio_cross_ut_r(swe_ctx *ctx, int ipl, double x2cross, doub
   ) {
     char snam[AS_MAXCH];
     swe_get_planet_name_r(ctx, ipl, snam);
-    if (serr != NULL) snprintf(serr, AS_MAXCH, "swe_helio_cross: not possible for object %d = %.230s", ipl, snam);
+    if (serr != NULL) snprintf(serr, AS_MAXCH, "swe_helio_cross: not possible for object %d = %.190s", ipl, snam);
     return ERR;
   }
   if (swe_calc_ut_r(ctx, jd_ut, ipl, flag, x, serr) < 0) 

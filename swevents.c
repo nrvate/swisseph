@@ -464,7 +464,7 @@ int main(int argc, char *argv[])
     } else if (strncmp(argv[i], "-ejpl", 5) == 0) {
       whicheph = SEFLG_JPLEPH;
       if (*(argv[i]+5) != '\0')
-	strcpy(fname, argv[i]+5);
+	snprintf(fname, sizeof(fname), "%s", argv[i]+5);
     } else if (strcmp(argv[i], "-eswe") == 0) {
       whicheph = SEFLG_SWIEPH;
     } else if (strcmp(argv[i], "-emos") == 0) {
@@ -2056,7 +2056,7 @@ static int32 get_aspect_angles(char *sasp, char *saspi, double *dasp, char *serr
       strcat(saspi, "BB");
       break;
     default:
-      snprintf(serr, AS_MAXCH, "aspects string %.230s is invalid", sasp);
+      snprintf(serr, AS_MAXCH, "aspects string %.210s is invalid", sasp);
       return ERR;
       break;
     }
@@ -2622,7 +2622,7 @@ static int do_fread_double(FILE *fpout, char *foutnam, int32 fposbeg, double *tj
     return ERR;  
   }
   if (fread((void *) tjdbeg, sizeof(double), 1, fpout) <= 0) {
-    snprintf(serr, AS_MAXCH, "error while trying to read %.230s (1)", foutnam);
+    snprintf(serr, AS_MAXCH, "error while trying to read %.210s (1)", foutnam);
     return ERR;  
   }
   return OK;

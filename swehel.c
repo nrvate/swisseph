@@ -2386,7 +2386,7 @@ static int32 get_asc_obl(swe_ctx *ctx, double tjd, int32 ipl, char *star, int32 
         strcpy(s, star);
       else
         swe_get_planet_name_r(ctx, ipl, s);
-      snprintf(serr, AS_MAXCH, "%.230s is circumpolar, cannot calculate heliacal event", s);
+      snprintf(serr, AS_MAXCH, "%.200s is circumpolar, cannot calculate heliacal event", s);
       return -2;
     }
     adp = asin(adp) / DEGTORAD;
@@ -3195,7 +3195,7 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
   if (Planet == SE_MOON) {
     if (TypeEvent == 1 || TypeEvent == 2) {
       if (serr_ret != NULL) {
-        snprintf(serr_ret, AS_MAXCH, "%.230s (event type %d) does not exist for the moon\n", sevent[TypeEvent], TypeEvent);
+        snprintf(serr_ret, AS_MAXCH, "%.190s (event type %d) does not exist for the moon\n", sevent[TypeEvent], TypeEvent);
       }
       return ERR;
     }
@@ -3221,7 +3221,7 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
 		  strcpy(s, ObjectName);
 		else
 		  swe_get_planet_name_r(ctx, Planet, s);
-		snprintf(serr_ret, AS_MAXCH, "%.230s (event type %d) does not exist for %.230s\n", sevent[TypeEvent], TypeEvent, s);
+		snprintf(serr_ret, AS_MAXCH, "%.100s (event type %d) does not exist for %.100s\n", sevent[TypeEvent], TypeEvent, s);
 	      }
 	return ERR;
       }
@@ -3244,7 +3244,7 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
 	  strcpy(s, ObjectName);
 	else
 	  swe_get_planet_name_r(ctx, Planet, s);
-	snprintf(serr_ret, AS_MAXCH, "%.230s (event type %d) is not provided for %.230s\n", sevent[TypeEvent], TypeEvent, s);
+	snprintf(serr_ret, AS_MAXCH, "%.100s (event type %d) is not provided for %.100s\n", sevent[TypeEvent], TypeEvent, s);
       }
       return ERR;
     }

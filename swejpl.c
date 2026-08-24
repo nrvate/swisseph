@@ -254,7 +254,7 @@ static int32 fsizer(swe_ctx *ctx, char *serr)
     if (serr != NULL) {
       strcpy(serr, "alleged ephemeris file has invalid format.");
       if (strlen(serr) + strlen(js->jplfname) + 3 < AS_MAXCH) {
-	snprintf(serr, AS_MAXCH, "alleged ephemeris file (%.230s) has invalid format.", js->jplfname);
+	snprintf(serr, AS_MAXCH, "alleged ephemeris file (%.200s) has invalid format.", js->jplfname);
       }
     }
     return(NOT_AVAILABLE);
@@ -784,7 +784,7 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
 	 * after the arithmetic was correct. Print them at full width. */
 	snprintf(serr, AS_MAXCH, "JPL ephemeris file is mutilated; length = %lld instead of %lld.", (long long) flen, (long long) nb);
 	if (strlen(serr) + strlen(js->jplfname) < AS_MAXCH - 1) {
-	  snprintf(serr, AS_MAXCH, "JPL ephemeris file %.230s is mutilated; length = %lld instead of %lld.", js->jplfname, (long long) flen, (long long) nb);
+	  snprintf(serr, AS_MAXCH, "JPL ephemeris file %.160s is mutilated; length = %lld instead of %lld.", js->jplfname, (long long) flen, (long long) nb);
 	}
       }
       return(NOT_AVAILABLE);

@@ -3620,8 +3620,10 @@ double CALL_CONV swe_sidtime(double tjd_ut)
  * ipli       	= number of planet
  * fname      	= ephemeris file name
  */
-void swi_gen_filename(double tjd, int ipli, char *fname) 
-{  
+/* fname is AS_MAXCH in every caller; the longest name this can build is
+ * "ast9999/s9999999.se1". */
+void swi_gen_filename(double tjd, int ipli, char *fname)
+{
   int icty;
   int ncties = (int) NCTIES;
   short gregflag;
@@ -3652,14 +3654,14 @@ void swi_gen_filename(double tjd, int ipli, char *fname)
     case SEI_PHOLUS:
       strcpy(fname, "seas");
       break;
-    default: 	/* asteroid or planetary moon */
+    default:	/* asteroid or planetary moon */
       if (ipli > SE_PLMOON_OFFSET && ipli < SE_AST_OFFSET) {
-        sprintf(fname, "sat%ssepm%d.%s", DIR_GLUE, ipli, SE_FILE_SUFFIX);
+	snprintf(fname, AS_MAXCH, "sat%ssepm%d.%s", DIR_GLUE, ipli, SE_FILE_SUFFIX);
       } else {
 	sform = "ast%d%sse%05d.%s";
-	if (ipli - SE_AST_OFFSET > 99999) 
+	if (ipli - SE_AST_OFFSET > 99999)
 	  sform = "ast%d%ss%06d.%s";
-	sprintf(fname, sform, (ipli - SE_AST_OFFSET) / 1000, DIR_GLUE, ipli - SE_AST_OFFSET, SE_FILE_SUFFIX);
+	snprintf(fname, AS_MAXCH, sform, (ipli - SE_AST_OFFSET) / 1000, DIR_GLUE, ipli - SE_AST_OFFSET, SE_FILE_SUFFIX);
       }
       return;	/* asteroids or planetary moons: only one file 3000 bc - 3000 ad */
       /* break; */
@@ -3690,7 +3692,7 @@ void swi_gen_filename(double tjd, int ipli, char *fname)
   else 
     strcat(fname, "_");
   icty = abs(icty);
-  sprintf(fname + strlen(fname), "%02d.%s", icty, SE_FILE_SUFFIX);
+  snprintf(fname + strlen(fname), AS_MAXCH - strlen(fname), "%02d.%s", icty, SE_FILE_SUFFIX);
 }
 
 /**************************************************************
@@ -4656,7 +4658,7 @@ void swi_open_trace(char *serr)
 #endif
     if ((swi_fp_trace_c = fopen(fname, FILE_A_ACCESS)) == NULL) {
       if (serr != NULL) {
-	snprintf(serr, AS_MAXCH, "could not open trace output file '%.230s'", fname);
+	snprintf(serr, AS_MAXCH, "could not open trace output file '%.210s'", fname);
       }
     } else {
       fputs("#include \"sweodef.h\"\n", swi_fp_trace_c);   
@@ -4689,7 +4691,7 @@ void swi_open_trace(char *serr)
 #endif
     if ((swi_fp_trace_out = fopen(fname, FILE_A_ACCESS)) == NULL) {
       if (serr != NULL) {
-	snprintf(serr, AS_MAXCH, "could not open trace output file '%.230s'", fname);
+	snprintf(serr, AS_MAXCH, "could not open trace output file '%.210s'", fname);
       }
     }
   }
