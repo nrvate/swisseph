@@ -68,14 +68,37 @@ static TLS FILE *TRANSCRIPT;
  *    lines all keyed on the token "trying", so a comparator keyed by first
  *    token silently collapsed them to one. Runs of whitespace become a
  *    single space. */
+/* The ephemeris path is rewritten to $EPHE so the transcript does not depend
+ * on where it was run, and the result is compared across platforms.
+ *
+ * Two things that has to get right, both learnt from MSVC:
+ *
+ * The match must be a whole path element. The Linux jobs pass "../ephe", but
+ * the MSVC job passes "ephe", and a blind substring replace turns "Chiron's
+ * ephemeris" into "Chiron's $EPHEmeris" and "swe_set_ephe_fallback(1)" into
+ * "swe_set_$EPHE_fallback(1)". So the character on each side must be one an
+ * identifier cannot contain -- a quote or a separator, not a letter, digit
+ * or underscore.
+ *
+ * A backslash is a path separator here and nothing else -- no message in this
+ * transcript contains one for any other reason -- so it becomes '/'. Without
+ * that, every message carrying a path differs from the Linux spelling, both
+ * after $EPHE and inside file names swi_gen_filename() built with DIR_GLUE. */
+static int path_boundary(char c) {
+  return !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+           || (c >= '0' && c <= '9') || c == '_');
+}
+
 static void sanitize(char *d, size_t n, const char *s) {
   size_t el = strlen(EPHE), j = 0;
   for (size_t i = 0; s[i] && j + 8 < n; ) {
-    if (el && strncmp(s + i, EPHE, el) == 0) {
+    if (el && strncmp(s + i, EPHE, el) == 0
+        && (i == 0 || path_boundary(s[i - 1])) && path_boundary(s[i + el])) {
       memcpy(d + j, "$EPHE", 5); j += 5; i += el;
-    } else if (s[i] == '\n' || s[i] == '\r' || s[i] == '\t' || s[i] == ' ') {
-      while (s[i] == '\n' || s[i] == '\r' || s[i] == '\t' || s[i] == ' ') i++;
-      d[j++] = ' ';
+    } else if (s[i] == '\n' || s[i] == '\r' || s[i] == '\t') {
+      d[j++] = ' '; i++;
+    } else if (s[i] == '\\') {
+      d[j++] = '/'; i++;
     } else d[j++] = s[i++];
   }
   d[j] = 0;
@@ -870,6 +893,34 @@ static void coverage(void) {
     swe_close();
     swe_set_ephe_path((char *) EPHE);
 
+    /* Error strings from the star lookups. The transcript pins serr, but
+     * only for the messages some row happens to reach -- and none reached
+     * these, so the bounded-string sweep respelt "star  not found" with one
+     * space and every gate stayed green. Both entry points, because they
+     * fail through different code: swe_fixstar() scans the file, while
+     * swe_fixstar2() searches the parsed list. The 250-character name is
+     * the input that reaches the bare message, the branch that gives up on
+     * appending the name. */
+    { static const char *bad[] = { "NoSuchStar", "NoSuchStar%", ",noSuchBayer", "99999", "" };
+      char st[AS_MAXCH], tg[64];
+      for (size_t b = 0; b < sizeof bad / sizeof *bad; b++) {
+        snprintf(tg, sizeof tg, "cov:starerr[%zu,v1]", b);
+        strcpy(st, bad[b]); *serr = 0;
+        rf = swe_fixstar(st, 2451545.0, SEFLG_SWIEPH, x, serr);
+        row(tg, rf, NULL, 0, serr);
+        snprintf(tg, sizeof tg, "cov:starerr[%zu,v2]", b);
+        strcpy(st, bad[b]); *serr = 0;
+        rf = swe_fixstar2(st, 2451545.0, SEFLG_SWIEPH, x, serr);
+        row(tg, rf, NULL, 0, serr);
+      }
+      memset(st, 'q', 250); st[250] = '\0'; *serr = 0;
+      rf = swe_fixstar(st, 2451545.0, SEFLG_SWIEPH, x, serr);
+      row("cov:starerr[long,v1]", rf, NULL, 0, serr);
+      memset(st, 'q', 250); st[250] = '\0'; *serr = 0;
+      rf = swe_fixstar2(st, 2451545.0, SEFLG_SWIEPH, x, serr);
+      row("cov:starerr[long,v2]", rf, NULL, 0, serr);
+    }
+
     /* Entry points the transcript had never reached: swe_date_conversion(),
      * the v1 swe_fixstar_mag(), and the fictitious bodies. The last group
      * reads its elements from seorbel.txt through a per-context cache; these
@@ -976,27 +1027,53 @@ static void suite(void) {
 
 struct targ { int id; char *buf; size_t len; int setup; };
 
-/* The --threads path (G2) needs open_memstream() to capture each worker's
- * transcript, and MSVC has no such function. The single-threaded transcript
- * -- the numerical check that matters most, and the reason this file exists
- * -- is portable, so only the threaded mode is excluded on Windows.
+/* Capturing each worker's transcript used to call open_memstream(), which is
+ * POSIX and has no MSVC equivalent, so G2 -- the gate this file exists for --
+ * did not run on Windows at all. A per-thread temp file is standard C and
+ * hands the comparison below exactly what it wants, a->buf and a->len. One
+ * implementation for every platform, so Windows exercises the same path.
  *
- * G2 still runs on Linux and macOS. Windows' SRWLOCK backend is covered by
- * tests/threadshim.c and tests/ctxtest.c, both of which already build there.
- */
-#if !defined(_WIN32)
+ * "w+b": no newline translation, so the bytes are the bytes on either side. */
+static FILE *capture_open(int id, char *path, size_t n) {
+  snprintf(path, n, ".golden_capture_%d.tmp", id);
+  return fopen(path, "w+b");
+}
+
+static void capture_close(struct targ *a, FILE *f, const char *path) {
+  long end;
+  fflush(f);
+  end = ftell(f);
+  a->len = end > 0 ? (size_t) end : 0;
+  a->buf = malloc(a->len + 1);
+  if (a->buf != NULL) {
+    rewind(f);
+    a->len = fread(a->buf, 1, a->len, f);
+    a->buf[a->len] = '\0';
+  } else {
+    a->len = 0;
+  }
+  fclose(f);
+  remove(path);
+}
+
 static thr_ret_t THR_CALL thread_suite(void *p) {
   struct targ *a = p;
-  TRANSCRIPT = open_memstream(&a->buf, &a->len);
+  char path[64];
+  FILE *f = capture_open(a->id, path, sizeof path);
+  if (f == NULL) {
+    fprintf(stderr, "could not open capture file %s\n", path);
+    a->buf = NULL; a->len = 0;
+    return (thr_ret_t) 0;
+  }
+  TRANSCRIPT = f;
   /* a->setup mirrors what a well-behaved caller does on a worker thread.
    * 0 = configure only on the main thread (the pyswisseph pattern).
    * 1 = re-apply configuration on every worker thread (today's workaround). */
   if (a->setup) swe_set_ephe_path((char *)EPHE);
   suite_compute_only();
-  fclose(TRANSCRIPT);
-  return NULL;
+  capture_close(a, f, path);
+  return (thr_ret_t) 0;
 }
-#endif  /* !_WIN32 */
 
 int main(int argc, char **argv) {
   int nthreads = 0, setup = 0;
@@ -1027,11 +1104,6 @@ int main(int argc, char **argv) {
   swe_set_tid_acc(-25.85);
 
   struct targ ref = { -1, NULL, 0, 0 };
-#if defined(_WIN32)
-  fprintf(stderr, "--threads is POSIX-only (needs open_memstream); "
-                  "use tests/threadshim and tests/ctxtest on Windows\n");
-  return 2;
-#else
   thread_suite(&ref);
 
   struct targ *a = calloc(nthreads, sizeof *a);
@@ -1043,9 +1115,10 @@ int main(int argc, char **argv) {
   for (int i = 0; i < nthreads; i++) thr_join(t[i]);
 
   if (getenv("SE_DUMP")) {
-    FILE *f = fopen("/tmp/ref.txt","w"); fwrite(ref.buf,1,ref.len,f); fclose(f);
-    for (int i = 0; i < nthreads; i++) { char p[64]; snprintf(p,sizeof p,"/tmp/thr%d.txt",i);
-      f=fopen(p,"w"); fwrite(a[i].buf,1,a[i].len,f); fclose(f); }
+    /* relative, not /tmp: this has to land somewhere on Windows too */
+    FILE *f = fopen("golden_ref.txt","wb"); fwrite(ref.buf,1,ref.len,f); fclose(f);
+    for (int i = 0; i < nthreads; i++) { char p[64]; snprintf(p,sizeof p,"golden_thr%d.txt",i);
+      f=fopen(p,"wb"); fwrite(a[i].buf,1,a[i].len,f); fclose(f); }
   }
   int bad = 0;
   for (int i = 0; i < nthreads; i++) {
@@ -1066,5 +1139,4 @@ int main(int argc, char **argv) {
           nthreads - bad, nthreads, setup ? " (--per-thread-setup)" : "");
   swe_close();
   return bad ? 1 : 0;
-#endif  /* !_WIN32 */
 }

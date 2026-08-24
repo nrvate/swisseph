@@ -17,7 +17,7 @@
 /windows/projects/obj/
 *.vcxproj.user
 
-# bin/ -- output of the swetests/sweventss targets.
+# bin/ -- output of the swetests target.
 #
 # These were tracked, which was ordinary practice when this codebase was
 # written. But `make all` rewrites them on every build, so the tree was

@@ -21,26 +21,34 @@ name: CI
 #   for reasons that have nothing to do with our changes.
 
 on:
+  # The two events cover disjoint commits, so nothing is ever built twice.
+  #
+  #   pull_request  every branch on its way to main, including work. It
+  #                 builds refs/pull/N/merge -- the branch already merged
+  #                 into main -- which is the commit the merge produces and
+  #                 so the one worth gating on.
+  #   push          main only: the squash that lands after the PR is green,
+  #                 which is a commit no PR ever built. threadsafe is frozen
+  #                 by a repository ruleset and cannot be pushed; it stays
+  #                 listed so the gates would still run if that were lifted.
+  #
+  # Listing work under push as well meant both events fired for every push
+  # to it and all 13 jobs ran twice. Cancelling one of them is not the fix:
+  # push and pull_request build different commits, so whichever loses the
+  # race decides what was actually tested. A branch with no open PR is
+  # covered by workflow_dispatch, and legacy-master has no CI by design.
   push:
-    # main is the default branch and takes squashes through a PR. work is
-    # where fixes land in the meantime. legacy-master is the pristine
-    # upstream tree and deliberately has no CI; threadsafe is the granular
-    # history of the transformation and is frozen by a repository ruleset,
-    # so nothing can be pushed to it -- it stays listed only so the gates
-    # would still run if that freeze were ever lifted.
-    branches: [ main, work, threadsafe ]
+    branches: [ main, threadsafe ]
   pull_request:
   workflow_dispatch:
 
-# One run per ref. push and pull_request both fire for a branch with an open
-# PR, so every push was running all 13 jobs TWICE; superseded runs are now
-# cancelled instead of racing the new one to the same conclusion.
+# Supersede a run when its own ref gets another push -- the newer commit is
+# the one anyone cares about. Groups never span events now, so this only
+# ever cancels a run of the same kind.
 concurrency:
-  # head_ref, not ref: for a pull_request github.ref is refs/pull/N/merge
-  # while the push that created it is refs/heads/<branch>, so keying on
-  # ref put them in DIFFERENT groups and both still ran. head_ref is the
-  # source branch for a PR and empty otherwise, so the two collapse.
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  # head_ref is the source branch of a pull_request and empty otherwise;
+  # ref_name is the short branch name, not refs/heads/<branch>.
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 # Least privilege: nothing here writes to the repository. release.yml asks
@@ -150,11 +158,48 @@ jobs:
       - name: Sample programs and TRACE build
         run: make -C tests check-build
 
+      # readme.md documents `make LTO=0`, and nothing built it. -flto defers
+      # gcc's -Wformat-truncation analysis, so a set of snprintf calls that
+      # could not fit their own format string compiled clean by default and
+      # failed -Werror the moment LTO came off. Every other build here is
+      # LTO=1, so this is the only place that would catch it. Last, because
+      # it starts by discarding the objects every step above it built.
+      - name: Non-LTO build (readme documents LTO=0)
+        run: make clean && make LTO=0 all
+
+      # -Wformat-truncation, -Wmaybe-uninitialized and the value-range
+      # analysis behind them all depend on the optimisation level, and the
+      # two compilers disagree about which they report. The library ships at
+      # -O2 and every other job builds it that way, but tests/ compiles the
+      # same sources at -O0, so a diagnostic that fires only at -O0 was
+      # reachable by every gate and asserted by none. Two landed that way
+      # before this step existed, and widening it to the other levels found
+      # five more. Every source the tree builds, both compilers, -O0 through
+      # -Os. sweephe4.c and swephgen4.c are in the list although no target
+      # builds them -- that is exactly why they rot.
+      - name: Warning-free under both compilers at every -O level
+        run: |
+          set -e
+          for cc in gcc clang; do
+            for O in 0 1 2 3 s; do
+              for f in sweconfig swedate swehouse swejpl swemmoon swemplan sweph \
+                       swephlib swecl swehel swetest swevents swemini obama \
+                       sweephe4 swephgen4; do
+                $cc -std=c17 -Wall -Wextra -Werror -O$O -g -fPIC -D_GNU_SOURCE \
+                    -c -o /dev/null $f.c
+              done
+              for f in tests/*.c; do
+                $cc -std=c17 -Wall -Wextra -Werror -O$O -g -D_GNU_SOURCE -I. -Itests \
+                    -c -o /dev/null $f
+              done
+            done
+          done
+
   # ---------------------------------------------------------------------
-  # LTO parity. `make LTO=1` is opt-in and was measured only on gcc 13,
-  # where it is bit-identical to plain -O2 and worth ~5% on the Moshier
-  # Moon path. This job exists to prove it does not change results under a
-  # second toolchain before anyone considers making it the default.
+  # LTO parity. LTO is the default build as of ts.5 -- it is bit-identical
+  # to plain -O2 and worth ~5% on the Moshier Moon path. This job keeps that
+  # claim honest across all three toolchains; the reference job builds
+  # LTO=0, the configuration the readme also documents.
   # ---------------------------------------------------------------------
   lto:
     name: lto / ${{ matrix.name }}
@@ -168,17 +213,10 @@ jobs:
           - { name: clang,       os: ubuntu-latest, cc: clang }
           - { name: apple-clang, os: macos-latest,  cc: cc    }
     env:
-      EPHE: ephe
-      TOL: 1e-5
       CC: ${{ matrix.cc }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/ephe/sat/
-            !/ephe/ep4/
+        with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
       - name: Build with LTO
         run: make LTO=1 CC=$CC libswe.a
       - name: Golden within tolerance
@@ -299,22 +337,26 @@ jobs:
 
           cl /nologo /I. tests\threadshim.c || exit /b 1
           threadshim.exe || exit /b 1
-      - name: Numerical transcript under MSVC
+      # Windows had NO numerical verification at all. This job compiled
+      # objects and ran a TLS probe; windows-package smoke-tested swetest for
+      # "the Sun is near 280 degrees". A DLL producing wrong numbers would
+      # have shipped with every check green.
+      #
+      # golden.c could not be built here until it stopped hardcoding
+      # <pthread.h>; it uses a portable thread shim now. --threads was still
+      # excluded because capturing each worker's transcript called POSIX
+      # open_memstream(); that is a temp file in standard C now, so G2 -- the
+      # gate this whole file exists for -- finally runs on the platform whose
+      # threading backend nothing else exercises end to end.
+      - name: Numerical transcript and G2 under MSVC
         shell: cmd
         run: |
-          rem Windows had NO numerical verification at all. This job compiled
-          rem objects and ran a TLS probe; windows-package smoke-tested swetest
-          rem for "the Sun is near 280 degrees". A DLL producing wrong numbers
-          rem would have shipped with every check green.
-          rem
-          rem golden.c could not be built here until now because it hardcoded
-          rem <pthread.h>. It uses a portable thread shim as of this change; its
-          rem --threads mode needs POSIX open_memstream and stays excluded on
-          rem Windows, where threadshim and ctxtest already cover SRWLOCK.
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
           cl /nologo /I. /D_CRT_SECURE_NO_WARNINGS tests\golden.c sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c /Fe:golden_msvc.exe || exit /b 1
           golden_msvc.exe --ephe %EPHE% > msvc.txt || exit /b 1
           for /f %%n in ('type msvc.txt ^| find /c /v ""') do echo transcript rows: %%n
+          golden_msvc.exe --ephe %EPHE% --threads 4 > nul || exit /b 1
+          golden_msvc.exe --ephe %EPHE% --threads 4 --per-thread-setup > nul || exit /b 1
       - name: Compare against the reference transcript
         shell: bash
         run: |
@@ -392,6 +434,9 @@ jobs:
           cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. ctxtest.c \
              obj-thread/*.o -o ctxtest_tsan -lm -ldl -lpthread
           env -u SE_EPHE_PATH ./ctxtest_tsan --ephe ../$EPHE
+
+  # ---------------------------------------------------------------------
+  # Dialects. The library floats on whatever -std= the local cc defaults to,
   # so pin each explicitly. C89 is EXPECTED to fail (58 errors on this tree,
   # long before either plan started) -- asserted as a known-fail so that if
   # the C17 migration ever makes it pass, we hear about it.
@@ -470,11 +515,29 @@ jobs:
           added=$(comm -13 /tmp/base.sym /tmp/new.sym | grep -c . || true)
           echo "ABI ok: nothing removed, $added symbol(s) added since upstream"
 
-          # Informational: report where a retained symbol changed section, so
-          # a genuine type change is still visible without failing the build.
+          # Section moves. These were all informational, which meant the one
+          # direction that matters could not fail the build.
+          #
+          # Read-only -> writable is a regression, and on this branch a
+          # pointed one: a table that was const is shared immutable state
+          # that every thread can read at once, and the whole reason this
+          # fork exists is that swed was not. Losing the const also loses the
+          # page sharing between processes. R or T on the left and anything
+          # writable on the right fails.
+          #
+          # Writable -> read-only is the const-correctness work landing and
+          # stays a note; five internal tables moved D -> R that way, and an
+          # earlier version of this gate read exactly that as a deletion.
           nm -D --defined-only /tmp/base.so | awk '{print $3, $2}' | sort > /tmp/base.tn
           nm -D --defined-only /tmp/new.so  | awk '{print $3, $2}' | sort > /tmp/new.tn
-          join /tmp/base.tn /tmp/new.tn | awk '$2!=$3{print "  note: "$1" "$2" -> "$3}'
+          join /tmp/base.tn /tmp/new.tn | awk '
+            $2 != $3 {
+              if ($2 ~ /^[RTrt]$/ && $3 ~ /^[DBGSdbgs]$/) {
+                print "  ABI FAIL: " $1 " moved " $2 " -> " $3 " (read-only to writable)"
+                bad = 1
+              } else print "  note: " $1 " " $2 " -> " $3
+            }
+            END { exit bad ? 1 : 0 }'
 
   # ---------------------------------------------------------------------
   # Upstream's own suite, used as a DIFFERENTIAL gate. It cannot be

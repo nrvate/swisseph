@@ -47,17 +47,50 @@ compares them bit-exactly with diff, where they ARE reproducible. Pass
 Usage:  cmpgolden.py A.txt B.txt [--abs 1e-6] [--verbose] [--no-skip]
 Exit 0 if every value agrees within tolerance, 1 otherwise.
 """
+import re
 import sys
+
+# A C99 %a literal. The number of mantissa digits it prints is up to the
+# implementation: glibc emits the shortest form that round-trips, "0x1.9p+3",
+# while MSVC always pads to 13, "0x1.9000000000000p+3". Both denote the same
+# double. Values are parsed and compared as numbers below, so the spelling
+# never mattered there -- but some rows carry a %a inside the message text,
+# where it would otherwise be compared as a string and every such row would
+# differ on Windows for no reason at all.
+_HEXFLOAT = re.compile(r"[-+]?0[xX][0-9a-fA-F]*\.?[0-9a-fA-F]*[pP][-+]?\d+")
+
+
+def _canon_hexfloats(s):
+    def one(m):
+        try:
+            return float.fromhex(m.group(0)).hex()
+        except ValueError:
+            return m.group(0)
+    return _HEXFLOAT.sub(one, s)
 
 
 def load(path):
     rows = {}
+    msgs = {}
     for ln in open(path):
         f = ln.split()
         if not f:
             continue
-        rows[f[0]] = [x for x in f[1:] if x.startswith(("0x", "-0x"))]
-    return rows
+        # Canonicalised on the way in, so the "is it identical" shortcut below
+        # compares values and not spellings. Without it MSVC reports every
+        # padded literal as a difference of magnitude zero -- 22670 of them on
+        # this transcript, which buries anything real.
+        rows[f[0]] = [_canon_hexfloats(x)
+                      for x in f[1:] if x.startswith(("0x", "-0x"))]
+        # golden.c writes the error string after a " | ", already run through
+        # its sanitize(): the ephemeris path is rewritten to $EPHE and the
+        # control characters that would break one-row-per-line are mapped to
+        # spaces. What is left is machine-independent -- the numbers inside a
+        # message go through printf conversions whose output C specifies
+        # exactly -- so it is compared verbatim rather than skipped.
+        i = ln.find(" | ")
+        msgs[f[0]] = _canon_hexfloats(ln[i + 3:].rstrip("\n")) if i >= 0 else ""
+    return rows, msgs
 
 
 def main():
@@ -73,7 +106,7 @@ def main():
     verbose = "--verbose" in opts
     skip_illcond = "--no-skip" not in opts
 
-    a, b = load(args[0]), load(args[1])
+    (a, amsg), (b, bmsg) = load(args[0]), load(args[1])
 
     only_a = set(a) - set(b)
     only_b = set(b) - set(a)
@@ -106,6 +139,25 @@ def main():
 
     if shape:
         print(f"FAIL: {shape} rows have a different number of values")
+        return 1
+
+    # Error strings, compared exactly. Before this, only the bit-exact gcc -O0
+    # job looked at them, so a message could change on every other toolchain
+    # unremarked -- and one did: "star  not found" quietly lost a space.
+    badmsg = [k for k in a if amsg[k] != bmsg[k]]
+    if badmsg:
+        # Grouped by the (A, B) pair, not row by row: one cause typically
+        # hits dozens of rows, and printing the first five of them says far
+        # less than printing each distinct pair once with a count.
+        groups = {}
+        for k in badmsg:
+            groups.setdefault((amsg[k], bmsg[k]), []).append(k)
+        print(f"FAIL: {len(badmsg)} row(s) differ in their error string, "
+              f"{len(groups)} distinct difference(s)")
+        for (x, y), ks in sorted(groups.items(), key=lambda g: -len(g[1])):
+            print(f"  x{len(ks)}, e.g. {ks[0]}")
+            print(f"    A: {x[:160]}")
+            print(f"    B: {y[:160]}")
         return 1
 
     if skipped:

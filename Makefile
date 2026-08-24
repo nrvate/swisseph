@@ -79,8 +79,16 @@ endif
 # ar both are). If yours is not: make LTO=0.
 LTO ?= 1
 ifeq ($(LTO),1)
-  CFLAGS += -flto
-  LIBS   += -flto
+  # gcc: -flto=auto runs the link-time partitions in parallel (jobserver or
+  # nproc); plain -flto runs them serially and warns about it. clang has no
+  # =auto and takes plain -flto.
+  ifneq ($(shell $(CC) -v 2>&1 | grep -c 'gcc version'),0)
+    LTOFLAG = -flto=auto
+  else
+    LTOFLAG = -flto
+  endif
+  CFLAGS += $(LTOFLAG)
+  LIBS   += $(LTOFLAG)
 endif
 
 # Appended to every compile and link. Lets a caller add flags without
@@ -135,12 +143,6 @@ endif
 # Build swevents
 swevents: swevents.o $(SWEOBJ)
 	$(CC) $(CFLAGS) -o swevents swevents.o $(SWEOBJ) $(LIBS)
-
-# Build sweventss, statically compiled
-sweventss: swevents.o $(SWEOBJ)
-	$(CC) $(CFLAGS) $(STATIC_LINK_FLAGS) -o sweventss swevents.o $(SWEOBJ) $(DYNAMIC_LINK_FLAGS) $(LIBS)
-	mkdir -p bin
-	cp sweventss  bin/swevents
 
 # Build swemini
 swemini: swemini.o libswe.a
@@ -276,7 +278,6 @@ clean:
 
 # Dependency rules
 swecl.o: swejpl.h sweodef.h swephexp.h swedll.h sweph.h swephlib.h
-sweclips.o: sweodef.h swephexp.h swedll.h
 swedate.o: swephexp.h sweodef.h swedll.h
 swehel.o: swephexp.h sweodef.h swedll.h
 swehouse.o: swephexp.h sweodef.h swedll.h swephlib.h swehouse.h

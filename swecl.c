@@ -672,9 +672,6 @@ static int32 eclipse_where( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starna
   int i;
   int32 retc = 0, niter = 0;
   double e[6], et[6], rm[6], rs[6], rmt[6], rst[6], xs[6], xst[6];
-#if 0
-  double erm[6];
-#endif
   double x[6];
   double lm[6], ls[6], lx[6];
   double dsm, dsmt, d0, D0, s0, r0, d, s, dm;
@@ -764,9 +761,6 @@ iter_where:
   for (i = 0; i <= 2; i++) {
     e[i] /= dsm;
     et[i] /= dsmt;
-#if 0
-    erm[i] = rm[i] / dm;
-#endif
   }
   sinf1 = ((drad - rmoon) / dsm);
   cosf1 = sqrt(1 - sinf1 * sinf1);
@@ -1662,7 +1656,7 @@ int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32
     ifltype2 = (ifltype & ~(SE_ECL_NONCENTRAL | SE_ECL_CENTRAL));
     if (ifltype2 == SE_ECL_ANNULAR || ifltype == SE_ECL_ANNULAR_TOTAL) {
       if (serr != NULL)
-	sprintf(serr, "annular occulation do not exist for object %d %s\n", ipl, starname);
+	snprintf(serr, AS_MAXCH, "annular occulation do not exist for object %d %.190s\n", ipl, starname);
       return ERR;
     }
   }
@@ -1687,12 +1681,12 @@ int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32
 next_try:
   if (calc_planet_star(ctx, t, ipl, starname, ifl, ls, serr) == ERR)
       return ERR;
-  /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have 
+  /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have
    * an occultation. Even lunar parallax andd proper motion of star
    * will never allow it. */
   if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
-    if (serr != NULL) 
-      sprintf(serr, "occultation never occurs: star %s has ecl. lat. %.1f", starname, ls[1]);
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "occultation never occurs: star %.150s has ecl. lat. %.1f", starname, ls[1]);
     return ERR;
   }
   if (swe_calc_r(ctx, t, SE_MOON, ifl, lm, serr) == ERR)
@@ -2520,12 +2514,12 @@ next_try:
   //is_partial = FALSE;
   if (calc_planet_star(ctx, t, ipl, starname, iflaggeo, ls, serr) == ERR)
       return ERR;
-  /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have 
+  /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have
    * an occultation. Even lunar parallax andd proper motion of star
    * will never allow it. */
   if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
-    if (serr != NULL) 
-      sprintf(serr, "occultation never occurs: star %s has ecl. lat. %.1f", starname, ls[1]);
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "occultation never occurs: star %.150s has ecl. lat. %.1f", starname, ls[1]);
     return ERR;
   }
   if (swe_calc_r(ctx, t, SE_MOON, iflaggeo, lm, serr) == ERR)
@@ -4213,28 +4207,6 @@ int32 CALL_CONV swe_pheno_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, do
       if (swe_calc_r(ctx, tjd, (int) ipl, epheflag|SEFLG_XYZ, xx, serr) == ERR)
 	return ERR;
       attr[5] = acos(swi_dot_prod_unit(xm, xx)) / DEGTORAD;
-#if 0
-      {
-      /* Expl. Suppl. to the Astronomical Almanac 1984, p. 400;
-       * Does not take into account 
-       * - the topocentric distance of the moon
-       * - the distance of the observer from the geocenter 
-       */
-      double tsid, h, e, f = EARTH_OBLATENESS;
-      double cosz, sinz, phi;
-      /* local apparent sidereal time */
-      tsid = swe_sidtime_r(ctx, tjd - swe_deltat_ex_r(ctx, tjd, iflag, serr)) * 15 + ctx->topd.geolon;
-      /* local hour angle of the moon */
-      h = swe_degnorm(tsid - xm[0] / DEGTORAD);
-      /* geocentric latitude of the observer */
-      e = sqrt(f * (2 - f));
-      phi = atan((1 - e * e) * tan(ctx->topd.geolat * DEGTORAD));
-      /* sine of geocentric zenith angle of moon */
-      cosz = sin(xm[1]) * sin(phi) + cos(xm[1]) * cos(phi) * cos(h * DEGTORAD);
-      sinz = sqrt(1 - cosz * cosz);
-      attr[5] = asin(sinz * sinhp / (1 - sinz * sinhp)) / DEGTORAD;
-      }
-#endif
     }
   }
   if (*serr2 != '\0' && serr != NULL)

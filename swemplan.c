@@ -358,11 +358,6 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       /* one more position for speed. 
        * the following dt gives good speed for light-time correction
        */
-    #if 0
-      for (i = 0; i <= 2; i++) 
-	dx[i] = xp[i] - pedp->x[i];
-      dt = LIGHTTIME_AUNIT * sqrt(square_sum(dx));   
-    #endif
       dt = PLAN_SPEED_INTV;
       swi_moshplan2(ctx, tjd - dt, iplm, x2); 
       swi_polcart(x2, x2);
@@ -733,7 +728,7 @@ static int load_fict_lines(swe_ctx *ctx, char *serr)
         free(lines);
         fclose(fp);
         if (serr != NULL)
-          sprintf(serr, "out of memory reading %s", SE_FICTFILE);
+          snprintf(serr, AS_MAXCH, "out of memory reading %.40s", SE_FICTFILE);
         return ERR;
       }
       lines = p;
@@ -797,10 +792,10 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
   for (k = 0; k < ctx->n_fict_lines; k++) {
     strcpy(s, ctx->fict_lines[k].s);	/* swi_cutstr() writes into it */
     ncpos = swi_cutstr(s, ",", cpos, 20);
-    sprintf(serri, "error in file %s, line %7.0f:", SE_FICTFILE, (double) ctx->fict_lines[k].iline);
+    snprintf(serri, AS_MAXCH, "error in file %.40s, line %7.0f:", SE_FICTFILE, (double) ctx->fict_lines[k].iline);
     if (ncpos < 9) {
       if (serr != NULL) {
-        sprintf(serr, "%s nine elements required", serri);
+        snprintf(serr, AS_MAXCH, "%.200s nine elements required", serri);
       }
       goto return_err;
     }
@@ -821,7 +816,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
         *tjd0 = J1900;
       else if (*sp == 'j' || *sp == 'b') {
         if (serr != NULL) {
-          sprintf(serr, "%s invalid epoch", serri);
+          snprintf(serr, AS_MAXCH, "%.200s invalid epoch", serri);
 	}
         goto return_err;
       } else
@@ -845,7 +840,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
         *tequ = tjd;
       else if (*sp == 'j' || *sp == 'b') {
         if (serr != NULL) {
-          sprintf(serr, "%s invalid equinox", serri);
+          snprintf(serr, AS_MAXCH, "%.200s invalid equinox", serri);
 	}
         goto return_err;
       } else
@@ -857,7 +852,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
 	  *mano = swe_degnorm(*mano);
       if (retc == ERR) {
         if (serr != NULL) {
-          sprintf(serr, "%s mean anomaly value invalid", serri);
+          snprintf(serr, AS_MAXCH, "%.200s mean anomaly value invalid", serri);
 	}
         goto return_err;
       }
@@ -875,7 +870,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
       retc = check_t_terms(tt, cpos[3], sema);
       if (*sema <= 0 || retc == ERR) {
         if (serr != NULL) {
-          sprintf(serr, "%s semi-axis value invalid", serri);
+          snprintf(serr, AS_MAXCH, "%.200s semi-axis value invalid", serri);
 	}
         goto return_err;
       }
@@ -885,7 +880,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
       retc = check_t_terms(tt, cpos[4], ecce);
       if (*ecce >= 1 || *ecce < 0 || retc == ERR) {
         if (serr != NULL) {
-          sprintf(serr, "%s eccentricity invalid (no parabolic or hyperbolic orbits allowed)", serri);
+          snprintf(serr, AS_MAXCH, "%.150s eccentricity invalid (no parabolic or hyperbolic orbits allowed)", serri);
 	}
         goto return_err;
       }
@@ -896,7 +891,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
 	  *parg = swe_degnorm(*parg);
       if (retc == ERR) {
         if (serr != NULL) {
-          sprintf(serr, "%s perihelion argument value invalid", serri);
+          snprintf(serr, AS_MAXCH, "%.200s perihelion argument value invalid", serri);
 	}
         goto return_err;
       }
@@ -908,7 +903,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
 	  *node = swe_degnorm(*node);
       if (retc == ERR) {
         if (serr != NULL) {
-          sprintf(serr, "%s node value invalid", serri);
+          snprintf(serr, AS_MAXCH, "%.200s node value invalid", serri);
 	}
         goto return_err;
       }
@@ -920,7 +915,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
 	  *incl = swe_degnorm(*incl);
       if (retc == ERR) {
         if (serr != NULL) {
-          sprintf(serr, "%s inclination value invalid", serri);
+          snprintf(serr, AS_MAXCH, "%.200s inclination value invalid", serri);
 	}
         goto return_err;
       }
@@ -945,7 +940,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
   }
   if (!elem_found) {
     if (serr != NULL) {
-      sprintf(serr, "%s elements for planet %7.0f not found", serri, (double) ipl);
+      snprintf(serr, AS_MAXCH, "%.150s elements for planet %7.0f not found", serri, (double) ipl);
     }
     goto return_err;
   }

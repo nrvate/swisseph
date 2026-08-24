@@ -2819,7 +2819,7 @@ static int32 orbital_elements(double tjd_et, int32 ipl, int32 iflag, char *serr)
   int32 retval;
   double dret[20], jut;
   int32 jyear, jmon, jday;
-  char sdateperi[40];
+  char sdateperi[AS_MAXCH];
   retval = swe_get_orbital_elements(tjd_et, ipl, iflag, dret, serr);
   if (retval == ERR) {
     printf("%s\n", serr);
@@ -3959,9 +3959,12 @@ static char *hms_from_tjd(double tjd)
   return s;
 }
 
+/* s and s2 hold dms()'s output, which is a char[50]; they were AS_MAXCH,
+ * advertising five times the content they can ever carry, and every caller
+ * that formatted hms() into a modest buffer looked like an overflow. */
 static char *hms(double x, int32 iflag)
 {
-  static char s[AS_MAXCH], s2[AS_MAXCH], *sp;
+  static char s[50], s2[50], *sp;
   char *c = ODEGREE_STRING;
   x += 0.5 / 36000.0; /* round to 0.1 sec */
   strcpy(s, dms(x, iflag));

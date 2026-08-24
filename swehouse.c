@@ -109,9 +109,6 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
 			   char *serr);
 static int sunshine_solution_makransky(double ramc, double lat, double ecl, struct houses *hsp);
 static int sunshine_solution_treindl(double ramc, double lat, double ecl, struct houses *hsp);
-#if 0
-static void test_Asc1();
-#endif
 
 /* housasp.c 
  * cusps are returned in double cusp[13],
@@ -824,15 +821,6 @@ int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
     }
   }
   swi_trace_unlock();
-#endif
-#if 0 
-/* for test of swe_house_pos(). 
- * 1st house will be 0, second 30, etc. */
-for (i = 1; i <=12; i++) {
-  double x[6];
-  x[0] = cusp[i]; x[1] = 0; x[2] = 1;
-  cusp[i] = (swe_house_pos_r(ctx, armc, geolat, eps, hsys, x, NULL) - 1) * 30;
-}
 #endif
   return retc;
 }

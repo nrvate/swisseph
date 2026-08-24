@@ -166,7 +166,7 @@ int eph4_pack (int32 jd, double (*l)[NDB], double ecliptic[],
 /*************************************/
 char *degstr (double t)
 {
-  static char a[20];	/* must survive call */
+  static char a[360];	/* must survive call; wide enough for any double */
   double min, sec;
   int ideg, imin;
   char sign = ' ';
@@ -176,7 +176,7 @@ char *degstr (double t)
   min = ( t - ideg ) * 60.0;
   imin = (int) floor(min);
   sec = ( min - imin ) * 60.0;
-  sprintf (a, "%c%3d %2d'%5.2f\"", sign, ideg, imin, sec);
+  snprintf (a, sizeof(a), "%c%3d %2d'%5.2f\"", sign, ideg, imin, sec);
   return (a);
 } /* degstr */
 

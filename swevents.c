@@ -389,10 +389,16 @@ int main(int argc, char *argv[])
   int nstep = 0, istep;
   double dx;
   double x[6], xs[6], x0[6], x1[6], x2[6], xd[6];
-  double xp[6], xp0[6], xp1[6] = {0}, xp2[6], xs0[6], xs1[6] = {0}, xs2[6];
-  double xel0[6], xel1[6] = {0}, xel2[6], xang0[6], xang1[6] = {0}, xang2[6], xma0[6], xma1[6] = {0}, xma2[6];
-  double xh0[6], xh1[6] = {0}, xh2[6];
-  double xd0[6], xd1[6] = {0}, xd2[6];
+  /* Three-point sliding window: x*0 <- x*1 <- x*2 at the top of each step,
+   * then x*2 is recomputed. The first two passes therefore copy x*2 before
+   * anything has written it. Only the x*1 arrays were initialised, so the
+   * x*2 arrays were read indeterminate. Nothing consumes the copies until
+   * `istep >= 2`, by which point all three hold computed values, so this
+   * defines the reads without changing a result. */
+  double xp[6], xp0[6], xp1[6] = {0}, xp2[6] = {0}, xs0[6], xs1[6] = {0}, xs2[6] = {0};
+  double xel0[6], xel1[6] = {0}, xel2[6] = {0}, xang0[6], xang1[6] = {0}, xang2[6] = {0}, xma0[6], xma1[6] = {0}, xma2[6] = {0};
+  double xh0[6], xh1[6] = {0}, xh2[6] = {0};
+  double xd0[6], xd1[6] = {0}, xd2[6] = {0};
   double attr[20];
   double xel, xma, sunrad;
   double dt, dt1, dt2, elong, rphel;
@@ -464,7 +470,7 @@ int main(int argc, char *argv[])
     } else if (strncmp(argv[i], "-ejpl", 5) == 0) {
       whicheph = SEFLG_JPLEPH;
       if (*(argv[i]+5) != '\0')
-	strcpy(fname, argv[i]+5);
+	snprintf(fname, sizeof(fname), "%s", argv[i]+5);
     } else if (strcmp(argv[i], "-eswe") == 0) {
       whicheph = SEFLG_SWIEPH;
     } else if (strcmp(argv[i], "-emos") == 0) {
@@ -823,17 +829,9 @@ int main(int argc, char *argv[])
 	  /* planet is behind solar disk or is transiting it */
 	  for (j = 0, dt1 = tstep; j <= 5; j++, dt1 /= 3) {
 	    for (k = 0; k <= 2; k++) {
-	      switch(k) {
-		case 0:
-		  t3 = t2 - dt1;
-		  break;
-		case 1:
-		  t3 = t2;
-		  break;
-		case 2:
-		  t3 = t2 + dt1;
-		  break;
-	      }
+	      /* the three cases of the switch this replaces, in order:
+	       * t2 - dt1, t2, t2 + dt1. Total, so t3 cannot be read unset. */
+	      t3 = t2 + (k - 1) * dt1;
 	      iflgret = swe_calc(t3, (int) ipl, iflag, xp, serr);
 	      iflgret = swe_calc(t3, SE_SUN, iflag, xs, serr);
 	      swi_polcart(xp, x1);
@@ -900,17 +898,8 @@ int main(int argc, char *argv[])
 	t2 = te + dt;
 	for (j = 0, dt1 = tstep; j <= 5; j++, dt1 /= 3) {
 	  for (k = 0; k <= 2; k++) {
-	    switch(k) {
-	      case 0:
-		t3 = t2 - dt1;
-		break;
-	      case 1:
-		t3 = t2;
-		break;
-	      case 2:
-		t3 = t2 + dt1;
-		break;
-	    }
+	    /* as above: t2 - dt1, t2, t2 + dt1, without a partial switch */
+	    t3 = t2 + (k - 1) * dt1;
 	    //iflgret = swe_calc(t3, (int) ipl, iflag, xp, serr);
 	    //iflgret = swe_calc(t3, SE_SUN, iflag, xs, serr);
 	    //swi_polcart(xp, x1);
@@ -1030,17 +1019,7 @@ int main(int argc, char *argv[])
 	t2 = te + dt;
 	for (j = 0, dt1 = tstep; j <= 5; j++, dt1 /= 3) {
 	  for (k = 0; k <= 2; k++) {
-	    switch(k) {
-	      case 0:
-		t3 = t2 - dt1;
-		break;
-	      case 1:
-		t3 = t2;
-		break;
-	      case 2:
-		t3 = t2 + dt1;
-		break;
-	    }
+	    t3 = t2 + (k - 1) * dt1;
 	    iflgret = swe_calc(t3, (int) ipl, iflag, xp, serr);
 	    iflgret = swe_calc(t3, SE_SUN, iflag, xs, serr);
 	    swi_polcart(xp, x1);
@@ -1071,14 +1050,8 @@ int main(int argc, char *argv[])
 	t2 = te - xp2[3] / ((xp2[3] - xp1[3]) / tstep);
 	for (j = 0, dt1 = tstep; j <= 5; j++, dt1 /= 3) {
 	  for (k = 0; k <= 1; k++) {
-	    switch(k) {
-	      case 0:
-		t3 = t2;
-		break;
-	      case 1:
-		t3 = t2 + dt1;
-		break;
-	    }
+	    /* k runs 0..1 here: t2, t2 + dt1 */
+	    t3 = t2 + k * dt1;
 	    iflgret = swe_calc(t3, (int) ipl, iflag, xp, serr);
 	    x0[k] = xp[3];
 	  }
@@ -1104,17 +1077,7 @@ int main(int argc, char *argv[])
 	t2 = te + dt;
 	for (j = 0, dt1 = tstep; j <= 4; j++, dt1 /= 3) {
 	  for (k = 0; k <= 2; k++) {
-	    switch(k) {
-	      case 0:
-		t3 = t2 - dt1;
-		break;
-	      case 1:
-		t3 = t2;
-		break;
-	      case 2:
-		t3 = t2 + dt1;
-		break;
-	    }
+	    t3 = t2 + (k - 1) * dt1;
 	    iflgret = swe_calc(t3, (int) ipl, iflag/*|SEFLG_HELCTR*/, xp, serr);
 	    x0[k] = xp[2];
 	  }
@@ -1147,17 +1110,7 @@ int main(int argc, char *argv[])
 	t2 = te + dt;
 	for (j = 0, dt1 = tstep; j <= 4; j++, dt1 /= 3) {
 	  for (k = 0; k <= 2; k++) {
-	    switch(k) {
-	      case 0:
-		t3 = t2 - dt1;
-		break;
-	      case 1:
-		t3 = t2;
-		break;
-	      case 2:
-		t3 = t2 + dt1;
-		break;
-	    }
+	    t3 = t2 + (k - 1) * dt1;
 	    iflgret = swe_calc(t3, (int) ipl, iflag|SEFLG_EQUATORIAL, xp, serr);
 	    x0[k] = xp[1];
 	  }
@@ -2056,7 +2009,7 @@ static int32 get_aspect_angles(char *sasp, char *saspi, double *dasp, char *serr
       strcat(saspi, "BB");
       break;
     default:
-      sprintf(serr, "aspects string %s is invalid", sasp);
+      snprintf(serr, AS_MAXCH, "aspects string %.210s is invalid", sasp);
       return ERR;
       break;
     }
@@ -2402,7 +2355,7 @@ int32 calc_mundane_aspects(int32 iflag, double tjd0, double tjde, double tstep,
   UNUSED(xa1d);
   sprintf(foutnam, "%s/%s", PATH_FOUTNAM, FOUTNAM);
   if ((fpout = fopen(foutnam, BFILE_W_CREATE)) == NULL) {
-    sprintf(serr, "could not open file %s", foutnam);
+    snprintf(serr, AS_MAXCH, "could not open file %.230s", foutnam);
     return ERR;
   }
   fprintf(fpout, "%s, mundane aspects\ncreation date: %s\n%s\n", FOUTNAM, sdate, cmdline);
@@ -2618,12 +2571,12 @@ int32 calc_mundane_aspects(int32 iflag, double tjd0, double tjde, double tstep,
 static int do_fread_double(FILE *fpout, char *foutnam, int32 fposbeg, double *tjdbeg, char *serr)
 {
   if (fseek(fpout, fposbeg, SEEK_SET) != 0) {
-    sprintf(serr, "fseek failed (SEEK_SET): %s", foutnam);
-    return ERR;   
+    snprintf(serr, AS_MAXCH, "fseek failed (SEEK_SET): %.230s", foutnam);
+    return ERR;  
   }
   if (fread((void *) tjdbeg, sizeof(double), 1, fpout) <= 0) {
-    sprintf(serr, "error while trying to read %s (1)", foutnam);
-    return ERR;   
+    snprintf(serr, AS_MAXCH, "error while trying to read %.210s (1)", foutnam);
+    return ERR;  
   }
   return OK;
 }

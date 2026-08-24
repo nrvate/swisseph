@@ -254,7 +254,7 @@ static int32 fsizer(swe_ctx *ctx, char *serr)
     if (serr != NULL) {
       strcpy(serr, "alleged ephemeris file has invalid format.");
       if (strlen(serr) + strlen(js->jplfname) + 3 < AS_MAXCH) {
-	sprintf(serr, "alleged ephemeris file (%s) has invalid format.", js->jplfname);
+	snprintf(serr, AS_MAXCH, "alleged ephemeris file (%.200s) has invalid format.", js->jplfname);
       }
     }
     return(NOT_AVAILABLE);
@@ -782,9 +782,9 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
 	 * reported as a negative number -- which is how the nb overflow above
 	 * disguised itself: the diagnostic looked like the arithmetic bug even
 	 * after the arithmetic was correct. Print them at full width. */
-	sprintf(serr, "JPL ephemeris file is mutilated; length = %lld instead of %lld.", (long long) flen, (long long) nb);
+	snprintf(serr, AS_MAXCH, "JPL ephemeris file is mutilated; length = %lld instead of %lld.", (long long) flen, (long long) nb);
 	if (strlen(serr) + strlen(js->jplfname) < AS_MAXCH - 1) {
-	  sprintf(serr, "JPL ephemeris file %s is mutilated; length = %lld instead of %lld.", js->jplfname, (long long) flen, (long long) nb);
+	  snprintf(serr, AS_MAXCH, "JPL ephemeris file %.160s is mutilated; length = %lld instead of %lld.", js->jplfname, (long long) flen, (long long) nb);
 	}
       }
       return(NOT_AVAILABLE);
@@ -826,21 +826,24 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
   t = (et_mn - ((nr - 2) * js->eh_ss[2] + js->eh_ss[0]) + et_fr) / js->eh_ss[2];
   /* read correct record if not in core */
   if (nr != js->nrl) {
-    js->nrl = nr;
+    /* nrl says which record buf[] holds, and a failed read leaves buf[]
+     * holding neither the old record nor the new one -- fread() keeps the
+     * bytes of a short read. Mark it empty until the read has succeeded;
+     * record numbers start at 2, so 0 is the sentinel set at open. */
+    js->nrl = 0;
     if (FSEEK(js->jplfptr, (off_t64) (nr * ((off_t64) js->irecsz)), 0) != 0) {
-      if (serr != NULL) 
+      if (serr != NULL)
 	sprintf(serr, "Read error in JPL eph. at %f\n", et);
       return NOT_AVAILABLE;
     }
-    for (k = 1; k <= js->ncoeffs; ++k) {
-      if ( fread((void *) &buf[k - 1], sizeof(double), 1, js->jplfptr) != 1) {
-	if (serr != NULL) 
-	  sprintf(serr, "Read error in JPL eph. at %f\n", et);
-	return NOT_AVAILABLE;
-      }
-      if (js->do_reorder)
-	reorder((char *) &buf[k-1], sizeof(double), 1);
+    if ((int32) fread((void *) buf, sizeof(double), (size_t) js->ncoeffs, js->jplfptr) != js->ncoeffs) {
+      if (serr != NULL)
+	sprintf(serr, "Read error in JPL eph. at %f\n", et);
+      return NOT_AVAILABLE;
     }
+    if (js->do_reorder)
+      reorder((char *) buf, sizeof(double), js->ncoeffs);
+    js->nrl = nr;
   }
   if (js->do_km) {
     intv = js->eh_ss[2] * 86400.;

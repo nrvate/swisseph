@@ -144,7 +144,6 @@ static thr_ret_t THR_CALL reader(void *arg) {
 int main(void) {
   thr_t t[NTHREADS];
   thr_t pub, rd[NTHREADS - 1];
-  struct payload p;
   long want;
   int bad = 0, i;
 

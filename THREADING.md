@@ -139,7 +139,7 @@ run this rather than trusting a green local run.
 - **LTO is on by default** (`make LTO=0` turns it off). Measured at about
   **5% faster** on the Moshier Moon path and bit-identical to plain `-O2`
   across the whole golden transcript on gcc 11.4 (5137 rows as the transcript
-  then stood; it is 12657 today). The CI `lto` job runs the transcript under
+  then stood; it is 12669 today). The CI `lto` job runs the transcript under
   gcc, clang and Apple clang with `-flto`, all within the 1e-5 cross-toolchain
   tolerance; MSVC builds through the `.vcxproj` files and is not affected.
 - **`-DSWE_NO_THREADS`** compiles the threading primitives to no-ops for
@@ -153,7 +153,7 @@ run this rather than trusting a green local run.
 
 ## What is verified
 
-Every change is gated on a bit-exact transcript: **12657 rows** of C99 `%a` hex
+Every change is gated on a bit-exact transcript: **12669 rows** of C99 `%a` hex
 floats, compared byte for byte, so no test ever has to pick a tolerance.
 
 The transcript is not a handful of spot checks. It sweeps 120 pseudo-random
