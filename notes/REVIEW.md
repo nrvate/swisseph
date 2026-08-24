@@ -6,8 +6,8 @@ re-audited. Everything above the line is real, scoped, and provable on the
 bit-exact gates — the rule for landing it. `make -C tests check` runs every
 gate but G8 in about 15 s; `make -C tests check-all` adds G8, the setest
 differential against `origin/legacy-master`.
-**Base:** `main` @ `07fc6b4` (rollup #11 merged); `SE_VERSION` is still
-2.10.03-ts.5, not yet tagged.
+**Base:** `main` @ `558ac48`, released as 2.10.03-ts.6 — rollups #11, #12
+and #13.
 **Scope:** root `*.c`/`*.h`; `windows/`, `setest/` and the samples only where
 noted.
 
