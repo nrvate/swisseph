@@ -236,7 +236,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci
+       check-build check-ephe-ci check-samples
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -255,6 +255,39 @@ check-all: check check-setest
 # The numerical gates only; the thread and race gates exercise the same file
 # access through the same paths, so running them again here would cost
 # seconds to prove nothing new.
+# G17: the two sample programs.
+#
+# swemini and obama ship in every package -- they are the code a newcomer
+# copies -- and nothing asserted a single number either of them printed.
+# `make all` proved they compile and check-build proved that much again; the
+# output was unverified, so any of them could have started printing rubbish
+# and every gate would still have been green.
+#
+# Pinned exactly, which is the same contract check-golden has and for the
+# same reason: bit-exactness is meaningful at fixed flags, so they are built
+# here at the tests' own -O0 rather than taken from the root build. obama
+# takes no input; swemini reads one date and then prompts again, which is
+# where its stdin ends.
+samples_obama: ../obama.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+samples_mini: ../swemini.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+.samples.txt: samples_obama samples_mini
+	@{ SE_EPHE_PATH=$(EPHE) ./samples_obama; \
+	   printf '1.1.2000\n' | SE_EPHE_PATH=$(EPHE) ./samples_mini; } > $@ 2>&1
+
+samples-baseline: .samples.txt
+	@cp .samples.txt samples.baseline
+	@echo "samples.baseline: $$(wc -l < samples.baseline) lines"
+
+check-samples: .samples.txt samples.baseline
+	@diff -q samples.baseline .samples.txt \
+	  && echo "G17 PASS: swemini and obama output unchanged" \
+	  || { echo "G17 FAIL: a sample program's output moved"; \
+	       diff samples.baseline .samples.txt | head -20; exit 1; }
+
 EPHE_MIN = .ephe-min
 check-ephe-ci:
 	@echo "G16: the gates hold against CI's pruned ephe/ (no sat/, no ep4/)"
@@ -271,7 +304,7 @@ check-ephe-ci:
 	@echo "G16 PASS"
 
 clean:
-	rm -f .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
@@ -280,6 +313,7 @@ clean:
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
+        check-samples samples-baseline \
         check-winmacros check-jplreal orderprobe \
         ci-image check-ci clean
 
@@ -465,7 +499,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f .tiergolden* .tier*.txt .tier*.err; \
+	rm -f samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
