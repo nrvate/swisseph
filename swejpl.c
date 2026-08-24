@@ -832,15 +832,13 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
 	sprintf(serr, "Read error in JPL eph. at %f\n", et);
       return NOT_AVAILABLE;
     }
-    for (k = 1; k <= js->ncoeffs; ++k) {
-      if ( fread((void *) &buf[k - 1], sizeof(double), 1, js->jplfptr) != 1) {
-	if (serr != NULL) 
-	  sprintf(serr, "Read error in JPL eph. at %f\n", et);
-	return NOT_AVAILABLE;
-      }
-      if (js->do_reorder)
-	reorder((char *) &buf[k-1], sizeof(double), 1);
+    if ((int32) fread((void *) buf, sizeof(double), (size_t) js->ncoeffs, js->jplfptr) != js->ncoeffs) {
+      if (serr != NULL)
+	sprintf(serr, "Read error in JPL eph. at %f\n", et);
+      return NOT_AVAILABLE;
     }
+    if (js->do_reorder)
+      reorder((char *) buf, sizeof(double), js->ncoeffs);
   }
   if (js->do_km) {
     intv = js->eh_ss[2] * 86400.;
