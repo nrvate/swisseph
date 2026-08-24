@@ -98,6 +98,13 @@ jobs:
           esac
       - name: Build library
         run: make libswe.a
+      # readme.md documents `make LTO=0`, and nothing built it. -flto defers
+      # gcc's -Wformat-truncation analysis, so a set of snprintf calls that
+      # cannot fit their own format string compiled clean by default and
+      # failed -Werror the moment LTO came off. Every other job here is
+      # LTO=1, so this is the only place that would catch it.
+      - name: Non-LTO build (readme documents LTO=0)
+        run: make clean && make LTO=0 all && make clean
       - name: G1 numerical no-op (bit-exact, the pinned config)
         run: make -C tests check-golden EPHE=../$EPHE
       - name: G1b -O2 within tolerance
