@@ -138,7 +138,7 @@ run this rather than trusting a green local run.
 
 - **`LTO=1`** is opt-in. Measured at about **5% faster** on the Moshier Moon
   path and bit-identical to plain `-O2` across the whole golden transcript on
-  gcc 11.4 (5137 rows as the transcript then stood; it is 12761 today).
+  gcc 11.4 (5137 rows as the transcript then stood; it is 12582 today).
   It is not the default because parity on clang/macOS/MSVC has not been
   confirmed — the CI `lto` job exists to close that.
 - **`-DSWE_NO_THREADS`** compiles the threading primitives to no-ops for
@@ -152,7 +152,7 @@ run this rather than trusting a green local run.
 
 ## What is verified
 
-Every change is gated on a bit-exact transcript: **12761 rows** of C99 `%a` hex
+Every change is gated on a bit-exact transcript: **12582 rows** of C99 `%a` hex
 floats, compared byte for byte, so no test ever has to pick a tolerance.
 
 The transcript is not a handful of spot checks. It sweeps 120 pseudo-random

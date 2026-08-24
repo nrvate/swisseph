@@ -142,8 +142,9 @@ jobs:
             | `swisseph-android-*.tar.gz` | JNI library for every ABI the NDK builds, plus `swejni.h` |
 
             Ephemeris data is **not** included — it has its own release
-            cadence. Without it the library uses the built-in Moshier
-            ephemeris, which needs no files.
+            cadence. Without it a request for the Swiss or JPL ephemeris is
+            an error, not a silent substitution; the built-in Moshier
+            ephemeris needs no files and is there for callers who ask for it.
 
             See `THREADING.md` in any archive for what differs from upstream
             and how to use independent contexts.

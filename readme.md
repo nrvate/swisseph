@@ -86,7 +86,7 @@ swe_calc_ut_r(ctx, tjd, SE_MOON, iflag, xx, serr);
 swe_ctx_free(ctx);
 ```
 
-There are **78** `_r` entry points, each taking a context as its first
+There are **80** `_r` entry points, each taking a context as its first
 argument. Two contexts can hold two sidereal modes or two observer positions at
 once — something the process-wide API cannot express at all.
 
@@ -123,6 +123,13 @@ swe_set_ephe_fallback_r(ctx, 1);   /* one context   */
 or set `SE_EPHE_FALLBACK=1` in the environment, which needs no recompile.
 Asking for Moshier and getting it was never a downgrade and is unaffected.
 
+Two details worth knowing. Naming no ephemeris at all is treated as asking for
+Swiss — it is what `swe_calc_ut()` has always done explicitly, and the two entry
+points must agree — so it is refused the same way. And the check covers
+`swe_fixstar()`/`swe_fixstar2()`, whose Earth position comes from a path that
+bypasses `swe_calc()`; with fallback enabled those still return upstream's
+flag, which names the ephemeris requested rather than the one used.
+
 ---
 
 ## Compatibility
@@ -142,13 +149,13 @@ that leaned on a silent fallback now sees `ERR` where it used to get numbers.
 
 ## What is verified
 
-Every change is gated on a bit-exact transcript — **12761 rows** of C99 `%a`
+Every change is gated on a bit-exact transcript — **12582 rows** of C99 `%a`
 hex floats compared byte for byte, so no test has to pick a tolerance. The
 transcript sweeps 120 pseudo-random dates spanning roughly 1400 years across
 three ephemeris flag sets and every major body, recording longitude, latitude,
 distance and all three speed components.
 
-Ten gates run on every push (`make -C tests check`), covering bit-exactness,
+Eleven gates run on every push (`make -C tests check`), covering bit-exactness,
 cross-thread agreement, context independence, configuration leaks, two specific
 historical races, malformed-input handling and the threading backends.
 
