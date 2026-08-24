@@ -167,6 +167,21 @@ jobs:
       - name: Non-LTO build (readme documents LTO=0)
         run: make clean && make LTO=0 all
 
+      # -Wformat-truncation, and the value-range analysis behind several other
+      # warnings, depend on the optimisation level. The library ships at -O2
+      # and every job here builds it that way, but tests/ compiles the same
+      # sources at -O0 -- so a diagnostic that only fires at -O0 was reachable
+      # by every gate and asserted by none. Two landed that way before this
+      # step existed. -O1 and -O3 are NOT gated: both report a pre-existing
+      # -Wmaybe-uninitialized on nutlo in swephlib.c that predates the fork's
+      # CI, so gating them would mean starting red.
+      - name: -O0 must also be -Werror clean
+        run: |
+          for f in sweconfig swedate swehouse swejpl swemmoon swemplan sweph \
+                   swephlib swecl swehel swetest swevents swemini obama; do
+            cc -std=c17 -Wall -Wextra -Werror -O0 -g -fPIC -D_GNU_SOURCE -c -o /dev/null $f.c
+          done
+
   # ---------------------------------------------------------------------
   # LTO parity. LTO is the default build as of ts.5 -- it is bit-identical
   # to plain -O2 and worth ~5% on the Moshier Moon path. This job keeps that
