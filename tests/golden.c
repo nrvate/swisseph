@@ -153,14 +153,35 @@ static const int32 FLAGS[] = {
  *
  * Also tagged: the fixed-star distance SPEED (field[5]), extracted by
  * differencing a distance of ~1e7 AU to recover a quantity ~3e-10 of it.
+ *
+ * A SECOND measurement, of a different sensitivity. The table above perturbs
+ * the input; a compiler that contracts a*b+c into a fused multiply-add
+ * perturbs every intermediate instead, and the two do not rank the same
+ * rows. Apple clang on arm64 contracts by default, and the macOS CI job
+ * reported OSCU_APOG under SWIEPH at 5.7e-06 -- 57% of the 1e-05 tolerance,
+ * untagged. Reproduced on x86 with -O2 -mfma -ffp-contract=fast against
+ * the bit-exact baseline, worst untagged rows:
+ *
+ *   OSCU_APOG  swieph/equat  speed (field 3)   2.7e-05   OVER, 2.7x   <-- tagged
+ *   OSCU_APOG  swieph/equat  speed (field 4)   6.1e-06
+ *   MOON       moseph        speed (field 3)   3.5e-06   many dates
+ *   everything else                            < 1.6e-06
+ *
+ * So the osculating apogee is tagged under EVERY ephemeris: its position is
+ * fine, but its speed is a difference of two nearly equal unstable
+ * solutions and inherits their noise. The Moshier Moon's speed is left in
+ * at ~3x headroom; if a toolchain moves it past tolerance, that is the row
+ * to look at first.
  */
 #define ILLCOND "~illcond"
 
-/* Bodies whose values are not reproducible across math libraries when
- * computed from Moshier -- see the measurements above. */
+/* Bodies whose values are not reproducible across math libraries -- see the
+ * measurements above. The osculating apogee under any ephemeris; the true
+ * node only under Moshier. */
 static int is_illcond(int32 iflag, int ipl) {
-  return (iflag & SEFLG_MOSEPH)
-      && (ipl == SE_TRUE_NODE || ipl == SE_OSCU_APOG);
+  if (ipl == SE_OSCU_APOG)
+    return 1;
+  return (iflag & SEFLG_MOSEPH) && ipl == SE_TRUE_NODE;
 }
 
 /* The library version goes in the transcript as provenance, but must NOT
@@ -821,6 +842,30 @@ static void coverage(void) {
     row("cov:order_moseph_after_jplname", rf, x, 6, serr);
     *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
     row("cov:order_swiss_after_jplname", rf, x, 6, serr);
+
+    /* One request, one answer, however the ephemeris bits are spelled.
+     * swe_calc() resolves SWIEPH|MOSEPH to Swiss (plaus_iflag: JPL over
+     * Swiss over Moshier) and the strict guard must read the bits in the
+     * same order. It used to read them the other way round and refuse the
+     * call as "Moshier answered by Swiss". This row must equal
+     * cov:order_swiss_alone. */
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
+    row("cov:flags_swi_or_mos", rf, x, 6, serr);
+
+    /* swe_fixstar() computes the Earth through main_planet_bary(), not
+     * swe_calc(), so the guard at swe_calc()'s exit never saw it: with the
+     * JPL file missing it answered from Swiss and still returned
+     * SEFLG_JPLEPH. The real file (de200, named above) must go through
+     * (rf=1); a missing one must be refused (rf=-1), for both star APIs. */
+    { char st[AS_MAXCH]; strcpy(st, "Sirius"); *serr = 0; rf = swe_fixstar(st, 2451545.0, SEFLG_JPLEPH, x, serr);
+      row("cov:fixstar_jpl_real", rf, x, 6, serr); }
+    { char st[AS_MAXCH]; strcpy(st, "Sirius"); *serr = 0; rf = swe_fixstar2(st, 2451545.0, SEFLG_JPLEPH, x, serr);
+      row("cov:fixstar2_jpl_real", rf, x, 6, serr); }
+    { char jf[AS_MAXCH]; strcpy(jf, "nope.eph"); swe_set_jpl_file(jf); }
+    { char st[AS_MAXCH]; strcpy(st, "Sirius"); *serr = 0; rf = swe_fixstar(st, 2451545.0, SEFLG_JPLEPH, x, serr);
+      row("cov:fixstar_jpl_missing", rf, x, 6, serr); }
+    { char st[AS_MAXCH]; strcpy(st, "Sirius"); *serr = 0; rf = swe_fixstar2(st, 2451545.0, SEFLG_JPLEPH, x, serr);
+      row("cov:fixstar2_jpl_missing", rf, x, 6, serr); }
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();
     swe_set_ephe_path((char *) EPHE);
