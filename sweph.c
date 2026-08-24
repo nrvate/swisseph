@@ -7123,11 +7123,23 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
     strcpy(searchkey, sstar);
     len = (int) (strlen(sstar) - 1);
     searchkey[len] = '\0';
-    for (i = 0; i < ndata; i++) {
-      if (strncmp(stardatabegp[i].skey, sstar, len) == 0) {
-        *stardata = stardatabegp[i];
-	return OK;
+    /* The list is sorted by skey (strcmp), so every key with this prefix is
+     * contiguous and the first of them is the lower bound -- the same
+     * element the linear scan this replaces returned first. */
+    {
+      int lo = 0, hi = ndata;
+      while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (strncmp(stardatabegp[mid].skey, sstar, len) < 0)
+          lo = mid + 1;
+        else
+          hi = mid;
       }
+      i = lo;
+    }
+    if (i < ndata && strncmp(stardatabegp[i].skey, sstar, len) == 0) {
+      *stardata = stardatabegp[i];
+      return OK;
     }
     if (serr != NULL)
       sprintf(serr, "error, swe_fixstar(): star search string %s did not match", sstar);
