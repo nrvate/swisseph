@@ -716,6 +716,16 @@ extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
                            const double * SWI_RESTRICT xsun, char *serr);
 extern FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char *serr);
 extern int32 swi_init_swed_if_start(swe_ctx *ctx);
+/* "JPL" / "Swiss (.se1)" / "Moshier", for error messages. */
+extern const char *swi_ephe_name(int32 epheflag);
+/* SE_EPHE_FALLBACK, read fresh -- see swe_set_ephe_fallback(). */
+extern AS_BOOL swi_env_ephe_fallback(void);
+/* Close the .se1 files. FORGET_DENUM when the next open may find different
+ * files, KEEP_DENUM when the same ones are coming back -- delta-t reads that
+ * number before anything reopens them. */
+#define FORGET_DENUM TRUE
+#define KEEP_DENUM   FALSE
+extern void swi_close_ephe_files(swe_ctx *ctx, AS_BOOL forget_denum);
 extern int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, char *serr);
 extern int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr);
 
@@ -921,6 +931,17 @@ struct swe_ctx {
   int32     cfg_local;     /* groups this context set itself and now owns  */
   AS_BOOL   cfg_applying;  /* re-entrancy guard while a setter is applying */
   AS_BOOL ephe_path_is_set;
+  /* May a calculation quietly finish on a weaker ephemeris than the caller
+   * asked for? FALSE by default in this fork -- see swe_set_ephe_fallback().
+   *
+   * Upstream substitutes on its own: a missing .se1 file or a date outside
+   * it drops to Moshier, a missing JPL file drops to Swiss. It notes this in
+   * serr and sets the ephemeris bit in the return flag, but the return code
+   * still says success, so a caller that checks only the return value gets
+   * arcsecond-level analytic positions believing they came from the data
+   * files. Every wrapper that discards serr -- pyswisseph among them --
+   * makes the substitution completely invisible. */
+  AS_BOOL ephe_fallback;
   struct jpl_save *jpl;   /* Phase 3c: the open JPL file and every scrap of
                            * state derived from its header. Opaque here;
                            * defined in swejpl.c. NULL when closed. */

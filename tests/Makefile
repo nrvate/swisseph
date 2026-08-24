@@ -11,7 +11,7 @@ LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
 REP     ?= 7
 
-all: golden sunrace glprace threadshim cfgleak jplguard
+all: golden sunrace glprace threadshim cfgleak jplguard jplreal
 
 golden: golden.c $(SWE)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
@@ -45,6 +45,37 @@ cfgleak: cfgleak.c $(SWE)
 # guard shows up as a diagnosed overflow rather than silent corruption.
 jplguard: jplguard.c $(SWE)
 	$(CC) $(CFLAGS) -fsanitize=address $^ -o $@ $(LIBS)
+
+# G15: the JPL path, against a genuine JPL binary rather than a fixture.
+#
+# Runs unconditionally: ephe/de200.eph is tracked beside the .se1 files, so
+# there is nothing to configure and nothing to skip. jplguard.c and jplcalc.c
+# only ever fed the reader fabricated headers; this opens a real one.
+#
+# SE_JPL_FILE and SE_TEST_EPHE override the defaults to point at a different
+# ephemeris. ⚠️ SE_TEST_EPHE must name a directory holding BOTH the JPL file
+# and the .se1 files, since the gate compares one against the other:
+#
+#   make check-jplreal SE_JPL_FILE=de441.eph SE_TEST_EPHE=$$HOME/se1
+jplreal: jplreal.c $(SWE)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-jplreal: jplreal
+	@SE_TEST_EPHE="$${SE_TEST_EPHE:-$(EPHE)}" ./jplreal
+
+# The order-dependence probe. NOT a gate -- a bug-finding instrument.
+#
+# Runs every (prior operation, measurement) pair in its own process and
+# reports anything whose value moved because of what ran before it. That is
+# how the three tid_acc leaks were found; the cov:order_* rows in
+# baseline.txt are the permanent guard those turned into.
+#
+#   make orderprobe && cd tests && ./orderprobe.py
+#
+# A clean run still lists three: swe_set_tid_acc, swe_set_delta_t_userdef and
+# swe_set_sid_mode, which are the caller deliberately changing the value.
+orderprobe: orderprobe.c $(SWE)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 check-jplguard: jplguard
 	@./jplguard
@@ -142,16 +173,16 @@ check-threads-workaround: golden
 	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) --threads 8 --per-thread-setup > /dev/null \
 	  && echo "workaround PASS" || { echo "workaround FAIL -- something is badly wrong"; exit 1; }
 
-check: check-version check-threadshim check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
+check: check-version check-threadshim check-jplreal check-golden check-golden-O2 check-sunrace check-glprace check-cfgleak check-jplguard check-threads-workaround check-threads
 
 clean:
-	rm -f jplcalc .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge \
-        check-winmacros \
+        check-winmacros check-jplreal orderprobe \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
@@ -463,7 +494,14 @@ check-setest: $(SETEST_REF)
 	# would consider them up to date and the pin above would do nothing.
 	@$(MAKE) -B -C .. libswe.a CFLAGS="$(SETEST_CFLAGS)" >/dev/null 2>&1
 	@$(MAKE) -B -C ../setest >/dev/null 2>&1
-	@cd ../setest && SE_EPHE_PATH=$(EPHE_ABS) ./setest t 2>&1 | $(SCRUB) > ../tests/.setest_now.txt || true
+	# ⚠️ SE_EPHE_FALLBACK=1: this gate asks whether our changes altered
+	# UPSTREAM's numerical behaviour, so it has to run upstream's suite under
+	# upstream's rules. setest requests ephemerides the machine may not have
+	# and expects numbers back; under this fork's strict default it reads
+	# zeros and every comparison fails -- which says nothing about the
+	# arithmetic this gate exists to protect. The strict default is tested by
+	# check-golden and G15 instead.
+	@cd ../setest && SE_EPHE_PATH=$(EPHE_ABS) SE_EPHE_FALLBACK=1 ./setest t 2>&1 | $(SCRUB) > ../tests/.setest_now.txt || true
 	@lines=$$(wc -l < .setest_now.txt); \
 	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
 	   echo "G8 FAIL: setest produced only $$lines lines -- it did not run"; \

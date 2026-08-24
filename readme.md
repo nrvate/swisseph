@@ -95,15 +95,47 @@ wipe the settings every other thread was reading.
 
 ---
 
+## No silent ephemeris downgrades
+
+⚠️ **The one deliberate behavioural break from upstream.** Ask for an
+ephemeris and you get it, or you get an error.
+
+Upstream substitutes on its own — a missing `.se1` file or a date outside it
+drops to Moshier, a missing JPL file drops to Swiss. It mentions this in
+`serr` and sets the ephemeris bit in the return flag, but the **return code
+still says success**, so a caller checking only that cannot tell a data-file
+position from an analytic approximation. Every wrapper that discards `serr` —
+pyswisseph among them — makes it invisible.
+
+The gap is small enough to pass a spot check and large enough to matter.
+Against the DE441-based `.se1` files over 1900–2050, Moshier tracks the Sun to
+**0.02″** — so checking the Sun proves nothing — while the Moon reaches
+**2.85″** and Neptune passes an arcsecond after 2030.
+
+If you relied on the substitution, restore it:
+
+```c
+swe_set_ephe_fallback(1);          /* process-wide  */
+swe_set_ephe_fallback_r(ctx, 1);   /* one context   */
+```
+
+or set `SE_EPHE_FALLBACK=1` in the environment, which needs no recompile.
+Asking for Moshier and getting it was never a downgrade and is unaffected.
+
+---
+
 ## Compatibility
 
 The public ABI is **additive only**: 106 exported symbols before this work,
-**186** after, none removed and none changed. Existing binaries keep working
+**190** after, none removed and none changed. Existing binaries keep working
 and existing source keeps compiling. Every legacy entry point is now exactly
 `swe_X_r(swi_default_ctx(), ...)`.
 
 A CI job compares the exported symbol set against upstream on Linux, macOS and
 Windows on every push, and fails if anything upstream exported disappears.
+
+The one thing that is **not** source-compatible is the behaviour above: code
+that leaned on a silent fallback now sees `ERR` where it used to get numbers.
 
 ---
 

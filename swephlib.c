@@ -3272,12 +3272,22 @@ int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int
     *tid_acc = ctx->tid_acc;
     return iflag;
   }
+  /* Moshier reads no file: it is an analytic theory fitted to DE404, so its
+   * tidal acceleration is a property of the theory and cannot depend on which
+   * ephemeris files happen to be present.
+   *
+   * This test used to sit inside the `denum == 0` guard below, where it did
+   * depend on them: swe_deltat_ex_r() passes jpldenum for any non-Swiss
+   * request, so naming a JPL file -- without ever calculating from it -- made
+   * denum nonzero, skipped this branch, and put Moshier on that file's tidal
+   * term. A Moshier Sun at -3000 moved 56 arcsec because a filename had been
+   * mentioned. tests/golden.c cov:order_moseph_* holds it. */
+  if (iflag & SEFLG_MOSEPH) {
+    *tid_acc = SE_TIDAL_DE404;
+    *denumret = 404;
+    return iflag;
+  }
   if (denum == 0) {
-    if (iflag & SEFLG_MOSEPH) {
-      *tid_acc = SE_TIDAL_DE404;
-      *denumret = 404;
-      return iflag;
-    }
     if (iflag & SEFLG_JPLEPH) {
       if (ctx->jpl_file_is_open) {
 	denum = ctx->jpldenum;

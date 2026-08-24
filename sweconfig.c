@@ -166,18 +166,13 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 
   /* --- invalidate what that made stale ------------------------------ */
   if (path_changed) {
-    int i;
     /* This thread's own file handles only. Another thread's fidat[] is
      * its own business -- these are per-thread FILE*, not shared. */
     if (ctx->jpl_file_is_open) {
       swi_close_jpl_file(ctx);
       ctx->jpl_file_is_open = FALSE;
     }
-    for (i = 0; i < SEI_NEPHFILES; i++) {
-      if (ctx->fidat[i].fptr != NULL)
-        fclose(ctx->fidat[i].fptr);
-      memset((void *) &ctx->fidat[i], 0, sizeof(struct file_data));
-    }
+    swi_close_ephe_files(ctx, FORGET_DENUM);
     ctx->last_epheflag = 0;
   }
   if (geo_changed)

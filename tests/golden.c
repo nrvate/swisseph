@@ -114,7 +114,10 @@ static const int32 FLAGS[] = {
   SEFLG_SWIEPH|SEFLG_TRUEPOS,
   SEFLG_SWIEPH|SEFLG_NOABERR|SEFLG_NOGDEFL,
   SEFLG_MOSEPH|SEFLG_SPEED,
-  SEFLG_JPLEPH|SEFLG_SPEED,
+  /* No SEFLG_JPLEPH. It never reached JPL -- no .eph is shipped, so all 189
+   * of those rows were Swiss results recorded under a JPL label. Real JPL is
+   * tested by tests/jplreal.c (G15) against a real file; the refusal a
+   * missing one now produces is recorded by cov:set_jpl_file below. */
 };
 #define NFLAGS (sizeof(FLAGS)/sizeof(FLAGS[0]))
 
@@ -771,13 +774,55 @@ static void coverage(void) {
     row("cov:interpolate_nut", rf, x, 6, serr);
     swe_set_interpolate_nut(FALSE);
 
-    /* swe_set_jpl_file() only records a name; no .eph is shipped, so the
-     * observable effect is that a JPL calc falls back and says so. */
+    /* swe_set_jpl_file() only records a name; no .eph is shipped with this
+     * repository, so the observable effect is what happens when the file is
+     * missing. Under the strict default that is now a refusal (rf=-1) rather
+     * than a Swiss answer wearing a JPL label -- which is the whole point,
+     * and this row is the transcript's record of it. */
     { char jf[AS_MAXCH]; strcpy(jf, "de431.eph"); swe_set_jpl_file(jf); }
     *serr = 0; rf = swe_calc(2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr);
     row("cov:set_jpl_file", rf, x, 6, serr);
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();                          /* drop the failed JPL attempt */
+    swe_set_ephe_path((char *) EPHE);
+
+    /* ⛔ Order independence: the same Swiss request must answer the same
+     * whether or not a Moshier calculation preceded it.
+     *
+     * It did not. Switching ephemeris closes the .se1 files and used to zero
+     * the DE number recorded with them, and swe_calc_ut() asks for delta-t
+     * BEFORE the position that would reopen them -- so the tidal term fell
+     * back to the default -25.8 instead of DE441's -25.936. At -3000, where
+     * delta-t is hours, that moved the Sun 4.56 arcsec depending on what had
+     * been computed before it.
+     *
+     * These two rows are identical by construction and worthless if they
+     * ever stop being identical, which is exactly what makes them a test. */
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_swiss_alone", rf, x, 6, serr);
+    *serr = 0; swe_calc(DATES[0], SE_SUN, SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_swiss_after_moseph", rf, x, 6, serr);
+
+    /* Merely NAMING a JPL file must not move a result computed from another
+     * ephemeris. swe_set_jpl_file() both closes the .se1 files and sets
+     * jpldenum, and each leaked somewhere it had no business:
+     *
+     *   the close forgot the Moon file's DE number, so a later SWISS calc_ut
+     *   took the default tidal term      -> 4.56 arcsec  (swe_set_jpl_file_r)
+     *   jpldenum reached MOSHIER's tidal
+     *   term through swe_deltat_ex_r     -> 56 arcsec    (swi_get_tid_acc)
+     *
+     * All three rows below must therefore equal their _alone counterparts. */
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_moseph_alone", rf, x, 6, serr);
+    { char jf[AS_MAXCH]; strcpy(jf, "de200.eph"); swe_set_jpl_file(jf); }
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_moseph_after_jplname", rf, x, 6, serr);
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:order_swiss_after_jplname", rf, x, 6, serr);
+    { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
+    swe_close();
     swe_set_ephe_path((char *) EPHE);
   }
 }

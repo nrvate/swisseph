@@ -849,6 +849,21 @@ ext_def( int32 ) swe_rise_trans_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *
 ext_def( int32 ) swe_rise_trans_true_hor_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname, int32 epheflag, int32 rsmi, double *geopos, double atpress, double attemp, double horhgt, double *tret, char *serr);
 ext_def( void ) swe_set_astro_models_r(swe_ctx *ctx, char *samod, int32 iflag);
 ext_def( void ) swe_set_delta_t_userdef_r(swe_ctx *ctx, double dt);
+/* Involuntary ephemeris substitution: off by default in this fork.
+ *
+ * Ask for an ephemeris and you get it or you get an error. Upstream instead
+ * answers from Moshier when a .se1 file is missing or the date falls outside
+ * it (and from Swiss when a JPL file is missing), notes it in serr, and
+ * returns success -- so a caller checking only the return value cannot tell
+ * a data-file position from an analytic approximation.
+ *
+ * swe_set_ephe_fallback(1) restores the upstream behaviour. The ephemeris
+ * actually used is reported in the return flag either way. */
+ext_def( void ) swe_set_ephe_fallback(int allow);
+ext_def( void ) swe_set_ephe_fallback_r(swe_ctx *ctx, int allow);
+ext_def( int )  swe_get_ephe_fallback(void);
+ext_def( int )  swe_get_ephe_fallback_r(swe_ctx *ctx);
+
 ext_def( void ) swe_set_ephe_path_r(swe_ctx *ctx, const char *path);
 ext_def( void ) swe_set_interpolate_nut_r(swe_ctx *ctx, AS_BOOL do_interpolate);
 ext_def( void ) swe_set_jpl_file_r(swe_ctx *ctx, const char *fname);
