@@ -2056,7 +2056,7 @@ static int32 get_aspect_angles(char *sasp, char *saspi, double *dasp, char *serr
       strcat(saspi, "BB");
       break;
     default:
-      sprintf(serr, "aspects string %s is invalid", sasp);
+      snprintf(serr, AS_MAXCH, "aspects string %.230s is invalid", sasp);
       return ERR;
       break;
     }
@@ -2402,7 +2402,7 @@ int32 calc_mundane_aspects(int32 iflag, double tjd0, double tjde, double tstep,
   UNUSED(xa1d);
   sprintf(foutnam, "%s/%s", PATH_FOUTNAM, FOUTNAM);
   if ((fpout = fopen(foutnam, BFILE_W_CREATE)) == NULL) {
-    sprintf(serr, "could not open file %s", foutnam);
+    snprintf(serr, AS_MAXCH, "could not open file %.230s", foutnam);
     return ERR;
   }
   fprintf(fpout, "%s, mundane aspects\ncreation date: %s\n%s\n", FOUTNAM, sdate, cmdline);
@@ -2618,12 +2618,12 @@ int32 calc_mundane_aspects(int32 iflag, double tjd0, double tjde, double tstep,
 static int do_fread_double(FILE *fpout, char *foutnam, int32 fposbeg, double *tjdbeg, char *serr)
 {
   if (fseek(fpout, fposbeg, SEEK_SET) != 0) {
-    sprintf(serr, "fseek failed (SEEK_SET): %s", foutnam);
-    return ERR;   
+    snprintf(serr, AS_MAXCH, "fseek failed (SEEK_SET): %.230s", foutnam);
+    return ERR;  
   }
   if (fread((void *) tjdbeg, sizeof(double), 1, fpout) <= 0) {
-    sprintf(serr, "error while trying to read %s (1)", foutnam);
-    return ERR;   
+    snprintf(serr, AS_MAXCH, "error while trying to read %.230s (1)", foutnam);
+    return ERR;  
   }
   return OK;
 }

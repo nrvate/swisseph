@@ -2482,24 +2482,24 @@ static int32 get_asc_obl(swe_ctx *ctx, double tjd, int32 ipl, char *star, int32 
       return ERR;
   }
   adp = tan(dgeo[1] * DEGTORAD) * tan(x[1] * DEGTORAD);
-  if (fabs(adp) > 1) {
-    if (star != NULL && *star != '\0')
-      strcpy(s, star);
+    if (fabs(adp) > 1) {
+      if (star != NULL && *star != '\\0')
+        strcpy(s, star);
+      else
+        swe_get_planet_name_r(ctx, ipl, s);
+      snprintf(serr, AS_MAXCH, "%.230s is circumpolar, cannot calculate heliacal event", s);
+      return -2;
+    }
+    adp = asin(adp) / DEGTORAD;
+    if (desc_obl)
+      *daop = x[0] + adp;
     else
-      swe_get_planet_name_r(ctx, ipl, s);
-    sprintf(serr, "%s is circumpolar, cannot calculate heliacal event", s);
-    return -2;
+      *daop = x[0] - adp;
+    *daop = swe_degnorm(*daop);
+    return OK;
   }
-  adp = asin(adp) / DEGTORAD;
-  if (desc_obl)
-    *daop = x[0] + adp;
-  else
-    *daop = x[0] - adp;
-  *daop = swe_degnorm(*daop);
-  return OK;
-}
 
-#if 0
+  #if 0
 static int32 get_asc_obl_old(double tjd, int32 ipl, char *star, int32 iflag, double *dgeo, AS_BOOL desc_obl, double *daop, char *serr)
 {
   int32 retval;
@@ -2514,23 +2514,23 @@ static int32 get_asc_obl_old(double tjd, int32 ipl, char *star, int32 iflag, dou
       return ERR;
   }
   adp = tan(dgeo[1] * DEGTORAD) * tan(x[1] * DEGTORAD); 
-  if (fabs(adp) > 1) {
-    if (star != NULL && *star != '\0') 
-      strcpy(s, star);
-    else 
-      swe_get_planet_name_r(ctx, ipl, s);
-    sprintf(serr, "%s is circumpolar, cannot calculate heliacal event", s);
-    return -2;
+    if (fabs(adp) > 1) {
+      if (star != NULL && *star != '\\0') 
+        strcpy(s, star);
+      else 
+        swe_get_planet_name_r(ctx, ipl, s);
+      snprintf(serr, AS_MAXCH, "%.230s is circumpolar, cannot calculate heliacal event", s);
+      return -2;
+    }
+    adp = asin(adp) / DEGTORAD;
+    if (desc_obl)
+      *daop = x[0] + adp;
+    else
+      *daop = x[0] - adp;
+    *daop = swe_degnorm(*daop);
+    return OK;
   }
-  adp = asin(adp) / DEGTORAD;
-  if (desc_obl)
-    *daop = x[0] + adp;
-  else
-    *daop = x[0] - adp;
-  *daop = swe_degnorm(*daop);
-  return OK;
-}
-#endif
+  #endif
 
 static int32 get_asc_obl_diff(swe_ctx *ctx, double tjd, int32 ipl, char *star, int32 iflag, double *dgeo, AS_BOOL desc_obl, AS_BOOL is_acronychal, double *dsunpl, char *serr)
 {
@@ -3436,7 +3436,7 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
   if (Planet == SE_MOON) {
     if (TypeEvent == 1 || TypeEvent == 2) {
       if (serr_ret != NULL) {
-        sprintf(serr_ret, "%s (event type %d) does not exist for the moon\n", sevent[TypeEvent], TypeEvent);
+        snprintf(serr_ret, AS_MAXCH, "%.230s (event type %d) does not exist for the moon\n", sevent[TypeEvent], TypeEvent);
       }
       return ERR;
     }
@@ -3458,12 +3458,12 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
     if (Planet == -1 || Planet >= SE_MARS) {
       if (TypeEvent == 3 || TypeEvent == 4) {
 	if (serr_ret != NULL) {
-	  if (Planet == -1)
-	    strcpy(s, ObjectName);
-	  else
-	    swe_get_planet_name_r(ctx, Planet, s);
-	  sprintf(serr_ret, "%s (event type %d) does not exist for %s\n", sevent[TypeEvent], TypeEvent, s);
-	}
+		if (Planet == -1)
+		  strcpy(s, ObjectName);
+		else
+		  swe_get_planet_name_r(ctx, Planet, s);
+		snprintf(serr_ret, AS_MAXCH, "%.230s (event type %d) does not exist for %.230s\n", sevent[TypeEvent], TypeEvent, s);
+	      }
 	return ERR;
       }
     }
@@ -3485,7 +3485,7 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
 	  strcpy(s, ObjectName);
 	else
 	  swe_get_planet_name_r(ctx, Planet, s);
-	sprintf(serr_ret, "%s (event type %d) is not provided for %s\n", sevent[TypeEvent], TypeEvent, s);
+	snprintf(serr_ret, AS_MAXCH, "%.230s (event type %d) is not provided for %.230s\n", sevent[TypeEvent], TypeEvent, s);
       }
       return ERR;
     }

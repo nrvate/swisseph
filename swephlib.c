@@ -4761,7 +4761,7 @@ void swi_open_trace(char *serr)
 #endif
     if ((swi_fp_trace_c = fopen(fname, FILE_A_ACCESS)) == NULL) {
       if (serr != NULL) {
-	sprintf(serr, "could not open trace output file '%s'", fname);
+	snprintf(serr, AS_MAXCH, "could not open trace output file '%.230s'", fname);
       }
     } else {
       fputs("#include \"sweodef.h\"\n", swi_fp_trace_c);   
@@ -4794,7 +4794,7 @@ void swi_open_trace(char *serr)
 #endif
     if ((swi_fp_trace_out = fopen(fname, FILE_A_ACCESS)) == NULL) {
       if (serr != NULL) {
-	sprintf(serr, "could not open trace output file '%s'", fname);
+	snprintf(serr, AS_MAXCH, "could not open trace output file '%.230s'", fname);
       }
     }
   }

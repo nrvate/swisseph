@@ -733,7 +733,7 @@ static int load_fict_lines(swe_ctx *ctx, char *serr)
         free(lines);
         fclose(fp);
         if (serr != NULL)
-          sprintf(serr, "out of memory reading %s", SE_FICTFILE);
+          snprintf(serr, AS_MAXCH, "out of memory reading %.40s", SE_FICTFILE);
         return ERR;
       }
       lines = p;
@@ -797,10 +797,10 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
   for (k = 0; k < ctx->n_fict_lines; k++) {
     strcpy(s, ctx->fict_lines[k].s);	/* swi_cutstr() writes into it */
     ncpos = swi_cutstr(s, ",", cpos, 20);
-    sprintf(serri, "error in file %s, line %7.0f:", SE_FICTFILE, (double) ctx->fict_lines[k].iline);
+    snprintf(serri, AS_MAXCH, "error in file %.40s, line %7.0f:", SE_FICTFILE, (double) ctx->fict_lines[k].iline);
     if (ncpos < 9) {
       if (serr != NULL) {
-        sprintf(serr, "%s nine elements required", serri);
+        snprintf(serr, AS_MAXCH, "%s nine elements required", serri);
       }
       goto return_err;
     }
@@ -820,47 +820,47 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
       else if (strncmp(sp, "j1900", 5) == OK)
         *tjd0 = J1900;
       else if (*sp == 'j' || *sp == 'b') {
-        if (serr != NULL) {
-          sprintf(serr, "%s invalid epoch", serri);
-	}
-        goto return_err;
-      } else
-        *tjd0 = atof(sp);
-      tt = tjd - *tjd0;
-    }
-    /* equinox */
-    if (tequ != NULL) {
-      sp = cpos[1];
-      while(*sp == ' ' || *sp == '\t')
-        sp++;
-	  for (i = 0; i < 5; i++)
-       sp[i] = tolower(sp[i]);
-      if (strncmp(sp, "j2000", 5) == OK)
-        *tequ = J2000;
-      else if (strncmp(sp, "b1950", 5) == OK)
-        *tequ = B1950;
-      else if (strncmp(sp, "j1900", 5) == OK)
-        *tequ = J1900;
-      else if (strncmp(sp, "jdate", 5) == OK)
-        *tequ = tjd;
-      else if (*sp == 'j' || *sp == 'b') {
-        if (serr != NULL) {
-          sprintf(serr, "%s invalid equinox", serri);
-	}
+              if (serr != NULL) {
+                snprintf(serr, AS_MAXCH, "%s invalid epoch", serri);
+      	}
+              goto return_err;
+            } else
+              *tjd0 = atof(sp);
+            tt = tjd - *tjd0;
+          }
+          /* equinox */
+          if (tequ != NULL) {
+            sp = cpos[1];
+            while(*sp == ' ' || *sp == '	')
+              sp++;
+      	for (i = 0; i < 5; i++)
+             sp[i] = tolower(sp[i]);
+            if (strncmp(sp, "j2000", 5) == OK)
+              *tequ = J2000;
+            else if (strncmp(sp, "b1950", 5) == OK)
+              *tequ = B1950;
+            else if (strncmp(sp, "j1900", 5) == OK)
+              *tequ = J1900;
+            else if (strncmp(sp, "jdate", 5) == OK)
+              *tequ = tjd;
+            else if (*sp == 'j' || *sp == 'b') {
+              if (serr != NULL) {
+                snprintf(serr, AS_MAXCH, "%s invalid equinox", serri);
+      	}
         goto return_err;
       } else
         *tequ = atof(sp);
     }
     /* mean anomaly t0 */
-    if (mano != NULL) {
-      retc = check_t_terms(tt, cpos[2], mano);
-	  *mano = swe_degnorm(*mano);
-      if (retc == ERR) {
-        if (serr != NULL) {
-          sprintf(serr, "%s mean anomaly value invalid", serri);
-	}
-        goto return_err;
-      }
+        if (mano != NULL) {
+          retc = check_t_terms(tt, cpos[2], mano);
+    	*mano = swe_degnorm(*mano);
+          if (retc == ERR) {
+            if (serr != NULL) {
+              snprintf(serr, AS_MAXCH, "%s mean anomaly value invalid", serri);
+    	}
+            goto return_err;
+          }
       /* if mean anomaly has t terms (which happens with fictitious 
        * planet Vulcan), we set
        * epoch = tjd, so that no motion will be added anymore 

@@ -2747,10 +2747,9 @@ FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char *serr)
     if (fp != NULL) 
       return fp;
   }
-  sprintf(s, "SwissEph file '%s' not found in PATH '%s'", fname, ephepath);
-  s[AS_MAXCH-1] = '\0';		/* s must not be longer then AS_MAXCH */
+  snprintf(s, sizeof(s), "SwissEph file '%.230s' not found in PATH '%.230s'", fname, ephepath);
   if (serr != NULL)
-    strcpy(serr, s);
+    snprintf(serr, AS_MAXCH, "%s", s);
   return NULL;
 }
 
@@ -4827,9 +4826,9 @@ static int get_new_segment(swe_ctx *ctx, double tjd, int ipli, int ifno, char *s
      * order + 1 */
     if (nco > pdp->ncoe) {
       if (serr != NULL) {
-	sprintf(serr, "error in ephemeris file: %d coefficients instead of %d. ", nco, pdp->ncoe);
+	snprintf(serr, AS_MAXCH, "error in ephemeris file: %d coefficients instead of %d. ", nco, pdp->ncoe);
 	if (strlen(serr) + strlen(fdp->fnam) < AS_MAXCH - 1) {
-	  sprintf(serr, "error in ephemeris file %s: %d coefficients instead of %d. ", fdp->fnam, nco, pdp->ncoe);
+	  snprintf(serr, AS_MAXCH, "error in ephemeris file %.230s: %d coefficients instead of %d. ", fdp->fnam, nco, pdp->ncoe);
 	}
       }
       free(pdp->segp);
@@ -4976,7 +4975,7 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr)
     *sp = tolower((int) *sp);
   if (strcmp(s2, s) != 0) {
     if (serr != NULL) {
-      sprintf(serr, "Ephemeris file name '%s' wrong; rename '%s' ", s2, s);
+      snprintf(serr, AS_MAXCH, "Ephemeris file name '%.230s' wrong; rename '%.230s' ", s2, s);
     }
     goto return_error;
   }
@@ -5323,7 +5322,7 @@ static int do_fread(swe_ctx *ctx, void *trg, int size, int count, int corrsize, 
       if (serr != NULL) {
 	strcpy(serr, "Ephemeris file is damaged (1). ");
 	if (strlen(serr) + strlen(ctx->fidat[ifno].fnam) < AS_MAXCH - 1) {
-	  sprintf(serr, "Ephemeris file %s is damaged (2).", ctx->fidat[ifno].fnam);
+	  snprintf(serr, AS_MAXCH, "Ephemeris file %.230s is damaged (2).", ctx->fidat[ifno].fnam);
 	}
       }
       return(ERR);
@@ -5334,7 +5333,7 @@ static int do_fread(swe_ctx *ctx, void *trg, int size, int count, int corrsize, 
       if (serr != NULL) {
 	strcpy(serr, "Ephemeris file is damaged (3). ");
 	if (strlen(serr) + strlen(ctx->fidat[ifno].fnam) < AS_MAXCH - 1) {
-	  sprintf(serr, "Ephemeris file %s is damaged (4).", ctx->fidat[ifno].fnam);
+	  snprintf(serr, AS_MAXCH, "Ephemeris file %.230s is damaged (4).", ctx->fidat[ifno].fnam);
 	}
       }
       return(ERR);
@@ -6635,10 +6634,10 @@ int32 fixstar_cut_string(swe_ctx *ctx, char *srecord, char *star, struct fixed_s
   if (i < 14) {
     if (serr != NULL) {
       if (i >= 2) {
-	sprintf(serr, "data of star '%s,%s' incomplete", cpos[0], cpos[1]);
+	snprintf(serr, AS_MAXCH, "data of star '%.40s,%.40s' incomplete", cpos[0], cpos[1]);
       } else {
         if (strlen(s) > 200) s[200] = '\0';
-	sprintf(serr, "invalid line in fixed stars file: '%s'", s);
+	snprintf(serr, AS_MAXCH, "invalid line in fixed stars file: '%.200s'", s);
       }
     }
     return ERR;
@@ -7117,7 +7116,7 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
     ndata = ctx->n_fixstars_named;
     if ((size_t) (sp - sstar) != strlen(sstar) - 1) {	/* sp >= sstar: strchr() found sp within sstar */
       if (serr != NULL)
-	sprintf(serr, "error, swe_fixstar(): invalid search string %s", sstar);
+	snprintf(serr, AS_MAXCH, "error, swe_fixstar(): invalid search string %.40s", sstar);
       return ERR;
     }
     strcpy(searchkey, sstar);
@@ -7142,7 +7141,7 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
       return OK;
     }
     if (serr != NULL)
-      sprintf(serr, "error, swe_fixstar(): star search string %s did not match", sstar);
+      snprintf(serr, AS_MAXCH, "error, swe_fixstar(): star search string %.40s did not match", sstar);
     return ERR;
   /* traditional name or Bayer/Flamsteed: find it with binary search */
   } else {
@@ -7162,10 +7161,10 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
 	       sizeof (struct fixed_star),
 	       fstar_node_compare);
     if (stardatap == NULL) {
-      if (serr != NULL) 
-	sprintf(serr, "error, swe_fixstar(): could not find star name %s", sstar);
-      return ERR;
-    }
+          if (serr != NULL)
+    	snprintf(serr, AS_MAXCH, "error, swe_fixstar(): could not find star name %.40s", sstar);
+          return ERR;
+        }
     *stardata = *stardatap;
     //printf("name search: %s, %s, %s, %f\n", stardata.skey, stardata.starname, stardata.starbayer, stardata.mag);
     return OK;
@@ -8039,7 +8038,7 @@ static int32 swi_fixstar_load_record(swe_ctx *ctx, char *star, char *srecord, ch
     // invalid line without comma
     if ((sp = strchr(s, ',')) == NULL) {
       if (serr != NULL) {
-	sprintf(serr, "star file %s damaged at line %d", SE_STARFILE, fline);
+	snprintf(serr, AS_MAXCH, "star file %.40s damaged at line %d", SE_STARFILE, fline);
       }
       return ERR;
     } 
@@ -8075,9 +8074,9 @@ static int32 swi_fixstar_load_record(swe_ctx *ctx, char *star, char *srecord, ch
       goto found;
   }
   if (serr != NULL) {
-    sprintf(serr, "star  not found");
+    snprintf(serr, AS_MAXCH, "star not found");
     if (strlen(serr) + strlen(star) < AS_MAXCH) {
-      sprintf(serr, "star %s not found", star);
+      snprintf(serr, AS_MAXCH, "star %.230s not found", star);
     }
     return ERR;
   }
@@ -9125,7 +9124,7 @@ int32 CALL_CONV swe_helio_cross_r(swe_ctx *ctx, int ipl, double x2cross, double 
   ) {
     char snam[AS_MAXCH];
     swe_get_planet_name_r(ctx, ipl, snam);
-    if (serr != NULL) sprintf(serr, "swe_helio_cross: not possible for object %d = %s", ipl, snam);
+    if (serr != NULL) snprintf(serr, AS_MAXCH, "swe_helio_cross: not possible for object %d = %.230s", ipl, snam);
     return ERR;
   }
   if (swe_calc_r(ctx, jd_et, ipl, flag, x, serr) < 0) 
@@ -9178,7 +9177,7 @@ int32 CALL_CONV swe_helio_cross_ut_r(swe_ctx *ctx, int ipl, double x2cross, doub
   ) {
     char snam[AS_MAXCH];
     swe_get_planet_name_r(ctx, ipl, snam);
-    if (serr != NULL) sprintf(serr, "swe_helio_cross: not possible for object %d = %s", ipl, snam);
+    if (serr != NULL) snprintf(serr, AS_MAXCH, "swe_helio_cross: not possible for object %d = %.230s", ipl, snam);
     return ERR;
   }
   if (swe_calc_ut_r(ctx, jd_ut, ipl, flag, x, serr) < 0) 
