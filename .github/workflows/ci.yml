@@ -21,26 +21,33 @@ name: CI
 #   for reasons that have nothing to do with our changes.
 
 on:
+  # The two events cover disjoint commits, so nothing is ever built twice.
+  #
+  #   pull_request  every branch on its way to main, including work. It
+  #                 builds refs/pull/N/merge -- the branch already merged
+  #                 into main -- which is the commit the merge produces and
+  #                 so the one worth gating on.
+  #   push          main only: the squash that lands after the PR is green,
+  #                 which is a commit no PR ever built. threadsafe is frozen
+  #                 by a repository ruleset and cannot be pushed; it stays
+  #                 listed so the gates would still run if that were lifted.
+  #
+  # Listing work under push as well meant both events fired for every push
+  # to it and all 13 jobs ran twice. Cancelling one of them is not the fix:
+  # push and pull_request build different commits, so whichever loses the
+  # race decides what was actually tested. A branch with no open PR is
+  # covered by workflow_dispatch, and legacy-master has no CI by design.
   push:
-    # main is the default branch and takes squashes through a PR. work is
-    # where fixes land in the meantime. legacy-master is the pristine
-    # upstream tree and deliberately has no CI; threadsafe is the granular
-    # history of the transformation and is frozen by a repository ruleset,
-    # so nothing can be pushed to it -- it stays listed only so the gates
-    # would still run if that freeze were ever lifted.
-    branches: [ main, work, threadsafe ]
+    branches: [ main, threadsafe ]
   pull_request:
   workflow_dispatch:
 
-# One run per ref. push and pull_request both fire for a branch with an open
-# PR, so every push was running all 13 jobs TWICE; superseded runs are now
-# cancelled instead of racing the new one to the same conclusion.
+# Supersede a run when its own ref gets another push -- the newer commit is
+# the one anyone cares about. Groups never span events now, so this only
+# ever cancels a run of the same kind.
 concurrency:
-  # Both halves must reduce to the bare branch name. head_ref is the source
-  # branch of a pull_request and empty otherwise; the fallback has to be
-  # ref_name ("work"), not ref ("refs/heads/work") -- with ref the two
-  # events landed in different groups and every push still ran all 13 jobs
-  # twice, which is what this block was added to stop.
+  # head_ref is the source branch of a pull_request and empty otherwise;
+  # ref_name is the short branch name, not refs/heads/<branch>.
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
