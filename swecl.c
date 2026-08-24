@@ -1681,8 +1681,8 @@ int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32
 next_try:
   if (calc_planet_star(ctx, t, ipl, starname, ifl, ls, serr) == ERR)
       return ERR;
-  /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have \
-   * an occultation. Even lunar parallax andd proper motion of star\
+  /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have
+   * an occultation. Even lunar parallax andd proper motion of star
    * will never allow it. */
   if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
     if (serr != NULL)
@@ -2510,18 +2510,18 @@ static int32 occult_when_loc(
     direction = -1;
   t = tjd_start;
   tjd = tjd_start;
-  next_try:
-    //is_partial = FALSE;
-    if (calc_planet_star(ctx, t, ipl, starname, iflaggeo, ls, serr) == ERR)
-        return ERR;
-    /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have \
-       * an occultation. Even lunar parallax andd proper motion of star\
-       * will never allow it. */
-      if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
-        if (serr != NULL)
-          snprintf(serr, AS_MAXCH, "occultation never occurs: star %.150s has ecl. lat. %.1f", starname, ls[1]);
-        return ERR;
-      }
+next_try:
+  //is_partial = FALSE;
+  if (calc_planet_star(ctx, t, ipl, starname, iflaggeo, ls, serr) == ERR)
+      return ERR;
+  /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have
+   * an occultation. Even lunar parallax andd proper motion of star
+   * will never allow it. */
+  if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "occultation never occurs: star %.150s has ecl. lat. %.1f", starname, ls[1]);
+    return ERR;
+  }
   if (swe_calc_r(ctx, t, SE_MOON, iflaggeo, lm, serr) == ERR)
       return ERR;
   dl = swe_degnorm(ls[0] - lm[0]);

@@ -7137,10 +7137,10 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
 	       sizeof (struct fixed_star),
 	       fstar_node_compare);
     if (stardatap == NULL) {
-          if (serr != NULL)
-    	snprintf(serr, AS_MAXCH, "error, swe_fixstar(): could not find star name %.40s", sstar);
-          return ERR;
-        }
+      if (serr != NULL)
+	snprintf(serr, AS_MAXCH, "error, swe_fixstar(): could not find star name %.40s", sstar);
+      return ERR;
+    }
     *stardata = *stardatap;
     //printf("name search: %s, %s, %s, %f\n", stardata.skey, stardata.starname, stardata.starbayer, stardata.mag);
     return OK;
@@ -8049,7 +8049,7 @@ static int32 swi_fixstar_load_record(swe_ctx *ctx, char *star, char *srecord, ch
       goto found;
   }
   if (serr != NULL) {
-    snprintf(serr, AS_MAXCH, "star not found");
+    snprintf(serr, AS_MAXCH, "star  not found");
     if (strlen(serr) + strlen(star) < AS_MAXCH) {
       snprintf(serr, AS_MAXCH, "star %.230s not found", star);
     }
