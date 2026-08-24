@@ -186,6 +186,9 @@ extern void swi_gen_filename(double tjd, int ipli, char *fname);
 extern uint32 swi_crc32(unsigned char *buf, int len);
 extern void swi_seed_leap_table(swe_ctx *ctx);
 extern void swi_seed_dt_table(swe_ctx *ctx);
+/* Empty calc_deltat()'s memo. Every writer of ctx->dt[] has to call it --
+ * the table is an input to that memo that its key does not carry. */
+extern void swi_dt_memo_clear(swe_ctx *ctx);
 
 extern int swi_cutstr(char *s, char *cutlist, char *cpos[], int nmax);
 extern char *swi_right_trim(char *s);

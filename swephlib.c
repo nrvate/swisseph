@@ -2515,6 +2515,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   double tid_acc;
   int32 denum, denumret;
   int32 epheflag, otherflag;
+  int islot;
 //fprintf(stderr, "dmod=%f, %.f\n", (double) deltat_model, (double) SEMOD_DELTAT_DEFAULT);
   if (deltat_model == 0) deltat_model = SEMOD_DELTAT_DEFAULT;
   epheflag = iflag & SEFLG_EPHMASK;
@@ -2536,6 +2537,18 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     tid_acc = ctx->tid_acc;
   }
   iflag = otherflag | retc;
+  /* Everything from here down is a pure function of tjd, deltat_model and
+   * the tid_acc just resolved above -- the resolution itself has side
+   * effects and must not be skipped. See struct dt_memo. */
+  for (islot = 0; islot < SWI_DT_MEMO_SLOTS; islot++) {
+    if (ctx->dt_np.slot[islot].used
+	&& ctx->dt_np.slot[islot].tjd == tjd
+	&& ctx->dt_np.slot[islot].deltat_model == deltat_model
+	&& ctx->dt_np.slot[islot].tid_acc == tid_acc) {
+      *deltat = ctx->dt_np.slot[islot].deltat;
+      return iflag;
+    }
+  }
   Y = 2000.0 + (tjd - J2000)/365.25;
   Ygreg = 2000.0 + (tjd - J2000)/365.2425;
   /* Model for epochs before 1955, currently default in Swiss Ephemeris:
@@ -2554,7 +2567,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     if (tjd >= 2434108.5) {
       *deltat += (1.0 - (2435108.5 - tjd) / 1000.0) * 0.6610218 / 86400.0;
     }
-    return iflag;
+    goto done;
   }
   /* Model used SE 1.77 - 2.05.01, for epochs before 1633:
    * Polynomials by Espenak & Meeus 2006, 
@@ -2565,7 +2578,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
    */
   if (deltat_model == SEMOD_DELTAT_ESPENAK_MEEUS_2006 && tjd < 2317746.13090277789) {
     *deltat = deltat_espenak_meeus_1620(tjd, tid_acc);
-    return iflag;
+    goto done;
   }
   /* delta t model used in SE 1.72 - 1.76:
    * Stephenson & Morrison 2004;
@@ -2574,7 +2587,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     // before 1600: 
     if (Y < TAB2_END) {
       *deltat = deltat_stephenson_morrison_2004_1600(tjd, tid_acc);
-      return iflag;
+      goto done;
     } else {
       /* between 1600 and 1620:
        * linear interpolation between 
@@ -2586,7 +2599,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
 	ans = dt2[iy] + dd * (ctx->dt[0] - dt2[iy]);
 	ans = adjust_for_tidacc(ans, Ygreg, tid_acc, SE_TIDAL_26, FALSE);
 	*deltat = ans / 86400.0;
-	return iflag;
+	goto done;
       }
     }
   }
@@ -2597,7 +2610,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     // before 1600: 
     if (Y < TAB97_END) {
       *deltat = deltat_stephenson_morrison_1997_1600(tjd, tid_acc);
-      return iflag;
+      goto done;
     } else {
       /* between 1600 and 1620:
        * linear interpolation between 
@@ -2609,7 +2622,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
 	ans = dt97[iy] + dd * (ctx->dt[0] - dt97[iy]);
 	ans = adjust_for_tidacc(ans, Ygreg, tid_acc, SE_TIDAL_26, FALSE);
 	*deltat = ans / 86400.0;
-	return iflag;
+	goto done;
       }
     }
   }
@@ -2628,7 +2641,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
       ans = 35.0 * B * B  +  40.;
     }
     *deltat = ans / 86400.0;
-    return iflag;
+    goto done;
   }
   /* 1620 - today + a few years (tabend):
    * Tabulated values of deltaT from Astronomical Almanac 
@@ -2637,7 +2650,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
    */
   if (Y >= TABSTART) {
     *deltat = deltat_aa(ctx, tjd, tid_acc);
-    return iflag;
+    goto done;
   }
 #ifdef TRACE
   swi_open_trace(NULL);
@@ -2660,6 +2673,15 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   swi_trace_unlock();
 #endif
   *deltat = ans / 86400.0;
+done:
+  /* One exit, so the store cannot be forgotten on one of the nine paths
+   * that produce a value. Round-robin; see struct dt_memo. */
+  ctx->dt_np.slot[ctx->dt_np.next].tjd = tjd;
+  ctx->dt_np.slot[ctx->dt_np.next].deltat_model = deltat_model;
+  ctx->dt_np.slot[ctx->dt_np.next].tid_acc = tid_acc;
+  ctx->dt_np.slot[ctx->dt_np.next].deltat = *deltat;
+  ctx->dt_np.slot[ctx->dt_np.next].used = TRUE;
+  ctx->dt_np.next = (ctx->dt_np.next + 1) % SWI_DT_MEMO_SLOTS;
   return iflag;
 }
 
@@ -3071,6 +3093,19 @@ static double deltat_espenak_meeus_1620(double tjd, double tid_acc)
 void swi_seed_dt_table(swe_ctx *ctx)
 {
   memcpy(ctx->dt, dt_builtin, sizeof(ctx->dt));
+  swi_dt_memo_clear(ctx);
+}
+
+/* The delta-t table is an input to calc_deltat()'s memo that is deliberately
+ * NOT in its key -- comparing 220 entries on every one of 135,204 calls to
+ * catch a change that happens at most twice in a context's life is the wrong
+ * trade. Both writers empty the memo instead; see struct dt_memo. */
+void swi_dt_memo_clear(swe_ctx *ctx)
+{
+  int i;
+  for (i = 0; i < SWI_DT_MEMO_SLOTS; i++)
+    ctx->dt_np.slot[i].used = FALSE;
+  ctx->dt_np.next = 0;
 }
 
 static int init_dt(swe_ctx *ctx)
@@ -3088,6 +3123,8 @@ if (!ctx->init_dt_done) {
    * is absent this returns immediately, and calc_deltat() then reads
    * ctx->dt[iy] as zeros. */
   memcpy(ctx->dt, dt_builtin, sizeof(ctx->dt));
+  /* Anything already memoised was computed against the previous table. */
+  swi_dt_memo_clear(ctx);
   /* no error message if file is missing */
   if ((fp = swi_fopen(ctx, -1, "swe_deltat.txt", ctx->ephepath, NULL)) == NULL
     && (fp = swi_fopen(ctx, -1, "sedeltat.txt", ctx->ephepath, NULL)) == NULL)

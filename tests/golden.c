@@ -860,6 +860,28 @@ static void coverage(void) {
     row("cov:nutswitch[after]", rf, x, 6, serr);
     { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
 
+    /* The five delta-t models, all at ONE instant. Same two jobs as the
+     * nutation rows above: the models had no coverage -- nothing computed
+     * anything but the default SEMOD_DELTAT_STEPHENSON_ETC_2016 -- and the
+     * shared instant makes these a probe for calc_deltat()'s memo, which is
+     * keyed on astro_models[SE_MODEL_DELTAT] among other things. Drop that
+     * field and all five collapse to model 1's answer.
+     *
+     * Year 1000 because that is where the models disagree: from 1620 on
+     * they all read the same tabulated values through deltat_aa(), and
+     * below 948 the 1984 model switches to Borkowski. SE_MODEL_DELTAT is
+     * index 0, so the model string is just the number. */
+    for (int dm = SEMOD_DELTAT_STEPHENSON_MORRISON_1984;
+	 dm <= SEMOD_DELTAT_STEPHENSON_ETC_2016; dm++) {
+      char sam[AS_MAXCH], tag[64];
+      snprintf(sam, sizeof sam, "%d", dm);
+      swe_set_astro_models(sam, 0);
+      x[0] = swe_deltat(2086308.0);
+      snprintf(tag, sizeof tag, "cov:deltatmodel[%d]", dm);
+      row(tag, 0, x, 1, "");
+    }
+    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+
     /* swe_set_jpl_file() only records a name; no .eph is shipped with this
      * repository, so the observable effect is what happens when the file is
      * missing. Under the strict default that is now a refusal (rf=-1) rather

@@ -249,7 +249,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples
+       check-build check-ephe-ci check-samples check-dtmemo
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -295,6 +295,25 @@ samples-baseline: .samples.txt
 	@cp .samples.txt samples.baseline
 	@echo "samples.baseline: $$(wc -l < samples.baseline) lines"
 
+# G18: calc_deltat()'s memo does not outlive the delta-t table.
+#
+# Needs a swe_deltat.txt whose 1620 entry differs from the built-in 124.00,
+# and it CANNOT live in $(EPHE): init_dt() would pick it up for every other
+# gate and move rows all over the transcript. So the file is written into a
+# directory of its own, holding nothing else -- delta-t is the only thing
+# this reads, so no .se1 files are needed.
+DT_DIR = .ephe-dt
+
+dtmemo: dtmemo.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-dtmemo: dtmemo
+	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
+	@printf '# fixture: 1620 moved off the built-in 124.00\n1620  200.0\n' \
+	  > $(DT_DIR)/swe_deltat.txt
+	@env -u SE_EPHE_PATH ./dtmemo $(DT_DIR)
+	@rm -rf $(DT_DIR)
+
 check-samples: .samples.txt samples.baseline
 	@diff -q samples.baseline .samples.txt \
 	  && echo "G17 PASS: swemini and obama output unchanged" \
@@ -321,6 +340,7 @@ clean:
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
+	rm -rf dtmemo $(DT_DIR)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -329,7 +349,7 @@ clean:
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
-        check-samples samples-baseline \
+        check-samples samples-baseline check-dtmemo \
         check-winmacros check-jplreal orderprobe \
         ci-image check-ci clean
 

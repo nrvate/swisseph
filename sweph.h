@@ -927,6 +927,43 @@ struct nut_memo {
   AS_BOOL valid;
 };
 
+/* calc_deltat()'s result (swephlib.c).
+ *
+ * What the heliacal profile leads with once the nutation memo lands: 30% of
+ * samples and 135,204 calls in a benchmark making 34,000 position calls,
+ * because every swe_sidtime(), every ObjectLoc() and every ET<->UT
+ * conversion asks for delta-t at an instant something else just asked about.
+ *
+ * The memo sits INSIDE calc_deltat(), after the tidal-acceleration
+ * resolution and before the model evaluation, and that split is the point.
+ * The resolution has side effects -- swi_set_tid_acc() writes ctx->tid_acc,
+ * and the missing-ephemeris-path note goes to serr -- so it has to run every
+ * time. What follows it is a pure function of:
+ *
+ *   tjd           the instant.
+ *   deltat_model  astro_models[SE_MODEL_DELTAT], read here and again inside
+ *                 deltat_aa().
+ *   tid_acc       the RESOLVED value, not the inputs that produced it.
+ *                 Keying on the answer rather than on epheflag and the DE
+ *                 number means a change in how it is derived cannot slip
+ *                 past the key.
+ *
+ * ctx->dt[], the tabulated delta-t, is the fourth input and is not in the
+ * key: it has exactly two writers, swi_seed_dt_table() at context creation
+ * and init_dt() on first use, and both empty the memo instead. That keeps a
+ * 220-entry table out of a comparison made 135,204 times.
+ *
+ * Four slots. Measured hit rate 36% at one slot, 76.8% at two, 80.5% at
+ * three and 80.6% from four on -- the callers work two or three nearby
+ * epochs at a time (tjd_ut against tjd_et, t against t + 1), so one slot
+ * thrashes where the earlier memos did not. */
+#define SWI_DT_MEMO_SLOTS 4
+struct dt_memo {
+  struct { double tjd, tid_acc, deltat; int32 deltat_model; AS_BOOL used; }
+    slot[SWI_DT_MEMO_SLOTS];
+  int next;
+};
+
 /* Scratch state for the Moshier lunar theory (swemmoon.c).
  *
  * These 27 values were file-scope TLS statics used as IMPLICIT PARAMETERS:
@@ -1080,6 +1117,7 @@ struct swe_ctx {
   struct sidt_memo sidt_np;	/* see struct sidt_memo */
   struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
   struct nut_memo nut_np;	/* see struct nut_memo */
+  struct dt_memo dt_np;		/* see struct dt_memo */
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;
   struct plan_data pldat[SEI_NPLANETS];
