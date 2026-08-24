@@ -79,8 +79,16 @@ endif
 # ar both are). If yours is not: make LTO=0.
 LTO ?= 1
 ifeq ($(LTO),1)
-  CFLAGS += -flto
-  LIBS   += -flto
+  # gcc: -flto=auto runs the link-time partitions in parallel (jobserver or
+  # nproc); plain -flto runs them serially and warns about it. clang has no
+  # =auto and takes plain -flto.
+  ifneq ($(shell $(CC) -v 2>&1 | grep -c 'gcc version'),0)
+    LTOFLAG = -flto=auto
+  else
+    LTOFLAG = -flto
+  endif
+  CFLAGS += $(LTOFLAG)
+  LIBS   += $(LTOFLAG)
 endif
 
 # Appended to every compile and link. Lets a caller add flags without

@@ -2,10 +2,14 @@
 SWE      = ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c ../swemplan.c \
            ../sweph.c ../swephlib.c ../swecl.c ../swehel.c
 CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
-# `make LTO=1` mirrors the root Makefile's opt-in; see the note there for
-# the measured numbers and why it is not on by default.
+# `make LTO=1` is opt-in HERE so the bit-exact G1 reference build stays plain
+# -O0; the root Makefile has LTO on by default. Same flag choice as there.
 ifeq ($(LTO),1)
-  CFLAGS += -flto
+  ifneq ($(shell $(CC) -v 2>&1 | grep -c 'gcc version'),0)
+    CFLAGS += -flto=auto
+  else
+    CFLAGS += -flto
+  endif
 endif
 LIBS     = -lm -ldl -lpthread
 EPHE    ?= ../ephe
