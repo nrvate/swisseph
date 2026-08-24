@@ -184,8 +184,8 @@ static int do_fread(swe_ctx *ctx, void *targ, int size, int count, int corrsize,
 static int get_new_segment(swe_ctx *ctx, double tjd, int ipli, int ifno, char *serr);
 static int main_planet(swe_ctx *ctx, double tjd, int ipli, int iplmoon, int32 epheflag, int32 iflag,
 		       char *serr);
-static int main_planet_bary(swe_ctx *ctx, double tjd, int ipli, int32 epheflag, int32 iflag, 
-		AS_BOOL do_save, 
+static int main_planet_bary(swe_ctx *ctx, double tjd, int ipli, int32 epheflag, int32 iflag,
+		AS_BOOL do_save, int32 *iephe_used,
 		double *xp, double *xe, double *xs, double *xm, 
 		char *serr);
 static int sweplan(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, AS_BOOL do_save, 
@@ -205,7 +205,7 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr);
 extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *xx);
-static AS_BOOL swi_was_downgraded(swe_ctx *ctx, int32 wanted, int32 iflag);
+static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, double tjd, char *serr);
 static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum);
 static int app_pos_etc_mean(swe_ctx *ctx, int ipl, int32 iflag, char *serr);
 static void nut_matrix(struct nut *nu, struct epsilon *oec); 
@@ -371,11 +371,20 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * ephemeris = 0 to ephemeris = SEFLG_DEFAULTEPH
    * or vice-versa.
    */
+  /* ⚠️ Same precedence as plaus_iflag(): JPL over Swiss over Moshier. That
+   * is the order swecalc() actually dispatches in, and this value is what
+   * the strict guard at the end of this function compares the answer
+   * against. Upstream read the bits the other way round here, which only
+   * ever affected which save area got cleared -- until the guard: a request
+   * spelled SEFLG_SWIEPH|SEFLG_MOSEPH was answered by Swiss, as always, and
+   * then refused as a Moshier request answered by Swiss. */
   epheflag = iflag & SEFLG_EPHMASK;
-  if (epheflag & SEFLG_MOSEPH) {
-    epheflag = SEFLG_MOSEPH;
-  } else if (epheflag & SEFLG_JPLEPH) {
+  if (epheflag & SEFLG_JPLEPH) {
     epheflag = SEFLG_JPLEPH;
+  } else if (epheflag & SEFLG_SWIEPH) {
+    epheflag = SEFLG_SWIEPH;
+  } else if (epheflag & SEFLG_MOSEPH) {
+    epheflag = SEFLG_MOSEPH;
   } else  {
     epheflag = SEFLG_SWIEPH;
   }
@@ -544,17 +553,11 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
   /* if no ephemeris has been specified, do not return chosen ephemeris */
   if ((iflgsave & SEFLG_EPHMASK) == 0)
     iflag = iflag & ~SEFLG_DEFAULTEPH;
-  /* The nineteen substitution paths in this file all converge here, with the
-   * ephemeris they actually used sitting in iflag. */
-  if (swi_was_downgraded(ctx, epheflag, iflag)) {
-    if (serr != NULL)
-      snprintf(serr, AS_MAXCH,
-        "%s ephemeris is not available for jd %.4f; falling back to %s would "
-        "answer with lower precision. Install the data files, or call "
-        "swe_set_ephe_fallback(1) to allow the substitution.",
-        swi_ephe_name(epheflag), tjd, swi_ephe_name(iflag & SEFLG_EPHMASK));
+  /* The substitution paths under swecalc() all converge here, with the
+   * ephemeris they actually used sitting in iflag. (The fixed-star functions
+   * do not pass through here; they carry the same check themselves.) */
+  if (swi_refuse_downgrade(ctx, epheflag, iflag & SEFLG_EPHMASK, tjd, serr))
     goto return_error;
-  }
 #ifdef TRACE
   trace_swe_calc(2, tjd, ipl, iflag, xx, serr);
 #endif
@@ -1698,19 +1701,27 @@ void swi_close_ephe_files(swe_ctx *ctx, AS_BOOL forget_denum)
   }
 }
 
-/* Did the library answer from a weaker ephemeris than the one asked for?
+/* Did the library answer from a different ephemeris than the one asked for?
+ * If so, and fallback is off, write the refusal into serr and return TRUE.
  *
- * `wanted` has already resolved an unspecified request to SEFLG_SWIEPH, so
- * naming nothing is treated as asking for Swiss -- which is what
- * swe_calc_ut_r() does explicitly anyway, and the two entry points must agree
- * about identical arguments. Asking for Moshier and getting it is not a
- * downgrade. */
-static AS_BOOL swi_was_downgraded(swe_ctx *ctx, int32 wanted, int32 iflag)
+ * `wanted` and `got` are single SEFLG_*EPH bits. `wanted` has already
+ * resolved an unspecified request to SEFLG_SWIEPH, so naming nothing is
+ * treated as asking for Swiss -- which is what swe_calc_ut_r() does
+ * explicitly anyway, and the two entry points must agree about identical
+ * arguments. `got` may be 0 when no ephemeris was consulted at all (mean
+ * node, obliquity), which is not a substitution. Asking for Moshier and
+ * getting it is not a downgrade. */
+static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, double tjd, char *serr)
 {
-  int32 got = iflag & SEFLG_EPHMASK;
-  if (ctx->ephe_fallback)
+  if (ctx->ephe_fallback || got == 0 || got == wanted)
     return FALSE;
-  return got != 0 && got != wanted;
+  if (serr != NULL)
+    snprintf(serr, AS_MAXCH,
+      "%s ephemeris is not available for jd %.4f; falling back to %s would "
+      "answer with lower precision. Install the data files, or call "
+      "swe_set_ephe_fallback(1) to allow the substitution.",
+      swi_ephe_name(wanted), tjd, swi_ephe_name(got));
+  return TRUE;
 }
 
 /* SE_EPHE_FALLBACK=1 restores upstream's silent substitution without touching
@@ -2013,11 +2024,17 @@ static int main_planet(swe_ctx *ctx, double tjd, int ipli, int iplmoon, int32 ep
  * 
  * xm is used with Moshier only 
  */
+/* iephe_used, if not NULL, receives the ephemeris that actually answered --
+ * this function substitutes on its own when the one asked for is missing,
+ * and its callers outside swecalc() (the fixed-star functions) need to know
+ * in order to refuse the answer under the strict default. */
 static int main_planet_bary(swe_ctx *ctx, double tjd, int ipli, int32 epheflag, int32 iflag, AS_BOOL do_save,
-		       double *xp, double *xe, double *xs, double *xm, 
+		       int32 *iephe_used,
+		       double *xp, double *xe, double *xs, double *xm,
 		       char *serr)
 {
   int i, retc;
+  int32 used = epheflag;
   switch(epheflag) {
     case SEFLG_JPLEPH:
       retc = jplplan(ctx, tjd, ipli, iflag, do_save, xp, xe, xs, serr);
@@ -2034,6 +2051,7 @@ static int main_planet_bary(swe_ctx *ctx, double tjd, int ipli, int32 epheflag, 
       break;
     case SEFLG_SWIEPH:
       sweph_planet:
+      used = SEFLG_SWIEPH;
       /* compute barycentric planet (+ earth, sun, moon) */
       retc = sweplan(ctx, tjd, ipli, SEI_FILE_PLANET, iflag, do_save, xp, xe, xs, xm, serr);
    /* if barycentric moshier calculation were implemented */
@@ -2053,6 +2071,7 @@ static int main_planet_bary(swe_ctx *ctx, double tjd, int ipli, int32 epheflag, 
       break;
     case SEFLG_MOSEPH:
       moshier_planet:
+      used = SEFLG_MOSEPH;
       retc = swi_moshplan(ctx, tjd, ipli, do_save, xp, xe, serr);/**/
       if (retc == ERR)
 	return ERR;
@@ -2061,7 +2080,9 @@ static int main_planet_bary(swe_ctx *ctx, double tjd, int ipli, int32 epheflag, 
       break;
     default:
       break;
-  } 
+  }
+  if (iephe_used != NULL)
+    *iephe_used = used;
   return OK;
 }
 
@@ -3844,7 +3865,7 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	xxsp[i] = pdp->x[i] - xx[i] - xxsp[i];
       t = pdp->teval - dt;
       /* for accuracy in speed, we will need earth as well */
-      retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, xearth, xearth, xsun, xmoon, serr);
+      retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
       if (swi_osc_el_plan(ctx, t, xx, ipl-SE_FICT_OFFSET, ipli, xearth, xsun, serr) != OK)
 	return ERR;
       if (retc != OK)
@@ -6874,12 +6895,23 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
    * for parallax, light deflection, and aberration,
    ****************************************************/
   if (!(iflag & SEFLG_BARYCTR) && (!(iflag & SEFLG_HELCTR) || !(iflag & SEFLG_MOSEPH))) {
-    if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, ctx->sp.fx_struct.xearth_dt, ctx->sp.fx_struct.xearth_dt, ctx->sp.fx_struct.xsun_dt, NULL, serr)) != OK) {
+    /* ⚠️ This is the one place a star's answer depends on an ephemeris, and
+     * it does not go through swe_calc(), so the strict guard at swe_calc()'s
+     * exit never sees it. main_planet_bary() substitutes on its own when the
+     * requested file is missing; the return flag of this function is the
+     * caller's iflag, unchanged, so without this check a missing JPL file
+     * gave a Swiss-based position labelled SEFLG_JPLEPH. */
+    int32 iephe_used = epheflag;
+    if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, &iephe_used, ctx->sp.fx_struct.xearth_dt, ctx->sp.fx_struct.xearth_dt, ctx->sp.fx_struct.xsun_dt, NULL, serr)) != OK) {
       return ERR;
     }
-    if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xsun, NULL, serr)) != OK) {
+    if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
+      return ERR;
+    if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, &iephe_used, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xsun, NULL, serr)) != OK) {
       return ERR;
     }
+    if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
+      return ERR;
   }
   /************************************
    * observer: geocenter or topocenter
@@ -8155,12 +8187,19 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
    * for parallax, light deflection, and aberration,
    ****************************************************/
   if (!(iflag & SEFLG_BARYCTR) && (!(iflag & SEFLG_HELCTR) || !(iflag & SEFLG_MOSEPH))) {
-    if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, ctx->sp.fx_record.xearth_dt, ctx->sp.fx_record.xearth_dt, ctx->sp.fx_record.xsun_dt, NULL, serr)) != OK) {
+    /* Same check as in fixstar_calc_from_struct(), for the same reason: the
+     * strict guard lives at swe_calc()'s exit and this path never reaches it. */
+    int32 iephe_used = epheflag;
+    if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, &iephe_used, ctx->sp.fx_record.xearth_dt, ctx->sp.fx_record.xearth_dt, ctx->sp.fx_record.xsun_dt, NULL, serr)) != OK) {
       return ERR;
     }
-    if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xsun, NULL, serr)) != OK) {
+    if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
+      return ERR;
+    if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, &iephe_used, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xsun, NULL, serr)) != OK) {
       return ERR;
     }
+    if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
+      return ERR;
   }
   /************************************
    * observer: geocenter or topocenter
