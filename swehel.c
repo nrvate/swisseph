@@ -1870,13 +1870,6 @@ int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *
     illum = attr[1] * 100;
   }
   kact = kt(ctx, AltS, sunra, dgeo[1], dgeo[2], datm[1], datm[2], datm[3], 4, serr);
-  if ((0)) {
-darr[26] = kR(AltS, dgeo[2]);
-darr[27] = kW(dgeo[2], datm[1], datm[2]);
-darr[28] = kOZ(ctx, AltS, sunra, dgeo[1]);
-darr[29] = ka(ctx, AltS, sunra, dgeo[1], dgeo[2], datm[1], datm[2], datm[3], serr);
-darr[30] = darr[26] + darr[27] + darr[28] + darr[29];
-  }
   WMoon = 0;
   qYal = 0;
   qCrit = 0;
@@ -2955,7 +2948,7 @@ static int32 get_heliacal_details(swe_ctx *ctx, double tday, double *dgeo, doubl
 static int32 heliacal_ut_vis_lim(swe_ctx *ctx, double tjd_start, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 TypeEventIn, int32 helflag, double *dret, char *serr_ret)
 {
   int i;
-  double d, darr[10], direct = 1, tjd, tday;
+  double tjd, tday;
   int32 retval = OK, helflag2;
   int32 ipl;
   int32 TypeEvent = TypeEventIn;
@@ -3019,16 +3012,6 @@ static int32 heliacal_ut_vis_lim(swe_ctx *ctx, double tjd_start, double *dgeo, d
     if (ipl == SE_MERCURY || ipl == SE_VENUS || TypeEvent <= 2) {
       retval = get_heliacal_details(ctx, tday, dgeo, datm, dobs, ObjectName, TypeEvent, helflag2, dret, serr);
       if (retval == ERR) goto swe_heliacal_err;
-    } else if ((0)) {
-      if (TypeEvent == 4 || TypeEvent == 6) direct = -1;
-      for (i = 0, d = 100.0 / 86400.0; i < 3; i++, d /= 10.0) {
-	while((retval = swe_vis_limit_mag_r(ctx, *dret + d * direct, dgeo, datm, dobs, ObjectName, helflag, darr, serr)) == -2 || (retval >= 0 && darr[0] < darr[7])) { 
-	  *dret += d * direct; 
-	}
-      }
-      /* the last time step must be added */
-      if (retval == OK)
-	*dret += 1.0 / 86400.0 * direct;
     }
   } /* if (1) */
 swe_heliacal_err:
