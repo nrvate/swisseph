@@ -26,17 +26,18 @@ repaired; see Closed.
 
 ## 2. Open — performance, bit-exact
 
-- **`calc_deltat` recomputed at the same instant.** With three memos now in
-  place it is what the heliacal profile leads with: 30% of samples, 422,842
-  calls against 34,000 position calls, nearly all of them in `deltat_aa`.
-  Every `swe_sidtime`, every `ObjectLoc` and every ET↔UT conversion asks for
-  delta-t at an instant something else just asked about.
-  Same shape as the nutation memo and needing the same care: `calc_deltat`
-  reads `tid_acc`, `astro_models[SE_MODEL_DELTAT]`, `jpldenum`, `fidat[]`
-  and `dt[]`, so `(tjd, iflag)` alone is not a key. `tid_acc` is the awkward
-  one — `swi_set_tid_acc()` derives it per-thread from whichever file that
-  thread opened, deliberately without a generation bump (see `sweconfig.h`),
-  so it belongs in the key rather than behind an invalidation hook.
+Nothing open. The three memos are in; see Closed.
+
+What is left in this area is **the tidal-acceleration resolution at the top
+of `calc_deltat`**, which the memo deliberately does not cover because it has
+side effects: `swi_set_tid_acc()` writes `ctx->tid_acc` and the
+missing-ephemeris-path note goes to `serr`. With the evaluation memoised
+that resolution is most of what `calc_deltat` still costs. Caching it too
+would mean keying on `epheflag`, `jpldenum`, `fidat[].sweph_denum` and
+`is_tid_acc_manual`, and writing `ctx->tid_acc` back on a hit to preserve
+the side effect — a much larger key for a much weaker argument, against a
+measured 2.7% for the part already done. Not proposed; recorded so the
+question is not reopened without a number attached.
 
 ## 3. Open — hygiene, bit-exact by construction
 
@@ -140,4 +141,6 @@ Worth doing only as their own rollup, with G1/G8 as the proof:
 | `calc_nutation` recomputed at an instant just computed — 39,376 calls, 73% of them immediate repeats, because `swe_sidtime` reaches `swi_nutation` directly and misses `swi_check_nutation`'s cache | one-slot memo keyed on `(J, nut_model)`, declining both JPLHOR flags rather than describing them. Heliacal benchmark 0.57 s → 0.37 s |
 | `swe_set_astro_models()` invalidated **nothing** on its own thread, and `swe_set_sid_mode()` cleared positions but not the nutation cache, so switching nutation or precession model and re-asking about a computed instant returned the old model's numbers | one `swi_invalidate_models()` used by both setters and by `swi_config_apply`; `cov:nutswitch` rows pin it. No existing transcript row moved |
 | The five nutation models had no coverage at all, and nothing exercised a model change | `cov:nutmodel[1..5]` through `swe_sidtime` at one instant — which also fails if the memo's key loses `nut_model`; `cov:nutswitch[before,after]` for the invalidation |
+| `calc_deltat` recomputed at an instant just computed — 135,204 calls in the heliacal benchmark, 80.6% of them repeats | four-slot memo between the tidal-acceleration resolution (side effects, must always run) and the model evaluation (pure in `tjd`, `deltat_model`, `tid_acc`). `deltat_aa` calls 422,842 → 80,362; benchmark 1.50 s → 1.46 s at n=40, **2.7%** — the resolution is now the bulk of what is left. Nine early returns became one exit so the store cannot be missed |
+| Nothing exercised any delta-t model but the default, and no gate could reach the `dt[]` table changing under a live memo | `cov:deltatmodel[1..5]` at one instant (year 1000, where the models still disagree); **G18** `check-dtmemo`, two contexts asking the same three questions in different orders against a fixture `swe_deltat.txt`. Both proven by reintroducing the defect |
 | `check-threadshim` failed ~1 run in 12 under load: the publisher ran a fixed 20,000 iterations and could set `stop_readers` before a starved reader ran at all, tripping the test's own "test is vacuous" guard | publisher now also waits until every reader has observed something, with a 50× ceiling so a genuinely blind reader still fails loudly. 96 concurrent runs on 12 cores, 0 failures; the ceiling stretched to 128,508 publishes at worst |
