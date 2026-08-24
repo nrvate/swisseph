@@ -821,6 +821,30 @@ static void coverage(void) {
     row("cov:order_moseph_after_jplname", rf, x, 6, serr);
     *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
     row("cov:order_swiss_after_jplname", rf, x, 6, serr);
+
+    /* One request, one answer, however the ephemeris bits are spelled.
+     * swe_calc() resolves SWIEPH|MOSEPH to Swiss (plaus_iflag: JPL over
+     * Swiss over Moshier) and the strict guard must read the bits in the
+     * same order. It used to read them the other way round and refuse the
+     * call as "Moshier answered by Swiss". This row must equal
+     * cov:order_swiss_alone. */
+    *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
+    row("cov:flags_swi_or_mos", rf, x, 6, serr);
+
+    /* swe_fixstar() computes the Earth through main_planet_bary(), not
+     * swe_calc(), so the guard at swe_calc()'s exit never saw it: with the
+     * JPL file missing it answered from Swiss and still returned
+     * SEFLG_JPLEPH. The real file (de200, named above) must go through
+     * (rf=1); a missing one must be refused (rf=-1), for both star APIs. */
+    { char st[AS_MAXCH]; strcpy(st, "Sirius"); *serr = 0; rf = swe_fixstar(st, 2451545.0, SEFLG_JPLEPH, x, serr);
+      row("cov:fixstar_jpl_real", rf, x, 6, serr); }
+    { char st[AS_MAXCH]; strcpy(st, "Sirius"); *serr = 0; rf = swe_fixstar2(st, 2451545.0, SEFLG_JPLEPH, x, serr);
+      row("cov:fixstar2_jpl_real", rf, x, 6, serr); }
+    { char jf[AS_MAXCH]; strcpy(jf, "nope.eph"); swe_set_jpl_file(jf); }
+    { char st[AS_MAXCH]; strcpy(st, "Sirius"); *serr = 0; rf = swe_fixstar(st, 2451545.0, SEFLG_JPLEPH, x, serr);
+      row("cov:fixstar_jpl_missing", rf, x, 6, serr); }
+    { char st[AS_MAXCH]; strcpy(st, "Sirius"); *serr = 0; rf = swe_fixstar2(st, 2451545.0, SEFLG_JPLEPH, x, serr);
+      row("cov:fixstar2_jpl_missing", rf, x, 6, serr); }
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();
     swe_set_ephe_path((char *) EPHE);
