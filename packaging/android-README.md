@@ -38,9 +38,20 @@ the main thread.
 
 Not included — it is hundreds of megabytes. Ship the `.se1` files you need as
 assets, copy them somewhere readable at runtime, and call
-`swe_set_ephe_path()` with that directory. Without them the library uses the
-built-in Moshier ephemeris, which needs no files at all and is often enough
-for chart work.
+`swe_set_ephe_path()` with that directory.
+
+**This fork does not substitute one ephemeris for another.** If the assets did
+not unpack, or the path is wrong, or the date falls outside the files you
+shipped, the call fails and names the ephemeris, the date and the fix — it does
+not quietly answer from the built-in Moshier model and report success. On
+Android that is the difference between a bug you find in testing and one that
+ships: a missing asset otherwise reads as slightly different numbers rather
+than as a missing asset.
+
+Moshier remains available when you *ask* for it — `SEFLG_MOSEPH` — and needs no
+data files at all, which makes it a reasonable deliberate choice for a small
+app. To restore the upstream substituting behaviour, call
+`swe_set_ephe_fallback(1)` or set `SE_EPHE_FALLBACK=1` in the environment.
 
 ## Verifying
 

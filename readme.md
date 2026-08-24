@@ -58,8 +58,9 @@ make LTO=1              # optional, see THREADING.md
 ```
 
 Ephemeris data files are **not** included and have their own release cadence —
-see [Ephemeris data files](#ephemeris-data-files) below. Without them the
-library uses the built-in Moshier ephemeris, which needs no files at all.
+see [Ephemeris data files](#ephemeris-data-files) below. Without them a request
+for the Swiss or JPL ephemeris is an **error**, not a quiet substitution; the
+built-in Moshier model is still there for callers who ask for it by name.
 
 ---
 

@@ -67,9 +67,22 @@ the DLL does not export.
 ## Ephemeris data
 
 Not included — it is hundreds of megabytes and has its own release cadence.
-Without it the library falls back to the built-in Moshier ephemeris, which
-needs no files and is what `swetest -emos` uses. For full precision, obtain
-the `.se1` files and point the library at them with `swe_set_ephe_path()`.
+Obtain the `.se1` files and point the library at them with
+`swe_set_ephe_path()`.
+
+**This fork does not substitute one ephemeris for another.** Asking for Swiss
+or JPL and getting an approximation instead is an error here, not a warning:
+the call fails and names the ephemeris, the date and the fix. Upstream answers
+such a request from the built-in Moshier model, says so in `serr`, and returns
+success — so a caller that checks the return value alone cannot tell a data
+file position from an analytic one. They agree on the Sun to about 0.02
+arcsec; the Moon is out by ~2.9 arcsec, and Neptune passes an arcsecond after
+2030.
+
+Moshier remains available when you *ask* for it — `SEFLG_MOSEPH`, which is
+what `swetest -emos` uses — and needs no data files. To restore the upstream
+substituting behaviour, call `swe_set_ephe_fallback(1)` or set
+`SE_EPHE_FALLBACK=1` in the environment.
 
 ## Verifying
 
