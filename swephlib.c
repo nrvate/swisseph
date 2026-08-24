@@ -2030,6 +2030,11 @@ done:
   return ans;
 }
 
+/* The calls the memo below declines, on lookup as well as on store: these
+ * are the two bits of iflag whose branches read state the key does not
+ * describe. See struct nut_memo. */
+#define SWI_NUT_NO_MEMO(iflag)	((iflag) & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
+
 static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
 {
   int n;
@@ -2039,6 +2044,13 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
   AS_BOOL is_jplhor = FALSE;
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
+  /* Keyed on the defaulted model, not the raw one. */
+  if (!SWI_NUT_NO_MEMO(iflag) && ctx->nut_np.valid
+      && ctx->nut_np.J == J && ctx->nut_np.nut_model == nut_model) {
+    nutlo[0] = ctx->nut_np.nutlo[0];
+    nutlo[1] = ctx->nut_np.nutlo[1];
+    return OK;
+  }
   if (iflag & SEFLG_JPLHOR)
     is_jplhor = TRUE;
   if ((iflag & SEFLG_JPLHOR_APPROX) && 
@@ -2070,6 +2082,18 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
     }
   } else if (nut_model == SEMOD_NUT_WOOLARD) {
     calc_nutation_woolard(J, nutlo);
+  } else {
+    /* No model matched, so nothing wrote nutlo and the caller keeps
+     * whatever it passed in. Spelled out because the memo below must not
+     * store -- and later hand out -- a value that was never computed. */
+    return OK;
+  }
+  if (!SWI_NUT_NO_MEMO(iflag)) {
+    ctx->nut_np.J = J;
+    ctx->nut_np.nut_model = nut_model;
+    ctx->nut_np.nutlo[0] = nutlo[0];
+    ctx->nut_np.nutlo[1] = nutlo[1];
+    ctx->nut_np.valid = TRUE;
   }
   return OK;
 }
@@ -4314,6 +4338,7 @@ void CALL_CONV swe_set_astro_models_r(swe_ctx *ctx, char *samod, int32 iflag)
       swe_set_tid_acc_r(ctx, -25.7376);
     }
   }
+  swi_invalidate_models(ctx);
   swi_config_end_apply(ctx, swi_cfg_was);
   swi_config_publish(ctx, SWI_CFG_SID);
 }

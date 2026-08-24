@@ -818,6 +818,48 @@ static void coverage(void) {
     row("cov:interpolate_nut", rf, x, 6, serr);
     swe_set_interpolate_nut(FALSE);
 
+    /* The five nutation models, all at ONE instant, through swe_sidtime().
+     *
+     * Two things at once. The models had no coverage at all -- nothing
+     * outside the default SEMOD_NUT_IAU_2000B was ever computed -- and the
+     * shared instant makes these rows a probe for calc_nutation()'s memo,
+     * which is keyed on astro_models[SE_MODEL_NUT] among other things. Drop
+     * the model from that key and every row below returns model 1's
+     * nutation, so all five collapse to the same number and this fails.
+     *
+     * swe_sidtime() rather than swe_calc() precisely because it does NOT
+     * cache: swe_calc() would answer the second and later calls out of
+     * savedat[] on (tjd, ipl, iflag) without recomputing anything, and the
+     * rows would agree whatever the memo did. It is also the call that made
+     * the memo worth having -- it reaches swi_nutation() directly rather
+     * than through swi_check_nutation(). */
+    for (int nm = SEMOD_NUT_IAU_1980; nm <= SEMOD_NUT_WOOLARD; nm++) {
+      char sam[AS_MAXCH], tag[64];
+      snprintf(sam, sizeof sam, "0,0,0,%d", nm);
+      swe_set_astro_models(sam, 0);
+      x[0] = swe_sidtime(2451545.0);
+      snprintf(tag, sizeof tag, "cov:nutmodel[%d]", nm);
+      row(tag, 0, x, 1, "");
+    }
+    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+
+    /* Changing the nutation model has to reach a position already computed
+     * for that instant. swi_check_nutation() keeps the computed nutation
+     * keyed on tjd and the speed flag ALONE -- no model -- and
+     * swi_force_app_pos_etc() clears pldat/nddat/savedat but not that, so
+     * the second call here used to be answered with the first model's
+     * nutation however loudly the caller had asked for another one.
+     * sweconfig.c clears it on a model change now, and this pair is what
+     * says so: undo that and [after] becomes byte-identical to [before]. */
+    *serr = 0; rf = swe_calc(2451545.0, SE_MOON, SEFLG_SWIEPH, x, serr);
+    row("cov:nutswitch[before]", rf, x, 6, serr);
+    { char sam[AS_MAXCH];
+      snprintf(sam, sizeof sam, "0,0,0,%d", SEMOD_NUT_IAU_1980);
+      swe_set_astro_models(sam, 0); }
+    *serr = 0; rf = swe_calc(2451545.0, SE_MOON, SEFLG_SWIEPH, x, serr);
+    row("cov:nutswitch[after]", rf, x, 6, serr);
+    { char sam[AS_MAXCH]; sam[0] = '\0'; swe_set_astro_models(sam, 0); }
+
     /* swe_set_jpl_file() only records a name; no .eph is shipped with this
      * repository, so the observable effect is what happens when the file is
      * missing. Under the strict default that is now a refusal (rf=-1) rather

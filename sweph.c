@@ -3272,7 +3272,7 @@ void CALL_CONV swe_set_sid_mode_r(swe_ctx *ctx, int32 sid_mode, double t0, doubl
         break;
     }
   }
-  swi_force_app_pos_etc(ctx);
+  swi_invalidate_models(ctx);
   swi_config_end_apply(ctx, swi_cfg_was);
   swi_config_publish(ctx, SWI_CFG_SID);
 }

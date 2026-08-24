@@ -882,6 +882,51 @@ struct ldp_peps_memo {
   int next;
 };
 
+/* calc_nutation()'s result (swephlib.c).
+ *
+ * The top of the heliacal profile once the two series above are memoised:
+ * 39,376 calls in a benchmark making 34,000 position calls, 73% of them
+ * repeats of the call immediately before. swe_sidtime() is why -- it calls
+ * swi_nutation() directly rather than through swi_check_nutation(), so it
+ * misses that cache entirely, and swe_azalt() calls swe_sidtime() once per
+ * coordinate conversion.
+ *
+ * Unlike struct sidt_memo and struct ldp_peps_memo this is NOT a pure
+ * function of its arguments, so the key has to carry the rest of what the
+ * body reads. It is kept down to two fields by refusing the calls it cannot
+ * describe rather than describing them:
+ *
+ *   J           the epoch.
+ *   nut_model   astro_models[SE_MODEL_NUT], read by calc_nutation() and by
+ *               each of the three model functions it dispatches to.
+ *
+ * Neither JPLHOR flag is cached, on lookup or on store, and that is what
+ * lets the key stop there. SEFLG_JPLHOR reads the loaded dpsi/deps arrays
+ * and eop_tjd_*, which an ephemeris-path change reloads;
+ * SEFLG_JPLHOR_APPROX brings astro_models[SE_MODEL_JPLHORA_MODE] into it.
+ * With both excluded, is_jplhor is necessarily FALSE and what remains reads
+ * J and nut_model and nothing else. The rest of iflag drops out of the key
+ * with them -- the three model functions take no iflag at all -- so
+ * swe_sidtime()'s iflag of 0 shares a slot with a caller passing
+ * SEFLG_SPEED, which the arithmetic ignores.
+ *
+ * nut_model is in the key rather than resolved by a hook on
+ * swe_set_astro_models() because a COMPUTE path mutates it:
+ * get_aya_correction() saves astro_models[], overrides it for the duration
+ * of a calculation and restores it, deliberately without bumping the
+ * configuration generation (see sweconfig.h). A generation-keyed memo would
+ * hand out pre-override values inside that window.
+ *
+ * One slot. Measured: 73.1% hit rate, against 73.2% for four slots and
+ * 78.1% for sixteen -- the reuse is all back to back, so more slots buy
+ * almost nothing. */
+struct nut_memo {
+  double J;
+  double nutlo[2];
+  int32 nut_model;
+  AS_BOOL valid;
+};
+
 /* Scratch state for the Moshier lunar theory (swemmoon.c).
  *
  * These 27 values were file-scope TLS statics used as IMPLICIT PARAMETERS:
@@ -1034,6 +1079,7 @@ struct swe_ctx {
   struct interpol interpol;
   struct sidt_memo sidt_np;	/* see struct sidt_memo */
   struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
+  struct nut_memo nut_np;	/* see struct nut_memo */
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;
   struct plan_data pldat[SEI_NPLANETS];

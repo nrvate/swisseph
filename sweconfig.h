@@ -199,4 +199,9 @@ extern void swi_config_inherit(swe_ctx *ctx);
 /* Re-arm the master from the compile-time defaults. Used by swe_close(). */
 extern void swi_config_reset(swe_ctx *ctx);
 
+/* Invalidate what a change to astro_models[] makes stale on this thread.
+ * Every setter that writes those models has to call it; see the comment on
+ * the definition for why swi_force_app_pos_etc() alone is not enough. */
+extern void swi_invalidate_models(swe_ctx *ctx);
+
 #endif /* _SWECONFIG_INCLUDED */

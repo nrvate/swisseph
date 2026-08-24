@@ -99,6 +99,26 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  *                        (matches swe_set_interpolate_nut)
  *   const_lapse_rate  -> nothing; read directly at its use sites
  *====================================================================*/
+
+/* Everything a change to astro_models[] makes stale on the thread that made
+ * it. Three places change those models -- swe_set_astro_models(),
+ * swe_set_sid_mode() (SE_SIDBIT_PREC_ORIG, and the sidereal nutation
+ * override) and swi_config_apply() adopting another thread's change -- and
+ * each used to invalidate a different amount. swe_set_astro_models()
+ * invalidated nothing at all, so a caller who switched nutation or
+ * precession model and asked again about an instant already computed was
+ * answered with the old model's numbers.
+ *
+ * nut/nutv are in here because swi_check_nutation() keys the nutation it
+ * caches on tjd and the speed flag alone. No model appears in that key, and
+ * swi_force_app_pos_etc() clears pldat/nddat/savedat but not this. */
+void swi_invalidate_models(swe_ctx *ctx)
+{
+  ctx->nut.tnut = 0;
+  ctx->nutv.tnut = 0;
+  swi_force_app_pos_etc(ctx);
+}
+
 AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 {
   AS_BOOL path_changed, geo_changed, model_changed, dt_changed, nut_changed;
@@ -188,7 +208,9 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     ctx->interpol.nut_deps1 = 0;
     ctx->interpol.nut_deps2 = 0;
   }
-  if (path_changed || geo_changed || model_changed || dt_changed)
+  if (model_changed)
+    swi_invalidate_models(ctx);
+  else if (path_changed || geo_changed || dt_changed)
     swi_force_app_pos_etc(ctx);
 
   return TRUE;
