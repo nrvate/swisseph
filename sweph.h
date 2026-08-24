@@ -845,6 +845,126 @@ struct interpol {
   double nut_deps0, nut_deps1, nut_deps2;
 };
 
+/* The 33-term periodic series in sidtime_non_polynomial_part() (swephlib.c).
+ *
+ * 462 multiply-adds and 66 sin/cos, and swe_sidtime0() is the hottest
+ * function in a heliacal search: swe_azalt() calls it once per coordinate
+ * conversion, and one instant gets converted several times over -- for the
+ * sun, the moon and the object, in altitude and again in azimuth.
+ *
+ * The series is a pure function of tt, so keying on tt is the whole
+ * correctness argument: nothing else can make the answer differ, and the
+ * memo therefore needs no invalidation anywhere. Deriving tt from tjd
+ * involves delta-t, but that happens BEFORE the key is formed, so changing
+ * the delta-t model changes tt and misses rather than returning a stale
+ * value. One slot suffices because the repeats are back to back. What is
+ * stored is the computed value, never an interpolation, so a hit is
+ * bit-identical to recomputing. */
+struct sidt_memo {
+  double tt, dadd;
+  AS_BOOL valid;
+};
+
+/* Vondrak's ten periodic terms in swi_ldp_peps() (swephlib.c).
+ *
+ * SEMOD_PREC_DEFAULT is SEMOD_PREC_VONDRAK_2011, so swi_epsiln() lands on
+ * this series for every obliquity it is asked for -- 219,000 evaluations in
+ * a benchmark that made 34,000 heliacal position calls.
+ *
+ * Pure function of tjd, exactly like struct sidt_memo, so the key is the
+ * whole correctness argument and no invalidation is needed. Four slots
+ * rather than one because the callers alternate epochs and a single slot
+ * would only thrash: precess_2() asks about J and J2000 in turn, and
+ * app_pos_etc_plan() differences t against t + 1. */
+#define SWI_LDP_PEPS_SLOTS 4
+struct ldp_peps_memo {
+  struct { double tjd, dpre, deps; AS_BOOL used; } slot[SWI_LDP_PEPS_SLOTS];
+  int next;
+};
+
+/* calc_nutation()'s result (swephlib.c).
+ *
+ * The top of the heliacal profile once the two series above are memoised:
+ * 39,376 calls in a benchmark making 34,000 position calls, 73% of them
+ * repeats of the call immediately before. swe_sidtime() is why -- it calls
+ * swi_nutation() directly rather than through swi_check_nutation(), so it
+ * misses that cache entirely, and swe_azalt() calls swe_sidtime() once per
+ * coordinate conversion.
+ *
+ * Unlike struct sidt_memo and struct ldp_peps_memo this is NOT a pure
+ * function of its arguments, so the key has to carry the rest of what the
+ * body reads. It is kept down to two fields by refusing the calls it cannot
+ * describe rather than describing them:
+ *
+ *   J           the epoch.
+ *   nut_model   astro_models[SE_MODEL_NUT], read by calc_nutation() and by
+ *               each of the three model functions it dispatches to.
+ *
+ * Neither JPLHOR flag is cached, on lookup or on store, and that is what
+ * lets the key stop there. SEFLG_JPLHOR reads the loaded dpsi/deps arrays
+ * and eop_tjd_*, which an ephemeris-path change reloads;
+ * SEFLG_JPLHOR_APPROX brings astro_models[SE_MODEL_JPLHORA_MODE] into it.
+ * With both excluded, is_jplhor is necessarily FALSE and what remains reads
+ * J and nut_model and nothing else. The rest of iflag drops out of the key
+ * with them -- the three model functions take no iflag at all -- so
+ * swe_sidtime()'s iflag of 0 shares a slot with a caller passing
+ * SEFLG_SPEED, which the arithmetic ignores.
+ *
+ * nut_model is in the key rather than resolved by a hook on
+ * swe_set_astro_models() because a COMPUTE path mutates it:
+ * get_aya_correction() saves astro_models[], overrides it for the duration
+ * of a calculation and restores it, deliberately without bumping the
+ * configuration generation (see sweconfig.h). A generation-keyed memo would
+ * hand out pre-override values inside that window.
+ *
+ * One slot. Measured: 73.1% hit rate, against 73.2% for four slots and
+ * 78.1% for sixteen -- the reuse is all back to back, so more slots buy
+ * almost nothing. */
+struct nut_memo {
+  double J;
+  double nutlo[2];
+  int32 nut_model;
+  AS_BOOL valid;
+};
+
+/* calc_deltat()'s result (swephlib.c).
+ *
+ * What the heliacal profile leads with once the nutation memo lands: 30% of
+ * samples and 135,204 calls in a benchmark making 34,000 position calls,
+ * because every swe_sidtime(), every ObjectLoc() and every ET<->UT
+ * conversion asks for delta-t at an instant something else just asked about.
+ *
+ * The memo sits INSIDE calc_deltat(), after the tidal-acceleration
+ * resolution and before the model evaluation, and that split is the point.
+ * The resolution has side effects -- swi_set_tid_acc() writes ctx->tid_acc,
+ * and the missing-ephemeris-path note goes to serr -- so it has to run every
+ * time. What follows it is a pure function of:
+ *
+ *   tjd           the instant.
+ *   deltat_model  astro_models[SE_MODEL_DELTAT], read here and again inside
+ *                 deltat_aa().
+ *   tid_acc       the RESOLVED value, not the inputs that produced it.
+ *                 Keying on the answer rather than on epheflag and the DE
+ *                 number means a change in how it is derived cannot slip
+ *                 past the key.
+ *
+ * ctx->dt[], the tabulated delta-t, is the fourth input and is not in the
+ * key: it has exactly two writers, swi_seed_dt_table() at context creation
+ * and init_dt() on first use, and both call dt_memo_clear() instead. That
+ * keeps a 220-entry table out of a comparison made 135,204 times. G18
+ * (tests/dtmemo.c) is what holds them to it.
+ *
+ * Four slots. Measured hit rate 36% at one slot, 76.8% at two, 80.5% at
+ * three and 80.6% from four on -- the callers work two or three nearby
+ * epochs at a time (tjd_ut against tjd_et, t against t + 1), so one slot
+ * thrashes where the earlier memos did not. */
+#define SWI_DT_MEMO_SLOTS 4
+struct dt_memo {
+  struct { double tjd, tid_acc, deltat; int32 deltat_model; AS_BOOL used; }
+    slot[SWI_DT_MEMO_SLOTS];
+  int next;
+};
+
 /* Scratch state for the Moshier lunar theory (swemmoon.c).
  *
  * These 27 values were file-scope TLS statics used as IMPLICIT PARAMETERS:
@@ -869,22 +989,25 @@ struct moon_state {
 
 /* Memo caches for the heliacal code (swehel.c).
  *
- * Thirteen function-local TLS statics. They are grouped by OWNING FUNCTION
- * rather than flattened, because the names collide: alts_last and
- * sunra_last each existed three times -- in kOZ(), ka() and Deltam() -- and
- * tjdsv twice, in call_swe_calc() and fast_magnitude(). Each was a distinct
+ * Function-local TLS statics, grouped by OWNING FUNCTION rather than
+ * flattened, because the names collide: alts_last and sunra_last each
+ * existed three times -- in kOZ(), ka() and Deltam(). Each was a distinct
  * variable that merely shared a name with the others, so flattening them
  * into one struct would have silently merged three separate caches into
  * one and produced wrong answers with nothing failing to compile.
+ *
+ * Two further groups, `calc` and `fastmag`, are gone: they belonged to the
+ * #if 0 functions 3b9d090 deleted, and nothing has referenced them since.
+ * Both interpolated over a five-minute window rather than matching the
+ * instant, so neither could have been switched back on without moving
+ * results.
  */
 struct hel_state {
-  struct { double tjdsv[3], xsv[3][6]; int32 iflagsv[3]; } calc;
   struct { double dmag; char star_save[AS_MAXCH]; }        starmag;
   struct { double tjdlast, ralast; }                       sunra;
   struct { double koz_last, alts_last, sunra_last; }       koz;
   struct { double alts_last, sunra_last, ka_last; }        ka;
   struct { double alts_last, alto_last, sunra_last, deltam_last; } deltam;
-  struct { double tjdsv[3], dmagsv[3]; int32 helflagsv[3]; } fastmag;
 };
 
 /* Memo caches for sweph.c.
@@ -992,6 +1115,10 @@ struct swe_ctx {
   double const_lapse_rate;
   AS_BOOL do_interpolate_nut;
   struct interpol interpol;
+  struct sidt_memo sidt_np;	/* see struct sidt_memo */
+  struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
+  struct nut_memo nut_np;	/* see struct nut_memo */
+  struct dt_memo dt_np;		/* see struct dt_memo */
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;
   struct plan_data pldat[SEI_NPLANETS];

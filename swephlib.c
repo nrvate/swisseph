@@ -546,12 +546,23 @@ static const double xyper[5][NPER_PEQU] = {
   {1558.515853, 7774.939698, -2219.534038, -2523.969396, 247.850422, -846.485643, -1393.124055, 368.526116, 749.045012, 444.704518, 235.934465, 374.049623, -171.33018, -22.899655}
 };
 
-void swi_ldp_peps(double tjd, double *dpre, double *deps)
+void swi_ldp_peps(swe_ctx *ctx, double tjd, double *dpre, double *deps)
 {
   int i;
   int npol = NPOL_PEPS;
   int nper = NPER_PEPS;
   double t, p, q, w, a, s, c;
+  /* Pure function of tjd, and asked for the same few epochs over and over.
+   * See struct ldp_peps_memo. */
+  for (i = 0; i < SWI_LDP_PEPS_SLOTS; i++) {
+    if (ctx->ldp_peps.slot[i].used && ctx->ldp_peps.slot[i].tjd == tjd) {
+      if (dpre != NULL)
+	*dpre = ctx->ldp_peps.slot[i].dpre;
+      if (deps != NULL)
+	*deps = ctx->ldp_peps.slot[i].deps;
+      return;
+    }
+  }
   t = (tjd - J2000) / 36525.0;
   p = 0;
   q = 0;
@@ -574,6 +585,13 @@ void swi_ldp_peps(double tjd, double *dpre, double *deps)
   /* both to radians */
   p *= AS2R;
   q *= AS2R;
+  /* Both are stored whichever one the caller wanted, so a caller asking
+   * only for deps still primes the slot for one asking only for dpre. */
+  ctx->ldp_peps.slot[ctx->ldp_peps.next].tjd = tjd;
+  ctx->ldp_peps.slot[ctx->ldp_peps.next].dpre = p;
+  ctx->ldp_peps.slot[ctx->ldp_peps.next].deps = q;
+  ctx->ldp_peps.slot[ctx->ldp_peps.next].used = TRUE;
+  ctx->ldp_peps.next = (ctx->ldp_peps.next + 1) % SWI_LDP_PEPS_SLOTS;
   /* return */
   if (dpre != NULL)
     *dpre = p;
@@ -950,7 +968,7 @@ double swi_epsiln(swe_ctx *ctx, double J, int32 iflag)
     eps *= DEGTORAD;
 //fprintf(stderr, "epso=%.17f\n", eps);
   } else { /* SEMOD_PREC_VONDRAK_2011 */
-    swi_ldp_peps(J, NULL, &eps);
+    swi_ldp_peps(ctx, J, NULL, &eps);
     if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model != SEMOD_JPLHORA_2) {
       tofs = (J - DCOR_EPS_JPL_TJD0) / 365.25;
       dofs = OFFSET_EPS_JPLHORIZONS;
@@ -2012,6 +2030,11 @@ done:
   return ans;
 }
 
+/* The calls the memo below declines, on lookup as well as on store: these
+ * are the two bits of iflag whose branches read state the key does not
+ * describe. See struct nut_memo. */
+#define SWI_NUT_NO_MEMO(iflag)	((iflag) & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
+
 static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
 {
   int n;
@@ -2021,6 +2044,13 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
   AS_BOOL is_jplhor = FALSE;
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
+  /* Keyed on the defaulted model, not the raw one. */
+  if (!SWI_NUT_NO_MEMO(iflag) && ctx->nut_np.valid
+      && ctx->nut_np.J == J && ctx->nut_np.nut_model == nut_model) {
+    nutlo[0] = ctx->nut_np.nutlo[0];
+    nutlo[1] = ctx->nut_np.nutlo[1];
+    return OK;
+  }
   if (iflag & SEFLG_JPLHOR)
     is_jplhor = TRUE;
   if ((iflag & SEFLG_JPLHOR_APPROX) && 
@@ -2052,6 +2082,18 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
     }
   } else if (nut_model == SEMOD_NUT_WOOLARD) {
     calc_nutation_woolard(J, nutlo);
+  } else {
+    /* No model matched, so nothing wrote nutlo and the caller keeps
+     * whatever it passed in. Spelled out because the memo below must not
+     * store -- and later hand out -- a value that was never computed. */
+    return OK;
+  }
+  if (!SWI_NUT_NO_MEMO(iflag)) {
+    ctx->nut_np.J = J;
+    ctx->nut_np.nut_model = nut_model;
+    ctx->nut_np.nutlo[0] = nutlo[0];
+    ctx->nut_np.nutlo[1] = nutlo[1];
+    ctx->nut_np.valid = TRUE;
   }
   return OK;
 }
@@ -2473,6 +2515,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   double tid_acc;
   int32 denum, denumret;
   int32 epheflag, otherflag;
+  int islot;
 //fprintf(stderr, "dmod=%f, %.f\n", (double) deltat_model, (double) SEMOD_DELTAT_DEFAULT);
   if (deltat_model == 0) deltat_model = SEMOD_DELTAT_DEFAULT;
   epheflag = iflag & SEFLG_EPHMASK;
@@ -2494,6 +2537,18 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     tid_acc = ctx->tid_acc;
   }
   iflag = otherflag | retc;
+  /* Everything from here down is a pure function of tjd, deltat_model and
+   * the tid_acc just resolved above -- the resolution itself has side
+   * effects and must not be skipped. See struct dt_memo. */
+  for (islot = 0; islot < SWI_DT_MEMO_SLOTS; islot++) {
+    if (ctx->dt_np.slot[islot].used
+	&& ctx->dt_np.slot[islot].tjd == tjd
+	&& ctx->dt_np.slot[islot].deltat_model == deltat_model
+	&& ctx->dt_np.slot[islot].tid_acc == tid_acc) {
+      *deltat = ctx->dt_np.slot[islot].deltat;
+      return iflag;
+    }
+  }
   Y = 2000.0 + (tjd - J2000)/365.25;
   Ygreg = 2000.0 + (tjd - J2000)/365.2425;
   /* Model for epochs before 1955, currently default in Swiss Ephemeris:
@@ -2512,7 +2567,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     if (tjd >= 2434108.5) {
       *deltat += (1.0 - (2435108.5 - tjd) / 1000.0) * 0.6610218 / 86400.0;
     }
-    return iflag;
+    goto done;
   }
   /* Model used SE 1.77 - 2.05.01, for epochs before 1633:
    * Polynomials by Espenak & Meeus 2006, 
@@ -2523,7 +2578,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
    */
   if (deltat_model == SEMOD_DELTAT_ESPENAK_MEEUS_2006 && tjd < 2317746.13090277789) {
     *deltat = deltat_espenak_meeus_1620(tjd, tid_acc);
-    return iflag;
+    goto done;
   }
   /* delta t model used in SE 1.72 - 1.76:
    * Stephenson & Morrison 2004;
@@ -2532,7 +2587,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     // before 1600: 
     if (Y < TAB2_END) {
       *deltat = deltat_stephenson_morrison_2004_1600(tjd, tid_acc);
-      return iflag;
+      goto done;
     } else {
       /* between 1600 and 1620:
        * linear interpolation between 
@@ -2544,7 +2599,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
 	ans = dt2[iy] + dd * (ctx->dt[0] - dt2[iy]);
 	ans = adjust_for_tidacc(ans, Ygreg, tid_acc, SE_TIDAL_26, FALSE);
 	*deltat = ans / 86400.0;
-	return iflag;
+	goto done;
       }
     }
   }
@@ -2555,7 +2610,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     // before 1600: 
     if (Y < TAB97_END) {
       *deltat = deltat_stephenson_morrison_1997_1600(tjd, tid_acc);
-      return iflag;
+      goto done;
     } else {
       /* between 1600 and 1620:
        * linear interpolation between 
@@ -2567,7 +2622,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
 	ans = dt97[iy] + dd * (ctx->dt[0] - dt97[iy]);
 	ans = adjust_for_tidacc(ans, Ygreg, tid_acc, SE_TIDAL_26, FALSE);
 	*deltat = ans / 86400.0;
-	return iflag;
+	goto done;
       }
     }
   }
@@ -2586,7 +2641,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
       ans = 35.0 * B * B  +  40.;
     }
     *deltat = ans / 86400.0;
-    return iflag;
+    goto done;
   }
   /* 1620 - today + a few years (tabend):
    * Tabulated values of deltaT from Astronomical Almanac 
@@ -2595,7 +2650,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
    */
   if (Y >= TABSTART) {
     *deltat = deltat_aa(ctx, tjd, tid_acc);
-    return iflag;
+    goto done;
   }
 #ifdef TRACE
   swi_open_trace(NULL);
@@ -2618,6 +2673,15 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   swi_trace_unlock();
 #endif
   *deltat = ans / 86400.0;
+done:
+  /* One exit, so the store cannot be forgotten on one of the nine paths
+   * that produce a value. Round-robin; see struct dt_memo. */
+  ctx->dt_np.slot[ctx->dt_np.next].tjd = tjd;
+  ctx->dt_np.slot[ctx->dt_np.next].deltat_model = deltat_model;
+  ctx->dt_np.slot[ctx->dt_np.next].tid_acc = tid_acc;
+  ctx->dt_np.slot[ctx->dt_np.next].deltat = *deltat;
+  ctx->dt_np.slot[ctx->dt_np.next].used = TRUE;
+  ctx->dt_np.next = (ctx->dt_np.next + 1) % SWI_DT_MEMO_SLOTS;
   return iflag;
 }
 
@@ -3023,12 +3087,27 @@ static double deltat_espenak_meeus_1620(double tjd, double tid_acc)
 /* Read delta t values from external file.
 * record structure: year(whitespace)delta_t in 0.01 sec.
 */
+/* The delta-t table is an input to calc_deltat()'s memo that is deliberately
+ * NOT in its key -- comparing 220 entries on every one of 135,204 calls to
+ * catch a change that happens at most twice in a context's life is the wrong
+ * trade. Every writer of ctx->dt[] empties the memo instead, and both of
+ * them are in this file: swi_seed_dt_table() below and init_dt(). Keep it
+ * that way, or this has to stop being static. See struct dt_memo. */
+static void dt_memo_clear(swe_ctx *ctx)
+{
+  int i;
+  for (i = 0; i < SWI_DT_MEMO_SLOTS; i++)
+    ctx->dt_np.slot[i].used = FALSE;
+  ctx->dt_np.next = 0;
+}
+
 /* calc_deltat() reads ctx->dt[0] (swephlib.c:2622, 2645) on paths that never
  * call init_dt(), and the table used to be statically initialised, so dt[0]
  * was always 124.00. Exposed so context creation seeds it too. */
 void swi_seed_dt_table(swe_ctx *ctx)
 {
   memcpy(ctx->dt, dt_builtin, sizeof(ctx->dt));
+  dt_memo_clear(ctx);
 }
 
 static int init_dt(swe_ctx *ctx)
@@ -3046,6 +3125,8 @@ if (!ctx->init_dt_done) {
    * is absent this returns immediately, and calc_deltat() then reads
    * ctx->dt[iy] as zeros. */
   memcpy(ctx->dt, dt_builtin, sizeof(ctx->dt));
+  /* Anything already memoised was computed against the previous table. */
+  dt_memo_clear(ctx);
   /* no error message if file is missing */
   if ((fp = swi_fopen(ctx, -1, "swe_deltat.txt", ctx->ephepath, NULL)) == NULL
     && (fp = swi_fopen(ctx, -1, "sedeltat.txt", ctx->ephepath, NULL)) == NULL)
@@ -3397,11 +3478,15 @@ static const int stfarg[SIDTNTERM * SIDTNARG] = {
    1,   0,  -2,   0,  -3,   0,   0,   0,   0,   0,   0,   0,   0,   0,
    1,   0,  -2,   0,  -1,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 };
-static double sidtime_non_polynomial_part(double tt)
+static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
 {
   int i, j;
   double delm[SIDTNARG];
   double dadd, darg;
+  /* Pure function of tt, and called repeatedly at one instant.
+   * See struct sidt_memo. */
+  if (ctx->sidt_np.valid && ctx->sidt_np.tt == tt)
+    return ctx->sidt_np.dadd;
   /* L Mean anomaly of the Moon.*/
   delm[0] = swe_radnorm(2.35555598 + 8328.6914269554 * tt);
   /* LSU Mean anomaly of the Sun.*/
@@ -3433,6 +3518,9 @@ static double sidtime_non_polynomial_part(double tt)
     dadd += stcf[i * 2] * sin(darg) + stcf[i * 2 + 1] * cos(darg);
   }
   dadd /= (3600.0 * 1000000.0);
+  ctx->sidt_np.tt = tt;
+  ctx->sidt_np.dadd = dadd;
+  ctx->sidt_np.valid = TRUE;
   return dadd;
 }
 
@@ -3491,7 +3579,7 @@ double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut
     tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
     gmst = swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
     gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
-    dadd = sidtime_non_polynomial_part(tt);
+    dadd = sidtime_non_polynomial_part(ctx, tt);
     gmst = swe_degnorm(gmst + dadd);
     /*printf("gmst iers=%f \n", gmst);*/
     gmst = gmst / 15.0 * 3600.0;
@@ -4289,6 +4377,7 @@ void CALL_CONV swe_set_astro_models_r(swe_ctx *ctx, char *samod, int32 iflag)
       swe_set_tid_acc_r(ctx, -25.7376);
     }
   }
+  swi_invalidate_models(ctx);
   swi_config_end_apply(ctx, swi_cfg_was);
   swi_config_publish(ctx, SWI_CFG_SID);
 }

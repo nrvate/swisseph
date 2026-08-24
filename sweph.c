@@ -3272,7 +3272,7 @@ void CALL_CONV swe_set_sid_mode_r(swe_ctx *ctx, int32 sid_mode, double t0, doubl
         break;
     }
   }
-  swi_force_app_pos_etc(ctx);
+  swi_invalidate_models(ctx);
   swi_config_end_apply(ctx, swi_cfg_was);
   swi_config_publish(ctx, SWI_CFG_SID);
 }
@@ -3962,8 +3962,8 @@ void swi_precess_speed(swe_ctx *ctx, double *xx, double t, int32 iflag, int dire
   swi_cartpol_sp(xx, xx);
 if (1) {
   if (prec_model == SEMOD_PREC_VONDRAK_2011) {
-    swi_ldp_peps(t, &dpre, NULL);
-    swi_ldp_peps(t + 1, &dpre2, NULL);
+    swi_ldp_peps(ctx, t, &dpre, NULL);
+    swi_ldp_peps(ctx, t + 1, &dpre2, NULL);
     xx[3] += (dpre2 - dpre) * fac;
   } else {
     xx[3] += (50.290966 + 0.0222226 * tprec) / 3600 / 365.25 * DEGTORAD * fac;

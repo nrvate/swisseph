@@ -3,8 +3,11 @@
 **Status:** living list. Closed items are one line each at the bottom;
 anything judged not worth doing is listed with the reason, so it is not
 re-audited. Everything above the line is real, scoped, and provable on the
-bit-exact gates (`make -C tests check`, G8) — the rule for landing it.
-**Base:** `main` @ 2.10.03-ts.5, `work` rollup #11.
+bit-exact gates — the rule for landing it. `make -C tests check` runs every
+gate but G8 in about 15 s; `make -C tests check-all` adds G8, the setest
+differential against `origin/legacy-master`.
+**Base:** `main` @ `07fc6b4` (rollup #11 merged); `SE_VERSION` is still
+2.10.03-ts.5, not yet tagged.
 **Scope:** root `*.c`/`*.h`; `windows/`, `setest/` and the samples only where
 noted.
 
@@ -23,18 +26,18 @@ repaired; see Closed.
 
 ## 2. Open — performance, bit-exact
 
-- **Heliacal `ObjectLoc()` recomputed for the same instant**: called 5× in a
-  row by `swe_heliacal_pheno_ut` and twice per step (directly and via
-  `DeterTAV`) in the visibility search — order of 1,500–3,000 ephemeris
-  calls per search, about half exact duplicates. Memoising on
-  `(TimePointer, object, flags)` reuses identical results, so the transcript
-  cannot move. The `hel_ut`/`helpheno`/`vislim` rows cover it.
-- **Vondrák periodic series recomputed per call** at the same epoch in
-  `sidtime_long_term` and `precess_2`; **`sidtime_non_polynomial_part`**
-  recomputes a 33-term series on every `swe_sidtime`. Both are candidates
-  for the same memoisation `swi_nutation` already uses (`interpol.tjd_nut*`).
-  Bit-exact as long as the cached value is the computed one, not an
-  interpolation.
+Nothing open. The three memos are in; see Closed.
+
+What is left in this area is **the tidal-acceleration resolution at the top
+of `calc_deltat`**, which the memo deliberately does not cover because it has
+side effects: `swi_set_tid_acc()` writes `ctx->tid_acc` and the
+missing-ephemeris-path note goes to `serr`. With the evaluation memoised
+that resolution is most of what `calc_deltat` still costs. Caching it too
+would mean keying on `epheflag`, `jpldenum`, `fidat[].sweph_denum` and
+`is_tid_acc_manual`, and writing `ctx->tid_acc` back on a hit to preserve
+the side effect — a much larger key for a much weaker argument, against a
+measured 2.7% for the part already done. Not proposed; recorded so the
+question is not reopened without a number attached.
 
 ## 3. Open — hygiene, bit-exact by construction
 
@@ -46,9 +49,10 @@ Worth doing only as their own rollup, with G1/G8 as the proof:
 
 - `swehouse.c`: the ~15-line house-cusp convergence block is copied 6×
   (Gauquelin 2×, Placidus 4×) and the polar-circle AC/DC swap 5×.
-- `swecl.c`: the eclipse-maximum search loop is copied 6+×; 44 `goto`
-  labels drive the state machines. Any fix to one copy has to be applied to
-  all.
+- `swecl.c`: the eclipse-maximum search loop is copied 6+×. Any fix to one
+  copy has to be applied to all. (The 44 `goto`s are a smaller problem than
+  they look: they reach only 5 distinct labels, and 36 of them are one
+  retry idiom, `goto next_try`.)
 - `sweph.c`: the JPL→Swiss→Moshier fallback chain is implemented separately
   for the Moon, the barycentric Sun and each planet class.
 
@@ -63,6 +67,15 @@ Worth doing only as their own rollup, with G1/G8 as the proof:
   evaluates it from a different segment), and decides whose general
   constants are live — and reproducing each bit-for-bit cost ~80 lines and
   two struct fields to save one `fopen` per switch.
+- **Memoising heliacal `ObjectLoc()` on `(instant, object, flags)`.** Built
+  and measured, then dropped. The premise holds — 52% of a search's
+  `ObjectLoc` calls are exact repeats, matching the "about half" this list
+  used to claim — but they were never recomputed: `swe_calc()` already
+  returns a repeat from its per-planet save area (`savedat[]`, sweph.c:460)
+  on `(tjd, ipl, iflag)`. Worth 3% before the sidtime memo below and 0.7%
+  after it, which is inside run-to-run noise, against 1.4 KB on every
+  context and a cache that is only correct while every public heliacal
+  entry point remembers to empty it. A silent-staleness hazard for 0.7%.
 - **Moshier speed by finite differences over the full series**
   (`swi_moshplan`/`swi_moshmoon`). Any reuse of intermediate terms changes
   the arithmetic order; not bit-exact.
@@ -121,3 +134,13 @@ Worth doing only as their own rollup, with G1/G8 as the proof:
 | Per-double `fread()` in the JPL record read | `24b6f19`, one bulk read + one reorder; 20,000 record-crossing `swe_calc()` calls 0.46 s → 0.16 s |
 | `#if 0` region `3b9d090` missed because it is indented (`swemplan.c`) | `ca68bc9` |
 | Bare column offsets in the IERS finals and astorb parsers; `degstr()` `sprintf` into `char[20]` | `8e5f794`; `swephgen4.c`/`sweephe4.c` now clean under `-Werror`, and the K&R definitions listed here were already gone |
+| `sidtime_non_polynomial_part` recomputed its 33-term series on every `swe_sidtime`, and `swi_ldp_peps` its 10 Vondrák terms on every `swi_epsiln` | `d26da2a`; both are pure functions of one argument, so the key is the whole correctness argument and neither memo needs invalidating. Heliacal benchmark 0.70 s → 0.56 s, G1 bit-identical |
+| `struct hel_state.calc` and `.fastmag` outlived the `#if 0` functions that owned them | `d26da2a`; orphaned by `3b9d090`, referenced nowhere since |
+| `swe_heliacal_ut_r`'s local `serr` was read before anything wrote it, and `strcpy`'d out to the caller | `4f2f5d5` |
+| tests/ object rules had no header prerequisites, so a `sweph.h` edit rebuilt nothing and mixed struct offsets linked cleanly and then corrupted memory; `clean` left `.obj-*/` behind | `69495ff`, `-MMD -MP` + `-include`. Reachable only since `38fc47d` cached objects per flavour |
+| `calc_nutation` recomputed at an instant just computed — 39,376 calls, 73% of them immediate repeats, because `swe_sidtime` reaches `swi_nutation` directly and misses `swi_check_nutation`'s cache | one-slot memo keyed on `(J, nut_model)`, declining both JPLHOR flags rather than describing them. Heliacal benchmark 0.57 s → 0.37 s |
+| `swe_set_astro_models()` invalidated **nothing** on its own thread, and `swe_set_sid_mode()` cleared positions but not the nutation cache, so switching nutation or precession model and re-asking about a computed instant returned the old model's numbers | one `swi_invalidate_models()` used by both setters and by `swi_config_apply`; `cov:nutswitch` rows pin it. No existing transcript row moved |
+| The five nutation models had no coverage at all, and nothing exercised a model change | `cov:nutmodel[1..5]` through `swe_sidtime` at one instant — which also fails if the memo's key loses `nut_model`; `cov:nutswitch[before,after]` for the invalidation |
+| `calc_deltat` recomputed at an instant just computed — 135,204 calls in the heliacal benchmark, 80.6% of them repeats | four-slot memo between the tidal-acceleration resolution (side effects, must always run) and the model evaluation (pure in `tjd`, `deltat_model`, `tid_acc`). `deltat_aa` calls 422,842 → 80,362; benchmark 1.50 s → 1.46 s at n=40, **2.7%** — the resolution is now the bulk of what is left. Nine early returns became one exit so the store cannot be missed |
+| Nothing exercised any delta-t model but the default, and no gate could reach the `dt[]` table changing under a live memo | `cov:deltatmodel[1..5]` at one instant (year 1000, where the models still disagree); **G18** `check-dtmemo`, two contexts asking the same three questions in different orders against a fixture `swe_deltat.txt`. Both proven by reintroducing the defect |
+| `check-threadshim` failed ~1 run in 12 under load: the publisher ran a fixed 20,000 iterations and could set `stop_readers` before a starved reader ran at all, tripping the test's own "test is vacuous" guard | publisher now also waits until every reader has observed something, with a 50× ceiling so a genuinely blind reader still fails loudly. 96 concurrent runs on 12 cores, 0 failures; the ceiling stretched to 128,508 publishes at worst |
