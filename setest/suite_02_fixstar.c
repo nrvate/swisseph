@@ -4,7 +4,7 @@ TESTSUITE(2,"Fixed stars")
 
 double xx[6],jd;
 int rc, iflag, ipl;
-char serr[255], star[100];
+char serr[AS_MAXCH], star[100];
 
 // swe_fixstar doesn't read env.var. SE_EPHE_PATH
 // swe_calc does. So for this suite, we have to read it explicitly

@@ -5,7 +5,7 @@ TESTSUITE(9,"risings, heliacal risings")
 double jd, xxtret[10];
 double geolat, geolon, altitude, tret;
 double atpress, attemp, athumid, atktot, obsage, obsSN;
-char serr[255], star[100], object[100];
+char serr[AS_MAXCH], star[100], object[100];
 int rc, ipl;
 swe_set_ephe_path(NULL);
 
@@ -57,7 +57,7 @@ TESTCASE(2,"swe_rise_trans_true_hor( ) ") {
 TESTCASE(3,"swe_heliacal_ut( ) ") {
   double geopos[3] = {geolon, geolat, altitude};
   double datm[4] = {atpress, attemp, athumid, atktot};
-  double dobs[5] = {obsage, obsSN,};
+  double dobs[6] = {obsage, obsSN,};
   jd = GET_D(jd);
   rc = swe_heliacal_ut(jd, geopos, datm, dobs, GET_S(object), GET_I(evtype), GET_I(helflag), xxtret, serr);
   CHECK_I(rc);
@@ -67,7 +67,7 @@ TESTCASE(3,"swe_heliacal_ut( ) ") {
 TESTCASE(4,"swe_heliacal_pheno_ut()( ) ") {
   double geopos[3] = {geolon, geolat, altitude};
   double datm[4] = {atpress, attemp, athumid, atktot};
-  double dobs[5] = {obsage, obsSN,};
+  double dobs[6] = {obsage, obsSN,};
   jd = GET_D(jd);
   rc = swe_heliacal_pheno_ut(jd, geopos, datm, dobs, GET_S(object), GET_I(evtype), GET_I(helflag), xxtret, serr);
   CHECK_I(rc);
@@ -77,7 +77,7 @@ TESTCASE(4,"swe_heliacal_pheno_ut()( ) ") {
 TESTCASE(5,"swe_vis_limit_mag()( ) ") {
   double geopos[3] = {geolon, geolat, altitude};
   double datm[4] = {atpress, attemp, athumid, atktot};
-  double dobs[5] = {obsage, obsSN,};
+  double dobs[6] = {obsage, obsSN,};
   jd = GET_D(jd);
   rc = swe_vis_limit_mag(jd, geopos, datm, dobs, GET_S(object), GET_I(helflag), xxtret, serr);
   CHECK_I(rc);

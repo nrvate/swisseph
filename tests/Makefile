@@ -294,7 +294,8 @@ ci-image:
 
 check-ci: ci-image
 	@echo "=== gate set under the CI toolchain ==="
-	@docker run --rm -v $(abspath ..):/src -w /src/tests $(CI_IMAGE) sh -c '\
+	@docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
+	  -v $(abspath ..):/src -w /src/tests $(CI_IMAGE) sh -c '\
 	  set -e; \
 	  make -s -C .. clean > /dev/null 2>&1 || true; \
 	  make -s clean       > /dev/null 2>&1 || true; \
@@ -435,8 +436,11 @@ check-build:
 # ephemeris (de431.eph), which this checkout does not ship, so ~2730
 # assertions fail on pristine upstream too -- retflag comes back SWIEPH(2)
 # where the fixture expects JPLEPH(1), with ~1e-8 positional differences.
-# It also aborts with "stack smashing detected" in suite_08_eclipses on
-# pristine 3fd0f95.
+#
+# It used to abort with "stack smashing detected" partway through: suite_09
+# passed swe_heliacal_ut() a dobs[5] where the API takes dobs[6], and the
+# library's sixth default landed on the canary. Fixed in our copy of the
+# harness, which setest-ref copies over the reference tree too.
 #
 # It IS a strong DIFFERENTIAL gate: whatever it prints must be byte-identical
 # before and after our changes. Usage:
@@ -477,6 +481,9 @@ setest-ref:
 	@git -C .. worktree prune          # a killed run leaves a stale registration
 	@git -C .. worktree add -q /tmp/se_ref_wt $(REF)
 	@cp -n ../setest/t.exp ../setest/t.fix /tmp/se_ref_wt/setest/ 2>/dev/null || true
+	# Same harness on both sides: the reference is upstream's LIBRARY under
+	# our setest, so the differential measures only the library.
+	@cp ../setest/*.c ../setest/*.h ../setest/Makefile /tmp/se_ref_wt/setest/
 	@$(MAKE) -B -C /tmp/se_ref_wt libswe.a CFLAGS="$(SETEST_CFLAGS)" >/dev/null 2>&1
 	@$(MAKE) -B -C /tmp/se_ref_wt/setest >/dev/null 2>&1
 	@cd /tmp/se_ref_wt/setest && SE_EPHE_PATH=$(EPHE_ABS) ./setest t 2>&1 | $(SCRUB) > $(SETEST_REF) || true

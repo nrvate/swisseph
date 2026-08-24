@@ -2,7 +2,7 @@
 
 TESTSUITE(5,"Date and time functions")
 
-  char serr[255];
+  char serr[AS_MAXCH];
   int rc;
 swe_set_ephe_path(NULL);
 

@@ -5,7 +5,7 @@ TESTSUITE(10,"Various swe_*cross calls ")
 
 double xx[6],jd;
 int iflag, iephe; // Keep ephemeris selector separate from other flags
-char serr[255];
+char serr[AS_MAXCH];
 
 swe_set_ephe_path(NULL);
 swe_set_jpl_file("de431.eph");

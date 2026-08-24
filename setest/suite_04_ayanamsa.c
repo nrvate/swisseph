@@ -19,7 +19,7 @@ swe_set_ephe_path(NULL);
       int iflag = GET_I(iflag);
       int ipl = GET_I(ipl);
       double xx[6];
-      char serr[255];
+      char serr[AS_MAXCH];
       //fprintf(stderr, "jd=%.17f, ipl=%d, iflag=%d, \n", jd, ipl, iflag);
       int rc = swe_calc(jd,ipl,iflag,xx,serr);
       //fprintf(stderr, "x0=%.17f, x3=%.17f\n", xx[0], xx[3]);
