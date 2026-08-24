@@ -322,12 +322,30 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with: { sparse-checkout-cone-mode: false, sparse-checkout: "/*\n!/ephe/sat/\n!/ephe/ep4/\n" }
+      # ⭐ The library is compiled ONCE per sanitizer flavour, not once per gate.
+      # Four gates below each rebuilt all ten sources from scratch, in a single
+      # serial cc invocation -- so the asan library was built twice and the tsan
+      # library twice, and every one of those builds used one core.
+      #
+      # ⚠️ The objects are shared, but nothing else is: each gate still links its
+      # own binary and runs it under its own options. Sharing a .o between two
+      # links of identical flags cannot change what either one observes -- and
+      # both context gates were re-verified against these objects (same
+      # positions to nine decimals, LeakSanitizer still clean).
+      - name: Sanitizer objects -- one build per flavour, in parallel
+        run: |
+          cd tests
+          for san in thread address,undefined; do
+            d="obj-${san//,/}"; mkdir -p "$d"
+            printf '%s\n' sweconfig swedate swehouse swejpl swemmoon \
+                          swemplan sweph swephlib swecl swehel |
+              xargs -P "$(nproc)" -I{} \
+                cc -O1 -g -D_GNU_SOURCE -fsanitize=$san -I.. -c ../{}.c -o "$d/{}.o"
+          done
       - name: ThreadSanitizer -- threaded golden must report zero races
         run: |
           cd tests
-          cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. golden.c \
-             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
-             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
+          cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. golden.c obj-thread/*.o \
              -o golden_tsan -lm -ldl -lpthread
           setarch -R env TSAN_OPTIONS=halt_on_error=0 ./golden_tsan --ephe ../$EPHE --threads 4 > /dev/null 2> tsan.log || true
           n=$(grep -c "WARNING: ThreadSanitizer" tsan.log || true)
@@ -341,9 +359,7 @@ jobs:
         run: |
           cd tests
           cc -O1 -g -D_GNU_SOURCE -fsanitize=address,undefined -I.. golden.c \
-             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
-             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
-             -o golden_asan -lm -ldl -lpthread
+             obj-addressundefined/*.o -o golden_asan -lm -ldl -lpthread
           env -u SE_EPHE_PATH ./golden_asan --ephe ../$EPHE > /dev/null
       # LeakSanitizer on the context API. swe_ctx_free() must release what
       # the context allocated, and each thread must be able to release its
@@ -352,9 +368,7 @@ jobs:
         run: |
           cd tests
           cc -O1 -g -D_GNU_SOURCE -fsanitize=address,undefined -I.. ctxtest.c \
-             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
-             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
-             -o ctxtest_asan -lm -ldl -lpthread
+             obj-addressundefined/*.o -o ctxtest_asan -lm -ldl -lpthread
           env -u SE_EPHE_PATH ASAN_OPTIONS=detect_leaks=1 ./ctxtest_asan --ephe ../$EPHE
       # ThreadSanitizer on the context API: two contexts driven from two
       # threads at once must report no races between them.
@@ -362,9 +376,7 @@ jobs:
         run: |
           cd tests
           cc -O1 -g -D_GNU_SOURCE -fsanitize=thread -I.. ctxtest.c \
-             ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c \
-             ../swemplan.c ../sweph.c ../swephlib.c ../swecl.c ../swehel.c \
-             -o ctxtest_tsan -lm -ldl -lpthread
+             obj-thread/*.o -o ctxtest_tsan -lm -ldl -lpthread
           env -u SE_EPHE_PATH ./ctxtest_tsan --ephe ../$EPHE
   # so pin each explicitly. C89 is EXPECTED to fail (58 errors on this tree,
   # long before either plan started) -- asserted as a known-fail so that if
