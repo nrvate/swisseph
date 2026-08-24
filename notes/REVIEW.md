@@ -26,18 +26,17 @@ repaired; see Closed.
 
 ## 2. Open — performance, bit-exact
 
-- **`calc_nutation` recomputed at the same instant.** Now that the two
-  periodic series are memoised (see Closed) it is the top of the heliacal
-  profile: 35% of samples, 123,210 calls against 34,000 position calls. `swi_nutation`'s existing
-  `interpol.tjd_nut*` cache does not help — it only runs when
-  `swe_set_interpolate_nut(TRUE)` is set, and it interpolates over ±1 day
-  rather than matching the instant, so it is not bit-exact by construction.
-  Harder than the two just closed: `calc_nutation` is **not** a pure
-  function of `(J, iflag)`. It also reads `astro_models[SE_MODEL_NUT]` and
-  `[SE_MODEL_JPLHORA_MODE]`, and the `SEFLG_JPLHOR` branch reads the loaded
-  `dpsi`/`deps` arrays and `eop_tjd_*`. So the key has to carry the models,
-  or loading EOP data and `swe_set_astro_models()` need an invalidation
-  hook. Worth doing, but the correctness argument is not one line.
+- **`calc_deltat` recomputed at the same instant.** With three memos now in
+  place it is what the heliacal profile leads with: 30% of samples, 422,842
+  calls against 34,000 position calls, nearly all of them in `deltat_aa`.
+  Every `swe_sidtime`, every `ObjectLoc` and every ET↔UT conversion asks for
+  delta-t at an instant something else just asked about.
+  Same shape as the nutation memo and needing the same care: `calc_deltat`
+  reads `tid_acc`, `astro_models[SE_MODEL_DELTAT]`, `jpldenum`, `fidat[]`
+  and `dt[]`, so `(tjd, iflag)` alone is not a key. `tid_acc` is the awkward
+  one — `swi_set_tid_acc()` derives it per-thread from whichever file that
+  thread opened, deliberately without a generation bump (see `sweconfig.h`),
+  so it belongs in the key rather than behind an invalidation hook.
 
 ## 3. Open — hygiene, bit-exact by construction
 
@@ -138,3 +137,7 @@ Worth doing only as their own rollup, with G1/G8 as the proof:
 | `struct hel_state.calc` and `.fastmag` outlived the `#if 0` functions that owned them | `d26da2a`; orphaned by `3b9d090`, referenced nowhere since |
 | `swe_heliacal_ut_r`'s local `serr` was read before anything wrote it, and `strcpy`'d out to the caller | `4f2f5d5` |
 | tests/ object rules had no header prerequisites, so a `sweph.h` edit rebuilt nothing and mixed struct offsets linked cleanly and then corrupted memory; `clean` left `.obj-*/` behind | `69495ff`, `-MMD -MP` + `-include`. Reachable only since `38fc47d` cached objects per flavour |
+| `calc_nutation` recomputed at an instant just computed — 39,376 calls, 73% of them immediate repeats, because `swe_sidtime` reaches `swi_nutation` directly and misses `swi_check_nutation`'s cache | one-slot memo keyed on `(J, nut_model)`, declining both JPLHOR flags rather than describing them. Heliacal benchmark 0.57 s → 0.37 s |
+| `swe_set_astro_models()` invalidated **nothing** on its own thread, and `swe_set_sid_mode()` cleared positions but not the nutation cache, so switching nutation or precession model and re-asking about a computed instant returned the old model's numbers | one `swi_invalidate_models()` used by both setters and by `swi_config_apply`; `cov:nutswitch` rows pin it. No existing transcript row moved |
+| The five nutation models had no coverage at all, and nothing exercised a model change | `cov:nutmodel[1..5]` through `swe_sidtime` at one instant — which also fails if the memo's key loses `nut_model`; `cov:nutswitch[before,after]` for the invalidation |
+| `check-threadshim` failed ~1 run in 12 under load: the publisher ran a fixed 20,000 iterations and could set `stop_readers` before a starved reader ran at all, tripping the test's own "test is vacuous" guard | publisher now also waits until every reader has observed something, with a 50× ceiling so a genuinely blind reader still fails loudly. 96 concurrent runs on 12 cores, 0 failures; the ceiling stretched to 128,508 publishes at worst |
