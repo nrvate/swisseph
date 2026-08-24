@@ -44,21 +44,34 @@ SWEOBJ_O2   = $(patsubst ../%.c,$(OBJ_O2)/%.o,$(SWE))
 SWEOBJ_ASAN = $(patsubst ../%.c,$(OBJ_ASAN)/%.o,$(SWE))
 SWEOBJ_TSAN = $(patsubst ../%.c,$(OBJ_TSAN)/%.o,$(SWE))
 
+# -MMD -MP writes ../sweph.h and friends into a .d file beside each object,
+# and the -include below feeds them back as prerequisites. Without it these
+# rules depend on the .c file alone, so editing a header rebuilds NOTHING --
+# and since struct swe_ctx lives in one, half the objects go on using the
+# old field offsets while the other half use the new ones. That links and
+# runs, and then corrupts memory somewhere unrelated. Caching objects per
+# flavour is what made this reachable: before it, every gate compiled the
+# whole library from source and a header could not go stale.
+DEPFLAGS = -MMD -MP
+
 $(OBJ_STD)/%.o: ../%.c
 	@mkdir -p $(OBJ_STD)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 $(OBJ_O2)/%.o: ../%.c
 	@mkdir -p $(OBJ_O2)
-	$(CC) $(CFLAGS_O2) -c $< -o $@
+	$(CC) $(CFLAGS_O2) $(DEPFLAGS) -c $< -o $@
 
 $(OBJ_ASAN)/%.o: ../%.c
 	@mkdir -p $(OBJ_ASAN)
-	$(CC) $(CFLAGS) -fsanitize=address -c $< -o $@
+	$(CC) $(CFLAGS) $(DEPFLAGS) -fsanitize=address -c $< -o $@
 
 $(OBJ_TSAN)/%.o: ../%.c
 	@mkdir -p $(OBJ_TSAN)
-	$(CC) $(CFLAGS) -fsanitize=thread -c $< -o $@
+	$(CC) $(CFLAGS) $(DEPFLAGS) -fsanitize=thread -c $< -o $@
+
+-include $(SWEOBJ_STD:.o=.d) $(SWEOBJ_O2:.o=.d) \
+	 $(SWEOBJ_ASAN:.o=.d) $(SWEOBJ_TSAN:.o=.d)
 
 all: golden sunrace glprace threadshim cfgleak jplguard jplreal
 
@@ -308,6 +321,9 @@ clean:
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
+	@# The per-flavour object sets and their .d files. Left behind, a
+	@# `make clean` did not actually get you a clean build.
+	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
