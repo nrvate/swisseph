@@ -35,7 +35,7 @@ library, silently — the exact failure mode this branch exists to eliminate.
 
 | Path | What | Why |
 |---|---|---|
-| `bin/swetest`, `bin/swevents` | output of the `swetests`/`sweventss` targets | `make all` **rewrote them on every build**, so the tree was dirty after every gate run. Also broke CI: the runner's sparse checkout had no `bin/`, so the bare `cp` failed. Both targets now `mkdir -p bin` first. |
+| `bin/swetest`, `bin/swevents` | output of the `swetests`/`sweventss` targets | `make all` **rewrote them on every build**, so the tree was dirty after every gate run. Also broke CI: the runner's sparse checkout had no `bin/`, so the bare `cp` failed. `swetests` now `mkdir -p bin` first; `sweventss` was removed in `8dcd53d`, having never been in `ALL_TARGETS`. |
 | `windows/programs/*.exe` (7) | 2.10.03 prebuilts | predate every fix on this branch; all rebuildable from source here |
 | `windows/sweph.zip` | source snapshot + 9 binaries | see below |
 | `windows/swephzip.txt` | listing of that archive | its subject is gone |
