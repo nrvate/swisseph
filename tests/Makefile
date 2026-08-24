@@ -187,13 +187,39 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build
+       check-build check-ephe-ci
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
 # docker, and re-runs the gates under the CI toolchain rather than adding new
 # ones.
 check-all: check check-setest
+
+# CI checks out ephe/ without sat/ (227 MB) and ep4/ (25 MB), on the grounds
+# that no gate opens them. That held when it was measured with strace, and
+# nothing has enforced it since: the two directories are present on a
+# developer's machine, so a gate that grew a dependency on one would pass
+# locally and fail only in CI.
+#
+# So reproduce CI's layout and run the gates that actually read ephemeris
+# files against it. A symlink farm, not a copy -- 163 links, no bytes moved.
+# The numerical gates only; the thread and race gates exercise the same file
+# access through the same paths, so running them again here would cost
+# seconds to prove nothing new.
+EPHE_MIN = .ephe-min
+check-ephe-ci:
+	@echo "G16: the gates hold against CI's pruned ephe/ (no sat/, no ep4/)"
+	@rm -rf $(EPHE_MIN) && mkdir -p $(EPHE_MIN)
+	@for f in $(EPHE)/*; do \
+	  b=$$(basename $$f); \
+	  case "$$b" in sat|ep4) continue ;; esac; \
+	  ln -s "$$(cd $$(dirname $$f) && pwd)/$$b" "$(EPHE_MIN)/$$b"; \
+	done
+	@$(MAKE) --no-print-directory check-golden  EPHE=$(EPHE_MIN)
+	@$(MAKE) --no-print-directory check-jplcalc EPHE=$(EPHE_MIN)
+	@$(MAKE) --no-print-directory check-jplreal EPHE=$(EPHE_MIN)
+	@rm -rf $(EPHE_MIN)
+	@echo "G16 PASS"
 
 clean:
 	rm -f jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
@@ -204,7 +230,7 @@ clean:
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
-        check-build check-ctx check-jplcalc check-threadtiers check-bridge \
+        check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-winmacros check-jplreal orderprobe \
         ci-image check-ci clean
 
