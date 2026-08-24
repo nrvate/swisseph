@@ -315,6 +315,27 @@ static void houses(void) {
         for (int i = 0; i < 10; i++) fprintf(TRANSCRIPT, " %a", ascmc[i]);
         fprintf(TRANSCRIPT, "\n");
       }
+
+  /* Sunshine houses have two solutions and the letter picks between them:
+   * 'I' is Treindl's, lowercase 'i' is Makransky's. The table above is
+   * uppercase throughout, so sunshine_solution_makransky() -- 40 lines,
+   * and the only one of the two that can fail into Porphyry -- was never
+   * run. Latitudes either side of the polar circle, because that failure
+   * is the interesting half. */
+  {
+    const double plat[] = { 47.37, 75.0 };
+    for (size_t la = 0; la < sizeof(plat)/sizeof(plat[0]); la++) {
+      memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
+      memset(csp,0,sizeof csp);   memset(asp,0,sizeof asp);
+      ascmc[9] = 99;
+      int rc = swe_houses_ex2(DATES[0], SEFLG_SWIEPH, plat[la], 8.55,
+                              'i', cusp, ascmc, csp, asp, NULL);
+      snprintf(tag, sizeof tag, "hsys_makransky[%zu]", la);
+      fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
+      for (int i = 0; i < 13; i++) fprintf(TRANSCRIPT, " %a", cusp[i]);
+      fprintf(TRANSCRIPT, "\n");
+    }
+  }
 }
 
 /* Sunshine houses (hsys 'I') carry cross-call state in saved_sundec.
@@ -985,6 +1006,62 @@ static void coverage(void) {
 	row(tag, rf, x, 3, serr);
       }
     }
+
+    /* SE_INTP_APOG and SE_INTP_PERG, the interpolated lunar apsides. The
+     * planet loop stops at SE_VESTA (20) and these are 21 and 22, so
+     * intp_apsides() was never called. */
+    { int32 p;
+      for (p = SE_INTP_APOG; p <= SE_INTP_PERG; p++) {
+	*serr = 0;
+	rf = swe_calc(2451545.0, p, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+	snprintf(tag, sizeof tag, "cov:intp_apsides[%d]", (int) p);
+	row(tag, rf, x, 6, serr);
+      }
+    }
+
+    /* The three sidereal house branches. houses() reaches only the
+     * tropical path because it passes SEFLG_SWIEPH and nothing else;
+     * sidereal_houses_trad(), _ecl_t0() and _ssypl() all need
+     * SEFLG_SIDEREAL, and the last two need a bit on the sidereal mode.
+     *
+     * These live HERE rather than in houses() because houses() is part of
+     * suite_compute_only(), the subset the worker threads run, and its
+     * contract is that a worker calls no setter at all --
+     * swe_set_sid_mode() publishes to the shared config master, so a
+     * worker doing it changes what every thread that has not claimed the
+     * group computes. Putting them there cost two of eight threads on G2. */
+    {
+      double cusp[37], ascmc[10], csp[37], asp[10];
+      const struct { int32 bit; const char *name; } sid[] = {
+	{ 0,                   "trad"  },
+	{ SE_SIDBIT_ECL_T0,    "eclt0" },
+	{ SE_SIDBIT_SSY_PLANE, "ssypl" },
+      };
+      size_t s;
+      for (s = 0; s < sizeof(sid)/sizeof(sid[0]); s++) {
+	memset(cusp,0,sizeof cusp); memset(ascmc,0,sizeof ascmc);
+	memset(csp,0,sizeof csp);   memset(asp,0,sizeof asp);
+	ascmc[9] = 99;
+	swe_set_sid_mode(SE_SIDM_LAHIRI | sid[s].bit, 0, 0);
+	int rc = swe_houses_ex2(2451545.0, SEFLG_SWIEPH | SEFLG_SIDEREAL,
+				47.37, 8.55, 'P', cusp, ascmc, csp, asp, NULL);
+	snprintf(tag, sizeof tag, "cov:hsys_sid[%s]", sid[s].name);
+	fprintf(TRANSCRIPT, "%-46s rc=%-4d", tag, rc);
+	for (int i = 0; i < 13; i++) fprintf(TRANSCRIPT, " %a", cusp[i]);
+	fprintf(TRANSCRIPT, "\n");
+      }
+      swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+    }
+
+    /* Sidereal positions projected onto the solar-system plane. The
+     * sidereal section elsewhere never sets SE_SIDBIT_SSY_PLANE, so
+     * swi_trop_ra2sid_lon_sosy() -- a distinct projection, not a variant of
+     * the traditional one -- was never entered. */
+    swe_set_sid_mode(SE_SIDM_LAHIRI | SE_SIDBIT_SSY_PLANE, 0, 0);
+    *serr = 0;
+    rf = swe_calc(2451545.0, SE_MARS, SEFLG_SWIEPH | SEFLG_SIDEREAL | SEFLG_SPEED, x, serr);
+    row("cov:sid_ssy_plane", rf, x, 6, serr);
+    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
     { char jf[AS_MAXCH]; strcpy(jf, "de440.eph"); swe_set_jpl_file(jf); }
     swe_close();
     swe_set_ephe_path((char *) EPHE);
