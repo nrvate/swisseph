@@ -515,11 +515,29 @@ jobs:
           added=$(comm -13 /tmp/base.sym /tmp/new.sym | grep -c . || true)
           echo "ABI ok: nothing removed, $added symbol(s) added since upstream"
 
-          # Informational: report where a retained symbol changed section, so
-          # a genuine type change is still visible without failing the build.
+          # Section moves. These were all informational, which meant the one
+          # direction that matters could not fail the build.
+          #
+          # Read-only -> writable is a regression, and on this branch a
+          # pointed one: a table that was const is shared immutable state
+          # that every thread can read at once, and the whole reason this
+          # fork exists is that swed was not. Losing the const also loses the
+          # page sharing between processes. R or T on the left and anything
+          # writable on the right fails.
+          #
+          # Writable -> read-only is the const-correctness work landing and
+          # stays a note; five internal tables moved D -> R that way, and an
+          # earlier version of this gate read exactly that as a deletion.
           nm -D --defined-only /tmp/base.so | awk '{print $3, $2}' | sort > /tmp/base.tn
           nm -D --defined-only /tmp/new.so  | awk '{print $3, $2}' | sort > /tmp/new.tn
-          join /tmp/base.tn /tmp/new.tn | awk '$2!=$3{print "  note: "$1" "$2" -> "$3}'
+          join /tmp/base.tn /tmp/new.tn | awk '
+            $2 != $3 {
+              if ($2 ~ /^[RTrt]$/ && $3 ~ /^[DBGSdbgs]$/) {
+                print "  ABI FAIL: " $1 " moved " $2 " -> " $3 " (read-only to writable)"
+                bad = 1
+              } else print "  note: " $1 " " $2 " -> " $3
+            }
+            END { exit bad ? 1 : 0 }'
 
   # ---------------------------------------------------------------------
   # Upstream's own suite, used as a DIFFERENTIAL gate. It cannot be
