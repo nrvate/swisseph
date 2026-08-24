@@ -47,8 +47,9 @@ Nothing open; see Closed.
 
 The transcript is the only thing standing behind every "no-op" claim in
 this file, and it does not reach as much as its 12,693 rows suggest.
-Measured with gcov on the golden run: **`swehouse.c` 68.4%** of lines (was
-57.6%), **`swecl.c` 70.0%** (was 63.9%).
+Measured with gcov on the golden run, worst first: **`swephlib.c` 74.6%**
+(was 62.3%), **`swehouse.c` 68.4%** (was 57.6%), **`swecl.c` 70.0%** (was
+63.9%), `swejpl.c` 67.3%, `swedate.c` 71.1%, `sweph.c` 74.8%.
 
 Two crashes and one unreachable branch came out of closing the first part of
 that gap — see Closed — and all three were in code no gate ran. That is the
@@ -57,12 +58,22 @@ argument for the rest of it. Functions still at zero:
 - `sweph.c`: `meff` — the gravitational-deflection mass term, which needs a
   body passing close to the solar limb. Not a one-liner: it wants a date and
   object chosen so the geometry actually occurs.
+- `sweph.c`: `load_dpsi_deps` (63 lines) — the EOP loader for `SEFLG_JPLHOR`.
+  Needs an `eop_1962_today.txt` fixture, so it wants the same treatment G18
+  got. Worth doing together with a re-examination of `struct nut_memo`,
+  which declines to cache the JPLHOR branch precisely because nothing
+  exercises it.
 - `swehel.c`: `Airmass` — live (called from `Deltam`), but only on a helflag
   combination nothing selects.
 
-Everything else that was listed here is now covered. The remaining two are
-worth doing when someone is in that code anyway; neither is a one-call fix,
-which is why they are last.
+Everything else that was listed here is now covered. None of these three is
+a one-call fix, which is why they are what is left.
+
+**The pattern worth remembering:** three separate cache-key bugs have come
+out of this work — `swi_check_nutation`, `calc_deltat`'s table, and
+`swi_check_ecliptic` — and every one was a cache whose key omitted something
+its result depended on, found by making unreached code run. If another
+`swi_check_*` or memo turns up, check its key before anything else.
 
 ---
 
@@ -176,6 +187,8 @@ which is why they are last.
 | `swe_set_ephe_fallback()` — the switch for this fork's defining behavioural break — was called by no test at all, only the `SE_EPHE_FALLBACK` env var by G8, and could have been a no-op with every gate green | `cov:ephe_fallback[...]`, five rows pinning the default, the refusal, the switch, the substitution and the restore. Proven against both a no-op setter and a flipped default |
 | The AVKIND heliacal strategy (`heliacal_ut_arc_vis`, `moon_event_arc_vis`) had zero coverage, so the "half these calls are duplicates" analysis was about code no gate ran | `hel_avkind[...]`; 0% → 67.5% and 76.8% |
 | `swe_orbit_max_min_true_distance` and the `osc_iterate_min/max_dist` it reaches: public API, never called | `cov:orbit_max_min[...]`; 0% → 100% |
+| `swi_check_ecliptic()` keyed the obliquity on tjd alone — `oec` on `teps != tjd`, `oec2000` on `teps != J2000` — with no precession model in either, so switching `SE_MODEL_PREC_*` and re-asking about a computed instant returned the old model's obliquity | `swi_invalidate_models()` clears both. Third cache-key bug of the same shape, after `swi_check_nutation` and `calc_deltat`'s table |
+| The eleven precession models and thirteen exported conversion helpers, all at zero — `precess_2` alone 76 lines, the Owen 1990 chain another 78 | `cov:precmodel[1..11]` at -3000 (near J2000 every model takes the same short-term branch), `cov:conversions`. `swephlib.c` 62.3% → 74.6% |
 | `get_acronychal_day()` and `azalt_cart()` unreachable — 107 lines behind a branch that cannot be entered | removed; the guard now returns ERR rather than falling through, so a wrong reachability argument surfaces instead of silently answering an acronychal question with a heliacal result |
 | The three sidereal house branches, the Makransky sunshine solution, the interpolated lunar apsides, and the solar-system-plane sidereal projection: all at zero, each reachable with one call | `cov:hsys_sid[...]`, `hsys_makransky[...]`, `cov:intp_apsides[...]`, `cov:sid_ssy_plane`. `swehouse.c` 57.6% → 68.4%, `swecl.c` 63.9% → 70.0% |
 | `check-threadshim` failed ~1 run in 12 under load: the publisher ran a fixed 20,000 iterations and could set `stop_readers` before a starved reader ran at all, tripping the test's own "test is vacuous" guard | publisher now also waits until every reader has observed something, with a 50× ceiling so a genuinely blind reader still fails loudly. 96 concurrent runs on 12 cores, 0 failures; the ceiling stretched to 128,508 publishes at worst |
