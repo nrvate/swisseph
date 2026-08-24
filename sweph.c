@@ -528,7 +528,6 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     for (j = 3; j < 6; j++)
       x[j] = *(xs + j);
   }
-#if 1
   if (iflag & SEFLG_RADIANS) {
     if (ipl == SE_ECL_NUT) {
       for (j = 0; j < 4; j++)
@@ -542,7 +541,6 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
       }
     }
   }
-#endif
   for (i = 0; i <= 5; i++)
     xx[i] = x[i];
   //iflag = sd->iflgsave | (iflag & SEFLG_COORDSYS);
@@ -800,24 +798,8 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	/* sweplan(ctx) provides barycentric sun as a by-product in save area;
 	 * it is saved in swed.pldat[SEI_SUNBARY].x */
 	retc = sweplan(ctx, tjd, SEI_EARTH, SEI_FILE_PLANET, iflag, DO_SAVE, NULL, NULL, NULL, NULL, serr);
-#if 1
 	if (retc == ERR || retc == NOT_AVAILABLE)
 	  goto return_error;
-#else	/* this code would be needed if barycentric moshier calculation
-	 * were implemented */
-	if (retc == ERR)
-	  goto return_error;
-	/* if sweph file not found, switch to moshier */
-        if (retc == NOT_AVAILABLE) {
-	  if (tjd > MOSHLUEPH_START && tjd < MOSHLUEPH_END) {
-	    iflag = (iflag & ~SEFLG_SWIEPH) | SEFLG_MOSEPH;
-	    if (serr != NULL && strlen(serr) + 30 < AS_MAXCH)
-	      strcat(serr, " \nusing Moshier; ");
-	    goto moshier_sbar;
-	  } else
-	    goto return_error;
-	}
-#endif
 	psdp->teval = tjd;
 	/* pedp->teval = tjd; */
 	break;
@@ -2679,7 +2661,6 @@ again:
       for (i = 3; i <= 5; i++) 	
 	xp[i] = xemb[i] - xp[i];
   }
-#if 1
   /* asteroids are heliocentric.
    * if JPL or SWISSEPH, convert to barycentric */
   if (xsunb != NULL && ((iflag & SEFLG_JPLEPH) || (iflag & SEFLG_SWIEPH))) {
@@ -2691,7 +2672,6 @@ again:
 	  xp[i] += xsunb[i];
     }
   }
-#endif
   if (do_save) {
     pdp->teval = tjd;
     pdp->xflgs = -1;	/* do new computation of light-time etc. */
@@ -3389,7 +3369,6 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
    * ecliptic always need SEFLG_TRUEPOS, because position of galactic
    * pole is required without aberration or light deflection */
   iflag_galequ = iflag | SEFLG_TRUEPOS;
-#if 1
   /* _TRUE_ ayanamshas can have the following SEFLG_s;
    * The star will have the intended fixed position even if these flags are 
    * provided */
@@ -3397,7 +3376,6 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
   if (otherflag & SEFLG_TRUEPOS) iflag_true |= SEFLG_TRUEPOS;
   if (otherflag & SEFLG_NOABERR) iflag_true |= SEFLG_NOABERR;
   if (otherflag & SEFLG_NOGDEFL) iflag_true |= SEFLG_NOGDEFL;
-#endif
   /* warning, if swe_set_ephe_path() or swe_set_jplfile() was not called yet,
    * although ephemeris files are required */
   if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH) 
@@ -4144,9 +4122,7 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
   int i;
   double xx2[6];
   double u[6], e[6], q[6], ru, re, rq, uq, ue, qe, g1, g2;
-#if 1
   double xx3[6], dx1, dx2, dtsp;
-#endif
   double xsun[6], xearth[6];
   double sina, sin_sunr, meff_fact;
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
@@ -4614,11 +4590,9 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
      * the difference of speed of the earth between t and t-dt. 
      * Neglecting this would lead to an error of several 0.1"
      */
-#if 1
     if (iflag & SEFLG_SPEED)
       for (i = 3; i <= 5; i++) 
         xx[i] += xobs[i] - xobs2[i];
-#endif
   }
   /* if !speedflag, speed = 0 */
   if (!(iflag & SEFLG_SPEED))
@@ -5177,12 +5151,10 @@ fendian, ifno, serr);
     smsg = "m";
     goto file_damage;
   }
-#if 1
   if (swi_crc32((unsigned char *) s, (int) fpos) != ulng) {
     smsg = "n";
     goto file_damage;
   }
-#endif
   fseek(fp, fpos+4, SEEK_SET);
   /************************************* 
    * read general constants            * 
@@ -7971,7 +7943,6 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
   return retc;
 }
 
-#if 1
 static int32 swi_fixstar_load_record(swe_ctx *ctx, char *star, char *srecord, char *sname, char *sbayer, double *dparams, char *serr)
 {
   char s[AS_MAXCH + 20], *sp, *sp2;	/* 20 byte for SE_STARFILE */
@@ -8563,7 +8534,6 @@ int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
   return swe_fixstar_mag_r(swi_default_ctx(), star, mag, serr);
 }
 
-#endif
 
 int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
 {
