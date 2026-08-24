@@ -46,7 +46,7 @@ Nothing open; see Closed.
 ## 4. Open — coverage
 
 The transcript is the only thing standing behind every "no-op" claim in
-this file, and it does not reach as much as its 12,693 rows suggest.
+this file, and it does not reach as much as its 12,713 rows suggest.
 Measured with gcov on the golden run, worst first: **`swephlib.c` 74.6%**
 (was 62.3%), **`swehouse.c` 68.4%** (was 57.6%), **`swecl.c` 70.0%** (was
 63.9%), `swejpl.c` 67.3%, `swedate.c` 71.1%, `sweph.c` 74.8%.
