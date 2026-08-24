@@ -264,13 +264,18 @@ jobs:
     timeout-minutes: 45
     name: windows / package
     steps:
+      # ⭐ ALL of ephe/ is excluded, not just sat/ and ep4/. This job compiles,
+      # smoke-tests with `-emos` (the Moshier model, which needs no data files at
+      # all) and zips the result -- it never opens an .se1. It was cloning ~168 MB
+      # in order not to read it, on the slowest filesystem in the matrix. The
+      # gates that DO need the data live in ci.yml and keep their own narrower
+      # exclusion.
       - uses: actions/checkout@v7
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /*
-            !/ephe/sat/
-            !/ephe/ep4/
+            !/ephe/
       - name: Locate MSBuild
         shell: cmd
         run: |
