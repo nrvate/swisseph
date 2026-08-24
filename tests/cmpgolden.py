@@ -52,12 +52,21 @@ import sys
 
 def load(path):
     rows = {}
+    msgs = {}
     for ln in open(path):
         f = ln.split()
         if not f:
             continue
         rows[f[0]] = [x for x in f[1:] if x.startswith(("0x", "-0x"))]
-    return rows
+        # golden.c writes the error string after a " | ", already run through
+        # its sanitize(): the ephemeris path is rewritten to $EPHE and the
+        # control characters that would break one-row-per-line are mapped to
+        # spaces. What is left is machine-independent -- the numbers inside a
+        # message go through printf conversions whose output C specifies
+        # exactly -- so it is compared verbatim rather than skipped.
+        i = ln.find(" | ")
+        msgs[f[0]] = ln[i + 3:].rstrip("\n") if i >= 0 else ""
+    return rows, msgs
 
 
 def main():
@@ -73,7 +82,7 @@ def main():
     verbose = "--verbose" in opts
     skip_illcond = "--no-skip" not in opts
 
-    a, b = load(args[0]), load(args[1])
+    (a, amsg), (b, bmsg) = load(args[0]), load(args[1])
 
     only_a = set(a) - set(b)
     only_b = set(b) - set(a)
@@ -106,6 +115,16 @@ def main():
 
     if shape:
         print(f"FAIL: {shape} rows have a different number of values")
+        return 1
+
+    # Error strings, compared exactly. Before this, only the bit-exact gcc -O0
+    # job looked at them, so a message could change on every other toolchain
+    # unremarked -- and one did: "star  not found" quietly lost a space.
+    badmsg = [k for k in a if amsg[k] != bmsg[k]]
+    if badmsg:
+        print(f"FAIL: {len(badmsg)} row(s) differ in their error string")
+        for k in badmsg[:5]:
+            print(f"  {k}\n    A: {amsg[k]}\n    B: {bmsg[k]}")
         return 1
 
     if skipped:

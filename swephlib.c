@@ -4552,7 +4552,14 @@ void CALL_CONV swe_get_astro_models_r(swe_ctx *ctx, char *samod, char *sdet, int
     strcat(sdet, "\n");
     /* list all available astronomical models */
     if (!list_all_models) {
-      sprintf(sdet + strlen(sdet), "For list of all available astronomical models, add a '+' to the version string\n(swetest parameter -amod%s+ or -amod%s+)\n", samod, samod0);
+      /* samod is an input and may be NULL -- every other use of it above is
+       * guarded, this one was not, and printed it through %s regardless.
+       * "(null)" is glibc's choice for that, not C's. With no model string
+       * from the caller there is only the canonical spelling to offer. */
+      if (samod != NULL)
+	sprintf(sdet + strlen(sdet), "For list of all available astronomical models, add a '+' to the version string\n(swetest parameter -amod%s+ or -amod%s+)\n", samod, samod0);
+      else
+	sprintf(sdet + strlen(sdet), "For list of all available astronomical models, add a '+' to the version string\n(swetest parameter -amod%s+)\n", samod0);
     } else {
       strcat(sdet, "DELTA T MODELS (D)\n");
       for (i = 0; i <= SEMOD_NDELTAT; i++) {
