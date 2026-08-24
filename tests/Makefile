@@ -12,24 +12,69 @@ ifeq ($(LTO),1)
   endif
 endif
 LIBS     = -lm -ldl -lpthread
+# Cores available for the sub-makes and loops that build several times over.
+NPROC   := $(shell nproc 2>/dev/null || echo 4)
+# Parallel by default. The gates are independent targets and the object sets
+# below are per-flavour, so there is nothing to serialise; the two temp files
+# that used to be shared -- check-golden's and check-jplcalc's output -- are
+# variables now precisely so check-ephe-ci can re-run them under other names.
+# Without this a bare `make check` is one core and four times the wall clock.
+MAKEFLAGS += -j$(NPROC)
 EPHE    ?= ../ephe
 REP     ?= 7
 
+# Every gate used to name $(SWE) directly, so each of the ten or so test
+# binaries recompiled all ten library sources into itself: a hundred
+# compilations to run a suite, ~2s of the ~2s each gate cost, and the reason
+# `make check` took over a minute. The sanitizer job in ci.yml had already
+# learnt this and builds one object set per flavour; this is the same idea.
+#
+# One object set per distinct flag combination -- the flags ARE the flavour,
+# so they cannot be shared any further without changing what a gate tests.
+# Objects are per-flavour directories, and independent, so -j scales them.
+OBJ_STD   = .obj-std
+OBJ_O2    = .obj-o2
+OBJ_ASAN  = .obj-asan
+OBJ_TSAN  = .obj-tsan
+
+CFLAGS_O2 = -O2 -g -D_GNU_SOURCE -I..
+
+SWEOBJ_STD  = $(patsubst ../%.c,$(OBJ_STD)/%.o,$(SWE))
+SWEOBJ_O2   = $(patsubst ../%.c,$(OBJ_O2)/%.o,$(SWE))
+SWEOBJ_ASAN = $(patsubst ../%.c,$(OBJ_ASAN)/%.o,$(SWE))
+SWEOBJ_TSAN = $(patsubst ../%.c,$(OBJ_TSAN)/%.o,$(SWE))
+
+$(OBJ_STD)/%.o: ../%.c
+	@mkdir -p $(OBJ_STD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_O2)/%.o: ../%.c
+	@mkdir -p $(OBJ_O2)
+	$(CC) $(CFLAGS_O2) -c $< -o $@
+
+$(OBJ_ASAN)/%.o: ../%.c
+	@mkdir -p $(OBJ_ASAN)
+	$(CC) $(CFLAGS) -fsanitize=address -c $< -o $@
+
+$(OBJ_TSAN)/%.o: ../%.c
+	@mkdir -p $(OBJ_TSAN)
+	$(CC) $(CFLAGS) -fsanitize=thread -c $< -o $@
+
 all: golden sunrace glprace threadshim cfgleak jplguard jplreal
 
-golden: golden.c $(SWE)
+golden: golden.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
-sunrace: sunrace.c $(SWE)
+sunrace: sunrace.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
-sunrace_tsan: sunrace.c $(SWE)
+sunrace_tsan: sunrace.c $(SWEOBJ_TSAN)
 	$(CC) $(CFLAGS) -fsanitize=thread $^ -o $@ $(LIBS)
 
-glprace: glprace.c $(SWE)
+glprace: glprace.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
-glprace_tsan: glprace.c $(SWE)
+glprace_tsan: glprace.c $(SWEOBJ_TSAN)
 	$(CC) $(CFLAGS) -fsanitize=thread $^ -o $@ $(LIBS)
 
 # Sunshine-houses cross-thread contamination (swehouse.c saved_sundec)
@@ -39,7 +84,7 @@ check-sunrace: sunrace
 check-sunrace-tsan: sunrace_tsan
 	@SE_TEST_EPHE=$(EPHE) setarch -R env TSAN_OPTIONS=halt_on_error=0 ./sunrace_tsan
 
-cfgleak: cfgleak.c $(SWE)
+cfgleak: cfgleak.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 # REVIEW.md J1: swejpl.c's header-validation guards, exercised against real
@@ -47,7 +92,7 @@ cfgleak: cfgleak.c $(SWE)
 # cannot regress silently; the ncf half is a runtime value read from a file
 # and cannot be, which is why it needs this. Built with ASan so a removed
 # guard shows up as a diagnosed overflow rather than silent corruption.
-jplguard: jplguard.c $(SWE)
+jplguard: jplguard.c $(SWEOBJ_ASAN)
 	$(CC) $(CFLAGS) -fsanitize=address $^ -o $@ $(LIBS)
 
 # G15: the JPL path, against a genuine JPL binary rather than a fixture.
@@ -61,7 +106,7 @@ jplguard: jplguard.c $(SWE)
 # and the .se1 files, since the gate compares one against the other:
 #
 #   make check-jplreal SE_JPL_FILE=de441.eph SE_TEST_EPHE=$$HOME/se1
-jplreal: jplreal.c $(SWE)
+jplreal: jplreal.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 check-jplreal: jplreal
@@ -78,7 +123,7 @@ check-jplreal: jplreal
 #
 # A clean run still lists three: swe_set_tid_acc, swe_set_delta_t_userdef and
 # swe_set_sid_mode, which are the caller deliberately changing the value.
-orderprobe: orderprobe.c $(SWE)
+orderprobe: orderprobe.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 check-jplguard: jplguard
@@ -117,7 +162,7 @@ check-threadshim-all: threadshim.c ../swethread.h
 check-threadshim-tsan: threadshim_tsan
 	@setarch -R env TSAN_OPTIONS=halt_on_error=0 ./threadshim_tsan
 
-golden_tsan: golden.c $(SWE)
+golden_tsan: golden.c $(SWEOBJ_TSAN)
 	$(CC) $(CFLAGS) -fsanitize=thread $^ -o $@ $(LIBS)
 
 # Regenerate the baseline. Only ever run this on a PRISTINE tree.
@@ -132,10 +177,14 @@ baseline: golden
 # compiler legitimately perturbs the last bits -- speed components are
 # finite-differenced, which amplifies rounding -- so use check-golden-O2 /
 # cmpgolden.py for cross-configuration comparison instead of this target.
+# OUT is a variable because check-ephe-ci re-runs this target against a
+# different ephemeris directory; with a fixed name the two races under -j.
+OUT ?= .out.txt
+JPLOUT ?= .jplcalc.txt
 check-golden: golden baseline.txt
-	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) > .out.txt
-	@diff -q baseline.txt .out.txt && echo "G1 PASS: output bit-identical" \
-	  || { echo "G1 FAIL: numerical regression"; diff baseline.txt .out.txt | head -20; exit 1; }
+	@env -u SE_EPHE_PATH ./golden --ephe $(EPHE) > $(OUT)
+	@diff -q baseline.txt $(OUT) && echo "G1 PASS: output bit-identical" \
+	  || { echo "G1 FAIL: numerical regression"; diff baseline.txt $(OUT) | head -20; exit 1; }
 
 # G1b: the library must also behave at -O2, which is what a release build
 # uses. Compared with tolerance, not diff: measured gcc -O0 vs -O2 divergence
@@ -159,8 +208,8 @@ check-golden: golden baseline.txt
 # that actually catches regressions is check-golden, which is bit-exact.
 TOL ?= 1e-5
 
-golden_O2: golden.c $(SWE)
-	$(CC) -O2 -g -D_GNU_SOURCE -I.. $^ -o $@ $(LIBS)
+golden_O2: golden.c $(SWEOBJ_O2)
+	$(CC) $(CFLAGS_O2) $^ -o $@ $(LIBS)
 
 check-golden-O2: golden_O2 baseline.txt
 	@env -u SE_EPHE_PATH ./golden_O2 --ephe $(EPHE) > .out_O2.txt
@@ -215,14 +264,14 @@ check-ephe-ci:
 	  case "$$b" in sat|ep4) continue ;; esac; \
 	  ln -s "$$(cd $$(dirname $$f) && pwd)/$$b" "$(EPHE_MIN)/$$b"; \
 	done
-	@$(MAKE) --no-print-directory check-golden  EPHE=$(EPHE_MIN)
-	@$(MAKE) --no-print-directory check-jplcalc EPHE=$(EPHE_MIN)
+	@$(MAKE) --no-print-directory check-golden  EPHE=$(EPHE_MIN) OUT=.out-min.txt
+	@$(MAKE) --no-print-directory check-jplcalc EPHE=$(EPHE_MIN) JPLOUT=.jplcalc-min.txt
 	@$(MAKE) --no-print-directory check-jplreal EPHE=$(EPHE_MIN)
 	@rm -rf $(EPHE_MIN)
 	@echo "G16 PASS"
 
 clean:
-	rm -f jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
@@ -396,20 +445,27 @@ check-bridge:
 # Nothing detects that except building the tiers, which is what this does.
 check-threadtiers: baseline.txt
 	@echo "G11: swethread.h backends"
-	@rc=0; \
+	@# Each tier is a different -std/-D, so none of them can share the object
+	@# sets above -- the flags are the point. They are independent of each
+	@# other though, so build and run them at once rather than one after
+	@# another, each with its own scratch names.
+	@rc=0; pids=""; i=0; \
 	for spec in "c17:" "c17:-DSWE_PREFER_C11_ATOMICS" \
 	            "c99:-DSWE_PREFER_C11_ATOMICS" "c17:-DSWE_NO_THREADS"; do \
-	  std=$${spec%%:*}; extra=$${spec##*:}; \
-	  if $(CC) -std=$$std $$extra -O0 -g -D_GNU_SOURCE -I.. golden.c $(SWE) \
-	       -o .tiergolden $(LIBS) 2>.tier.err; then \
-	    ./.tiergolden --ephe $(EPHE) > .tier.txt 2>/dev/null; \
-	    if diff -q baseline.txt .tier.txt >/dev/null; then \
-	      printf "  %-34s OK\n" "-std=$$std $$extra"; \
-	    else printf "  %-34s OUTPUT DIFFERS\n" "-std=$$std $$extra"; rc=1; fi; \
-	  else printf "  %-34s BUILD FAIL\n" "-std=$$std $$extra"; \
-	       head -3 .tier.err; rc=1; fi; \
+	  i=$$((i+1)); \
+	  ( std=$${spec%%:*}; extra=$${spec##*:}; \
+	    if $(CC) -std=$$std $$extra -O0 -g -D_GNU_SOURCE -I.. golden.c $(SWE) \
+	         -o .tiergolden$$i $(LIBS) 2>.tier$$i.err; then \
+	      ./.tiergolden$$i --ephe $(EPHE) > .tier$$i.txt 2>/dev/null; \
+	      if diff -q baseline.txt .tier$$i.txt >/dev/null; then \
+	        printf "  %-34s OK\n" "-std=$$std $$extra"; \
+	      else printf "  %-34s OUTPUT DIFFERS\n" "-std=$$std $$extra"; exit 1; fi; \
+	    else printf "  %-34s BUILD FAIL\n" "-std=$$std $$extra"; \
+	         head -3 .tier$$i.err; exit 1; fi ) & \
+	  pids="$$pids $$!"; \
 	done; \
-	rm -f .tiergolden .tier.txt .tier.err; \
+	for p in $$pids; do wait $$p || rc=1; done; \
+	rm -f .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
@@ -418,25 +474,25 @@ check-threadtiers: baseline.txt
 # gate -- they need a .eph file, and this repo ships only .se1. Measured
 # with an fprintf: 0 hits across the whole golden suite. jplcalc generates
 # a synthetic .eph and drives swi_pleph() through it.
-jplcalc: jplcalc.c $(SWE)
+jplcalc: jplcalc.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 check-jplcalc: jplcalc
-	@./jplcalc --dir . > .jplcalc.txt 2>.jplcalc.err || \
-	  { echo "G10 FAIL: jplcalc errored"; cat .jplcalc.err; exit 1; }
+	@./jplcalc --dir . > $(JPLOUT) 2>$(JPLOUT).err || \
+	  { echo "G10 FAIL: jplcalc errored"; cat $(JPLOUT).err; exit 1; }
 	@if [ ! -f jplcalc.baseline ]; then \
-	   echo "G10: no baseline, recording one"; cp .jplcalc.txt jplcalc.baseline; fi
-	@if diff -q jplcalc.baseline .jplcalc.txt >/dev/null; then \
-	   echo "G10 PASS: JPL reader output bit-identical ($$(wc -l < .jplcalc.txt) rows)"; \
+	   echo "G10: no baseline, recording one"; cp $(JPLOUT) jplcalc.baseline; fi
+	@if diff -q jplcalc.baseline $(JPLOUT) >/dev/null; then \
+	   echo "G10 PASS: JPL reader output bit-identical ($$(wc -l < $(JPLOUT)) rows)"; \
 	 else echo "G10 FAIL: JPL reader output changed"; \
-	   diff jplcalc.baseline .jplcalc.txt | head -20; exit 1; fi
+	   diff jplcalc.baseline $(JPLOUT) | head -20; exit 1; fi
 
 # G4: two swe_ctx handles are genuinely independent.
 #
 # The gate every other one is blind to. G1 is bit-exactness of the legacy
 # path and G2 is agreement between threads sharing the default context --
 # a swe_X_r() that ignored its context argument entirely would pass both.
-ctxtest: ctxtest.c $(SWE)
+ctxtest: ctxtest.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 check-ctx: ctxtest
@@ -462,7 +518,7 @@ check-build:
 	@# and stderr to /dev/null, so when this gate failed in CI it reported
 	@# only "FAIL: make all" -- the diagnosis had to be reconstructed from
 	@# scratch. A gate that hides why it failed is barely a gate.
-	@$(MAKE) -B -C .. all > .build.log 2>&1 || { \
+	@$(MAKE) -B -j$(NPROC) -C .. all > .build.log 2>&1 || { \
 	  echo "  FAIL: make all"; tail -25 .build.log; rm -f .build.log; exit 1; }
 	@rm -f .build.log
 	@echo "  make all              OK  (swetest swevents swemini)"
