@@ -269,7 +269,11 @@ jobs:
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
           @echo on
-          cl /nologo /c /W3 /DWIN32_LEAN_AND_MEAN sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c || exit /b 1
+          rem /D_CRT_SECURE_NO_WARNINGS, as the golden build below, the package
+          rem job and the .vcxproj files already do. Without it this one line
+          rem printed 424 C4996 "strcpy may be unsafe" warnings, which is
+          rem enough noise to bury a real one.
+          cl /nologo /c /W3 /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS sweconfig.c swedate.c swehouse.c swejpl.c swemmoon.c swemplan.c sweph.c swephlib.c swecl.c swehel.c || exit /b 1
 
           echo #include "sweodef.h" > tlsp.c
           echo TLS int probe; >> tlsp.c

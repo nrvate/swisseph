@@ -7,7 +7,8 @@
  * declination belonging to a completely different date.
  *
  * Build (race detection):
- *   cc -g -O1 -fsanitize=thread -I.. sunrace.c ../*.c -lm -ldl -lpthread -o sunrace
+ *   cc -g -O1 -fsanitize=thread -I.. sunrace.c ../sw*.c -lm -ldl -lpthread -o sunrace
+ *   (spelled sw*.c so the glob does not open a nested comment; clang warns)
  *   setarch -R ./sunrace
  *
  * Exit 0 = no cross-thread contamination observed.
