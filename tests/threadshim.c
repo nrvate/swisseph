@@ -15,6 +15,16 @@
  *                         stale one. This is what catches a missing
  *                         release/acquire pairing.
  *
+ *                         The publisher stops when every reader has
+ *                         observed something, not after a fixed count --
+ *                         see NITER_MAX. Counting iterations meant that on
+ *                         a busy machine the publisher could finish and
+ *                         set stop_readers before a starved reader ran at
+ *                         all, and the run then failed its own "test is
+ *                         vacuous" check. Reproduced at 1 run in 12 with
+ *                         12 copies on 12 cores, which is what `make
+ *                         check` does to itself under -j.
+ *
  * Build with -fsanitize=thread for the strongest signal.
  */
 #include <stdio.h>
@@ -63,6 +73,14 @@ int main(void) {
 
 #define NTHREADS 8
 #define NITER    20000
+#define NREADERS (NTHREADS - 1)
+
+/* Ceiling on how long the publisher will keep going waiting for a reader
+ * that has not observed anything yet. Reached only when a reader really
+ * never observes -- which is the condition the vacuity check exists to
+ * report -- so the run still terminates and still fails, it just no longer
+ * fails first for want of a time slice. */
+#define NITER_MAX (NITER * 50L)
 
 /* Tier 5 needs this defined exactly once, and this test does not link the
  * library, so it defines it here.
@@ -101,20 +119,31 @@ static swi_gen_t pub_gen;
  * shim's own acquire/release counter -- the test synchronises
  * itself with the thing it is testing. */
 static swi_gen_t stop_readers;
+/* Bumped once by each reader, the first time it observes an update. The
+ * publisher waits on it so that it cannot finish before the readers have
+ * started; same reasoning as stop_readers for why it is not a plain int. */
+static swi_gen_t readers_seen;
 static long torn_reads, observed_updates;
+static long pub_iters;               /* what the publisher actually ran */
 static swi_mutex_t stat_lock = SWI_MUTEX_INIT;
 
 static thr_ret_t THR_CALL publisher(void *arg) {
   (void)arg;
-  int i;
-  for (i = 1; i <= NITER; i++) {
+  long i;
+  for (i = 1; i <= NITER_MAX; i++) {
     swi_mutex_lock(&lock);
-    shared_payload.a = i;
-    shared_payload.b = i * 2;
-    shared_payload.c = i * 3;
+    shared_payload.a = (int) i;
+    shared_payload.b = (int) i * 2;
+    shared_payload.c = (int) i * 3;
     swi_mutex_unlock(&lock);
     swi_gen_bump(&pub_gen);          /* release: payload before generation */
+    /* Enough hammering AND everyone is awake. Either alone is not enough:
+     * the count is what stresses the release/acquire pairing, the wait is
+     * what stops a starved reader being mistaken for a broken one. */
+    if (i >= NITER && (long) swi_gen_load(&readers_seen) >= NREADERS)
+      break;
   }
+  pub_iters = i;
   swi_gen_bump(&stop_readers);
   return (thr_ret_t) 0;
 }
@@ -128,6 +157,8 @@ static thr_ret_t THR_CALL reader(void *arg) {
     g = swi_gen_load(&pub_gen);   /* acquire */
     if (g == last) continue;
     last = g;
+    if (seen == 0)
+      swi_gen_bump(&readers_seen);   /* this reader is awake; publisher may stop */
     seen++;
     swi_mutex_lock(&lock);
     p = shared_payload;
@@ -164,15 +195,16 @@ int main(void) {
 
   /* publish/observe */
   thr_create(&pub, publisher, NULL);
-  for (i = 0; i < NTHREADS - 1; i++) thr_create(&rd[i], reader, NULL);
+  for (i = 0; i < NREADERS; i++) thr_create(&rd[i], reader, NULL);
   thr_join(pub);
-  for (i = 0; i < NTHREADS - 1; i++) thr_join(rd[i]);
+  for (i = 0; i < NREADERS; i++) thr_join(rd[i]);
 
-  printf("publish    : %ld updates observed, %ld torn %s\n",
-         observed_updates, torn_reads, torn_reads == 0 ? "OK" : "TORN");
+  printf("publish    : %ld updates observed over %ld publishes, %ld torn %s\n",
+         observed_updates, pub_iters, torn_reads, torn_reads == 0 ? "OK" : "TORN");
   if (torn_reads != 0) bad = 1;
   if (observed_updates == 0) {
-    printf("publish    : readers never observed an update -- test is vacuous\n");
+    printf("publish    : no reader observed an update in %ld publishes"
+           " -- test is vacuous\n", pub_iters);
     bad = 1;
   }
 
