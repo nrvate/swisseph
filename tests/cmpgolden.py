@@ -122,9 +122,18 @@ def main():
     # unremarked -- and one did: "star  not found" quietly lost a space.
     badmsg = [k for k in a if amsg[k] != bmsg[k]]
     if badmsg:
-        print(f"FAIL: {len(badmsg)} row(s) differ in their error string")
-        for k in badmsg[:5]:
-            print(f"  {k}\n    A: {amsg[k]}\n    B: {bmsg[k]}")
+        # Grouped by the (A, B) pair, not row by row: one cause typically
+        # hits dozens of rows, and printing the first five of them says far
+        # less than printing each distinct pair once with a count.
+        groups = {}
+        for k in badmsg:
+            groups.setdefault((amsg[k], bmsg[k]), []).append(k)
+        print(f"FAIL: {len(badmsg)} row(s) differ in their error string, "
+              f"{len(groups)} distinct difference(s)")
+        for (x, y), ks in sorted(groups.items(), key=lambda g: -len(g[1])):
+            print(f"  x{len(ks)}, e.g. {ks[0]}")
+            print(f"    A: {x[:160]}")
+            print(f"    B: {y[:160]}")
         return 1
 
     if skipped:

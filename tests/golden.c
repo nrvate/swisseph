@@ -68,13 +68,37 @@ static TLS FILE *TRANSCRIPT;
  *    lines all keyed on the token "trying", so a comparator keyed by first
  *    token silently collapsed them to one. Runs of whitespace become a
  *    single space. */
+/* The ephemeris path is rewritten to $EPHE so the transcript does not depend
+ * on where it was run, and the result is compared across platforms.
+ *
+ * Two things that has to get right, both learnt from MSVC:
+ *
+ * The match must be a whole path element. The Linux jobs pass "../ephe", but
+ * the MSVC job passes "ephe", and a blind substring replace turns "Chiron's
+ * ephemeris" into "Chiron's $EPHEmeris" and "swe_set_ephe_fallback(1)" into
+ * "swe_set_$EPHE_fallback(1)". So the character on each side must be one an
+ * identifier cannot contain -- a quote or a separator, not a letter, digit
+ * or underscore.
+ *
+ * A backslash is a path separator here and nothing else -- no message in this
+ * transcript contains one for any other reason -- so it becomes '/'. Without
+ * that, every message carrying a path differs from the Linux spelling, both
+ * after $EPHE and inside file names swi_gen_filename() built with DIR_GLUE. */
+static int path_boundary(char c) {
+  return !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+           || (c >= '0' && c <= '9') || c == '_');
+}
+
 static void sanitize(char *d, size_t n, const char *s) {
   size_t el = strlen(EPHE), j = 0;
   for (size_t i = 0; s[i] && j + 8 < n; ) {
-    if (el && strncmp(s + i, EPHE, el) == 0) {
+    if (el && strncmp(s + i, EPHE, el) == 0
+        && (i == 0 || path_boundary(s[i - 1])) && path_boundary(s[i + el])) {
       memcpy(d + j, "$EPHE", 5); j += 5; i += el;
     } else if (s[i] == '\n' || s[i] == '\r' || s[i] == '\t') {
       d[j++] = ' '; i++;
+    } else if (s[i] == '\\') {
+      d[j++] = '/'; i++;
     } else d[j++] = s[i++];
   }
   d[j] = 0;
