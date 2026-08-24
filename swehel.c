@@ -2483,7 +2483,7 @@ static int32 get_asc_obl(swe_ctx *ctx, double tjd, int32 ipl, char *star, int32 
   }
   adp = tan(dgeo[1] * DEGTORAD) * tan(x[1] * DEGTORAD);
     if (fabs(adp) > 1) {
-      if (star != NULL && *star != '\\0')
+      if (star != NULL && *star != '\0')
         strcpy(s, star);
       else
         swe_get_planet_name_r(ctx, ipl, s);
@@ -2515,7 +2515,7 @@ static int32 get_asc_obl_old(double tjd, int32 ipl, char *star, int32 iflag, dou
   }
   adp = tan(dgeo[1] * DEGTORAD) * tan(x[1] * DEGTORAD); 
     if (fabs(adp) > 1) {
-      if (star != NULL && *star != '\\0') 
+      if (star != NULL && *star != '\0') 
         strcpy(s, star);
       else 
         swe_get_planet_name_r(ctx, ipl, s);

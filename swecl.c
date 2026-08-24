@@ -1690,7 +1690,7 @@ next_try:
   /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have \
    * an occultation. Even lunar parallax andd proper motion of star\
    * will never allow it. */
-  if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\\0') {
+  if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
     if (serr != NULL)
       snprintf(serr, AS_MAXCH, "occultation never occurs: star %.230s has ecl. lat. %.1f", starname, ls[1]);
     return ERR;
@@ -2523,7 +2523,7 @@ static int32 occult_when_loc(
     /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have \
        * an occultation. Even lunar parallax andd proper motion of star\
        * will never allow it. */
-      if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\\0') {
+      if (fabs(ls[1]) > 7 && starname != NULL && *starname != '\0') {
         if (serr != NULL)
           snprintf(serr, AS_MAXCH, "occultation never occurs: star %.230s has ecl. lat. %.1f", starname, ls[1]);
         return ERR;
