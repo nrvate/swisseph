@@ -103,8 +103,8 @@ or two, and verify.
         as the transcript reaches it 0x1.55c462812cbf7p+7
 
   So the transcript's recorded value for that row is the polluted one. Ruled
-  out: it is NOT the `swe_calc_pctr` defect fixed on this branch — that one
-  is a caller reading `ctx->oec`/`ctx->nut` without keying them, and
+  out: it is NOT the `swe_calc_pctr` defect above — that one is a caller
+  reading `ctx->oec`/`ctx->nut` without keying them, and
   `app_pos_etc_mean` gets its check from `swecalc` upstream. It is also not
   reproducible from that one adjacent call alone, so it needs the accumulated
   sequence. Most likely the same family as the two tid_acc leaks already
