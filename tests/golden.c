@@ -1181,6 +1181,139 @@ static void coverage(void) {
     swe_close();
     swe_set_ephe_path((char *) EPHE);
 
+    /* Four exported functions with next to nothing behind them. Between them
+     * they were the largest untested surface left in the library:
+     * swe_house_pos() alone is 453 lines of which 19.6% ran, and the other
+     * three sat at or near zero. All four are callable by anyone linking
+     * this library. */
+
+    /* swe_refrac(): atmospheric refraction, both directions. Zero coverage.
+     * The altitudes straddle the horizon on purpose -- refraction is largest
+     * and worst-behaved there, and the function has a branch for going
+     * below it. */
+    {
+      const double alt[] = { 60.0, 10.0, 2.0, 0.0, -0.5, -2.0 };
+      for (size_t k = 0; k < sizeof(alt)/sizeof(alt[0]); k++) {
+        x[0] = swe_refrac(alt[k], 1013.25, 15.0, SE_TRUE_TO_APP);
+        x[1] = swe_refrac(alt[k], 1013.25, 15.0, SE_APP_TO_TRUE);
+        /* A thinner atmosphere: the pressure argument has to reach the
+         * arithmetic, and 500 mbar is roughly 5500 m up. */
+        x[2] = swe_refrac(alt[k], 500.0, -10.0, SE_TRUE_TO_APP);
+        snprintf(tag, sizeof tag, "cov:refrac[%.1f]", alt[k]);
+        row(tag, 0, x, 3, "");
+      }
+    }
+
+    /* swe_utc_time_zone(): the UTC/local conversion, zero coverage. The
+     * offsets include a negative one, a fractional one (Kathmandu is
+     * +5:45), and one large enough to carry the date across a year
+     * boundary in each direction -- which is the arithmetic worth pinning,
+     * since the day, month and year outputs all move together. */
+    {
+      const double tz[] = { 0.0, 5.75, -8.0, 13.0, -13.0 };
+      for (size_t k = 0; k < sizeof(tz)/sizeof(tz[0]); k++) {
+        int32 y2, mo2, d2, h2, mi2; double s2;
+        swe_utc_time_zone(2000, 1, 1, 0, 30, 15.5, tz[k],
+                          &y2, &mo2, &d2, &h2, &mi2, &s2);
+        x[0] = y2; x[1] = mo2; x[2] = d2; x[3] = h2; x[4] = mi2; x[5] = s2;
+        snprintf(tag, sizeof tag, "cov:utc_tz[%.2f]", tz[k]);
+        row(tag, 0, x, 6, "");
+      }
+      /* And back the other way, so the round trip is on the record. */
+      { int32 y2, mo2, d2, h2, mi2; double s2;
+        swe_utc_time_zone(1999, 12, 31, 23, 45, 0.25, -13.0,
+                          &y2, &mo2, &d2, &h2, &mi2, &s2);
+        x[0] = y2; x[1] = mo2; x[2] = d2; x[3] = h2; x[4] = mi2; x[5] = s2;
+        row("cov:utc_tz[wrap]", 0, x, 6, ""); }
+    }
+
+    /* swe_gauquelin_sector(): 29% covered, and calc_mer_trans() -- the
+     * meridian-transit search it reaches for the higher methods -- at zero.
+     * imeth runs 0..5: 0 and 1 use rising and setting, 2 to 5 use the
+     * meridian, so the whole range is needed to reach both halves. Method 6
+     * and above is rejected, and that refusal is worth a row too.
+     *
+     * Tagged gauq_meth, not gauquelin: cov:gauquelin[0] and [1] already
+     * exist further up, indexed by DATE at imeth 0. Two blocks sharing a
+     * tag would not just read badly -- cmpgolden.py keys its rows by tag,
+     * so the duplicate would silently drop one of them from every
+     * tolerance comparison while the bit-exact diff still passed. */
+    {
+      double geopos[3] = { 8.55, 47.37, 400 };
+      for (int32 im = 0; im <= 6; im++) {
+        double dg = 0;
+        *serr = 0;
+        rf = swe_gauquelin_sector(2451545.0, SE_MARS, NULL, SEFLG_SWIEPH,
+                                  im, geopos, 1013.25, 15.0, &dg, serr);
+        x[0] = dg;
+        snprintf(tag, sizeof tag, "cov:gauq_meth[%d]", (int) im);
+        row(tag, rf, x, 1, serr);
+      }
+      /* A fixed star takes the other branch: starname non-NULL means the
+       * position comes from swe_fixstar() rather than swe_calc(). */
+      { char st[AS_MAXCH]; double dg = 0;
+        strcpy(st, "Aldebaran"); *serr = 0;
+        rf = swe_gauquelin_sector(2451545.0, 0, st, SEFLG_SWIEPH,
+                                  0, geopos, 1013.25, 15.0, &dg, serr);
+        x[0] = dg;
+        row("cov:gauq_meth[star]", rf, x, 1, serr); }
+    }
+
+    /* calc_mer_trans(), 44 lines at zero. It is reached from
+     * swe_rise_trans() and nowhere else, when rsmi asks for a MERIDIAN
+     * transit rather than a rising or a setting -- upper (MTRANSIT) or
+     * lower (ITRANSIT). Every existing swe_rise_trans row asks for
+     * SE_CALC_RISE, so the whole transit half of that function was
+     * unreached. A star as well as a planet, because starname takes the
+     * other branch inside it. */
+    {
+      double geo[3] = { 8.55, 47.37, 400 };
+      const int32 rs[] = { SE_CALC_MTRANSIT, SE_CALC_ITRANSIT };
+      const char *rsn[] = { "m", "i" };
+      for (size_t k = 0; k < sizeof(rs)/sizeof(rs[0]); k++) {
+        double tr = 0;
+        *serr = 0;
+        rf = swe_rise_trans(2451545.0, SE_MARS, NULL, SEFLG_SWIEPH, rs[k],
+                            geo, 1013.25, 15.0, &tr, serr);
+        x[0] = tr;
+        snprintf(tag, sizeof tag, "cov:mer_trans[%s]", rsn[k]);
+        row(tag, rf, x, 1, serr);
+      }
+      { char st[AS_MAXCH]; double tr = 0;
+        strcpy(st, "Aldebaran"); *serr = 0;
+        rf = swe_rise_trans(2451545.0, 0, st, SEFLG_SWIEPH, SE_CALC_MTRANSIT,
+                            geo, 1013.25, 15.0, &tr, serr);
+        x[0] = tr;
+        row("cov:mer_trans[star]", rf, x, 1, serr); }
+    }
+
+    /* swe_house_pos(): 453 lines, 19.6% of them run. It answers "which
+     * house is this body in, and how far through it", and it carries a
+     * separate branch per house system -- which is why one call barely
+     * dents it and why this loops over the same 24 letters the hsys[] rows
+     * above use.
+     *
+     * Two latitudes and two positions each. 47 deg is ordinary; 66.7 deg is
+     * inside the polar circle, where several systems degenerate and fall
+     * back to Porphyry, and that fallback is code too. The second position
+     * carries ecliptic latitude, because some systems use it and others
+     * discard it, and a row where it changes nothing is as much a fact as
+     * one where it does. */
+    {
+      const char *hs = "PKORCAEVXHTBGWMNQLIUSDFY";
+      const double lat[] = { 47.37, 66.7 };
+      const double pos[][2] = { { 123.456, 0.0 }, { 300.5, 12.25 } };
+      for (const char *h = hs; *h; h++)
+        for (size_t la = 0; la < sizeof(lat)/sizeof(lat[0]); la++)
+          for (size_t p = 0; p < sizeof(pos)/sizeof(pos[0]); p++) {
+            double xpin[2] = { pos[p][0], pos[p][1] };
+            *serr = 0;
+            x[0] = swe_house_pos(90.0, lat[la], 23.4392911, (int) *h, xpin, serr);
+            snprintf(tag, sizeof tag, "cov:house_pos[%c,%zu,%zu]", *h, la, p);
+            row(tag, 0, x, 1, serr);
+          }
+    }
+
     /* ⛔ Order independence: the same Swiss request must answer the same
      * whether or not a Moshier calculation preceded it.
      *

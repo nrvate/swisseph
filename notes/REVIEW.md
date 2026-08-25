@@ -81,16 +81,25 @@ Nothing open; see Closed.
 
 The transcript is the only thing standing behind every "no-op" claim in
 this file, and it does not reach as much as its 12,718 rows suggest.
-Measured with gcov on the golden run, worst first: **`swephlib.c` 74.6%**
-(was 62.3%), **`swehouse.c` 68.4%** (was 57.6%), **`swecl.c` 70.0%** (was
-63.9%), `swejpl.c` 67.3%, `swedate.c` 71.1%, `sweph.c` 74.8%.
+Measured with gcov on the golden run, worst first: **`swejpl.c` 67.3%**,
+**`swecl.c` 72.9%** (was 63.9%), `swephlib.c` 74.6% (was 62.3%), `sweph.c`
+75.0%, `sweconfig.c` 78.6%, `swedate.c` 79.8% (was 71.1%), `swehouse.c`
+82.8% (was 57.6%), `swehel.c` 83.3%, `swemplan.c` 85.6%, `swemmoon.c` 96.7%.
 
 Three bugs and one unreachable branch came out of closing the first part of
 that gap — see Closed — and every one was in code no gate ran. That is the
 argument for the rest of it. Functions still at zero:
 
-Nothing at zero that is reachable. `meff` and `load_dpsi_deps` are covered;
-`Airmass` turned out not to be a coverage item at all — see Not doing.
+Nothing at zero that is reachable, and the four public functions that were
+worst are done: `swe_house_pos` 19.6% → 73.7% of its 453 lines,
+`swe_gauquelin_sector` 29.2% → 68.1%, `calc_mer_trans` 0% → 84.1%,
+`swe_refrac` 0% → 90.0%, `swe_utc_time_zone` 0% → 86.4%.
+
+`swejpl.c` at 67.3% is now the weakest file. Most of what is unreached there
+is error handling for malformed files, which `check-jplguard` exercises in
+its own binary and gcov therefore does not see from the golden run — so the
+number understates it, and anyone working from it should confirm against a
+combined profile before deciding there is a hole.
 
 **The pattern worth remembering:** three separate cache-key bugs have come
 out of this work — `swi_check_nutation`, `calc_deltat`'s table, and
