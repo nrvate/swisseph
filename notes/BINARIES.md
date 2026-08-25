@@ -157,8 +157,9 @@ upstream's while the behaviour differs.
 (five ABIs, JNI export count checked against `swejni.h` rather than a guessed
 threshold). A `v*` tag publishes them.
 
-The version question was settled with a `-ts.N` suffix: `SE_VERSION` is
-`2.10.03-ts.2` today, it is the only place the version is written down, and
+The version question was settled with a `-ts.N` suffix: `SE_VERSION` was
+`2.10.03-ts.2` when this was written, it is the only place the version is
+written down, and
 `make bump` moves it. Tags are `v2.10.03-ts.N`, which cannot collide with
 upstream's, and the release workflow refuses to publish a tag that disagrees
 with `SE_VERSION`.

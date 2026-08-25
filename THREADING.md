@@ -139,11 +139,16 @@ run this rather than trusting a green local run.
 - **LTO is on by default** (`make LTO=0` turns it off). Measured at about
   **5% faster** on the Moshier Moon path and bit-identical to plain `-O2`
   across the whole golden transcript on gcc 11.4 (5137 rows as the transcript
-  then stood; it is 12669 today). The CI `lto` job runs the transcript under
+  then stood; it is 13000 today). The CI `lto` job runs the transcript under
   gcc, clang and Apple clang with `-flto`, all within the 1e-5 cross-toolchain
   tolerance; MSVC builds through the `.vcxproj` files and is not affected.
 - **`-DSWE_NO_THREADS`** compiles the threading primitives to no-ops for
   single-threaded or embedded builds. No pthread dependency at all.
+- **`-DSWE_UPSTREAM_COMPAT`** puts back numerical defects this fork has fixed,
+  so `check-setest` can compare against unmodified upstream byte for byte.
+  **Never define it in a shipped build.** It exists for that one gate; what it
+  restores is listed at its definition in `sweph.h`, and `check-compat` fails
+  if it ever stops restoring them.
 - The threading shim selects one of five backends automatically (Windows
   SRWLOCK, gcc/clang `__atomic`, C11 `<stdatomic.h>`, or a mutex fallback for
   toolchains with none of those). All of them are built and checked by
@@ -153,14 +158,14 @@ run this rather than trusting a green local run.
 
 ## What is verified
 
-Every change is gated on a bit-exact transcript: **12669 rows** of C99 `%a` hex
+Every change is gated on a bit-exact transcript: **13000 rows** of C99 `%a` hex
 floats, compared byte for byte, so no test ever has to pick a tolerance.
 
 The transcript is not a handful of spot checks. It sweeps 120 pseudo-random
 dates spanning roughly 1400 years (JD 2086302.5 to 2597641.5) across three
 ephemeris flag sets — Swiss, Moshier and equatorial — for every body from the
 Sun to Vesta, recording ecliptic longitude and latitude, distance, and all
-three speed components. A further 5097 rows — houses under every system,
+three speed components. A further 5440 rows — houses under every system,
 sidereal modes, topocentric positions, eclipses and occultations, heliacal
 events, fixed stars, fictitious bodies, date and time conversions, and a
 coverage block for the remaining entry points — reach what the sweep does not,
@@ -181,6 +186,20 @@ so no exported function is entirely unwitnessed.
 | `check-winmacros` | nothing collides with `windows.h`'s empty annotation macros, and the `_WIN32` branches parse |
 | `check-version` | `SE_VERSION` is the only place the version is written down |
 | `check-jplreal` | `SEFLG_JPLEPH` reaches a real JPL ephemeris, and a missing one is refused rather than substituted |
+| `check-golden-O2` | the same numbers at `-O2`, within a measured tolerance |
+| `check-threadshim` | the threading primitives themselves, no libswe involved |
+| `check-threads-workaround` | per-thread setup still works for callers who do it |
+| `check-ephe-ci` | the gates hold against CI's pruned `ephe/` |
+| `check-samples` | `swemini` and the sample programs still print what they printed |
+| `check-dtmemo` | the delta-t memo cannot outlive the table it was computed from |
+| `check-eopload` | the IERS Earth-orientation loader reads the columns it claims to |
+| `check-firstcall` | nine entry points work as the FIRST call in a process, with no warm-up |
+| `check-pedantic` | every source compiles as conforming C, both compilers, not merely warning-free |
+| `check-jplswap` | the JPL byte-swapping path, against a byte-swapped twin of a real ephemeris |
+| `check-ctxfiles` | `seleapsec.txt` and `seorbel.txt` are read from the caller's context and path |
+| `check-compat` | `SWE_UPSTREAM_COMPAT` still restores exactly the defects it claims to |
+| `check-setest` | upstream's own suite prints byte-for-byte what it prints on unmodified upstream |
+| `check-jplhor` | true JPL Horizons mode — **opt-in**, needs a DE ≥ 403 ephemeris |
 
 The bit-exact transcript also carries `cov:order_*`, which pin something
 easily lost: **the same call must give the same answer regardless of what was
