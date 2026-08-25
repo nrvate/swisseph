@@ -32,6 +32,7 @@
   static void thr_join(thr_t t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); }
 #else
 # include <pthread.h>
+# include <unistd.h>          /* getpid(), for the capture-file name */
   typedef pthread_t thr_t;
   typedef void *    thr_ret_t;
 # define THR_CALL
@@ -1105,6 +1106,40 @@ static void coverage(void) {
     }
     reset_astro_models();
 
+    /* meff(), the one part of the gravitational-deflection maths nothing
+     * had ever run.
+     *
+     * Light from a planet grazing the Sun is bent, and the textbook formula
+     * treats the Sun as a point mass, so it diverges as the line of sight
+     * approaches the centre. The Astronomical Almanac says to set the
+     * deflection to zero there, which puts a step in the planet's apparent
+     * motion; this library instead models the Sun's mass distribution, so
+     * only the mass interior to the grazing radius bends the light.
+     * meff(r) is that fraction, interpolated from a 25-entry table.
+     *
+     * It runs only while the planet is inside the solar disc as seen from
+     * Earth -- sin(elongation) < SUN_RADIUS / r_sun -- which is why no row
+     * had reached it. These five are the deepest conjunction each planet
+     * makes in 2000-2030, found by scanning elongation; they enter meff()
+     * at r = 0.021, 0.134, 0.328, 0.351 and 0.427, so the interpolation is
+     * exercised across its range rather than at one point. */
+    {
+      const struct { double t; int32 ipl; const char *n; } occ[] = {
+        { 2457546.412153, SE_VENUS,   "venus"   },   /* r = 0.021 */
+        { 2458862.136111, SE_SATURN,  "saturn"  },   /* r = 0.134 */
+        { 2459892.222917, SE_MERCURY, "mercury" },   /* r = 0.328 */
+        { 2458845.268055, SE_JUPITER, "jupiter" },   /* r = 0.351 */
+        { 2460266.724653, SE_MARS,    "mars"    },   /* r = 0.427 */
+      };
+      for (size_t i = 0; i < sizeof(occ)/sizeof(occ[0]); i++) {
+        *serr = 0;
+        rf = swe_calc_ut(occ[i].t, occ[i].ipl, SEFLG_SWIEPH | SEFLG_SPEED,
+                         x, serr);
+        snprintf(tag, sizeof tag, "cov:meff[%s]", occ[i].n);
+        row(tag, rf, x, 6, serr);
+      }
+    }
+
     /* The small public conversions. Every one of these is exported, and
      * every one had zero coverage: nothing in the suite called them, so
      * they could have returned anything. swe_cs2lonlatstr() and its two
@@ -1340,7 +1375,16 @@ static void suite(void) {
   sweep();
 }
 
-struct targ { int id; char *buf; size_t len; int setup; };
+/* wrote and read_back are what capture_close() saw, kept apart so a failure
+ * can say whether the transcript was short because the worker produced less
+ * or because reading it back returned less. (read_back rather than read:
+ * <unistd.h> is in scope and a member called read beside it reads badly.)
+ * path survives the run when a thread mismatches, so there is something on
+ * disk to look at. */
+struct targ {
+  int id; char *buf; size_t len; int setup;
+  long wrote; size_t read_back; char path[64];
+};
 
 /* Capturing each worker's transcript used to call open_memstream(), which is
  * POSIX and has no MSVC equivalent, so G2 -- the gate this file exists for --
@@ -1348,16 +1392,39 @@ struct targ { int id; char *buf; size_t len; int setup; };
  * hands the comparison below exactly what it wants, a->buf and a->len. One
  * implementation for every platform, so Windows exercises the same path.
  *
- * "w+b": no newline translation, so the bytes are the bytes on either side. */
+ * "w+b": no newline translation, so the bytes are the bytes on either side.
+ *
+ * The process id is in the name because more than one golden runs at once.
+ * `make check` sets -j$(NPROC), and check-threads and
+ * check-threads-workaround each start ./golden --threads 8 in this same
+ * directory. Keyed on the thread id alone, both opened
+ * .golden_capture_0.tmp .. _7.tmp, and "w+b" truncates -- so one process
+ * could empty a file the other was still writing.
+ *
+ * That is wrong on its own terms and this fixes it. It is NOT established
+ * that it caused the intermittent thread mismatch seen on this tree, where
+ * a worker's transcript comes back a prefix of the reference: that was
+ * observed twice, on main as well as here, and has not been reproducible
+ * since -- not by racing two golden processes, not by `make -j2` on the two
+ * thread gates, and not over six cold `make check` runs with this name
+ * collision still in place. Both sightings were while the machine was
+ * heavily loaded. See notes/REVIEW.md; if it returns, this is not the
+ * explanation. */
 static FILE *capture_open(int id, char *path, size_t n) {
-  snprintf(path, n, ".golden_capture_%d.tmp", id);
+#if defined(_WIN32)
+  unsigned long pid = (unsigned long) GetCurrentProcessId();
+#else
+  unsigned long pid = (unsigned long) getpid();
+#endif
+  snprintf(path, n, ".golden_capture_%lu_%d.tmp", pid, id);
   return fopen(path, "w+b");
 }
 
-static void capture_close(struct targ *a, FILE *f, const char *path) {
+static void capture_close(struct targ *a, FILE *f) {
   long end;
   fflush(f);
   end = ftell(f);
+  a->wrote = end;
   a->len = end > 0 ? (size_t) end : 0;
   a->buf = malloc(a->len + 1);
   if (a->buf != NULL) {
@@ -1367,14 +1434,18 @@ static void capture_close(struct targ *a, FILE *f, const char *path) {
   } else {
     a->len = 0;
   }
+  a->read_back = a->len;
   fclose(f);
-  remove(path);
+  /* Deliberately NOT removed here. main() deletes these once every thread
+   * has matched; a run that fails leaves them behind, because the one thing
+   * the old report could not tell you was what the file actually held. */
 }
 
 static thr_ret_t THR_CALL thread_suite(void *p) {
   struct targ *a = p;
   char path[64];
   FILE *f = capture_open(a->id, path, sizeof path);
+  snprintf(a->path, sizeof a->path, "%s", path);
   if (f == NULL) {
     fprintf(stderr, "could not open capture file %s\n", path);
     a->buf = NULL; a->len = 0;
@@ -1386,7 +1457,7 @@ static thr_ret_t THR_CALL thread_suite(void *p) {
    * 1 = re-apply configuration on every worker thread (today's workaround). */
   if (a->setup) swe_set_ephe_path((char *)EPHE);
   suite_compute_only();
-  capture_close(a, f, path);
+  capture_close(a, f);
   return (thr_ret_t) 0;
 }
 
@@ -1418,7 +1489,7 @@ int main(int argc, char **argv) {
   swe_set_topo(8.55, 47.37, 400);
   swe_set_tid_acc(-25.85);
 
-  struct targ ref = { -1, NULL, 0, 0 };
+  struct targ ref = { -1, NULL, 0, 0, 0, 0, "" };
   thread_suite(&ref);
 
   struct targ *a = calloc(nthreads, sizeof *a);
@@ -1437,6 +1508,16 @@ int main(int argc, char **argv) {
   }
   int bad = 0;
   for (int i = 0; i < nthreads; i++) {
+    /* buf is NULL when the worker could not open or allocate its capture at
+     * all. The comparison below indexes both buffers, so say so and move on
+     * rather than dereferencing it -- the old code walked into that on the
+     * one path where a capture file cannot be created. */
+    if (a[i].buf == NULL || ref.buf == NULL) {
+      bad++;
+      fprintf(stderr, "thread %d: NO TRANSCRIPT (capture failed; %s)\n",
+              i, a[i].path[0] ? a[i].path : "no file was opened");
+      continue;
+    }
     if (a[i].len != ref.len || memcmp(a[i].buf, ref.buf, ref.len) != 0) {
       bad++;
       /* report the first differing line */
@@ -1448,7 +1529,49 @@ int main(int argc, char **argv) {
       sscanf(a[i].buf + off, "%299[^\n]", tl);
       fprintf(stderr, "thread %d: MISMATCH at line ~%d\n  main  : ...%.120s\n  thread: ...%.120s\n",
               i, line, rl, tl);
+
+      /* Which KIND of mismatch, because the two want opposite
+       * investigations and the lines above cannot tell them apart. A
+       * truncated transcript prints as an empty "thread:" line, which looks
+       * like a wrong value and is not one.
+       *
+       * SHORT   the worker's bytes are a prefix of the reference. Nothing
+       *         computed differently; output went missing. Compare wrote
+       *         against read below -- if they disagree, reading the file
+       *         back came up short, and if they agree the worker really did
+       *         stop early.
+       * LONGER  more output than the reference, which no ordinary failure
+       *         produces and would suggest two writers sharing a file.
+       * DIVERGED  same length, different bytes: an actual disagreement, and
+       *         the only one of the three that is about the library.
+       */
+      {
+        const char *kind =
+          (a[i].len < ref.len && off == a[i].len) ? "SHORT (a prefix of the reference)" :
+          (a[i].len > ref.len && off == ref.len)  ? "LONGER than the reference"        :
+          (a[i].len == ref.len)                   ? "DIVERGED (same length, different bytes)" :
+                                                    "DIVERGED, and a different length too";
+        fprintf(stderr,
+                "  kind  : %s\n"
+                "  bytes : reference %zu, thread %zu, first difference at %zu\n"
+                "  capture: ftell reported %ld, fread returned %zu%s\n"
+                "  file  : %s (kept for inspection)\n",
+                kind, ref.len, a[i].len, off,
+                a[i].wrote, a[i].read_back,
+                (a[i].wrote >= 0 && (size_t) a[i].wrote != a[i].read_back)
+                  ? "  <-- SHORT READ: the file held more than was read back" : "",
+                a[i].path);
+      }
     }
+  }
+  /* Only on success. A failed run leaves every capture file in place --
+   * including the reference's -- so the transcripts can be diffed directly
+   * rather than reconstructed from the one line printed above. */
+  if (bad == 0) {
+    remove(ref.path);
+    for (int i = 0; i < nthreads; i++) remove(a[i].path);
+  } else {
+    fprintf(stderr, "reference transcript: %s\n", ref.path);
   }
   fprintf(stderr, "%d/%d threads matched the main-thread transcript%s\n",
           nthreads - bad, nthreads, setup ? " (--per-thread-setup)" : "");
