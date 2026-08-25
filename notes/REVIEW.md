@@ -81,16 +81,36 @@ Nothing open; see Closed.
 
 The transcript is the only thing standing behind every "no-op" claim in
 this file, and it does not reach as much as its 12,718 rows suggest.
-Measured with gcov on the golden run, worst first: **`swephlib.c` 74.6%**
-(was 62.3%), **`swehouse.c` 68.4%** (was 57.6%), **`swecl.c` 70.0%** (was
-63.9%), `swejpl.c` 67.3%, `swedate.c` 71.1%, `sweph.c` 74.8%.
+Measure it across ALL the gate binaries, not just golden. Several files
+look far worse than they are from the golden run alone because another
+binary covers them — `swejpl.c` reads 67.3% there and 73.9% once
+`check-jplguard` is counted, and its malformed-file handling is the whole
+difference. Combined, worst first: **`swejpl.c` 73.9%**, `swephlib.c` 76.3%,
+`sweph.c` 77.6%, `swedate.c` 81.2%, `swecl.c` 80.8% (was 63.9%),
+`swehouse.c` 82.8% (was 57.6%), `swehel.c` 83.3%, `swemplan.c` 85.6%,
+`sweconfig.c` 88.6%, `swemmoon.c` 97.0%.
 
 Three bugs and one unreachable branch came out of closing the first part of
 that gap — see Closed — and every one was in code no gate ran. That is the
 argument for the rest of it. Functions still at zero:
 
-Nothing at zero that is reachable. `meff` and `load_dpsi_deps` are covered;
-`Airmass` turned out not to be a coverage item at all — see Not doing.
+Nothing at zero that is reachable, and the four public functions that were
+worst are done: `swe_house_pos` 19.6% → 73.7% of its 453 lines,
+`swe_gauquelin_sector` 29.2% → 68.1%, `calc_mer_trans` 0% → 84.1%,
+`swe_refrac` 0% → 90.0%, `swe_utc_time_zone` 0% → 86.4%.
+
+The largest single functions are done too: `swe_nod_aps` 41.1% → 86.7% of
+367 lines, `swe_house_pos` 19.6% → 73.7% of 453, `swe_pheno` 61.9% → 74.8%,
+`swe_sol_eclipse_when_glob` → 85.2%, `swe_lun_eclipse_when` → 92.2%.
+
+What is left is a long tail, and two functions that resisted: within
+`swecl.c`, `eclipse_when_loc` (63.4% of 246) and `occult_when_loc` (77.9%
+of 267) barely moved when the eclipse types and search directions were
+swept. Their remaining branches are geometric — a particular eclipse seen
+from a particular place — so reaching them needs dates and locations chosen
+against the geometry rather than more argument combinations. Worth doing by
+someone who wants to pick the circumstances deliberately; not worth guessing
+at.
 
 **The pattern worth remembering:** three separate cache-key bugs have come
 out of this work — `swi_check_nutation`, `calc_deltat`'s table, and
