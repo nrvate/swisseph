@@ -1,4 +1,4 @@
-/* G23: seleapsec.txt, the file that extends the leap-second table.
+/* G23: the data files a context reads along its OWN ephemeris path.
  *
  * init_leapsec() seeds ctx->leap_seconds from the 27 built-in entries and
  * then EXTENDS them from seleapsec.txt in the ephemeris directory, so a
@@ -16,6 +16,12 @@
  *
  * Two contexts rather than two processes, because leap_seconds is per-context
  * and loaded once per context -- the same reason eopload.c uses two.
+ *
+ * The second half is seorbel.txt, the fictitious-body element file, which had
+ * the identical defect: swe_get_planet_name_r() fetched the name through
+ * swi_get_fict_name(swi_default_ctx(), ...) instead of the caller's context,
+ * so it read whichever directory the DEFAULT context happened to point at.
+ * The fixture renames body 0 to ZZTESTBODY; the built-in name is Cupido.
  *
  * The third assertion is what makes the first mean something: a date the
  * fixture does NOT list must still be refused even by the context that read
@@ -55,7 +61,7 @@ int main(int argc, char **argv)
   swe_ctx *a, *b;
   int bad = 0;
 
-  printf("G23: seleapsec.txt extends the leap-second table\n");
+  printf("G23: per-context ephemeris files (seleapsec.txt, seorbel.txt)\n");
   a = swe_ctx_new();
   b = swe_ctx_new();
   if (a == NULL || b == NULL) {
@@ -70,6 +76,28 @@ int main(int argc, char **argv)
   bad |= check(b, "without the file", LEAP_Y, 0);
   /* ...and the file adds only what it lists, not "any 23:59:60". */
   bad |= check(a, "with seleapsec.txt", NOLEAP_Y, 0);
+
+  /* seorbel.txt: the name must come from the context that was asked. */
+  {
+    char nm[AS_MAXCH] = "";
+    swe_get_planet_name_r(a, SE_FICT_OFFSET, nm);
+    if (strstr(nm, "ZZTESTBODY") != NULL) {
+      printf("  %-22s fictitious body 0 -> %-12s OK\n", "with seorbel.txt", nm);
+    } else {
+      printf("  %-22s fictitious body 0 -> %s  FAIL: read another context's path\n",
+             "with seorbel.txt", nm);
+      bad = 1;
+    }
+    nm[0] = '\0';
+    swe_get_planet_name_r(b, SE_FICT_OFFSET, nm);
+    if (strstr(nm, "ZZTESTBODY") == NULL) {
+      printf("  %-22s fictitious body 0 -> %-12s OK\n", "without the file", nm);
+    } else {
+      printf("  %-22s fictitious body 0 -> %s  FAIL: saw the other context's file\n",
+             "without the file", nm);
+      bad = 1;
+    }
+  }
 
   swe_ctx_free(a);
   swe_ctx_free(b);

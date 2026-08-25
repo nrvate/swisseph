@@ -142,10 +142,11 @@ jobs:
       - name: JPL byte-swapping path (reorder)
         run: make -C tests check-jplswap EPHE=../$EPHE
 
-      # G23. seleapsec.txt, which extends the leap-second table. Writes its
-      # own fixture, so it needs no ephemeris.
-      - name: Leap-second file extends the table
-        run: make -C tests check-leapsec
+      # G23. The data files a context reads along its own ephemeris path --
+      # seleapsec.txt and seorbel.txt -- both of which were fetched from the
+      # default context instead of the caller's.
+      - name: Per-context ephemeris files
+        run: make -C tests check-ctxfiles EPHE=../$EPHE
 
       # G11. gcc/clang pick tier 3 at every -std=, so tiers 4 and 5 are
       # built by nothing else. Tier 5 had already rotted unbuildable.
