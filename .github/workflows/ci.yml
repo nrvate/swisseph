@@ -130,6 +130,14 @@ jobs:
       - name: JPL reader numerical baseline
         run: make -C tests check-jplcalc
 
+      # G21. Diagnostics only, so it is toolchain-independent and belongs
+      # anywhere; it sits here because the runner has both compilers and the
+      # gate wants both -- they disagree about what is pedantic. Everything
+      # else in this file gates behaviour; this gates conformance, which
+      # -Wall -Wextra -Werror does not imply.
+      - name: Sources compile as conforming C
+        run: make -C tests check-pedantic
+
       # G11. gcc/clang pick tier 3 at every -std=, so tiers 4 and 5 are
       # built by nothing else. Tier 5 had already rotted unbuildable.
       - name: swethread.h backends all build and compute
