@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 /* Portable thread shim, same as tests/threadshim.c and tests/ctxtest.c.
  *
  * golden.c hardcoded <pthread.h>, which MSVC does not have -- so the one
@@ -1384,6 +1385,7 @@ static void suite(void) {
 struct targ {
   int id; char *buf; size_t len; int setup;
   long wrote; size_t read_back; char path[64];
+  int io_flush, io_ferror, io_close, io_errno;   /* see capture_close() */
 };
 
 /* Capturing each worker's transcript used to call open_memstream(), which is
@@ -1422,7 +1424,19 @@ static FILE *capture_open(int id, char *path, size_t n) {
 
 static void capture_close(struct targ *a, FILE *f) {
   long end;
-  fflush(f);
+  /* Nothing here ever checked whether the writes landed. fprintf() returns
+   * a count nobody reads, fflush() a status nobody reads, and a stream that
+   * has failed simply stops accepting bytes -- which produces exactly the
+   * symptom G2 keeps reporting: a transcript that is a strict prefix of the
+   * reference, with nothing to say why. A full disk, a short write, an
+   * interrupted one: all of them look like the library computing less.
+   *
+   * These are the four places the truth is available. ferror() after the
+   * flush covers everything written during the run; fclose() is where a
+   * deferred write error finally surfaces, so its return matters too. */
+  a->io_flush  = fflush(f);
+  a->io_ferror = ferror(f);
+  a->io_errno  = (a->io_flush != 0 || a->io_ferror != 0) ? errno : 0;
   end = ftell(f);
   a->wrote = end;
   a->len = end > 0 ? (size_t) end : 0;
@@ -1435,7 +1449,8 @@ static void capture_close(struct targ *a, FILE *f) {
     a->len = 0;
   }
   a->read_back = a->len;
-  fclose(f);
+  a->io_close = fclose(f);
+  if (a->io_close != 0 && a->io_errno == 0) a->io_errno = errno;
   /* Deliberately NOT removed here. main() deletes these once every thread
    * has matched; a run that fails leaves them behind, because the one thing
    * the old report could not tell you was what the file actually held. */
@@ -1489,7 +1504,7 @@ int main(int argc, char **argv) {
   swe_set_topo(8.55, 47.37, 400);
   swe_set_tid_acc(-25.85);
 
-  struct targ ref = { -1, NULL, 0, 0, 0, 0, "" };
+  struct targ ref = { -1, NULL, 0, 0, 0, 0, "", 0, 0, 0, 0 };
   thread_suite(&ref);
 
   struct targ *a = calloc(nthreads, sizeof *a);
@@ -1506,7 +1521,42 @@ int main(int argc, char **argv) {
     for (int i = 0; i < nthreads; i++) { char p[64]; snprintf(p,sizeof p,"golden_thr%d.txt",i);
       f=fopen(p,"wb"); fwrite(a[i].buf,1,a[i].len,f); fclose(f); }
   }
-  int bad = 0;
+  int bad = 0, io_bad = 0;
+  /* A stream that failed is reported on its own, before any comparison, and
+   * fails the run whatever the bytes say. Two reasons. A transcript that was
+   * not written in full makes the comparison meaningless rather than merely
+   * wrong, so "8/8 matched" would be a lie about a run that lost data. And
+   * the report can name the cause -- ENOSPC, EFBIG, EIO -- instead of
+   * leaving a short transcript to be diagnosed from its length. This is the
+   * check that would have said whether the G2 sightings were the library or
+   * the disk; it did not exist when they happened.
+   *
+   * Counted apart from `bad` so the "N/M threads matched" line below stays
+   * about threads. The reference has a stream too, and folding its failure
+   * into the same counter made that line read -1/4. */
+  for (int i = -1; i < nthreads; i++) {
+    struct targ *w = (i < 0) ? &ref : &a[i];
+    char who[32];
+    if (w->io_flush == 0 && w->io_ferror == 0 && w->io_close == 0) continue;
+    io_bad++;
+    if (i < 0) snprintf(who, sizeof who, "reference");
+    else       snprintf(who, sizeof who, "thread %d", i);
+    fprintf(stderr,
+            "%s: TRANSCRIPT I/O FAILED -- fflush=%d ferror=%d fclose=%d errno=%d (%s)\n"
+            "  the capture was not written in full, so any comparison of it is void\n",
+            who, w->io_flush, w->io_ferror, w->io_close, w->io_errno,
+            w->io_errno ? strerror(w->io_errno) : "no errno recorded");
+  }
+  /* If the reference itself did not survive, there is nothing to compare
+   * against and every thread would be reported as differing from a
+   * truncated file. Say that once instead. */
+  if (ref.io_flush || ref.io_ferror || ref.io_close) {
+    fprintf(stderr, "the reference transcript is incomplete; thread comparison skipped\n");
+    fprintf(stderr, "%d/%d threads matched the main-thread transcript%s\n",
+            0, nthreads, setup ? " (--per-thread-setup)" : "");
+    swe_close();
+    return 1;
+  }
   for (int i = 0; i < nthreads; i++) {
     /* buf is NULL when the worker could not open or allocate its capture at
      * all. The comparison below indexes both buffers, so say so and move on
@@ -1573,8 +1623,15 @@ int main(int argc, char **argv) {
   } else {
     fprintf(stderr, "reference transcript: %s\n", ref.path);
   }
-  fprintf(stderr, "%d/%d threads matched the main-thread transcript%s\n",
-          nthreads - bad, nthreads, setup ? " (--per-thread-setup)" : "");
+  /* The I/O count rides on this line rather than only appearing above it.
+   * "4/4 threads matched" printed underneath a stream that failed is the
+   * exact reassurance this whole change exists to stop giving. */
+  fprintf(stderr, "%d/%d threads matched the main-thread transcript%s%s",
+          nthreads - bad, nthreads, setup ? " (--per-thread-setup)" : "",
+          io_bad ? "" : "\n");
+  if (io_bad)
+    fprintf(stderr, " -- but %d transcript%s incomplete, so that count means"
+                    " less than it says\n", io_bad, io_bad == 1 ? " was" : "s were");
   swe_close();
-  return bad ? 1 : 0;
+  return (bad || io_bad) ? 1 : 0;
 }

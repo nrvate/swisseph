@@ -38,7 +38,17 @@ or two, and verify.
   regardless and now carries the pid.
   Left open deliberately. A gate that fails when nothing is wrong is worth
   more attention than a clean list.
-  What has changed is that the next occurrence will say something. The
+  The stream itself is now checked. `fflush`, `ferror` and `fclose` all
+  returned statuses this file had never read, and `fprintf` returns a count
+  nobody reads either — so a write that failed part-way through a run
+  produced exactly this symptom with nothing to say why. A full disk, a
+  short write, an interrupted one: all of them looked like the library
+  computing less. A failed stream is now reported by name with its `errno`
+  and fails the run, and if the REFERENCE stream failed the comparison is
+  skipped rather than reporting every thread as different from a truncated
+  file. Verified against a real `EFBIG` (`ulimit -f` with `SIGXFSZ`
+  ignored), not a simulated one.
+  What has changed besides is that the next occurrence will say something. The
   report now classifies the mismatch — SHORT (the worker's bytes are a
   prefix, so output went missing), LONGER, or DIVERGED (same length,
   different bytes, the only one that is about the library) — prints the
