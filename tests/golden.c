@@ -1375,13 +1375,15 @@ static void suite(void) {
   sweep();
 }
 
-/* wrote/read are what capture_close() saw, kept apart so a failure can say
- * whether the transcript was short because the worker produced less or
- * because reading it back returned less. path survives the run when a
- * thread mismatches, so there is something on disk to look at. */
+/* wrote and read_back are what capture_close() saw, kept apart so a failure
+ * can say whether the transcript was short because the worker produced less
+ * or because reading it back returned less. (read_back rather than read:
+ * <unistd.h> is in scope and a member called read beside it reads badly.)
+ * path survives the run when a thread mismatches, so there is something on
+ * disk to look at. */
 struct targ {
   int id; char *buf; size_t len; int setup;
-  long wrote; size_t read; char path[64];
+  long wrote; size_t read_back; char path[64];
 };
 
 /* Capturing each worker's transcript used to call open_memstream(), which is
@@ -1390,8 +1392,9 @@ struct targ {
  * hands the comparison below exactly what it wants, a->buf and a->len. One
  * implementation for every platform, so Windows exercises the same path.
  *
- * "w+b": no newline translation, so the bytes are the bytes on either side. */
-/* The process id is in the name because more than one golden runs at once.
+ * "w+b": no newline translation, so the bytes are the bytes on either side.
+ *
+ * The process id is in the name because more than one golden runs at once.
  * `make check` sets -j$(NPROC), and check-threads and
  * check-threads-workaround each start ./golden --threads 8 in this same
  * directory. Keyed on the thread id alone, both opened
@@ -1431,7 +1434,7 @@ static void capture_close(struct targ *a, FILE *f) {
   } else {
     a->len = 0;
   }
-  a->read = a->len;
+  a->read_back = a->len;
   fclose(f);
   /* Deliberately NOT removed here. main() deletes these once every thread
    * has matched; a run that fails leaves them behind, because the one thing
@@ -1505,6 +1508,16 @@ int main(int argc, char **argv) {
   }
   int bad = 0;
   for (int i = 0; i < nthreads; i++) {
+    /* buf is NULL when the worker could not open or allocate its capture at
+     * all. The comparison below indexes both buffers, so say so and move on
+     * rather than dereferencing it -- the old code walked into that on the
+     * one path where a capture file cannot be created. */
+    if (a[i].buf == NULL || ref.buf == NULL) {
+      bad++;
+      fprintf(stderr, "thread %d: NO TRANSCRIPT (capture failed; %s)\n",
+              i, a[i].path[0] ? a[i].path : "no file was opened");
+      continue;
+    }
     if (a[i].len != ref.len || memcmp(a[i].buf, ref.buf, ref.len) != 0) {
       bad++;
       /* report the first differing line */
@@ -1544,8 +1557,8 @@ int main(int argc, char **argv) {
                 "  capture: ftell reported %ld, fread returned %zu%s\n"
                 "  file  : %s (kept for inspection)\n",
                 kind, ref.len, a[i].len, off,
-                a[i].wrote, a[i].read,
-                (a[i].wrote >= 0 && (size_t) a[i].wrote != a[i].read)
+                a[i].wrote, a[i].read_back,
+                (a[i].wrote >= 0 && (size_t) a[i].wrote != a[i].read_back)
                   ? "  <-- SHORT READ: the file held more than was read back" : "",
                 a[i].path);
       }
