@@ -400,10 +400,15 @@ check-samples: .samples.txt samples.baseline
 # One suppression exists, annotated where it sits: swe_get_library_path()
 # hands a function pointer to dladdr(), which takes void *. POSIX requires
 # that conversion and ISO C has none, so no spelling satisfies both.
+#
+# The two counters at the end are the point of a gate: it must not report
+# success having verified nothing. Without them a container with no compiler
+# prints "skipped" twice and passes, and a wildcard that matched no files
+# prints "OK (0 files)" and passes.
 PEDANTIC_SRC = $(wildcard ../*.c)
 check-pedantic:
 	@echo "G21: root sources compile as conforming C (-pedantic)"
-	@rc=0; \
+	@rc=0; ran=0; n=$$(echo $(PEDANTIC_SRC) | wc -w); \
 	for cc in $(CC) clang; do \
 	  command -v $$cc >/dev/null 2>&1 || { printf "  %-8s not installed, skipped\n" "$$cc"; continue; }; \
 	  bad=""; \
@@ -411,11 +416,14 @@ check-pedantic:
 	    $$cc -std=c17 -D_GNU_SOURCE -fPIC -Wall -Wextra -pedantic -Werror \
 	         -c $$f -o /dev/null 2>.pedantic.err || bad="$$bad $$(basename $$f)"; \
 	  done; \
+	  ran=$$((ran+1)); \
 	  if [ -n "$$bad" ]; then \
 	    printf "  %-8s FAIL:%s\n" "$$cc" "$$bad"; head -5 .pedantic.err; rc=1; \
-	  else printf "  %-8s OK  (%s files)\n" "$$cc" "$$(echo $(PEDANTIC_SRC) | wc -w)"; fi; \
+	  else printf "  %-8s OK  (%s files)\n" "$$cc" "$$n"; fi; \
 	done; \
 	rm -f .pedantic.err; \
+	if [ $$ran -eq 0 ]; then echo "  no compiler found -- verified nothing"; rc=1; fi; \
+	if [ $$n -eq 0 ]; then echo "  no sources matched -- verified nothing"; rc=1; fi; \
 	[ $$rc -eq 0 ] || exit 1
 	@echo "G21 PASS"
 
