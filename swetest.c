@@ -800,7 +800,9 @@ static int32 hindu = 0;
 /* for test of old models only */
 static char *astro_models;
 static int do_set_astro_models = FALSE;
-static char smod[2000];
+/* 2000 left 86 bytes spare: -amod<x>+ lists every model, measured at 1914,
+ * so one more model would have run past the end. */
+static char smod[4000];
 static AS_BOOL inut = FALSE; /* for Astrodienst internal feature */
 static AS_BOOL have_gap_parameter = FALSE; 
 static AS_BOOL use_swe_fixstar2 = FALSE; 

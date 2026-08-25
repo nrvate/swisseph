@@ -4645,10 +4645,18 @@ void CALL_CONV swe_get_astro_models_r(swe_ctx *ctx, char *samod, char *sdet, int
        * guarded, this one was not, and printed it through %s regardless.
        * "(null)" is glibc's choice for that, not C's. With no model string
        * from the caller there is only the canonical spelling to offer. */
+      /* Precisions, because samod is the CALLER's string and sdet is the
+       * caller's buffer: without them the length of an argument decided how
+       * many bytes the library wrote, and no buffer size could be safe.
+       * swetest passes argv straight through as -amod<...> into char[2000],
+       * so `swetest -amod<2000 chars>` was a 2133-byte write into it --
+       * ASan: global-buffer-overflow at this line. 60 is well past anything
+       * meaningful: set_astro_models() reads a short digit list, and the
+       * "SE2.06" form is truncated to 20 characters before it is parsed. */
       if (samod != NULL)
-	sprintf(sdet + strlen(sdet), "For list of all available astronomical models, add a '+' to the version string\n(swetest parameter -amod%s+ or -amod%s+)\n", samod, samod0);
+	sprintf(sdet + strlen(sdet), "For list of all available astronomical models, add a '+' to the version string\n(swetest parameter -amod%.60s+ or -amod%.60s+)\n", samod, samod0);
       else
-	sprintf(sdet + strlen(sdet), "For list of all available astronomical models, add a '+' to the version string\n(swetest parameter -amod%s+)\n", samod0);
+	sprintf(sdet + strlen(sdet), "For list of all available astronomical models, add a '+' to the version string\n(swetest parameter -amod%.60s+)\n", samod0);
     } else {
       strcat(sdet, "DELTA T MODELS (D)\n");
       for (i = 0; i <= SEMOD_NDELTAT; i++) {
