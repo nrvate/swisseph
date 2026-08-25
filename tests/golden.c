@@ -507,6 +507,91 @@ static void eclipses(void) {
   row("nod_aps_dsc",  rf, xdsc, 6, NULL);
   row("nod_aps_peri", rf, xper, 6, NULL);
   row("nod_aps_aphe", rf, xaph, 6, NULL);
+
+  /* The rest of swe_nod_aps(). The four rows above are one call -- the Moon,
+   * mean method -- and left 41% of its 367 lines run.
+   *
+   * The method argument is most of what was missing. 0 and SE_NODBIT_MEAN
+   * take the closed-form branch, and only for the Sun through Neptune plus
+   * the Earth; everything else falls through to the osculating one, which
+   * integrates. SE_NODBIT_OSCU_BAR switches that to barycentric, but only
+   * for bodies beyond Jupiter, so it needs a distant planet to mean
+   * anything. SE_NODBIT_FOPOINT replaces the aphelion with the orbit's
+   * second focus, which changes the fourth output array and nothing else.
+   *
+   * The objects are chosen against those branches rather than for variety:
+   * the Moon has its own path, the Earth is special-cased beside the
+   * planets, Mercury is an ordinary inner one, and Pluto is far enough out
+   * for OSCU_BAR to take effect. */
+  {
+    static const struct { int32 m; const char *n; } meth[] = {
+      { 0,                                    "dflt"     },
+      { SE_NODBIT_MEAN,                       "mean"     },
+      { SE_NODBIT_OSCU,                       "oscu"     },
+      { SE_NODBIT_OSCU_BAR,                   "oscubar"  },
+      { SE_NODBIT_OSCU | SE_NODBIT_FOPOINT,   "oscufoc"  },
+    };
+    static const struct { int32 ipl; const char *n; } obj[] = {
+      { SE_MOON,    "moon"    },
+      { SE_EARTH,   "earth"   },
+      { SE_MERCURY, "mercury" },
+      { SE_PLUTO,   "pluto"   },
+    };
+    for (size_t m = 0; m < sizeof(meth)/sizeof(meth[0]); m++)
+      for (size_t o = 0; o < sizeof(obj)/sizeof(obj[0]); o++) {
+        memset(xasc,0,sizeof xasc); memset(xdsc,0,sizeof xdsc);
+        memset(xper,0,sizeof xper); memset(xaph,0,sizeof xaph);
+        serr[0] = 0;
+        rf = swe_nod_aps(2451545.0, obj[o].ipl, SEFLG_SWIEPH|SEFLG_SPEED,
+                         meth[m].m, xasc, xdsc, xper, xaph, serr);
+        snprintf(tag, sizeof tag, "nodaps[%s,%s,asc]", meth[m].n, obj[o].n);
+        row(tag, rf, xasc, 6, serr);
+        snprintf(tag, sizeof tag, "nodaps[%s,%s,dsc]", meth[m].n, obj[o].n);
+        row(tag, rf, xdsc, 6, NULL);
+        snprintf(tag, sizeof tag, "nodaps[%s,%s,peri]", meth[m].n, obj[o].n);
+        row(tag, rf, xper, 6, NULL);
+        snprintf(tag, sizeof tag, "nodaps[%s,%s,aphe]", meth[m].n, obj[o].n);
+        row(tag, rf, xaph, 6, NULL);
+      }
+
+    /* And the refusals. A node or an apogee has no nodes of its own, and
+     * neither does an object number in the gap between the planets and the
+     * asteroid offset. Each returns ERR with a message, and the messages
+     * are as much a part of the contract as the numbers. */
+    { static const struct { int32 ipl; const char *n; } bad[] = {
+        { SE_MEAN_NODE, "meannode" }, { SE_TRUE_NODE, "truenode" },
+        { SE_OSCU_APOG, "oscuapog" }, { SE_NPLANETS + 1, "gap" },
+      };
+      for (size_t k = 0; k < sizeof(bad)/sizeof(bad[0]); k++) {
+        memset(xasc,0,sizeof xasc); memset(xdsc,0,sizeof xdsc);
+        memset(xper,0,sizeof xper); memset(xaph,0,sizeof xaph);
+        serr[0] = 0;
+        rf = swe_nod_aps(2451545.0, bad[k].ipl, SEFLG_SWIEPH,
+                         SE_NODBIT_MEAN, xasc, xdsc, xper, xaph, serr);
+        snprintf(tag, sizeof tag, "nodaps[refused,%s]", bad[k].n);
+        row(tag, rf, xasc, 6, serr);
+      }
+    }
+
+    /* Heliocentric, which takes a different iflg0 at the top, and the _ut
+     * entry point, which is the one most callers actually use and which
+     * only the single row above had reached. */
+    memset(xasc,0,sizeof xasc); memset(xdsc,0,sizeof xdsc);
+    memset(xper,0,sizeof xper); memset(xaph,0,sizeof xaph);
+    serr[0] = 0;
+    rf = swe_nod_aps(2451545.0, SE_JUPITER, SEFLG_SWIEPH|SEFLG_HELCTR,
+                     SE_NODBIT_OSCU, xasc, xdsc, xper, xaph, serr);
+    row("nodaps[helctr,jupiter,asc]", rf, xasc, 6, serr);
+    row("nodaps[helctr,jupiter,peri]", rf, xper, 6, NULL);
+
+    memset(xasc,0,sizeof xasc); memset(xdsc,0,sizeof xdsc);
+    memset(xper,0,sizeof xper); memset(xaph,0,sizeof xaph);
+    serr[0] = 0;
+    rf = swe_nod_aps_ut(2451545.0, SE_MARS, SEFLG_SWIEPH|SEFLG_SPEED,
+                        SE_NODBIT_OSCU, xasc, xdsc, xper, xaph, serr);
+    row("nodaps[ut,mars,asc]", rf, xasc, 6, serr);
+    row("nodaps[ut,mars,aphe]", rf, xaph, 6, NULL);
+  }
 }
 
 static void pheno(void) {
@@ -866,6 +951,127 @@ static void coverage(void) {
     { double g2[10]; memset(g2, 0, sizeof g2); *serr = 0;
       rf = swe_lun_occult_where(2451545.0, SE_VENUS, NULL, SEFLG_SWIEPH, g2, attr, serr);
       row("cov:lun_occult_where", rf, attr, 8, serr); }
+
+    /* The eclipse and occultation searches, by TYPE and DIRECTION.
+     *
+     * Every row above passes ifltype 0 and backward FALSE, which is one
+     * path through functions built around those two arguments: ifltype
+     * filters which kind of eclipse counts and each kind is searched for
+     * differently, and backward reverses the walk. Together they were most
+     * of what left this cluster between 62% and 77% -- swecl.c is the
+     * least-covered file in the library and this is why.
+     *
+     * SE_ECL_ONE_TRY rides in the backward argument rather than in ifltype,
+     * which is easy to misread: it stops the search after a single synodic
+     * period instead of hunting until it finds something. */
+    {
+      static const struct { int32 t; const char *n; } ecl[] = {
+        { 0,                                "any"      },
+        { SE_ECL_TOTAL,                     "total"    },
+        { SE_ECL_ANNULAR,                   "annular"  },
+        { SE_ECL_PARTIAL,                   "partial"  },
+        { SE_ECL_TOTAL | SE_ECL_CENTRAL,    "totcen"   },
+        { SE_ECL_ANNULAR_TOTAL,             "anntot"   },
+        { SE_ECL_PARTIAL | SE_ECL_CENTRAL,  "refused"  },
+      };
+      for (size_t k = 0; k < sizeof(ecl)/sizeof(ecl[0]); k++) {
+        memset(tret, 0, sizeof tret); *serr = 0;
+        rf = swe_sol_eclipse_when_glob(2451545.0, SEFLG_SWIEPH, ecl[k].t,
+                                       tret, FALSE, serr);
+        snprintf(tag, sizeof tag, "cov:sol_ecl_glob[%s]", ecl[k].n);
+        row(tag, rf, tret, 7, serr);
+      }
+      /* Lunar types are their own set -- a lunar eclipse can be penumbral
+       * and cannot be annular. */
+      { static const struct { int32 t; const char *n; } lun[] = {
+          { SE_ECL_TOTAL,     "total"     },
+          { SE_ECL_PARTIAL,   "partial"   },
+          { SE_ECL_PENUMBRAL, "penumbral" },
+        };
+        for (size_t k = 0; k < sizeof(lun)/sizeof(lun[0]); k++) {
+          memset(tret, 0, sizeof tret); *serr = 0;
+          rf = swe_lun_eclipse_when(2451545.0, SEFLG_SWIEPH, lun[k].t,
+                                    tret, FALSE, serr);
+          snprintf(tag, sizeof tag, "cov:lun_ecl_when[%s]", lun[k].n);
+          row(tag, rf, tret, 7, serr);
+        }
+      }
+
+      /* Backwards, for each of the five searches that take the flag. The
+       * walk runs the other way and the first hit is the one before the
+       * start date, not after it. */
+      memset(tret, 0, sizeof tret); *serr = 0;
+      rf = swe_sol_eclipse_when_glob(2451545.0, SEFLG_SWIEPH, 0, tret, TRUE, serr);
+      row("cov:sol_ecl_glob[back]", rf, tret, 7, serr);
+      memset(tret, 0, sizeof tret); *serr = 0;
+      rf = swe_lun_eclipse_when(2451545.0, SEFLG_SWIEPH, 0, tret, TRUE, serr);
+      row("cov:lun_ecl_when[back]", rf, tret, 7, serr);
+      memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr); *serr = 0;
+      rf = swe_sol_eclipse_when_loc(2451545.0, SEFLG_SWIEPH, geo, tret, attr, TRUE, serr);
+      row("cov:sol_ecl_loc[back]", rf, tret, 7, serr);
+      memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr); *serr = 0;
+      rf = swe_lun_eclipse_when_loc(2451545.0, SEFLG_SWIEPH, geo, tret, attr, TRUE, serr);
+      row("cov:lun_ecl_loc[back]", rf, tret, 7, serr);
+      memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr); *serr = 0;
+      rf = swe_lun_occult_when_loc(2451545.0, SE_VENUS, NULL, SEFLG_SWIEPH,
+                                   geo, tret, attr, TRUE, serr);
+      row("cov:lun_occ_loc[back]", rf, tret, 7, serr);
+
+      /* Occultation by type, plus the two refusals the function spells out:
+       * PARTIAL|CENTRAL is contradictory, and only the Sun can be occulted
+       * annularly -- ask for an annular occultation of a planet and it says
+       * so rather than searching for something that cannot happen. */
+      { static const struct { int32 t; const char *n; } occ[] = {
+          { SE_ECL_TOTAL,                    "total"    },
+          { SE_ECL_PARTIAL,                  "partial"  },
+          { SE_ECL_ANNULAR,                  "annular"  },
+          { SE_ECL_PARTIAL | SE_ECL_CENTRAL, "refused"  },
+        };
+        for (size_t k = 0; k < sizeof(occ)/sizeof(occ[0]); k++) {
+          memset(tret, 0, sizeof tret); *serr = 0;
+          rf = swe_lun_occult_when_glob(2451545.0, SE_VENUS, NULL, SEFLG_SWIEPH,
+                                        occ[k].t, tret, FALSE, serr);
+          snprintf(tag, sizeof tag, "cov:lun_occ_glob[%s]", occ[k].n);
+          row(tag, rf, tret, 7, serr);
+        }
+      }
+      /* A star, which takes the swe_fixstar() branch instead of swe_calc(),
+       * and ONE_TRY, which bounds the search instead of letting it hunt. */
+      { char st[AS_MAXCH]; strcpy(st, "Aldebaran");
+        memset(tret, 0, sizeof tret); *serr = 0;
+        rf = swe_lun_occult_when_glob(2451545.0, 0, st, SEFLG_SWIEPH, 0,
+                                      tret, FALSE, serr);
+        row("cov:lun_occ_glob[star]", rf, tret, 7, serr); }
+      memset(tret, 0, sizeof tret); *serr = 0;
+      rf = swe_lun_occult_when_glob(2451545.0, SE_VENUS, NULL, SEFLG_SWIEPH, 0,
+                                    tret, SE_ECL_ONE_TRY, serr);
+      row("cov:lun_occ_glob[onetry]", rf, tret, 7, serr);
+
+      /* swe_pheno() at 62%: the rows elsewhere ask geocentrically for the
+       * Sun through Saturn. Heliocentric and topocentric take different
+       * flag paths at the top, the Moon has its own branch, and an
+       * out-of-range body is refused. */
+      { memset(attr, 0, sizeof attr); *serr = 0;
+        rf = swe_pheno(2451545.0, SE_JUPITER, SEFLG_SWIEPH|SEFLG_HELCTR, attr, serr);
+        row("cov:pheno[helctr]", rf, attr, 8, serr);
+        memset(attr, 0, sizeof attr); *serr = 0;
+        rf = swe_pheno(2451545.0, SE_MOON, SEFLG_SWIEPH|SEFLG_TOPOCTR, attr, serr);
+        row("cov:pheno[topoctr_moon]", rf, attr, 8, serr);
+        memset(attr, 0, sizeof attr); *serr = 0;
+        rf = swe_pheno(2451545.0, SE_NPLANETS + 1, SEFLG_SWIEPH, attr, serr);
+        row("cov:pheno[refused]", rf, attr, 8, serr);
+        /* The two remappings at the top of the function, which nothing had
+         * reached: an object numbered as minor planet 134340 is Pluto and
+         * becomes SE_PLUTO, and minor planets 1 to 4 become SE_CERES
+         * onwards, because those four have their own ephemeris rather than
+         * living in the asteroid files. */
+        memset(attr, 0, sizeof attr); *serr = 0;
+        rf = swe_pheno(2451545.0, SE_AST_OFFSET + 134340, SEFLG_SWIEPH, attr, serr);
+        row("cov:pheno[ast_pluto]", rf, attr, 8, serr);
+        memset(attr, 0, sizeof attr); *serr = 0;
+        rf = swe_pheno(2451545.0, SE_AST_OFFSET + 1, SEFLG_SWIEPH, attr, serr);
+        row("cov:pheno[ast_ceres]", rf, attr, 8, serr); }
+    }
   }
 
   /* --- setters: exercised, then restored ------------------------------
