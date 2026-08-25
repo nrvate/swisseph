@@ -267,7 +267,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-eopload \
-       check-firstcall check-pedantic check-jplswap check-ctxfiles
+       check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -349,6 +349,34 @@ check-jplswap: jplswap
 	@env -u SE_EPHE_PATH SE_TEST_EPHE="$${SE_TEST_EPHE:-$(EPHE)}" \
 	  ./jplswap $(JPLSWAP_DIR)
 	@rm -rf $(JPLSWAP_DIR)
+
+# G24: the SWE_UPSTREAM_COMPAT switch that lets G8 stay strict.
+#
+# G8 compares against pristine upstream byte for byte, which only works while
+# the fork's deliberate numerical fixes can be switched off for that one
+# build. This asserts the switch in both directions -- the shipped default
+# must NOT carry the defects, and the compat build MUST -- because a switch
+# that has quietly stopped restoring them leaves G8 passing while a fix
+# silently stops shipping.
+#
+# Its own object set: the flag changes behaviour, so it cannot share
+# $(SWEOBJ_STD) with everything else.
+OBJ_COMPAT = .obj-compat
+SWEOBJ_COMPAT = $(patsubst ../%.c,$(OBJ_COMPAT)/%.o,$(SWE))
+$(OBJ_COMPAT)/%.o: ../%.c
+	@mkdir -p $(OBJ_COMPAT)
+	$(CC) $(CFLAGS) -DSWE_UPSTREAM_COMPAT $(DEPFLAGS) -c $< -o $@
+-include $(SWEOBJ_COMPAT:.o=.d)
+
+compat_default: compat.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+compat_upstream: compat.c $(SWEOBJ_COMPAT)
+	$(CC) $(CFLAGS) -DSWE_UPSTREAM_COMPAT -DEXPECT_COMPAT $^ -o $@ $(LIBS)
+
+check-compat: compat_default compat_upstream
+	@env -u SE_EPHE_PATH ./compat_default $(EPHE)
+	@env -u SE_EPHE_PATH ./compat_upstream $(EPHE)
 
 # G23: the data files a context reads along its OWN ephemeris path.
 #
@@ -478,12 +506,12 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f .setest_ref_f.txt .setest_now_f.txt .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
 	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall jplswap $(JPLSWAP_DIR)
-	rm -rf ctxfiles $(CTXF_DIR) $(CTXF_BARE)
+	rm -rf ctxfiles $(CTXF_DIR) $(CTXF_BARE) compat_default compat_upstream $(OBJ_COMPAT)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -494,7 +522,7 @@ clean:
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
-        check-ctxfiles \
+        check-ctxfiles check-compat \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
@@ -679,7 +707,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f .setest_ref_f.txt .setest_now_f.txt .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
@@ -765,31 +793,6 @@ check-build:
 # before and after our changes. Usage:
 #     make setest-ref REF=origin/legacy-master   # capture reference once
 #     make check-setest               # compare current tree against it
-# ONE testcase deliberately differs from upstream, and this is the only
-# accepted divergence. suite_01 testcase 5 is swe_calc_pctr(), whose answer
-# used to depend on which epoch had been computed before it -- 24.5 arcsec
-# after a position 10000 days away, because it read ctx->oec/ctx->nut without
-# keying them to its own tjd. See REVIEW.md Closed.
-#
-# Verified before accepting it: EVERY line the fix moves belongs to 1.5, and
-# the fix improves the planetocentric-from-Earth vs geocentric invariant for
-# every body tested. So this filter hides a change that is understood, not
-# one that is merely small.
-#
-# Both sides are filtered, so the gate keeps full strength everywhere else:
-# a change anywhere outside 1.5 still fails it -- verified by perturbing
-# swi_epsiln() by 1e-11, which does.
-#
-# Adding a SECOND divergence is not a judgement call: notes/REVIEW.md,
-# "Accepted divergences from upstream", states the three pieces of evidence
-# required and records what was produced for this one.
-# Character classes, not backslashes: awk processes escape sequences in a
-# -v assignment, so '1\.5\.' arrives as 1.5. with the dots as wildcards --
-# and warns about it. [.] means a literal dot however it is passed.
-SETEST_ACCEPTED      ?= 1[.]5[.]
-SETEST_ACCEPTED_DESC ?= testcase 1.5 (swe_calc_pctr, deliberately fixed)
-SETEST_ACCEPT = awk -v ACCEPT='$(SETEST_ACCEPTED)' -f $(CURDIR)/setest-accept.awk
-
 SETEST_REF ?= /tmp/setest_ref.txt
 REF        ?= origin/legacy-master
 
@@ -818,7 +821,14 @@ SCRUB = sed -f $(CURDIR)/scrub-ephe.sed
 #
 # Pinned to -O0 for the same reason tests/baseline.txt is: a differential is
 # only meaningful when the only variable is the code.
-SETEST_CFLAGS = -O0 -g -fPIC -D_GNU_SOURCE
+# -DSWE_UPSTREAM_COMPAT: build the library the way upstream behaves, so this
+# gate can stay a STRICT byte-for-byte differential even though the fork has
+# deliberately fixed numerical defects. Without it the choice was to filter
+# the affected testcases -- 15 of them across four suites, which hollows the
+# gate out -- or to re-baseline against ourselves and lose the upstream
+# comparison. See sweph.h for what the switch restores, and check-compat,
+# which fails if it ever stops restoring it.
+SETEST_CFLAGS = -O0 -g -fPIC -D_GNU_SOURCE -DSWE_UPSTREAM_COMPAT
 
 setest-ref:
 	@rm -rf /tmp/se_ref_wt
@@ -857,9 +867,6 @@ check-setest: $(SETEST_REF)
 	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
 	   echo "G8 FAIL: setest produced only $$lines lines -- it did not run"; \
 	   head -3 .setest_now.txt; exit 1; fi
-	@$(SETEST_ACCEPT) $(SETEST_REF) > .setest_ref_f.txt
-	@$(SETEST_ACCEPT) .setest_now.txt > .setest_now_f.txt
-	@diff -q .setest_ref_f.txt .setest_now_f.txt >/dev/null \
-	  && echo "G8 PASS: setest output identical to $(REF) outside $(SETEST_ACCEPTED_DESC) ($$(wc -l < .setest_now.txt) lines)" \
-	  || { echo "G8 FAIL: setest output changed"; diff .setest_ref_f.txt .setest_now_f.txt | head -20; exit 1; }
-	@rm -f .setest_ref_f.txt .setest_now_f.txt
+	@diff -q $(SETEST_REF) .setest_now.txt >/dev/null \
+	  && echo "G8 PASS: setest output identical to $(REF) ($$(wc -l < .setest_now.txt) lines)" \
+	  || { echo "G8 FAIL: setest output changed"; diff $(SETEST_REF) .setest_now.txt | head -20; exit 1; }

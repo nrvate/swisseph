@@ -639,7 +639,44 @@ static const struct aya_init ayanamsa[SE_NSIDM_PREDEF] = {
 /* obliquity of ecliptic */
 struct epsilon {
   double teps, eps, seps, ceps; 	/* jd, eps, sin(eps), cos(eps) */
+  /* The flags eps was computed under. swi_epsiln() consults SEFLG_JPLHOR and
+   * SEFLG_JPLHOR_APPROX -- the Horizons offset moves the obliquity by 0.88
+   * arcsec at -3000 -- so an epoch alone does not identify a cached value.
+   * swi_check_nutation() has always carried its flags for the same reason. */
+  int32 epsflag;
 };
+/* The bits swi_epsiln() and calc_nutation() both branch on, and so the
+ * bits their caches have to key on as well as the epoch. */
+#define SWI_JPLHOR_FLAGMASK (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX)
+
+/* SWE_UPSTREAM_COMPAT -- reproduce defects this fork has FIXED.
+ *
+ * Never define it in a shipped build. It exists for one caller: G8, the
+ * differential that asks whether our changes altered what upstream's own
+ * suite prints. A deliberate fix does alter it, and the choice used to be
+ * between filtering the affected testcases -- which quietly hollows the gate
+ * out -- and re-baselining against ourselves, which loses the upstream
+ * comparison for good. This is the third option: build the library the way
+ * upstream behaves, compare strictly, and ship the fix.
+ *
+ * G8 already had the shape of this idea. It runs setest with
+ * SE_EPHE_FALLBACK=1 so the suite meets upstream's rules on ephemeris
+ * substitution; this extends the same reasoning to numerical defects.
+ *
+ * What it restores, both proven by check-compat:
+ *   - swi_check_ecliptic()/swi_check_nutation() keyed on epoch alone, so a
+ *     value computed under SEFLG_JPLHOR was served to callers that did not
+ *     ask for it (104 of 120 answers contaminated)
+ *   - swe_calc_pctr() never keyed those caches to its own tjd (24.5 arcsec)
+ *
+ * Anything added here needs a check-compat case, or the switch rots into a
+ * macro that silently does nothing.
+ */
+#ifdef SWE_UPSTREAM_COMPAT
+# define SWI_EPS_KEY(iflag)  ((int32) 0)
+#else
+# define SWI_EPS_KEY(iflag)  ((iflag) & SWI_JPLHOR_FLAGMASK)
+#endif
 
 /*
 extern struct epsilon oec2000;
