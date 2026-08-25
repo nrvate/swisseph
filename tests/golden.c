@@ -1375,7 +1375,14 @@ static void suite(void) {
   sweep();
 }
 
-struct targ { int id; char *buf; size_t len; int setup; };
+/* wrote/read are what capture_close() saw, kept apart so a failure can say
+ * whether the transcript was short because the worker produced less or
+ * because reading it back returned less. path survives the run when a
+ * thread mismatches, so there is something on disk to look at. */
+struct targ {
+  int id; char *buf; size_t len; int setup;
+  long wrote; size_t read; char path[64];
+};
 
 /* Capturing each worker's transcript used to call open_memstream(), which is
  * POSIX and has no MSVC equivalent, so G2 -- the gate this file exists for --
@@ -1410,10 +1417,11 @@ static FILE *capture_open(int id, char *path, size_t n) {
   return fopen(path, "w+b");
 }
 
-static void capture_close(struct targ *a, FILE *f, const char *path) {
+static void capture_close(struct targ *a, FILE *f) {
   long end;
   fflush(f);
   end = ftell(f);
+  a->wrote = end;
   a->len = end > 0 ? (size_t) end : 0;
   a->buf = malloc(a->len + 1);
   if (a->buf != NULL) {
@@ -1423,14 +1431,18 @@ static void capture_close(struct targ *a, FILE *f, const char *path) {
   } else {
     a->len = 0;
   }
+  a->read = a->len;
   fclose(f);
-  remove(path);
+  /* Deliberately NOT removed here. main() deletes these once every thread
+   * has matched; a run that fails leaves them behind, because the one thing
+   * the old report could not tell you was what the file actually held. */
 }
 
 static thr_ret_t THR_CALL thread_suite(void *p) {
   struct targ *a = p;
   char path[64];
   FILE *f = capture_open(a->id, path, sizeof path);
+  snprintf(a->path, sizeof a->path, "%s", path);
   if (f == NULL) {
     fprintf(stderr, "could not open capture file %s\n", path);
     a->buf = NULL; a->len = 0;
@@ -1442,7 +1454,7 @@ static thr_ret_t THR_CALL thread_suite(void *p) {
    * 1 = re-apply configuration on every worker thread (today's workaround). */
   if (a->setup) swe_set_ephe_path((char *)EPHE);
   suite_compute_only();
-  capture_close(a, f, path);
+  capture_close(a, f);
   return (thr_ret_t) 0;
 }
 
@@ -1474,7 +1486,7 @@ int main(int argc, char **argv) {
   swe_set_topo(8.55, 47.37, 400);
   swe_set_tid_acc(-25.85);
 
-  struct targ ref = { -1, NULL, 0, 0 };
+  struct targ ref = { -1, NULL, 0, 0, 0, 0, "" };
   thread_suite(&ref);
 
   struct targ *a = calloc(nthreads, sizeof *a);
@@ -1504,7 +1516,49 @@ int main(int argc, char **argv) {
       sscanf(a[i].buf + off, "%299[^\n]", tl);
       fprintf(stderr, "thread %d: MISMATCH at line ~%d\n  main  : ...%.120s\n  thread: ...%.120s\n",
               i, line, rl, tl);
+
+      /* Which KIND of mismatch, because the two want opposite
+       * investigations and the lines above cannot tell them apart. A
+       * truncated transcript prints as an empty "thread:" line, which looks
+       * like a wrong value and is not one.
+       *
+       * SHORT   the worker's bytes are a prefix of the reference. Nothing
+       *         computed differently; output went missing. Compare wrote
+       *         against read below -- if they disagree, reading the file
+       *         back came up short, and if they agree the worker really did
+       *         stop early.
+       * LONGER  more output than the reference, which no ordinary failure
+       *         produces and would suggest two writers sharing a file.
+       * DIVERGED  same length, different bytes: an actual disagreement, and
+       *         the only one of the three that is about the library.
+       */
+      {
+        const char *kind =
+          (a[i].len < ref.len && off == a[i].len) ? "SHORT (a prefix of the reference)" :
+          (a[i].len > ref.len && off == ref.len)  ? "LONGER than the reference"        :
+          (a[i].len == ref.len)                   ? "DIVERGED (same length, different bytes)" :
+                                                    "DIVERGED, and a different length too";
+        fprintf(stderr,
+                "  kind  : %s\n"
+                "  bytes : reference %zu, thread %zu, first difference at %zu\n"
+                "  capture: ftell reported %ld, fread returned %zu%s\n"
+                "  file  : %s (kept for inspection)\n",
+                kind, ref.len, a[i].len, off,
+                a[i].wrote, a[i].read,
+                (a[i].wrote >= 0 && (size_t) a[i].wrote != a[i].read)
+                  ? "  <-- SHORT READ: the file held more than was read back" : "",
+                a[i].path);
+      }
     }
+  }
+  /* Only on success. A failed run leaves every capture file in place --
+   * including the reference's -- so the transcripts can be diffed directly
+   * rather than reconstructed from the one line printed above. */
+  if (bad == 0) {
+    remove(ref.path);
+    for (int i = 0; i < nthreads; i++) remove(a[i].path);
+  } else {
+    fprintf(stderr, "reference transcript: %s\n", ref.path);
   }
   fprintf(stderr, "%d/%d threads matched the main-thread transcript%s\n",
           nthreads - bad, nthreads, setup ? " (--per-thread-setup)" : "");

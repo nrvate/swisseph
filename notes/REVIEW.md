@@ -38,6 +38,15 @@ or two, and verify.
   regardless and now carries the pid.
   Left open deliberately. A gate that fails when nothing is wrong is worth
   more attention than a clean list.
+  What has changed is that the next occurrence will say something. The
+  report now classifies the mismatch — SHORT (the worker's bytes are a
+  prefix, so output went missing), LONGER, or DIVERGED (same length,
+  different bytes, the only one that is about the library) — prints the
+  byte counts and the offset, compares what `ftell` reported against what
+  `fread` returned so a short read is distinguishable from a short worker,
+  and leaves every capture file on disk instead of deleting it. The old
+  report printed one line of each transcript, and a truncated one prints as
+  an empty "thread:" line, which reads exactly like a wrong value.
 
 ## 2. Open — performance, bit-exact
 
