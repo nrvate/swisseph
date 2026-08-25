@@ -10,6 +10,10 @@
 #define SETEST_MAX_SYMBOL_SIZE 50
 #define SETEST_MAX_COMMAND_LENGTH 100
 
+/* Collection name plus a ".fix"/".exp" extension. Three sites built that
+ * filename in a plain char[SETEST_MAX_SYMBOL_SIZE] and overflowed it. */
+#define SETEST_MAX_COLLECTION_FILE (SETEST_MAX_SYMBOL_SIZE + 4)
+
 #include "globals.h"
 #include "reader.h"
 #include "testdata.h"

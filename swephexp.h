@@ -695,6 +695,9 @@ ext_def(int32) swe_topo_arcus_visionis(double tjdut, double *dgeo, double *datm,
 /* the following is secret, for Dieter, allows to test old models of
  * precession, nutation, etc. Search for SE_MODEL_... in this file */
 ext_def(void) swe_set_astro_models(char *samod, int32 iflag);
+/* sdet: a '+' in samod lists every model -- ~1.9 KB today, growing with each
+ * one added. Give it 4000. samod is echoed through a precision, so only a
+ * later release describing more models can outgrow the buffer. */
 ext_def(void) swe_get_astro_models(char *samod, char *sdet, int32 iflag);
 
 /**************************** 

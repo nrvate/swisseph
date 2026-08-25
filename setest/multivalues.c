@@ -123,7 +123,10 @@ void parse_int_range( const char* value, mvalues* mval) {
         break;
       default:
         fprintf(stderr,"Could not parse multivalue expression '%s'\n",p0);
-        return;
+/* Returned from a void function, so the caller never learned the expression
+ * was rejected: the table stayed at length 0 and multivalues_get_next()
+ * evaluated (i + 1) % length -- SIGFPE. Stop, as the case below does. */
+        exit(EXIT_FAILURE);
     }
     if (!ok) {
       fprintf(stderr,"Error while processing subexpression '%s'\n",p0);
@@ -195,8 +198,11 @@ void parse_double_range( const char* value, mvalues* mval) {
         exit(EXIT_FAILURE);
     }
     if (!ok) {
-      fprintf(stderr,"Error while processing multivalue expression '%s'",p0);
-      return;
+      fprintf(stderr,"Error while processing multivalue expression '%s'\n",p0);
+/* Mirror of the integer version, which exits here and returned above.
+ * The table is full rather than empty, so no SIGFPE -- it just silently
+ * drops values and runs a smaller test set. Newline was missing too. */
+      exit(EXIT_FAILURE);
     }
   } while(
        (p1 = strchr(p0,',')) != NULL &&

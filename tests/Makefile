@@ -267,13 +267,21 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-eopload \
-       check-firstcall
+       check-firstcall check-pedantic check-jplswap
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
 # docker, and re-runs the gates under the CI toolchain rather than adding new
 # ones.
-check-all: check check-setest
+#
+# Sequential, not `check-all: check check-setest`: as prerequisites those run
+# concurrently under -j, and both force a rebuild of the SAME root objects
+# with different flags -- check-build at the root's -O2, check-setest pinned
+# to -O0. Past the torn files, that leaves libswe.a a mix of both, silently
+# undoing the pin check-setest depends on.
+check-all:
+	@$(MAKE) check
+	@$(MAKE) check-setest
 
 # CI checks out ephe/ without sat/ (227 MB) and ep4/ (25 MB), on the grounds
 # that no gate opens them. That held when it was measured with strace, and
@@ -325,6 +333,23 @@ DT_DIR = .ephe-dt
 dtmemo: dtmemo.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
+# G22: reorder(), swejpl.c's byte-swapping path, which measured 0.00% --
+# de200.eph matches this host's byte order, so eleven call sites never fire.
+# The fixture is de200.eph rewritten into the opposite byte order, so it must
+# read back bit-identical. Details in jplswap.c.
+#
+# Writes a 41 MB twin, which the run removes; the header carries the expected
+# length, so it cannot be shrunk.
+JPLSWAP_DIR = .jplswap
+jplswap: jplswap.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-jplswap: jplswap
+	@rm -rf $(JPLSWAP_DIR) && mkdir -p $(JPLSWAP_DIR)
+	@env -u SE_EPHE_PATH SE_TEST_EPHE="$${SE_TEST_EPHE:-$(EPHE)}" \
+	  ./jplswap $(JPLSWAP_DIR)
+	@rm -rf $(JPLSWAP_DIR)
+
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
 	@printf '# fixture: 1620 moved off the built-in 124.00\n1620  200.0\n' \
@@ -372,8 +397,48 @@ check-samples: .samples.txt samples.baseline
 	  || { echo "G17 FAIL: a sample program's output moved"; \
 	       diff samples.baseline .samples.txt | head -20; exit 1; }
 
+# G21: the shipped sources are conforming C, not merely warning-free C.
+#
+# -Wall -Wextra -Werror accepts plenty ISO C does not -- a declaration after
+# a case label, empty initializer braces, a designated range -- and the bill
+# arrives on whichever port comes next, as a build failure in someone else's
+# tree. This caught a declaration after a case label during the setest review.
+#
+# Both compilers, because they disagree about what is pedantic. Samples
+# included: they are what a reader copies from. One suppression, annotated in
+# sweph.c, for the dladdr() cast POSIX requires and ISO C has no spelling for.
+#
+# The two counters at the end stop it reporting success having verified
+# nothing: no compiler, or no files, is a failure rather than a pass.
+PEDANTIC_SRC = $(wildcard ../*.c)
+check-pedantic:
+	@echo "G21: root sources compile as conforming C (-pedantic)"
+	@rc=0; ran=0; n=$$(echo $(PEDANTIC_SRC) | wc -w); \
+	for cc in $(CC) clang; do \
+	  command -v $$cc >/dev/null 2>&1 || { printf "  %-8s not installed, skipped\n" "$$cc"; continue; }; \
+	  bad=""; \
+	  for f in $(PEDANTIC_SRC); do \
+	    $$cc -std=c17 -D_GNU_SOURCE -fPIC -Wall -Wextra -pedantic -Werror \
+	         -c $$f -o /dev/null 2>.pedantic.err || bad="$$bad $$(basename $$f)"; \
+	  done; \
+	  ran=$$((ran+1)); \
+	  if [ -n "$$bad" ]; then \
+	    printf "  %-8s FAIL:%s\n" "$$cc" "$$bad"; head -5 .pedantic.err; rc=1; \
+	  else printf "  %-8s OK  (%s files)\n" "$$cc" "$$n"; fi; \
+	done; \
+	rm -f .pedantic.err; \
+	if [ $$ran -eq 0 ]; then echo "  no compiler found -- verified nothing"; rc=1; fi; \
+	if [ $$n -eq 0 ]; then echo "  no sources matched -- verified nothing"; rc=1; fi; \
+	[ $$rc -eq 0 ] || exit 1
+	@echo "G21 PASS"
+
 EPHE_MIN = .ephe-min
-check-ephe-ci:
+# Prerequisites so this make links them once up front. Otherwise the
+# sub-makes below link them while the sibling check-golden/-jplcalc/-jplreal
+# run them under -j, and a relink truncates the file mid-execution:
+#   env: './golden': Permission denied     (Error 126)
+# The sub-makes can't coordinate: MAKEFLAGS += -j resets jobserver mode.
+check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16: the gates hold against CI's pruned ephe/ (no sat/, no ep4/)"
 	@rm -rf $(EPHE_MIN) && mkdir -p $(EPHE_MIN)
 	@for f in $(EPHE)/*; do \
@@ -388,11 +453,11 @@ check-ephe-ci:
 	@echo "G16 PASS"
 
 clean:
-	rm -f samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
-	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall
+	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall jplswap $(JPLSWAP_DIR)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -402,7 +467,7 @@ clean:
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
-        check-winmacros check-jplreal orderprobe \
+        check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
@@ -522,7 +587,7 @@ check-ci: ci-image
 	  for t in check-golden check-golden-O2 check-threads check-cfgleak \
 	           check-sunrace check-glprace check-jplguard check-jplcalc \
 	           check-threadshim check-threadtiers check-ctx check-bridge \
-	           check-build; do \
+	           check-build check-pedantic; do \
 	    printf "  %-22s " $$t; \
 	    if make -s $$t > /tmp/o 2>&1; then echo OK; \
 	    else echo FAIL; tail -20 /tmp/o | sed "s/^/      /"; exit 1; fi; \
@@ -587,7 +652,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
