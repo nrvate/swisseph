@@ -707,11 +707,17 @@ static void misc(void) {
             (snprintf(tag, sizeof tag, "ayanname[%d]", sid), tag),
             nm ? nm : "(null)");
   }
-  for (int p = SE_SUN; p <= SE_VESTA; p++) {
+  /* Through SE_INTP_PERG, not SE_VESTA: the interpolated apogee and perigee
+   * are the last two names in the switch and the loop stopped two short of
+   * them. */
+  for (int p = SE_SUN; p <= SE_INTP_PERG; p++) {
     buf[0] = 0; swe_get_planet_name(p, buf);
     fprintf(TRANSCRIPT, "%-46s %s\n",
             (snprintf(tag, sizeof tag, "plname[%d]", p), tag), buf);
   }
+  /* Asking for Pluto by its asteroid number is aliased back to SE_PLUTO. */
+  buf[0] = 0; swe_get_planet_name(SE_AST_OFFSET + 134340, buf);
+  fprintf(TRANSCRIPT, "%-46s %s\n", "plname[pluto-as-asteroid]", buf);
   const char *hs = "PKORCAEVXHTBGWMNQLIUSDFY";
   for (const char *h = hs; *h; h++)
     fprintf(TRANSCRIPT, "%-46s %s\n",
@@ -885,6 +891,25 @@ static void coverage(void) {
     sprintf(tag, "cov:helio_cross[%d]", i);            row(tag, rf, x, 1, serr);
     *serr = 0; rf = swe_helio_cross_ut(SE_VENUS, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
     sprintf(tag, "cov:helio_cross_ut[%d]", i);         row(tag, rf, x, 1, serr);
+    /* Only ever asked forwards, for a planet with a usable heliocentric
+     * speed, and never for something it must refuse. dir < 0 searches
+     * backwards (dist = 360 - dist); Chiron is the one body whose speed is
+     * replaced by a mean value; the Moon is rejected outright, as are the
+     * nodes, the apogees and everything from SE_INTP_APOG up. */
+    *serr = 0; rf = swe_helio_cross(SE_VENUS, 90.0 * (i + 1), jd, SEFLG_SWIEPH, -1, &x[0], serr);
+    sprintf(tag, "cov:helio_cross[back,%d]", i);       row(tag, rf, x, 1, serr);
+    *serr = 0; rf = swe_helio_cross_ut(SE_VENUS, 90.0 * (i + 1), jd, SEFLG_SWIEPH, -1, &x[0], serr);
+    sprintf(tag, "cov:helio_cross_ut[back,%d]", i);    row(tag, rf, x, 1, serr);
+    *serr = 0; rf = swe_helio_cross(SE_CHIRON, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
+    sprintf(tag, "cov:helio_cross[chiron,%d]", i);     row(tag, rf, x, 1, serr);
+    /* Zeroed for the same reason: a refusal leaves *jd_cross untouched, so
+     * these rows were recording the Chiron crossing computed just above. */
+    *serr = 0; x[0] = 0;
+    rf = swe_helio_cross(SE_MOON, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
+    sprintf(tag, "cov:helio_cross[refused,%d]", i);    row(tag, rf, x, 1, serr);
+    *serr = 0; x[0] = 0;
+    rf = swe_helio_cross_ut(SE_MEAN_NODE, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
+    sprintf(tag, "cov:helio_cross_ut[refused,%d]", i); row(tag, rf, x, 1, serr);
   }
 
   /* --- misc compute --------------------------------------------------- */
@@ -892,6 +917,21 @@ static void coverage(void) {
     double tjd = 2451545.0 + i * 2000.0;
     *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH, x, serr);
     sprintf(tag, "cov:calc_pctr[%d]", i);              row(tag, rf, x, 6, serr);
+    /* Without SEFLG_SPEED the whole light-time-of-the-speed block is skipped
+     * -- it is what corrects apparent motion for dt changing with time.
+     * SEFLG_TRUEPOS skips the light-time iteration entirely, and asking for
+     * a body centred on itself is the one argument error the function has. */
+    *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    sprintf(tag, "cov:calc_pctr[speed,%d]", i);        row(tag, rf, x, 6, serr);
+    *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_TRUEPOS, x, serr);
+    sprintf(tag, "cov:calc_pctr[truepos,%d]", i);      row(tag, rf, x, 6, serr);
+    /* x is zeroed first: swe_calc_pctr() rejects ipl == iplctr without
+     * writing it, so the row recorded the PREVIOUS call's six values --
+     * byte-identical to the row above and silently re-pinned by any edit
+     * to it. Same reason as the memset in the fictitious-body loop. */
+    *serr = 0; memset(x, 0, sizeof x);
+    rf = swe_calc_pctr(tjd, SE_MARS, SE_MARS, SEFLG_SWIEPH, x, serr);
+    sprintf(tag, "cov:calc_pctr[same,%d]", i);         row(tag, rf, x, 6, serr);
     *serr = 0; rf = swe_gauquelin_sector(tjd, SE_MARS, NULL, SEFLG_SWIEPH, 0,
                                          (double[]){ 16.4, 48.2, 190.0 }, 1013.25, 15.0, &x[0], serr);
     sprintf(tag, "cov:gauquelin[%d]", i);              row(tag, rf, x, 1, serr);
@@ -1582,6 +1622,7 @@ static void coverage(void) {
     *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
     row("cov:order_swiss_after_moseph", rf, x, 6, serr);
 
+
     /* Merely NAMING a JPL file must not move a result computed from another
      * ephemeris. swe_set_jpl_file() both closes the .se1 files and sets
      * jpldenum, and each leaked somewhere it had no business:
@@ -1740,6 +1781,32 @@ static void coverage(void) {
         row(tg, 0, x, 1, serr);
       }
     }
+    reset_astro_models();
+  }
+
+  /* plaus_iflag()'s JPL Horizons handling, none of which ran. SEFLG_JPLHOR
+   * survives only alongside SEFLG_JPLEPH, and with no EOP data loaded it
+   * downgrades to SEFLG_JPLHOR_APPROX and says which of the four reasons it
+   * was. The calc then fails on the missing JPL file, which is what the row
+   * records -- the flag reasoning happens before that and is the point. The
+   * SEMOD_JPLHORA_2 row reaches the frame-bias branch, which the default
+   * model (3) skips. */
+  {
+    char sam[AS_MAXCH];
+    *serr = 0; rf = swe_calc(DATES[0], SE_MARS, SEFLG_JPLEPH|SEFLG_JPLHOR, x, serr);
+    row("cov:jplhor[downgrade]", rf, x, 6, serr);
+    *serr = 0; rf = swe_calc(DATES[0], SE_MARS, SEFLG_JPLEPH|SEFLG_JPLHOR_APPROX, x, serr);
+    row("cov:jplhor[approx]", rf, x, 6, serr);
+    /* JPLHOR is also stripped for the nodes and apogees, and for fictitious
+     * bodies, before any of that is considered. */
+    *serr = 0; rf = swe_calc(DATES[0], SE_MEAN_NODE, SEFLG_JPLEPH|SEFLG_JPLHOR, x, serr);
+    row("cov:jplhor[node]", rf, x, 6, serr);
+    *serr = 0; rf = swe_calc(DATES[0], SE_FICT_OFFSET, SEFLG_JPLEPH|SEFLG_JPLHOR, x, serr);
+    row("cov:jplhor[fict]", rf, x, 6, serr);
+    snprintf(sam, sizeof sam, "0,0,0,0,0,0,%d,0", SEMOD_JPLHORA_2);
+    swe_set_astro_models(sam, 0);
+    *serr = 0; rf = swe_calc(DATES[0], SE_MARS, SEFLG_JPLEPH|SEFLG_JPLHOR_APPROX, x, serr);
+    row("cov:jplhor[hora2]", rf, x, 6, serr);
     reset_astro_models();
   }
 

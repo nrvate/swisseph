@@ -7487,7 +7487,12 @@ char * CALL_CONV swe_get_planet_name_r(swe_ctx *ctx, int ipl, char *s)
     default: 
       /* fictitious planets */
       if (ipl >= SE_FICT_OFFSET && ipl <= SE_FICT_MAX) {
-        swi_get_fict_name(swi_default_ctx(), ipl - SE_FICT_OFFSET, s);
+        /* ctx, not swi_default_ctx(): this reads seorbel.txt along the
+         * ephemeris path and through the per-context line cache, so asking
+         * the default context returned names from the wrong directory
+         * whenever the caller was not the default context. Same shape as
+         * init_leapsec()'s two sites. */
+        swi_get_fict_name(ctx, ipl - SE_FICT_OFFSET, s);
         break;
       }
       /* asteroids */

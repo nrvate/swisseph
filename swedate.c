@@ -432,7 +432,13 @@ int32 CALL_CONV swe_utc_to_jd_r(swe_ctx *ctx, int32 iyear, int32 imonth, int32 i
   /* 
    * number of leap seconds since 1972: 
    */
-  tabsiz_nleap = init_leapsec(swi_default_ctx());
+  /* ctx, not swi_default_ctx(): the table being INDEXED two lines down is
+   * ctx->leap_seconds, and seleapsec.txt is looked up along the ephemeris
+   * path of whichever context is passed. Loading the default context's copy
+   * and then reading the caller's meant a non-default context never saw its
+   * own seleapsec.txt, and iterated its own array to a length that came from
+   * somewhere else. */
+  tabsiz_nleap = init_leapsec(ctx);
   nleap = NLEAP_INIT; /* initial difference between UTC and TAI in 1972 */
   ndat = iyear * 10000 + imonth * 100 + iday;
   for (i = 0; i < tabsiz_nleap; i++) {
@@ -534,7 +540,7 @@ void CALL_CONV swe_jdet_to_utc_r(swe_ctx *ctx, double tjd_et, int32 gregflag, in
    * minimum number of leap seconds since 1972; we may be missing one leap
    * second
    */
-  tabsiz_nleap = init_leapsec(swi_default_ctx());
+  tabsiz_nleap = init_leapsec(ctx);   /* see swe_utc_to_jd_r() above */
   swe_revjul(tjd_ut-1, SE_GREG_CAL, &iyear2, &imonth2, &iday2, &d);
   ndat = iyear2 * 10000 + imonth2 * 100 + iday2;
   nleap = 0; 

@@ -267,7 +267,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-eopload \
-       check-firstcall check-pedantic check-jplswap
+       check-firstcall check-pedantic check-jplswap check-ctxfiles
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -349,6 +349,31 @@ check-jplswap: jplswap
 	@env -u SE_EPHE_PATH SE_TEST_EPHE="$${SE_TEST_EPHE:-$(EPHE)}" \
 	  ./jplswap $(JPLSWAP_DIR)
 	@rm -rf $(JPLSWAP_DIR)
+
+# G23: the data files a context reads along its OWN ephemeris path.
+#
+# Both were fetched from swi_default_ctx() instead of the caller's context,
+# so a non-default context read the wrong directory: init_leapsec() at two
+# sites in swedate.c (and then indexed the caller's table anyway), and
+# swi_get_fict_name() in swe_get_planet_name_r(). Neither had a test, and
+# the transcript cannot have one -- it runs on the default context, where
+# the two spellings are the same call.
+CTXF_DIR  = .ephe-ctxf
+CTXF_BARE = .ephe-ctxf-bare
+ctxfiles: ctxfiles.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-ctxfiles: ctxfiles
+	@rm -rf $(CTXF_DIR) $(CTXF_BARE) && mkdir -p $(CTXF_DIR) $(CTXF_BARE)
+	@printf '# fixture: a leap second the built-in table does not carry\n20261231\n' \
+	  > $(CTXF_DIR)/seleapsec.txt
+	@# Written out rather than derived from $(EPHE)/seorbel.txt: this gate
+	@# needs no ephemeris otherwise, and deriving it would re-pin the fixture
+	@# silently if upstream ever reorders that file's first element line.
+	@printf 'J1900, J1900, 163.7409, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, ZZTESTBODY\n' \
+	  > $(CTXF_DIR)/seorbel.txt
+	@env -u SE_EPHE_PATH ./ctxfiles $(CTXF_DIR) $(CTXF_BARE)
+	@rm -rf $(CTXF_DIR) $(CTXF_BARE)
 
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
@@ -458,6 +483,7 @@ clean:
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
 	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall jplswap $(JPLSWAP_DIR)
+	rm -rf ctxfiles $(CTXF_DIR) $(CTXF_BARE)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -468,6 +494,7 @@ clean:
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
+        check-ctxfiles \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.

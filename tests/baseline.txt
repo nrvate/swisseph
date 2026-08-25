@@ -4998,6 +4998,9 @@ plname[17]                                     Ceres
 plname[18]                                     Pallas
 plname[19]                                     Juno
 plname[20]                                     Vesta
+plname[21]                                     intp. Apogee
+plname[22]                                     intp. Perigee
+plname[pluto-as-asteroid]                      Pluto
 hname[P]                                       Placidus
 hname[K]                                       Koch
 hname[O]                                       Porphyry
@@ -5077,6 +5080,11 @@ cov:mooncross_node[0]                          rf=0      0x1.2b42fe0fe852ap+21 0
 cov:mooncross_node_ut[0]                       rf=0      0x1.2b42fe0e64f73p+21 0x1.2fa73e298e94p+8 -0x1.d6ff39987760fp-30
 cov:helio_cross[0]                             rf=0      0x1.2b480504cd8c1p+21
 cov:helio_cross_ut[0]                          rf=0      0x1.2b480503497p+21
+cov:helio_cross[back,0]                        rf=0      0x1.2b40ff77d2881p+21
+cov:helio_cross_ut[back,0]                     rf=0      0x1.2b40ff764f81p+21
+cov:helio_cross[chiron,0]                      rf=0      0x1.2cfe23132305cp+21
+cov:helio_cross[refused,0]                     rf=-1     0x0p+0 | swe_helio_cross: not possible for object 1 = Moon
+cov:helio_cross_ut[refused,0]                  rf=-1     0x0p+0 | swe_helio_cross: not possible for object 10 = mean Node
 cov:solcross[1]                                rf=0      0x1.2b567bb28cbc8p+21
 cov:solcross_ut[1]                             rf=0      0x1.2b567bb106e14p+21
 cov:mooncross[1]                               rf=0      0x1.2b4f7bed55e1ap+21
@@ -5085,11 +5093,22 @@ cov:mooncross_node[1]                          rf=0      0x1.2b4f5446d1e06p+21 0
 cov:mooncross_node_ut[1]                       rf=0      0x1.2b4f54454cd35p+21 0x1.a4f311c43b789p+6 -0x1.aa3f4888fdcfcp-29
 cov:helio_cross[1]                             rf=0      0x1.2b50c64c4c771p+21
 cov:helio_cross_ut[1]                          rf=0      0x1.2b50c64ac73e7p+21
-cov:calc_pctr[0]                               rf=2      0x1.c904d38bc21afp+7 0x1.f503d437b7a3ep-1 0x1.f8830ed395cd2p+1 0x0p+0 0x0p+0 0x0p+0
+cov:helio_cross[back,1]                        rf=0      0x1.2b49c0c098c5fp+21
+cov:helio_cross_ut[back,1]                     rf=0      0x1.2b49c0bf146d1p+21
+cov:helio_cross[chiron,1]                      rf=0      0x1.2d50145c65d6dp+21
+cov:helio_cross[refused,1]                     rf=-1     0x0p+0 | swe_helio_cross: not possible for object 1 = Moon
+cov:helio_cross_ut[refused,1]                  rf=-1     0x0p+0 | swe_helio_cross: not possible for object 10 = mean Node
+cov:calc_pctr[0]                               rf=2      0x1.c90918563f652p+7 0x1.f503dcf1baeb2p-1 0x1.f8830ed395cd2p+1 0x0p+0 0x0p+0 0x0p+0
+cov:calc_pctr[speed,0]                         rf=258    0x1.c90541191ea07p+7 0x1.f503d48243581p-1 0x1.f8830ed395cd5p+1 -0x1.bb828ce0fa0bep-6 0x1.7aa57a0852f7dp-8 -0x1.484bfc098821fp-7
+cov:calc_pctr[truepos,0]                       rf=1554   0x1.c904f063d2121p+7 0x1.f5150db65d602p-1 0x1.f87a3ec37cfd5p+1 0x0p+0 0x0p+0 0x0p+0
+cov:calc_pctr[same,0]                          rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | ipl and iplctr (= 4) must not be identical 
 cov:gauquelin[0]                               rf=0      0x1.7cd9066a1ffadp+2
 cov:orbital_elements[0]                        rf=0      0x1.860fd65b5dfc2p+0 0x1.7e3804aa70b14p-4 0x1.d99248423fb99p+0 0x1.8c7eaf5b51ce6p+5 0x1.1e89a376b6d9p+8 0x1.501979622112dp+8 0x1.35b3be2ed518ep+4 0x1.75544a8bc8eb3p+4 0x1.54c632ceea0a3p+4 0x1.6374b5450e646p+8 0x1.e1803b2c2216cp+0 0x1.0c4ede08dc3e3p-1 0x1.e17c334256f4dp+0 0x1.85f982edbe182p+9 0x1.2b41a0813becp+21 0x1.61a9c6946b3f5p+0 0x1.aa75e62250b8fp+0
 cov:fixstar_ut[0]                              rf=2      0x1.a05759f53d9dfp+6 -0x1.3cd72dc8c457cp+5 0x1.0997859564323p+19 0x0p+0 0x0p+0 0x0p+0
 cov:calc_pctr[1]                               rf=2      0x1.24eee191d35e3p+3 -0x1.865f9744d3cf1p+0 0x1.91e5f11546432p+2 0x0p+0 0x0p+0 0x0p+0
+cov:calc_pctr[speed,1]                         rf=258    0x1.24eee191d35e2p+3 -0x1.865f9744d3cefp+0 0x1.91e5f11546433p+2 0x1.46b8d716ea11bp-3 0x1.72e24177b4033p-9 0x1.3f9e948443e7ep-7
+cov:calc_pctr[truepos,1]                       rf=1554   0x1.251e44354974ep+3 -0x1.8658de49a0cfap+0 0x1.91ec90c113566p+2 0x0p+0 0x0p+0 0x0p+0
+cov:calc_pctr[same,1]                          rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | ipl and iplctr (= 4) must not be identical 
 cov:gauquelin[1]                               rf=0      0x1.3e965bfef0d1ap+4
 cov:orbital_elements[1]                        rf=0      0x1.860f798b3ed1cp+0 0x1.7ebe9dd05571fp-4 0x1.d96f24fefe86bp+0 0x1.8c4e8e0a2984ap+5 0x1.1e9ffa89ad2a5p+8 0x1.5029cc4af25aep+8 0x1.5b5752445972fp+8 0x1.58b208794a92ap+8 0x1.5a0ce9d52eb3ep+8 0x1.43811e8f4bcdcp+8 0x1.e17f8f5126d0fp+0 0x1.0c4f3dcc704d5p-1 0x1.e17b8765527a1p+0 0x1.85fa20f503ba6p+9 0x1.2b6c918213b09p+21 0x1.619ca116503b8p+0 0x1.aa8252002d68p+0
 cov:fixstar_ut[1]                              rf=2      0x1.a0981ff6cd23p+6 -0x1.3cdb850e35fbep+5 0x1.0996eaf842629p+19 0x0p+0 0x0p+0 0x0p+0
@@ -5405,6 +5424,11 @@ cov:deltat_longterm[4,0]                       rf=0      0x1.03c4ed941a6a4p+3
 cov:deltat_longterm[4,1]                       rf=0      0x1.f4b06610f7a89p-4
 cov:deltat_longterm[5,0]                       rf=0      0x1.08f78dd5f82eap+3
 cov:deltat_longterm[5,1]                       rf=0      0x1.f6b88da96c304p-4
+cov:jplhor[downgrade]                          rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | JPL ephemeris is not available for jd 1356173.5000; falling back to Swiss (.se1) would answer with lower precision. Install the data files, or call swe_set_ephe_fallback(1) to allow the substitution.
+cov:jplhor[approx]                             rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | JPL ephemeris is not available for jd 1356173.5000; falling back to Swiss (.se1) would answer with lower precision. Install the data files, or call swe_set_ephe_fallback(1) to allow the substitution.
+cov:jplhor[node]                               rf=1      0x1.55c462812cbf7p+7 0x0p+0 0x1.50cbf7deb263fp-9 0x0p+0 0x0p+0 0x0p+0
+cov:jplhor[fict]                               rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | JPL ephemeris is not available for jd 1356173.5000; falling back to Swiss (.se1) would answer with lower precision. Install the data files, or call swe_set_ephe_fallback(1) to allow the substitution.
+cov:jplhor[hora2]                              rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | JPL ephemeris is not available for jd 1356173.5000; falling back to Swiss (.se1) would answer with lower precision. Install the data files, or call swe_set_ephe_fallback(1) to allow the substitution.
 cov:interp_nut[on]                             rf=258    0x1.c5d46ebb8d0d4p+7 0x1.46e039de78f95p+2 0x1.61453ab6be837p-9 0x1.7f59a045ec2ccp+3 -0x1.f55ad1d253f2bp-3 0x1.152a262c32a6ep-16
 cov:interp_nut[mid]                            rf=258    0x1.cf64dd10548b2p+7 0x1.3f7d6593219c1p+2 0x1.6210ab7106e55p-9 0x1.7dd506a906684p+3 -0x1.53bd8b89ffeeep-2 0x1.cf825ff1a7863p-17
 cov:interp_nut[off]                            rf=258    0x1.c5d46ebb8d0d4p+7 0x1.46e039de78f95p+2 0x1.61453ab6be837p-9 0x1.7f59a03214005p+3 -0x1.f55ab6cebd795p-3 0x1.152a262c61e56p-16
