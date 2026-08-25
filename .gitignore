@@ -51,6 +51,7 @@
 !/tests/*.c
 !/tests/*.py
 !/tests/*.sed
+!/tests/*.awk
 !/tests/*.md
 !/tests/Makefile
 !/tests/baseline.txt

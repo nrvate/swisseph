@@ -8705,6 +8705,18 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   /************************************************
    * precession, equator 2000 -> equator of date *
    ************************************************/
+  /* The obliquity and nutation used below are per-context caches keyed on
+   * the epoch they were last computed for. Every other site that reads them
+   * -- swe_calc_r, app_pos_etc_plan, swe_fixstar -- calls these two first;
+   * this one did not, and relied on a side effect of the SE_ECL_NUT call at
+   * the top of the function. Four swe_calc_r() calls run in between and each
+   * re-keys the caches to its own epoch, so the transformation ended up
+   * using whatever the last of them left. That made the answer depend on
+   * what had been computed BEFORE the function was called: asking for Mars
+   * from Jupiter at J2000 moved 1.9 arcsec if a position 100 days away had
+   * been computed first, and 24.5 arcsec at 10000 days. */
+  swi_check_ecliptic(ctx, tjd, iflag);
+  swi_check_nutation(ctx, tjd, iflag);
   if (!(iflag & SEFLG_J2000)) {
     swi_precess(ctx, xx, tjd, iflag, J2000_TO_J);
     if (iflag & SEFLG_SPEED)

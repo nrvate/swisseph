@@ -932,6 +932,14 @@ static void coverage(void) {
     *serr = 0; memset(x, 0, sizeof x);
     rf = swe_calc_pctr(tjd, SE_MARS, SE_MARS, SEFLG_SWIEPH, x, serr);
     sprintf(tag, "cov:calc_pctr[same,%d]", i);         row(tag, rf, x, 6, serr);
+    /* The two branches that pick `oe`, which the obliquity/nutation fix
+     * changed the meaning of: SEFLG_J2000 takes oec2000, everything else
+     * oec, and the sidereal path re-derives the longitude afterwards.
+     * Neither was reached before. */
+    *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_J2000, x, serr);
+    sprintf(tag, "cov:calc_pctr[j2000,%d]", i);        row(tag, rf, x, 6, serr);
+    *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_SIDEREAL, x, serr);
+    sprintf(tag, "cov:calc_pctr[sidereal,%d]", i);     row(tag, rf, x, 6, serr);
     *serr = 0; rf = swe_gauquelin_sector(tjd, SE_MARS, NULL, SEFLG_SWIEPH, 0,
                                          (double[]){ 16.4, 48.2, 190.0 }, 1013.25, 15.0, &x[0], serr);
     sprintf(tag, "cov:gauquelin[%d]", i);              row(tag, rf, x, 1, serr);
@@ -1621,6 +1629,19 @@ static void coverage(void) {
     *serr = 0; swe_calc(DATES[0], SE_SUN, SEFLG_MOSEPH|SEFLG_SPEED, x, serr);
     *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
     row("cov:order_swiss_after_moseph", rf, x, 6, serr);
+
+    /* ⛔ Third instance of the same shape, now closed: swe_calc_pctr() read
+     * the obliquity and nutation caches without keying them to its own tjd,
+     * so its answer depended on the epoch of whatever ran before it -- 1.9
+     * arcsec after a position 100 days away, 24.5 arcsec at 10000. These two
+     * rows are identical by construction and worthless if they ever stop
+     * being, which is what makes them a test. */
+    *serr = 0; rf = swe_calc_pctr(DATES[0], SE_MARS, SE_JUPITER, SEFLG_SWIEPH, x, serr);
+    row("cov:order_pctr_alone", rf, x, 6, serr);
+    { double xfar[6];
+      swe_calc(DATES[0] + 10000.0, SE_MARS, SEFLG_SWIEPH|SEFLG_SPEED, xfar, serr); }
+    *serr = 0; rf = swe_calc_pctr(DATES[0], SE_MARS, SE_JUPITER, SEFLG_SWIEPH, x, serr);
+    row("cov:order_pctr_after_far", rf, x, 6, serr);
 
 
     /* Merely NAMING a JPL file must not move a result computed from another
