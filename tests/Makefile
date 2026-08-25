@@ -266,7 +266,8 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-eopload
+       check-build check-ephe-ci check-samples check-dtmemo check-eopload \
+       check-firstcall
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -346,6 +347,25 @@ check-eopload: eopload
 	@env -u SE_EPHE_PATH ./eopload $(EOP_DIR)/with $(EOP_DIR)/without
 	@rm -rf $(EOP_DIR)
 
+# G20: no public function may need a warm-up call.
+#
+# One process per function, because that is the only way to have a FIRST
+# call -- the numerical transcript is a single process and by the time it
+# reaches an eclipse row the failing path no longer exists. The binary
+# reports how many cases it has rather than the count living here twice.
+firstcall: firstcall.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-firstcall: firstcall
+	@echo "G20: every entry point works as the first call in a process"
+	@set -e; n=$$(./firstcall $(EPHE) count); bad=0; \
+	  i=0; while [ $$i -lt $$n ]; do \
+	    env -u SE_EPHE_PATH ./firstcall $(EPHE) $$i || bad=$$((bad+1)); \
+	    i=$$((i+1)); \
+	  done; \
+	  [ $$bad -eq 0 ] && echo "G20 PASS ($$n entry points)" \
+	    || { echo "G20 FAIL: $$bad of $$n need something to run first"; exit 1; }
+
 check-samples: .samples.txt samples.baseline
 	@diff -q samples.baseline .samples.txt \
 	  && echo "G17 PASS: swemini and obama output unchanged" \
@@ -372,7 +392,7 @@ clean:
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
-	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR)
+	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -381,7 +401,7 @@ clean:
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
-        check-samples samples-baseline check-dtmemo check-eopload \
+        check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe \
         ci-image check-ci clean
 
