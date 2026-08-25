@@ -350,6 +350,42 @@ check-jplswap: jplswap
 	  ./jplswap $(JPLSWAP_DIR)
 	@rm -rf $(JPLSWAP_DIR)
 
+# G25: true JPL Horizons mode. OPT-IN -- it needs a JPL ephemeris with real
+# coefficients AND a DE number >= 403, which is a 2.6 GB file that cannot be
+# committed or checked out in CI. Skips loudly without one:
+#
+#   make check-jplhor SE_TEST_EPHE=/path/holding/de431.eph SE_JPL_FILE=de431.eph
+#
+# de200.eph is shipped but is DE200, and G19's synthetic header has numde=431
+# with no coefficients -- each is half of what SEFLG_JPLHOR needs, which is
+# why bessel() had never executed.
+JPLHOR_DIR  = .ephe-jplhor
+JPLHOR_BARE = .ephe-jplhor-bare
+jplhor: jplhor.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-jplhor: jplhor
+	@jf="$${SE_JPL_FILE:-de431.eph}"; src="$${SE_TEST_EPHE:-$(EPHE)}"; \
+	 if [ ! -f "$$src/$$jf" ]; then \
+	   echo "G25 SKIP: no $$jf in $$src (needs a DE >= 403 with real coefficients)"; \
+	   echo "          make check-jplhor SE_TEST_EPHE=<dir> SE_JPL_FILE=<file>"; \
+	   exit 0; \
+	 fi; \
+	 rm -rf $(JPLHOR_DIR) $(JPLHOR_BARE); mkdir -p $(JPLHOR_DIR) $(JPLHOR_BARE); \
+	 for f in "$$src"/*; do ln -sf "$$(cd "$$(dirname "$$f")" && pwd)/$$(basename "$$f")" \
+	     $(JPLHOR_DIR)/ 2>/dev/null || true; \
+	   ln -sf "$$(cd "$$(dirname "$$f")" && pwd)/$$(basename "$$f")" \
+	     $(JPLHOR_BARE)/ 2>/dev/null || true; done; \
+	 : > $(JPLHOR_DIR)/eop_1962_today.txt; \
+	 echo "# EOPC04 fixture" >> $(JPLHOR_DIR)/eop_1962_today.txt; \
+	 i=0; while [ $$i -lt 40 ]; do \
+	   awk -v i=$$i 'BEGIN{printf "2000  1 %2d  %5d   0.0 0.0 0.0 0.0 %.9f %.9f\n", \
+	     i+1, 51544+i, -0.05-i*1e-5, -0.005-i*1e-6}' >> $(JPLHOR_DIR)/eop_1962_today.txt; \
+	   i=$$((i+1)); done; \
+	 rm -f $(JPLHOR_BARE)/eop_1962_today.txt; \
+	 env -u SE_EPHE_PATH ./jplhor $(JPLHOR_DIR) $(JPLHOR_BARE) "$$jf"
+	@rm -rf $(JPLHOR_DIR) $(JPLHOR_BARE)
+
 # G24: the SWE_UPSTREAM_COMPAT switch that lets G8 stay strict.
 #
 # G8 compares against pristine upstream byte for byte, which only works while
@@ -512,6 +548,7 @@ clean:
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
 	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall jplswap $(JPLSWAP_DIR)
 	rm -rf ctxfiles $(CTXF_DIR) $(CTXF_BARE) compat_default compat_upstream $(OBJ_COMPAT)
+	rm -rf jplhor $(JPLHOR_DIR) $(JPLHOR_BARE)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -522,7 +559,7 @@ clean:
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
-        check-ctxfiles check-compat \
+        check-ctxfiles check-compat check-jplhor \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.

@@ -1403,6 +1403,16 @@ static void ctx_release(swe_ctx *ctx)
   memset((void *) &ctx->sidd, 0, sizeof(struct sid_data));
   ctx->timeout = 0;
   ctx->last_epheflag = 0;
+  /* eop_dpsi_loaded has to go back with them. load_dpsi_deps() opens with
+   * "if (eop_dpsi_loaded > 0) return;" -- a load-once guard -- so leaving the
+   * flag set while freeing the arrays it describes means the next JPL
+   * Horizons request reloads nothing and bessel() dereferences NULL:
+   *
+   *   swe_calc(..., SEFLG_JPLHOR); swe_close(); swe_calc(..., SEFLG_JPLHOR);
+   *
+   * segfaults. Unreachable until now only because SEFLG_JPLHOR needs a JPL
+   * file with a DE number >= 403 and the IERS corrections, neither of which
+   * this repository ships; G25 reaches it with both. */
   if (ctx->dpsi != NULL) {
     free(ctx->dpsi);
     ctx->dpsi = NULL;
@@ -1411,6 +1421,7 @@ static void ctx_release(swe_ctx *ctx)
     free(ctx->deps);
     ctx->deps = NULL;
   }
+  ctx->eop_dpsi_loaded = 0;
   if (ctx->n_fixstars_records > 0) {
     free(ctx->fixed_stars);
     ctx->fixed_stars = NULL;
