@@ -57,6 +57,30 @@ or two, and verify.
   report printed one line of each transcript, and a truncated one prints as
   an empty "thread:" line, which reads exactly like a wrong value.
 
+- **A mean node asked for through `SEFLG_JPLEPH` still depends on history**,
+  by about 0.065 arcsec. Found while covering `sweph.c`: a coverage block
+  that computed `SE_MEAN_NODE` with `SEFLG_SWIEPH|SEFLG_SPEED` at the same
+  instant, immediately before the existing `cov:jplhor[node]` row, *changed*
+  that row — and the changed value is the one a clean process produces:
+
+      swe_calc(1356173.5, SE_MEAN_NODE, SEFLG_JPLEPH|SEFLG_JPLHOR, …)
+        in a fresh process           0x1.55c4603c694acp+7
+        as the transcript reaches it 0x1.55c462812cbf7p+7
+
+  So the transcript's recorded value for that row is the polluted one. Ruled
+  out: it is NOT the `swe_calc_pctr` defect fixed on this branch — that one
+  is a caller reading `ctx->oec`/`ctx->nut` without keying them, and
+  `app_pos_etc_mean` gets its check from `swecalc` upstream. It is also not
+  reproducible from that one adjacent call alone, so it needs the accumulated
+  sequence. Most likely the same family as the two tid_acc leaks already
+  closed — a JPL request whose tidal term or delta-t follows which files have
+  been opened. `orderprobe` does not reach it: its ten targets are calc,
+  delta-t, houses and sidereal time, and none asks for a node through
+  `SEFLG_JPLEPH`.
+
+  Not fixed here because the mechanism is not yet pinned, and a guess would
+  move numbers across the transcript. The reproducer above is exact.
+
 ## 2. Open — performance, bit-exact
 
 Nothing open. The three memos are in; see Closed.
