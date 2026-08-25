@@ -148,6 +148,12 @@ jobs:
       - name: Per-context ephemeris files
         run: make -C tests check-ctxfiles
 
+      # G24. G8 stays a strict differential only while the fork's deliberate
+      # fixes can be switched off for that one build. Asserts both directions:
+      # the shipped default must not carry the defects, the compat build must.
+      - name: SWE_UPSTREAM_COMPAT restores what it claims
+        run: make -C tests check-compat EPHE=../$EPHE
+
       # G11. gcc/clang pick tier 3 at every -std=, so tiers 4 and 5 are
       # built by nothing else. Tier 5 had already rotted unbuildable.
       - name: swethread.h backends all build and compute

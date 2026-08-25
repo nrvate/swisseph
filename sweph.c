@@ -1875,7 +1875,7 @@ void CALL_CONV swe_set_jpl_file(const char *fname)
 static void calc_epsilon(swe_ctx *ctx, double tjd, int32 iflag, struct epsilon *e)
 {
     e->teps = tjd;
-    e->epsflag = iflag & SWI_JPLHOR_FLAGMASK;
+    e->epsflag = SWI_EPS_KEY(iflag);
     e->eps = swi_epsiln(ctx, tjd, iflag);
     e->seps = sin(e->eps);
     e->ceps = cos(e->eps);
@@ -6422,7 +6422,7 @@ void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag)
    * SEFLG_JPLHOR_APPROX carries the Horizons obliquity offset, and handing it
    * to a caller that did not ask for it moved a mean node by 0.065 arcsec. */
   if (ctx->oec2000.teps != J2000
-      || ctx->oec2000.epsflag != (iflag & SWI_JPLHOR_FLAGMASK)) {
+      || ctx->oec2000.epsflag != SWI_EPS_KEY(iflag)) {
     calc_epsilon(ctx, J2000, iflag, &ctx->oec2000);
   }
   if (tjd == J2000) {
@@ -6434,7 +6434,7 @@ void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag)
     return;
   }
   if (ctx->oec.teps != tjd || tjd == 0
-      || ctx->oec.epsflag != (iflag & SWI_JPLHOR_FLAGMASK)) {
+      || ctx->oec.epsflag != SWI_EPS_KEY(iflag)) {
     calc_epsilon(ctx, tjd, iflag, &ctx->oec);
   }
 }
@@ -6457,8 +6457,7 @@ void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
   if (!(iflag & SEFLG_NONUT)
 	&& (tjd != ctx->nut.tnut || tjd == 0
 	|| (!speedf1 && speedf2)
-	|| (ctx->sp.nut.nutflag & SWI_JPLHOR_FLAGMASK)
-	     != (iflag & SWI_JPLHOR_FLAGMASK))) {
+	|| SWI_EPS_KEY(ctx->sp.nut.nutflag) != SWI_EPS_KEY(iflag))) {
     swi_nutation(ctx, tjd, iflag, ctx->nut.nutlo);
     ctx->nut.tnut = tjd;
     ctx->nut.snut = sin(ctx->nut.nutlo[1]);
@@ -8729,8 +8728,10 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
    * what had been computed BEFORE the function was called: asking for Mars
    * from Jupiter at J2000 moved 1.9 arcsec if a position 100 days away had
    * been computed first, and 24.5 arcsec at 10000 days. */
+#ifndef SWE_UPSTREAM_COMPAT
   swi_check_ecliptic(ctx, tjd, iflag);
   swi_check_nutation(ctx, tjd, iflag);
+#endif
   if (!(iflag & SEFLG_J2000)) {
     swi_precess(ctx, xx, tjd, iflag, J2000_TO_J);
     if (iflag & SEFLG_SPEED)
