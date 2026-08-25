@@ -57,6 +57,41 @@ or two, and verify.
   report printed one line of each transcript, and a truncated one prints as
   an empty "thread:" line, which reads exactly like a wrong value.
 
+- **`swe_calc_pctr()`'s answer depends on what was computed before it**, by up
+  to 24.5 arcsec. Reproducible and measured — the error grows with the
+  distance of the previously computed epoch:
+
+      swe_calc_pctr(2451545.0, SE_MARS, SE_JUPITER, SEFLG_SWIEPH)
+        prior epoch +1 day      0.02 arcsec off
+        +100 days               1.89
+        +1000 days              2.94
+        +10000 days            24.5
+
+  It transforms to the ecliptic of date using `ctx->oec` and `ctx->nut`
+  without calling `swi_check_ecliptic()`/`swi_check_nutation()` for its own
+  `tjd`. Every other site that reads those caches does. It relies instead on
+  a side effect of the `SE_ECL_NUT` call at the top, and four `swe_calc_r()`
+  calls run between there and the transformation, each re-keying the caches
+  to its own epoch. `swe_calc()` itself is stable under the same sequence, so
+  the inputs are not in question.
+
+  **A one-line fix removes the history dependence completely** — the two
+  check calls, at `tjd`, before the transformation. It was written, measured
+  (0.00 arcsec at every distance tested) and then NOT landed, because it also
+  moves an unrelated ayanamsa assertion in `setest` suite_04 by about 1e-4
+  arcsec, and G8 is a byte-identical differential. Two explanations for that
+  were proposed and both are wrong: the ayanamsa test calls `swe_calc()`,
+  which keys the caches itself, so it is not reading leftover state; and
+  `swi_check_ecliptic()`'s key does omit `iflag` while `calc_epsilon()`
+  depends on it, but a direct test at that epoch returns the same obliquity
+  either way.
+
+  So the side effect is real, reproducible, and unexplained. The fix stays
+  out until it is understood — shipping a numerical change whose consequences
+  cannot be accounted for is worse than the bug it closes. Whoever picks this
+  up: the fix is the two calls, and the thing to explain first is why
+  suite_04's ayanamsa moves.
+
 - **A mean node asked for through `SEFLG_JPLEPH` still depends on history**,
   by about 0.065 arcsec. Found while covering `sweph.c`: a coverage block
   that computed `SE_MEAN_NODE` with `SEFLG_SWIEPH|SEFLG_SPEED` at the same
