@@ -175,12 +175,13 @@ jobs:
       # developer with the full tree reproduces what CI sees. The checkout
       # above has already pruned those two directories, so in this job the
       # farm is a copy of ephe/ and the three gates would simply run twice.
-      - name: G14 version, G15 real JPL, G17 samples, G18 delta-t memo
+      - name: G14 version, G15 real JPL, G17 samples, G18 delta-t memo, G19 EOP loader
         run: |
           make -C tests check-version
           make -C tests check-jplreal EPHE=../$EPHE
           make -C tests check-samples EPHE=../$EPHE
           make -C tests check-dtmemo
+          make -C tests check-eopload
 
       # readme.md documents `make LTO=0`, and nothing built it. -flto defers
       # gcc's -Wformat-truncation analysis, so a set of snprintf calls that

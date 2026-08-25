@@ -21,8 +21,23 @@ or two, and verify.
 
 ## 1. Open — correctness
 
-Nothing open. The bounded-strings sweep is finished and its fallout is
-repaired; see Closed.
+- **G2 fails intermittently, cause unknown.** A worker thread's transcript
+  comes back a strict PREFIX of the reference — truncated, not numerically
+  different — and the run reports a thread mismatch at whatever row the
+  truncation landed on. Seen twice under cold `make check` on a heavily
+  loaded machine, once on this branch and once on `main`, so it is not new
+  work. Not reproducible since: not by racing two `golden --threads`
+  processes, not by `make -j2` on the two thread gates, and not over six
+  cold `make check` runs with the capture-file name collision below still
+  in place.
+  What is ruled out: `TRANSCRIPT` is `TLS`, so threads are not sharing one
+  `FILE *`; and `swehouse.c` has no file-scope mutable state. What is fixed
+  but NOT shown to be the cause: `capture_open()` keyed its temp file on the
+  thread id alone, so two concurrent `golden` processes shared
+  `.golden_capture_0.tmp`..`_7.tmp` and `"w+b"` truncates. That is wrong
+  regardless and now carries the pid.
+  Left open deliberately. A gate that fails when nothing is wrong is worth
+  more attention than a clean list.
 
 ## 2. Open — performance, bit-exact
 
@@ -55,19 +70,8 @@ Three bugs and one unreachable branch came out of closing the first part of
 that gap — see Closed — and every one was in code no gate ran. That is the
 argument for the rest of it. Functions still at zero:
 
-- `sweph.c`: `meff` — the gravitational-deflection mass term, which needs a
-  body passing close to the solar limb. Not a one-liner: it wants a date and
-  object chosen so the geometry actually occurs.
-- `sweph.c`: `load_dpsi_deps` (63 lines) — the EOP loader for `SEFLG_JPLHOR`.
-  Needs an `eop_1962_today.txt` fixture, so it wants the same treatment G18
-  got. Worth doing together with a re-examination of `struct nut_memo`,
-  which declines to cache the JPLHOR branch precisely because nothing
-  exercises it.
-- `swehel.c`: `Airmass` — live (called from `Deltam`), but only on a helflag
-  combination nothing selects.
-
-Everything else that was listed here is now covered. None of these three is
-a one-call fix, which is why they are what is left.
+Nothing at zero that is reachable. `meff` and `load_dpsi_deps` are covered;
+`Airmass` turned out not to be a coverage item at all — see Not doing.
 
 **The pattern worth remembering:** three separate cache-key bugs have come
 out of this work — `swi_check_nutation`, `calc_deltat`'s table, and
@@ -115,6 +119,15 @@ its result depended on, found by making unreached code run. If another
   after it, which is inside run-to-run noise, against 1.4 KB on every
   context and a cache that is only correct while every public heliacal
   entry point remembers to empty it. A silent-staleness hazard for 0.7%.
+- **Covering `Airmass()` (swehel.c).** It is not reachable. `Deltam()`
+  selects between the detailed extinction chain and the single lumped
+  airmass on `if (staticAirmass == 0)`, and `staticAirmass` is
+  `#define staticAirmass 0` — a compile-time constant, with a note beside it
+  saying to use 1 instead "depending on difference k's". So it is a
+  configuration alternative a maintainer flips in source, in the same class
+  as `SunRA()` under `SIMULATE_VICTORVB` below, and `3b9d090` deliberately
+  kept that kind of thing. Listed here because it spent a rollup on the
+  coverage list described as a helflag nothing selects, which was wrong.
 - **Moshier speed by finite differences over the full series**
   (`swi_moshplan`/`swi_moshmoon`). Any reuse of intermediate terms changes
   the arithmetic order; not bit-exact.
@@ -187,8 +200,10 @@ its result depended on, found by making unreached code run. If another
 | `swe_set_ephe_fallback()` — the switch for this fork's defining behavioural break — was called by no test at all, only the `SE_EPHE_FALLBACK` env var by G8, and could have been a no-op with every gate green | `cov:ephe_fallback[...]`, five rows pinning the default, the refusal, the switch, the substitution and the restore. Proven against both a no-op setter and a flipped default |
 | The AVKIND heliacal strategy (`heliacal_ut_arc_vis`, `moon_event_arc_vis`) had zero coverage, so the "half these calls are duplicates" analysis was about code no gate ran | `hel_avkind[...]`; 0% → 67.5% and 76.8% |
 | `swe_orbit_max_min_true_distance` and the `osc_iterate_min/max_dist` it reaches: public API, never called | `cov:orbit_max_min[...]`; 0% → 100% |
-| `swi_check_ecliptic()` keyed the obliquity on tjd alone — `oec` on `teps != tjd`, `oec2000` on `teps != J2000` — with no precession model in either, so switching `SE_MODEL_PREC_*` and re-asking about a computed instant returned the old model's obliquity | `swi_invalidate_models()` clears both. Third cache-key bug of the same shape, after `swi_check_nutation` and `calc_deltat`'s table |
+| `meff()` — the solar mass-distribution term that keeps gravitational deflection finite when a planet sits behind the Sun's disc — had never run | `cov:meff[...]`, the deepest conjunction each of five planets makes in 2000–2030, found by scanning elongation; enters `meff` at r = 0.021, 0.134, 0.328, 0.351, 0.427. Make it return 1 (the point-mass formula) and all five rows move |
+| `load_dpsi_deps()` (63 lines), the IERS Earth-orientation loader behind `SEFLG_JPLHOR`, unreachable without both a DE ≥ 403 file and the EOP data, neither of them shipped | **G19** `check-eopload`: synthesises a ~20 KB self-consistent JPL header carrying `numde = 431` plus an EOPC04 fixture, then checks white-box that the loader found the file, parsed the right columns and recorded the span. Read the wrong column, or never report success, and it fails |
 | The eleven precession models and thirteen exported conversion helpers, all at zero — `precess_2` alone 76 lines, the Owen 1990 chain another 78 | `cov:precmodel[1..11]` at -3000 (near J2000 every model takes the same short-term branch), `cov:conversions`. `swephlib.c` 62.3% → 74.6% |
+| `swi_check_ecliptic()` keyed the obliquity on tjd alone — `oec` on `teps != tjd`, `oec2000` on `teps != J2000` — with no precession model in either, so switching `SE_MODEL_PREC_*` and re-asking about a computed instant returned the old model's obliquity | `swi_invalidate_models()` clears both. Third cache-key bug of the same shape, after `swi_check_nutation` and `calc_deltat`'s table |
 | `get_acronychal_day()` and `azalt_cart()` unreachable — 107 lines behind a branch that cannot be entered | removed; the guard now returns ERR rather than falling through, so a wrong reachability argument surfaces instead of silently answering an acronychal question with a heliacal result |
 | The three sidereal house branches, the Makransky sunshine solution, the interpolated lunar apsides, and the solar-system-plane sidereal projection: all at zero, each reachable with one call | `cov:hsys_sid[...]`, `hsys_makransky[...]`, `cov:intp_apsides[...]`, `cov:sid_ssy_plane`. `swehouse.c` 57.6% → 68.4%, `swecl.c` 63.9% → 70.0% |
 | `check-threadshim` failed ~1 run in 12 under load: the publisher ran a fixed 20,000 iterations and could set `stop_readers` before a starved reader ran at all, tripping the test's own "test is vacuous" guard | publisher now also waits until every reader has observed something, with a 50× ceiling so a genuinely blind reader still fails loudly. 96 concurrent runs on 12 cores, 0 failures; the ceiling stretched to 128,508 publishes at worst |

@@ -249,7 +249,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo
+       check-build check-ephe-ci check-samples check-dtmemo check-eopload
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -314,6 +314,21 @@ check-dtmemo: dtmemo
 	@env -u SE_EPHE_PATH ./dtmemo $(DT_DIR)
 	@rm -rf $(DT_DIR)
 
+# G19: load_dpsi_deps(), the IERS Earth-orientation loader behind
+# SEFLG_JPLHOR. Two directories, one carrying eop_1962_today.txt and one
+# not; the test writes both the EOP fixture and the ~20 KB synthetic JPL
+# file that gets it called at all (it needs a DE number >= 403, and the
+# shipped de200.eph is 200). Nothing here needs the real ephemeris.
+EOP_DIR = .ephe-eop
+
+eopload: eopload.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-eopload: eopload
+	@rm -rf $(EOP_DIR) && mkdir -p $(EOP_DIR)/with $(EOP_DIR)/without
+	@env -u SE_EPHE_PATH ./eopload $(EOP_DIR)/with $(EOP_DIR)/without
+	@rm -rf $(EOP_DIR)
+
 check-samples: .samples.txt samples.baseline
 	@diff -q samples.baseline .samples.txt \
 	  && echo "G17 PASS: swemini and obama output unchanged" \
@@ -340,7 +355,7 @@ clean:
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
-	rm -rf dtmemo $(DT_DIR)
+	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -349,7 +364,7 @@ clean:
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
-        check-samples samples-baseline check-dtmemo \
+        check-samples samples-baseline check-dtmemo check-eopload \
         check-winmacros check-jplreal orderprobe \
         ci-image check-ci clean
 

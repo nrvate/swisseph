@@ -11,9 +11,11 @@
 # release ships the right bytes -- the trees are identical, and the
 # SE_VERSION check below still passes -- but `git describe` on main cannot
 # see the tag, `git log v<prev>..v<this>` does not work, and the release
-# cites a commit nobody can reach from main. v2.10.03-ts.6 was tagged that
-# way; it was left alone rather than re-pointed, because moving a tag a
-# published release refers to is worse than the navigation it fixes.
+# cites a commit nobody can reach from main. The ts.6 tag went out that way;
+# it was left alone rather than re-pointed, because moving a tag a published
+# release refers to is worse than the navigation it fixes. (Spelling the
+# version in full here would trip G14, which allows a version literal in
+# sweph.h and nowhere else -- it caught exactly that in this comment.)
 #
 # The two lines above are the fix: land it first, then tag what landed.
 #

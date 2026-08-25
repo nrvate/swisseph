@@ -32,6 +32,7 @@
   static void thr_join(thr_t t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); }
 #else
 # include <pthread.h>
+# include <unistd.h>          /* getpid(), for the capture-file name */
   typedef pthread_t thr_t;
   typedef void *    thr_ret_t;
 # define THR_CALL
@@ -1105,6 +1106,40 @@ static void coverage(void) {
     }
     reset_astro_models();
 
+    /* meff(), the one part of the gravitational-deflection maths nothing
+     * had ever run.
+     *
+     * Light from a planet grazing the Sun is bent, and the textbook formula
+     * treats the Sun as a point mass, so it diverges as the line of sight
+     * approaches the centre. The Astronomical Almanac says to set the
+     * deflection to zero there, which puts a step in the planet's apparent
+     * motion; this library instead models the Sun's mass distribution, so
+     * only the mass interior to the grazing radius bends the light.
+     * meff(r) is that fraction, interpolated from a 25-entry table.
+     *
+     * It runs only while the planet is inside the solar disc as seen from
+     * Earth -- sin(elongation) < SUN_RADIUS / r_sun -- which is why no row
+     * had reached it. These five are the deepest conjunction each planet
+     * makes in 2000-2030, found by scanning elongation; they enter meff()
+     * at r = 0.021, 0.134, 0.328, 0.351 and 0.427, so the interpolation is
+     * exercised across its range rather than at one point. */
+    {
+      const struct { double t; int32 ipl; const char *n; } occ[] = {
+        { 2457546.412153, SE_VENUS,   "venus"   },   /* r = 0.021 */
+        { 2458862.136111, SE_SATURN,  "saturn"  },   /* r = 0.134 */
+        { 2459892.222917, SE_MERCURY, "mercury" },   /* r = 0.328 */
+        { 2458845.268055, SE_JUPITER, "jupiter" },   /* r = 0.351 */
+        { 2460266.724653, SE_MARS,    "mars"    },   /* r = 0.427 */
+      };
+      for (size_t i = 0; i < sizeof(occ)/sizeof(occ[0]); i++) {
+        *serr = 0;
+        rf = swe_calc_ut(occ[i].t, occ[i].ipl, SEFLG_SWIEPH | SEFLG_SPEED,
+                         x, serr);
+        snprintf(tag, sizeof tag, "cov:meff[%s]", occ[i].n);
+        row(tag, rf, x, 6, serr);
+      }
+    }
+
     /* The small public conversions. Every one of these is exported, and
      * every one had zero coverage: nothing in the suite called them, so
      * they could have returned anything. swe_cs2lonlatstr() and its two
@@ -1349,8 +1384,29 @@ struct targ { int id; char *buf; size_t len; int setup; };
  * implementation for every platform, so Windows exercises the same path.
  *
  * "w+b": no newline translation, so the bytes are the bytes on either side. */
+/* The process id is in the name because more than one golden runs at once.
+ * `make check` sets -j$(NPROC), and check-threads and
+ * check-threads-workaround each start ./golden --threads 8 in this same
+ * directory. Keyed on the thread id alone, both opened
+ * .golden_capture_0.tmp .. _7.tmp, and "w+b" truncates -- so one process
+ * could empty a file the other was still writing.
+ *
+ * That is wrong on its own terms and this fixes it. It is NOT established
+ * that it caused the intermittent thread mismatch seen on this tree, where
+ * a worker's transcript comes back a prefix of the reference: that was
+ * observed twice, on main as well as here, and has not been reproducible
+ * since -- not by racing two golden processes, not by `make -j2` on the two
+ * thread gates, and not over six cold `make check` runs with this name
+ * collision still in place. Both sightings were while the machine was
+ * heavily loaded. See notes/REVIEW.md; if it returns, this is not the
+ * explanation. */
 static FILE *capture_open(int id, char *path, size_t n) {
-  snprintf(path, n, ".golden_capture_%d.tmp", id);
+#if defined(_WIN32)
+  unsigned long pid = (unsigned long) GetCurrentProcessId();
+#else
+  unsigned long pid = (unsigned long) getpid();
+#endif
+  snprintf(path, n, ".golden_capture_%lu_%d.tmp", pid, id);
   return fopen(path, "w+b");
 }
 
