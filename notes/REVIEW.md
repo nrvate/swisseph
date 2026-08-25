@@ -5,10 +5,34 @@ anything judged not worth doing is listed with the reason, so it is not
 re-audited. Everything above the line is real, scoped, and provable on the
 bit-exact gates — the rule for landing it. `make -C tests check` runs every
 gate but G8 in about 15 s; `make -C tests check-all` adds G8, the setest
-differential against `origin/legacy-master`.
-**Base:** `main` @ `e8be70f`, released as 2.10.03-ts.8 — rollups #11 to #21.
+differential against `origin/legacy-master` — strict everywhere except the
+one accepted divergence recorded below.
+**Base:** `main` @ `e98cc61`, released as 2.10.03-ts.8 plus rollup #23.
 **Scope:** root `*.c`/`*.h`; `windows/`, `setest/` and the samples only where
 noted.
+
+## Accepted divergences from upstream
+
+G8 asks whether this fork changed what upstream's own suite prints, and the
+answer must normally be no. Exactly one testcase is exempt, and it is listed
+here rather than only in the Makefile so the count is visible:
+
+| setest testcase | why | landed |
+|---|---|---|
+| `1.5` — `swe_calc_pctr()` | its answer depended on which epoch had been computed before it, by up to 24.5 arcsec. Fixing that necessarily changes what the function returns, and setest checks it | rollup #24 |
+
+**The bar for adding a second.** A divergence is accepted only with all three
+of: the moved lines resolved back to their owning testcases, showing nothing
+outside the fix's own function changed; evidence of correctness that does not
+depend on setest's expectation file, which was generated against an ephemeris
+this repository does not ship; and a demonstration that the filter still
+fails on an unrelated change. For `1.5` those are, respectively — every one
+of the 72 moved lines belongs to testcase 1.5; the planetocentric-from-Earth
+vs geocentric invariant improves for all four bodies tested; and perturbing
+`swi_epsiln()` by 1e-11 still fails the gate.
+
+Filtering is done on BOTH sides of the comparison, so the gate keeps full
+strength everywhere else. See `SETEST_ACCEPTED` in `tests/Makefile`.
 
 The original 2026-08-22 survey this grew out of catalogued idioms — `goto`
 counts, `#define`-only constants, license boilerplate, `const`-correctness —

@@ -777,7 +777,12 @@ check-build:
 # one that is merely small.
 #
 # Both sides are filtered, so the gate keeps full strength everywhere else:
-# a change anywhere outside 1.5 still fails it.
+# a change anywhere outside 1.5 still fails it -- verified by perturbing
+# swi_epsiln() by 1e-11, which does.
+#
+# Adding a SECOND divergence is not a judgement call: notes/REVIEW.md,
+# "Accepted divergences from upstream", states the three pieces of evidence
+# required and records what was produced for this one.
 SETEST_ACCEPTED      ?= 1\.5\.
 SETEST_ACCEPTED_DESC ?= testcase 1.5 (swe_calc_pctr, deliberately fixed)
 SETEST_ACCEPT = awk -v ACCEPT='$(SETEST_ACCEPTED)' -f $(CURDIR)/setest-accept.awk
