@@ -373,7 +373,12 @@ check-samples: .samples.txt samples.baseline
 	       diff samples.baseline .samples.txt | head -20; exit 1; }
 
 EPHE_MIN = .ephe-min
-check-ephe-ci:
+# Prerequisites so this make links them once up front. Otherwise the
+# sub-makes below link them while the sibling check-golden/-jplcalc/-jplreal
+# run them under -j, and a relink truncates the file mid-execution:
+#   env: './golden': Permission denied     (Error 126)
+# The sub-makes can't coordinate: MAKEFLAGS += -j resets jobserver mode.
+check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16: the gates hold against CI's pruned ephe/ (no sat/, no ep4/)"
 	@rm -rf $(EPHE_MIN) && mkdir -p $(EPHE_MIN)
 	@for f in $(EPHE)/*; do \
