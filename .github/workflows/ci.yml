@@ -138,6 +138,13 @@ jobs:
       - name: Sources compile as conforming C
         run: make -C tests check-pedantic
 
+      # G22. reorder() is swejpl.c's byte-swapping path and nothing reached
+      # it: the shipped de200.eph matches the host's byte order. Reads a
+      # swapped twin of it and requires bit-identical numbers, so it is
+      # bit-exact and belongs on the reference toolchain, like check-golden.
+      - name: JPL byte-swapping path (reorder)
+        run: make -C tests check-jplswap EPHE=../$EPHE
+
       # G11. gcc/clang pick tier 3 at every -std=, so tiers 4 and 5 are
       # built by nothing else. Tier 5 had already rotted unbuildable.
       - name: swethread.h backends all build and compute

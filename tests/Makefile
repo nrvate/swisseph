@@ -267,7 +267,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-eopload \
-       check-firstcall check-pedantic
+       check-firstcall check-pedantic check-jplswap
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -333,6 +333,34 @@ DT_DIR = .ephe-dt
 
 dtmemo: dtmemo.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+# G22: reorder(), swejpl.c's byte-swapping path.
+#
+# It measured 0.00% -- ephe/de200.eph matches this host's byte order, so
+# do_reorder is 0 for the whole suite and eleven call sites never fire. It
+# was the largest untested unit in the least-covered file.
+#
+# The fixture is not synthesised the way jplguard's are. It is de200.eph
+# rewritten field-for-field into the opposite byte order, so it holds the
+# SAME ephemeris and must therefore read back bit-identical -- not within a
+# tolerance. Two assertions, because they fail for different reasons: the
+# header (both files must report the same epoch range, which needs ss[]
+# reordered) and the coefficients (60 samples, 10 bodies x 6 epochs, with
+# speed). Six epochs rather than one because at a single instant ten bodies
+# do not touch every coefficient in a record, and a corrupted one went
+# undetected.
+#
+# Needs the real ephemeris and writes a 41 MB twin, which the run removes;
+# the header carries the expected length, so it cannot be shrunk.
+JPLSWAP_DIR = .jplswap
+jplswap: jplswap.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-jplswap: jplswap
+	@rm -rf $(JPLSWAP_DIR) && mkdir -p $(JPLSWAP_DIR)
+	@env -u SE_EPHE_PATH SE_TEST_EPHE="$${SE_TEST_EPHE:-$(EPHE)}" \
+	  ./jplswap $(JPLSWAP_DIR)
+	@rm -rf $(JPLSWAP_DIR)
 
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
@@ -452,7 +480,7 @@ clean:
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
-	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall
+	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall jplswap $(JPLSWAP_DIR)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -462,7 +490,7 @@ clean:
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
-        check-winmacros check-jplreal orderprobe check-pedantic \
+        check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
