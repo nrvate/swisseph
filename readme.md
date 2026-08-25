@@ -149,16 +149,20 @@ that leaned on a silent fallback now sees `ERR` where it used to get numbers.
 
 ## What is verified
 
-Every change is gated on a bit-exact transcript — **12669 rows** of C99 `%a`
+Every change is gated on a bit-exact transcript — **13000 rows** of C99 `%a`
 hex floats compared byte for byte, so no test has to pick a tolerance. The
 transcript sweeps 120 pseudo-random dates spanning roughly 1400 years across
 three ephemeris flag sets and every major body, recording longitude, latitude,
 distance and all three speed components. Where a call fails, the error string
 is pinned too, so a message cannot change without a row changing.
 
-Eleven gates run on every push (`make -C tests check`), covering bit-exactness,
-cross-thread agreement, context independence, configuration leaks, two specific
-historical races, malformed-input handling and the threading backends.
+Twenty-six gates run on every push (`make -C tests check`), covering
+bit-exactness, cross-thread agreement, context independence, configuration
+leaks, two specific historical races, malformed-input handling, the threading
+backends, the JPL reader and its byte-swapping path, per-context data files,
+and whether every source still compiles as conforming C. Two more are opt-in:
+a byte-for-byte differential against unmodified upstream's own test suite, and
+true JPL Horizons mode, which needs a 2.6 GB ephemeris.
 
 CI additionally builds and checks under gcc, clang, macOS/clang and MSVC, with
 ThreadSanitizer, AddressSanitizer and LeakSanitizer, across four C dialects,
@@ -226,6 +230,13 @@ Upstream repository, documentation and support:
 Support questions about the ephemeris itself belong upstream. Issues with
 *this fork's* threading, contexts, build or packaging belong here.
 
+**For upstream maintainers.** [`notes/UPSTREAM-BUGS.md`](notes/UPSTREAM-BUGS.md)
+lists the defects fixed here that are still present upstream — a crash, several
+memory errors and four cases where an answer depends on what was computed
+before it. Each is verified against upstream's own source, with file, line, a
+reproducer and the fix. Nothing in it depends on adopting this fork's context
+API.
+
 ### Ephemeris data files
 
 Not included in this repository's releases. As of April 2026 all `.se1` files
@@ -239,8 +250,12 @@ Ephemeris releases back to 1.67 (March 2005).
   [Dropbox area](https://www.dropbox.com/scl/fo/y3naz62gy6f6qfrhquu7u/h?rlkey=ejltdhb262zglm7eo6yfj2940&dl=0),
   or <https://ephe.scryr.io/> (web space provided by Phillip McCabe)
 - JPL files direct from JPL:
-  <https://www.astro.com/swisseph-download/jplfiles/>. After download,
-  `de441/linux_m13000p17000.441` must be renamed `de441.eph` to be recognised.
+  <https://www.astro.com/ftp/swisseph/jplfiles/index.htm>, which links the
+  files on `ssd.jpl.nasa.gov` and publishes their md5 sums. After download,
+  `de441/linux_m13000p17000.441` must be renamed `de441.eph` to be recognised
+  (likewise `de431/lnxm13000p17000.431` → `de431.eph`). Both are ~2.6 GB;
+  expect around 0.3 MB/s from JPL, so the Dropbox mirror above is usually
+  faster.
 
 **Where the library looks.** `swed.ephepath` defaults to `\sweph\ephe` on
 Windows and `.:/users/ephe2/:/users/ephe/` on Unix-likes; `;` (Windows) or `;`
