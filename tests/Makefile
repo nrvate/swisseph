@@ -273,7 +273,16 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
 # a network fetch on a fresh clone. check-ci is separate again: it needs
 # docker, and re-runs the gates under the CI toolchain rather than adding new
 # ones.
-check-all: check check-setest
+#
+# Sequential, not `check-all: check check-setest`. As prerequisites those two
+# run concurrently under -j, and both force a rebuild of the SAME root
+# objects with different flags: check-build does `make -B -C .. all` at the
+# root's -O2, check-setest does `make -B -C .. libswe.a` pinned to -O0. Past
+# the torn-file race, that leaves libswe.a a mix of both -- silently undoing
+# the pin the comment above the check-setest rule exists to guarantee.
+check-all:
+	@$(MAKE) check
+	@$(MAKE) check-setest
 
 # CI checks out ephe/ without sat/ (227 MB) and ep4/ (25 MB), on the grounds
 # that no gate opens them. That held when it was measured with strace, and
