@@ -7,7 +7,7 @@ bit-exact gates — the rule for landing it. `make -C tests check` runs every
 gate but G8 in about 15 s; `make -C tests check-all` adds G8, the setest
 differential against `origin/legacy-master` — strict everywhere except the
 one accepted divergence recorded below.
-**Base:** `main` @ `e98cc61`, released as 2.10.03-ts.8 plus rollup #23.
+**Base:** `main` @ `ff9c86b`, released as 2.10.03-ts.9 — rollups #11 to #24.
 **Scope:** root `*.c`/`*.h`; `windows/`, `setest/` and the samples only where
 noted.
 
@@ -134,10 +134,10 @@ them, and a partial profile is what let the numbers below drift — one
 measured over four binaries read `sweconfig.c` at 79.4% against the 88.6%
 the full set gives.
 
-Combined at ts.8, worst first: **`sweph.c` 78.9%**, `swejpl.c` 81.0%,
-`swedate.c` 81.2%, `swehouse.c` 83.1%, `swehel.c` 83.4%, `swecl.c` 83.7%,
-`swephlib.c` 85.2%, `swemplan.c` 86.0%, `sweconfig.c` 88.6%,
-`swemmoon.c` 98.1%.
+Combined at ts.9, worst first: **`sweph.c` 80.1%**, `swejpl.c` 81.0%,
+`swedate.c` 81.2%, `swehouse.c` 82.9%, `swehel.c` 83.4%, `swecl.c` 83.7%,
+`swemplan.c` 86.0%, `swephlib.c` 86.8%, `sweconfig.c` 88.6%,
+`swemmoon.c` 97.7%.
 
 Measured by hand each time, which is how the previous set went stale. A
 `make -C tests coverage` target would fix that and has not been built.
