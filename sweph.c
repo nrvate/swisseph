@@ -1355,6 +1355,16 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
     ctx->fixfp = NULL;
   }
   swi_free_fict_lines(ctx);
+  /* Both guard a table read from the EPHEMERIS PATH, and this function runs
+   * when that path is being replaced -- swe_set_ephe_path_r() calls it. Left
+   * set, init_leapsec() and init_dt() return early and the tables loaded
+   * from the OLD directory survive into the new one: a second path's
+   * seleapsec.txt is simply never seen. The seorbel line cache one line up
+   * is dropped for exactly this reason; these two were missed.
+   * init_dt() clears the delta-t memo itself when it re-runs, so the flags
+   * are all that have to go back. */
+  ctx->leapsec_done = FALSE;
+  ctx->init_dt_done = FALSE;
   swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
   ctx->is_old_starfile = FALSE;
   ctx->i_saved_planet_name = 0;
@@ -1422,6 +1432,14 @@ static void ctx_release(swe_ctx *ctx)
     ctx->deps = NULL;
   }
   ctx->eop_dpsi_loaded = 0;
+  /* Same shape, same close: both guard a per-context table read from the
+   * EPHEMERIS PATH, and swe_set_ephe_path() closes before adopting the new
+   * one. Left set, the tables loaded from the old directory survive into the
+   * new one -- verified for seleapsec.txt, where a second path's leap second
+   * is simply never seen. init_dt() clears the delta-t memo itself when it
+   * re-runs, so the flag is all that has to go back. */
+  ctx->leapsec_done = FALSE;
+  ctx->init_dt_done = FALSE;
   if (ctx->n_fixstars_records > 0) {
     free(ctx->fixed_stars);
     ctx->fixed_stars = NULL;
