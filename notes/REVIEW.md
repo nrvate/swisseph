@@ -57,41 +57,6 @@ or two, and verify.
   report printed one line of each transcript, and a truncated one prints as
   an empty "thread:" line, which reads exactly like a wrong value.
 
-- **`swe_calc_pctr()`'s answer depends on what was computed before it**, by up
-  to 24.5 arcsec. Reproducible and measured — the error grows with the
-  distance of the previously computed epoch:
-
-      swe_calc_pctr(2451545.0, SE_MARS, SE_JUPITER, SEFLG_SWIEPH)
-        prior epoch +1 day      0.02 arcsec off
-        +100 days               1.89
-        +1000 days              2.94
-        +10000 days            24.5
-
-  It transforms to the ecliptic of date using `ctx->oec` and `ctx->nut`
-  without calling `swi_check_ecliptic()`/`swi_check_nutation()` for its own
-  `tjd`. Every other site that reads those caches does. It relies instead on
-  a side effect of the `SE_ECL_NUT` call at the top, and four `swe_calc_r()`
-  calls run between there and the transformation, each re-keying the caches
-  to its own epoch. `swe_calc()` itself is stable under the same sequence, so
-  the inputs are not in question.
-
-  **A one-line fix removes the history dependence completely** — the two
-  check calls, at `tjd`, before the transformation. It was written, measured
-  (0.00 arcsec at every distance tested) and then NOT landed, because it also
-  moves an unrelated ayanamsa assertion in `setest` suite_04 by about 1e-4
-  arcsec, and G8 is a byte-identical differential. Two explanations for that
-  were proposed and both are wrong: the ayanamsa test calls `swe_calc()`,
-  which keys the caches itself, so it is not reading leftover state; and
-  `swi_check_ecliptic()`'s key does omit `iflag` while `calc_epsilon()`
-  depends on it, but a direct test at that epoch returns the same obliquity
-  either way.
-
-  So the side effect is real, reproducible, and unexplained. The fix stays
-  out until it is understood — shipping a numerical change whose consequences
-  cannot be accounted for is worse than the bug it closes. Whoever picks this
-  up: the fix is the two calls, and the thing to explain first is why
-  suite_04's ayanamsa moves.
-
 - **A mean node asked for through `SEFLG_JPLEPH` still depends on history**,
   by about 0.065 arcsec. Found while covering `sweph.c`: a coverage block
   that computed `SE_MEAN_NODE` with `SEFLG_SWIEPH|SEFLG_SPEED` at the same
@@ -103,7 +68,7 @@ or two, and verify.
         as the transcript reaches it 0x1.55c462812cbf7p+7
 
   So the transcript's recorded value for that row is the polluted one. Ruled
-  out: it is NOT the `swe_calc_pctr` defect above — that one is a caller
+  out: it is NOT the `swe_calc_pctr` defect now closed — that one is a caller
   reading `ctx->oec`/`ctx->nut` without keying them, and
   `app_pos_etc_mean` gets its check from `swecalc` upstream. It is also not
   reproducible from that one adjacent call alone, so it needs the accumulated
@@ -336,3 +301,4 @@ its result depended on, found by making unreached code run. If another
 | `swe_get_astro_models()` echoed the caller's `samod` into the caller's `sdet` with a bare `sprintf`, so the length of an argument decided how many bytes the library wrote — `swetest -amod<2000 chars>` was a 2133-byte write into its `char[2000]` (ASan: global-buffer-overflow at `swephlib.c:4649`). The required buffer size was documented nowhere, and the `'+'` enumeration already wrote 1914 of those 2000 | precision on the two `%s`, so the output no longer depends on the caller's input length — which is what makes a documented size possible at all. `swephexp.h` now states 4000 beside the prototype; `swetest` carries it. Found by asking why `swe_get_astro_models_r` sat at 51.8% while `swephlib.c` was the least-covered file |
 | `swephlib.c` was the least-covered file at 77.8%: `swe_sidtime0` (a public entry point) at 0%, the five model-description switches at 17–57%, `quadratic_intp` at 0%, and `deltat_longterm_morrison_stephenson` at 0% with the three models that reach it at 27/52/57% | `cov:sidtime0` (the caller-supplies-obliquity form nothing called), `cov:astro_models_all` (a `'+'` enumerates every model in one call, walking all five switches; recorded as length + byte-sum rather than 1.9 KB of prose), `cov:interp_nut[]` (`swe_set_interpolate_nut`, off by default so it never ran), `cov:deltat_longterm[model,date]`. The last needed the insight that the existing `cov:deltatmodel[]` rows ask at year 1000 — inside the tables — and that the DEFAULT model has its own long-term branch and never calls the shared one, so an extreme date alone was not enough. **`swephlib.c` 77.8% → 85.2%**; `deltat_longterm` 0% → 100%, `swe_sidtime0` and the five switches → 100%, the 1997/2004 families 52/57% → 69.6%. Baseline additive: 12,955 → 12,970 rows, none altered |
 | Two per-context data files were read through `swi_default_ctx()` instead of the caller's context, so a non-default context looked along the WRONG ephemeris path: `init_leapsec()` at both sites in `swedate.c` (which then indexed `ctx->leap_seconds` anyway, iterating the caller's array to a length from another context's load), and `swi_get_fict_name()` inside `swe_get_planet_name_r()`, which reads `seorbel.txt` and its per-context line cache. The file half of `init_leapsec()` was also entirely unexecuted | `ctx` at all three sites. **G23** `check-ctxfiles`: two contexts, one directory carrying a `seleapsec.txt` with a leap second the built-in table lacks and a `seorbel.txt` renaming fictitious body 0, one without. `swe_utc_to_jd_r()` accepting `23:59:60` and `swe_get_planet_name_r()` returning the fixture name are the read-outs; a date the fixture does not list is still refused, so the file adds what it lists rather than "any 23:59:60". Both halves proven by reverting their fix. The transcript is unchanged: it runs on the default context, where the two spellings are the same call — which is why nothing caught either |
+| `swe_calc_pctr()`'s answer depended on which epoch had been computed before it — 0.02 arcsec after a position one day away, 1.89 at 100 days, **24.5 at 10000**. It transforms to the ecliptic of date using `ctx->oec`/`ctx->nut` but never called `swi_check_ecliptic()`/`swi_check_nutation()` for its own `tjd`, relying instead on a side effect of the `SE_ECL_NUT` call at the top of the function — and four `swe_calc_r()` calls run in between, each re-keying the caches to its own epoch | the two check calls, as at every other site that reads those caches. Confirmed three ways: history dependence goes to 0.00 arcsec at every distance tested; **every** setest line it moves belongs to testcase 1.5, `swe_calc_pctr` itself, and nothing else in 14,461; and the planetocentric-from-Earth vs geocentric invariant improves for all four bodies tested (Mars 3.9e-06″ → 1.1e-06″, Saturn 4.3e-06″ → 2.2e-06″). `cov:order_pctr_alone`/`_after_far` pin it, identical by construction. G8 records this as its one accepted divergence from upstream, filtered on both sides so a change anywhere else still fails it — verified by perturbing `swi_epsiln()` by 1e-11, which does. Fourth cache-key bug of the family, and the first where the cache was right and the caller never asked it for the correct epoch |

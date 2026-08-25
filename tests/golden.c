@@ -1622,6 +1622,19 @@ static void coverage(void) {
     *serr = 0; rf = swe_calc_ut(DATES[0], SE_SUN, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
     row("cov:order_swiss_after_moseph", rf, x, 6, serr);
 
+    /* ⛔ Third instance of the same shape, now closed: swe_calc_pctr() read
+     * the obliquity and nutation caches without keying them to its own tjd,
+     * so its answer depended on the epoch of whatever ran before it -- 1.9
+     * arcsec after a position 100 days away, 24.5 arcsec at 10000. These two
+     * rows are identical by construction and worthless if they ever stop
+     * being, which is what makes them a test. */
+    *serr = 0; rf = swe_calc_pctr(DATES[0], SE_MARS, SE_JUPITER, SEFLG_SWIEPH, x, serr);
+    row("cov:order_pctr_alone", rf, x, 6, serr);
+    { double xfar[6];
+      swe_calc(DATES[0] + 10000.0, SE_MARS, SEFLG_SWIEPH|SEFLG_SPEED, xfar, serr); }
+    *serr = 0; rf = swe_calc_pctr(DATES[0], SE_MARS, SE_JUPITER, SEFLG_SWIEPH, x, serr);
+    row("cov:order_pctr_after_far", rf, x, 6, serr);
+
 
     /* Merely NAMING a JPL file must not move a result computed from another
      * ephemeris. swe_set_jpl_file() both closes the .se1 files and sets

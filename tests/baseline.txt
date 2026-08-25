@@ -5098,16 +5098,16 @@ cov:helio_cross_ut[back,1]                     rf=0      0x1.2b49c0bf146d1p+21
 cov:helio_cross[chiron,1]                      rf=0      0x1.2d50145c65d6dp+21
 cov:helio_cross[refused,1]                     rf=-1     0x0p+0 | swe_helio_cross: not possible for object 1 = Moon
 cov:helio_cross_ut[refused,1]                  rf=-1     0x0p+0 | swe_helio_cross: not possible for object 10 = mean Node
-cov:calc_pctr[0]                               rf=2      0x1.c90918563f652p+7 0x1.f503dcf1baeb2p-1 0x1.f8830ed395cd2p+1 0x0p+0 0x0p+0 0x0p+0
-cov:calc_pctr[speed,0]                         rf=258    0x1.c90541191ea07p+7 0x1.f503d48243581p-1 0x1.f8830ed395cd5p+1 -0x1.bb828ce0fa0bep-6 0x1.7aa57a0852f7dp-8 -0x1.484bfc098821fp-7
-cov:calc_pctr[truepos,0]                       rf=1554   0x1.c904f063d2121p+7 0x1.f5150db65d602p-1 0x1.f87a3ec37cfd5p+1 0x0p+0 0x0p+0 0x0p+0
+cov:calc_pctr[0]                               rf=2      0x1.c905411912e85p+7 0x1.f503d44e16997p-1 0x1.f8830ed395cd3p+1 0x0p+0 0x0p+0 0x0p+0
+cov:calc_pctr[speed,0]                         rf=258    0x1.c905411912e84p+7 0x1.f503d44e16995p-1 0x1.f8830ed395cd4p+1 -0x1.bb82942a10c5fp-6 0x1.7aa57855e9a94p-8 -0x1.484bfc05196f2p-7
+cov:calc_pctr[truepos,0]                       rf=1554   0x1.c904f063c5902p+7 0x1.f5150db65d658p-1 0x1.f87a3ec37cfd3p+1 0x0p+0 0x0p+0 0x0p+0
 cov:calc_pctr[same,0]                          rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | ipl and iplctr (= 4) must not be identical 
 cov:gauquelin[0]                               rf=0      0x1.7cd9066a1ffadp+2
 cov:orbital_elements[0]                        rf=0      0x1.860fd65b5dfc2p+0 0x1.7e3804aa70b14p-4 0x1.d99248423fb99p+0 0x1.8c7eaf5b51ce6p+5 0x1.1e89a376b6d9p+8 0x1.501979622112dp+8 0x1.35b3be2ed518ep+4 0x1.75544a8bc8eb3p+4 0x1.54c632ceea0a3p+4 0x1.6374b5450e646p+8 0x1.e1803b2c2216cp+0 0x1.0c4ede08dc3e3p-1 0x1.e17c334256f4dp+0 0x1.85f982edbe182p+9 0x1.2b41a0813becp+21 0x1.61a9c6946b3f5p+0 0x1.aa75e62250b8fp+0
 cov:fixstar_ut[0]                              rf=2      0x1.a05759f53d9dfp+6 -0x1.3cd72dc8c457cp+5 0x1.0997859564323p+19 0x0p+0 0x0p+0 0x0p+0
-cov:calc_pctr[1]                               rf=2      0x1.24eee191d35e3p+3 -0x1.865f9744d3cf1p+0 0x1.91e5f11546432p+2 0x0p+0 0x0p+0 0x0p+0
-cov:calc_pctr[speed,1]                         rf=258    0x1.24eee191d35e2p+3 -0x1.865f9744d3cefp+0 0x1.91e5f11546433p+2 0x1.46b8d716ea11bp-3 0x1.72e24177b4033p-9 0x1.3f9e948443e7ep-7
-cov:calc_pctr[truepos,1]                       rf=1554   0x1.251e44354974ep+3 -0x1.8658de49a0cfap+0 0x1.91ec90c113566p+2 0x0p+0 0x0p+0 0x0p+0
+cov:calc_pctr[1]                               rf=2      0x1.24eee17c28fep+3 -0x1.865f973c0006dp+0 0x1.91e5f11546432p+2 0x0p+0 0x0p+0 0x0p+0
+cov:calc_pctr[speed,1]                         rf=258    0x1.24eee17c28fe1p+3 -0x1.865f973c0007p+0 0x1.91e5f11546432p+2 0x1.46b8d87375eap-3 0x1.72e239c6dfd85p-9 0x1.3f9e94805bbbcp-7
+cov:calc_pctr[truepos,1]                       rf=1554   0x1.251e441f706abp+3 -0x1.8658de49a0d17p+0 0x1.91ec90c113566p+2 0x0p+0 0x0p+0 0x0p+0
 cov:calc_pctr[same,1]                          rf=-1     0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 0x0p+0 | ipl and iplctr (= 4) must not be identical 
 cov:gauquelin[1]                               rf=0      0x1.3e965bfef0d1ap+4
 cov:orbital_elements[1]                        rf=0      0x1.860f798b3ed1cp+0 0x1.7ebe9dd05571fp-4 0x1.d96f24fefe86bp+0 0x1.8c4e8e0a2984ap+5 0x1.1e9ffa89ad2a5p+8 0x1.5029cc4af25aep+8 0x1.5b5752445972fp+8 0x1.58b208794a92ap+8 0x1.5a0ce9d52eb3ep+8 0x1.43811e8f4bcdcp+8 0x1.e17f8f5126d0fp+0 0x1.0c4f3dcc704d5p-1 0x1.e17b8765527a1p+0 0x1.85fa20f503ba6p+9 0x1.2b6c918213b09p+21 0x1.619ca116503b8p+0 0x1.aa8252002d68p+0
@@ -5317,6 +5317,8 @@ cov:house_pos[Y,1,0]                           rf=0      0x1.550f3a1d5948fp+3
 cov:house_pos[Y,1,1]                           rf=0      0x1.308a19d6ef14bp+2
 cov:order_swiss_alone                          rf=258    0x1.104f0279d40d6p+8 0x1.9f6ccf64be448p-12 0x1.f90110b1ddca4p-1 0x1.036f642afc7c4p+0 -0x1.7521509bf2dfcp-16 0x1.9fb809a1b139dp-13
 cov:order_swiss_after_moseph                   rf=258    0x1.104f0279d40d6p+8 0x1.9f6ccf64be448p-12 0x1.f90110b1ddca4p-1 0x1.036f642afc7c4p+0 -0x1.7521509bf2dfcp-16 0x1.9fb809a1b139dp-13
+cov:order_pctr_alone                           rf=2      0x1.c023a99da673fp+7 0x1.8fcd140fc6dbbp-1 0x1.41c433af52b13p+2 0x0p+0 0x0p+0 0x0p+0
+cov:order_pctr_after_far                       rf=2      0x1.c023a99da673fp+7 0x1.8fcd140fc6dbbp-1 0x1.41c433af52b13p+2 0x0p+0 0x0p+0 0x0p+0
 cov:order_moseph_alone                         rf=260    0x1.104e365ebc0d9p+8 0x1.a91a5672993a1p-12 0x1.f900f994354f6p-1 0x1.036f8e5a8add8p+0 -0x1.6c835f7f52366p-16 0x1.9fab02011c375p-13
 cov:order_moseph_after_jplname                 rf=260    0x1.104e365ebc0d9p+8 0x1.a91a5672993a1p-12 0x1.f900f994354f6p-1 0x1.036f8e5a8add8p+0 -0x1.6c835f7f52366p-16 0x1.9fab02011c375p-13
 cov:order_swiss_after_jplname                  rf=258    0x1.104f0279d40d6p+8 0x1.9f6ccf64be448p-12 0x1.f90110b1ddca4p-1 0x1.036f642afc7c4p+0 -0x1.7521509bf2dfcp-16 0x1.9fb809a1b139dp-13
