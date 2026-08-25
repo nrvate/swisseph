@@ -146,7 +146,7 @@ jobs:
       # seleapsec.txt and seorbel.txt -- both of which were fetched from the
       # default context instead of the caller's.
       - name: Per-context ephemeris files
-        run: make -C tests check-ctxfiles EPHE=../$EPHE
+        run: make -C tests check-ctxfiles
 
       # G11. gcc/clang pick tier 3 at every -std=, so tiers 4 and 5 are
       # built by nothing else. Tier 5 had already rotted unbuildable.

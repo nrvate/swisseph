@@ -367,8 +367,11 @@ check-ctxfiles: ctxfiles
 	@rm -rf $(CTXF_DIR) $(CTXF_BARE) && mkdir -p $(CTXF_DIR) $(CTXF_BARE)
 	@printf '# fixture: a leap second the built-in table does not carry\n20261231\n' \
 	  > $(CTXF_DIR)/seleapsec.txt
-	@grep -vE '^[[:space:]]*#|^[[:space:]]*$$' $(EPHE)/seorbel.txt | head -1 \
-	  | sed 's/Cupido/ZZTESTBODY/' > $(CTXF_DIR)/seorbel.txt
+	@# Written out rather than derived from $(EPHE)/seorbel.txt: this gate
+	@# needs no ephemeris otherwise, and deriving it would re-pin the fixture
+	@# silently if upstream ever reorders that file's first element line.
+	@printf 'J1900, J1900, 163.7409, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, ZZTESTBODY\n' \
+	  > $(CTXF_DIR)/seorbel.txt
 	@env -u SE_EPHE_PATH ./ctxfiles $(CTXF_DIR) $(CTXF_BARE)
 	@rm -rf $(CTXF_DIR) $(CTXF_BARE)
 

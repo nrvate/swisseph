@@ -902,9 +902,13 @@ static void coverage(void) {
     sprintf(tag, "cov:helio_cross_ut[back,%d]", i);    row(tag, rf, x, 1, serr);
     *serr = 0; rf = swe_helio_cross(SE_CHIRON, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
     sprintf(tag, "cov:helio_cross[chiron,%d]", i);     row(tag, rf, x, 1, serr);
-    *serr = 0; rf = swe_helio_cross(SE_MOON, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
+    /* Zeroed for the same reason: a refusal leaves *jd_cross untouched, so
+     * these rows were recording the Chiron crossing computed just above. */
+    *serr = 0; x[0] = 0;
+    rf = swe_helio_cross(SE_MOON, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
     sprintf(tag, "cov:helio_cross[refused,%d]", i);    row(tag, rf, x, 1, serr);
-    *serr = 0; rf = swe_helio_cross_ut(SE_MEAN_NODE, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
+    *serr = 0; x[0] = 0;
+    rf = swe_helio_cross_ut(SE_MEAN_NODE, 90.0 * (i + 1), jd, SEFLG_SWIEPH, 1, &x[0], serr);
     sprintf(tag, "cov:helio_cross_ut[refused,%d]", i); row(tag, rf, x, 1, serr);
   }
 
@@ -921,7 +925,12 @@ static void coverage(void) {
     sprintf(tag, "cov:calc_pctr[speed,%d]", i);        row(tag, rf, x, 6, serr);
     *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_TRUEPOS, x, serr);
     sprintf(tag, "cov:calc_pctr[truepos,%d]", i);      row(tag, rf, x, 6, serr);
-    *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_MARS, SEFLG_SWIEPH, x, serr);
+    /* x is zeroed first: swe_calc_pctr() rejects ipl == iplctr without
+     * writing it, so the row recorded the PREVIOUS call's six values --
+     * byte-identical to the row above and silently re-pinned by any edit
+     * to it. Same reason as the memset in the fictitious-body loop. */
+    *serr = 0; memset(x, 0, sizeof x);
+    rf = swe_calc_pctr(tjd, SE_MARS, SE_MARS, SEFLG_SWIEPH, x, serr);
     sprintf(tag, "cov:calc_pctr[same,%d]", i);         row(tag, rf, x, 6, serr);
     *serr = 0; rf = swe_gauquelin_sector(tjd, SE_MARS, NULL, SEFLG_SWIEPH, 0,
                                          (double[]){ 16.4, 48.2, 190.0 }, 1013.25, 15.0, &x[0], serr);

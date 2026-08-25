@@ -66,6 +66,8 @@ int main(int argc, char **argv)
   b = swe_ctx_new();
   if (a == NULL || b == NULL) {
     printf("  FAIL: swe_ctx_new() returned NULL\n");
+    if (a != NULL) swe_ctx_free(a);
+    if (b != NULL) swe_ctx_free(b);
     return 1;
   }
   swe_set_ephe_path_r(a, (char *) dir_leap);
