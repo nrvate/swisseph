@@ -2,6 +2,23 @@
 SWE      = ../sweconfig.c ../swedate.c ../swehouse.c ../swejpl.c ../swemmoon.c ../swemplan.c \
            ../sweph.c ../swephlib.c ../swecl.c ../swehel.c
 CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
+# The diagnostics CI already applies to this directory, applied here too.
+#
+# ci.yml compiles every tests/*.c with -Wall -Wextra -Werror at five -O
+# levels under both compilers; this Makefile compiled them with none of
+# that. So a green `make check` was weaker than a green CI run and, as
+# usual, did not say so. Two warnings went out that way in one afternoon: a
+# `serr != NULL` test on something that is an array here and can never be
+# NULL, and a parameter left unused when the call that used it moved. Both
+# compiled clean locally and failed in the container.
+#
+# Diagnostics only -- they cannot change code generation, so the bit-exact
+# G1 baseline is unaffected. -std is deliberately NOT set: the dialect
+# floors are check-build's job, and pinning one here could change codegen.
+# Override with `make WARNFLAGS=` if a newer compiler invents a warning
+# mid-bisect.
+WARNFLAGS ?= -Wall -Wextra -Werror
+CFLAGS  += $(WARNFLAGS)
 # `make LTO=1` is opt-in HERE so the bit-exact G1 reference build stays plain
 # -O0; the root Makefile has LTO on by default. Same flag choice as there.
 ifeq ($(LTO),1)
