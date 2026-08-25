@@ -130,18 +130,15 @@ jobs:
       - name: JPL reader numerical baseline
         run: make -C tests check-jplcalc
 
-      # G21. Diagnostics only, so it is toolchain-independent and belongs
-      # anywhere; it sits here because the runner has both compilers and the
-      # gate wants both -- they disagree about what is pedantic. Everything
-      # else in this file gates behaviour; this gates conformance, which
-      # -Wall -Wextra -Werror does not imply.
+      # G21. Diagnostics only, so toolchain-independent; here because the
+      # runner has both compilers and the gate wants both. Gates conformance,
+      # which -Wall -Wextra -Werror does not imply.
       - name: Sources compile as conforming C
         run: make -C tests check-pedantic
 
-      # G22. reorder() is swejpl.c's byte-swapping path and nothing reached
-      # it: the shipped de200.eph matches the host's byte order. Reads a
-      # swapped twin of it and requires bit-identical numbers, so it is
-      # bit-exact and belongs on the reference toolchain, like check-golden.
+      # G22. reorder(), which nothing reached: de200.eph matches the host's
+      # byte order. Reads a swapped twin and requires bit-identical numbers,
+      # so it belongs on the reference toolchain, like check-golden.
       - name: JPL byte-swapping path (reorder)
         run: make -C tests check-jplswap EPHE=../$EPHE
 

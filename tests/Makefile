@@ -274,12 +274,11 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
 # docker, and re-runs the gates under the CI toolchain rather than adding new
 # ones.
 #
-# Sequential, not `check-all: check check-setest`. As prerequisites those two
-# run concurrently under -j, and both force a rebuild of the SAME root
-# objects with different flags: check-build does `make -B -C .. all` at the
-# root's -O2, check-setest does `make -B -C .. libswe.a` pinned to -O0. Past
-# the torn-file race, that leaves libswe.a a mix of both -- silently undoing
-# the pin the comment above the check-setest rule exists to guarantee.
+# Sequential, not `check-all: check check-setest`: as prerequisites those run
+# concurrently under -j, and both force a rebuild of the SAME root objects
+# with different flags -- check-build at the root's -O2, check-setest pinned
+# to -O0. Past the torn files, that leaves libswe.a a mix of both, silently
+# undoing the pin check-setest depends on.
 check-all:
 	@$(MAKE) check
 	@$(MAKE) check-setest
@@ -334,24 +333,13 @@ DT_DIR = .ephe-dt
 dtmemo: dtmemo.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
-# G22: reorder(), swejpl.c's byte-swapping path.
+# G22: reorder(), swejpl.c's byte-swapping path, which measured 0.00% --
+# de200.eph matches this host's byte order, so eleven call sites never fire.
+# The fixture is de200.eph rewritten into the opposite byte order, so it must
+# read back bit-identical. Details in jplswap.c.
 #
-# It measured 0.00% -- ephe/de200.eph matches this host's byte order, so
-# do_reorder is 0 for the whole suite and eleven call sites never fire. It
-# was the largest untested unit in the least-covered file.
-#
-# The fixture is not synthesised the way jplguard's are. It is de200.eph
-# rewritten field-for-field into the opposite byte order, so it holds the
-# SAME ephemeris and must therefore read back bit-identical -- not within a
-# tolerance. Two assertions, because they fail for different reasons: the
-# header (both files must report the same epoch range, which needs ss[]
-# reordered) and the coefficients (60 samples, 10 bodies x 6 epochs, with
-# speed). Six epochs rather than one because at a single instant ten bodies
-# do not touch every coefficient in a record, and a corrupted one went
-# undetected.
-#
-# Needs the real ephemeris and writes a 41 MB twin, which the run removes;
-# the header carries the expected length, so it cannot be shrunk.
+# Writes a 41 MB twin, which the run removes; the header carries the expected
+# length, so it cannot be shrunk.
 JPLSWAP_DIR = .jplswap
 jplswap: jplswap.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
@@ -411,28 +399,17 @@ check-samples: .samples.txt samples.baseline
 
 # G21: the shipped sources are conforming C, not merely warning-free C.
 #
-# -Wall -Wextra -Werror accepts a good deal that ISO C does not: a
-# declaration straight after a case label, empty initializer braces, a
-# designated range in an initializer, a function pointer cast to void *.
-# Each compiles on every toolchain we build today and is still outside the
-# standard, so the bill arrives on whichever port comes next -- and it
-# arrives as a build failure in someone else's tree, not ours. This costs
-# one compile per file and closes that gap. It caught a declaration after a
-# case label during the setest review, which -Wall -Wextra had passed.
+# -Wall -Wextra -Werror accepts plenty ISO C does not -- a declaration after
+# a case label, empty initializer braces, a designated range -- and the bill
+# arrives on whichever port comes next, as a build failure in someone else's
+# tree. This caught a declaration after a case label during the setest review.
 #
-# Both compilers, because they disagree about what is pedantic: clang was
-# already silent on the dladdr() cast below that gcc rejects.
+# Both compilers, because they disagree about what is pedantic. Samples
+# included: they are what a reader copies from. One suppression, annotated in
+# sweph.c, for the dladdr() cast POSIX requires and ISO C has no spelling for.
 #
-# The samples are included. They are the code a reader copies from.
-#
-# One suppression exists, annotated where it sits: swe_get_library_path()
-# hands a function pointer to dladdr(), which takes void *. POSIX requires
-# that conversion and ISO C has none, so no spelling satisfies both.
-#
-# The two counters at the end are the point of a gate: it must not report
-# success having verified nothing. Without them a container with no compiler
-# prints "skipped" twice and passes, and a wildcard that matched no files
-# prints "OK (0 files)" and passes.
+# The two counters at the end stop it reporting success having verified
+# nothing: no compiler, or no files, is a failure rather than a pass.
 PEDANTIC_SRC = $(wildcard ../*.c)
 check-pedantic:
 	@echo "G21: root sources compile as conforming C (-pedantic)"

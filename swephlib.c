@@ -4645,14 +4645,12 @@ void CALL_CONV swe_get_astro_models_r(swe_ctx *ctx, char *samod, char *sdet, int
        * guarded, this one was not, and printed it through %s regardless.
        * "(null)" is glibc's choice for that, not C's. With no model string
        * from the caller there is only the canonical spelling to offer. */
-      /* Precisions, because samod is the CALLER's string and sdet is the
-       * caller's buffer: without them the length of an argument decided how
-       * many bytes the library wrote, and no buffer size could be safe.
-       * swetest passes argv straight through as -amod<...> into char[2000],
-       * so `swetest -amod<2000 chars>` was a 2133-byte write into it --
-       * ASan: global-buffer-overflow at this line. 60 is well past anything
-       * meaningful: set_astro_models() reads a short digit list, and the
-       * "SE2.06" form is truncated to 20 characters before it is parsed. */
+      /* Precisions: samod is the CALLER's string and sdet the caller's
+       * buffer, so without them an argument's length decided how much the
+       * library wrote and no buffer size was safe. swetest passes argv
+       * through as -amod<...> into char[2000]; 2000 characters made this a
+       * 2133-byte write (ASan: global-buffer-overflow). 60 is past anything
+       * meaningful -- the "SE2.06" form is cut to 20 before parsing. */
       if (samod != NULL)
 	sprintf(sdet + strlen(sdet), "For list of all available astronomical models, add a '+' to the version string\n(swetest parameter -amod%.60s+ or -amod%.60s+)\n", samod, samod0);
       else

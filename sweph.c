@@ -267,11 +267,9 @@ char *CALL_CONV swe_get_library_path(char *s)
     /* Must be a local. As a file-scope static this was shared mutable state
      * written by every concurrent caller. */
     Dl_info dli;
-    /* ISO C has no conversion from a function pointer to void *, and
-     * -Wpedantic says so. POSIX requires exactly this one: dladdr() takes
-     * the address to look up as void *, and the address we want is a
-     * function's. The cast stays visible rather than being laundered
-     * through uintptr_t, which is no more conforming and only hides it. */
+    /* ISO C has no function-pointer-to-void* conversion; POSIX requires this
+     * one, since dladdr() takes the address as void *. Kept visible rather
+     * than laundered through uintptr_t, which is no more conforming. */
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wpedantic"
     if (dladdr((void *)swe_version, &dli) != 0) {

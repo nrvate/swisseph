@@ -1686,15 +1686,12 @@ static void coverage(void) {
     }
   }
 
-  /* swephlib.c was the least-covered file at 77.8%, and these were the
-   * reachable holes in it.
+  /* swephlib.c was the least-covered file at 77.8%; these were its reachable
+   * holes.
    *
    * swe_sidtime0() at 0%: the transcript reaches sidereal time only through
-   * swe_sidtime(), which computes obliquity and nutation itself. The
-   * three-argument form -- where the CALLER supplies them -- is a separate
-   * public entry point and nothing called it. Values here are the ones
-   * swe_calc() reports for J2000, so the row is a real answer rather than a
-   * pair of round numbers. */
+   * swe_sidtime(), which derives obliquity and nutation itself. The form
+   * where the CALLER supplies them is a separate entry point nothing used. */
   {
     double eps = 23.4392911, nut = -0.00389;
     x[0] = swe_sidtime0(2451545.0, eps, nut);
@@ -1702,16 +1699,11 @@ static void coverage(void) {
     row("cov:sidtime0", 0, x, 2, "");
   }
 
-  /* The five model-description helpers -- get_deltat_model,
-   * get_precession_model, get_nutation_model, get_frame_bias_model,
-   * get_sidt_model -- read 17% to 57%. Each is a switch over every model the
-   * library knows, and the transcript only ever selected a handful.
-   *
-   * A '+' in samod makes swe_get_astro_models() enumerate ALL of them in one
-   * call, which walks every case in all five switches. The output is ~1.9 KB
-   * of prose over many lines, so the row records its length and a byte sum
-   * rather than the text: one line, deterministic, and it still moves if any
-   * description changes. */
+  /* The five model-description switches read 17% to 57%: the transcript only
+   * ever selected a handful of models. A '+' in samod makes
+   * swe_get_astro_models() enumerate all of them in one call, walking every
+   * case. The output is ~1.9 KB over many lines, so the row records length
+   * and a byte sum -- one line, and it still moves if a description does. */
   {
     static char sdet[8000];    /* the header now documents 4000 */
     char sam[AS_MAXCH];
@@ -1726,21 +1718,14 @@ static void coverage(void) {
     reset_astro_models();
   }
 
-  /* deltat_longterm_morrison_stephenson() at 0%, and the three tabulated
-   * models that reach it at 27%, 52% and 57%.
-   *
-   * The existing cov:deltatmodel[] rows select every model but ask at year
-   * 1000, which is INSIDE the tables -- so the extrapolation below them was
-   * never entered. Only some models route there at all: Espenak-Meeus falls
-   * through to the long-term formula below -500, and the 1997 and 2004
-   * families below TAB2_START (-1000). The default, Stephenson etc. 2016,
-   * has its own long-term branch and never calls it, which is why asking at
-   * an extreme date under the DEFAULT model still left it at zero.
-   *
-   * Two dates per model: one below -1000 where every route is open, and one
-   * between -1000 and -500 where Espenak-Meeus is still on the formula and
-   * the other two have crossed into the table. The pair is what distinguishes
-   * them; a single early date would not. */
+  /* deltat_longterm_morrison_stephenson() at 0%, and the three models that
+   * reach it at 27/52/57%. The existing cov:deltatmodel[] rows select every
+   * model but ask at year 1000, inside the tables, so the extrapolation below
+   * was never entered -- and an extreme date under the DEFAULT model does not
+   * help either, since Stephenson etc. 2016 carries its own long-term branch.
+   * It needs the older models AND an early date: Espenak-Meeus falls through
+   * below -500, the 1997 and 2004 families below -1000. Two dates per model,
+   * one either side of -1000, because the pair is what separates them. */
   {
     static const double DT_FAR[2] = { -3026613.5, 1721057.5 };  /* ~-20000, ~-700 */
     for (int dm = SEMOD_DELTAT_STEPHENSON_MORRISON_1984;
@@ -1759,10 +1744,8 @@ static void coverage(void) {
   }
 
   /* quadratic_intp() at 0%: it interpolates nutation between whole days and
-   * runs only when swe_set_interpolate_nut() is on, which nothing switched
-   * on. Two positions a fraction of a day apart, so the interpolation has
-   * something to do, then the switch goes back off -- it is global state and
-   * every row after this one would otherwise inherit it. */
+   * runs only under swe_set_interpolate_nut(), which nothing enabled. Switched
+   * back off afterwards -- it is global state later rows would inherit. */
   {
     swe_set_interpolate_nut(TRUE);
     *serr = 0; rf = swe_calc(2451545.3, SE_MOON, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
