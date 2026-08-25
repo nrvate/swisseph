@@ -83,6 +83,13 @@ bool is_empty(const char *s) {
 } 
 
 bool is_blank(const char *s) {
-  for (const char *s1 = s;s1 != '\0';s1++) if (!isspace(*s1)) return false;
+  /* Was "s1 != '\0'", comparing the pointer against the null pointer
+   * constant, so the loop ended only at the terminator, where isspace()
+   * fails: is_blank() returned false for every input, blanks included.
+   * (-Wpointer-compare catches it, but setest builds with -Wall alone.)
+   * The cast: char is signed here and these files are UTF-8, so a byte
+   * above 127 would reach isspace() negative, which is undefined. */
+  for (const char *s1 = s;*s1 != '\0';s1++)
+    if (!isspace((unsigned char)*s1)) return false;
   return true;
 }

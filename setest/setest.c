@@ -43,7 +43,7 @@ void run( test_context* ctx ) {
     if (ctx->out && ctx->out != stdout) fclose(ctx->out);
   }
   void open_exp_or_fix_reader() {
-    char file[SETEST_MAX_SYMBOL_SIZE];
+    char file[SETEST_MAX_COLLECTION_FILE];
     strcpy(file,ctx->test_collection);
     strcat(file,ctx->testmode ? ".exp" : ".fix" );
     if (is_empty(ctx->prepare_fixture_command)) {
@@ -59,7 +59,7 @@ void run( test_context* ctx ) {
     ); 
   }
   void open_output_stream() {
-    char file[SETEST_MAX_SYMBOL_SIZE];
+    char file[SETEST_MAX_COLLECTION_FILE];
     if (!ctx->testmode) {
       strcpy(file,ctx->test_collection);
       strcat(file,".exp");
@@ -88,7 +88,7 @@ void run( test_context* ctx ) {
     printf(".\n");
     }
   void check_file_existence( ) {
-    char file[SETEST_MAX_SYMBOL_SIZE];
+    char file[SETEST_MAX_COLLECTION_FILE];
     sprintf(file,"%s.fix",ctx->test_collection);
     if (ctx->testmode) {
 // Test mode: Need expectations file
@@ -150,6 +150,11 @@ void evaluate_cmdline_options(int argc, char** argv, test_context *ctx) {
       case 0:
         /* If this option set a flag, do nothing else now. */
         if (long_options[option_index].flag != 0) break;
+        /* ...and if it did not, still nothing: falling through into 'g'
+         * would turn test mode off. Unreachable as the table stands, but
+         * adding a long-only option as { "foo", no_argument, 0, 0 } makes
+         * getopt return 0 with a null flag, and reaches it. */
+        break;
       case 'g':
         ctx->testmode = false;
         break;
@@ -179,6 +184,16 @@ void evaluate_cmdline_options(int argc, char** argv, test_context *ctx) {
        switch (i) {
          case 0:
 // The remaining argument is the test collection name
+/* Was an unbounded strcpy into a 50-byte field mid-struct: a longer name
+ * overwrote every member after it and died later somewhere unrelated, and
+ * ASan cannot see an overflow that stays inside one object. Refuse rather
+ * than truncate -- a truncated name reads the wrong .exp file. */
+           if (strlen(argv[optind]) >= SETEST_MAX_SYMBOL_SIZE) {
+             fprintf(stderr,
+                 "Test collection name is %d characters, the limit is %d.\n",
+                 (int)strlen(argv[optind]), SETEST_MAX_SYMBOL_SIZE - 1);
+             exit(EXIT_FAILURE);
+           }
            strcpy(ctx->test_collection,argv[optind]);
 // Strip off file extension if given
            if (ends_with(ctx->test_collection,".fix") ||
