@@ -1685,6 +1685,94 @@ static void coverage(void) {
       row(tag, 0, x, 0, nm);
     }
   }
+
+  /* swephlib.c was the least-covered file at 77.8%, and these were the
+   * reachable holes in it.
+   *
+   * swe_sidtime0() at 0%: the transcript reaches sidereal time only through
+   * swe_sidtime(), which computes obliquity and nutation itself. The
+   * three-argument form -- where the CALLER supplies them -- is a separate
+   * public entry point and nothing called it. Values here are the ones
+   * swe_calc() reports for J2000, so the row is a real answer rather than a
+   * pair of round numbers. */
+  {
+    double eps = 23.4392911, nut = -0.00389;
+    x[0] = swe_sidtime0(2451545.0, eps, nut);
+    x[1] = swe_sidtime0(1356173.5, eps, nut);   /* -3000, far from the fit */
+    row("cov:sidtime0", 0, x, 2, "");
+  }
+
+  /* The five model-description helpers -- get_deltat_model,
+   * get_precession_model, get_nutation_model, get_frame_bias_model,
+   * get_sidt_model -- read 17% to 57%. Each is a switch over every model the
+   * library knows, and the transcript only ever selected a handful.
+   *
+   * A '+' in samod makes swe_get_astro_models() enumerate ALL of them in one
+   * call, which walks every case in all five switches. The output is ~1.9 KB
+   * of prose over many lines, so the row records its length and a byte sum
+   * rather than the text: one line, deterministic, and it still moves if any
+   * description changes. */
+  {
+    static char sdet[8000];    /* the header now documents 4000 */
+    char sam[AS_MAXCH];
+    unsigned long sum = 0;
+    strcpy(sam, "+");
+    memset(sdet, 0, sizeof sdet);
+    swe_get_astro_models(sam, sdet, SEFLG_SWIEPH);
+    for (const char *p = sdet; *p; p++) sum = sum * 31u + (unsigned char) *p;
+    x[0] = (double) strlen(sdet);
+    x[1] = (double) (sum & 0xffffffUL);
+    row("cov:astro_models_all", 0, x, 2, "");
+    reset_astro_models();
+  }
+
+  /* deltat_longterm_morrison_stephenson() at 0%, and the three tabulated
+   * models that reach it at 27%, 52% and 57%.
+   *
+   * The existing cov:deltatmodel[] rows select every model but ask at year
+   * 1000, which is INSIDE the tables -- so the extrapolation below them was
+   * never entered. Only some models route there at all: Espenak-Meeus falls
+   * through to the long-term formula below -500, and the 1997 and 2004
+   * families below TAB2_START (-1000). The default, Stephenson etc. 2016,
+   * has its own long-term branch and never calls it, which is why asking at
+   * an extreme date under the DEFAULT model still left it at zero.
+   *
+   * Two dates per model: one below -1000 where every route is open, and one
+   * between -1000 and -500 where Espenak-Meeus is still on the formula and
+   * the other two have crossed into the table. The pair is what distinguishes
+   * them; a single early date would not. */
+  {
+    static const double DT_FAR[2] = { -3026613.5, 1721057.5 };  /* ~-20000, ~-700 */
+    for (int dm = SEMOD_DELTAT_STEPHENSON_MORRISON_1984;
+         dm <= SEMOD_DELTAT_STEPHENSON_ETC_2016; dm++) {
+      char sam[AS_MAXCH], tg[64];
+      snprintf(sam, sizeof sam, "%d", dm);
+      swe_set_astro_models(sam, 0);
+      for (int d = 0; d < 2; d++) {
+        *serr = 0;
+        x[0] = swe_deltat_ex(DT_FAR[d], SEFLG_SWIEPH, serr);
+        snprintf(tg, sizeof tg, "cov:deltat_longterm[%d,%d]", dm, d);
+        row(tg, 0, x, 1, serr);
+      }
+    }
+    reset_astro_models();
+  }
+
+  /* quadratic_intp() at 0%: it interpolates nutation between whole days and
+   * runs only when swe_set_interpolate_nut() is on, which nothing switched
+   * on. Two positions a fraction of a day apart, so the interpolation has
+   * something to do, then the switch goes back off -- it is global state and
+   * every row after this one would otherwise inherit it. */
+  {
+    swe_set_interpolate_nut(TRUE);
+    *serr = 0; rf = swe_calc(2451545.3, SE_MOON, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:interp_nut[on]", rf, x, 6, serr);
+    *serr = 0; rf = swe_calc(2451545.7, SE_MOON, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:interp_nut[mid]", rf, x, 6, serr);
+    swe_set_interpolate_nut(FALSE);
+    *serr = 0; rf = swe_calc(2451545.3, SE_MOON, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    row("cov:interp_nut[off]", rf, x, 6, serr);
+  }
 }
 
 /* Broad date sweep: every major body at 120 pseudo-random dates.
