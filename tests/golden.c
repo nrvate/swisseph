@@ -932,6 +932,14 @@ static void coverage(void) {
     *serr = 0; memset(x, 0, sizeof x);
     rf = swe_calc_pctr(tjd, SE_MARS, SE_MARS, SEFLG_SWIEPH, x, serr);
     sprintf(tag, "cov:calc_pctr[same,%d]", i);         row(tag, rf, x, 6, serr);
+    /* The two branches that pick `oe`, which the obliquity/nutation fix
+     * changed the meaning of: SEFLG_J2000 takes oec2000, everything else
+     * oec, and the sidereal path re-derives the longitude afterwards.
+     * Neither was reached before. */
+    *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_J2000, x, serr);
+    sprintf(tag, "cov:calc_pctr[j2000,%d]", i);        row(tag, rf, x, 6, serr);
+    *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_SIDEREAL, x, serr);
+    sprintf(tag, "cov:calc_pctr[sidereal,%d]", i);     row(tag, rf, x, 6, serr);
     *serr = 0; rf = swe_gauquelin_sector(tjd, SE_MARS, NULL, SEFLG_SWIEPH, 0,
                                          (double[]){ 16.4, 48.2, 190.0 }, 1013.25, 15.0, &x[0], serr);
     sprintf(tag, "cov:gauquelin[%d]", i);              row(tag, rf, x, 1, serr);

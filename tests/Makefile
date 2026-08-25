@@ -783,7 +783,10 @@ check-build:
 # Adding a SECOND divergence is not a judgement call: notes/REVIEW.md,
 # "Accepted divergences from upstream", states the three pieces of evidence
 # required and records what was produced for this one.
-SETEST_ACCEPTED      ?= 1\.5\.
+# Character classes, not backslashes: awk processes escape sequences in a
+# -v assignment, so '1\.5\.' arrives as 1.5. with the dots as wildcards --
+# and warns about it. [.] means a literal dot however it is passed.
+SETEST_ACCEPTED      ?= 1[.]5[.]
 SETEST_ACCEPTED_DESC ?= testcase 1.5 (swe_calc_pctr, deliberately fixed)
 SETEST_ACCEPT = awk -v ACCEPT='$(SETEST_ACCEPTED)' -f $(CURDIR)/setest-accept.awk
 
