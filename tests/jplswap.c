@@ -1,52 +1,30 @@
-/* G22: the JPL reader's byte-swapping path, reorder().
+/* G22: reorder(), swejpl.c's byte-swapping path.
  *
- * swejpl.c carries a full big-endian/little-endian conversion. fsizer()
- * decides on it from one number -- ss[2], the segment size in days -- and
- * turns it on when that lands outside 1..200, which is what a byte-swapped
- * double looks like. Eleven call sites then run it over the header fields,
- * the 400 constants, and every coefficient record.
+ * fsizer() turns byte-swapping on when ss[2], the segment size in days,
+ * lands outside 1..200 -- what a swapped double looks like -- and eleven
+ * call sites then run it over the header, the 400 constants and every
+ * coefficient record. None of it ran: ephe/de200.eph matches this host's
+ * byte order, so reorder() measured 0.00%.
  *
- * None of it was ever executed. ephe/de200.eph matches this host's byte
- * order, so do_reorder is 0 for the whole suite and reorder() measured 0.00%
- * -- the largest untested unit in the least-covered file (swejpl.c, 73.9%).
+ * The fixture is de200.eph rewritten field-for-field into the opposite byte
+ * order, so it is the SAME ephemeris and must read back bit-identical, not
+ * within a tolerance. Two assertions, because they fail for different
+ * reasons: the header (both files must report the same epoch range, which
+ * needs ss[] reordered) and the coefficients (60 samples).
  *
- * It is not merely untested. reorder() byte-reverses through a fixed
- * char s[8] using a caller-supplied `size`, with no bound of its own:
+ * A PASS means the path ran AND was right: fsizer() rejects a file whose
+ * reordered ss[] is implausible, so a broken reorder() cannot load at all.
  *
- *     static void reorder(char *x, int size, int number) {
- *       char s[8];
- *       ... for (j = 0; j < size; j++) *(sp2 + j) = ...
- *
- * Every current caller passes sizeof(double) or sizeof(int32), so it is
- * correct today and there is nothing to fix. But that is the same
- * trust-the-file shape as REVIEW.md's J1 (ksize/ncf against fixed arrays),
- * in the same file -- and unlike J1 this had no test at all.
- *
- * WHAT THIS ASSERTS, and why it is stronger than reaching the code:
- *
- * The fixture is not synthesised. It is ephe/de200.eph rewritten into the
- * opposite byte order, field for field, so it holds the SAME ephemeris.
- * Read correctly it must therefore produce bit-identical numbers -- not
- * numbers within a tolerance, the same doubles. Anything else means
- * reorder() got a byte wrong, and a single wrong byte in a mantissa is a
- * value that no tolerance would forgive anyway.
- *
- * That also makes the gate self-proving. If reorder() were broken or
- * removed, the swapped file would not merely compute badly, it would not
- * load: fsizer() checks the reordered ss[] against a plausibility range
- * (-5583942..9025909, segment 1..200) and rejects the file. So a PASS here
- * means the path ran AND was right.
- *
- * The fixture costs one 41 MB write per run -- the length is checked
- * against the header, so it cannot be truncated to save space.
+ * Costs one 41 MB write per run; the header carries the expected length, so
+ * it cannot be truncated.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "swephexp.h"
 
-/* The first record's layout, as fsizer() reads it. Same map jplguard.c
- * documents; text first, then the binary fields this has to reverse.
+/* The first record's layout, as fsizer() reads it -- the map jplguard.c
+ * documents. Text first, then the binary fields to reverse.
  *    0     252 B    title            (text, left alone)
  *  252    2400 B    constant names   (text, left alone)
  * 2652    3 doubles ss[]
@@ -92,9 +70,8 @@ static int32 get32(const unsigned char *p)
   return v;
 }
 
-/* fsizer()'s own computation, kept identical on purpose: the record size has
- * to be derived the way the reader derives it, or the two disagree about
- * where every record after the first begins. */
+/* fsizer()'s computation, kept identical: derive the record size any other
+ * way and the two disagree about where every later record begins. */
 static int32 ksize_of(const unsigned char *hdr)
 {
   int32 ipt[39];
@@ -110,10 +87,9 @@ static int32 ksize_of(const unsigned char *hdr)
   return ksize;
 }
 
-/* Rewrites `src` into `dst` in the opposite byte order, reversing exactly
- * the fields the reader reverses and nothing else -- the title and the
- * constant names are text and must survive intact. Returns the record size,
- * or -1. */
+/* Rewrites src into dst in the opposite byte order, reversing exactly what
+ * the reader reverses -- title and constant names are text. Returns the
+ * record size, or -1. */
 static long build_swapped(const char *src, const char *dst)
 {
   unsigned char *rec;
@@ -153,6 +129,10 @@ static long build_swapped(const char *src, const char *dst)
     } else if (recno == 1) {
       swap_n(rec, 8, 400);                  /* cval[400], the constants */
     } else {
+      /* Refuse a short tail rather than copying it through unswapped: that
+       * would produce a fixture wrong in a way the gate would blame on
+       * reorder(). */
+      if (n % 8 != 0) { free(rec); fclose(in); fclose(out); return -1; }
       swap_n(rec, 8, n / 8);                /* a record of coefficients */
     }
     if (fwrite(rec, 1, n, out) != n) {
@@ -165,14 +145,10 @@ static long build_swapped(const char *src, const char *dst)
   return irecsz;
 }
 
-/* Epochs spread across DE200's 1600..2170, so the comparison lands in
- * different records rather than one. It matters more than it looks: with a
- * single epoch, corrupting one coefficient in the middle of a record changed
- * no result at all -- ten bodies at one instant do not touch everything a
- * record holds, so the numeric half of this gate only covers what gets used.
- * Several epochs and SEFLG_SPEED (which brings in the derivative chain)
- * widen that considerably. Measured: with these, the same one-coefficient
- * corruption is caught. */
+/* Spread across DE200's 1600..2170 so the comparison lands in different
+ * records. With a single epoch, corrupting one coefficient mid-record changed
+ * no result at all: ten bodies at one instant do not touch everything a record
+ * holds. With these and SEFLG_SPEED, that same corruption is caught. */
 static const double EPOCHS[] = {
   2305456.5,     /* 1600-01-01, near the start of DE200's range */
   2378496.5,     /* 1800-01-01 */
@@ -184,17 +160,10 @@ static const double EPOCHS[] = {
 #define NEPOCH ((int)(sizeof(EPOCHS)/sizeof(EPOCHS[0])))
 #define NSAMP  (NBODY * NEPOCH)
 
-/* Asks for a date far outside any ephemeris and returns what the reader
- * says. state() answers that with
- *     "jd %f outside JPL eph. range %.2f .. %.2f;"
- * built from eh_ss[0] and eh_ss[1] -- the reordered header. So the reply is
- * a direct read-out of whether the HEADER byte-swapped correctly, and it
- * needs no coefficient record to produce.
- *
- * That separation is the point. Without it the gate can only say "the
- * swapped file did not answer" and has to guess whether the header or the
- * coefficients were at fault; guessing got it wrong, and a probe whose
- * header was fine was reported as a header failure. */
+/* A date outside any ephemeris makes state() answer "jd %f outside JPL eph.
+ * range %.2f .. %.2f;" from eh_ss[] -- the reordered header, read back
+ * without touching a coefficient record. That separates the two failures;
+ * inferring them from the first refused sample got it wrong. */
 static void range_probe(const char *dir, const char *file, char *serr)
 {
   char jf[AS_MAXCH];
@@ -238,7 +207,7 @@ int main(int argc, char **argv)
   const char *ephe = getenv("SE_TEST_EPHE");
   const char *jplfile = getenv("SE_JPL_FILE");
   const char *outdir = (argc > 1) ? argv[1] : ".";
-  char src[AS_MAXCH * 2], dst[AS_MAXCH * 2];
+  char src[AS_MAXCH * 2], dst[AS_MAXCH * 2], base[AS_MAXCH];
   static double xa[NSAMP][6], xb[NSAMP][6];
   static int32 fa[NSAMP], fb[NSAMP];
   char serr[AS_MAXCH] = "", sa[AS_MAXCH] = "", sb[AS_MAXCH] = "";
@@ -251,8 +220,11 @@ int main(int argc, char **argv)
   printf("G22: the JPL byte-swapping path (reorder), against a swapped %s\n",
          jplfile);
 
-  if (snprintf(src, sizeof src, "%s/%s", ephe, jplfile) >= (int) sizeof src ||
-      snprintf(dst, sizeof dst, "%s/swapped_%s", outdir, jplfile) >= (int) sizeof dst) {
+  /* Keep the bare filename rather than slicing it back out of dst three
+   * times; the reader is given a directory and a name. */
+  if (snprintf(base, sizeof base, "swapped_%s", jplfile) >= (int) sizeof base ||
+      snprintf(src, sizeof src, "%s/%s", ephe, jplfile) >= (int) sizeof src ||
+      snprintf(dst, sizeof dst, "%s/%s", outdir, base) >= (int) sizeof dst) {
     printf("  FAIL: path too long\n");
     return 1;
   }
@@ -260,6 +232,7 @@ int main(int argc, char **argv)
   irecsz = build_swapped(src, dst);
   if (irecsz < 0) {
     printf("  FAIL: could not build the swapped fixture from %s\n", src);
+    remove(dst);        /* a partial 41 MB file, if it got that far */
     return 1;
   }
   printf("  fixture %s  (record size %ld bytes)\n", dst, irecsz);
@@ -267,7 +240,15 @@ int main(int argc, char **argv)
   /* 1. The header. Both files must describe the same epoch range, which the
    *    reader can only report if ss[] came back correctly. */
   range_probe(ephe, jplfile, sa);
-  range_probe(outdir, dst + strlen(outdir) + 1, sb);
+  range_probe(outdir, base, sb);
+  /* Two files that both fail to open report the same thing, and equal is
+   * equal -- so require the native probe to have actually reported a range. */
+  if (strstr(sa, "range") == NULL) {
+    printf("  FAIL: the native file did not report its range, so there is "
+           "nothing to compare\n        %.110s\n", sa);
+    remove(dst);
+    return 1;
+  }
   if (strcmp(sa, sb) != 0) {
     printf("  FAIL: the header did not byte-swap -- the two files disagree "
            "about their own range\n");
@@ -284,10 +265,15 @@ int main(int argc, char **argv)
     remove(dst);
     return 1;
   }
-  if (read_all(outdir, dst + strlen(outdir) + 1, xb, fb, serr, &at) != 0) {
-    printf("  FAIL: the swapped file opened -- so its header is right -- then "
-           "refused at\n        sample %d (%s, jd %.4f): %.100s\n",
-           at, NAMES[at % NBODY], EPOCHS[at / NBODY], serr);
+  if (read_all(outdir, base, xb, fb, serr, &at) != 0) {
+    /* at < 0 means it never got as far as a sample; NAMES[at % NBODY] would
+     * be NAMES[-1], since -1 % 10 is -1 in C. */
+    if (at < 0)
+      printf("  FAIL: the swapped file could not be set up: %.100s\n", serr);
+    else
+      printf("  FAIL: the swapped file opened -- so its header is right -- "
+             "then refused at\n        sample %d (%s, jd %.4f): %.100s\n",
+             at, NAMES[at % NBODY], EPOCHS[at / NBODY], serr);
     remove(dst);
     return 1;
   }
