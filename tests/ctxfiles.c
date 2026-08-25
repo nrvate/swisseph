@@ -101,6 +101,25 @@ int main(int argc, char **argv)
     }
   }
 
+  /* Switching a context's ephemeris path must re-read these files. The
+   * load-once flags are not reset by swe_set_ephe_path_r()'s close unless
+   * something puts them back, and left set they carry the old directory's
+   * tables into the new one. Same context, two paths, so this cannot pass by
+   * accident of per-context state. */
+  {
+    double dret[2];
+    char es[AS_MAXCH] = "";
+    int32 rf;
+    swe_set_ephe_path_r(a, (char *) dir_bare);   /* a had the fixture; now it does not */
+    rf = swe_utc_to_jd_r(a, LEAP_Y, 12, 31, 23, 59, 60.0, SE_GREG_CAL, dret, es);
+    if (rf == ERR) {
+      printf("  %-22s after switching away, the leap second is gone  OK\n", "path switch");
+    } else {
+      printf("  %-22s FAIL: still honouring the previous path's seleapsec.txt\n", "path switch");
+      bad = 1;
+    }
+  }
+
   swe_ctx_free(a);
   swe_ctx_free(b);
   printf(bad ? "G23 FAIL\n" : "G23 PASS\n");
