@@ -6,8 +6,7 @@ re-audited. Everything above the line is real, scoped, and provable on the
 bit-exact gates — the rule for landing it. `make -C tests check` runs every
 gate but G8 in about 15 s; `make -C tests check-all` adds G8, the setest
 differential against `origin/legacy-master`.
-**Base:** `main` @ `558ac48`, released as 2.10.03-ts.6 — rollups #11, #12
-and #13.
+**Base:** `main` @ `e7b1720`, released as 2.10.03-ts.7 — rollups #11 to #19.
 **Scope:** root `*.c`/`*.h`; `windows/`, `setest/` and the samples only where
 noted.
 
@@ -20,14 +19,6 @@ or two, and verify.
 ---
 
 ## 1. Open — correctness
-
-- **`swe_rise_trans`, `swe_sol_eclipse_when_loc` and
-  `swe_lun_occult_when_loc` failed as the FIRST library call in a process**,
-  returning "geographic position has not been set" although each takes
-  `geopos` and sets the observer from it. Fixed, and G20 (`check-firstcall`)
-  holds all nine geopos-taking entry points to it — one process each,
-  because the transcript is a single process and cannot have a first call.
-  See Closed.
 
 - **G2 fails intermittently, cause unknown.** A worker thread's transcript
   comes back a strict PREFIX of the reference — truncated, not numerically
@@ -249,7 +240,7 @@ its result depended on, found by making unreached code run. If another
 | `find_conjunct_sun()` indexed its 18-entry `tcon[]` at `ipl * 2` with no bound, and `ipl` comes from `DeterObject()`, which maps a numeric object name to `SE_AST_OFFSET + n` — so `swe_heliacal_ut(..., "433", ...)` read `tcon[20866]`: undefined, build-dependent, SEGV when unmapped | bounds check, and a refusal saying no conjunction epoch is tabulated. No supported object's path changes; `hel_asteroid[433]` pins it |
 | `swe_set_ephe_fallback()` — the switch for this fork's defining behavioural break — was called by no test at all, only the `SE_EPHE_FALLBACK` env var by G8, and could have been a no-op with every gate green | `cov:ephe_fallback[...]`, five rows pinning the default, the refusal, the switch, the substitution and the restore. Proven against both a no-op setter and a flipped default |
 | The AVKIND heliacal strategy (`heliacal_ut_arc_vis`, `moon_event_arc_vis`) had zero coverage, so the "half these calls are duplicates" analysis was about code no gate ran | `hel_avkind[...]`; 0% → 67.5% and 76.8% |
-| `swe_rise_trans` and two eclipse searches returned "geographic position has not been set" when called first in a process, and the right answer if anything at all had run before | `set_topo_for_this_call()`: `swi_init_swed_if_start()` — which carries `swi_config_sync()` — before the local override, not after. `swe_set_topo_r()` does call it, but under `swi_config_begin_apply()` where sync is a documented no-op, and `SWI_CFG_LOCAL` wraps it the same way again, so the adopt happened later instead and re-applied the master config over the observer just set. Nothing in swecl.c called it; sweph.c does at 14 sites. **G20** `check-firstcall`, one process per entry point |
+| `swe_rise_trans` and two eclipse searches returned "geographic position has not been set" when called first in a process, and the right answer if anything at all had run before | `set_topo_for_this_call()`: `swi_init_swed_if_start()` — which carries `swi_config_sync()` — before the local override, not after. `swe_set_topo_r()` does call it, but under `swi_config_begin_apply()` where sync is a documented no-op, and `SWI_CFG_LOCAL` wraps it the same way again, so the adopt happened later instead and re-applied the master config over the observer just set. Nothing in swecl.c called it; sweph.c does at 14 sites. **G20** `check-firstcall`, one process per entry point. `orderprobe.py` was then run to see whether it was one of a family: clean, reporting only the three priors it always has — `swe_set_tid_acc`, `swe_set_delta_t_userdef` and the sidereal mode — which are the caller deliberately changing configuration. It could not have found this one: its ten targets are calc, delta-t, houses and sidereal time, and no swecl.c entry point is among them |
 | `swe_orbit_max_min_true_distance` and the `osc_iterate_min/max_dist` it reaches: public API, never called | `cov:orbit_max_min[...]`; 0% → 100% |
 | `meff()` — the solar mass-distribution term that keeps gravitational deflection finite when a planet sits behind the Sun's disc — had never run | `cov:meff[...]`, the deepest conjunction each of five planets makes in 2000–2030, found by scanning elongation; enters `meff` at r = 0.021, 0.134, 0.328, 0.351, 0.427. Make it return 1 (the point-mass formula) and all five rows move |
 | `load_dpsi_deps()` (63 lines), the IERS Earth-orientation loader behind `SEFLG_JPLHOR`, unreachable without both a DE ≥ 403 file and the EOP data, neither of them shipped | **G19** `check-eopload`: synthesises a ~20 KB self-consistent JPL header carrying `numde = 431` plus an EOPC04 fixture, then checks white-box that the loader found the file, parsed the right columns and recorded the span. Read the wrong column, or never report success, and it fails |
