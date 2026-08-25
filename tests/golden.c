@@ -938,6 +938,11 @@ static void coverage(void) {
      * Neither was reached before. */
     *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_J2000, x, serr);
     sprintf(tag, "cov:calc_pctr[j2000,%d]", i);        row(tag, rf, x, 6, serr);
+    /* Set explicitly rather than inheriting whatever the last block left:
+     * this row is 600 lines below the swe_set_sid_mode() that happens to
+     * decide it, and would move silently if anything in between changed the
+     * mode without restoring it. Same value either way today. */
+    swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
     *serr = 0; rf = swe_calc_pctr(tjd, SE_MARS, SE_JUPITER, SEFLG_SWIEPH|SEFLG_SIDEREAL, x, serr);
     sprintf(tag, "cov:calc_pctr[sidereal,%d]", i);     row(tag, rf, x, 6, serr);
     *serr = 0; rf = swe_gauquelin_sector(tjd, SE_MARS, NULL, SEFLG_SWIEPH, 0,
