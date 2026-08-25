@@ -1047,6 +1047,50 @@ static void coverage(void) {
                                     tret, SE_ECL_ONE_TRY, serr);
       row("cov:lun_occ_glob[onetry]", rf, tret, 7, serr);
 
+      /* The local searches, pointed where the geometry actually is.
+       *
+       * Everything above asks about one arbitrary place, which finds a
+       * partial eclipse or nothing, and leaves eclipse_when_loc()'s central
+       * branches unreached: the `retflag = SE_ECL_TOTAL` and
+       * `SE_ECL_ANNULAR` arms and the contact-timing block that only runs
+       * for a central eclipse.
+       *
+       * The dates and places are not guesses. swe_sol_eclipse_when_glob()
+       * was asked for an eclipse of each type and swe_sol_eclipse_where()
+       * for the point it is central over, and those answers are what is
+       * pinned here -- the library was used to find the circumstances that
+       * exercise the library. They are written out as constants rather than
+       * recomputed at run time so that these rows test the local search
+       * alone, not a chain of three functions. */
+      { static const struct { double t, lon, lat; const char *n; } cen[] = {
+          { 2452258.369414, -130.7016,   0.6351, "annular" },
+          { 2453469.358171, -118.9839, -10.5676, "total"   },
+        };
+        for (size_t k = 0; k < sizeof(cen)/sizeof(cen[0]); k++) {
+          double g[3] = { cen[k].lon, cen[k].lat, 0 };
+          memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr);
+          *serr = 0;
+          rf = swe_sol_eclipse_when_loc(cen[k].t - 5, SEFLG_SWIEPH, g,
+                                        tret, attr, FALSE, serr);
+          snprintf(tag, sizeof tag, "cov:sol_ecl_loc[%s]", cen[k].n);
+          row(tag, rf, tret, 7, serr);
+        }
+      }
+
+      /* occult_when_loc's two remaining shapes. A star far off the ecliptic
+       * can never be occulted and the function says so by name rather than
+       * searching; an asteroid takes the branch that derives the occulted
+       * body's radius from ast_diam instead of a table. */
+      { char st[AS_MAXCH]; strcpy(st, "Polaris");
+        memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr); *serr = 0;
+        rf = swe_lun_occult_when_loc(2451545.0, 0, st, SEFLG_SWIEPH,
+                                     geo, tret, attr, FALSE, serr);
+        row("cov:lun_occ_loc[polaris]", rf, tret, 7, serr); }
+      memset(tret, 0, sizeof tret); memset(attr, 0, sizeof attr); *serr = 0;
+      rf = swe_lun_occult_when_loc(2451545.0, SE_AST_OFFSET + 1, NULL,
+                                   SEFLG_SWIEPH, geo, tret, attr, FALSE, serr);
+      row("cov:lun_occ_loc[ceres]", rf, tret, 7, serr);
+
       /* swe_pheno() at 62%: the rows elsewhere ask geocentrically for the
        * Sun through Saturn. Heliocentric and topocentric take different
        * flag paths at the top, the Moon has its own branch, and an

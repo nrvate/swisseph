@@ -658,6 +658,38 @@ int32 CALL_CONV swe_lun_occult_where(
   return swe_lun_occult_where_r(swi_default_ctx(), tjd_ut, ipl, starname, ifl, geopos, attr, serr);
 }
 
+/* Set the observer position for THIS calculation only.
+ *
+ * Every eclipse and occultation search here takes a geopos argument and has
+ * to put it into the context before computing topocentrically. It must not
+ * publish -- an eclipse calculation announcing its observer as the
+ * process-wide default would silently move every other thread's
+ * topocentric results, which is what SWI_CFG_LOCAL exists to prevent.
+ *
+ * The init call is the part that is easy to leave out, and doing so was a
+ * real bug: swe_sol_eclipse_when_loc() returned "geographic position has
+ * not been set" when it was the FIRST library call in a process, and
+ * succeeded if anything at all had run before it.
+ *
+ * The order is the whole story. swi_init_swed_if_start() carries
+ * swi_config_sync(), which adopts whatever another thread has published.
+ * swe_set_topo_r() does call it -- but under swi_config_begin_apply(), and
+ * sync is a documented no-op while a setter is mid-apply; SWI_CFG_LOCAL
+ * wraps it the same way again. So the adopt never happened here. It
+ * happened later instead, at the first swe_calc() inside the search, by
+ * which point it re-applied the master configuration and cleared the
+ * observer this had just set. Nothing in swecl.c called
+ * swi_init_swed_if_start() -- sweph.c does at 14 sites and swephlib.c at 5,
+ * which is why every other entry point was already immune.
+ *
+ * Sync first, then override. Both halves matter and neither is optional.
+ */
+static void set_topo_for_this_call(swe_ctx *ctx, double lon, double lat, double alt)
+{
+  swi_init_swed_if_start(ctx);
+  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, lon, lat, alt));
+}
+
 /* Used by several swe_sol_eclipse_ functions.
  * Like swe_sol_eclipse_where(), but instead of attr[0], it returns:
  *
@@ -967,7 +999,7 @@ int32 CALL_CONV swe_sol_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
   if (retflag)
     retflag |= (retflag2 & (SE_ECL_CENTRAL | SE_ECL_NONCENTRAL));
   attr[3] = dcore[0];
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, geopos[0], geopos[1], geopos[2]));
+  set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
   if (swe_calc_ut_r(ctx, tjd_ut, SE_SUN, ifl | SEFLG_TOPOCTR | SEFLG_EQUATORIAL, ls, serr) == ERR)
     return ERR;
   swe_azalt_r(ctx, tjd_ut, SE_EQU2HOR, geopos, 0, 10, ls, xaz);
@@ -1023,7 +1055,7 @@ static int32 eclipse_how( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname
   geopos[1] = geolat;
   geopos[2] = geohgt;
   te = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, ifl, serr);
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, geolon, geolat, geohgt));
+  set_topo_for_this_call(ctx, geolon, geolat, geohgt);
   if (calc_planet_star(ctx, te, ipl, starname, iflag, ls, serr) == ERR)
     return ERR;
   if (swe_calc_r(ctx, te, SE_MOON, iflag, lm, serr) == ERR)
@@ -2180,7 +2212,7 @@ static int32 eclipse_when_loc(swe_ctx *ctx, double tjd_start, int32 ifl, double 
   double dt1 = 0, dt2 = 0, dtdiv, dtstart;
   int32 iflag = SEFLG_EQUATORIAL | SEFLG_TOPOCTR | ifl;
   int32 iflagcart = iflag | SEFLG_XYZ;
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, geopos[0], geopos[1], geopos[2]));
+  set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
   K = (int) ((tjd_start - J2000) / 365.2425 * 12.3685);
   if (backward)
     K++;
@@ -2225,7 +2257,7 @@ next_try:
   // A1 *= DEGTORAD;
   tjd = tjd - 0.4075 * sin(Mm)
             + 0.1721 * E * sin(M);
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, geopos[0], geopos[1], geopos[2]));
+  set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
   dtdiv = 2;
   dtstart = 0.5;
   if (tjd < 1900000 || tjd > 2500000)	/* because above formula is not good (delta t?) */
@@ -2503,7 +2535,7 @@ static int32 occult_when_loc(
   AS_BOOL stop_after_this = FALSE;
   backward &= 1L;
   retflag = 0;
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, geopos[0], geopos[1], geopos[2]));
+  set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
   for (i = 0; i <= 9; i++)
     tret[i] = 0;
   if (backward)
@@ -3312,7 +3344,7 @@ int32 CALL_CONV swe_lun_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
   /* 
    * azimuth and altitude of moon
    */
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, geopos[0], geopos[1], geopos[2]));
+  set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
   if (swe_calc_ut_r(ctx, tjd_ut, SE_MOON, ifl | SEFLG_TOPOCTR | SEFLG_EQUATORIAL, lm, serr) == ERR)
     return ERR;
   swe_azalt_r(ctx, tjd_ut, SE_EQU2HOR, geopos, 0, 10, lm, xaz);
@@ -4344,7 +4376,7 @@ static int32 rise_set_fast(
     facrise = -1;
   if (!(rsmi & SE_BIT_GEOCTR_NO_ECL_LAT)) {
     iflagtopo |= SEFLG_TOPOCTR;
-    SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, dgeo[0], dgeo[1], dgeo[2]));
+    set_topo_for_this_call(ctx, dgeo[0], dgeo[1], dgeo[2]);
   }
 run_rise_again:
   if (swe_calc_ut_r(ctx, tjd_ut, ipl, iflagtopo, xx, serr) == ERR) 
@@ -4408,7 +4440,7 @@ run_rise_again:
     tohor_flag = SE_EQU2HOR; // this is more efficient
     iflagtopo = iflag | SEFLG_EQUATORIAL;
     iflagtopo |= SEFLG_TOPOCTR;
-    SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, dgeo[0], dgeo[1], dgeo[2]));
+    set_topo_for_this_call(ctx, dgeo[0], dgeo[1], dgeo[2]);
   }
   for (i = 0; i < nloop; i++) {
     if (swe_calc_ut_r(ctx, tr, ipl, iflagtopo, xx, serr) == ERR)
@@ -4558,7 +4590,7 @@ int32 CALL_CONV swe_rise_trans_true_hor_r(swe_ctx *ctx, double tjd_ut, int32 ipl
     tohor_flag = SE_EQU2HOR;
     iflag |= SEFLG_EQUATORIAL;
     iflag |= SEFLG_TOPOCTR;
-    SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, geopos[0], geopos[1], geopos[2]));
+    set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
   }
   if (rsmi & (SE_CALC_MTRANSIT | SE_CALC_ITRANSIT))
     return calc_mer_trans(ctx, tjd_ut, ipl, epheflag, rsmi, 

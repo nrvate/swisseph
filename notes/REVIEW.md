@@ -21,6 +21,14 @@ or two, and verify.
 
 ## 1. Open — correctness
 
+- **`swe_rise_trans`, `swe_sol_eclipse_when_loc` and
+  `swe_lun_occult_when_loc` failed as the FIRST library call in a process**,
+  returning "geographic position has not been set" although each takes
+  `geopos` and sets the observer from it. Fixed, and G20 (`check-firstcall`)
+  holds all nine geopos-taking entry points to it — one process each,
+  because the transcript is a single process and cannot have a first call.
+  See Closed.
+
 - **G2 fails intermittently, cause unknown.** A worker thread's transcript
   comes back a strict PREFIX of the reference — truncated, not numerically
   different — and the run reports a thread mismatch at whatever row the
@@ -80,7 +88,7 @@ Nothing open; see Closed.
 ## 4. Open — coverage
 
 The transcript is the only thing standing behind every "no-op" claim in
-this file, and it does not reach as much as its 12,718 rows suggest.
+this file, and it does not reach as much as its 12,955 rows suggest.
 Measure it across ALL the gate binaries, not just golden. Several files
 look far worse than they are from the golden run alone because another
 binary covers them — `swejpl.c` reads 67.3% there and 73.9% once
@@ -103,14 +111,17 @@ The largest single functions are done too: `swe_nod_aps` 41.1% → 86.7% of
 367 lines, `swe_house_pos` 19.6% → 73.7% of 453, `swe_pheno` 61.9% → 74.8%,
 `swe_sol_eclipse_when_glob` → 85.2%, `swe_lun_eclipse_when` → 92.2%.
 
-What is left is a long tail, and two functions that resisted: within
-`swecl.c`, `eclipse_when_loc` (63.4% of 246) and `occult_when_loc` (77.9%
-of 267) barely moved when the eclipse types and search directions were
-swept. Their remaining branches are geometric — a particular eclipse seen
-from a particular place — so reaching them needs dates and locations chosen
-against the geometry rather than more argument combinations. Worth doing by
-someone who wants to pick the circumstances deliberately; not worth guessing
-at.
+Those two are done as well. `eclipse_when_loc` 63.4% → 82.1% and
+`occult_when_loc` 77.9% → 79.8%, `swecl.c` 80.8% → 83.3%. This entry used to
+say they wanted circumstances "not worth guessing at", which was the wrong
+framing: no guessing was needed. `swe_sol_eclipse_when_glob()` was asked for
+an eclipse of each type and `swe_sol_eclipse_where()` for the point it is
+central over, and those coordinates are what the rows use — the library was
+used to find the circumstances that exercise the library, the same way the
+`meff` conjunctions were found by scanning elongation. Worth remembering the
+next time something looks like it needs a lucky guess.
+
+What is left is a long tail.
 
 **The pattern worth remembering:** three separate cache-key bugs have come
 out of this work — `swi_check_nutation`, `calc_deltat`'s table, and
@@ -238,6 +249,7 @@ its result depended on, found by making unreached code run. If another
 | `find_conjunct_sun()` indexed its 18-entry `tcon[]` at `ipl * 2` with no bound, and `ipl` comes from `DeterObject()`, which maps a numeric object name to `SE_AST_OFFSET + n` — so `swe_heliacal_ut(..., "433", ...)` read `tcon[20866]`: undefined, build-dependent, SEGV when unmapped | bounds check, and a refusal saying no conjunction epoch is tabulated. No supported object's path changes; `hel_asteroid[433]` pins it |
 | `swe_set_ephe_fallback()` — the switch for this fork's defining behavioural break — was called by no test at all, only the `SE_EPHE_FALLBACK` env var by G8, and could have been a no-op with every gate green | `cov:ephe_fallback[...]`, five rows pinning the default, the refusal, the switch, the substitution and the restore. Proven against both a no-op setter and a flipped default |
 | The AVKIND heliacal strategy (`heliacal_ut_arc_vis`, `moon_event_arc_vis`) had zero coverage, so the "half these calls are duplicates" analysis was about code no gate ran | `hel_avkind[...]`; 0% → 67.5% and 76.8% |
+| `swe_rise_trans` and two eclipse searches returned "geographic position has not been set" when called first in a process, and the right answer if anything at all had run before | `set_topo_for_this_call()`: `swi_init_swed_if_start()` — which carries `swi_config_sync()` — before the local override, not after. `swe_set_topo_r()` does call it, but under `swi_config_begin_apply()` where sync is a documented no-op, and `SWI_CFG_LOCAL` wraps it the same way again, so the adopt happened later instead and re-applied the master config over the observer just set. Nothing in swecl.c called it; sweph.c does at 14 sites. **G20** `check-firstcall`, one process per entry point |
 | `swe_orbit_max_min_true_distance` and the `osc_iterate_min/max_dist` it reaches: public API, never called | `cov:orbit_max_min[...]`; 0% → 100% |
 | `meff()` — the solar mass-distribution term that keeps gravitational deflection finite when a planet sits behind the Sun's disc — had never run | `cov:meff[...]`, the deepest conjunction each of five planets makes in 2000–2030, found by scanning elongation; enters `meff` at r = 0.021, 0.134, 0.328, 0.351, 0.427. Make it return 1 (the point-mass formula) and all five rows move |
 | `load_dpsi_deps()` (63 lines), the IERS Earth-orientation loader behind `SEFLG_JPLHOR`, unreachable without both a DE ≥ 403 file and the EOP data, neither of them shipped | **G19** `check-eopload`: synthesises a ~20 KB self-consistent JPL header carrying `numde = 431` plus an EOPC04 fixture, then checks white-box that the loader found the file, parsed the right columns and recorded the span. Read the wrong column, or never report success, and it fails |
