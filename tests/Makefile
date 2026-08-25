@@ -267,7 +267,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-eopload \
-       check-firstcall
+       check-firstcall check-pedantic
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -381,6 +381,44 @@ check-samples: .samples.txt samples.baseline
 	  || { echo "G17 FAIL: a sample program's output moved"; \
 	       diff samples.baseline .samples.txt | head -20; exit 1; }
 
+# G21: the shipped sources are conforming C, not merely warning-free C.
+#
+# -Wall -Wextra -Werror accepts a good deal that ISO C does not: a
+# declaration straight after a case label, empty initializer braces, a
+# designated range in an initializer, a function pointer cast to void *.
+# Each compiles on every toolchain we build today and is still outside the
+# standard, so the bill arrives on whichever port comes next -- and it
+# arrives as a build failure in someone else's tree, not ours. This costs
+# one compile per file and closes that gap. It caught a declaration after a
+# case label during the setest review, which -Wall -Wextra had passed.
+#
+# Both compilers, because they disagree about what is pedantic: clang was
+# already silent on the dladdr() cast below that gcc rejects.
+#
+# The samples are included. They are the code a reader copies from.
+#
+# One suppression exists, annotated where it sits: swe_get_library_path()
+# hands a function pointer to dladdr(), which takes void *. POSIX requires
+# that conversion and ISO C has none, so no spelling satisfies both.
+PEDANTIC_SRC = $(wildcard ../*.c)
+check-pedantic:
+	@echo "G21: root sources compile as conforming C (-pedantic)"
+	@rc=0; \
+	for cc in $(CC) clang; do \
+	  command -v $$cc >/dev/null 2>&1 || { printf "  %-8s not installed, skipped\n" "$$cc"; continue; }; \
+	  bad=""; \
+	  for f in $(PEDANTIC_SRC); do \
+	    $$cc -std=c17 -D_GNU_SOURCE -fPIC -Wall -Wextra -pedantic -Werror \
+	         -c $$f -o /dev/null 2>.pedantic.err || bad="$$bad $$(basename $$f)"; \
+	  done; \
+	  if [ -n "$$bad" ]; then \
+	    printf "  %-8s FAIL:%s\n" "$$cc" "$$bad"; head -5 .pedantic.err; rc=1; \
+	  else printf "  %-8s OK  (%s files)\n" "$$cc" "$$(echo $(PEDANTIC_SRC) | wc -w)"; fi; \
+	done; \
+	rm -f .pedantic.err; \
+	[ $$rc -eq 0 ] || exit 1
+	@echo "G21 PASS"
+
 EPHE_MIN = .ephe-min
 # Prerequisites so this make links them once up front. Otherwise the
 # sub-makes below link them while the sibling check-golden/-jplcalc/-jplreal
@@ -402,7 +440,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
@@ -416,7 +454,7 @@ clean:
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
-        check-winmacros check-jplreal orderprobe \
+        check-winmacros check-jplreal orderprobe check-pedantic \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
@@ -536,7 +574,7 @@ check-ci: ci-image
 	  for t in check-golden check-golden-O2 check-threads check-cfgleak \
 	           check-sunrace check-glprace check-jplguard check-jplcalc \
 	           check-threadshim check-threadtiers check-ctx check-bridge \
-	           check-build; do \
+	           check-build check-pedantic; do \
 	    printf "  %-22s " $$t; \
 	    if make -s $$t > /tmp/o 2>&1; then echo OK; \
 	    else echo FAIL; tail -20 /tmp/o | sed "s/^/      /"; exit 1; fi; \
@@ -601,7 +639,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
