@@ -1875,6 +1875,7 @@ void CALL_CONV swe_set_jpl_file(const char *fname)
 static void calc_epsilon(swe_ctx *ctx, double tjd, int32 iflag, struct epsilon *e)
 {
     e->teps = tjd;
+    e->epsflag = iflag & SWI_JPLHOR_FLAGMASK;
     e->eps = swi_epsiln(ctx, tjd, iflag);
     e->seps = sin(e->eps);
     e->ceps = cos(e->eps);
@@ -6417,7 +6418,11 @@ static void calc_speed(double *x0, double *x1, double *x2, double dt)
 
 void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag)
 {
-  if (ctx->oec2000.teps != J2000) {
+  /* The flags are part of the key, not just the epoch: a value cached under
+   * SEFLG_JPLHOR_APPROX carries the Horizons obliquity offset, and handing it
+   * to a caller that did not ask for it moved a mean node by 0.065 arcsec. */
+  if (ctx->oec2000.teps != J2000
+      || ctx->oec2000.epsflag != (iflag & SWI_JPLHOR_FLAGMASK)) {
     calc_epsilon(ctx, J2000, iflag, &ctx->oec2000);
   }
   if (tjd == J2000) {
@@ -6425,9 +6430,11 @@ void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag)
     ctx->oec.eps = ctx->oec2000.eps;
     ctx->oec.seps = ctx->oec2000.seps;
     ctx->oec.ceps = ctx->oec2000.ceps;
+    ctx->oec.epsflag = ctx->oec2000.epsflag;
     return;
   }
-  if (ctx->oec.teps != tjd || tjd == 0) {
+  if (ctx->oec.teps != tjd || tjd == 0
+      || ctx->oec.epsflag != (iflag & SWI_JPLHOR_FLAGMASK)) {
     calc_epsilon(ctx, tjd, iflag, &ctx->oec);
   }
 }
@@ -6442,9 +6449,16 @@ void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
   double t;
   speedf1 = ctx->sp.nut.nutflag & SEFLG_SPEED;
   speedf2 = iflag & SEFLG_SPEED;
+  /* The JPLHOR bits belong in the key for the same reason they belong in
+   * swi_check_ecliptic()'s: calc_nutation() branches on them, so a value
+   * cached under SEFLG_JPLHOR_APPROX is not the one a caller without it
+   * asked for. calc_nutation() already declines its own memo for these
+   * flags -- SWI_NUT_NO_MEMO -- and this is the same argument one level up. */
   if (!(iflag & SEFLG_NONUT)
 	&& (tjd != ctx->nut.tnut || tjd == 0
-	|| (!speedf1 && speedf2))) {
+	|| (!speedf1 && speedf2)
+	|| (ctx->sp.nut.nutflag & SWI_JPLHOR_FLAGMASK)
+	     != (iflag & SWI_JPLHOR_FLAGMASK))) {
     swi_nutation(ctx, tjd, iflag, ctx->nut.nutlo);
     ctx->nut.tnut = tjd;
     ctx->nut.snut = sin(ctx->nut.nutlo[1]);

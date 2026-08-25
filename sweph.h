@@ -639,7 +639,15 @@ static const struct aya_init ayanamsa[SE_NSIDM_PREDEF] = {
 /* obliquity of ecliptic */
 struct epsilon {
   double teps, eps, seps, ceps; 	/* jd, eps, sin(eps), cos(eps) */
+  /* The flags eps was computed under. swi_epsiln() consults SEFLG_JPLHOR and
+   * SEFLG_JPLHOR_APPROX -- the Horizons offset moves the obliquity by 0.88
+   * arcsec at -3000 -- so an epoch alone does not identify a cached value.
+   * swi_check_nutation() has always carried its flags for the same reason. */
+  int32 epsflag;
 };
+/* The bits swi_epsiln() and calc_nutation() both branch on, and so the
+ * bits their caches have to key on as well as the epoch. */
+#define SWI_JPLHOR_FLAGMASK (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX)
 
 /*
 extern struct epsilon oec2000;
