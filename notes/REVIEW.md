@@ -6,7 +6,7 @@ re-audited. Everything above the line is real, scoped, and provable on the
 bit-exact gates — the rule for landing it. `make -C tests check` runs every
 gate but G8 in about 15 s; `make -C tests check-all` adds G8, the setest
 differential against `origin/legacy-master`.
-**Base:** `main` @ `e7b1720`, released as 2.10.03-ts.7 — rollups #11 to #19.
+**Base:** `main` @ `e8be70f`, released as 2.10.03-ts.8 — rollups #11 to #21.
 **Scope:** root `*.c`/`*.h`; `windows/`, `setest/` and the samples only where
 noted.
 
@@ -79,19 +79,27 @@ Nothing open; see Closed.
 ## 4. Open — coverage
 
 The transcript is the only thing standing behind every "no-op" claim in
-this file, and it does not reach as much as its 12,955 rows suggest.
-Measure it across ALL the gate binaries, not just golden. Several files
-look far worse than they are from the golden run alone because another
-binary covers them — `swejpl.c` reads 67.3% there and 73.9% once
-`check-jplguard` is counted, and its malformed-file handling is the whole
-difference. Combined, worst first: **`swejpl.c` 73.9%**, `swephlib.c` 76.3%,
-`sweph.c` 77.6%, `swedate.c` 81.2%, `swecl.c` 80.8% (was 63.9%),
-`swehouse.c` 82.8% (was 57.6%), `swehel.c` 83.3%, `swemplan.c` 85.6%,
-`sweconfig.c` 88.6%, `swemmoon.c` 97.0%.
+this file, and it does not reach as much as its 12,970 rows suggest.
+Measure it across ALL twelve gate binaries, not just golden: several files
+look far worse from the golden run alone because another binary covers
+them, and a partial profile is what let the numbers below drift — one
+measured over four binaries read `sweconfig.c` at 79.4% against the 88.6%
+the full set gives.
 
-Three bugs and one unreachable branch came out of closing the first part of
-that gap — see Closed — and every one was in code no gate ran. That is the
-argument for the rest of it. Functions still at zero:
+Combined at ts.8, worst first: **`sweph.c` 78.9%**, `swejpl.c` 81.0%,
+`swedate.c` 81.2%, `swehouse.c` 83.1%, `swehel.c` 83.4%, `swecl.c` 83.7%,
+`swephlib.c` 85.2%, `swemplan.c` 86.0%, `sweconfig.c` 88.6%,
+`swemmoon.c` 98.1%.
+
+Measured by hand each time, which is how the previous set went stale. A
+`make -C tests coverage` target would fix that and has not been built.
+
+Five bugs and one unreachable branch came out of closing the first part of
+that gap — see Closed — and every one was in code no gate ran. Two of the
+five arrived at ts.8 the same way: `reorder()` at 0.00% and
+`swe_get_astro_models_r()` at 51.8% were both found by asking why a number
+was low, not by reading code looking for defects. That is the argument for
+the rest of it. Functions still at zero:
 
 Nothing at zero that is reachable, and the four public functions that were
 worst are done: `swe_house_pos` 19.6% → 73.7% of its 453 lines,
@@ -112,7 +120,20 @@ used to find the circumstances that exercise the library, the same way the
 `meff` conjunctions were found by scanning elongation. Worth remembering the
 next time something looks like it needs a lucky guess.
 
-What is left is a long tail.
+What is left is a long tail, and in `swephlib.c` four functions that are
+still at zero and are named here so the next pass does not re-derive them:
+
+- **`bessel()`** — the EOP interpolation behind `SEFLG_JPLHOR`. It needs a
+  JPL file with real coefficients AND a DE number ≥ 403; `de200.eph` has the
+  coefficients but is DE200, and G19's synthetic DE431 header has the number
+  but no coefficients. The route is to patch `numde` to 431 in a copy of
+  `de200.eph`, using the header map G22 established.
+- **`square_sum()`** — one branch of `swi_cartpol_sp()`, needing a position
+  vector of exactly zero on that path. `SE_EARTH` geocentric produces zeros
+  but does not reach it, with or without `SEFLG_XYZ`.
+- **`swi_angnorm()`** and **`swi_FK5_FK4()`** — called by nothing. Not
+  removable: both are symbols upstream exports, and the ABI gate fails on a
+  removal relative to `legacy-master`.
 
 **The pattern worth remembering:** three separate cache-key bugs have come
 out of this work — `swi_check_nutation`, `calc_deltat`'s table, and

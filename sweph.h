@@ -65,7 +65,7 @@
 /* Fork version. Upstream is 2.10.03; the "-ts.N" suffix marks the
  * thread-safe fork, so swe_version() cannot report a number that
  * implies upstream behaviour this library no longer has. */
-#define SE_VERSION      "2.10.03-ts.7" 
+#define SE_VERSION      "2.10.03-ts.8" 
 
 #define J2000           2451545.0  	/* 2000 January 1.5 */
 #define B1950           2433282.42345905  	/* 1950 January 0.923 */
