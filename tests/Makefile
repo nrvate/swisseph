@@ -267,7 +267,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-eopload \
-       check-firstcall check-pedantic check-jplswap
+       check-firstcall check-pedantic check-jplswap check-leapsec
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -349,6 +349,22 @@ check-jplswap: jplswap
 	@env -u SE_EPHE_PATH SE_TEST_EPHE="$${SE_TEST_EPHE:-$(EPHE)}" \
 	  ./jplswap $(JPLSWAP_DIR)
 	@rm -rf $(JPLSWAP_DIR)
+
+# G23: seleapsec.txt, the file that extends the leap-second table. The
+# reading loop was unexecuted, and writing this gate turned up that both
+# init_leapsec() call sites loaded swi_default_ctx()'s table and then indexed
+# the CALLER's -- so a non-default context never saw its own file.
+LEAP_DIR  = .ephe-leap
+LEAP_BARE = .ephe-noleap
+leapsec: leapsec.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+check-leapsec: leapsec
+	@rm -rf $(LEAP_DIR) $(LEAP_BARE) && mkdir -p $(LEAP_DIR) $(LEAP_BARE)
+	@printf '# fixture: a leap second the built-in table does not carry\n20261231\n' \
+	  > $(LEAP_DIR)/seleapsec.txt
+	@env -u SE_EPHE_PATH ./leapsec $(LEAP_DIR) $(LEAP_BARE)
+	@rm -rf $(LEAP_DIR) $(LEAP_BARE)
 
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
@@ -458,6 +474,7 @@ clean:
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
 	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall jplswap $(JPLSWAP_DIR)
+	rm -rf leapsec $(LEAP_DIR) $(LEAP_BARE)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
@@ -468,6 +485,7 @@ clean:
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
+        check-leapsec \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.

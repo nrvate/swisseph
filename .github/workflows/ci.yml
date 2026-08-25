@@ -142,6 +142,11 @@ jobs:
       - name: JPL byte-swapping path (reorder)
         run: make -C tests check-jplswap EPHE=../$EPHE
 
+      # G23. seleapsec.txt, which extends the leap-second table. Writes its
+      # own fixture, so it needs no ephemeris.
+      - name: Leap-second file extends the table
+        run: make -C tests check-leapsec
+
       # G11. gcc/clang pick tier 3 at every -std=, so tiers 4 and 5 are
       # built by nothing else. Tier 5 had already rotted unbuildable.
       - name: swethread.h backends all build and compute
