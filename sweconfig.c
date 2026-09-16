@@ -65,6 +65,8 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
 {
   memcpy(c->ephepath, ctx->ephepath, sizeof(c->ephepath));
   memcpy(c->jplfnam,  ctx->jplfnam,  sizeof(c->jplfnam));
+  c->sweph_denum_moon       = ctx->sweph_denum_moon;
+  c->jpldenum_cfg           = ctx->jpldenum_cfg;
   c->sidd = ctx->sidd;
   memcpy(c->astro_models, ctx->astro_models, sizeof(c->astro_models));
   c->geolon                 = ctx->topd.geolon;
@@ -168,6 +170,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     memcpy(ctx->ephepath, c->ephepath, sizeof(ctx->ephepath));
     memcpy(ctx->jplfnam,  c->jplfnam,  sizeof(ctx->jplfnam));
     ctx->ephe_path_is_set = c->ephe_path_is_set;
+    ctx->sweph_denum_moon = c->sweph_denum_moon;
+    ctx->jpldenum_cfg     = c->jpldenum_cfg;
   }
   if (groups & SWI_CFG_SID) {
     ctx->sidd = c->sidd;
@@ -240,6 +244,8 @@ static void cfg_merge(struct swe_config *dst, const struct swe_config *src,
     memcpy(dst->ephepath, src->ephepath, sizeof(dst->ephepath));
     memcpy(dst->jplfnam,  src->jplfnam,  sizeof(dst->jplfnam));
     dst->ephe_path_is_set = src->ephe_path_is_set;
+    dst->sweph_denum_moon = src->sweph_denum_moon;
+    dst->jpldenum_cfg     = src->jpldenum_cfg;
   }
   if (groups & SWI_CFG_SID) {
     dst->sidd = src->sidd;

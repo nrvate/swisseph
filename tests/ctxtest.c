@@ -26,6 +26,16 @@
  *                        published through the legacy setters, rather than
  *                        starting from library defaults and falling back to
  *                        Moshier -- the decision in PHASE3-API.md section 5.
+ *
+ *   5. ORDER              one context, several bodies at one pre-1955
+ *                        instant: every answer equals the brand-new-context
+ *                        answer. The tidal term behind delta-t used to
+ *                        follow which files the context happened to have
+ *                        open, so the same body at the same instant moved
+ *                        with call order: the Moon at JD 2415020.5 answered
+ *                        272.41632607 fresh and 272.41633228 after a
+ *                        Mercury calculation on the same context
+ *                        (notes/UPSTREAM-BUGS.md section 14).
  */
 #include <stdio.h>
 #include <string.h>
@@ -293,6 +303,72 @@ int main(int argc, char **argv)
         fail("inheritance", "swe_ctx_new() did not adopt the published configuration");
       swe_ctx_free(C);
     }
+  }
+
+  /* 5. ORDER ------------------------------------------------------- */
+  {
+    /* 1900-01-01: pre-1955, where the delta-t table is in force and the
+     * tidal term actually reaches the answer. At J2000 the polynomial
+     * carries it alone and this test cannot fail, which is exactly why
+     * the defect hid behind every modern-date test. */
+    double jd = 2415020.5;
+    int32 fl = SEFLG_SWIEPH | SEFLG_SPEED;
+    double wantM[6], wantMe[6], wantV[6], got[6];
+    double dtFirst, dtAfter, dtDefault;
+    char serr[AS_MAXCH] = "";
+    swe_ctx *F, *O;
+    int i;
+
+    /* The references, each on its own brand-new context, so they carry no
+     * history of their own. A context's FIRST answer is the one that used
+     * to be wrong, so fresh contexts are the oracle, not the sequence. */
+    F = swe_ctx_new();
+    if (F == NULL) { fail("swe_ctx_new", "returned NULL"); }
+    else {
+      serr[0] = '\0';
+      if (swe_calc_ut_r(F, jd, SE_MOON,    fl, wantM,  serr) < 0 ||
+          swe_calc_ut_r(F, jd, SE_MERCURY, fl, wantMe, serr) < 0 ||
+          swe_calc_ut_r(F, jd, SE_VENUS,   fl, wantV,  serr) < 0) {
+        fail("order", "a reference calculation failed; is the ephe path set?");
+      }
+      dtFirst = swe_deltat_ex_r(F, jd, fl, serr);
+      swe_ctx_free(F);
+    }
+
+    /* The same three bodies, in sequence, on ONE shared context. Every
+     * answer must equal its reference bit for bit -- positions, speeds
+     * and all, not rounded. */
+    O = swe_ctx_new();
+    if (O == NULL) { fail("swe_ctx_new", "returned NULL"); }
+    else {
+      serr[0] = '\0';
+      swe_calc_ut_r(O, jd, SE_MOON,    fl, got, serr);
+      if (!same(got, wantM, 6))
+        fail("order", "the Moon's first answer on a fresh context is wrong");
+      swe_calc_ut_r(O, jd, SE_MERCURY, fl, got, serr);
+      if (!same(got, wantMe, 6))
+        fail("order", "Mercury moved after a Moon calculation");
+      swe_calc_ut_r(O, jd, SE_MOON,    fl, got, serr);
+      if (!same(got, wantM, 6))
+        fail("order", "the Moon moved after a Mercury calculation");
+      swe_calc_ut_r(O, jd, SE_VENUS,   fl, got, serr);
+      if (!same(got, wantV, 6))
+        fail("order", "Venus moved after a Moon calculation");
+      swe_calc_ut_r(O, jd, SE_MERCURY, fl, got, serr);
+      if (!same(got, wantMe, 6))
+        fail("order", "Mercury moved after a Venus calculation");
+      /* And delta-t itself: on this worked context it must still be the
+       * first-answer value, and it must be what the process-wide API
+       * gives at the same instant. */
+      dtAfter = swe_deltat_ex_r(O, jd, fl, serr);
+      if (dtFirst != dtAfter)
+        fail("order", "delta-t moved between a context's first and later answers");
+      dtDefault = swe_deltat_ex(jd, fl, serr);
+      if (dtFirst != dtDefault)
+        fail("order", "a fresh context's delta-t differs from the process-wide one");
+      swe_ctx_free(O);
+    }
+    (void) i;
   }
 
   /* swe_ctx_free() must tolerate NULL and must refuse the default context

@@ -65,7 +65,7 @@
 /* Fork version. Upstream is 2.10.03; the "-ts.N" suffix marks the
  * thread-safe fork, so swe_version() cannot report a number that
  * implies upstream behaviour this library no longer has. */
-#define SE_VERSION      "2.10.03-ts.10" 
+#define SE_VERSION      "2.10.03-ts.11" 
 
 #define J2000           2451545.0  	/* 2000 January 1.5 */
 #define B1950           2433282.42345905  	/* 1950 January 0.923 */
@@ -1114,6 +1114,24 @@ struct swe_ctx {
   char ephepath[AS_MAXCH];
   char jplfnam[AS_MAXCH];
   int32 jpldenum;
+  /* The DE numbers the CONFIGURATION knows, learned at the setters' header
+   * pre-opens and published with SWI_CFG_PATH, so that a context's first
+   * delta-t uses the same tidal term as every later one. swi_get_tid_acc()
+   * used to resolve the term from whichever files happened to be open in
+   * the asking context: a context that had opened none -- every
+   * swe_ctx_new() child, since the pre-open at swe_set_ephe_path_r runs on
+   * the asking context only -- took SE_TIDAL_DEFAULT, then switched to the
+   * file's term on its first file open, moving pre-1955 positions by
+   * ~0.05 arcsec depending on call order. Measured: the Moon at JD
+   * 2415020.5 answered 272.41632607 fresh and 272.41633228 after a
+   * Mercury calculation on the same context. Catalogued as an upstream
+   * defect in notes/UPSTREAM-BUGS.md section 14; the fix is the Closed
+   * row of the same name in notes/REVIEW.md.
+   * Zero means unknown: no swe_set_ephe_path()/swe_set_jpl_file() has
+   * succeeded in this configuration, and the default term is then the
+   * honest answer for every call, first or fiftieth. */
+  int32 sweph_denum_moon;
+  int32 jpldenum_cfg;
   int32 last_epheflag;
   AS_BOOL geopos_is_set;
   AS_BOOL ayana_is_set;

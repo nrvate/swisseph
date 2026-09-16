@@ -1009,6 +1009,68 @@ the next format revision reviewable.
 
 ---
 
+## 14. The tidal term behind delta-t follows which ephemeris files are open
+
+`swi_get_tid_acc()` resolves the Moon's tidal acceleration — the term every
+pre-1955 delta-t carries — from whichever ephemeris file happens to be open
+at the moment it is asked:
+
+```c
+/* swephlib.c, swi_get_tid_acc() */
+if (denum == 0) {
+    if (iflag & SEFLG_JPLEPH) {
+      if (swed.jpl_file_is_open)
+	denum = swed.jpldenum;
+    }
+    if (iflag & SEFLG_SWIEPH) {
+      if (swed.fidat[SEI_FILE_MOON].fptr != NULL)
+	denum = swed.fidat[SEI_FILE_MOON].sweph_denum;
+    }
+}
+```
+
+`calc_deltat()` passes `fidat[SEI_FILE_MOON].sweph_denum` in directly, so
+the same open-state reaches it from the other side. The DE number is a
+property of the files on the configured path, not of the call sequence —
+but the call sequence is what this reads.
+
+Upstream hides the dependence because its one global `swed` is pre-opened by
+`swe_set_ephe_path()` itself, which reads the moon file's header for exactly
+this DE number; every later delta-t in the process then finds the file open.
+It still surfaces upstream as a first-call difference: a delta-t computed
+before any file is open takes `SE_TIDAL_DEFAULT` (DE431's −25.8) where the
+same instant after a file open takes the file's term — DE441's −25.936 for
+current Astrodienst files, an 0.136 ct/sec² difference the pre-1955 tables
+amplify.
+
+The fork made it worse, and that is how it was found: `swe_ctx_new()`
+children inherit the published configuration but not the asking context's
+open files, so every child's first delta-t took the default term and every
+calculation after its first file open took the file's — the same body at the
+same instant moved with call order.
+
+**Reproducer** (fork API; the difference is invisible at J2000, where the
+delta-t polynomial carries no tidal term — it needs a pre-1955 instant):
+
+```c
+    swe_set_ephe_path(".../ephem");           /* the moon file is DE441 */
+    swe_ctx *c = swe_ctx_new();
+    swe_calc_ut_r(c, 2415020.5, SE_MOON,    SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    /* 272.41632607666696  -- delta-t resolved with SE_TIDAL_DEFAULT */
+    swe_calc_ut_r(c, 2415020.5, SE_MERCURY, SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    swe_calc_ut_r(c, 2415020.5, SE_MOON,    SEFLG_SWIEPH|SEFLG_SPEED, x, serr);
+    /* 272.41633228606418  -- the same instant, ~0.05 arcsec away */
+```
+
+**Fixed on this fork** (notes/REVIEW.md, Closed): the setters' header
+pre-opens publish the DE numbers as configuration — `sweph_denum_moon` with
+`swe_set_ephe_path()`, `jpldenum_cfg` with `swe_set_jpl_file()` — and both
+resolution sites read them whenever the files are closed. Property 5 of
+`tests/ctxtest.c` holds it. Upstream's fix would be the same published
+value, wherever upstream chooses to keep it.
+
+---
+
 ## How these were found
 
 Almost none of this came from reading code looking for defects. The method

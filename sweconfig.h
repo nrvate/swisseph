@@ -87,6 +87,15 @@ struct swe_config {
   char ephepath[AS_MAXCH];        /* swe_set_ephe_path()               */
   char jplfnam[AS_MAXCH];         /* swe_set_jpl_file()                */
 
+  /* --- the DE numbers learned at the setters' header pre-opens ------ */
+  /* The moon .se1 file's DE number, read when swe_set_ephe_path_r()
+   * pre-opens it, and the JPL file's, read when swe_set_jpl_file_r()
+   * opens it. Config, not cache: the tidal term behind delta-t must not
+   * depend on which files a context happens to have open -- see the
+   * comment on the fields in struct swe_ctx. Zero = unknown. */
+  int32 sweph_denum_moon;
+  int32 jpldenum_cfg;
+
   /* --- sidereal ----------------------------------------------------- */
   struct sid_data sidd;           /* swe_set_sid_mode(); pure config    */
 

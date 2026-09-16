@@ -54,6 +54,9 @@ Written **only** by public setters. Safe to share, propagate on generation chang
 | `delta_t_userdef` | `swe_set_delta_t_userdef` | read only by `swe_deltat_ex` |
 | `delta_t_userdef_is_set` | `swe_set_delta_t_userdef` | |
 | `is_tid_acc_manual` | `swe_set_tid_acc` | the discriminator for `tid_acc`, §3.3 |
+| `sweph_denum_moon` | `swe_set_ephe_path` (header pre-open) | the moon file's DE number; read by the tidal resolution whenever the file is closed. Without it a context that had opened no file took the default term and switched on its first open — order-dependent delta-t |
+| `jpldenum_cfg` | `swe_set_jpl_file` (header read) | the JPL file's DE number, same reasoning |
+
 | `do_interpolate_nut` | `swe_set_interpolate_nut` | |
 | `const_lapse_rate` | `swe_set_lapse_rate` | **lives outside `swed`**, `swecl.c:74` |
 

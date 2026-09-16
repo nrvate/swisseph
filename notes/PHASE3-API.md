@@ -190,6 +190,15 @@ clean variant. The common case is "I configured the library, now give me a
 context", and the alternative is a silent Moshier fallback — the exact failure
 mode this whole branch exists to eliminate.
 
+*(2026-09-16: "just works" turned out to have a hole — inheritance carried
+the ephemeris PATH but not the DE number its pre-open had read, so a child
+context's first delta-t took the default tidal term and switched to the
+file's on its first open: pre-1955 answers moved with call order. The DE
+numbers are config now, `sweph_denum_moon`/`jpldenum_cfg` in `SWI_CFG_PATH`,
+and inherit with everything else — notes/UPSTREAM-BUGS.md section 14,
+notes/REVIEW.md Closed. Inheritance is the right recommendation; what it
+inherits must be everything the answer depends on.)*
+
 ---
 
 ## 6. Sequencing

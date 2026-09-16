@@ -2526,7 +2526,11 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   /* otherwise we use tid_acc consistent with epheflag */
   } else {
     denum = ctx->jpldenum;
-    if (epheflag & SEFLG_SWIEPH) denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
+    if (epheflag & SEFLG_SWIEPH) {
+      denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
+      if (denum == 0)
+        denum = ctx->sweph_denum_moon;
+    }
     if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH)) {
       if (serr != NULL) 
 	strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_deltat_ex()");
@@ -3277,12 +3281,28 @@ int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int
     if (iflag & SEFLG_JPLEPH) {
       if (ctx->jpl_file_is_open) {
 	denum = ctx->jpldenum;
+      } else if (ctx->jpldenum_cfg != 0) {
+	/* Closed since, but swe_set_jpl_file() read its DE number and
+	 * published it: the tidal term does not depend on whether the
+	 * file is still open. */
+	denum = ctx->jpldenum_cfg;
       }
     }
     /* SEFLG_SWIEPH wanted or SEFLG_JPLEPH failed: */
     if (iflag & SEFLG_SWIEPH) {
       if (ctx->fidat[SEI_FILE_MOON].fptr != NULL) {
 	denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
+      } else if (ctx->sweph_denum_moon != 0) {
+	/* Not open yet -- but swe_set_ephe_path() read the moon file's
+	 * header and published its DE number, and every context that
+	 * inherited this configuration must answer with that term on its
+	 * first delta-t too. Without this fallback the first answer took
+	 * SE_TIDAL_DEFAULT and the rest took the file's term, so the same
+	 * body at the same instant moved with call order: the Moon at JD
+	 * 2415020.5 answered 272.41632607 fresh and 272.41633228 after a
+	 * Mercury calculation on the same context (notes/UPSTREAM-BUGS.md
+	 * section 14). */
+	denum = ctx->sweph_denum_moon;
       }
     }
   }

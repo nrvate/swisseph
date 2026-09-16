@@ -1571,6 +1571,12 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
     }
     if (fdp->fptr != NULL)
       swi_set_tid_acc(ctx, 0, 0, fdp->sweph_denum, NULL);
+    /* Whatever the pre-open found is what every context inheriting this
+     * configuration must use for its tidal term -- including "nothing",
+     * so that a tree without a moon file answers with the default term on
+     * its first delta-t too, not only after a failed open. Published
+     * below with SWI_CFG_PATH. */
+    ctx->sweph_denum_moon = (fdp->fptr != NULL) ? fdp->sweph_denum : 0;
   }
 #ifdef TRACE
   swi_open_trace(NULL);
@@ -8012,6 +8018,13 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
     ctx->jpl_file_is_open = TRUE;
     swi_set_tid_acc(ctx, 0, 0, ctx->jpldenum, serr);
   }
+  /* Publish whatever this open established, for the same reason as the
+   * moon file's DE number in swe_set_ephe_path_r(): a JPL delta-t must
+   * not depend on whether the file is still open when it is asked for. A
+   * failed open names a file this configuration cannot answer from, so
+   * the published term returns to unknown rather than keeping the
+   * previous file's. */
+  ctx->jpldenum_cfg = (retc == OK) ? ctx->jpldenum : 0;
   return retc;
 }
 
