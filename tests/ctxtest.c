@@ -322,7 +322,13 @@ int main(int argc, char **argv)
     double jd = 2415020.5;
     int32 fl = SEFLG_SWIEPH | SEFLG_SPEED;
     double wantM[6], wantMe[6], wantV[6], got[6];
-    double dtFirst, dtAfter, dtDefault;
+    /* dtFirst is set only when the reference context exists; the checks
+     * that read it are skipped otherwise (that failure is reported
+     * already). gcc at -O1 and up (11 here, 13 on the CI runner) could not
+     * see that and warned
+     * maybe-uninitialized, which -Werror made CI red from ts.12 on. */
+    double dtFirst = 0.0, dtAfter, dtDefault;
+    int fHaveFirst = 0;
     char serr[AS_MAXCH] = "";
     swe_ctx *F, *O;
     int i;
@@ -340,6 +346,7 @@ int main(int argc, char **argv)
         fail("order", "a reference calculation failed; is the ephe path set?");
       }
       dtFirst = swe_deltat_ex_r(F, jd, fl, serr);
+      fHaveFirst = 1;
       swe_ctx_free(F);
     }
 
@@ -369,10 +376,10 @@ int main(int argc, char **argv)
        * first-answer value, and it must be what the process-wide API
        * gives at the same instant. */
       dtAfter = swe_deltat_ex_r(O, jd, fl, serr);
-      if (dtFirst != dtAfter)
+      if (fHaveFirst && dtFirst != dtAfter)
         fail("order", "delta-t moved between a context's first and later answers");
       dtDefault = swe_deltat_ex(jd, fl, serr);
-      if (dtFirst != dtDefault)
+      if (fHaveFirst && dtFirst != dtDefault)
         fail("order", "a fresh context's delta-t differs from the process-wide one");
       swe_ctx_free(O);
     }
