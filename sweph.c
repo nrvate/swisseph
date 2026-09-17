@@ -201,6 +201,8 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr);
 static void embofs(double * SWI_RESTRICT xemb, const double * SWI_RESTRICT xmoon);
 static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, char *serr);
 static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, char *serr);
+static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el, double mu, double tequ, double *xp, char *serr);
+static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el, double mu, double tequ, int32 iplctr, int32 iflag, char *serr);
 static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr);
@@ -634,6 +636,199 @@ int32 CALL_CONV swe_calc_ut(double tjd_ut, int32 ipl, int32 iflag,
 	double *xx, char *serr)
 {
   return swe_calc_ut_r(swi_default_ctx(), tjd_ut, ipl, iflag, xx, serr);
+}
+
+/* Position and speed from caller-supplied orbital elements, the reverse of
+ * swe_get_orbital_elements(). The apparent-position machinery is the
+ * fictitious bodies' (app_pos_etc_plan_osc, above in swecalc's flow); the
+ * elements and the two-body mu come from the caller and the library's
+ * constants instead of seorbel.txt. See swephexp.h for the contract. */
+int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
+        int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
+        double *xx, char *serr)
+{
+  int i, j;
+  int32 epheflag;
+  double tequ, mu;
+  double x[24], *xs;
+  /* The scratch body: the fictitious bodies compute into SEI_ANYBODY the
+   * same way, and nothing here outlives the call. */
+  struct plan_data *pdp = &ctx->pldat[SEI_ANYBODY];
+  double *xp = pdp->xreturn;
+
+  if (serr != NULL)
+    *serr = '\0';
+  for (i = 0; i < 24; i++)
+    x[i] = 0;
+  /* Caller-supplied elements have no JPL Horizons meaning: the mode's
+   * corrections belong to the ephemeris' own bodies. Strip before
+   * plaus_iflag(), which would otherwise try to load EOP data for them. */
+  iflag &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+  /* SEFLG_SPEED3 wants three positions; the two-body speed is already the
+   * exact derivative of the model the elements define. */
+  if (iflag & SEFLG_SPEED3) {
+    if (serr != NULL)
+      strcpy(serr, "SEFLG_SPEED3 is not supported for orbital elements: SEFLG_SPEED is the exact derivative of the two-body model.");
+    goto return_error;
+  }
+  /* cartesian flag excludes radians flag, as in swe_calc() */
+  if ((iflag & SEFLG_XYZ) && (iflag & SEFLG_RADIANS))
+    iflag = iflag & ~SEFLG_RADIANS;
+  /* centre and mu: pure two-body, the body massless, GM from this
+   * library's own constants (sweph.h), as seorbel.txt's fictitious bodies
+   * use KGAUSS/KGAUSS_GEO whatever ephemeris answers the centre. */
+  if (iplctr == SE_SUN) {
+    mu = KGAUSS * KGAUSS;
+  } else if (iplctr == SE_EARTH) {
+    mu = KGAUSS_EARTH * KGAUSS_EARTH;
+  } else {
+    if (serr != NULL)
+      strcpy(serr, "orbital elements: centre must be SE_SUN or SE_EARTH.");
+    goto return_error;
+  }
+  /* the elements' equinox, as seorbel.txt spells its own */
+  switch (equinox) {
+    case SE_ORBEL_EQ_J2000:
+      tequ = J2000;
+      break;
+    case SE_ORBEL_EQ_B1950:
+      tequ = B1950;
+      break;
+    case SE_ORBEL_EQ_J1900:
+      tequ = J1900;
+      break;
+    case SE_ORBEL_EQ_DATE:
+      tequ = tjd_et;
+      break;
+    case SE_ORBEL_EQ_EXPLICIT:
+      if (!(equinoxJd > 0) || !(equinoxJd == equinoxJd)) {
+        if (serr != NULL)
+          strcpy(serr, "orbital elements: explicit equinox needs a positive Julian day.");
+        goto return_error;
+      }
+      tequ = equinoxJd;
+      break;
+    default:
+      if (serr != NULL)
+        strcpy(serr, "orbital elements: unknown equinox.");
+      goto return_error;
+  }
+  /* The ephemeris setup, as swe_calc() does it: warn without a path, then
+   * resolve the ephemeris bits' precedence (JPL over Swiss over Moshier). */
+  if (swi_init_swed_if_start(ctx) == 1 && !(iflag & SEFLG_MOSEPH) && serr != NULL) {
+    strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_calc() or swe_calc_orbel()");
+    goto return_error;
+  }
+  epheflag = iflag & SEFLG_EPHMASK;
+  if (epheflag & SEFLG_JPLEPH) {
+    epheflag = SEFLG_JPLEPH;
+  } else if (epheflag & SEFLG_SWIEPH) {
+    epheflag = SEFLG_SWIEPH;
+  } else if (epheflag & SEFLG_MOSEPH) {
+    epheflag = SEFLG_MOSEPH;
+  } else  {
+    epheflag = SEFLG_SWIEPH;
+    iflag |= SEFLG_SWIEPH;
+  }
+  iflag = plaus_iflag(ctx, iflag, -1, tjd_et, serr);
+  retc_orbel:;
+  /* Earth (and through it the Sun) with speeds, saved as any swe_calc()
+   * of the Earth would save them; app_pos_etc_orbel reads the saved
+   * vectors, like app_pos_etc_plan_osc does. Re-run on every retry: the
+   * saved Earth must be the ephemeris the rest of the call uses. */
+  if (main_planet(ctx, tjd_et, SEI_EARTH, 0, epheflag, iflag, serr) == ERR)
+    goto return_error;
+  /* the ephemeris that actually answered: main_planet may have fallen back */
+  iflag = ctx->pldat[SEI_EARTH].xflgs;
+  epheflag = iflag & SEFLG_EPHMASK;
+  i = app_pos_etc_orbel(ctx, tjd_et, el, mu, tequ, iplctr, iflag, serr);
+  if (i == ERR)
+    goto return_error;
+  if (i == NOT_AVAILABLE || i == BEYOND_EPH_LIMITS) {
+    /* the light-time-retarded epoch fell outside the ephemeris: the same
+     * redo-with-Moshier the fictitious bodies get from swecalc() */
+    if (epheflag != SEFLG_MOSEPH
+      && tjd_et > MOSHPLEPH_START && tjd_et < MOSHPLEPH_END) {
+      iflag = (iflag & ~SEFLG_EPHMASK) | SEFLG_MOSEPH;
+      epheflag = SEFLG_MOSEPH;
+      if (serr != NULL && strlen(serr) + 30 < AS_MAXCH)
+        strcat(serr, "\nusing Moshier eph.; ");
+      goto retc_orbel;
+    }
+    goto return_error;
+  }
+  /* same output selection as swe_calc() */
+  for (j = 0; j < 24; j++)
+    x[j] = xp[j];
+  if (iflag & SEFLG_EQUATORIAL) {
+    xs = x + 12;	/* equatorial coordinates */
+  } else {
+    xs = x;		/* ecliptic coordinates */
+  }
+  if (iflag & SEFLG_XYZ)
+    xs = xs + 6;	/* cartesian coordinates */
+  for (j = 0; j < 3; j++)
+    xx[j] = *(xs + j);
+  for (j = 3; j < 6; j++)
+    xx[j] = 0;
+  if (iflag & SEFLG_SPEED) {
+    for (j = 3; j < 6; j++)
+      xx[j] = *(xs + j);
+  }
+  if (iflag & SEFLG_RADIANS) {
+    for (j = 0; j < 2; j++)
+      xx[j] *= DEGTORAD;
+    if (iflag & SEFLG_SPEED) {
+      for (j = 3; j < 5; j++)
+        xx[j] *= DEGTORAD;
+    }
+  }
+  return iflag;
+  return_error:;
+  for (i = 0; i <= 5; i++)
+    xx[i] = 0;
+  return ERR;
+}
+
+/* UT wrapper, in the shape of swe_calc_ut_r(): delta t from the requested
+ * ephemeris, recomputed if the answer came from a substituted one. */
+int32 CALL_CONV swe_calc_orbel_ut_r(swe_ctx *ctx, double tjd_ut, const double *el,
+        int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
+        double *xx, char *serr)
+{
+  double deltat;
+  int32 retval = OK;
+  int32 epheflag = 0;
+  iflag = plaus_iflag(ctx, iflag & ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX), -1, tjd_ut, serr);
+  epheflag = iflag & SEFLG_EPHMASK;
+  if (epheflag == 0) {
+    epheflag = SEFLG_SWIEPH;
+    iflag |= SEFLG_SWIEPH;
+  }
+  deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+  retval = swe_calc_orbel_r(ctx, tjd_ut + deltat, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
+  /* if ephe required is not ephe returned, adjust delta t: */
+  if ((retval & SEFLG_EPHMASK) != epheflag) {
+    deltat = swe_deltat_ex_r(ctx, tjd_ut, retval, NULL);
+    retval = swe_calc_orbel_r(ctx, tjd_ut + deltat, el, iplctr, equinox, equinoxJd, iflag, xx, NULL);
+  }
+  return retval;
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+int32 CALL_CONV swe_calc_orbel(double tjd_et, const double *el, int32 iplctr,
+        int32 equinox, double equinoxJd, int32 iflag, double *xx, char *serr)
+{
+  return swe_calc_orbel_r(swi_default_ctx(), tjd_et, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
+}
+
+/* Legacy entry point: the process-wide default context.
+ * Kept byte-compatible -- this is the ABI. */
+int32 CALL_CONV swe_calc_orbel_ut(double tjd_ut, const double *el, int32 iplctr,
+        int32 equinox, double equinoxJd, int32 iflag, double *xx, char *serr)
+{
+  return swe_calc_orbel_ut_r(swi_default_ctx(), tjd_ut, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
 }
 
 static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 iflag, double *x, char *serr) 
@@ -4042,6 +4237,359 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
      */
     if (iflag & SEFLG_SPEED)
       for (i = 3; i <= 5; i++) 
+	xx[i] += xobs[i] - xobs2[i];
+  }
+  /* save J2000 coordinates; required for sidereal positions */
+  for (i = 0; i <= 5; i++)
+    xxsv[i] = xx[i];
+  /************************************************
+   * precession, equator 2000 -> equator of date *
+   ************************************************/
+  if (!(iflag & SEFLG_J2000)) {
+    swi_precess(ctx, xx, pdp->teval, iflag, J2000_TO_J);
+    if (iflag & SEFLG_SPEED)
+      swi_precess_speed(ctx, xx, pdp->teval, iflag, J2000_TO_J);
+    oe = &ctx->oec;
+  } else
+    oe = &ctx->oec2000;
+  return app_pos_rest(ctx, pdp, iflag, xx, xxsv, oe, serr);
+}
+
+/* The two-body state of caller-supplied orbital elements at one instant
+ * (protocol v4 kind 4), referred to the mean ecliptic and equinox of tequ
+ * and rotated to the J2000 equator, relative to the centre body. el[] =
+ * mean anomaly M (deg), semi-major axis a (AU), eccentricity e, argument
+ * of perihelion (deg), ascending node (deg), inclination (deg), all
+ * already EVALUATED at tjd; mu = GM of the centre in AU^3/day^2. The same
+ * Gaussian-vector and Kepler machinery as swi_osc_el_plan() (swemplan.c),
+ * which reads its elements from seorbel.txt; here they come from the
+ * caller. The speed is the exact derivative of the two-body motion
+ * dM/dt = n = sqrt(mu/a^3), so a call at a retarded epoch with
+ * M - n * dt moves along the same motion.
+ *
+ * Invalid elements are errors, not clamps, as read_elements_file() refuses
+ * them for the fictitious bodies. */
+static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
+    double mu, double tequ, double *xp, char *serr)
+{
+  double pqr[9], x[6];
+  double eps, K, fac, rho, cose, sine;
+  double alpha, beta, zeta, sigma, M2, Msgn, M_180_or_0;
+  double mano, sema, ecce, parg, node, incl;
+  double cosnode, sinnode, cosincl, sinincl, cosparg, sinparg;
+  double M, E;
+  (void) tjd;	/* the elements are already evaluated at the instant */
+  mano = el[0];
+  sema = el[1];
+  ecce = el[2];
+  parg = el[3];
+  node = el[4];
+  incl = el[5];
+  /* NaN fails every comparison, so one test per quantity */
+  if (!(mano == mano) || !(parg == parg) || !(node == node) || !(incl == incl)) {
+    if (serr != NULL)
+      strcpy(serr, "orbital elements: mean anomaly or orientation angle is not finite.");
+    return ERR;
+  }
+  if (!(sema > 0)) {
+    if (serr != NULL)
+      strcpy(serr, "orbital elements: semi-major axis invalid.");
+    return ERR;
+  }
+  if (!(ecce >= 0) || !(ecce < 1)) {
+    if (serr != NULL)
+      strcpy(serr, "orbital elements: eccentricity invalid (no parabolic or hyperbolic orbits allowed).");
+    return ERR;
+  }
+  if (!(incl >= 0) || !(incl <= 180)) {
+    if (serr != NULL)
+      strcpy(serr, "orbital elements: inclination out of range (0..180 degrees).");
+    return ERR;
+  }
+  cosnode = cos(node * DEGTORAD);
+  sinnode = sin(node * DEGTORAD);
+  cosincl = cos(incl * DEGTORAD);
+  sinincl = sin(incl * DEGTORAD);
+  cosparg = cos(parg * DEGTORAD);
+  sinparg = sin(parg * DEGTORAD);
+  /* Gaussian vector */
+  pqr[0] = cosparg * cosnode - sinparg * cosincl * sinnode;
+  pqr[1] = -sinparg * cosnode - cosparg * cosincl * sinnode;
+  pqr[2] = sinincl * sinnode;
+  pqr[3] = cosparg * sinnode + sinparg * cosincl * cosnode;
+  pqr[4] = -sinparg * sinnode + cosparg * cosincl * cosnode;
+  pqr[5] = -sinincl * cosnode;
+  pqr[6] = sinparg * sinincl;
+  pqr[7] = cosparg * sinincl;
+  pqr[8] = cosincl;
+  /* Kepler problem; M is already the mean anomaly of the instant */
+  E = M = swi_mod2PI(mano * DEGTORAD);
+  /* better E for very high eccentricity and small M, as in
+   * swi_osc_el_plan() */
+  if (ecce > 0.975) {
+    M2 = M * RADTODEG;
+    if (M2 > 150 && M2 < 210) {
+      M2 -= 180;
+      M_180_or_0 = 180;
+    } else
+      M_180_or_0 = 0;
+    if (M2 > 330)
+      M2 -= 360;
+    if (M2 < 0) {
+      M2 = -M2;
+      Msgn = -1;
+    } else
+      Msgn = 1;
+    if (M2 < 30) {
+      M2 *= DEGTORAD;
+      alpha = (1 - ecce) / (4 * ecce + 0.5);
+      beta = M2 / (8 * ecce + 1);
+      zeta = pow(beta + sqrt(beta * beta + alpha * alpha), 1/3);
+      sigma = zeta - alpha / 2;
+      sigma = sigma - 0.078 * sigma * sigma * sigma * sigma * sigma / (1 + ecce);
+      E = Msgn * (M2 + ecce * (3 * sigma - 4 * sigma * sigma * sigma))
+			+ M_180_or_0;
+    }
+  }
+  E = swi_kepler(E, M, ecce);
+  /* position and speed, referred to orbital plane. K = sqrt(mu/a) plays
+   * the KGAUSS / sqrt(sema) of swi_osc_el_plan(): KGAUSS is
+   * sqrt(GM_sun), KGAUSS_GEO sqrt(GM_earth). */
+  K = sqrt(mu) / sqrt(sema);
+  cose = cos(E);
+  sine = sin(E);
+  fac = sqrt((1 - ecce) * (1 + ecce));
+  rho = 1 - ecce * cose;
+  x[0] = sema * (cose - ecce);
+  x[1] = sema * fac * sine;
+  x[2] = x[5] = 0;
+  x[3] = -K * sine / rho;
+  x[4] = K * fac * cose / rho;
+  /* transformation to ecliptic */
+  xp[0] = pqr[0] * x[0] + pqr[1] * x[1];
+  xp[1] = pqr[3] * x[0] + pqr[4] * x[1];
+  xp[2] = pqr[6] * x[0] + pqr[7] * x[1];
+  xp[3] = pqr[0] * x[3] + pqr[1] * x[4];
+  xp[4] = pqr[3] * x[3] + pqr[4] * x[4];
+  xp[5] = pqr[6] * x[3] + pqr[7] * x[4];
+  /* transformation to equator */
+  eps = swi_epsiln(ctx, tequ, 0);
+  swi_coortrf(xp, xp, -eps);
+  swi_coortrf(xp+3, xp+3, -eps);
+  /* precess to J2000 */
+  if (tequ != J2000) {
+    swi_precess(ctx, xp, tequ, 0, J_TO_J2000);
+    swi_precess(ctx, xp+3, tequ, 0, J_TO_J2000);
+  }
+  return OK;
+}
+
+/* The apparent-position pipeline for caller-supplied orbital elements:
+ * app_pos_etc_plan_osc()'s for the fictitious bodies, with three
+ * differences. The state comes from the caller's elements, not
+ * seorbel.txt; the centre is SE_SUN or SE_EARTH by parameter; and the
+ * retarded-epoch state of the speed branch is the same elements' two-body
+ * motion (M - n * dt), there being no element polynomial to evaluate
+ * again -- light time is carried through the same two-body motion.
+ * Results land in the scratch body SEI_ANYBODY, as the fictitious
+ * bodies' do; nothing here outlives the call.
+ * Returns ERR, or NOT_AVAILABLE / BEYOND_EPH_LIMITS from the ephemeris
+ * reads, for the caller to redo with Moshier. */
+static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
+    double mu, double tequ, int32 iplctr, int32 iflag, char *serr)
+{
+  int i, j, niter, retc;
+  double xx[6], dx[3], dt, dtsave_for_defl;
+  double xearth[6], xsun[6], xmoon[6];
+  double xxsv[6], xxsp[3]={0}, xobs[6], xobs2[6];
+  double t, dmot, elret[6];
+  struct plan_data *pdp = &ctx->pldat[SEI_ANYBODY];
+  struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
+  struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
+  struct epsilon *oe = &ctx->oec2000;
+  int32 epheflag = SEFLG_DEFAULTEPH;
+  dt = dtsave_for_defl = 0;	/* dummy assign to silence gcc */
+  if (iflag & SEFLG_MOSEPH) {
+    epheflag = SEFLG_MOSEPH;
+  } else if (iflag & SEFLG_SWIEPH) {
+    epheflag = SEFLG_SWIEPH;
+  } else if (iflag & SEFLG_JPLEPH) {
+    epheflag = SEFLG_JPLEPH;
+  }
+  /* the two-body state at t, relative to the centre, then to the
+   * centre's barycentric position: what swi_osc_el_plan() does with
+   * xsun/xearth at its end */
+  if (swi_orbel_to_state(ctx, tjd, el, mu, tequ, pdp->x, serr) != OK)
+    return ERR;
+  if (iplctr == SE_EARTH) {
+    for (i = 0; i <= 5; i++)
+      pdp->x[i] += pedp->x[i];
+  } else {
+    for (i = 0; i <= 5; i++)
+      pdp->x[i] += psdp->x[i];
+  }
+  pdp->teval = tjd;
+  pdp->iephe = pedp->iephe;
+  /* the mean motion of the elements' own Kepler orbit, deg/day */
+  dmot = sqrt(mu / (el[1] * el[1] * el[1])) * RADTODEG;
+  /* the conversions will be done with xx[]. */
+  for (i = 0; i <= 5; i++)
+    xx[i] = pdp->x[i];
+  /************************************
+   * barycentric position is required *
+   ************************************/
+  /* = heliocentric position with Moshier ephemeris */
+  /************************************
+   * observer: geocenter or topocenter
+   ************************************/
+  /* if topocentric position is wanted  */
+  if (iflag & SEFLG_TOPOCTR) {
+    if (ctx->topd.teval != pedp->teval
+      || ctx->topd.teval == 0) {
+      if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
+        return ERR;
+    } else {
+      for (i = 0; i <= 5; i++)
+        xobs[i] = ctx->topd.xobs[i];
+    }
+    /* barycentric position of observer */
+    for (i = 0; i <= 5; i++)
+      xobs[i] = xobs[i] + pedp->x[i];
+  } else if (iflag & SEFLG_BARYCTR) {
+    for (i = 0; i <= 5; i++)
+      xobs[i] = 0;
+  } else if (iflag & SEFLG_HELCTR) {
+    if (iflag & SEFLG_MOSEPH) {
+      for (i = 0; i <= 5; i++)
+        xobs[i] = 0;
+    } else {
+      for (i = 0; i <= 5; i++)
+        xobs[i] = psdp->x[i];
+    }
+  } else {
+    for (i = 0; i <= 5; i++)
+      xobs[i] = pedp->x[i];
+  }
+  /*******************************
+   * light-time                  *
+   *******************************/
+  if (!(iflag & SEFLG_TRUEPOS)) {
+    niter = 1;
+    if (iflag & SEFLG_SPEED) {
+      /*
+       * Apparent speed is influenced by the fact that dt changes with
+       * motion. This makes a difference of several hundredths of an
+       * arc second. To take this into account, we compute
+       * 1. true position - apparent position at time t - 1.
+       * 2. true position - apparent position at time t.
+       * 3. the difference between the two is the daily motion resulting from
+       * the change of dt.
+       */
+      for (i = 0; i <= 2; i++)
+	xxsv[i] = xxsp[i] = xx[i] - xx[i+3];
+      for (j = 0; j <= niter; j++) {
+	for (i = 0; i <= 2; i++) {
+	  dx[i] = xxsp[i];
+	  if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
+	    dx[i] -= (xobs[i] - xobs[i+3]);
+	}
+	/* new dt */
+	dt = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
+	for (i = 0; i <= 2; i++)
+	  xxsp[i] = xxsv[i] - dt * pdp->x[i+3];/* rough apparent position */
+      }
+      /* true position - apparent position at time t-1 */
+      for (i = 0; i <= 2; i++)
+	xxsp[i] = xxsv[i] - xxsp[i];
+    }
+    /* dt and t(apparent) */
+    for (j = 0; j <= niter; j++) {
+      for (i = 0; i <= 2; i++) {
+	dx[i] = xx[i];
+	if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
+	  dx[i] -= xobs[i];
+      }
+      /* new dt */
+      dt = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
+      dtsave_for_defl = dt;
+      /* new position: subtract t * speed
+       */
+      for (i = 0; i <= 2; i++) {
+	xx[i] = pdp->x[i] - dt * pdp->x[i+3];/**/
+	xx[i+3] = pdp->x[i+3];
+      }
+    }
+    if (iflag & SEFLG_SPEED) {
+      /* part of daily motion resulting from change of dt */
+      for (i = 0; i <= 2; i++)
+	xxsp[i] = pdp->x[i] - xx[i] - xxsp[i];
+      t = pdp->teval - dt;
+      /* for accuracy in speed, we will need earth as well */
+      retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
+      /* the same elements' two-body motion at the retarded epoch, where
+       * swi_osc_el_plan() re-evaluates the element file's polynomial */
+      for (i = 0; i <= 5; i++)
+        elret[i] = el[i];
+      elret[0] = el[0] - dmot * dt;
+      if (swi_orbel_to_state(ctx, t, elret, mu, tequ, xx, serr) != OK)
+	return ERR;
+      if (iplctr == SE_EARTH) {
+        for (i = 0; i <= 5; i++)
+          xx[i] += xearth[i];
+      } else {
+        for (i = 0; i <= 5; i++)
+          xx[i] += xsun[i];
+      }
+      if (retc != OK)
+	return retc;
+      if (iflag & SEFLG_TOPOCTR) {
+        if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
+          return ERR;
+        for (i = 0; i <= 5; i++)
+          xobs2[i] += xearth[i];
+      } else {
+        for (i = 0; i <= 5; i++)
+          xobs2[i] = xearth[i];
+      }
+    }
+  }
+  /*******************************
+   * conversion to geocenter     *
+   *******************************/
+  for (i = 0; i <= 5; i++)
+    xx[i] -= xobs[i];
+  if (!(iflag & SEFLG_TRUEPOS)) {
+    /*
+     * Apparent speed is also influenced by
+     * the change of dt during motion.
+     * Neglect of this would result in an error of several 0.01"
+     */
+    if (iflag & SEFLG_SPEED)
+      for (i = 3; i <= 5; i++)
+	xx[i] -= xxsp[i-3];
+  }
+  if (!(iflag & SEFLG_SPEED))
+    for (i = 3; i <= 5; i++)
+      xx[i] = 0;
+  /************************************
+   * relativistic deflection of light *
+   ************************************/
+  if (!(iflag & SEFLG_TRUEPOS) && !(iflag & SEFLG_NOGDEFL))
+		/* SEFLG_NOGDEFL is on, if SEFLG_HELCTR or SEFLG_BARYCTR */
+    swi_deflect_light(ctx, xx, dtsave_for_defl, iflag);
+  /**********************************
+   * 'annual' aberration of light   *
+   **********************************/
+  if (!(iflag & SEFLG_TRUEPOS) && !(iflag & SEFLG_NOABERR)) {
+		/* SEFLG_NOABERR is on, if SEFLG_HELCTR or SEFLG_BARYCTR */
+    swi_aberr_light(xx, xobs, iflag);
+    /*
+     * Apparent speed is also influenced by
+     * the difference of speed of the earth between t and t-dt.
+     * Neglecting this would involve an error of several 0.1"
+     */
+    if (iflag & SEFLG_SPEED)
+      for (i = 3; i <= 5; i++)
 	xx[i] += xobs[i] - xobs2[i];
   }
   /* save J2000 coordinates; required for sidereal positions */

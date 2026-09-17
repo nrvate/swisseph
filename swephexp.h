@@ -213,6 +213,18 @@ extern "C" {
                                       * 1962 - today to 0.002 arcsec. */
 #define SEFLG_JPLHOR	SEFLG_DPSIDEPS_1980
 #define SEFLG_JPLHOR_APPROX	(512*1024)   /* approximate JPL Horizons 1962 - today */
+
+/*
+ * Equinoxes of caller-supplied orbital elements, for swe_calc_orbel().
+ * The elements' mean anomaly M, argument of perihelion, ascending node and
+ * inclination are referred to the mean ecliptic and equinox named here;
+ * the values match protocol v4's element-equinox registry (A.16).
+ */
+#define SE_ORBEL_EQ_J2000	0	/* mean equinox and ecliptic J2000.0 */
+#define SE_ORBEL_EQ_B1950	1	/* B1950 */
+#define SE_ORBEL_EQ_J1900	2	/* J1900 */
+#define SE_ORBEL_EQ_DATE	3	/* mean equinox and ecliptic of date */
+#define SE_ORBEL_EQ_EXPLICIT	4	/* equinoxJd, a TT Julian day */
 #define SEFLG_CENTER_BODY	(1024*1024)  /* calculate position of center of body (COB)
                                                 of planet, not barycenter of its system */
 #define SEFLG_TEST_PLMOON	(2*1024*1024 | SEFLG_J2000 | SEFLG_ICRS | SEFLG_HELCTR | SEFLG_TRUEPOS)  /* test raw data in files sepm9* */
@@ -718,6 +730,46 @@ ext_def(int32) swe_calc_ut(double tjd_ut, int32 ipl, int32 iflag,
 
 ext_def(int32) swe_calc_pctr(double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr);
 
+/* Position from orbital elements, the reverse of swe_get_orbital_elements():
+ * the caller supplies six elements EVALUATED AT tjd -- mean anomaly M (deg),
+ * semi-major axis a (AU), eccentricity e, argument of perihelion (deg),
+ * ascending node (deg), inclination (deg) -- and gets the body's apparent
+ * position and speed back under the same conventions as swe_calc(). The
+ * motion is pure two-body Keplerian with mu = GM of the centre taken from
+ * this library's own constants (KGAUSS^2 for the Sun, KGAUSS_GEO^2 for the
+ * Earth, both in AU^3/day^2); the body is massless. The speed is the
+ * analytic two-body derivative with the mean motion n = sqrt(mu/a^3), so
+ * feeding elements derived from a state vector reproduces that state and
+ * its speed to the precision of the Kepler solve.
+ *
+ * iplctr is the centre body: SE_SUN or SE_EARTH, nothing else.
+ *
+ * equinox names the mean equinox and ecliptic the elements are referred
+ * to; the equinoxJd parameter is read only for SE_ORBEL_EQ_EXPLICIT.
+ *
+ * iflag honours the subset a plain swe_calc() call honours: the ephemeris
+ * bit, the observer bits (TOPOCTR, HELCTR, BARYCTR), the frame bits
+ * (J2000, NONUT, ICRS), the correction bits (TRUEPOS, NOABERR, NOGDEFL --
+ * light time, deflection and aberration are applied as to any body, with
+ * light time carried through the same two-body motion), SPEED, SIDEREAL,
+ * EQUATORIAL, XYZ and RADIANS. SEFLG_SPEED3 is refused: the speed comes
+ * from the two-body solution itself. SEFLG_JPLHOR and SEFLG_JPLHOR_APPROX
+ * are meaningless for caller-supplied elements and are stripped.
+ *
+ * Errors, not clamps: a <= 0, e < 0 or e >= 1 (no parabolic or hyperbolic
+ * orbits) and inclination outside 0..180 degrees are refused, as are
+ * non-finite values.
+ */
+ext_def(int32) swe_calc_orbel(
+        double tjd_et, const double *el, int32 iplctr,
+        int32 equinox, double equinoxJd, int32 iflag,
+        double *xx, char *serr);
+
+ext_def(int32) swe_calc_orbel_ut(
+        double tjd_ut, const double *el, int32 iplctr,
+        int32 equinox, double equinoxJd, int32 iflag,
+        double *xx, char *serr);
+
 ext_def(double) swe_solcross(double x2cross, double jd_et, int32 flag, char *serr);
 ext_def(double) swe_solcross_ut(double x2cross, double jd_ut, int32 flag, char *serr);
 ext_def(double) swe_mooncross(double x2cross, double jd_et, int32 flag, char *serr);
@@ -798,6 +850,8 @@ ext_def( void ) swe_azalt_r(swe_ctx *ctx, double tjd_ut, int32 calc_flag, double
 ext_def( void ) swe_azalt_rev_r(swe_ctx *ctx, double tjd_ut, int32 calc_flag, double *geopos, double *xin, double *xout);
 ext_def( int32 ) swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr);
 ext_def( int32 ) swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag, double *xx, char *serr);
+ext_def( int32 ) swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el, int32 iplctr, int32 equinox, double equinoxJd, int32 iflag, double *xx, char *serr);
+ext_def( int32 ) swe_calc_orbel_ut_r(swe_ctx *ctx, double tjd_ut, const double *el, int32 iplctr, int32 equinox, double equinoxJd, int32 iflag, double *xx, char *serr);
 ext_def( int32 ) swe_calc_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, double *xx, char *serr);
 ext_def( void ) swe_close_r(swe_ctx *ctx);
 ext_def( double ) swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *serr);

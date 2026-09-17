@@ -293,6 +293,12 @@ typedef struct swe_ctx swe_ctx;
 #define HELGRAVCONST    1.32712440017987e+20	/* G * M(sun), m^3/sec^2, AA 2006 K6 */
 #define GEOGCONST       3.98600448e+14 		/* G * M(earth) m^3/sec^2, AA 1996 K6 */
 #define KGAUSS		0.01720209895		/* Gaussian gravitational constant K6 */
+/* Earth's own GM, Earth only (no Moon), in the same units as KGAUSS:
+ * sqrt(GM_earth) in AU^(3/2)/day. Same value as KGAUSS_GEO in swemplan.c,
+ * which keeps its own define for the fictitious bodies; this copy exists
+ * for the caller-supplied-elements entry point, whose centre-Earth mass
+ * must not depend on that file. */
+#define KGAUSS_EARTH	0.0000298122353216	/* Earth only */
 #define SUN_RADIUS      (959.63 / 3600 * DEGTORAD)  /*  Meeus germ. p 391 */
 #define EARTH_RADIUS	6378136.6		/* AA 2006 K6 */
 //#define EARTH_OBLATENESS (1.0/ 298.257223563)	/* AA 1998 K13 */
