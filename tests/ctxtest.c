@@ -30,7 +30,8 @@
  *   6. REVIEW             the 2026-09-16 review's relations: JPL over Swiss
  *                         over Moshier in delta-t, a path change forgetting
  *                         the JPL DE number, no stale observer in nod_aps
- *                         or pctr, and fresh = warm past a file's end
+ *                         or pctr, fresh = warm past a file's end and
+ *                         on a segment boundary
  *   5. ORDER              one context, several bodies at one pre-1955
  *                        instant: every answer equals the brand-new-context
  *                        answer. The tidal term behind delta-t used to
@@ -454,6 +455,30 @@ int main(int argc, char **argv)
     if (!same(x, y, 6))
       fail("review F7", "a centered topocentric Moon kept an earlier call's observer");
     swe_ctx_free(C);
+
+    /* F9: an instant on a segment boundary answers from the segment that
+     * starts there, whichever one is loaded. Phobos's file has 4-day
+     * segments with a boundary at 2451545.5; a calculation one day
+     * earlier leaves the previous segment loaded, and so does the first
+     * call's own light-time step. */
+    {
+      double jb = 2451545.5, z[6];
+      int32 fl = SEFLG_SWIEPH | SEFLG_SPEED, rf, rw, r2;
+      C = swe_ctx_new();
+      rf = swe_calc_r(C, jb, 9401, fl, x, serr);
+      swe_ctx_free(C);
+      if (rf < 0 || !(rf & SEFLG_SWIEPH)) {
+        printf("  (review F9 skipped: no sat/sepm9401.se1 under %s)\n", g_ephe);
+      } else {
+        C = swe_ctx_new();
+        swe_calc_r(C, jb - 1.0, 9401, fl, y, serr);
+        rw = swe_calc_r(C, jb, 9401, fl, y, serr);
+        r2 = swe_calc_r(C, jb, 9401, fl, z, serr);
+        if (rw != rf || r2 != rf || !same(x, y, 6) || !same(x, z, 6))
+          fail("review F9", "a planetary moon on a segment boundary answered by call order");
+        swe_ctx_free(C);
+      }
+    }
 
 #ifndef _WIN32
     /* F11: just past a file's nominal end, a fresh context answers what a

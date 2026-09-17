@@ -2700,7 +2700,24 @@ again:
    * get planet's position      
    ******************************/
   /* get new segment, if necessary */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* An instant exactly on a segment boundary is inside two segments, and
+   * the range test below keeps whichever is loaded -- while a fresh
+   * context loads the one get_new_segment() computes, the segment that
+   * STARTS there. Adjacent fits agree only to ~1e-10 degrees at the join,
+   * so the same question had two answers by call order: Phobos at JD
+   * 2451545.5, where the light-time step of the first call leaves the
+   * PREVIOUS segment loaded for every call after it (2026-09-16 review,
+   * F9). Choosing by the same arithmetic as get_new_segment() makes the
+   * warm answer the fresh one. Not at the file's last instant, whose
+   * index is one past the last segment. */
+  if (pdp->segp == NULL || tjd < pdp->tseg0 || tjd > pdp->tseg1
+      || (tjd < pdp->tfend
+          && pdp->tfstart + (int32) ((tjd - pdp->tfstart) / pdp->dseg)
+             * pdp->dseg != pdp->tseg0)) {
+#else
   if (pdp->segp == NULL || tjd < pdp->tseg0 || tjd > pdp->tseg1) {
+#endif
     retc = get_new_segment(ctx, tjd, ipl, ifno, serr);
     if (retc != OK)
       return(retc);
