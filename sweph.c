@@ -8679,21 +8679,23 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   }
   iflag = plaus_iflag(ctx, iflag, ipl, tjd, serr);
   epheflag = iflag & SEFLG_EPHMASK;
+  // this fills in obliquity and nutation values in swed
+  swe_calc_r(ctx, tjd + swe_deltat_ex_r(ctx, tjd, epheflag, serr), SE_ECL_NUT, iflag, xx, serr);
 #ifndef SWE_UPSTREAM_COMPAT
   /* The light deflection below adds the SAVED observer when TOPOCTR is
    * set, and nothing on this path computes one: a fresh context used a
    * zero observer, a used one whatever an earlier topocentric call left
    * -- up to 5e-7" apart, but not the same bits (2026-09-16 review, F7).
    * Computed here, at this instant, and saved as the other entry points
-   * save it. */
+   * save it -- after the SE_ECL_NUT call above, which is what initialises
+   * a fresh context: computed before it, a fresh context's observer
+   * differed from a used one's, the dependence this was meant to remove. */
   if (iflag & SEFLG_TOPOCTR) {
     double xobs_pctr[6];
     if (swi_get_observer(ctx, tjd, iflag, TRUE, xobs_pctr, serr) != OK)
       return ERR;
   }
 #endif
-  // this fills in obliquity and nutation values in swed
-  swe_calc_r(ctx, tjd + swe_deltat_ex_r(ctx, tjd, epheflag, serr), SE_ECL_NUT, iflag, xx, serr);
   iflag &= ~(SEFLG_HELCTR|SEFLG_BARYCTR);
   iflag2 = epheflag;
   iflag2 |= (SEFLG_BARYCTR|SEFLG_J2000|SEFLG_ICRS|SEFLG_TRUEPOS|SEFLG_EQUATORIAL|SEFLG_XYZ|SEFLG_SPEED);

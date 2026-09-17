@@ -460,7 +460,7 @@ int main(int argc, char **argv)
      * context that had the file open answers. A directory holding only
      * the 1800-2400 planet and moon files makes the edge. */
     {
-      char dir[] = "/tmp/ctxtest-f11-XXXXXX", src[AS_MAXCH], dst[AS_MAXCH];
+      char dir[] = "/tmp/ctxtest-f11-XXXXXX", src[3 * AS_MAXCH], dst[AS_MAXCH];
       const char *files[] = {"sepl_18.se1", "semo_18.se1"};
       int k, ok = mkdtemp(dir) != NULL;
       for (k = 0; ok && k < 2; k++) {
