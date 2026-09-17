@@ -49,6 +49,10 @@ worst were in code that had never executed even once.
 | 11 | Changing the ephemeris path does not re-read what was loaded from it | Correctness | `swedate.c`, `swephlib.c` |
 | 12 | `setest/` — five defects in the shipped harness | Memory / Robustness | `setest/` |
 | 13 | Lower severity, grouped | — | `swephgen4.c` |
+| 14 | The tidal term behind delta-t follows which ephemeris files are open | Correctness | `swephlib.c`, `sweph.c` |
+| 15 | `swe_calc(SE_ECL_NUT)` under another ephemeris wipes the open files' constants | Correctness / Memory | `sweph.c` |
+| 16 | `swe_pheno(SE_ECL_NUT)` indexes two tables with -1 | Memory | `swecl.c` |
+| 17 | `ipl * 100` overflows int32 for a large negative body number | Robustness | `sweph.c` |
 
 ---
 
@@ -1071,6 +1075,93 @@ value, wherever upstream chooses to keep it.
 
 ---
 
+## 15. `swe_calc(SE_ECL_NUT)` under another ephemeris wipes the open files' constants
+
+`swe_calc()` clears its state when the ephemeris flag changes, and
+deliberately leaves the files open for `SE_ECL_NUT`, whose answer depends on
+no ephemeris:
+
+```c
+/* sweph.c:386, swe_calc() */
+if (swed.last_epheflag != epheflag) {
+    free_planets();
+    /* close and free ephemeris files */
+    if (ipl != SE_ECL_NUT) {  /* because file will not be reopened with this ipl */
+      ...
+      swi_close_ephe_files();
+      swed.last_epheflag = epheflag;
+    }
+}
+```
+
+`free_planets()` sits outside the exemption. It zeroes every `pldat[]`,
+which is where `read_const()` put each open file's constants -- `tfstart`,
+`dseg`, `lndx0`. So after the `SE_ECL_NUT` call the files are still open,
+`last_epheflag` still names the old ephemeris, and the constants are gone.
+The next call under the old flag finds its file open, skips `read_const()`,
+and `get_new_segment()` (sweph.c:4383) divides by `dseg = 0`: the segment
+index is a double-to-int conversion of infinity (undefined behaviour), and
+`iseg * 3` at :4389 overflows. On x86-64 the resulting file offset is
+garbage and the call fails:
+
+```c
+    swe_calc(2440000.0, SE_SUN,     SEFLG_SWIEPH, x, serr);
+    swe_calc(2440000.0, SE_ECL_NUT, SEFLG_MOSEPH, x, serr);
+    swe_calc(2451545.0, SE_MARS,    SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+    /* returns ERR: "Ephemeris file .../sepl_18.se1 is damaged (2)."
+     * The same Mars call on a fresh process returns 327.962729488835. */
+```
+
+Reproduced on `3fd0f95` and on `91339e5`, one commit later. Nothing about the
+sequence is unusual: a program that computes nutation with the Moshier flag
+and planets with Swiss files reaches it.
+
+**Fixed on this fork** by moving `free_planets()` inside the `ipl !=
+SE_ECL_NUT` block, so the planets' data is freed exactly when the files are
+closed. Nutation reads none of it, and every save area is keyed on the flags
+it was computed under, so nothing stale can be served. G24 (`check-compat`)
+holds it both ways, and G25 (`check-hostile`, UBSan) spells the sequence out.
+
+## 16. `swe_pheno(SE_ECL_NUT)` indexes two tables with -1
+
+`SE_ECL_NUT` (-1) is a valid `swe_calc()` body number, so the geocentric
+`swe_calc()` at the top of `swe_pheno()` (swecl.c:3791) succeeds, and the
+function carries on to
+
+```c
+/* swecl.c:3879 */  if (ipl < NDIAM) dd = pla_diam[ipl];
+/* swecl.c:3891 */  if (ipl > SE_AST_OFFSET || (ipl < NMAG_ELEM && mag_elem[ipl][0] < 99)) {
+```
+
+Both read one element before the start of a static table, and the magnitude
+branch goes on to read `mag_elem[-1][1..3]`. The call returns OK with a phase,
+diameter and magnitude computed from whatever precedes those tables in the
+data segment. `swe_pheno_ut()` has the same path. No caller wants phenomena
+of the nutation record; the fix is to refuse it -- the fork returns ERR with
+"illegal planet number -1." for any `ipl < SE_SUN`, after the Ceres-to-Vesta
+renumbering. G24 holds it.
+
+## 17. `ipl * 100` overflows int32 for a large negative body number
+
+```c
+/* sweph.c:422, swe_calc() */
+if ((iflag & SEFLG_CENTER_BODY) && ipl <= SE_PLUTO && ...) {
+    iplmoon = ipl * 100 + 9099; // planetary center of body
+```
+
+Any `ipl` below about -21.5 million overflows (signed overflow, undefined
+behaviour). The call then fails as an illegal planet number, so on common
+compilers nothing visible happens -- UBSan reports it, and an optimiser is
+entitled to do anything. It is reached by a program that passes body numbers
+from outside unchecked; that is how it was found, by fuzzing an ephemeris
+server's wire protocol. The fork bounds the test at `ipl >= SE_ECL_NUT`,
+which keeps upstream's arithmetic, flag clearing included, for every body
+number that exists. G25 fuzzes every public calculation entry point over
+edge ids and flag sets under `-fsanitize=undefined` and holds this and entry
+15.
+
+---
+
 ## How these were found
 
 Almost none of this came from reading code looking for defects. The method
@@ -1103,8 +1194,9 @@ If only some of this is worth taking:
 |---|---|---|
 | First | 4 | a crash, reachable from ordinary setup calls |
 | | 1, 2, 3, 7, 8, 9 | memory errors, several caller-triggerable |
-| Then | 5, 6, 10, 11 | wrong answers that depend on call order |
-| Last | 12, 13 | test harness and utilities |
+| | 15, 16 | a failed or garbage answer from an ordinary call sequence |
+| Then | 5, 6, 10, 11, 14 | wrong answers that depend on call order |
+| Last | 12, 13, 17 | test harness, utilities, undefined behaviour on hostile input |
 
 Entries 5, 6 and 10 are one family — a cache whose key omits something its
 value depends on. Fixing one does not address the others, and it is worth

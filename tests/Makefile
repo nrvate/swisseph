@@ -53,6 +53,7 @@ OBJ_STD   = .obj-std
 OBJ_O2    = .obj-o2
 OBJ_ASAN  = .obj-asan
 OBJ_TSAN  = .obj-tsan
+OBJ_UBSAN = .obj-ubsan
 
 CFLAGS_O2 = -O2 -g -D_GNU_SOURCE -I..
 
@@ -60,6 +61,12 @@ SWEOBJ_STD  = $(patsubst ../%.c,$(OBJ_STD)/%.o,$(SWE))
 SWEOBJ_O2   = $(patsubst ../%.c,$(OBJ_O2)/%.o,$(SWE))
 SWEOBJ_ASAN = $(patsubst ../%.c,$(OBJ_ASAN)/%.o,$(SWE))
 SWEOBJ_TSAN = $(patsubst ../%.c,$(OBJ_TSAN)/%.o,$(SWE))
+SWEOBJ_UBSAN = $(patsubst ../%.c,$(OBJ_UBSAN)/%.o,$(SWE))
+
+# G25's flavour. bounds-strict and float-cast-overflow are not in
+# -fsanitize=undefined, and each caught a defect here; no recovery, so a
+# report is an exit status rather than a line nobody reads.
+UBSANFLAGS = -fsanitize=undefined,bounds-strict,float-cast-overflow -fno-sanitize-recover=all
 
 # -MMD -MP writes ../sweph.h and friends into a .d file beside each object,
 # and the -include below feeds them back as prerequisites. Without it these
@@ -87,8 +94,12 @@ $(OBJ_TSAN)/%.o: ../%.c
 	@mkdir -p $(OBJ_TSAN)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -fsanitize=thread -c $< -o $@
 
+$(OBJ_UBSAN)/%.o: ../%.c
+	@mkdir -p $(OBJ_UBSAN)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(UBSANFLAGS) -c $< -o $@
+
 -include $(SWEOBJ_STD:.o=.d) $(SWEOBJ_O2:.o=.d) \
-	 $(SWEOBJ_ASAN:.o=.d) $(SWEOBJ_TSAN:.o=.d)
+	 $(SWEOBJ_ASAN:.o=.d) $(SWEOBJ_TSAN:.o=.d) $(SWEOBJ_UBSAN:.o=.d)
 
 all: golden sunrace glprace threadshim cfgleak jplguard jplreal
 
@@ -267,7 +278,8 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-eopload \
-       check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat
+       check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
+       check-hostile
 
 # check plus the differential, which needs a worktree of legacy-master and so
 # a network fetch on a fresh clone. check-ci is separate again: it needs
@@ -414,6 +426,14 @@ check-compat: compat_default compat_upstream
 	@env -u SE_EPHE_PATH ./compat_default $(EPHE)
 	@env -u SE_EPHE_PATH ./compat_upstream $(EPHE)
 
+# G25: hostile body numbers and flag sets reach no undefined behaviour. See
+# hostile.c; its random pass is fixed-seed, so a failure reproduces.
+hostile: hostile.c $(SWEOBJ_UBSAN)
+	$(CC) $(CFLAGS) $(UBSANFLAGS) $^ -o $@ $(LIBS)
+
+check-hostile: hostile
+	@env -u SE_EPHE_PATH ./hostile $(EPHE)
+
 # G23: the data files a context reads along its OWN ephemeris path.
 #
 # Both were fetched from swi_default_ctx() instead of the caller's context,
@@ -551,7 +571,7 @@ clean:
 	rm -rf jplhor $(JPLHOR_DIR) $(JPLHOR_BARE)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
-	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN)
+	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN) $(OBJ_UBSAN) hostile
 
 .PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
@@ -559,7 +579,7 @@ clean:
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
-        check-ctxfiles check-compat check-jplhor \
+        check-ctxfiles check-compat check-jplhor check-hostile \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.

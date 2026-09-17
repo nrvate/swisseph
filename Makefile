@@ -115,7 +115,7 @@ all: $(ALL_TARGETS)
 
 # Compile .c files to .o files
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 # Build swetest: link swetest.o with the static library libswe.a
 swetest: swetest.o libswe.a
@@ -273,19 +273,20 @@ test.exp:
 
 # Clean up build artifacts
 clean:
-	rm -f *.o swetest libswe.* swetests swevents swemini swe.pc
+	rm -f *.o *.d swetest libswe.* swetests swevents swemini swe.pc
 	cd setest && make clean
 
-# Dependency rules
-swecl.o: swejpl.h sweodef.h swephexp.h swedll.h sweph.h swephlib.h
-swedate.o: swephexp.h sweodef.h swedll.h
-swehel.o: swephexp.h sweodef.h swedll.h
-swehouse.o: swephexp.h sweodef.h swedll.h swephlib.h swehouse.h
-swejpl.o: swephexp.h sweodef.h swedll.h sweph.h swejpl.h
-swemini.o: swephexp.h sweodef.h swedll.h
-swemmoon.o: swephexp.h sweodef.h swedll.h sweph.h swephlib.h
-swemplan.o: swephexp.h sweodef.h swedll.h sweph.h swephlib.h swemptab.h
-sweph.o: swejpl.h sweodef.h swephexp.h swedll.h sweph.h swephlib.h
-swephlib.o: swephexp.h sweodef.h swedll.h sweph.h swephlib.h
-swetest.o: swephexp.h sweodef.h swedll.h
-swevents.o: swephexp.h sweodef.h swedll.h
+# Header dependencies come from the compiler.
+#
+# This used to be a hand-written list, and it had rotted the way such lists
+# do: sweconfig.o and obama.o were not in it at all, and swethread.h and
+# sweconfig.h, which sweph.h includes, were named for nothing. Measured:
+# touching sweph.h -- where struct swe_ctx lives -- rebuilt 6 of the 10
+# library objects and left sweconfig, swedate, swehel and swehouse compiled
+# against the old field offsets, which links and then corrupts memory.
+# tests/Makefile found the same thing and fixed it the same way (69495ff).
+#
+# -MMD -MP, on the compile rule only, writes a .d file beside each object
+# naming every header it read; on a clean tree there are none, and
+# everything is built anyway.
+-include $(wildcard *.d)

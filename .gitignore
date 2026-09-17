@@ -6,6 +6,8 @@
 *.dylib
 *.dll
 *.exe
+# Header dependencies, written by -MMD beside each object.
+*.d
 
 # ndk-build output.
 /contrib/android/libs/

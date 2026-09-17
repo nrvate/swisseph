@@ -398,9 +398,23 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_calc() or swe_calc_ut()");
   }
   if (ctx->last_epheflag != epheflag) {
+#ifdef SWE_UPSTREAM_COMPAT
     free_planets(ctx);
+#endif
     /* close and free ephemeris files */
     if (ipl != SE_ECL_NUT) {  /* because file will not be reopened with this ipl */
+#ifndef SWE_UPSTREAM_COMPAT
+      /* ⚠️ Only where the files are closed too. Upstream freed the planets'
+       * data for SE_ECL_NUT as well, which wiped every file's constants
+       * (tfstart, dseg, lndx0) while leaving the files open and
+       * last_epheflag unchanged -- so the next call under the old flag found
+       * its file open, skipped read_const(), and looked a segment up with
+       * dseg = 0: Sun (Swiss), SE_ECL_NUT (Moshier), Mars (Swiss) answered
+       * "sepl_18.se1 is damaged", and a double-to-int overflow got there.
+       * Nutation reads none of this data, and every save area keys on the
+       * flags it was computed under, so leaving it all in place is safe. */
+      free_planets(ctx);
+#endif
       if (ctx->jpl_file_is_open) {
 	swi_close_jpl_file(ctx);
 	ctx->jpl_file_is_open = FALSE;
@@ -428,7 +442,16 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * we want to handle both cases the same way. */
   // planet is called with SE_PLUTO etc. and SEFLG_CENTER_BODY:
   // get number of center of body 
+#ifndef SWE_UPSTREAM_COMPAT
+  /* ⚠️ Not below SE_ECL_NUT: no body is numbered there, and ipl * 100
+   * overflows int32 for ids under about -21.5 million, which a caller
+   * passing an unchecked id reaches (UBSan, from the ephemeris server's
+   * fuzz). -1 keeps upstream's arithmetic, flag clearing included; lower
+   * ids fail as an illegal planet number either way. */
+  if ((iflag & SEFLG_CENTER_BODY) && ipl >= SE_ECL_NUT && ipl <= SE_PLUTO && (iflag & SEFLG_TEST_PLMOON) != SEFLG_TEST_PLMOON) {
+#else
   if ((iflag & SEFLG_CENTER_BODY) && ipl <= SE_PLUTO && (iflag & SEFLG_TEST_PLMOON) != SEFLG_TEST_PLMOON) {
+#endif
     iplmoon = ipl * 100 + 9099; // planetary center of body
   }
   // planet center of body or planetary moon is called using 9... number:

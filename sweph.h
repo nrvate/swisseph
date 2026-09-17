@@ -65,7 +65,7 @@
 /* Fork version. Upstream is 2.10.03; the "-ts.N" suffix marks the
  * thread-safe fork, so swe_version() cannot report a number that
  * implies upstream behaviour this library no longer has. */
-#define SE_VERSION      "2.10.03-ts.13" 
+#define SE_VERSION      "2.10.03-ts.14" 
 
 #define J2000           2451545.0  	/* 2000 January 1.5 */
 #define B1950           2433282.42345905  	/* 1950 January 0.923 */
@@ -668,6 +668,13 @@ struct epsilon {
  *     value computed under SEFLG_JPLHOR was served to callers that did not
  *     ask for it (104 of 120 answers contaminated)
  *   - swe_calc_pctr() never keyed those caches to its own tjd (24.5 arcsec)
+ *   - swe_calc(SE_ECL_NUT) under a different ephemeris flag wiped the open
+ *     files' constants, so the next call under the old flag failed ("file
+ *     is damaged") after a segment lookup divided by zero
+ *   - swe_pheno(SE_ECL_NUT) read pla_diam[-1] and mag_elem[-1] and returned
+ *     OK; the fork refuses it
+ *   - ipl * 100 in swe_calc()'s center-of-body setup overflowed int32 for a
+ *     large negative id (UBSan only, so asserted by check-hostile, G25)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

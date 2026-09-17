@@ -3965,6 +3965,16 @@ int32 CALL_CONV swe_pheno_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, do
   /* Ceres - Vesta must be SE_CERES etc., not 10001 etc. */
   if (ipl > SE_AST_OFFSET && ipl <= SE_AST_OFFSET + 4)
         ipl = ipl - SE_AST_OFFSET - 1 + SE_CERES;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* ⚠️ SE_ECL_NUT is a valid swe_calc() number but not a body: upstream
+   * computed it and then indexed pla_diam[] and mag_elem[] with -1, out of
+   * bounds, and returned whatever it read as a phase and a magnitude. */
+  if (ipl < SE_SUN) {
+    if (serr != NULL)
+      sprintf(serr, "illegal planet number %d.", ipl);
+    return ERR;
+  }
+#endif
   iflag = iflag & (SEFLG_EPHMASK | 
                    SEFLG_TRUEPOS | 
                    SEFLG_J2000 | 
