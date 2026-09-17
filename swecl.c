@@ -5569,8 +5569,22 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     if (swe_calc_r(ctx, tjd_et, SE_SUN, iflg0, x, serr) == ERR)
       return ERR;
   } else {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Not TOPOCTR for the Earth (the Sun's orbit): a topocentric Earth
+     * returns before its barycentric position reaches the save area, and
+     * swi_deflect_light() below reads that slot -- NaN on a fresh context,
+     * and on a used one whatever Earth an earlier call left, so the Sun's
+     * mean perihelion moved with call order (2026-09-16 review, F6).
+     * The observer is computed separately below; this call is only for
+     * the save area. Upstream hides it: its swe_set_ephe_path() computes
+     * the Moon at J2000, leaving an Earth there. */
+    if (swe_calc_r(ctx, tjd_et, ipli, iflg0 | (ipli == SE_EARTH ? 0 :
+        (iflag & SEFLG_TOPOCTR)), x, serr) == ERR)
+      return ERR;
+#else
     if (swe_calc_r(ctx, tjd_et, ipli, iflg0 | (iflag & SEFLG_TOPOCTR), x, serr) == ERR)
       return ERR;
+#endif
   }
   /***********************
    * position of observer

@@ -27,6 +27,10 @@
  *                        starting from library defaults and falling back to
  *                        Moshier -- the decision in PHASE3-API.md section 5.
  *
+ *   6. REVIEW             the 2026-09-16 review's relations: JPL over Swiss
+ *                         over Moshier in delta-t, a path change forgetting
+ *                         the JPL DE number, no stale observer in nod_aps
+ *                         or pctr, and fresh = warm past a file's end
  *   5. ORDER              one context, several bodies at one pre-1955
  *                        instant: every answer equals the brand-new-context
  *                        answer. The tidal term behind delta-t used to
@@ -40,6 +44,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#ifndef _WIN32
+#include <unistd.h>   /* mkdtemp, symlink: review property F11 */
+#endif
 #include "swephexp.h"
 #include "sweph.h"   /* swi_default_ctx(), for the free-the-default no-op check */
 
@@ -369,6 +376,128 @@ int main(int argc, char **argv)
       swe_ctx_free(O);
     }
     (void) i;
+  }
+
+  /* 6. REVIEW ------------------------------------------------------ */
+  /* The 2026-09-16 review of ts.11 (notes/REVIEW.md). Each is a relation
+   * the library must keep on its own -- no upstream binary needed -- and
+   * each failed on ts.11. */
+  {
+    double jd = 2415020.5, jdt, x[6], y[6];
+    double xn[6], xd[6], xp[6], xa[6], yn[6], yd[6], yp[6], ya[6];
+    char serr[AS_MAXCH] = "", jplpath[AS_MAXCH];
+    swe_ctx *C;
+
+    /* F1: JPL outranks Swiss, so JPLEPH|SWIEPH is the JPL file's tidal
+     * term. ts.11 substituted the moon file's before resolving it. */
+    C = swe_ctx_new();
+    snprintf(jplpath, sizeof(jplpath), "%s/de200.eph", g_ephe);
+    swe_set_jpl_file_r(C, "de200.eph");
+    if (swe_calc_r(C, jd, SE_JUPITER, SEFLG_JPLEPH, x, serr) < 0 ||
+        !(swe_calc_r(C, jd, SE_JUPITER, SEFLG_JPLEPH, x, serr) & SEFLG_JPLEPH)) {
+      printf("  (review F1/F4 skipped: no de200.eph under %s)\n", g_ephe);
+    } else {
+      double dJ = swe_deltat_ex_r(C, jd, SEFLG_JPLEPH, serr);
+      double dJS = swe_deltat_ex_r(C, jd, SEFLG_JPLEPH | SEFLG_SWIEPH, serr);
+      if (dJ != dJS)
+        fail("review F1", "JPLEPH|SWIEPH delta-t is not the JPL file's");
+      /* F4: a path change forgets the JPL file's DE number, as upstream
+       * does: the same answer as a fresh context on that path. */
+      {
+        swe_ctx *G = swe_ctx_new();
+        swe_set_ephe_path_r(C, "/nonexistent-review-f4");
+        swe_set_ephe_path_r(G, "/nonexistent-review-f4");
+        if (swe_deltat_ex_r(C, jd, SEFLG_JPLEPH, serr) !=
+            swe_deltat_ex_r(G, jd, SEFLG_JPLEPH, serr))
+          fail("review F4", "a JPL delta-t kept the old file's term across a path change");
+        swe_ctx_free(G);
+      }
+    }
+    swe_ctx_free(C);
+
+    /* F5: MOSEPH|SWIEPH resolves as Swiss, the library's precedence. */
+    C = swe_ctx_new();
+    if (swe_deltat_ex_r(C, jd, SEFLG_MOSEPH | SEFLG_SWIEPH, serr) !=
+        swe_deltat_ex_r(C, jd, SEFLG_SWIEPH, serr))
+      fail("review F5", "MOSEPH|SWIEPH delta-t took Moshier's term");
+    swe_ctx_free(C);
+
+    /* F6: the Sun's topocentric mean apsides: not NaN on a fresh context,
+     * and the same after unrelated work on it. */
+    jdt = 2451546.5;
+    C = swe_ctx_new();
+    swe_set_topo_r(C, 8.55, 47.37, 400);
+    swe_nod_aps_r(C, jdt, SE_SUN, SEFLG_SWIEPH | SEFLG_TOPOCTR,
+                  SE_NODBIT_MEAN, xn, xd, xp, xa, serr);
+    swe_ctx_free(C);
+    C = swe_ctx_new();
+    swe_set_topo_r(C, 8.55, 47.37, 400);
+    swe_calc_r(C, 2460000.5, SE_MARS, SEFLG_SWIEPH, x, serr);
+    swe_nod_aps_r(C, jdt, SE_SUN, SEFLG_SWIEPH | SEFLG_TOPOCTR,
+                  SE_NODBIT_MEAN, yn, yd, yp, ya, serr);
+    if (xp[0] != xp[0])
+      fail("review F6", "the Sun's topocentric perihelion is NaN on a fresh context");
+    else if (!same(xp, yp, 3))
+      fail("review F6", "the Sun's topocentric perihelion moved after a Mars calculation");
+    swe_ctx_free(C);
+
+    /* F7: a centered topocentric position does not keep an earlier
+     * call's observer. */
+    C = swe_ctx_new();
+    swe_set_topo_r(C, 8.55, 47.37, 400);
+    swe_calc_pctr_r(C, jdt, SE_MOON, SE_MARS, SEFLG_SWIEPH | SEFLG_TOPOCTR, x, serr);
+    swe_ctx_free(C);
+    C = swe_ctx_new();
+    swe_set_topo_r(C, 8.55, 47.37, 400);
+    swe_calc_r(C, 2460000.5, SE_VENUS, SEFLG_SWIEPH | SEFLG_TOPOCTR, y, serr);
+    swe_calc_pctr_r(C, jdt, SE_MOON, SE_MARS, SEFLG_SWIEPH | SEFLG_TOPOCTR, y, serr);
+    if (!same(x, y, 6))
+      fail("review F7", "a centered topocentric Moon kept an earlier call's observer");
+    swe_ctx_free(C);
+
+#ifndef _WIN32
+    /* F11: just past a file's nominal end, a fresh context answers what a
+     * context that had the file open answers. A directory holding only
+     * the 1800-2400 planet and moon files makes the edge. */
+    {
+      char dir[] = "/tmp/ctxtest-f11-XXXXXX", src[AS_MAXCH], dst[AS_MAXCH];
+      const char *files[] = {"sepl_18.se1", "semo_18.se1"};
+      int k, ok = mkdtemp(dir) != NULL;
+      for (k = 0; ok && k < 2; k++) {
+        snprintf(src, sizeof(src), "%s/%s", g_ephe, files[k]);
+        if (src[0] != '/') {
+          char cwd[AS_MAXCH];
+          if (getcwd(cwd, sizeof(cwd)) == NULL) { ok = 0; break; }
+          snprintf(src, sizeof(src), "%s/%s/%s", cwd, g_ephe, files[k]);
+        }
+        snprintf(dst, sizeof(dst), "%s/%s", dir, files[k]);
+        ok = symlink(src, dst) == 0;
+      }
+      if (ok) {
+        double past = 2597660.5;   /* 2400-01-19, after sepl_18's nominal end */
+        int32 rf, rw;
+        swe_set_ephe_path(dir);
+        C = swe_ctx_new();
+        rf = swe_calc_r(C, past, SE_SUN, SEFLG_SWIEPH, x, serr);
+        swe_ctx_free(C);
+        C = swe_ctx_new();
+        swe_calc_r(C, past - 60.0, SE_SUN, SEFLG_SWIEPH, y, serr);
+        rw = swe_calc_r(C, past, SE_SUN, SEFLG_SWIEPH, y, serr);
+        if ((rf < 0) != (rw < 0) || (rf >= 0 && !same(x, y, 3)))
+          fail("review F11", "past a file's end a fresh context and a warm one answer differently");
+        swe_ctx_free(C);
+        swe_set_ephe_path((char *) g_ephe);
+      } else {
+        printf("  (review F11 skipped: could not stage the edge directory)\n");
+      }
+      for (k = 0; k < 2; k++) {
+        snprintf(dst, sizeof(dst), "%s/%s", dir, files[k]);
+        unlink(dst);
+      }
+      rmdir(dir);
+    }
+#endif
+    (void) jplpath;
   }
 
   /* swe_ctx_free() must tolerate NULL and must refuse the default context

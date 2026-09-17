@@ -2526,11 +2526,16 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   /* otherwise we use tid_acc consistent with epheflag */
   } else {
     denum = ctx->jpldenum;
-    if (epheflag & SEFLG_SWIEPH) {
-      denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
-      if (denum == 0)
-        denum = ctx->sweph_denum_moon;
-    }
+    /* Upstream's line, unchanged. When the moon file is closed this
+     * leaves denum 0, and swi_get_tid_acc() resolves the term -- JPL
+     * before Swiss, the published DE numbers when the files are closed.
+     * ts.11 also substituted the published moon DE number HERE, which
+     * made denum nonzero before the resolver ran: a JPLEPH|SWIEPH request
+     * then took the moon file's term (DE441) instead of the JPL file's
+     * (DE200), 0.56 s of delta-t (notes/REVIEW.md, the 2026-09-16 review,
+     * F1). The resolver's fallback alone keeps delta-t independent of
+     * which files are open. */
+    if (epheflag & SEFLG_SWIEPH) denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
     if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH)) {
       if (serr != NULL) 
 	strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_deltat_ex()");
@@ -3272,7 +3277,14 @@ int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int
    * denum nonzero, skipped this branch, and put Moshier on that file's tidal
    * term. A Moshier Sun at -3000 moved 56 arcsec because a filename had been
    * mentioned. tests/golden.c cov:order_moseph_* holds it. */
-  if (iflag & SEFLG_MOSEPH) {
+  /* Only when Moshier is the ephemeris asked for. With SWIEPH or JPLEPH
+   * set as well, the library's precedence is JPL, then Swiss, then
+   * Moshier -- swe_calc() resolves a mixed flag that way -- and this
+   * early return took DE404 for MOSEPH|SWIEPH, 0.098 s of delta-t away
+   * from upstream's DE441 (2026-09-16 review, F5). An ephemeris server
+   * forces SWIEPH onto every request and converts UT with exactly that
+   * pair. */
+  if ((iflag & SEFLG_MOSEPH) && !(iflag & (SEFLG_SWIEPH | SEFLG_JPLEPH))) {
     *tid_acc = SE_TIDAL_DE404;
     *denumret = 404;
     return iflag;
@@ -3292,7 +3304,9 @@ int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int
     if (iflag & SEFLG_SWIEPH) {
       if (ctx->fidat[SEI_FILE_MOON].fptr != NULL) {
 	denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
-      } else if (ctx->sweph_denum_moon != 0) {
+      } else if (denum == 0 && ctx->sweph_denum_moon != 0) {
+	/* denum == 0: a JPL DE number found just above outranks the
+	 * published moon number (F1, 2026-09-16 review). */
 	/* Not open yet -- but swe_set_ephe_path() read the moon file's
 	 * header and published its DE number, and every context that
 	 * inherited this configuration must answer with that term on its

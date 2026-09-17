@@ -1385,6 +1385,13 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
  * freeing one context must not reconfigure every other one. */
 static void ctx_release(swe_ctx *ctx)
 {
+  /* The published DE numbers go with the files: a closed library knows
+   * nothing about either until a setter reads a header again, which is
+   * what upstream's swe_close() leaves. Kept, a Mercury after swe_close()
+   * took the moon file's term where upstream takes the default, and G8
+   * (check-setest) failed four setest cases (2026-09-16 review, F2). */
+  ctx->sweph_denum_moon = 0;
+  ctx->jpldenum_cfg = 0;
   swi_close_ephe_files(ctx, FORGET_DENUM);
   free_planets(ctx);
   memset((void *) &ctx->oec, 0, sizeof(struct epsilon));
@@ -1533,6 +1540,12 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
   swi_close_keep_topo_etc(ctx, FORGET_DENUM);
   swi_init_swed_if_start(ctx);
   ctx->ephe_path_is_set = TRUE;
+  /* The JPL file is found through the path, so its published DE number
+   * does not survive a path change either (2026-09-16 review, F4): kept,
+   * a JPL delta-t after pointing the path at a directory without the
+   * file still used the old file's term, where upstream uses the
+   * default. swe_set_jpl_file() publishes it again. */
+  ctx->jpldenum_cfg = 0;
   /* environment variable SE_EPHE_PATH has priority. The length tests are
    * upstream's: a path with no room left for a file name is dropped for the
    * default rather than silently truncated. They do not bound the file name
@@ -1863,6 +1876,11 @@ void CALL_CONV swe_set_jpl_file_r(swe_ctx *ctx, const char *fname)
   strcpy(ctx->jplfnam, sp);
   /* open ephemeris */
   retc = open_jpl_file(ctx, ss, ctx->jplfnam, ctx->ephepath, NULL);
+  /* The setter is what publishes the JPL DE number -- configuration, read
+   * once here. open_jpl_file() used to publish it on EVERY open, lazy
+   * opens on the calculation paths included, so a context's config
+   * changed because it had computed something (2026-09-16 review, F4). */
+  ctx->jpldenum_cfg = (retc == OK) ? ctx->jpldenum : 0;
   if (retc == OK) {
     if (ctx->jpldenum >= 403) {
       /*if (INCLUDE_CODE_FOR_DPSI_DEPS_IAU1980) */
@@ -2565,6 +2583,9 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
   }
   /* if sweph file not open, find and open it */
   if (fdp->fptr == NULL) {
+#ifndef SWE_UPSTREAM_COMPAT
+    int ineighbour = 0;
+#endif
     swi_gen_filename(tjd, ipli, fname); 
     strcpy(subdirnam, fname);
     sp = strrchr(subdirnam, (int) *DIR_GLUE);
@@ -2608,6 +2629,28 @@ again:
 	  goto again;
 	}
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      /* The file named for this instant's 600-year bucket is not here --
+       * but the neighbouring bucket's file may be, and its data runs a
+       * little past its nominal range. An OPEN file is kept for any
+       * instant inside its data (the range check above), so a context
+       * that had just computed on the neighbour answered this instant and
+       * a fresh one did not: the same question, two answers, by call
+       * order (2026-09-16 review, F11; measured at JD 2597730, a Sun that
+       * answered inside a window starting in 2399 and failed alone).
+       * Asking the neighbour here makes the fresh answer the warm one;
+       * the range check below still refuses an instant it does not
+       * cover. Planets, the Moon and the main asteroid files only: a
+       * numbered asteroid's or a planetary moon's file is one file. */
+      if (ipli < SE_PLMOON_OFFSET && ipl != SEI_ANYBODY) {
+        while (ineighbour < 2) {
+          swi_gen_filename(tjd + (ineighbour++ == 0 ? -3652.5 : 3652.5),
+                           ipli, s);
+          if (strcmp(s, fname) != 0)
+            goto again;
+        }
+      }
+#endif
       return(NOT_AVAILABLE);
     }
     /* during the search error messages may have been built, delete them */
@@ -7830,7 +7873,13 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
    */
   delt = swe_deltat_ex_r(ctx, tjd, iflag, serr);
   tjd_ut = tjd - delt;
-  if (ctx->oec.teps == tjd && ctx->nut.tnut == tjd) {
+  /* Keyed like every other reader of these caches (swi_check_ecliptic,
+   * swi_check_nutation): the instant AND the flag key. On the instant
+   * alone, a JPLHOR call could reuse an obliquity computed without the
+   * Horizons offsets, or the reverse (2026-09-16 review, F10). */
+  if (ctx->oec.teps == tjd && ctx->nut.tnut == tjd
+      && ctx->oec.epsflag == SWI_EPS_KEY(iflag)
+      && SWI_EPS_KEY(ctx->sp.nut.nutflag) == SWI_EPS_KEY(iflag)) {
     eps = ctx->oec.eps;
     nutlo[1] = ctx->nut.nutlo[1];
     nutlo[0] = ctx->nut.nutlo[0];
@@ -8018,13 +8067,8 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
     ctx->jpl_file_is_open = TRUE;
     swi_set_tid_acc(ctx, 0, 0, ctx->jpldenum, serr);
   }
-  /* Publish whatever this open established, for the same reason as the
-   * moon file's DE number in swe_set_ephe_path_r(): a JPL delta-t must
-   * not depend on whether the file is still open when it is asked for. A
-   * failed open names a file this configuration cannot answer from, so
-   * the published term returns to unknown rather than keeping the
-   * previous file's. */
-  ctx->jpldenum_cfg = (retc == OK) ? ctx->jpldenum : 0;
+  /* The DE number is published by swe_set_jpl_file_r(), not here: this
+   * runs for lazy opens on the calculation paths too (F4). */
   return retc;
 }
 
@@ -8635,6 +8679,19 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   }
   iflag = plaus_iflag(ctx, iflag, ipl, tjd, serr);
   epheflag = iflag & SEFLG_EPHMASK;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* The light deflection below adds the SAVED observer when TOPOCTR is
+   * set, and nothing on this path computes one: a fresh context used a
+   * zero observer, a used one whatever an earlier topocentric call left
+   * -- up to 5e-7" apart, but not the same bits (2026-09-16 review, F7).
+   * Computed here, at this instant, and saved as the other entry points
+   * save it. */
+  if (iflag & SEFLG_TOPOCTR) {
+    double xobs_pctr[6];
+    if (swi_get_observer(ctx, tjd, iflag, TRUE, xobs_pctr, serr) != OK)
+      return ERR;
+  }
+#endif
   // this fills in obliquity and nutation values in swed
   swe_calc_r(ctx, tjd + swe_deltat_ex_r(ctx, tjd, epheflag, serr), SE_ECL_NUT, iflag, xx, serr);
   iflag &= ~(SEFLG_HELCTR|SEFLG_BARYCTR);

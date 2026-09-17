@@ -138,7 +138,13 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
   path_changed  = (groups & SWI_CFG_PATH)
                   && (strcmp(ctx->ephepath, c->ephepath) != 0
                    || strcmp(ctx->jplfnam, c->jplfnam) != 0
-                   || ctx->ephe_path_is_set != c->ephe_path_is_set);
+                   || ctx->ephe_path_is_set != c->ephe_path_is_set
+                   /* The DE numbers too: the same path string can hold a
+                    * different moon file than when a thread last synced,
+                    * and a worker kept the old tidal term (2026-09-16
+                    * review, F3). */
+                   || ctx->sweph_denum_moon != c->sweph_denum_moon
+                   || ctx->jpldenum_cfg != c->jpldenum_cfg);
   geo_changed   = (groups & SWI_CFG_TOPO)
                   && (ctx->topd.geolon != c->geolon
                    || ctx->topd.geolat != c->geolat
