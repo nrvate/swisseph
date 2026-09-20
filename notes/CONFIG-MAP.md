@@ -225,10 +225,27 @@ plus the `interpol` reset that `swe_set_interpolate_nut` already performs, plus
 | `ephepath`, `jplfnam` | `fidat[]` (close files), `jpl_file_is_open`, `jpldenum`, `last_epheflag`, then `swi_force_app_pos_etc()` |
 | `sidd`, `astro_models` | `swi_force_app_pos_etc()` — matches `sweph.c:2930` |
 | `topd.geo*` | `topd.teval = 0` (forces observer recompute), `swi_force_app_pos_etc()` — matches `sweph.c:7266-7269` |
-| `tid_acc` (manual) | Δt-dependent results: `swi_force_app_pos_etc()` |
+| `tid_acc` (manual) | Δt-dependent results: **`topd.teval = 0` and** `swi_force_app_pos_etc()` — `swi_invalidate_deltat()` |
 | `delta_t_userdef*` | same |
 | `do_interpolate_nut` | `interpol.*` = 0 — already done by the setter |
 | `const_lapse_rate` | nothing — read directly at use sites, no cache |
+
+**The Δt rows said `swi_force_app_pos_etc()` alone until 2026-09-20, and that
+was wrong** — corrected above, and the correction is the finding. That
+primitive clears `pldat`/`nddat`/`savedat` and **not** `topd.teval`, so a Δt
+change left the observer standing: `swi_get_observer()` is reached only on
+`topd.teval != pedp->teval || topd.teval == 0`, and Δt is what turns the
+instant into the UT the observer is built from. The visible effect was that
+the *first* Δt used on a context won for every later call at the same
+instant — 6.98″ on a topocentric Moon between Δt 0 and 100, and an answer
+that depended on what the caller had asked before it. G26 (`tests/dtobs.c`),
+fixed by `swi_invalidate_deltat()`.
+
+Worth noting **how the table was wrong**: not by omitting the dependency —
+it had the row, and named Δt-dependent results — but by prescribing an
+invalidation one cache short. A dependency table can be complete in its
+edges and wrong in its actions, and only the second kind shows up as a wrong
+number.
 
 Note `swe_set_topo` already sets `topd.teval = 0` at `sweph.c:7266` and has an
 early-out at `:7256-7258` when the position is unchanged. Both behaviours must

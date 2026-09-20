@@ -259,6 +259,7 @@ its result depended on, found by making unreached code run. If another
 
 | Item | Where |
 |---|---|
+| Δt changes did not invalidate the cached topocentric observer: the first Δt used on a context won for every later call at the same instant (6.98″ on a topocentric Moon, and order-dependent) | `swi_invalidate_deltat()`, both setters and the cross-thread adopt path; G26 `tests/dtobs.c`; upstream entry 18; CONFIG-MAP's Δt rows prescribed `swi_force_app_pos_etc()` alone and were one cache short |
 | J1: JPL reader trusted the file's `ksize`/`ncf` against fixed arrays | `04bb51a`; guards + `static_assert`; `jplguard` gate |
 | S1: unreachable `get_builtin_star()` branch | dead code, not a wrong result; deleted on `threadsafe` |
 | No `-O2`, no `-std`, `-Wall` only, no CI | `-std=c17 -Wall -Wextra -Werror -O2`, 13-job CI, on `threadsafe` |

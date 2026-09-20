@@ -53,6 +53,7 @@ worst were in code that had never executed even once.
 | 15 | `swe_calc(SE_ECL_NUT)` under another ephemeris wipes the open files' constants | Correctness / Memory | `sweph.c` |
 | 16 | `swe_pheno(SE_ECL_NUT)` indexes two tables with -1 | Memory | `swecl.c` |
 | 17 | `ipl * 100` overflows int32 for a large negative body number | Robustness | `sweph.c` |
+| 18 | Changing delta t does not invalidate the cached topocentric observer | Correctness | `swephlib.c`, `sweph.c` |
 
 ---
 
@@ -1159,6 +1160,77 @@ which keeps upstream's arithmetic, flag clearing included, for every body
 number that exists. G25 fuzzes every public calculation entry point over
 edge ids and flag sets under `-fsanitize=undefined` and holds this and entry
 15.
+
+---
+
+## 18. Changing delta t does not invalidate the cached topocentric observer
+
+**Severity: Correctness (the first delta t wins for every later call at the same instant)**
+**Where:** `swephlib.c`, `swe_set_delta_t_userdef()` and `swe_set_tid_acc()`; `sweph.c`, `swi_get_observer()`
+
+The topocentric observer's position vector is cached in `swed.topd` and
+recomputed only when the *instant* moves:
+
+```c
+    if (swed.topd.teval != pedp->teval
+      || swed.topd.teval == 0) {
+```
+
+(`sweph.c:2526`, and again at `:3397` and `:3925`.) That observer is a
+function of sidereal time, which `swi_get_observer()` derives from
+UT = TT − Δt:
+
+```c
+  delt = swe_deltat_ex(tjd, iflag, serr);
+  tjd_ut = tjd - delt;
+```
+
+So Δt is an input to the cached value, and the key does not carry it. The
+only thing that ever sets `topd.teval = 0` is `swe_set_topo()` — and that
+early-returns when the site is unchanged, so re-asserting the same site does
+not clear it either. A **site** change therefore invalidates and a **Δt**
+change does not, which is why a Greenwich answer and a Sydney answer at one
+instant are both correct and this is not otherwise visible.
+
+`swe_set_delta_t_userdef()` invalidates nothing at all:
+
+```c
+void CALL_CONV swe_set_delta_t_userdef(double dt)
+{
+  if (dt == SE_DELTAT_AUTOMATIC) {
+    swed.delta_t_userdef_is_set = FALSE;
+  } else {
+    swed.delta_t_userdef_is_set = TRUE;
+    swed.delta_t_userdef = dt;
+  }
+}
+```
+
+`swe_set_tid_acc()` is the same story by a second route: the tidal term
+feeds `swe_deltat_ex()`.
+
+**To reach it:** set a topocentric site, ask for a body, set a different
+`swe_set_delta_t_userdef()`, ask again **at the same instant**. The second
+answer is the first one. Measured on the Moon at J2000 from Zurich
+(8.55°E, 47.37°N, 400 m): Δt 0 then 100 answers Δt 0 twice; Δt 100 then 0
+answers Δt 100 twice; the two correct values are **6.98″** apart. The wrong
+answer is not merely wrong — it depends on what the caller asked earlier,
+which is entry 6's shape.
+
+**The fix** is one cache line more than entry 10's: `swi_force_app_pos_etc()`
+clears `pldat`/`nddat`/`savedat` and **not** `topd.teval`, so the setters
+need
+
+```c
+  swed.topd.teval = 0;          /* force swi_get_observer() to recompute */
+  swi_force_app_pos_etc();
+```
+
+on a real change of value — the "on a real change" matters, since a caller
+that sets a Δt per row would otherwise discard every planet cache on each
+one. In the fork this is `swi_invalidate_deltat()`, called from both
+setters and from the cross-thread adoption path, and held by G26
+(`tests/dtobs.c`), which needs no ephemeris files.
 
 ---
 

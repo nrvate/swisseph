@@ -208,6 +208,14 @@ extern void swi_config_inherit(swe_ctx *ctx);
 /* Re-arm the master from the compile-time defaults. Used by swe_close(). */
 extern void swi_config_reset(swe_ctx *ctx);
 
+/* Invalidate what a change to DELTA T makes stale on this thread: the
+ * topocentric observer, whose cache is keyed on the instant and not on the
+ * delta t that turns that instant into UT. Both setters that move delta t
+ * -- swe_set_delta_t_userdef_r() and swe_set_tid_acc_r() -- have to call
+ * it, and only when the value really changed; see the comment on the
+ * definition, and G26. */
+extern void swi_invalidate_deltat(swe_ctx *ctx);
+
 /* Invalidate what a change to astro_models[] makes stale on this thread.
  * Every setter that writes those models has to call it; see the comment on
  * the definition for why swi_force_app_pos_etc() alone is not enough. */

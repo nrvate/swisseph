@@ -102,6 +102,43 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  *   const_lapse_rate  -> nothing; read directly at its use sites
  *====================================================================*/
 
+/* Everything a change to delta t makes stale on the thread that made it.
+ *
+ * topd holds the observer's geocentric position vector, and
+ * swi_get_observer() recomputes it only when
+ *
+ *     ctx->topd.teval != pedp->teval || ctx->topd.teval == 0
+ *
+ * -- the INSTANT. That observer is a function of sidereal time, which comes
+ * from UT = TT minus delta t, so delta t is an input to the cache whose key
+ * does not carry it. swe_set_topo_r() zeroes teval and was the only thing
+ * that ever did; it also early-returns when the site is unchanged, so a
+ * SITE change invalidated and a DELTA T change did not. That is why a
+ * Greenwich answer and a Sydney answer at one instant were both right and
+ * this went unseen.
+ *
+ * The visible effect was that the FIRST delta t used on a context won for
+ * every later call at the same instant -- 6.98 arcsec on a topocentric Moon
+ * between delta t 0 and 100, and worse than a wrong number, an answer that
+ * depended on what the caller had asked earlier. tests/dtobs.c (G26).
+ *
+ * Both setters that move delta t come here: swe_set_delta_t_userdef_r() and
+ * swe_set_tid_acc_r(), the second because the tidal term feeds
+ * swe_deltat_ex_r(). Each calls it only when the value actually CHANGES --
+ * a caller that sets the same delta t once per row would otherwise throw
+ * away every planet cache on each one.
+ *
+ * Note which way this defect points. tests/orderprobe.c hunts a prior
+ * operation that CHANGES a later measurement, and a clean run already lists
+ * swe_set_delta_t_userdef among three expected rows. This bug is the
+ * opposite sign -- a prior operation that wrongly PINS a later measurement
+ * -- and an instrument looking for a difference cannot see a missing one. */
+void swi_invalidate_deltat(swe_ctx *ctx)
+{
+  ctx->topd.teval = 0;          /* force swi_get_observer() to recompute */
+  swi_force_app_pos_etc(ctx);
+}
+
 /* Everything a change to astro_models[] makes stale on the thread that made
  * it. Three places change those models -- swe_set_astro_models(),
  * swe_set_sid_mode() (SE_SIDBIT_PREC_ORIG, and the sidereal nutation
@@ -215,7 +252,13 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     swi_free_fict_lines(ctx);
     ctx->last_epheflag = 0;
   }
-  if (geo_changed)
+  /* dt_changed is in here for the reason G26 records: the observer is built
+   * from UT = TT minus delta t, and topd.teval keys only the instant. The
+   * adopting thread needs the same invalidation the setting thread gets
+   * from swi_invalidate_deltat() -- without it a worker that picked up
+   * another thread's delta t kept the observer it had already built, which
+   * is the same defect arriving by the other door. */
+  if (geo_changed || dt_changed)
     ctx->topd.teval = 0;        /* force swi_get_observer(ctx) to recompute */
   if (nut_changed) {
     ctx->interpol.tjd_nut0 = 0;

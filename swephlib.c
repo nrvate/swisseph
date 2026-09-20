@@ -3208,16 +3208,25 @@ double CALL_CONV swe_get_tid_acc(void)
  *   of the Moon will be set consistent with that ephemeris.
  * - SE_TIDAL_AUTOMATIC, 
  */
+/* The tidal term feeds swe_deltat_ex_r(), so changing it moves delta t and
+ * makes the topocentric observer stale -- swi_invalidate_deltat(), G26.
+ * Only on a real change: the early-out mirrors swe_set_topo_r()'s, so a
+ * caller re-asserting the value it already holds pays nothing. */
 void CALL_CONV swe_set_tid_acc_r(swe_ctx *ctx, double t_acc)
 {
+  AS_BOOL changed;
   if (t_acc == SE_TIDAL_AUTOMATIC) {
+    changed = ctx->is_tid_acc_manual || ctx->tid_acc != SE_TIDAL_DEFAULT;
     ctx->tid_acc = SE_TIDAL_DEFAULT;
     ctx->is_tid_acc_manual = FALSE;
+    if (changed) swi_invalidate_deltat(ctx);
     swi_config_publish(ctx, SWI_CFG_TIDACC);
     return;
   }
+  changed = !ctx->is_tid_acc_manual || ctx->tid_acc != t_acc;
   ctx->tid_acc = t_acc;
   ctx->is_tid_acc_manual = TRUE;
+  if (changed) swi_invalidate_deltat(ctx);
   swi_config_publish(ctx, SWI_CFG_TIDACC);
 }
 
@@ -3228,14 +3237,25 @@ void CALL_CONV swe_set_tid_acc(double t_acc)
   swe_set_tid_acc_r(swi_default_ctx(), t_acc);
 }
 
+/* Changing delta t makes the topocentric observer stale: its cache is keyed
+ * on the instant, and delta t is what turns that instant into the UT the
+ * observer is built from. swi_invalidate_deltat(), G26.
+ *
+ * Only on a real change. A caller that sets a delta t per row and resets it
+ * afterwards -- which is what a server answering one request per row does
+ * -- would otherwise discard every planet cache twice per row. */
 void CALL_CONV swe_set_delta_t_userdef_r(swe_ctx *ctx, double dt)
 {
+  AS_BOOL changed;
   if (dt == SE_DELTAT_AUTOMATIC) {
-    ctx->delta_t_userdef_is_set = FALSE; 
+    changed = ctx->delta_t_userdef_is_set;
+    ctx->delta_t_userdef_is_set = FALSE;
   } else {
+    changed = !ctx->delta_t_userdef_is_set || ctx->delta_t_userdef != dt;
     ctx->delta_t_userdef_is_set = TRUE;
     ctx->delta_t_userdef = dt;
   }
+  if (changed) swi_invalidate_deltat(ctx);
   swi_config_publish(ctx, SWI_CFG_DELTAT);
 }
 
