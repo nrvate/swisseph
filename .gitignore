@@ -82,3 +82,6 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Env RC
+.envrc
