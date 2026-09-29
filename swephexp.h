@@ -546,7 +546,14 @@ extern "C" {
 #define SEMOD_NUT_IAU_2000A         3 /* very time consuming ! */
 #define SEMOD_NUT_IAU_2000B         4 /* fast, but precision of milli-arcsec */
 #define SEMOD_NUT_WOOLARD           5
+#ifdef SWE_UPSTREAM_COMPAT
 #define SEMOD_NUT_DEFAULT           SEMOD_NUT_IAU_2000B  /* fast, but precision of milli-arcsec */
+#else
+/* This fork: the full series, made fast by a half-day grid (swephlib.c,
+ * calc_nutation; G29). Setting SEMOD_NUT_IAU_2000A explicitly computes the
+ * series directly at every instant. */
+#define SEMOD_NUT_DEFAULT           SEMOD_NUT_IAU_2000A
+#endif
 
 /* methods for sidereal time */
 #define SEMOD_NSIDT		4

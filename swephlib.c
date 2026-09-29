@@ -968,7 +968,30 @@ double swi_epsiln(swe_ctx *ctx, double J, int32 iflag)
     eps *= DEGTORAD;
 //fprintf(stderr, "epso=%.17f\n", eps);
   } else { /* SEMOD_PREC_VONDRAK_2011 */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* The mean obliquity of date IS the angle between the model's mean
+     * ecliptic pole (P_A, Q_A: pre_pecl) and mean equator pole (X_A, Y_A:
+     * pre_pequ). The paper's separate epsilon_A series (its Table 3,
+     * swi_ldp_peps) is a fit to that angle: within 0.02" over 1000-2650,
+     * but 1" at -1000, 17.6" at -5000 and 46" at -13000, and using it puts
+     * the ecliptic pole of date off latitude 90 in the model's own frame.
+     * The ephemeris protocol's 3.5a defines it as the pole angle (agreed by
+     * the Astrolog and Ephemeris Prometheia projects, 2026-09-29). atan2 of
+     * the cross and dot products, which stays exact as the angle shrinks
+     * where acos does not. G28. */
+    {
+      double pecl[3], peqr[3], cx, cy, cz;
+      pre_pecl(J, pecl);
+      pre_pequ(J, peqr);
+      cx = pecl[1] * peqr[2] - pecl[2] * peqr[1];
+      cy = pecl[2] * peqr[0] - pecl[0] * peqr[2];
+      cz = pecl[0] * peqr[1] - pecl[1] * peqr[0];
+      eps = atan2(sqrt(cx * cx + cy * cy + cz * cz),
+                  pecl[0] * peqr[0] + pecl[1] * peqr[1] + pecl[2] * peqr[2]);
+    }
+#else
     swi_ldp_peps(ctx, J, NULL, &eps);
+#endif
     if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model != SEMOD_JPLHORA_2) {
       tofs = (J - DCOR_EPS_JPL_TJD0) / 365.25;
       dofs = OFFSET_EPS_JPLHORIZONS;
@@ -2035,6 +2058,43 @@ done:
  * describe. See struct nut_memo. */
 #define SWI_NUT_NO_MEMO(iflag)	((iflag) & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* The DEFAULT nutation: full IAU 2000A, interpolated. The series is
+ * evaluated only at quarter-day nodes, cached, and a quintic Lagrange
+ * polynomial through the six nodes around J gives the value. Measured
+ * against the direct series (G29): within 1 microarcsecond. The direct
+ * series costs about 14 times IAU 2000B per instant; the grid pays for one
+ * node per quarter day of span, whatever the number of instants or bodies.
+ * Half-day nodes measured 1.15 microarcseconds worst; a quarter day is the
+ * sixth power of two better, for twice the nodes. */
+static void calc_nutation_grid(swe_ctx *ctx, double J, double *nutlo)
+{
+  double x = J * 4.0, k0 = floor(x), u = x - k0, w[6];
+  int j, m;
+  nutlo[0] = nutlo[1] = 0.0;
+  for (j = 0; j < 6; j++) {
+    /* Lagrange weight of node offset j-2 at u, nodes at -2..3 */
+    w[j] = 1.0;
+    for (m = 0; m < 6; m++)
+      if (m != j)
+	w[j] *= (u - (m - 2)) / (double) (j - m);
+  }
+  for (j = 0; j < 6; j++) {
+    double k = k0 + (j - 2);
+    long long ik = (long long) k;
+    int slot = (int) (((ik % SWI_NUT_GRID_SLOTS) + SWI_NUT_GRID_SLOTS) % SWI_NUT_GRID_SLOTS);
+    struct nut_grid_slot *ps = &ctx->nut_grid[slot];
+    if (!ps->valid || ps->k != k) {
+      calc_nutation_iau2000ab(ctx, k * 0.25, ps->v);
+      ps->k = k;
+      ps->valid = TRUE;
+    }
+    nutlo[0] += w[j] * ps->v[0];
+    nutlo[1] += w[j] * ps->v[1];
+  }
+}
+#endif
+
 static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
 {
   int n;
@@ -2042,7 +2102,11 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
   int nut_model = ctx->astro_models[SE_MODEL_NUT];
   int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   AS_BOOL is_jplhor = FALSE;
+  AS_BOOL use_grid = (nut_model == 0);	/* the default, not a chosen model */
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
+#ifdef SWE_UPSTREAM_COMPAT
+  (void) use_grid;
+#endif
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
   /* Keyed on the defaulted model, not the raw one. */
   if (!SWI_NUT_NO_MEMO(iflag) && ctx->nut_np.valid
@@ -2075,6 +2139,13 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
   } else if (nut_model == SEMOD_NUT_IAU_1980 || nut_model == SEMOD_NUT_IAU_CORR_1987) {
     calc_nutation_iau1980(ctx, J, nutlo);
   } else if (nut_model == SEMOD_NUT_IAU_2000A || nut_model == SEMOD_NUT_IAU_2000B) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* The grid indexes nodes as integers, so a non-finite or absurd J
+     * (G25's hostile walk) takes the direct series, which copes. */
+    if (use_grid && nut_model == SEMOD_NUT_IAU_2000A && fabs(J) < 1e12)
+      calc_nutation_grid(ctx, J, nutlo);
+    else
+#endif
     calc_nutation_iau2000ab(ctx, J, nutlo);
     if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_2) {
       nutlo[0] += -41.7750 / 3600.0 / 1000.0 * DEGTORAD;

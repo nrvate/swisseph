@@ -116,7 +116,7 @@ static void notag_space(char *s) {
 
 /* Dates spanning the ephemeris range, incl. pre/post file boundaries. */
 static const double DATES[] = {
-  1356173.5,   /* -3000 Jan 1  */
+  1356173.5,   /*  -999 Jan 1 (this said -3000; JD 1356173.5 is -999) */
   1721423.5,   /*     1 Jan 1  */
   2195883.5,   /*  1300 Jan 1  */
   2415020.5,   /*  1900 Jan 1  */

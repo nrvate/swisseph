@@ -65,7 +65,7 @@
 /* Fork version. Upstream is 2.10.03; the "-ts.N" suffix marks the
  * thread-safe fork, so swe_version() cannot report a number that
  * implies upstream behaviour this library no longer has. */
-#define SE_VERSION      "2.10.03-ts.16" 
+#define SE_VERSION      "2.10.03-ts.17" 
 
 #define J2000           2451545.0  	/* 2000 January 1.5 */
 #define B1950           2433282.42345905  	/* 1950 January 0.923 */
@@ -977,6 +977,16 @@ struct nut_memo {
   AS_BOOL valid;
 };
 
+/* The default nutation's grid (swephlib.c, calc_nutation): full IAU 2000A
+ * evaluated at quarter-day nodes, cached direct-mapped by node index. The
+ * values depend on the series alone, so nothing invalidates them. */
+#define SWI_NUT_GRID_SLOTS 512
+struct nut_grid_slot {
+  double k;		/* node index: the node is at k / 4 days */
+  double v[2];		/* dpsi, deps there */
+  AS_BOOL valid;
+};
+
 /* calc_deltat()'s result (swephlib.c).
  *
  * What the heliacal profile leads with once the nutation memo lands: 30% of
@@ -1186,6 +1196,7 @@ struct swe_ctx {
   struct sidt_memo sidt_np;	/* see struct sidt_memo */
   struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
   struct nut_memo nut_np;	/* see struct nut_memo */
+  struct nut_grid_slot nut_grid[SWI_NUT_GRID_SLOTS];
   struct dt_memo dt_np;		/* see struct dt_memo */
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;
