@@ -1276,6 +1276,33 @@ rotates only what came from the ephemeris. G27 holds it: every body's
 astrometric direction equals B(t − τ) − E(t) built from this library's own
 geometric outputs, to 0.000000″.
 
+## 21. A sidereal node or apsis carries the nutation in longitude
+
+**Severity: Correctness (the whole of delta-psi, up to 17″, on every sidereal node and apsis from `swe_nod_aps()`)**
+**Where:** `swecl.c`, `swe_nod_aps_r()`
+
+`swe_calc()` runs its flags through `plaus_iflag()`, which says "if sidereal
+bit is set, set also no_nutation bit": a sidereal planet, `SE_MEAN_NODE` or
+`SE_OSCU_APOG` is the tropical mean ecliptic of date less the ayanamsa.
+`swe_nod_aps()` has no such line. Called with `SEFLG_SIDEREAL` it applies
+the nutation and then subtracts the ayanamsa, which is the mean one, so the
+longitude of a node or apsis is out by delta-psi against the planets beside
+it and against the same point from `swe_calc()`: **+12.82″** for the Moon's
+mean node on 1990-06-16, +17.43″ on 1900-01-01, for the mean and osculating
+methods and for all four points of every planet.
+
+Found by comparing Astrolog's sidereal chart through Ephemeris Prometheia's
+server (which puts the node on the mean ecliptic of date and subtracts the
+ayanamsa) with the local Swiss answer: every body agreed to 0.02″ except the
+nodes, 12.84″ apart. Neither engine's rate or ephemeris was involved.
+
+**Fix, as done here:** `if (iflag & SEFLG_SIDEREAL) iflag |= SEFLG_NONUT;`
+at the top of `swe_nod_aps_r()`, the same rule as `plaus_iflag()`. G30 holds
+it: 144 longitudes (Moon, Mars, Jupiter; mean and osculating; four points;
+three epochs; Fagan-Bradley and Lahiri) equal the NONUT tropical longitude
+less `swe_get_ayanamsa_ex()` to under 1e-9 degrees, and fail by delta-psi
+on the `SWE_UPSTREAM_COMPAT` build.
+
 ## How these were found
 
 Almost none of this came from reading code looking for defects. The method
@@ -1310,6 +1337,7 @@ If only some of this is worth taking:
 | | 1, 2, 3, 7, 8, 9 | memory errors, several caller-triggerable |
 | | 15, 16 | a failed or garbage answer from an ordinary call sequence |
 | Then | 5, 6, 10, 11, 14 | wrong answers that depend on call order |
+| | 21 | a sidereal node or apsis off by delta-psi |
 | Last | 12, 13, 17 | test harness, utilities, undefined behaviour on hostile input |
 
 Entries 5, 6 and 10 are one family — a cache whose key omits something its
