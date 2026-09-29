@@ -4178,6 +4178,42 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	xx[i+3] = pdp->x[i+3];
       }
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    if (iflag & SEFLG_SPEED) {
+      /* part of daily motion resulting from change of dt */
+      for (i = 0; i <= 2; i++) 
+	xxsp[i] = pdp->x[i] - xx[i] - xxsp[i];
+    }
+    /* The light-time equation solved on the ORBIT, for every flag set.
+     * The straight line above, x(t) - dt * v(t), is only a first guess:
+     * it ignores the orbit's curvature over dt, and it used to be the
+     * whole answer whenever SEFLG_SPEED was off, so the same question
+     * gave different positions depending on a flag that should only add
+     * columns -- 63.7" at 80,000 AU, 0.095" for the intramercurial Vulcan.
+     * Re-evaluating the elements at t - dt also takes an equinox of date
+     * at the emission instant, as the ephemeris protocol's 3.5a defines
+     * it. Converged to 1e-12 day, about 26 m of light travel. G27. */
+    for (j = 0; j < 10; j++) {
+      double dtNew;
+      t = pdp->teval - dt;
+      retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
+      if (swi_osc_el_plan(ctx, t, xx, ipl-SE_FICT_OFFSET, ipli, xearth, xsun, serr) != OK)
+	return ERR;
+      if (retc != OK)
+	return(retc);
+      for (i = 0; i <= 2; i++) {
+	dx[i] = xx[i];
+	if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
+	  dx[i] -= xobs[i];
+      }
+      dtNew = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
+      if (fabs(dtNew - dt) < 1e-12)
+	break;
+      dt = dtNew;
+    }
+    dtsave_for_defl = dt;
+    if (iflag & SEFLG_SPEED) {
+#else
     if (iflag & SEFLG_SPEED) {
       /* part of daily motion resulting from change of dt */
       for (i = 0; i <= 2; i++) 
@@ -4189,6 +4225,7 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	return ERR;
       if (retc != OK)
 	return(retc);
+#endif
       if (iflag & SEFLG_TOPOCTR) {
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
           return ERR;
@@ -4239,6 +4276,17 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
       for (i = 3; i <= 5; i++) 
 	xx[i] += xobs[i] - xobs2[i];
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* ICRS to J2000, as app_pos_etc_plan() does for a planet. The elements
+   * are dynamical (a mean ecliptic and equinox), so swi_osc_el_plan()
+   * carries the body into ICRS before adding the Sun or the Earth, which
+   * are ICRS; everything since is ICRS, and this returns it to the frame a
+   * planet is answered in. Without the pair, a geocentric fictitious body
+   * subtracted an unrotated ICRS Earth from a dynamical body: 15.5 km, a
+   * constant 0.023" frame-bias rotation on every one of them. G27. */
+  if (!(iflag & SEFLG_ICRS) && swi_get_denum(ctx, SEI_EARTH, pedp->iephe) >= 403)
+    swi_bias(ctx, xx, pdp->teval, iflag, FALSE);
+#endif
   /* save J2000 coordinates; required for sidereal positions */
   for (i = 0; i <= 5; i++)
     xxsv[i] = xx[i];

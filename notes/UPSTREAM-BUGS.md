@@ -1234,6 +1234,48 @@ setters and from the cross-thread adoption path, and held by G26
 
 ---
 
+## 19. A fictitious body's position depends on SEFLG_SPEED
+
+**Severity: Correctness (up to 64″; 0.095″ on an ordinary element set)**
+**Where:** `sweph.c`, `app_pos_etc_plan_osc()`
+
+Light time for a body from `seorbel.txt` is a straight line,
+`x(t) - dt * v(t)`, iterated on `dt` with the straight-line position. Only
+under `SEFLG_SPEED` does the function go on to re-evaluate the orbit at
+`t - dt`, so the same question answers two positions depending on a flag
+that is only meant to add columns. The straight line ignores the orbit's
+curvature over the light time (0.095″ for the intramercurial Vulcan, set 16,
+which goes round in 18.5 days), and it also leaves an equinox of date at the
+observation instant rather than the emission instant (63.7″ for set 26 at
+80,000 AU, 0.063″ for Proserpina).
+
+**Fix, as done here:** after the straight-line first guess, solve the
+light-time equation on the orbit itself, for every flag set: re-evaluate the
+elements at `t - dt`, recompute `dt` from that position, and repeat until it
+converges (1e-12 day). G27 `tests/fictlt.c`.
+
+## 20. A geocentric fictitious body mixes the dynamical and ICRS frames
+
+**Severity: Correctness (0.023″, constant, on every geocentric fictitious body)**
+**Where:** `swemplan.c`, `swi_osc_el_plan()`; `sweph.c`, `app_pos_etc_plan_osc()`
+
+The elements are dynamical (a mean ecliptic and equinox), and
+`swi_osc_el_plan()` precesses the body to the dynamical J2000 frame, then
+adds the Sun's or the Earth's barycentric position, which is ICRS.
+`app_pos_etc_plan_osc()` subtracts the ICRS Earth and never applies a frame
+bias, where `app_pos_etc_plan()` does for a planet (ICRS to J2000, for DE403
+and later). The Earth a fictitious body is seen from therefore differs from
+the one `swe_calc(SE_EARTH)` returns by the bias rotation: **15.5 km**, the
+same for every body and under Moshier or files alike, or 0.023″ on Vulcan.
+
+**Fix, as done here:** `swi_bias(..., backward)` on the body inside
+`swi_osc_el_plan()` before the centre is added, and the forward
+`swi_bias()` in `app_pos_etc_plan_osc()` where a planet takes it, both on
+`swi_get_denum(SEI_EARTH, ...) >= 403`, so the pair cancels on the body and
+rotates only what came from the ephemeris. G27 holds it: every body's
+astrometric direction equals B(t − τ) − E(t) built from this library's own
+geometric outputs, to 0.000000″.
+
 ## How these were found
 
 Almost none of this came from reading code looking for defects. The method

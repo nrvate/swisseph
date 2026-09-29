@@ -674,6 +674,15 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
     swi_precess(ctx, xp, tequ, 0, J_TO_J2000);
     swi_precess(ctx, xp+3, tequ, 0, J_TO_J2000);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* J2000 (dynamical) to ICRS, before the Sun or Earth -- which are ICRS --
+   * is added; app_pos_etc_plan_osc() takes the result back to J2000 as it
+   * does a planet. Same condition on both sides, so the pair always
+   * cancels for the body and rotates only what came from the ephemeris.
+   * G27. */
+  if (swi_get_denum(ctx, SEI_EARTH, pedp->iephe) >= 403)
+    swi_bias(ctx, xp, tjd, SEFLG_SPEED, TRUE);
+#endif
   /* to solar system barycentre */
   if (fict_ifl & FICT_GEO) {
     for (i = 0; i <= 5; i++) {
