@@ -1303,6 +1303,30 @@ three epochs; Fagan-Bradley and Lahiri) equal the NONUT tropical longitude
 less `swe_get_ayanamsa_ex()` to under 1e-9 degrees, and fail by delta-psi
 on the `SWE_UPSTREAM_COMPAT` build.
 
+## 22. The built-in Spica record's radial velocity is a stale catalogue value
+
+**Severity: Data (a 4.3 km/s error in the distance rate of the star named "Spica"; positions unaffected)**
+**Where:** `sweph.c`, `get_builtin_star()`
+
+`swe_fixstar2()` answers "Spica" from a record built into the source (it
+serves `SE_SIDM_TRUE_CITRA`) and never reads `sefstars.txt` for that name, so
+a corrected catalogue file cannot correct it. The record carries a radial
+velocity of +1 km/s; SIMBAD's is now -3.31 (2023ApJS..266...11B, quality A).
+A radial velocity moves no direction that matters and is the whole of the
+distance rate, so the star's position is untouched and its distance rate was
+2.5e-3 AU/day out. "Citra", the same star, is read from the file.
+
+Found by grading Astrolog's star rates against Ephemeris Prometheia's, whose
+Spica carries -3.31: every other star's difference vanished after the
+catalogue was refreshed, and this one alone did not.
+
+**Fix, as done here:** the record's radial velocity is -3.31. G31 builds a
+catalogue whose "Citra" is that line and requires the built-in "Spica" to have
+the same differenced distance rate to 1e-9 AU/day; with the old value it
+fails by 2.49e-3. The other built-in records (Revati, Pushya, Mula) were
+compared with SIMBAD the same day: Pushya's radial velocity and Mula's are
+current, and Revati (zeta Psc) has no radial velocity in SIMBAD to compare.
+
 ## How these were found
 
 Almost none of this came from reading code looking for defects. The method
@@ -1338,6 +1362,7 @@ If only some of this is worth taking:
 | | 15, 16 | a failed or garbage answer from an ordinary call sequence |
 | Then | 5, 6, 10, 11, 14 | wrong answers that depend on call order |
 | | 21 | a sidereal node or apsis off by delta-psi |
+| | 22 | a stale built-in star record (distance rate of Spica) |
 | Last | 12, 13, 17 | test harness, utilities, undefined behaviour on hostile input |
 
 Entries 5, 6 and 10 are one family — a cache whose key omits something its
