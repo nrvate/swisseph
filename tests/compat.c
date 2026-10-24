@@ -190,10 +190,40 @@ static double sidt_splice_step(void)
   return (d - 24.0 * 1.00273781191135448 * (tb - ta)) * 15 * 3600;
 }
 
+/* Defect 26 (G36): a heliocentric light time was measured from the
+ * barycentre on its second pass. Returns the angle, arcsec, between
+ * Mercury's heliocentric astrometric place under SWIEPH at J2000 and
+ * B(t - tau) - S(t) rebuilt from the library's own geometric positions:
+ * 0.27" with the defect, roundoff without. */
+static double helio_lt_from_barycentre(void)
+{
+  const double c = 173.1446326846693, jd = 2451545.0;
+  int32 base = SEFLG_SWIEPH | SEFLG_J2000 | SEFLG_NONUT | SEFLG_XYZ;
+  int32 geom = base | SEFLG_BARYCTR | SEFLG_TRUEPOS;
+  double xh[6], xs[6], xb[6], d[3], tau = 0.0, r, cx, cy, cz, dot;
+  char s[AS_MAXCH] = "";
+  int it;
+  swe_close(); swe_set_ephe_path((char *) EPHE);
+  if (swe_calc(jd, SE_MERCURY, base | SEFLG_HELCTR | SEFLG_NOABERR | SEFLG_NOGDEFL, xh, s) < 0 ||
+      swe_calc(jd, SE_SUN, geom, xs, s) < 0)
+    return -1.0;
+  for (it = 0; it < 50; it++) {
+    if (swe_calc(jd - tau, SE_MERCURY, geom, xb, s) < 0) return -1.0;
+    d[0] = xb[0] - xs[0]; d[1] = xb[1] - xs[1]; d[2] = xb[2] - xs[2];
+    r = sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+    if (fabs(r / c - tau) < 1e-13) break;
+    tau = r / c;
+  }
+  r = sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]) * sqrt(xh[0]*xh[0] + xh[1]*xh[1] + xh[2]*xh[2]);
+  cx = xh[1]*d[2] - xh[2]*d[1]; cy = xh[2]*d[0] - xh[0]*d[2]; cz = xh[0]*d[1] - xh[1]*d[0];
+  dot = (xh[0]*d[0] + xh[1]*d[1] + xh[2]*d[2]) / r;
+  return atan2(sqrt(cx*cx + cy*cy + cz*cz) / r, dot) * 206264.806247;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt, sidstep;
+  double drift, moonlt, jpltt, sidstep, hlt;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -205,6 +235,7 @@ int main(int argc, char **argv)
   moonlt = moon_lighttime();
   jpltt  = jpl_tt_read();
   sidstep = sidt_splice_step();
+  hlt    = helio_lt_from_barycentre();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -261,6 +292,14 @@ int main(int argc, char **argv)
   else {
     printf("  sidereal step 2050     %+.6f\"     FAIL: expected %s\n",
            sidstep, WANT_DEFECT ? "> 1\"" : "< 0.001\"");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (hlt > 0.01) : (hlt >= 0.0 && hlt < 1e-4))
+    printf("  helio light time       %.4f arcsec  OK\n", hlt);
+  else {
+    printf("  helio light time       %.4f arcsec  FAIL: expected %s\n",
+           hlt, WANT_DEFECT ? "> 0.01 arcsec" : "< 0.0001");
     bad++;
   }
 

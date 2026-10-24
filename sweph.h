@@ -690,6 +690,9 @@ struct epsilon {
  *   - the long-term sidereal time spliced at 1850 and 2050 by constant
  *     offsets fitted under an older delta t (-0.097" and -1.908" steps;
  *     UPSTREAM-BUGS 25, G35)
+ *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
+ *     light time from the barycentre on the second pass (0.84" on Mercury;
+ *     UPSTREAM-BUGS 26, G36)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

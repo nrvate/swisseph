@@ -61,6 +61,7 @@ worst were in code that had never executed even once.
 | 23 | The Moon's light time is taken once, and read at a rounded instant | Correctness | `sweph.c` |
 | 24 | The ephemeris files are read at TT; their argument is TDB | Correctness | `swejpl.c`, `sweph.c` |
 | 25 | The default sidereal time steps at 1850 and 2050 | Correctness | `swephlib.c` |
+| 26 | A heliocentric light time is measured from the barycentre on its second pass | Correctness | `sweph.c` |
 
 ---
 
@@ -1458,6 +1459,56 @@ antiquity, a departure from upstream that every historical chart would
 see, so it is left as a decision rather than made here.
 `SEMOD_SIDT_IERS_CONV_2010` already gives the ERA-based value at every
 date (its precession polynomial is the IAU 2006 one, for near J2000).
+
+## 26. A heliocentric light time is measured from the barycentre on its second pass
+
+**Severity: Correctness (up to 0.84" on Mercury, 0.28" on Venus, 2.6" on a fictitious body inside Mercury's orbit; every heliocentric position from the files)**
+**Where:** `sweph.c`, `app_pos_etc_plan()` and `app_pos_etc_plan_osc()`
+
+The light time of a body seen from the Sun is the solution of
+tau = |B(t - tau) - S(t)| / c, the body's barycentric place when the light
+left it against the Sun's when it arrives. `app_pos_etc_plan()` iterates it
+in two passes for the JPL and Swiss files (`niter = 1`). Each pass measures
+the distance of an estimate of the body from `xobs` and reads the body at
+t - dt. For a geocentric request `xobs` is the barycentric Earth and both
+passes subtract it. For a heliocentric one the subtraction is skipped
+(`if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))` on both loops),
+on the reasoning that `xx` is heliocentric already -- and on the first pass
+it is, the Sun having been taken out above for the `SEFLG_TRUEPOS` answer.
+But every later estimate is formed as `xx0 - dt * v`, and `xx0` is the
+BARYCENTRIC position. So the second pass measures the distance from the
+barycentre, and the light time the function keeps is the barycentric
+distance over c. The Sun sits up to 0.01 AU from the barycentre, so the
+instant the body is read at is off by up to 2.3% of its light time: 0.84"
+on Mercury (2200-01-01), 0.28" on Venus, 0.09" on Mars, 0.016" on Jupiter,
+against JPL Horizons' Sun-centred astrometric places and Ephemeris
+Prometheia, which agree with each other to 0.00001" (2026-10-24). The
+`SEFLG_SPEED` loop has the same skip, so the light-time term of the speed
+carries it too.
+
+`app_pos_etc_plan_osc()`, for a body from orbital elements, sets `xobs` to
+the Sun for a heliocentric request and then skips it in both loops the same
+way, so there the barycentric distance was measured on every pass: 2.6" on
+Vulcan at J2000 (G36), whose light time is 0.00078 d at 19 degrees a day.
+
+Found comparing heliocentric Mercury with Horizons and Prometheia; the
+recipe above reproduces Swiss's number from its own barycentric positions
+to roundoff, and the corrected recipe reproduces theirs.
+
+**Fix, as done here:** the loops measure from `xobs` for every centre. In
+`app_pos_etc_plan()` `xobs` is set for a barycentric request (zero) and a
+heliocentric one (the barycentric Sun from the files; zero under Moshier,
+whose stored positions are heliocentric), the iteration starts from the
+barycentric vector `xx0` so that every pass measures the same quantity, and
+the two skips are kept only under `SWE_UPSTREAM_COMPAT`. The same two skips
+in `app_pos_etc_plan_osc()`, and the fork's `app_pos_etc_orbel()`, which
+was written from it. No new reads of the ephemeris. G36 `tests/hellt.c`:
+the heliocentric astrometric direction of Mercury to Pluto under the Swiss
+files and de200.eph, and of a fictitious body from an element set written
+by the test, equals B(t - tau) - S(t) built from this library's own
+geometric barycentric positions, to 0.0001" (0.000000" measured; the
+unfixed library misses on all 51 rows, worst 2.608"). check-compat (G24)
+asserts the compat build keeps 0.27" on Mercury at J2000.
 
 ## How these were found
 
