@@ -322,6 +322,23 @@ static double moon_speed_off(int32 extra)
   return fabs(x[3] - r);
 }
 
+/* The Sun's ecliptic latitude speed of date against a five-point
+ * difference of its latitude, deg/day: the turning of the ecliptic of date
+ * (UPSTREAM-BUGS 33) is ~1e-5 deg/day of it. */
+static double ecl_lat_speed_off(void)
+{
+  double jd = 2461338.137, x[6], f[5][6], r;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(jd, SE_SUN, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_calc(jd + (k - 2) * 0.01, SE_SUN, SEFLG_SWIEPH, f[k], serr);
+  r = (f[0][1] - 8 * f[1][1] + 8 * f[3][1] - f[4][1]) / 0.12;
+  return fabs(x[4] - r);
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -345,7 +362,7 @@ static double era_scatter(void)
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt;
+  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -364,6 +381,7 @@ int main(int argc, char **argv)
   era    = era_scatter();
   spd3   = moon_speed_off(0);
   spdlt  = moon_speed_off(SEFLG_NOABERR);
+  latspd = ecl_lat_speed_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -477,6 +495,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moon light-time rate   %.2e deg/day FAIL: expected %s\n",
            spdlt, WANT_DEFECT ? "> 5e-5" : "< 5e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (latspd > 2e-6) : (latspd < 2e-7))
+    printf("  ecliptic turning       %.2e deg/day OK\n", latspd);
+  else {
+    printf("  ecliptic turning       %.2e deg/day FAIL: expected %s\n",
+           latspd, WANT_DEFECT ? "> 2e-6" : "< 2e-7");
     bad++;
   }
 

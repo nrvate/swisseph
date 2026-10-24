@@ -701,6 +701,8 @@ struct epsilon {
  *     UPSTREAM-BUGS 31, G40)
  *   - app_pos_etc_moon() left the light time's rate out of the Moon's
  *     speed (4.3e-4 deg/day topocentric; UPSTREAM-BUGS 32, G40)
+ *   - speeds rotated into or out of the ecliptic of date without its
+ *     turning, the obliquity's rate (1.6e-5 deg/day; UPSTREAM-BUGS 33, G41)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

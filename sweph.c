@@ -3510,6 +3510,13 @@ static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, int32 iflag,
     if (iflag & SEFLG_SPEED)
       swi_coortrf2(xx+3, xx+3, ctx->nut.snut, ctx->nut.cnut);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* the ecliptic of date turns as its obliquity changes (bug 33); J2000's
+   * does not */
+  if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
+    swi_ecl_frame_speed(xx, swi_obliquity_rate(ctx, pdp->teval, iflag,
+                                               !(iflag & SEFLG_NONUT)));
+#endif
   /* now we have ecliptic cartesian coordinates */
   for (i = 0; i <= 5; i++)
     pdp->xreturn[6+i] = xx[i];
@@ -4742,6 +4749,44 @@ if (1) {
 /* multiplies cartesian equatorial coordinates with previously
  * calculated nutation matrix. also corrects speed. 
  */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 33: the ecliptic of date turns about the equinox as the
+ * obliquity changes, and a velocity rotated into it with the same matrix
+ * as the position is not the rate of the rotated position. The obliquity
+ * rate, rad/day: the mean obliquity's by a central difference over two
+ * days (it changes over centuries), and with_nut adds the nutation in
+ * obliquity's, from the nutation at tjd and tjd - NUT_SPEED_INTV that
+ * swi_check_nutation() keeps for speeds (up to 1.3e-5 deg/day, the
+ * fortnightly and semiannual terms; the mean rate is 3.6e-7). */
+double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nut)
+{
+  double rate = (swi_epsiln(ctx, tjd + 1, iflag) - swi_epsiln(ctx, tjd - 1, iflag)) / 2;
+  if (with_nut) {
+    double t = tjd - NUT_SPEED_INTV, nl[2];
+    if (ctx->nut.tnut == tjd && ctx->nutv.tnut == t) {
+      rate += (ctx->nut.nutlo[1] - ctx->nutv.nutlo[1]) / NUT_SPEED_INTV;
+    } else {
+      double n0[2];
+      swi_nutation(ctx, tjd, iflag, n0);
+      swi_nutation(ctx, t, iflag, nl);
+      rate += (n0[1] - nl[1]) / NUT_SPEED_INTV;
+    }
+  }
+  return rate;
+}
+
+/* xx: ecliptic cartesian position and velocity in a frame rotated from
+ * the equator by an obliquity that changes at edot. The rotation about x,
+ * y' = y cos e + z sin e, z' = -y sin e + z cos e, has d/de (y', z') =
+ * (z', -y'): entering the frame, call it with +edot after the rotation;
+ * leaving it, with -edot before. */
+void swi_ecl_frame_speed(double *xx, double edot)
+{
+  xx[4] += edot * xx[2];
+  xx[5] -= edot * xx[1];
+}
+#endif
+
 void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward)
 {
   int i;
@@ -5531,6 +5576,12 @@ static int app_pos_etc_mean(swe_ctx *ctx, int ipl, int32 iflag, char *serr)
     xx[i] = pdp->x[i];
   /* cartesian equatorial coordinates */
   swi_polcart_sp(xx, xx);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* out of the mean ecliptic of date, which turns at the mean obliquity's
+   * rate (bug 33): app_pos_rest() adds it back on the way in */
+  if (iflag & SEFLG_SPEED)
+    swi_ecl_frame_speed(xx, -swi_obliquity_rate(ctx, pdp->teval, iflag, FALSE));
+#endif
   swi_coortrf2(xx, xx, -ctx->oec.seps, ctx->oec.ceps);
   swi_coortrf2(xx+3, xx+3, -ctx->oec.seps, ctx->oec.ceps);
   if (!(iflag & SEFLG_SPEED))
@@ -6758,8 +6809,19 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     swi_cartpol_sp(ndp->xreturn+6, ndp->xreturn);
     /* cartesian equatorial */
     swi_coortrf2(ndp->xreturn+6, ndp->xreturn+18, -oe->seps, oe->ceps);
-    if (iflag & SEFLG_SPEED)
+    if (iflag & SEFLG_SPEED) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* out of the true ecliptic of date, which turns (bug 33) */
+      double xe[6];
+      for (i = 0; i <= 5; i++)
+        xe[i] = ndp->xreturn[6+i];
+      if (!(iflag & SEFLG_J2000))
+        swi_ecl_frame_speed(xe, -swi_obliquity_rate(ctx, tjd, iflag, !(iflag & SEFLG_NONUT)));
+      swi_coortrf2(xe+3, ndp->xreturn+21, -oe->seps, oe->ceps);
+#else
       swi_coortrf2(ndp->xreturn+9, ndp->xreturn+21, -oe->seps, oe->ceps);
+#endif
+    }
 #ifdef SID_TNODE_FROM_ECL_T0
     /* sideral: we return NORMAL equatorial coordinates, there are no
      * sidereal ones */
@@ -6923,8 +6985,17 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
   /*printf("%.10f, %.10f, %.10f, %.10f\n", xx[0] /DEGTORAD, xx[1] / DEGTORAD, xx [2], xx[3] /DEGTORAD);*/
   /* equatorial cartesian */
   swi_coortrf2(ndp->xreturn+6, ndp->xreturn+18, -oe->seps, oe->ceps);
-  if (iflag & SEFLG_SPEED)
+  if (iflag & SEFLG_SPEED) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* out of the mean ecliptic of date, which turns (bug 33) */
+    for (i = 0; i <= 5; i++)
+      x[i] = ndp->xreturn[6+i];
+    swi_ecl_frame_speed(x, -swi_obliquity_rate(ctx, tjd, iflag, FALSE));
+    swi_coortrf2(x+3, ndp->xreturn+21, -oe->seps, oe->ceps);
+#else
     swi_coortrf2(ndp->xreturn+9, ndp->xreturn+21, -oe->seps, oe->ceps);
+#endif
+  }
   ndp->teval = tjd;
   ndp->xflgs = iflag;
   ndp->iephe = iflag & SEFLG_EPHMASK;
@@ -6992,6 +7063,11 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
       if (iflag & SEFLG_SPEED)
 	swi_coortrf2(ndp->xreturn+9, ndp->xreturn+9, nut->snut, nut->cnut);
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* into the true ecliptic of date, which turns (bug 33) */
+    if (iflag & SEFLG_SPEED)
+      swi_ecl_frame_speed(ndp->xreturn+6, swi_obliquity_rate(ctx, tjd, iflag, !(iflag & SEFLG_NONUT)));
+#endif
     /* ecliptic polar */
     swi_cartpol_sp(ndp->xreturn+6, ndp->xreturn);
   }
@@ -7902,6 +7978,11 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
       if (iflag & SEFLG_SPEED)
 	swi_coortrf2(x+3, x+3, ctx->nut.snut, ctx->nut.cnut);
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* into the ecliptic of date, which turns (bug 33) */
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
+      swi_ecl_frame_speed(x, swi_obliquity_rate(ctx, tjd, iflag, !(iflag & SEFLG_NONUT)));
+#endif
   }
 //  printf("%.17f, %.17f\n", x[0], x[3]);
   /************************************
@@ -9276,6 +9357,11 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
       if (iflag & SEFLG_SPEED)
 	swi_coortrf2(x+3, x+3, ctx->nut.snut, ctx->nut.cnut);
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* into the ecliptic of date, which turns (bug 33) */
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
+      swi_ecl_frame_speed(x, swi_obliquity_rate(ctx, tjd, iflag, !(iflag & SEFLG_NONUT)));
+#endif
   }
   /************************************
    * sidereal positions               *
@@ -9712,6 +9798,11 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
     if (iflag & SEFLG_SPEED)
       swi_coortrf2(xx+3, xx+3, ctx->nut.snut, ctx->nut.cnut);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* into the ecliptic of date, which turns (bug 33) */
+  if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
+    swi_ecl_frame_speed(xx, swi_obliquity_rate(ctx, tjd, iflag, !(iflag & SEFLG_NONUT)));
+#endif
   /* now we have ecliptic cartesian coordinates */
   for (i = 0; i <= 5; i++)
     xreturn[6+i] = xx[i];

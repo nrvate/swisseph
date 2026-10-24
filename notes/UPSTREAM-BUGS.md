@@ -68,6 +68,7 @@ worst were in code that had never executed even once.
 | 30 | The Earth rotation angle is rounded at the size of the day count | Correctness | `swephlib.c` |
 | 31 | The three-point speed is the slope at t + dt, not at t | Correctness | `sweph.c`, `swemmoon.c` |
 | 32 | The Moon's speed leaves out the rate of its light time | Correctness | `sweph.c` |
+| 33 | Speeds in the ecliptic of date leave out its turning | Correctness | `sweph.c` |
 
 ---
 
@@ -1793,6 +1794,48 @@ Moshier (three-point cases only). The upstream build fails 11 of the 12
 judged. G24 asserts each both ways. G1: 1,265 rows; speeds by up to 1.3e-3
 deg/day, positions only in the Moshier osculating apogee and in iterated
 results (0.1 mas); G17's swemini Moon speed 2e-5 deg/day.
+
+## 33. Speeds in the ecliptic of date leave out its turning
+
+**Severity: Correctness (up to 1.6e-5 deg/day on every ecliptic latitude speed of date, and on the equatorial speeds of the nodes and apsides)**
+**Where:** `sweph.c`: `app_pos_rest()`, `app_pos_etc_mean()`, `lunar_osc_elem()`'s output, `intp_apsides()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `swe_calc_pctr_r()`
+
+The ecliptic of date is the equator rotated about the equinox by the
+obliquity, and the obliquity changes: the mean obliquity by -47" a
+century (3.6e-7 deg/day) and the nutation in obliquity by up to 1.3e-5
+deg/day, from its fortnightly and semiannual terms. Every conversion
+rotated the velocity with the position's matrix and nothing else, so the
+velocity returned was not the rate of the rotated position: it lacked
+de/dt (0, z', -y'). Measured against five-point differences of the
+library's own positions: the Sun's, Moon's, every planet's, Chiron's, a
+fixed star's and a planetocentric latitude speed off by 1.2-1.6e-5
+deg/day; the true node's and the osculating apogee's declination speeds
+the same, from the conversion out of the ecliptic.
+
+**Fix, as done here:** `swi_obliquity_rate()` (the mean obliquity's rate
+by a central difference over two days, plus the nutation in obliquity's
+from the nutation at t and t - NUT_SPEED_INTV that `swi_check_nutation()`
+already keeps for speeds) and `swi_ecl_frame_speed()`, which adds
+de/dt (0, z', -y') entering an ecliptic of date and subtracts it before
+leaving one. The J2000 ecliptic does not turn. Applied to the paths
+above; latitude speeds now within 5.5e-8 deg/day, the nodes'
+declination speeds within 2.8e-7.
+
+Left alone on purpose: `swi_plan_for_osc_elem()`, which turns the Moon's
+or a planet's state into the ecliptic to fit osculating elements; those
+need the inertial velocity in the frame of the instant, and the node's
+speed is taken from nodes differenced a step apart, which already carry
+the turning. Not done: `swe_nod_aps_r()` with the osculating method
+(1.3e-5 deg/day in latitude, ecliptic and equatorial alike), whose
+speeds take a different route.
+
+G41 `tests/eclspeed.c`: twelve speeds against five-point differences,
+within 1e-6 deg/day, and 2.5e-7 where only the mean obliquity's rate is
+at stake; the upstream build fails all twelve. G24 asserts it both ways
+on the Sun (8.4e-9 shipped, 7.2e-6 compat). G1: 5,810 rows, speeds
+only (latitude by up to 2.2e-5, longitude by ~5e-7 through the
+latitude), and the Moon's node-crossing results by 0.3 mas, which iterate
+on the latitude speed. G17: last digits of six speeds.
 
 ## How these were found
 

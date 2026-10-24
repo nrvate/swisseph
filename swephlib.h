@@ -161,6 +161,10 @@ extern void swi_ldp_peps(swe_ctx *ctx, double J, double *dpre, double *deps);
 extern void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag);
 extern int swi_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo);
 extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
+#ifndef SWE_UPSTREAM_COMPAT
+extern double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nut);
+extern void swi_ecl_frame_speed(double *xx, double edot);
+#endif
 
 extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 
 							 double *node, double *dnode, 
