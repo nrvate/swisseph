@@ -69,8 +69,11 @@ int main(void)
     printf("  jd %.1f: built-in %.9f, file %.9f AU/day, differ %.3e%s\n",
            rgjd[i], a, b, d, d > 1e-9 ? "  <-- BAD" : "");
   }
-  snprintf(path, sizeof(path), "rm -rf %s", dir);
-  (void)system(path);
+  /* remove(), not system("rm"): glibc marks system() warn_unused_result,
+   * which a (void) cast does not silence under -Werror */
+  snprintf(path, sizeof(path), "%s/sefstars.txt", dir);
+  if (remove(path) != 0 || remove(dir) != 0)
+    printf("  (could not remove %s)\n", dir);
   if (bad) { printf("FAIL: %d of 3 differ\n", bad); return 1; }
   printf("OK: worst %.3e AU/day\n", worst);
   return 0;
