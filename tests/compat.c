@@ -409,17 +409,19 @@ static double topo_sun_speed_off(void)
   return lon_speed_off(SE_SUN, SEFLG_SWIEPH | SEFLG_TOPOCTR, 2461338.137);
 }
 
-/* UPSTREAM-BUGS 35: Mercury's geocentric speed, the light time's rate taken
- * over a day */
+/* UPSTREAM-BUGS 35: Mercury's speed, geocentric (the light time's rate
+ * taken over a day) and heliocentric (not taken at all) */
 static double mercury_lt_rate_off(void)
 {
   double w = 0, d;
-  int k;
+  int k, c;
   swe_close();
   swe_set_ephe_path(EPHE);
-  for (k = 0; k < 9; k++)
-    if ((d = lon_speed_off(SE_MERCURY, SEFLG_SWIEPH, 2378496.5 + k * 13698.6 + 0.137)) > w)
-      w = d;
+  for (c = 0; c < 2; c++)
+    for (k = 0; k < 9; k++)
+      if ((d = lon_speed_off(SE_MERCURY, SEFLG_SWIEPH | (c ? SEFLG_HELCTR : 0),
+                             2378496.5 + k * 13698.6 + 0.137)) > w)
+        w = d;
   return w;
 }
 

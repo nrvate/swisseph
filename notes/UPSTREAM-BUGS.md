@@ -1911,15 +1911,18 @@ dtau/dt part as the change, over one day, of the light-time
 displacement of the body moved linearly along its velocity (`xxsp`, "true
 position - apparent position at time t-1"). That is the rate a day back
 along a straight line, off by the curvature of a day's motion: Mercury's
-geocentric speed by 3e-6 deg/day and 1.5e-4 heliocentric (scan, B7),
-Pluto's distance rate by 6.9e-5 AU/day, a planetocentric speed by
-6.4e-7.
+geocentric speed by 3e-6 deg/day, Pluto's distance rate by 6.9e-5
+AU/day, a planetocentric speed by 6.4e-7. A heliocentric or barycentric
+planet had no such term at all, though its light time from the centre
+changes too: 1.6e-4 deg/day on Mercury, 4e-6 on Mars (the scan, B7).
 
 **Fix, as done here:** dtau/dt = rho^.(v_P - v_O) / (c + rho^.v_P),
 exactly, from the solved light time's own vectors (`lt_rate_exact()`),
-as entry 32 does for the Moon. Mercury 4.8e-8 deg/day, Pluto's
-distance rate 1.5e-8 AU/day, planetocentric 3.3e-8. G24
-`mercury_lt_rate_off`: 7.0e-8 shipped, 5.9e-6 compat.
+as entry 32 does for the Moon, and for every centre. Mercury 4.8e-8
+deg/day geocentric and 2.4e-7 heliocentric, the outer planets'
+heliocentric speeds within 1.7e-8, Pluto's distance rate 1.5e-8
+AU/day, planetocentric 3.3e-8. G24 `mercury_lt_rate_off`, geocentric
+and heliocentric: 1.0e-7 shipped, 1.7e-4 compat.
 
 ## 36. The topocentric observer turns at the rate per UT day, per TT day
 

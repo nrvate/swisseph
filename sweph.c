@@ -3463,6 +3463,17 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	  xx[i] -= xxsp[i-3]; 	
     }
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Heliocentric and barycentric light times change too, and upstream
+   * left their rate out entirely: 1.4e-4 deg/day on Mercury (bug 35). xx
+   * is relative to the centre at t here, so the centre is the origin. */
+  else if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_TRUEPOS)) {
+    static const double xorigin[6] = {0, 0, 0, 0, 0, 0};
+    lt_rate_exact(xx, xorigin, xxsp);
+    for (i = 3; i <= 5; i++)
+      xx[i] -= xxsp[i-3];
+  }
+#endif
   if (!(iflag & SEFLG_SPEED))
     for (i = 3; i <= 5; i++)
       xx[i] = 0;
