@@ -4753,14 +4753,17 @@ if (1) {
 /* Upstream bug 33: the ecliptic of date turns about the equinox as the
  * obliquity changes, and a velocity rotated into it with the same matrix
  * as the position is not the rate of the rotated position. The obliquity
- * rate, rad/day: the mean obliquity's by a central difference over two
- * days (it changes over centuries), and with_nut adds the nutation in
+ * rate, rad/day: the mean obliquity's by a difference over one day (its
+ * rate changes over centuries; the value at tjd is usually cached in
+ * ctx->oec already), and with_nut adds the nutation in
  * obliquity's, from the nutation at tjd and tjd - NUT_SPEED_INTV that
  * swi_check_nutation() keeps for speeds (up to 1.3e-5 deg/day, the
  * fortnightly and semiannual terms; the mean rate is 3.6e-7). */
 double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nut)
 {
-  double rate = (swi_epsiln(ctx, tjd + 1, iflag) - swi_epsiln(ctx, tjd - 1, iflag)) / 2;
+  double e0 = (ctx->oec.teps == tjd && ctx->oec.epsflag == SWI_EPS_KEY(iflag))
+              ? ctx->oec.eps : swi_epsiln(ctx, tjd, iflag);
+  double rate = swi_epsiln(ctx, tjd + 1, iflag) - e0;
   if (with_nut) {
     double t = tjd - NUT_SPEED_INTV, nl[2];
     if (ctx->nut.tnut == tjd && ctx->nutv.tnut == t) {
