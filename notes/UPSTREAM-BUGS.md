@@ -62,6 +62,7 @@ worst were in code that had never executed even once.
 | 24 | The ephemeris files are read at TT; their argument is TDB | Correctness | `swejpl.c`, `sweph.c` |
 | 25 | The default sidereal time steps at 1850 and 2050 | Correctness | `swephlib.c` |
 | 26 | A heliocentric light time is measured from the barycentre on its second pass | Correctness | `sweph.c` |
+| 27 | The topocentric observer is placed about the mean pole of date | Correctness | `sweph.c` |
 
 ---
 
@@ -1509,6 +1510,57 @@ by the test, equals B(t - tau) - S(t) built from this library's own
 geometric barycentric positions, to 0.0001" (0.000000" measured; the
 unfixed library misses on all 51 rows, worst 2.608"). check-compat (G24)
 asserts the compat build keeps 0.27" on Mercury at J2000.
+
+## 27. The topocentric observer is placed about the mean pole of date
+
+**Severity: Correctness (200-270 m on the observer, 0.10-0.15" on the topocentric Moon; every topocentric position, eclipse and occultation geometry)**
+**Where:** `sweph.c`, `swi_get_observer()`
+
+The Earth turns about its true pole of date, and the apparent sidereal time
+is the angle it has turned through, so the geocentric vector of a site is
+built on the true equator and equinox of date and carried from there to
+J2000. `swi_get_observer()` takes `SEFLG_NONUT` to mean something else:
+under it the function uses the MEAN sidereal time and the mean obliquity,
+skips its own nutation step, and precesses the vector to J2000 as if it
+were on the true equator. Every caller in the library passes
+`iflag | SEFLG_NONUT` (the J2000 vector is what they add to the barycentric
+Earth), so the site was always placed relative to the mean pole, which is
+up to 9" (the nutation in obliquity) and 17" x sin(eps) (the nutation in
+longitude) from the pole the Earth actually turns about. 6378 km x that
+angle is 200-270 m (G37: 15-277 m at five sites and five instants
+1800-2100), and 200-270 m seen from the Moon is **0.10-0.15"**: measured
+against Ephemeris Prometheia on the same delta t and against JPL Horizons
+at six sites and six instants 1800-2100, 10-148 mas, every one of them
+explained by the site offset to about 1 mas (2026-10-24). Planets: under
+1 mas. The function also neglected the frame bias ("displacement of 45cm"),
+though the Earth the site is added to is ICRS for DE403 and later and the
+callers take the sum back to J2000 with the forward bias: 0.3 mas on the
+Moon.
+
+Found comparing the topocentric Moon with Prometheia and Horizons; the
+recipe above reproduces Swiss's observer to the centimetre from its own
+sidereal time, obliquity and nutation, and the true-pole recipe reproduces
+theirs.
+
+**Fix, as done here:** the observer is built on the true equator and
+equinox of date whatever frame the caller wants its answer in: the
+apparent sidereal time from the true obliquity and the nutation in
+longitude, both computed at this instant rather than taken from the caches
+(whose entry may be another instant's), the site vector and its velocity
+rotated by the transposed nutation matrix to the mean equator of date,
+precessed to J2000, and then, when the ephemeris is ICRS
+(`swi_get_denum() >= 403`), taken to ICRS with the backward frame bias.
+`SEFLG_NONUT` no longer says where the observer is. Upstream's branch is
+kept under `SWE_UPSTREAM_COMPAT`. G37 `tests/topopole.c`: the geocentric
+minus the topocentric GEOMETRIC Moon (`SEFLG_TRUEPOS`, so no light time
+enters) in the true equator of date is the observer the library used; it
+must equal the site built from the geodetic coordinates, the library's own
+delta t, true obliquity and nutation, and `swe_sidtime0()`, to 5 cm
+(0.0000 m measured; the unfixed library misses on all 25 rows, worst
+276.6 m). Moshier, no files. check-compat (G24) asserts the compat build
+keeps 197.5 m at Zurich, J2000. The `topd` cache is unchanged: it is keyed
+by instant and invalidated with delta t (entry 18), and the new vector goes
+through the same `do_save` path.
 
 ## How these were found
 

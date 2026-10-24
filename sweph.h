@@ -693,6 +693,9 @@ struct epsilon {
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
+ *   - swi_get_observer() built the topocentric observer on the mean equator
+ *     of date, 200-270 m from its true-pole place (0.15" on the Moon;
+ *     UPSTREAM-BUGS 27, G37)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

@@ -8571,7 +8571,7 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
 	AS_BOOL do_save, double *xobs, char *serr)
 {
   int i;
-  double sidt, delt, tjd_ut, eps, nut, nutlo[2];
+  double sidt, delt, tjd_ut, eps, nut;
   double f = EARTH_OBLATENESS;
   double re = EARTH_RADIUS; 
   double cosfi, sinfi, cc, ss, cosl, sinl, h;
@@ -8587,6 +8587,33 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
    */
   delt = swe_deltat_ex_r(ctx, tjd, iflag, serr);
   tjd_ut = tjd - delt;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* The Earth turns about its TRUE pole of date, and the apparent sidereal
+   * time is the angle it has turned through. So the observer is built on
+   * the true equator and equinox of date, whatever frame the caller wants
+   * its answer in: the SEFLG_NONUT bit says how the result is to be
+   * expressed, not where the observer is. Upstream read it as the latter,
+   * and since every caller passes it (the J2000 vector is what they add to
+   * the barycentric Earth), the site was placed relative to the MEAN pole
+   * -- 200-270 m from its place, 0.10-0.15" on the Moon (UPSTREAM-BUGS.md
+   * 27, G37). The obliquity and nutation are taken at this instant rather
+   * than from the caches, whose entry may be another instant's. */
+  struct epsilon oectmp;
+  struct nut nuttmp;
+  calc_epsilon(ctx, tjd, iflag, &oectmp);
+  if (swi_nutation(ctx, tjd, iflag, nuttmp.nutlo) == ERR)
+    return ERR;
+  nuttmp.tnut = tjd;
+  nuttmp.snut = sin(nuttmp.nutlo[1]);
+  nuttmp.cnut = cos(nuttmp.nutlo[1]);
+  nut_matrix(&nuttmp, &oectmp);
+  eps = oectmp.eps + nuttmp.nutlo[1];
+  nut = nuttmp.nutlo[0];
+  /* apparent sidereal time */
+  sidt = swe_sidtime0_r(ctx, tjd_ut, eps * RADTODEG, nut * RADTODEG);
+  sidt *= 15;	/* in degrees */
+#else
+  double nutlo[2];
   /* Keyed like every other reader of these caches (swi_check_ecliptic,
    * swi_check_nutation): the instant AND the flag key. On the instant
    * alone, a JPLHOR call could reuse an obliquity computed without the
@@ -8612,6 +8639,7 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
    * not SEFLG_NONUT is set */
   sidt = swe_sidtime0_r(ctx, tjd_ut, eps * RADTODEG, nut * RADTODEG);
   sidt *= 15;	/* in degrees */
+#endif
   /* length of position and speed vectors;
    * the height above sea level must be taken into account.
    * with the moon, an altitude of 3000 m makes a difference 
@@ -8647,6 +8675,21 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
   /* to AUNIT */
   for (i = 0; i <= 5; i++)
     xobs[i] /= AUNIT;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* true equator and equinox of date -> mean equator and equinox of date:
+   * the transposed nutation matrix, as swi_nutate(..., TRUE) applies it,
+   * on the position and on the velocity. The rotation only: the nutation
+   * rate on a 6378 km vector is micrometres a day. */
+  {
+    double x[6];
+    for (i = 0; i <= 2; i++) {
+      x[i]   = xobs[0] * nuttmp.matrix[i][0] + xobs[1] * nuttmp.matrix[i][1] + xobs[2] * nuttmp.matrix[i][2];
+      x[i+3] = xobs[3] * nuttmp.matrix[i][0] + xobs[4] * nuttmp.matrix[i][1] + xobs[5] * nuttmp.matrix[i][2];
+    }
+    for (i = 0; i <= 5; i++)
+      xobs[i] = x[i];
+  }
+#else
   /* subtract nutation, set backward flag */
   if (!(iflag & SEFLG_NONUT)) {
     swi_coortrf2(xobs, xobs, -ctx->nut.snut, ctx->nut.cnut);
@@ -8655,12 +8698,22 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
       swi_coortrf2(xobs+3, xobs+3, -ctx->nut.snut, ctx->nut.cnut);
     swi_nutate(ctx, xobs, iflag | SEFLG_SPEED, TRUE);
   }
+#endif
   /* precess to J2000 */
   swi_precess(ctx, xobs, tjd, iflag, J_TO_J2000);
   /*if (iflag & SEFLG_SPEED)*/
     swi_precess_speed(ctx, xobs, tjd, iflag, J_TO_J2000);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* The Earth this is added to is ICRS (DE403 and later), and the callers
+   * take the sum back to J2000 with the forward bias, so the site goes in
+   * as ICRS too: J2000 -> ICRS, the 45 cm upstream neglected (0.3 mas on
+   * the Moon; G37 measures the observer to 0.05 m). */
+  if (swi_get_denum(ctx, SEI_EARTH, iflag) >= 403)
+    swi_bias(ctx, xobs, tjd, iflag | SEFLG_SPEED, TRUE);
+#else
   /* neglect frame bias (displacement of 45cm) */
   /* ... */
+#endif
   /* save */
   if (do_save) {
     for (i = 0; i <= 5; i++)

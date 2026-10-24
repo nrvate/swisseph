@@ -220,10 +220,38 @@ static double helio_lt_from_barycentre(void)
   return atan2(sqrt(cx*cx + cy*cy + cz*cz) / r, dot) * 206264.806247;
 }
 
+/* Defect 27 (G37): the topocentric observer was built on the mean equator of
+ * date. Returns, in metres, how far the observer the library used (the
+ * geocentric minus the topocentric geometric Moon, true equator of date)
+ * sits from the site built on the apparent sidereal time: ~200 m with the
+ * defect, millimetres without. Moshier. */
+static double observer_off_true_pole(void)
+{
+  const double tjd = 2451545.0, lon = 8.55, lat = 47.37, alt = 400.0;
+  const double f = 1.0 / 298.25642, re = 6378136.6, au = 1.49597870700e+11;   /* sweph.h */
+  int32 geom = SEFLG_MOSEPH | SEFLG_TRUEPOS | SEFLG_EQUATORIAL | SEFLG_XYZ | SEFLG_NOABERR | SEFLG_NOGDEFL;
+  double xg[6], xt[6], xn[6], ut, gast, cosfi, sinfi, cc, ss, lam, ref[3];
+  char s[AS_MAXCH] = "";
+  int i;
+  swe_close(); swe_set_ephe_path((char *) EPHE);
+  swe_set_topo(lon, lat, alt);
+  if (swe_calc(tjd, SE_MOON, geom, xg, s) < 0 || swe_calc(tjd, SE_MOON, geom | SEFLG_TOPOCTR, xt, s) < 0 ||
+      swe_calc(tjd, SE_ECL_NUT, SEFLG_MOSEPH, xn, s) < 0)
+    return -1.0;
+  for (i = 0; i < 3; i++) xg[i] = (xg[i] - xt[i]) * au;
+  ut = tjd - swe_deltat_ex(tjd, SEFLG_MOSEPH, s);
+  gast = swe_sidtime0(ut, xn[0], xn[2]) * 15.0;
+  cosfi = cos(lat * DEGTORAD); sinfi = sin(lat * DEGTORAD);
+  cc = 1 / sqrt(cosfi * cosfi + (1 - f) * (1 - f) * sinfi * sinfi); ss = (1 - f) * (1 - f) * cc;
+  lam = (lon + gast) * DEGTORAD;
+  ref[0] = (re * cc + alt) * cosfi * cos(lam); ref[1] = (re * cc + alt) * cosfi * sin(lam); ref[2] = (re * ss + alt) * sinfi;
+  return sqrt((xg[0]-ref[0])*(xg[0]-ref[0]) + (xg[1]-ref[1])*(xg[1]-ref[1]) + (xg[2]-ref[2])*(xg[2]-ref[2]));
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt, sidstep, hlt;
+  double drift, moonlt, jpltt, sidstep, hlt, obs;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -236,6 +264,7 @@ int main(int argc, char **argv)
   jpltt  = jpl_tt_read();
   sidstep = sidt_splice_step();
   hlt    = helio_lt_from_barycentre();
+  obs    = observer_off_true_pole();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -300,6 +329,14 @@ int main(int argc, char **argv)
   else {
     printf("  helio light time       %.4f arcsec  FAIL: expected %s\n",
            hlt, WANT_DEFECT ? "> 0.01 arcsec" : "< 0.0001");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (obs > 100.0) : (obs >= 0.0 && obs < 1.0))
+    printf("  observer off true pole %.1f m        OK\n", obs);
+  else {
+    printf("  observer off true pole %.1f m        FAIL: expected %s\n",
+           obs, WANT_DEFECT ? "> 100 m" : "< 1 m");
     bad++;
   }
 
