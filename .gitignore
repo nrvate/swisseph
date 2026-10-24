@@ -63,6 +63,12 @@
 # Stand-in Windows headers. Deliberately not `!/tests/*.h` -- the root
 # sweph.h has been copied into tests/ by accident before, and shipped.
 !/tests/winstub/
+# The by-hand numerics audit (tests/scan/sescan.c): its source and Makefile,
+# not its binary or the report `make run` writes.
+!/tests/scan/
+/tests/scan/*
+!/tests/scan/*.c
+!/tests/scan/Makefile
 
 # Python bytecode (tools/)
 __pycache__/
