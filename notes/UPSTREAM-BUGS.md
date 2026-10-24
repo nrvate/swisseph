@@ -66,6 +66,8 @@ worst were in code that had never executed even once.
 | 28 | The osculating lunar apogee is fitted with a GM from a different almanac | Correctness | `sweph.c`, `swejpl.c` |
 | 29 | The long-term sidereal time follows delta t | Correctness | `swephlib.c` |
 | 30 | The Earth rotation angle is rounded at the size of the day count | Correctness | `swephlib.c` |
+| 31 | The three-point speed is the slope at t + dt, not at t | Correctness | `sweph.c`, `swemmoon.c` |
+| 32 | The Moon's speed leaves out the rate of its light time | Correctness | `sweph.c` |
 
 ---
 
@@ -1732,6 +1734,65 @@ them.
 G39 `tests/sidera.c` check 4 is the straight line, within 0.01 mas, at
 -999, -13000 and +12000. A G24 case asserts it both ways on the IERS 2010
 model at -13000 (0.0033 mas shipped, 1.03 mas compat).
+
+## 31. The three-point speed is the slope at t + dt, not at t
+
+**Severity: Correctness (1.3e-3 deg/day on the topocentric Moon's speed, 9.5e-5 with SEFLG_SPEED3 geocentric; the Moshier Moon's velocity 4.32 s late)**
+**Where:** `sweph.c`, `calc_speed()`; `swemmoon.c`, `swi_moshmoon()`
+
+`swe_calc()` computes a speed from three positions when the caller asks
+for `SEFLG_SPEED3`, and on its own for every topocentric request with
+aberration ("topocentric with SEFLG_SPEED is not good if aberration is
+included"). `calc_speed()` fits the parabola x1 + b s + a s^2 through the
+positions at t - dt, t and t + dt (s in steps of dt) and returned
+(2 a + b) / dt: the parabola's slope at s = 1, the speed at t + dt -- 4.32
+s late for the Moon, 8.64 s for a planet. The error is the acceleration
+times dt; the topocentric Moon's diurnal parallax curves its path at ~30
+deg/day^2, so its speed was off by up to 1.3e-3 deg/day (4.7"/day). The
+Moshier Moon's velocity in `swi_moshmoon()` used the same formula on the
+same three points, with the central difference beside it under `#if 0`.
+A third copy, for the osculating node in `lunar_osc_elem()`, is
+overwritten by a central difference before it is returned.
+
+**Fix, as done here:** b / dt at all three. Upstream's formula stays under
+`SWE_UPSTREAM_COMPAT`. The library's three-point speed now equals a
+three-point difference of the positions it returns, to the last digit.
+What is left in it is the positions' own roughness over 8.64 s, ~3e-5
+deg/day on the topocentric Moon against a five-point difference over
++-0.02 day. The Moshier osculating apogee, which is fitted to the Moon's
+velocity and amplifies it ~18 times, moves by up to 90" (closer to the
+Swiss files': rms 62.3" to 59.4", 1800-2100).
+
+## 32. The Moon's speed leaves out the rate of its light time
+
+**Severity: Correctness (up to 4.3e-4 deg/day on the topocentric Moon without aberration, 3.6e-5 geocentric)**
+**Where:** `sweph.c`, `app_pos_etc_moon()`
+
+The Moon is seen at t - tau(t), so the velocity of M(t - tau) - O(t) is
+v_M (1 - dtau/dt) - v_O, with dtau/dt = rdot / c.
+`app_pos_etc_moon()` returned v_M - v_O. With v_M ~30 km/s barycentric,
+dtau/dt = 1e-6 is 3e-5 km/s, 4e-4 deg/day at the Moon's distance. A
+topocentric observer's diurnal 0.3 km/s along the line of sight reaches
+that (up to 4.3e-4 measured); the geocentric range rate makes a tenth of it.
+The planets have the term, from the light-time displacement a day apart
+(`xxsp` in `app_pos_etc_plan()`); the Moon never did.
+
+**Fix, as done here:** dtau/dt = rho^ . (v_M - v_O) / (c + rho^ . v_M), from
+the solved light time's vectors, and v_M scaled by 1 - dtau/dt. Swiss
+files and JPL: the geocentric Moon's speed within 5e-7 deg/day, the
+topocentric one without aberration within 1.7e-6, 1800-2100. Moshier's
+Moon is moved back along its velocity at t rather than read at t - tau,
+so its speed still lacks tau times the Moon's acceleration (1.3e-4 deg/day
+topocentric); left, as G33 left its light time.
+
+G40 `tests/moonspeed.c` checks both against a five-point difference of
+the library's own positions, J2000 equator: Moon geocentric, topocentric
+through the three-point path, topocentric without aberration, and
+`SEFLG_SPEED3` on the Moon and Mars, on the Swiss files, de200.eph and
+Moshier (three-point cases only). The upstream build fails 11 of the 12
+judged. G24 asserts each both ways. G1: 1,265 rows; speeds by up to 1.3e-3
+deg/day, positions only in the Moshier osculating apogee and in iterated
+results (0.1 mas); G17's swemini Moon speed 2e-5 deg/day.
 
 ## How these were found
 

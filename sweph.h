@@ -696,6 +696,11 @@ struct epsilon {
  *   - the Earth rotation angle formed as 1.0027 * (JD - J2000), rounded at
  *     the size of the day count (0.3 mas at -999, 1 mas at -13000, and
  *     differently where the multiply-add fuses; UPSTREAM-BUGS 30, G39)
+ *   - calc_speed() and the Moshier Moon took a three-point speed as the
+ *     slope at t + dt (1.3e-3 deg/day on the topocentric Moon;
+ *     UPSTREAM-BUGS 31, G40)
+ *   - app_pos_etc_moon() left the light time's rate out of the Moon's
+ *     speed (4.3e-4 deg/day topocentric; UPSTREAM-BUGS 32, G40)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

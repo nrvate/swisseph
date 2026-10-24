@@ -5365,6 +5365,29 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
       for (i = 0; i <= 2; i++)
         xx[i] += e * vb[i];
     }
+    /* Upstream bug 32: the Moon is seen at t - tau(t), so the velocity of
+     * M(t - tau) - O(t) is v_M (1 - dtau/dt) - v_O, and dtau/dt = rdot / c
+     * with rdot = rho^ . (v_M (1 - dtau/dt) - v_O). The rate of the light
+     * time was left out: with v_M ~30 km/s barycentric, dtau/dt = 1e-6 is
+     * 3e-5 km/s, 4e-4 deg/day at the Moon's distance, which a topocentric
+     * observer's diurnal 0.3 km/s along the line of sight reaches (4.3e-4
+     * measured) and the geocentric range rate a tenth of (1.7e-5). The
+     * planets take it from the light-time displacement a day apart (xxsp in
+     * app_pos_etc_plan()); here it is exact, from the vectors at hand. */
+    if (iflag & SEFLG_SPEED) {
+      double rho[3], r, rv = 0, rvm = 0, taudot;
+      const double c = CLIGHT * 86400.0 / AUNIT;   /* AU per day */
+      for (i = 0; i <= 2; i++)
+        rho[i] = xx[i] - xobs[i];
+      r = sqrt(square_sum(rho));
+      for (i = 0; i <= 2; i++) {
+        rv += rho[i] * (xx[i+3] - xobs[i+3]);
+        rvm += rho[i] * xx[i+3];
+      }
+      taudot = (rv / r) / (c + rvm / r);
+      for (i = 3; i <= 5; i++)
+        xx[i] -= taudot * xx[i];
+    }
 #endif
     if (iflag & SEFLG_TOPOCTR) {
       if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, NULL) != OK)
@@ -6406,7 +6429,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   struct plan_data *ndp, *ndnp, *ndap;
   struct epsilon *oe;
   double speed_intv = NODE_CALC_INTV;	/* to silence gcc warning */
-  double a, b;
+  double b;
   double xpos[3][6], xx[3][6], xxa[3][6], xnorm[6], r[6];
   double *xp;
   double rxy, rxyz, t, dt, fac, sgn;
@@ -6614,8 +6637,17 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     ndnp->x[i] = xx[2][i];
     if (iflag & SEFLG_SPEED) {
       b = (xx[1][i] - xx[0][i]) / 2;
-      a = (xx[1][i] + xx[0][i]) / 2 - xx[2][i];
-      ndnp->x[i+3] = (2 * a + b) / speed_intv;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* the slope at tjd (bug 31: 2 a + b is the slope at tjd + speed_intv).
+       * Overwritten below by the central difference of the nodes rescaled
+       * to the osculating ellipse, so this value is never returned. */
+      ndnp->x[i+3] = b / speed_intv;
+#else
+      {
+        double a = (xx[1][i] + xx[0][i]) / 2 - xx[2][i];
+        ndnp->x[i+3] = (2 * a + b) / speed_intv;
+      }
+#endif
     } else
       ndnp->x[i+3] = 0;
     ndnp->teval = tjd;
@@ -7233,13 +7265,25 @@ static void denormalize_positions(double *x0, double *x1, double *x2)
 static void calc_speed(double *x0, double *x1, double *x2, double dt)
 {
   int i, j, k;
-  double a, b;
+  double b;
   for (j = 0; j <= 18; j += 6) {
     for (i = 0; i < 3; i++) {
       k = j + i;
       b = (x2[k] - x0[k]) / 2;
-      a = (x2[k] + x0[k]) / 2 - x1[k];
-      x1[k+3] = (2 * a + b) / dt;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 31: x0, x1, x2 are at t - dt, t, t + dt, and the
+       * parabola through them, x1 + b s + a s^2 in steps of dt, has the slope
+       * b at t. 2 a + b is its slope at s = 1: the speed 4.32 s (the Moon)
+       * or 8.64 s (a planet) late, off by the acceleration times dt --
+       * 1.3e-3 deg/day on the topocentric Moon, whose diurnal parallax
+       * curves its path at ~30 deg/day^2. */
+      x1[k+3] = b / dt;
+#else
+      {
+        double a = (x2[k] + x0[k]) / 2 - x1[k];
+        x1[k+3] = (2 * a + b) / dt;
+      }
+#endif
     }
   }
 }

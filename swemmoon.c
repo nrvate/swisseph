@@ -701,7 +701,7 @@ return(0);
 int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char *serr) 
 {
   int i;
-  double a, b, x1[6], x2[6], t;
+  double b, x1[6], x2[6], t;
   double xx[6], *xpm;
   struct plan_data *pdp = &ctx->pldat[SEI_MOON];
   char s[AS_MAXCH];
@@ -755,8 +755,17 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
     xpm[i+3] = (x1[i] - x2[i]) / MOON_SPEED_INTV / 2;
 #else
     b = (x1[i] - x2[i]) / 2;
-    a = (x1[i] + x2[i]) / 2 - xpm[i];
-    xpm[i+3] = (2 * a + b) / MOON_SPEED_INTV;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 31: x2, xpm, x1 are at t - dt, t, t + dt; b is the
+     * parabola's slope at t, 2 a + b its slope at t + dt, the Moon's
+     * velocity 4.32 s late. */
+    xpm[i+3] = b / MOON_SPEED_INTV;
+#else
+    {
+      double a = (x1[i] + x2[i]) / 2 - xpm[i];
+      xpm[i+3] = (2 * a + b) / MOON_SPEED_INTV;
+    }
+#endif
 #endif
   }
   if (xpmret != NULL)

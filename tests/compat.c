@@ -302,6 +302,26 @@ static double sidt_follows_deltat(void)
   return d * 54000;
 }
 
+/* The topocentric Moon's speed against a five-point difference of its own
+ * positions, J2000 equator, deg/day, at one instant: through the three-point
+ * path (aberration on; UPSTREAM-BUGS 31) or the analytic one (NOABERR; 32). */
+static double moon_speed_off(int32 extra)
+{
+  int32 fl = SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_J2000 | SEFLG_NONUT
+             | SEFLG_EQUATORIAL | extra;
+  double jd = 2461338.137, x[6], f[5][6], r;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 47.37, 400);
+  swe_calc(jd, SE_MOON, fl | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_calc(jd + (k - 2) * 0.01, SE_MOON, fl, f[k], serr);
+  r = (f[0][0] - 8 * f[1][0] + 8 * f[3][0] - f[4][0]) / 0.12;
+  return fabs(x[3] - r);
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -325,7 +345,7 @@ static double era_scatter(void)
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era;
+  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -342,6 +362,8 @@ int main(int argc, char **argv)
   obs    = observer_off_true_pole();
   gm     = apogee_gm_off();
   era    = era_scatter();
+  spd3   = moon_speed_off(0);
+  spdlt  = moon_speed_off(SEFLG_NOABERR);
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -439,6 +461,22 @@ int main(int argc, char **argv)
   else {
     printf("  rotation angle scatter %.4f mas      FAIL: expected %s\n",
            era, WANT_DEFECT ? "> 0.1 mas" : "< 0.01 mas");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (spd3 > 5e-4) : (spd3 < 1e-4))
+    printf("  3-point speed late     %.2e deg/day OK\n", spd3);
+  else {
+    printf("  3-point speed late     %.2e deg/day FAIL: expected %s\n",
+           spd3, WANT_DEFECT ? "> 5e-4" : "< 1e-4");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (spdlt > 5e-5) : (spdlt < 5e-6))
+    printf("  Moon light-time rate   %.2e deg/day OK\n", spdlt);
+  else {
+    printf("  Moon light-time rate   %.2e deg/day FAIL: expected %s\n",
+           spdlt, WANT_DEFECT ? "> 5e-5" : "< 5e-6");
     bad++;
   }
 
