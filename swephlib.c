@@ -4014,7 +4014,7 @@ void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
 double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
 {
   int i;
-  double eps, nutlo[2], tsid;
+  double eps, nutlo[2] = {0, 0}, tsid;	/* calc_nutation() writes nothing for a model it does not know */
   double tjde;
   /* delta t adjusted to default tidal acceleration of the moon */
   tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL); 
