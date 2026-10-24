@@ -5391,6 +5391,15 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     xpe[3] = swe_degnorm(xpe[3] + xna[0] + xna[3]);
     /* speed */
     xpe[3] = swe_degnorm(xpe[3] - xpe[0]);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 38: the latitude's speed was never taken. xpe[4] is the
+     * aux. position's latitude, a day on, and went out as the speed, so
+     * the mean perihelion's and aphelion's latitude speed was the latitude
+     * itself (1.8 deg/day for Mars, against a true 1e-6), and through the
+     * cartesian state the geocentric longitude speed was off by 0.01-0.04
+     * deg/day with it. */
+    xpe[4] -= xpe[1];
+#endif
     /* heliocentric distance of perihelion and aphelion */
     xpe[2] = sema * (1 - ecce);
     xpe[5] = (sema + vsema) * (1 - ecce - vecce) - xpe[2];
@@ -5646,6 +5655,22 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     	xp[i] = 0;
       continue;
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 37, the sibling of 33: the points were built in the
+     * ecliptic of date -- the osculating ones in the true one by
+     * swi_plan_for_osc_elem() and differenced there, the mean ones from
+     * elements of the mean one -- so their speeds carry its turning, the
+     * obliquity's rate, about the HELIOCENTRIC point. Nothing took it out
+     * on the way to the equator, and nothing put it back below on the way
+     * into the ecliptic again, on the GEOCENTRIC point; what survived was
+     * de/dt x (the Earth's heliocentric position), up to 1.6e-5 deg/day on
+     * the latitude and declination speeds, and nothing heliocentric or for
+     * the Moon. Taken out here, added back below. Not under SEFLG_J2000,
+     * whose output is left as upstream has it (see UPSTREAM-BUGS 37). */
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
+      swi_ecl_frame_speed(xp, -swi_obliquity_rate(ctx, tjd_et, iflag,
+                              is_true_nodaps && !(iflag & SEFLG_NONUT)));
+#endif
     /*********************
      * to equator 
      *********************/
@@ -5775,6 +5800,13 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       if (iflag & SEFLG_SPEED)
         swi_coortrf2(xp+3, xp+3, ctx->nut.snut, ctx->nut.cnut);
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* into the ecliptic of date, which turns (bugs 33, 37); J2000's does
+     * not, and is left alone above as well */
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
+      swi_ecl_frame_speed(xp, swi_obliquity_rate(ctx, tjd_et, iflag,
+                                                 !(iflag & SEFLG_NONUT)));
+#endif
     /* now we have ecliptic cartesian coordinates */
     for (j = 0; j <= 5; j++)
       pldat.xreturn[6+j] = xp[j];

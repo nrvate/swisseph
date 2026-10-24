@@ -712,6 +712,11 @@ struct epsilon {
  *     difference (3e-6 deg/day on Mercury; UPSTREAM-BUGS 35)
  *   - the topocentric observer turning EARTH_ROT_SPEED per TT day, not
  *     per UT day (3e-6 deg/day on the Moon at -999; UPSTREAM-BUGS 36)
+ *   - swe_nod_aps() left that turning in about the heliocentric point and
+ *     put none back about the geocentric one (1.6e-5 deg/day on a planet's
+ *     node or apsis; UPSTREAM-BUGS 37, G42)
+ *   - swe_nod_aps() returned the mean perihelion's and aphelion's latitude
+ *     as its latitude speed (1.8 deg/day for Mars; UPSTREAM-BUGS 38, G42)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

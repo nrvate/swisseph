@@ -72,6 +72,8 @@ worst were in code that had never executed even once.
 | 34 | The aberration rate is the observer's velocity change over the light time | Correctness | `sweph.c` |
 | 35 | A planet's light-time rate is a one-day difference along a straight line | Correctness | `sweph.c` |
 | 36 | The topocentric observer turns at the rate per UT day, per TT day | Correctness | `sweph.c` |
+| 37 | `swe_nod_aps()` carries the ecliptic's turning about the wrong centre | Correctness | `swecl.c` |
+| 38 | `swe_nod_aps()` returns the mean apsides' latitude as its speed | Correctness | `swecl.c` |
 
 ---
 
@@ -1941,6 +1943,84 @@ The G1 baseline moved on 7,035 rows for the three together: speeds only
 and positions by at most 3.9e-11 deg topocentric and 9.3e-10 day on the
 occultation and eclipse times that iterate on a topocentric speed. G17:
 twelve speed digits.
+## 37. `swe_nod_aps()` carries the ecliptic's turning about the wrong centre
+
+**Severity: Correctness (up to 1.6e-5 deg/day on the latitude and declination speeds of every geocentric node and apsis of a planet, 6e-6 on the right ascension speeds; 1.3e-4 on the Sun's perigee near perihelion)**
+**Where:** `swecl.c`: `swe_nod_aps_r()`, the conversions shared by the mean and osculating points
+
+The nodes and apsides are built in the ecliptic of date: the osculating
+ones by `swi_plan_for_osc_elem()`, which turns the planet's state into
+the true ecliptic of each instant, and differenced there a step apart;
+the mean ones from elements referred to the mean ecliptic of date. So
+their speeds already carry that ecliptic's turning, the obliquity's rate
+de/dt (0, z', -y') of entry 33, taken about the HELIOCENTRIC point. The
+shared conversions then rotate to the equator with the matrix alone
+(leaving the turning in), go to J2000, add the Sun, subtract the
+observer, apply deflection and aberration, and rotate back into the
+ecliptic of date with the matrix alone (adding no turning for the
+GEOCENTRIC point). What survives is de/dt x (the Earth's heliocentric
+position), 1 AU long, which is nothing heliocentric or for the Moon,
+whose two centres are the same point, and up to 1.6e-5 deg/day on a
+planet's geocentric node or apsis -- or more where the point is near
+the Earth: the Sun's osculating perigee at J2000 is 0.044 AU away and
+its latitude speed was off by 1.3e-4 deg/day. Measured against five-point
+differences of the function's own positions (h = 0.01 day): Mars's
+osculating ascending node's latitude speed off by 1.3e-5 at 1800, the
+error at every date and point matching de/dt x r_Earth to two digits;
+with SEFLG_HELCTR 1e-8. With the mean method the nutation in obliquity's
+rate survived alone (the points leave the MEAN ecliptic and re-enter the
+TRUE one, and the mean obliquity's rate cancels), 2e-6 to 1.5e-5.
+
+**Fix, as done here:** before the rotation to the equator,
+`swi_ecl_frame_speed()` with minus the rate of the frame the points were
+built in (true with nutation for the osculating points, mean for the mean
+ones, mean under SEFLG_NONUT); after the rotation back into the ecliptic,
+plus the rate of the output frame. Latitude and declination speeds now
+within 9e-8 deg/day. Not under SEFLG_J2000, whose output is left as
+upstream has it: that path does not set SEFLG_NONUT as `swe_calc()`'s
+`plaus_iflag()` would, so it rotates the ecliptic-of-date points by the
+J2000 obliquity and applies the nutation to J2000 coordinates; the Moon's
+mean node from `swe_nod_aps()` under SEFLG_J2000 is 7.8" in longitude
+and 6.9" in latitude from `swe_calc(SE_MEAN_NODE)` under the same flag,
+where of date they agree to 1e-6 deg. A position defect, not fixed here.
+
+## 38. `swe_nod_aps()` returns the mean apsides' latitude as its speed
+
+**Severity: Correctness (the mean perihelion's and aphelion's latitude speed is the latitude itself, 1.1-3.9 deg/day against a true 1e-6 to 1e-2; 0.01-0.1 deg/day on their geocentric longitude speeds through it)**
+**Where:** `swecl.c`: `swe_nod_aps_r()`, the mean apsides
+
+The mean perihelion's speed is taken from an aux. position a day on:
+`xpe[3]` is set to the argument of perihelion plus its daily rate, both
+are turned from the orbital plane into the ecliptic by `swe_cotrans()`,
+and the longitude speed is their difference. The latitude's difference
+is never taken: `xpe[4]`, the aux. position's latitude, goes out as the
+latitude speed, and the aphelion gets its negative. Heliocentric, Mars's
+mean perihelion had a latitude speed of -1.8 deg/day, its latitude; the
+Moon's mean perigee -3.4 deg/day. Through the cartesian state and the
+change of centre the geocentric speeds carry it too: Mars's mean
+perihelion's longitude speed was off by 0.014 deg/day, Mercury's by 0.047,
+and the distance rates by up to 1.4e-3 AU/day.
+
+**Fix, as done here:** `xpe[4] -= xpe[1]` where the longitude speed is
+formed, the same one-day difference. The mean apsides' latitude speeds are
+now within 9e-8 deg/day of a five-point difference, geocentric and
+heliocentric; the Moon's mean perigee 0.0110 deg/day.
+
+G42 `tests/nodspeed.c`, for both: the longitude and latitude (right
+ascension and declination) speeds of the four points of Mars, Venus and
+Jupiter, osculating and mean, ecliptic and equatorial, against five-point
+differences at seven dates -200..+200 years; latitude and declination
+within 2.5e-7 deg/day, longitude and right ascension within 1e-6; the
+upstream build fails every case. G24 asserts both ways: Mars's osculating
+node's latitude speed (3.9e-8 shipped, 1.2e-5 compat) and Mars's mean
+perihelion's heliocentric latitude speed (1.4e-9 shipped, 1.77 compat).
+G1: 76 rows, every `nod_aps`/`nodaps` row with speeds but the Earth's
+ten zeroed nodes, speeds only -- positions unchanged to the bit. The 34 mean rows by bug 38 (latitude
+speeds by up to 3.4 deg/day, longitude by 0.047, distance by 1.4e-3) and
+the Moon's mean nodes' latitude speed by 4.7e-6 (bug 37); the 42
+osculating rows by bug 37 (latitude speeds by up to 1.3e-4 on the Sun's
+perigee and 8.2e-6 elsewhere, longitude and distance speeds by at most
+3e-8), the geocentric Moon's in the last bits. G17 unchanged.
 
 ## How these were found
 

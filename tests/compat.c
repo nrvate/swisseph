@@ -339,6 +339,44 @@ static double ecl_lat_speed_off(void)
   return fabs(x[4] - r);
 }
 
+/* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
+ * against a five-point difference of its latitude, deg/day. The points are
+ * built in the ecliptic of date, whose turning is taken out of the
+ * heliocentric point and must go back on the geocentric one (UPSTREAM-BUGS
+ * 37); upstream does neither, and de/dt x (the Earth's position) survives,
+ * ~1e-5 deg/day on this date. */
+static double nodaps_turning_off(void)
+{
+  double jd = 2461338.137, x[6], f[5][6], r, u[6];
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_nod_aps(jd, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_OSCU, x, u, u, u, serr);
+  for (k = 0; k < 5; k++)
+    swe_nod_aps(jd + (k - 2) * 0.01, SE_MARS, SEFLG_SWIEPH, SE_NODBIT_OSCU, f[k], u, u, u, serr);
+  r = (f[0][1] - 8 * f[1][1] + 8 * f[3][1] - f[4][1]) / 0.12;
+  return fabs(x[4] - r);
+}
+
+/* The mean perihelion of Mars, heliocentric: its latitude speed against a
+ * five-point difference of its latitude, deg/day. Upstream never takes
+ * it; the aux. position's latitude, a day on, goes out in its place, so
+ * the speed is the latitude itself, ~1.8 deg/day (UPSTREAM-BUGS 38). */
+static double mean_apsis_lat_speed_off(void)
+{
+  double jd = 2461338.137, x[6], f[5][6], r, u[6];
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_nod_aps(jd, SE_MARS, SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_SPEED, SE_NODBIT_MEAN, u, u, x, u, serr);
+  for (k = 0; k < 5; k++)
+    swe_nod_aps(jd + (k - 2) * 0.01, SE_MARS, SEFLG_SWIEPH | SEFLG_HELCTR, SE_NODBIT_MEAN, u, u, f[k], u, serr);
+  r = (f[0][1] - 8 * f[1][1] + 8 * f[3][1] - f[4][1]) / 0.12;
+  return fabs(x[4] - r);
+}
+
 /* A speed against a five-point difference of its own longitude, deg/day,
  * at an instant and a step that are binary fractions (t + k h exact). */
 static double lon_speed_off(int ipl, int32 fl, double jd)
@@ -420,6 +458,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
+  double nodspd, apslat;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -439,6 +478,8 @@ int main(int argc, char **argv)
   spd3   = moon_speed_off(0);
   spdlt  = moon_speed_off(SEFLG_NOABERR);
   latspd = ecl_lat_speed_off();
+  nodspd = nodaps_turning_off();
+  apslat = mean_apsis_lat_speed_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -563,6 +604,22 @@ int main(int argc, char **argv)
   else {
     printf("  ecliptic turning       %.2e deg/day FAIL: expected %s\n",
            latspd, WANT_DEFECT ? "> 2e-6" : "< 2e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodspd > 2e-6) : (nodspd < 2.5e-7))
+    printf("  nod_aps turning        %.2e deg/day OK\n", nodspd);
+  else {
+    printf("  nod_aps turning        %.2e deg/day FAIL: expected %s\n",
+           nodspd, WANT_DEFECT ? "> 2e-6" : "< 2.5e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (apslat > 0.1) : (apslat < 1e-6))
+    printf("  mean apsis lat speed   %.2e deg/day OK\n", apslat);
+  else {
+    printf("  mean apsis lat speed   %.2e deg/day FAIL: expected %s\n",
+           apslat, WANT_DEFECT ? "> 0.1" : "< 1e-6");
     bad++;
   }
 
