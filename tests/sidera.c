@@ -20,7 +20,12 @@
  *      expression (the IAU 2006 polynomial) within 0.2 mas, 1500-2500;
  *   3. it is continuous, within 0.01" (what a JD resolves there), where
  *      the table ends (+-400 centuries from J2000) and the integral takes
- *      over.
+ *      over;
+ *   4. over 64 consecutive representable JDs at -999, -13000 and +12000 it
+ *      lies on the straight line through the first and last within 0.01
+ *      mas: the rotation angle is formed from the fraction of the day, not
+ *      as 1.0027 * (JD - J2000), whose rounding scattered it by 0.15 mas
+ *      there, differently wherever the multiply-add fuses.
  * The upstream build fails 1 by 4.1" and 2 by up to 19" (at 2500). Run as
  *   sidera
  */
@@ -90,6 +95,27 @@ int main(void)
     printf("  %s400 cy   step where the table ends %+.6f\"\n", i ? "+" : "-", step);
     if (fabs(step) > 1e-2) {
       printf("    FAIL: sidereal time steps at the end of the table\n");
+      bad++;
+    }
+  }
+  /* sidereal time through 0 h is a straight line over 64 ulps of the JD;
+   * nutation 0, so the equation of the equinoxes adds nothing to bend it */
+  for (i = 0; i < 3; i++) {
+    static const double rgYear3[3] = {-999, -13000, 12000};
+    double jd0 = floor(2451545.0 + (rgYear3[i] - 2000) * 365.25) + 0.5, jd = jd0;
+    double v[65], dev, worst = 0;
+    int j;
+    for (j = 0; j <= 64; j++) {
+      v[j] = swe_sidtime0_r(ca, jd, 23.4, 0) - swe_sidtime0_r(ca, jd0, 23.4, 0);
+      jd = nextafter(jd, 1e10);
+    }
+    for (j = 1; j < 64; j++) {
+      dev = (v[j] - v[64] * j / 64) * 54000;
+      if (fabs(dev) > worst) worst = fabs(dev);
+    }
+    printf("  %7.0f  64 consecutive JDs: worst off the line %.6f mas\n", rgYear3[i], worst * 1e3);
+    if (worst > 1e-5) {
+      printf("    FAIL: the rotation angle is rounded at the size of the day count\n");
       bad++;
     }
   }

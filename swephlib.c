@@ -3902,14 +3902,38 @@ static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
 #define SIDT_LTERM_OFS0   (0.000378172 / 15.0)
 #define SIDT_LTERM_OFS1   (0.001385646 / 15.0)
 
+/* The Earth rotation angle, IERS Conventions 2010 eq. 5.15, in degrees,
+ * for tjd = JD(UT1). */
+static double era_deg(double tjd)
+{
+  double jdrel = tjd - J2000;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Written as the Conventions write it, the whole days apart, and the
+   * fraction of the day taken from tjd itself (J2000 is a whole day), which
+   * is exact for any double: jdrel is not before about -1357 (JD 1225772),
+   * where it outgrows tjd and joins consecutive JDs in pairs. Then only
+   * 0.00273781191135448 * jdrel rounds, at 4.5e-13 of a turn (0.6 uas) at
+   * year -999. 1.00273781191135448 * jdrel there is 1.1e6 turns, which
+   * rounds at 2.3e-10 (0.3 mas), and to a different last bit wherever the
+   * compiler fuses the multiply-add (arm64 does by default), so sidereal
+   * time differed between platforms by 0.3 mas, and the topocentric Moon's
+   * three-point speed turned that into 1.9e-5 deg/day. The JD itself
+   * resolves 20 us there, which is the same everywhere. */
+  double era = (tjd - floor(tjd)) + 0.7790572732640 + 0.00273781191135448 * jdrel;
+  return (era - floor(era)) * 360;
+#else
+  return swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
+#endif
+}
+
 /* Mean sidereal time, IERS Conventions 2010 (ERA-based, IAU 2006
  * precession), in degrees: the SEMOD_SIDT_IERS_CONV_2010 branch of
  * swe_sidtime0_r() without the equation of the equinoxes. */
 static double sidtime_iers2010_deg(swe_ctx *ctx, double tjd)
 {
-  double jdrel = tjd - J2000, gmst, dadd;
+  double gmst, dadd;
   double tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
-  gmst = swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
+  gmst = era_deg(tjd);
   gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
   dadd = sidtime_non_polynomial_part(ctx, tt);
   return swe_degnorm(gmst + dadd);
@@ -4039,9 +4063,9 @@ static double sidt_pra(swe_ctx *ctx, double tc)
  * precession in right ascension, with the IERS 2010 complementary terms. */
 static double sidtime_era_long_deg(swe_ctx *ctx, double tjd)
 {
-  double jdrel = tjd - J2000, gmst, dadd;
+  double gmst, dadd;
   double tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
-  gmst = swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
+  gmst = era_deg(tjd);
   gmst += (0.014506 + SIDT_PRA_NUTC * tt + sidt_pra(ctx, tt)) / 3600.0;
   dadd = sidtime_non_polynomial_part(ctx, tt);
   return swe_degnorm(gmst + dadd);

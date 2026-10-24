@@ -65,6 +65,7 @@ worst were in code that had never executed even once.
 | 27 | The topocentric observer is placed about the mean pole of date | Correctness | `sweph.c` |
 | 28 | The osculating lunar apogee is fitted with a GM from a different almanac | Correctness | `sweph.c`, `swejpl.c` |
 | 29 | The long-term sidereal time follows delta t | Correctness | `swephlib.c` |
+| 30 | The Earth rotation angle is rounded at the size of the day count | Correctness | `swephlib.c` |
 
 ---
 
@@ -1683,6 +1684,54 @@ IERS 2010 expression within 0.2 mas over 1500-2500 (0.09 mas measured; up
 to 19" on the compat build); and it is continuous where the table ends,
 within what a JD resolves there (4.8 mas). G35 still holds the 1850 and
 2050 splices. A G24 case asserts the delta-t coupling both ways.
+
+## 30. The Earth rotation angle is rounded at the size of the day count
+
+**Severity: Correctness (0.3 mas of sidereal time at -999, 1 mas at -13000, different on arm64; 1.9e-5 deg/day on the topocentric Moon's speed)**
+**Where:** `swephlib.c`, `swe_sidtime0_r()`'s IERS 2010 branch (in the fork `era_deg()`, which it and entry 29's long-term sidereal time share)
+
+The IERS 2010 sidereal time forms the Earth rotation angle as
+`(0.7790572732640 + 1.00273781191135448 * jdrel) * 360`, jdrel = JD(UT1) -
+J2000. At year -999 the product is 1.1e6 turns, which a double holds to
+2.3e-10 of a turn, 0.3 mas, and the multiplication by 360 rounds again. The
+JD itself resolves 20 us there, about the same 0.3 mas of rotation, but
+that loss is the input's and is the same on every machine; this one is the
+formula's, and where the compiler fuses the multiply-add into one rounding
+(arm64 does by default, clang's -ffp-contract=on) the last bit differs. So
+sidereal time differed between platforms by up to 0.3 mas in antiquity.
+
+Upstream reaches this only when a caller selects
+`SEMOD_SIDT_IERS_CONV_2010` (by default it is used only within 1850-2050,
+where jdrel is small and the loss a few uas). Entry 29's fix made the
+rotation angle the default at every date, and the fork's macOS and
+apple-clang LTO jobs then failed G1b: the topocentric Moon's speed, which
+`swe_calc()` differences from three positions 4.32 s apart when aberration
+is on, moved 1.86e-5 deg/day (tolerance 1e-5) for a 5 uas shift of the
+Moon. Reproduced on x86 with clang -O2 -mfma -ffp-contract=on, to the digit.
+
+A second rounding comes before it: below JD 1225772 (-1357), |jdrel| is
+larger than the JD and cannot hold every JD, so consecutive JDs share one
+jdrel in pairs (1 mas at -13000).
+
+**Fix, as done here:** the Conventions' own form, eq. 5.15: the fraction of
+the day plus 0.7790572732640 + 0.00273781191135448 * jdrel, reduced to one
+turn before the multiplication by 360. The fraction of the day is taken from
+the JD itself (J2000 is a whole day), which is exact for any double; only
+the small product rounds, 4.5e-13 of a turn (0.6 uas) at -999. Upstream's
+form stays under `SWE_UPSTREAM_COMPAT`.
+
+Over 64 consecutive representable JDs the sidereal time now lies on a
+straight line within 0.0005 mas at -999, 0.003 at -13000, 0.0014 at +12000;
+upstream's form scatters by 0.33, 1.03 and 0.78 mas. The FMA build against
+the -O0 one: topocentric Moon speeds within 7.6e-7 deg/day (was 1.86e-5).
+G1: 1,160 rows, all sidereal-time consumers; sidereal time moved by up to
+0.36 mas, house cusps by up to 0.63 mas (system H at year 1), topocentric
+Moon speeds by up to 5.2e-6 deg/day, which is the old rounding leaving
+them.
+
+G39 `tests/sidera.c` check 4 is the straight line, within 0.01 mas, at
+-999, -13000 and +12000. A G24 case asserts it both ways on the IERS 2010
+model at -13000 (0.0033 mas shipped, 1.03 mas compat).
 
 ## How these were found
 

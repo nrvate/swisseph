@@ -693,6 +693,9 @@ struct epsilon {
  *   - the long-term sidereal time taken from the mean Sun at TT, so it
  *     followed delta t at 0.041" a second (+2382" at -3000; UPSTREAM-BUGS
  *     29, G39)
+ *   - the Earth rotation angle formed as 1.0027 * (JD - J2000), rounded at
+ *     the size of the day count (0.3 mas at -999, 1 mas at -13000, and
+ *     differently where the multiply-add fuses; UPSTREAM-BUGS 30, G39)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

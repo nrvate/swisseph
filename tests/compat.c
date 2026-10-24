@@ -302,10 +302,30 @@ static double sidt_follows_deltat(void)
   return d * 54000;
 }
 
+/* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
+ * the size of the day count: on the IERS 2010 sidereal time at -13000,
+ * consecutive representable JDs scatter off a straight line by ~1 mas.
+ * Worst over 64 of them, in mas. */
+static double era_scatter(void)
+{
+  double jd0 = 2451545.0 - 15000 * 365.25 + 0.5, jd = jd0, v[65], worst = 0;
+  int j;
+  swe_close();
+  swe_set_astro_models("0,0,0,0,0,0,0,3", 0);   /* SEMOD_SIDT_IERS_CONV_2010 */
+  for (j = 0; j <= 64; j++) {
+    v[j] = swe_sidtime0(jd, 23.4, 0) - swe_sidtime0(jd0, 23.4, 0);
+    jd = nextafter(jd, 1e10);
+  }
+  for (j = 1; j < 64; j++)
+    if (fabs(v[j] - v[64] * j / 64) > worst) worst = fabs(v[j] - v[64] * j / 64);
+  swe_set_astro_models("0,0,0,0,0,0,0,0", 0);
+  return worst * 54000 * 1e3;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt;
+  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -321,6 +341,7 @@ int main(int argc, char **argv)
   hlt    = helio_lt_from_barycentre();
   obs    = observer_off_true_pole();
   gm     = apogee_gm_off();
+  era    = era_scatter();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -410,6 +431,14 @@ int main(int argc, char **argv)
   else {
     printf("  sidereal follows dT    %+.6f\"     FAIL: expected %s\n",
            siddt, WANT_DEFECT ? "> 1\"" : "< 0.001\"");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (era > 0.1) : (era < 0.01))
+    printf("  rotation angle scatter %.4f mas      OK\n", era);
+  else {
+    printf("  rotation angle scatter %.4f mas      FAIL: expected %s\n",
+           era, WANT_DEFECT ? "> 0.1 mas" : "< 0.01 mas");
     bad++;
   }
 
