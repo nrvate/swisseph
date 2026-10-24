@@ -5170,7 +5170,10 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
 {
   int i;
   double xx2[6];
-  double u[6], e[6], q[6], ru, re, rq, uq, ue, qe, g1, g2;
+  double u[6], e[6], q[6], ru, re, rq, uq, ue, g1, g2;
+#ifdef SWE_UPSTREAM_COMPAT
+  double qe;
+#endif
   double xx3[6], dx1, dx2, dtsp;
   double xsun[6], xearth[6];
   double sina, sin_sunr, meff_fact;
@@ -5217,7 +5220,9 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
   }
   uq = dot_prod(u,q);
   ue = dot_prod(u,e);
+#ifdef SWE_UPSTREAM_COMPAT
   qe = dot_prod(q,e);
+#endif
   /* When a planet approaches the center of the sun in superior
    * conjunction, the formula for the deflection angle as given
    * in Expl. Suppl. p. 136 cannot be used. The deflection seems
@@ -5228,7 +5233,20 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
    * for a non-point-mass, taking into account the mass distribution
    * within the sun. For more info, s. meff().
    */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 39: sqrt(1 - ue^2) cancels where it matters, a planet
+   * behind the disc, ue ~ 1: at 0.02 of the Sun's radius sina ~ 1e-4 and
+   * carries 1e-12 of rounding, against the 1e-8 it changes over the speed
+   * step below; the deflection's rate came out rough by 1.5e-5 deg/day
+   * between instants 1e-9 day apart. |u x e| is exact to its last bits. */
+  {
+    double ux[3];
+    swi_cross_prod(u, e, ux);
+    sina = sqrt(square_sum(ux));
+  }
+#else
   sina = sqrt(1 - ue * ue);	/* sin(angle) between sun and planet */
+#endif
   sin_sunr = SUN_RADIUS / re; 	/* sine of sun radius (= sun radius) */
   if (sina < sin_sunr) 	{
     meff_fact = meff(sina / sin_sunr);
@@ -5236,7 +5254,18 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
     meff_fact = 1;
   }
   g1 = 2.0 * HELGRAVCONST * meff_fact / CLIGHT / CLIGHT / AUNIT / re; 
+#ifndef SWE_UPSTREAM_COMPAT
+  /* and 1 + q.e cancels there too, q.e ~ -1, g2 ~ 5e-9: for unit vectors
+   * it is |q + e|^2 / 2, formed from the small vector itself */
+  {
+    double qpe[3];
+    for (i = 0; i <= 2; i++)
+      qpe[i] = q[i] + e[i];
+    g2 = square_sum(qpe) / 2;
+  }
+#else
   g2 = 1.0 + qe;
+#endif
   /* compute deflected position */
   for (i = 0; i <= 2; i++) 
     xx2[i] = ru * (u[i] + g1/g2 * (uq * e[i] - ue * q[i]));
@@ -5290,8 +5319,18 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
     }
     uq = dot_prod(u,q);
     ue = dot_prod(u,e);
+#ifdef SWE_UPSTREAM_COMPAT
     qe = dot_prod(q,e);
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
+    {
+      double ux[3];
+      swi_cross_prod(u, e, ux);
+      sina = sqrt(square_sum(ux));
+    }
+#else
     sina = sqrt(1 - ue * ue);	/* sin(angle) between sun and planet */
+#endif
     sin_sunr = SUN_RADIUS / re; 	/* sine of sun radius (= sun radius) */
     if (sina < sin_sunr) {
       meff_fact = meff(sina / sin_sunr);
@@ -5299,7 +5338,16 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
       meff_fact = 1;
     }
     g1 = 2.0 * HELGRAVCONST * meff_fact / CLIGHT / CLIGHT / AUNIT / re; 
+#ifndef SWE_UPSTREAM_COMPAT
+    {
+      double qpe[3];
+      for (i = 0; i <= 2; i++)
+        qpe[i] = q[i] + e[i];
+      g2 = square_sum(qpe) / 2;
+    }
+#else
     g2 = 1.0 + qe;
+#endif
     for (i = 0; i <= 2; i++) 
       xx3[i] = ru * (u[i] + g1/g2 * (uq * e[i] - ue * q[i]));
     for (i = 0; i <= 2; i++) {

@@ -717,6 +717,9 @@ struct epsilon {
  *     node or apsis; UPSTREAM-BUGS 37, G42)
  *   - swe_nod_aps() returned the mean perihelion's and aphelion's latitude
  *     as its latitude speed (1.8 deg/day for Mars; UPSTREAM-BUGS 38, G42)
+ *   - swi_deflect_light() formed the elongation's sine and 1 + q.e by
+ *     cancelling subtractions, so a planet's speed behind the Sun's disc
+ *     was rough by 1.5e-5 deg/day (UPSTREAM-BUGS 39, G44)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

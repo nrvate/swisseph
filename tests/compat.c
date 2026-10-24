@@ -339,6 +339,28 @@ static double ecl_lat_speed_off(void)
   return fabs(x[4] - r);
 }
 
+/* UPSTREAM-BUGS 39: Venus 0.02 of the Sun's radius behind its centre
+ * (2016-06-06): the spread of its J2000 longitude and latitude speeds over
+ * seven instants 1e-9 day apart, deg/day; the deflection's rate formed
+ * from two cancelling quantities was rough by 1.5e-5 */
+static double defl_rough_off(void)
+{
+  double lo[2] = {1e9, 1e9}, hi[2] = {-1e9, -1e9}, x[6];
+  char serr[256];
+  int k, j;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = -3; k <= 3; k++) {
+    swe_calc(2457546.412153 + k * 1e-9, SE_VENUS,
+             SEFLG_SWIEPH | SEFLG_J2000 | SEFLG_NONUT | SEFLG_SPEED, x, serr);
+    for (j = 0; j < 2; j++) {
+      if (x[3 + j] < lo[j]) lo[j] = x[3 + j];
+      if (x[3 + j] > hi[j]) hi[j] = x[3 + j];
+    }
+  }
+  return fmax(hi[0] - lo[0], hi[1] - lo[1]);
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -460,7 +482,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat;
+  double nodspd, apslat, deflr;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -482,6 +504,7 @@ int main(int argc, char **argv)
   latspd = ecl_lat_speed_off();
   nodspd = nodaps_turning_off();
   apslat = mean_apsis_lat_speed_off();
+  deflr = defl_rough_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -622,6 +645,14 @@ int main(int argc, char **argv)
   else {
     printf("  mean apsis lat speed   %.2e deg/day FAIL: expected %s\n",
            apslat, WANT_DEFECT ? "> 0.1" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (deflr > 3e-6) : (deflr < 1e-7))
+    printf("  deflection speed rough %.2e deg/day OK\n", deflr);
+  else {
+    printf("  deflection speed rough %.2e deg/day FAIL: expected %s\n",
+           deflr, WANT_DEFECT ? "> 3e-6" : "< 1e-7");
     bad++;
   }
 

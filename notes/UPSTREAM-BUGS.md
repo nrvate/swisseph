@@ -74,6 +74,7 @@ worst were in code that had never executed even once.
 | 36 | The topocentric observer turns at the rate per UT day, per TT day | Correctness | `sweph.c` |
 | 37 | `swe_nod_aps()` carries the ecliptic's turning about the wrong centre | Correctness | `swecl.c` |
 | 38 | `swe_nod_aps()` returns the mean apsides' latitude as its speed | Correctness | `swecl.c` |
+| 39 | The light deflection's speed is rough behind the Sun's disc | Correctness | `sweph.c` |
 
 ---
 
@@ -2024,6 +2025,35 @@ the Moon's mean nodes' latitude speed by 4.7e-6 (bug 37); the 42
 osculating rows by bug 37 (latitude speeds by up to 1.3e-4 on the Sun's
 perigee and 8.2e-6 elsewhere, longitude and distance speeds by at most
 3e-8), the geocentric Moon's in the last bits. G17 unchanged.
+
+## 39. The light deflection's speed is rough behind the Sun's disc
+
+**Severity: Correctness (1.5e-5 deg/day of noise on a planet's speed while it is behind the Sun, between instants 1e-9 day apart)**
+**Where:** `sweph.c`: `swi_deflect_light()`
+
+The deflection's rate is the change of the deflection over 5e-7 day,
+from u (the planet), e (Sun-Earth) and q (Sun-planet), unit vectors.
+Two of its quantities cancel exactly where the deflection is largest, a
+planet behind the disc: the elongation's sine as sqrt(1 - (u.e)^2), u.e ~
+1, and the denominator 1 + q.e, q.e ~ -1. At 0.02 of the Sun's radius
+from its centre they are ~1e-4 and ~5e-9 and carry ~1e-12 and ~1e-16 of
+rounding; over the speed's step they change by only ~1e-8 and ~1e-13 of
+themselves, so the rate came out rough: Venus at its 2016-06-06
+conjunction 1.5e-5 deg/day from one instant to the next, Saturn 4e-6,
+Jupiter 3e-7. Found when it moved G1's `cov:meff[venus]` row past G1b's
+1e-5 tolerance on arm64.
+
+**Fix, as done here:** the sine as |u x e| and the denominator as
+|q + e|^2 / 2 (the same for unit vectors), both formed from the small
+quantity itself. The spread is now <= 2.9e-8 deg/day and the speed within
+2.2e-7 of a central difference. Positions move by the rounding they
+carried, <= 3.1e-13 deg.
+
+G44 `tests/deflspeed.c`: the five conjunctions G1 uses for meff(), speeds
+at seven instants 1e-9 day apart within 1e-7 of each other and within
+1e-6 of a central difference; the upstream build fails on Venus, Saturn,
+Jupiter and (light-time rate, entry 35) Mercury. G24
+`defl_rough_off`: 6.8e-9 shipped, 1.5e-5 compat. G1: the five meff rows.
 
 ## How these were found
 
