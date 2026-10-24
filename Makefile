@@ -51,6 +51,19 @@ else
   DYNAMIC_LINK_FLAGS= -Wl,-Bdynamic
 endif
 
+# No fused multiply-add contraction: a * b + c is rounded twice, as written.
+#
+# gcc in ISO mode (-std=c17) never contracts; clang contracts within an
+# expression by default (-ffp-contract=on), and on arm64, where FMA is
+# always there, that changed last bits wherever an operand is inexact.
+# Measured: the JPL reader's Chebyshev recursion differed in 78 of G10's 96
+# rows on Apple clang, and the Earth rotation angle at -999 by 0.3 mas
+# before UPSTREAM-BUGS 30. With contraction off, clang -O2 -mfma reproduces
+# gcc -O0's G1 transcript bit for bit on x86 (13,000 rows); across
+# platforms the libm (sin, cos, atan2) still differs in its last bits.
+FPFLAGS ?= -ffp-contract=off
+CFLAGS += $(FPFLAGS)
+
 # Link-time optimisation. ON by default; `make LTO=0` turns it off.
 #
 # Measured on gcc 11.4 -O2 (tests/bench, 3 interleaved runs, median of 5):

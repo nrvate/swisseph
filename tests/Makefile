@@ -19,6 +19,10 @@ CFLAGS  ?= -O0 -g -D_GNU_SOURCE -I..
 # mid-bisect.
 WARNFLAGS ?= -Wall -Wextra -Werror
 CFLAGS  += $(WARNFLAGS)
+# No multiply-add contraction, as in the root Makefile (see FPFLAGS there):
+# the arithmetic is the same on every compiler and FMA or none.
+FPFLAGS ?= -ffp-contract=off
+CFLAGS  += $(FPFLAGS)
 # `make LTO=1` is opt-in HERE so the bit-exact G1 reference build stays plain
 # -O0; the root Makefile has LTO on by default. Same flag choice as there.
 ifeq ($(LTO),1)
@@ -55,7 +59,7 @@ OBJ_ASAN  = .obj-asan
 OBJ_TSAN  = .obj-tsan
 OBJ_UBSAN = .obj-ubsan
 
-CFLAGS_O2 = -O2 -g -D_GNU_SOURCE -I..
+CFLAGS_O2 = -O2 -g -D_GNU_SOURCE -I.. $(FPFLAGS)
 
 SWEOBJ_STD  = $(patsubst ../%.c,$(OBJ_STD)/%.o,$(SWE))
 SWEOBJ_O2   = $(patsubst ../%.c,$(OBJ_O2)/%.o,$(SWE))
@@ -716,7 +720,7 @@ clean:
 # NOT a gate -- it is a measuring instrument, and wall-clock on a shared
 # machine is not a pass/fail signal. Built at -O2 regardless of CFLAGS,
 # since a claim about codegen measured at -O0 is meaningless.
-BENCH_CFLAGS = -O2 -g -D_GNU_SOURCE -I..
+BENCH_CFLAGS = -O2 -g -D_GNU_SOURCE -I.. $(FPFLAGS)
 
 bench: bench.c $(wildcard ../*.c)
 	$(CC) $(BENCH_CFLAGS) bench.c $(SWE) -o $@ $(LIBS)
