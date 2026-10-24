@@ -3899,12 +3899,60 @@ static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
 #define SIDT_LTERM_T1  2469807.5  /* 1 Jan 2050  */
 #define SIDT_LTERM_OFS0   (0.000378172 / 15.0)
 #define SIDT_LTERM_OFS1   (0.001385646 / 15.0)
+
+/* Mean sidereal time, IERS Conventions 2010 (ERA-based, IAU 2006
+ * precession), in degrees: the SEMOD_SIDT_IERS_CONV_2010 branch of
+ * swe_sidtime0_r() without the equation of the equinoxes. */
+static double sidtime_iers2010_deg(swe_ctx *ctx, double tjd)
+{
+  double jdrel = tjd - J2000, gmst, dadd;
+  double tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
+  gmst = swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
+  gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
+  dadd = sidtime_non_polynomial_part(ctx, tt);
+  return swe_degnorm(gmst + dadd);
+}
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 25: SIDT_LTERM_OFS0 and OFS1 were fitted once, under the
+ * delta t of their day (they meet to 0.00003" at 1850 under Espenak-Meeus
+ * 2006), but sidtime_long_term() moves 0.041" for every second of delta t
+ * at the boundary and with the precession model, so under the default
+ * models since 2.06 sidereal time stepped by -0.097" at 1850 and -1.908" at
+ * 2050. The offset is now the two formulas' difference at the boundary,
+ * under this context's models, in hours: continuous by construction.
+ * Memoized by value on everything it reads (struct sidt_splice_memo). */
+static double sidt_lterm_offset(swe_ctx *ctx, int ib)
+{
+  double tb = ib ? SIDT_LTERM_T1 : SIDT_LTERM_T0;
+  double dt_b = swe_deltat_ex_r(ctx, tb, -1, NULL);
+  double dt_j2000 = swe_deltat_ex_r(ctx, J2000, -1, NULL);
+  double ofs;
+  if (ctx->sidt_splice.slot[ib].valid
+      && ctx->sidt_splice.slot[ib].dt_b == dt_b
+      && ctx->sidt_splice.slot[ib].dt_j2000 == dt_j2000
+      && memcmp(ctx->sidt_splice.slot[ib].models, ctx->astro_models,
+                sizeof(ctx->astro_models)) == 0)
+    return ctx->sidt_splice.slot[ib].ofs;
+  /* both mean: eps != 0 and nut 0 add no equation of the equinoxes */
+  ofs = sidtime_long_term(ctx, tb, 1, 0) - sidtime_iers2010_deg(ctx, tb) / 15.0;
+  if (ofs > 12) ofs -= 24;
+  if (ofs < -12) ofs += 24;
+  ctx->sidt_splice.slot[ib].dt_b = dt_b;
+  ctx->sidt_splice.slot[ib].dt_j2000 = dt_j2000;
+  memcpy(ctx->sidt_splice.slot[ib].models, ctx->astro_models,
+         sizeof(ctx->astro_models));
+  ctx->sidt_splice.slot[ib].ofs = ofs;
+  ctx->sidt_splice.slot[ib].valid = TRUE;
+  return ofs;
+}
+#endif
 double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut)
 {
   double jd0;    	/* Julian day at midnight Universal Time */
   double secs;   	/* Time of day, UT seconds since UT midnight */
-  double eqeq, jd, tu, tt, msday, jdrel;
-  double gmst, dadd;
+  double eqeq, jd, tu, tt, msday;
+  double gmst;
   int prec_model_short = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
   int sidt_model = ctx->astro_models[SE_MODEL_SIDT];
   if (prec_model_short == 0) prec_model_short = SEMOD_PREC_DEFAULT_SHORT;
@@ -3913,10 +3961,14 @@ double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut
   if (sidt_model == SEMOD_SIDT_LONGTERM) {
     if (tjd <= SIDT_LTERM_T0 || tjd >= SIDT_LTERM_T1) {
       gmst = sidtime_long_term(ctx, tjd, eps, nut);
+#ifndef SWE_UPSTREAM_COMPAT
+      gmst -= sidt_lterm_offset(ctx, tjd >= SIDT_LTERM_T1);
+#else
       if (tjd <= SIDT_LTERM_T0)
 	gmst -= SIDT_LTERM_OFS0;
       else if (tjd >= SIDT_LTERM_T1)
 	gmst -= SIDT_LTERM_OFS1;
+#endif
       if (gmst >= 24) gmst -= 24;
       if (gmst < 0) gmst += 24;
       goto sidtime_done;
@@ -3938,13 +3990,7 @@ double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut
   if (sidt_model == SEMOD_SIDT_IERS_CONV_2010 || sidt_model == SEMOD_SIDT_LONGTERM) {
     /*  ERA-based expression for Greenwich Sidereal Time (GST) based 
      *  on the IAU 2006 precession */
-    jdrel = tjd - J2000;
-    tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
-    gmst = swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
-    gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
-    dadd = sidtime_non_polynomial_part(ctx, tt);
-    gmst = swe_degnorm(gmst + dadd);
-    /*printf("gmst iers=%f \n", gmst);*/
+    gmst = sidtime_iers2010_deg(ctx, tjd);
     gmst = gmst / 15.0 * 3600.0;
   /* sidt_model == SEMOD_SIDT_IAU_2006, older standards according to precession model */
   } else if (sidt_model == SEMOD_SIDT_IAU_2006) {

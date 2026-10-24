@@ -177,10 +177,23 @@ static double jpl_tt_read(void)
   return w;
 }
 
+/* Defect 25: the default sidereal time steps where it changes formula at
+ * 2050-01-01 0h UT, the long-term formula's constant offset having been
+ * fitted under an older delta t. The step over two seconds less the
+ * sidereal rate, in arcsec (G35 holds 1850 and four other model sets). */
+static double sidt_splice_step(void)
+{
+  double ta = 2469807.5 - 1.0 / 86400.0, tb = 2469807.5 + 1.0 / 86400.0, d;
+  swe_close();
+  d = swe_sidtime(tb) - swe_sidtime(ta);
+  if (d < -12) d += 24;
+  return (d - 24.0 * 1.00273781191135448 * (tb - ta)) * 15 * 3600;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt;
+  double drift, moonlt, jpltt, sidstep;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -191,6 +204,7 @@ int main(int argc, char **argv)
   pheno  = pheno_accepts_eclnut();
   moonlt = moon_lighttime();
   jpltt  = jpl_tt_read();
+  sidstep = sidt_splice_step();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -239,6 +253,14 @@ int main(int argc, char **argv)
   else {
     printf("  JPL read at TT         %.3f m        FAIL: expected %s\n",
            jpltt, WANT_DEFECT ? "> 10 m" : "< 1 m");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (fabs(sidstep) > 1) : (fabs(sidstep) < 0.001))
+    printf("  sidereal step 2050     %+.6f\"     OK\n", sidstep);
+  else {
+    printf("  sidereal step 2050     %+.6f\"     FAIL: expected %s\n",
+           sidstep, WANT_DEFECT ? "> 1\"" : "< 0.001\"");
     bad++;
   }
 

@@ -687,6 +687,9 @@ struct epsilon {
  *   - the JPL file and the Swiss files read at TT, where their argument is
  *     TDB (45 m on the barycentric Earth, 0.88 mas on the Moon;
  *     UPSTREAM-BUGS 24, G34)
+ *   - the long-term sidereal time spliced at 1850 and 2050 by constant
+ *     offsets fitted under an older delta t (-0.097" and -1.908" steps;
+ *     UPSTREAM-BUGS 25, G35)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -919,6 +922,23 @@ struct interpol {
 struct sidt_memo {
   double tt, dadd;
   AS_BOOL valid;
+};
+
+/* The offsets that splice sidtime_long_term() onto the IERS 2010 sidereal
+ * time at 1850 and 2050 (swephlib.c, sidt_lterm_offset(); UPSTREAM-BUGS
+ * 25), one slot per boundary. Each is the difference of the two formulas
+ * at its boundary, so it depends on everything they read: the models, and
+ * delta t at the boundary and at J2000 (sidtime_long_term() takes the
+ * obliquity at J2000 + delta t). All of that is the key, by value, so a
+ * changed model or delta t misses; a configuration generation would not
+ * do, since get_aya_correction() overrides astro_models[] mid-calculation
+ * without bumping it (see struct nut_memo). */
+struct sidt_splice_memo {
+  struct {
+    double dt_b, dt_j2000, ofs;
+    int32 models[SEI_NMODELS];
+    AS_BOOL valid;
+  } slot[2];
 };
 
 /* Vondrak's ten periodic terms in swi_ldp_peps() (swephlib.c).
@@ -1204,6 +1224,7 @@ struct swe_ctx {
   AS_BOOL do_interpolate_nut;
   struct interpol interpol;
   struct sidt_memo sidt_np;	/* see struct sidt_memo */
+  struct sidt_splice_memo sidt_splice;	/* see struct sidt_splice_memo */
   struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
   struct nut_memo nut_np;	/* see struct nut_memo */
   struct nut_grid_slot nut_grid[SWI_NUT_GRID_SLOTS];

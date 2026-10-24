@@ -60,6 +60,7 @@ worst were in code that had never executed even once.
 | 22 | The built-in Spica record's radial velocity is a stale catalogue value | Data | `sweph.c` |
 | 23 | The Moon's light time is taken once, and read at a rounded instant | Correctness | `sweph.c` |
 | 24 | The ephemeris files are read at TT; their argument is TDB | Correctness | `swejpl.c`, `sweph.c` |
+| 25 | The default sidereal time steps at 1850 and 2050 | Correctness | `swephlib.c` |
 
 ---
 
@@ -1414,6 +1415,49 @@ asked at the TT whose TDB is its JED, match to 7 mm (testpo's last digit),
 where the compat build misses by 1.5 m and 45 m; a G24 case asserts both.
 Against Prometheia on DE440 at twelve dates 1600-2600, the astrometric Moon
 went from 1.340 mas to 0.011 and every planet is within 0.002.
+
+## 25. The default sidereal time steps at 1850 and 2050
+
+**Severity: Correctness (a -1.908" step at 2050-01-01 0h UT, -0.097" at 1850-01-01; every house cusp and ascendant follows)**
+**Where:** `swephlib.c`, `swe_sidtime0_r()`
+
+`SEMOD_SIDT_LONGTERM`, the default, uses the IERS Conventions 2010 sidereal
+time between 1850 and 2050 and `sidtime_long_term()` outside, which builds
+it from the mean Earth of Simon et al. 1994 carried through the context's
+precession. The two are spliced by constants, `SIDT_LTERM_OFS0` and `OFS1`.
+`sidtime_long_term()` evaluates the mean Earth at TT for a UT instant, so it
+moves 0.041" (the Sun's mean motion) for every second of delta t, where the
+IERS expression moves 0.0001" per 100 s (precession only). The constants
+were fitted under the delta t of their day: under Espenak-Meeus 2006, the
+default until 2.06, the 1850 splice meets to 0.00003". Under Stephenson et
+al. 2016, the default since, sidereal time steps by **-0.097"** across
+1850-01-01 0h UT and **-1.908"** across 2050-01-01, in upstream 2.10.03 and
+the fork alike; -0.509" at 2050 under Espenak-Meeus. A house cusp at high
+latitude moves twice that (G1: 3.7").
+
+**Fix, as done here:** the offset is the difference of the two formulas
+at its boundary, under the context's own models (`sidt_lterm_offset()`),
+so the splice is continuous for any precession, nutation or delta t.
+Memoized per boundary on everything it reads, by value: the whole
+`astro_models[]`, delta t at the boundary and at J2000 (struct
+`sidt_splice_memo`). Cost: +1.8% on `swe_houses()` before 1850. G35
+`tests/sidsplice.c`: the step across each boundary within 0.001" under the
+default and four other model sets, in turn on one context and back to the
+default (0.00004" measured); the compat build fails 10 of 12. A G24 case.
+Sidereal time moves by the old step, constant, outside 1850-2050: +1.908"
+after 2050 and -0.097" before 1850.
+
+**Not changed: the delta-t coupling itself.** Away from the boundaries the
+0.041" per second remains. Against the IERS 2010 expression, the default is
++37" at 1000, +328" at year 0 and +2382" (0.66 deg) at -3000, of the
+order of 0.041" times delta t (60", 434", 3082"; the rest is the two
+precession treatments), where sidereal time at a given UT1 is set by the
+Earth's rotation, not the Sun. Removing it would move every house before
+1850 by tens of arcseconds at 1500 and by most of a degree of RAMC in
+antiquity, a departure from upstream that every historical chart would
+see, so it is left as a decision rather than made here.
+`SEMOD_SIDT_IERS_CONV_2010` already gives the ERA-based value at every
+date (its precession polynomial is the IAU 2006 one, for near J2000).
 
 ## How these were found
 
