@@ -248,10 +248,46 @@ static double observer_off_true_pole(void)
   return sqrt((xg[0]-ref[0])*(xg[0]-ref[0]) + (xg[1]-ref[1])*(xg[1]-ref[1]) + (xg[2]-ref[2])*(xg[2]-ref[2]));
 }
 
+/* Defect 28 (G38): the osculating apogee's ellipse was fitted with a 1996
+ * almanac GM. Returns the relative difference between the GM solved back
+ * from the reported apogee distance and the Moon's geometric state, and
+ * DE403's GMB (Moshier's generation): 3.5e-8 with the defect, ~1e-14
+ * without. Moshier. */
+static double apo_dist(const double *xm, double gm)   /* a(1+e) through state xm under gm */
+{
+  double r = sqrt(xm[0]*xm[0] + xm[1]*xm[1] + xm[2]*xm[2]);
+  double v2 = xm[3]*xm[3] + xm[4]*xm[4] + xm[5]*xm[5];
+  double hx = xm[1]*xm[5] - xm[2]*xm[4], hy = xm[2]*xm[3] - xm[0]*xm[5], hz = xm[0]*xm[4] - xm[1]*xm[3];
+  double a = 1.0 / (2.0 / r - v2 / gm);
+  return a * (1.0 + sqrt(1.0 - (hx*hx + hy*hy + hz*hz) / (gm * a)));
+}
+
+static double apogee_gm_off(void)
+{
+  const double gmb403 = 8.997011374291876e-10, tjd = 2451545.0;
+  int32 flg = SEFLG_MOSEPH | SEFLG_TRUEPOS | SEFLG_NONUT;
+  double xa[6], xm[6], g0 = 8.997e-10, g1 = 9.0e-10, f0, f1, g2;
+  char s[AS_MAXCH] = "";
+  int it;
+  swe_close(); swe_set_ephe_path((char *) EPHE);
+  if (swe_calc(tjd, SE_OSCU_APOG, flg, xa, s) < 0 ||
+      swe_calc(tjd, SE_MOON, flg | SEFLG_J2000 | SEFLG_XYZ | SEFLG_SPEED, xm, s) < 0)
+    return -1.0;
+  f0 = apo_dist(xm, g0) - xa[2];
+  for (it = 0; it < 60; it++) {
+    f1 = apo_dist(xm, g1) - xa[2];
+    if (f1 == f0) break;
+    g2 = g1 - f1 * (g1 - g0) / (f1 - f0);
+    g0 = g1; f0 = f1; g1 = g2;
+    if (fabs(g1 - g0) < 1e-24) break;
+  }
+  return fabs(g1 / gmb403 - 1.0);
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt, sidstep, hlt, obs;
+  double drift, moonlt, jpltt, sidstep, hlt, obs, gm;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -265,6 +301,7 @@ int main(int argc, char **argv)
   sidstep = sidt_splice_step();
   hlt    = helio_lt_from_barycentre();
   obs    = observer_off_true_pole();
+  gm     = apogee_gm_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -337,6 +374,14 @@ int main(int argc, char **argv)
   else {
     printf("  observer off true pole %.1f m        FAIL: expected %s\n",
            obs, WANT_DEFECT ? "> 100 m" : "< 1 m");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (gm > 1e-8) : (gm >= 0.0 && gm < 1e-10))
+    printf("  apogee GM off          %.1e         OK\n", gm);
+  else {
+    printf("  apogee GM off          %.1e         FAIL: expected %s\n",
+           gm, WANT_DEFECT ? "> 1e-8" : "< 1e-10");
     bad++;
   }
 

@@ -104,6 +104,7 @@ extern void swi_close_jpl_file(swe_ctx *ctx);
 extern int swi_open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *serr);
 
 extern int32 swi_get_jpl_denum(swe_ctx *ctx);
+extern int32 swi_get_jpl_const(swe_ctx *ctx, const char *name, double *val);
 
 extern void swi_IERS_FK5(double *xin, double *xout, int dir);
 

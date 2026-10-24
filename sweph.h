@@ -696,6 +696,9 @@ struct epsilon {
  *   - swi_get_observer() built the topocentric observer on the mean equator
  *     of date, 200-270 m from its true-pole place (0.15" on the Moon;
  *     UPSTREAM-BUGS 27, G37)
+ *   - lunar_osc_elem() fitted the osculating apogee's ellipse with a 1996
+ *     almanac GM, 3.3e-8 above the ephemeris's GMB (0.2" on the apogee;
+ *     UPSTREAM-BUGS 28, G38)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

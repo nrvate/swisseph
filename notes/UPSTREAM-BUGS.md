@@ -63,6 +63,7 @@ worst were in code that had never executed even once.
 | 25 | The default sidereal time steps at 1850 and 2050 | Correctness | `swephlib.c` |
 | 26 | A heliocentric light time is measured from the barycentre on its second pass | Correctness | `sweph.c` |
 | 27 | The topocentric observer is placed about the mean pole of date | Correctness | `sweph.c` |
+| 28 | The osculating lunar apogee is fitted with a GM from a different almanac | Correctness | `sweph.c`, `swejpl.c` |
 
 ---
 
@@ -1561,6 +1562,50 @@ delta t, true obliquity and nutation, and `swe_sidtime0()`, to 5 cm
 keeps 197.5 m at Zurich, J2000. The `topd` cache is unchanged: it is keyed
 by instant and invalidated with delta t (entry 18), and the new vector goes
 through the same `do_save` path.
+
+## 28. The osculating lunar apogee is fitted with a GM from a different almanac
+
+**Severity: Correctness (up to 0.2" on SE_OSCU_APOG, median 0.08"; distance and speed with it)**
+**Where:** `sweph.c`, `lunar_osc_elem()`
+
+`lunar_osc_elem()` fits a two-body ellipse to the Moon's geocentric state
+and reports its apogee (`SE_OSCU_APOG`). The gravitational parameter of that
+ellipse was a compile-time constant, `GEOGCONST * (1 + 1 / EARTH_MOON_MRAT)`
+with `GEOGCONST` the Astronomical Almanac's 1996 G M_earth and `EARTH_MOON_MRAT`
+1 / 0.0123000383. That is 3.26e-8 above the GMB (G (M_earth + M_moon)) that
+DE440/441 integrated the Moon with, 3.47e-8 above DE403's and 3.1e-9 above
+DE200's. An osculating ellipse through a given state has its eccentricity
+vector e = (v x h) / GM - r / |r|, and for a near-circular orbit a relative
+error in GM moves the direction of e by about (1 + e) / e = 19 times that
+error: the apogee's longitude was off by **up to 0.2"**, median 0.08" over
+36 instants 1600-2600 against Ephemeris Prometheia (2026-10-24). With the
+ephemeris's own GMB the two agree to 0.004" geometric, the remainder being
+the Moon's state itself.
+
+Found comparing the osculating apogee with Prometheia, whose apsides are
+read off the ephemeris's own constants; the recipe above with the compiled
+constants reproduces Swiss's apogee to 0.00005 mas, and the recipe with the
+header's GMB reproduces Prometheia's.
+
+**Fix, as done here:** `gm_earth_moon()` gives `lunar_osc_elem()` the GM of
+the ephemeris in use. A JPL file carries GMB in its header, and that value
+is used when the file is open and the Moon came from it (`swi_get_jpl_const()`,
+new in `swejpl.c`, reads a named constant from the record `state()` has
+already loaded). The Swiss files and Moshier carry no constants: the Moon
+file's DE number names the JPL header the value is taken from (DE440/441,
+DE430/431, DE405/406, DE403, else DE200; the pairs share one set of
+constants), and Moshier, whose lunar theory is fitted to DE404 and for which
+`swi_get_denum()` answers 403, takes DE403's. EMRAT is not needed: GMB is
+the sum. Upstream's constant stays under `SWE_UPSTREAM_COMPAT`. G38
+`tests/apogm.c`: the apogee DISTANCE the library reports, a (1 + e),
+together with the Moon's geometric geocentric state it was fitted to
+(`SEFLG_TRUEPOS` on both), determines the GM of the ellipse uniquely;
+solving for it must give the ephemeris's GMB to 1e-10 relative, at four
+instants 1900-2100 under Moshier (DE403's), the Swiss files (by their DE
+number) and de200.eph (whose header the test parses itself, independently
+of the library's reader). Before: all 12 rows fail, +3.47e-8 Moshier,
++3.26e-8 Swiss DE441, +3.07e-9 DE200. After: 1.6e-13. check-compat (G24)
+asserts the compat build keeps 3.5e-8 under Moshier.
 
 ## How these were found
 

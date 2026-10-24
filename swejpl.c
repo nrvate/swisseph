@@ -110,6 +110,7 @@ struct jpl_save {
   double eh_cval[400];
   double eh_ss[3], eh_au, eh_emrat;
   int32 eh_denum, eh_ncon, eh_ipt[39];
+  AS_BOOL eh_have_cval;   /* the constants record (eh_cval) has been read */
   char ch_cnam[6*400];
   double pv[78];
   double pvsun[6];
@@ -720,6 +721,7 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
     if (nrd != 400) return NOT_AVAILABLE;
     if (js->do_reorder)
       reorder((char *) &js->eh_cval[0], sizeof(double), 400);
+    js->eh_have_cval = TRUE;
     /* new 26-aug-2008: verify correct block size */
     /* ipt[i*3+1] (i = 0..12: 10 planets, sun, nutation, libration) is the
      * per-body coefficient count ("ncf" in interp()). It is read straight
@@ -1009,5 +1011,27 @@ int swi_open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *
 int32 swi_get_jpl_denum(swe_ctx *ctx)
 {
   return ctx->jpl->eh_denum;
+}
+
+/* A constant from the open JPL file's header, by its name as the file
+ * spells it ("GMB", "EMRAT", "AU"; up to six characters, blank-padded in
+ * the file). OK and the value, or NOT_AVAILABLE when no file is open, its
+ * constants record has not been read yet (state() reads it on the first
+ * position), or the name is not in it. */
+int32 swi_get_jpl_const(swe_ctx *ctx, const char *name, double *val)
+{
+  struct jpl_save *js = ctx->jpl;
+  size_t n = strlen(name);
+  int32 i;
+  if (js == NULL || js->jplfptr == NULL || !js->eh_have_cval || n == 0 || n > 6)
+    return NOT_AVAILABLE;
+  for (i = 0; i < js->eh_ncon && i < 400; i++) {
+    const char *c = js->ch_cnam + 6 * i;
+    if (strncmp(c, name, n) == 0 && (n == 6 || c[n] == ' ')) {
+      *val = js->eh_cval[i];
+      return OK;
+    }
+  }
+  return NOT_AVAILABLE;
 }
 

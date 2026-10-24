@@ -6288,6 +6288,40 @@ static void nut_matrix(struct nut *nu, struct epsilon *oe)
   nu->matrix[2][2] = cospsi * sineps * sineps0 + coseps * coseps0;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* G (M_earth + M_moon) in AU^3/day^2, for the two-body ellipse
+ * lunar_osc_elem() fits to the Moon: the constant the ephemeris in use
+ * integrated the Moon with, not a constant from a different almanac.
+ *
+ * Upstream used GEOGCONST x (1 + 1/EARTH_MOON_MRAT), the Astronomical
+ * Almanac's 1996 G M_earth, which is 3.3e-8 above DE440/441's GMB and
+ * 3.5e-8 above DE403's. The eccentricity vector of a near-circular orbit
+ * amplifies a relative error in GM by about (1 + e)/e = 19, so the
+ * osculating apogee was off by up to 0.2" (UPSTREAM-BUGS.md 28, G38).
+ *
+ * A JPL file carries GMB in its header, and that is used when it is open.
+ * The Swiss files and Moshier do not carry one: the file's DE number names
+ * the JPL header the value is taken from (ssd.jpl.nasa.gov/ftp/eph/planets/
+ * ascii, header.4xx, GROUP 1041, read 2026-10-24); Moshier's lunar theory
+ * is fitted to DE404, whose constants are DE403's (swi_get_denum() answers
+ * 403 for it). DE440 and DE441 share one set, as do DE430/431 and DE405/406.
+ * The nearest generation is taken for a DE number between them. */
+static double gm_earth_moon(swe_ctx *ctx, int32 epheflag)
+{
+  double gm;
+  int32 denum;
+  if ((epheflag & SEFLG_JPLEPH) && ctx->jpl_file_is_open
+      && swi_get_jpl_const(ctx, "GMB", &gm) == OK && gm > 0)
+    return gm;
+  denum = swi_get_denum(ctx, SEI_MOON, epheflag);
+  if (denum >= 440) return 8.997011392947347e-10;   /* header.440, header.441 */
+  if (denum >= 430) return 8.997011390199871e-10;   /* header.430, header.431 */
+  if (denum >= 405) return 8.997011346712499e-10;   /* header.405, header.406 */
+  if (denum >= 403) return 8.997011374291876e-10;   /* header.403; Moshier */
+  return 8.997011658557308e-10;                     /* header.200 */
+}
+#endif
+
 /* lunar osculating elements, i.e.
  * osculating node ('true' node) and
  * osculating apogee ('black moon', 'lilith').
@@ -6591,7 +6625,11 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
    * must be computed anyway to get the node's distance       *
    ************************************************************/
   ndap = &ctx->nddat[SEI_OSCU_APOG];
+#ifndef SWE_UPSTREAM_COMPAT
+  Gmsm = gm_earth_moon(ctx, epheflag);
+#else
   Gmsm = GEOGCONST * (1 + 1 / EARTH_MOON_MRAT) /AUNIT/AUNIT/AUNIT*86400.0*86400.0;
+#endif
   /* three apogees */
   for (i = istart; i <= 2; i++) {
     /* node */
