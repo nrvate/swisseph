@@ -5,11 +5,14 @@
  * IAU 2000A (0.5 mas at 1800 and J2000, 1.0 mas at 2100, measured by the
  * Ephemeris Prometheia project from output), where the ephemeris protocol's
  * 3.5a names 2000A. The full series costs about 14 times as much per
- * instant, so the default evaluates it only at quarter-day nodes, cached,
- * with a quintic Lagrange polynomial between. Measured over 20000 random
- * instants in each of 1800-2100 and -13000..15000: worst 0.018
- * microarcseconds in longitude and 0.008 in obliquity, at the cost of 2000B
- * (128,000 Moon rows 1.14 s either way, 15.6 s for the direct series).
+ * instant, so the default evaluates it only at nodes, cached. ts.17's
+ * nodes were a quarter day apart with a quintic Lagrange polynomial through
+ * six of them: worst 0.018 microarcseconds in longitude and 0.008 in
+ * obliquity over 20000 random instants in each of 1800-2100 and
+ * -13000..15000. ts.20's are a day apart, carrying the series' first three
+ * derivatives, with the septic Hermite polynomial on the two around the
+ * instant (two nodes, not six, for an instant that shares none with the
+ * last; G32 holds the cost): worst 0.0014 and 0.0006 on the same instants.
  *
  * The check: the default context against one set to SEMOD_NUT_IAU_2000A
  * explicitly, which computes the series directly, within 0.05 uas. The

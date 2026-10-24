@@ -277,7 +277,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-eopload \
+       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-nutspeed check-eopload \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -362,6 +362,10 @@ sidnod: sidnod.c $(SWEOBJ_STD)
 
 spicarv: spicarv.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+# -O2, as a release is built: a cost measured at -O0 says little about it.
+nutspeed: nutspeed.c $(SWEOBJ_O2)
+	$(CC) $(CFLAGS_O2) $(WARNFLAGS) $^ -o $@ $(LIBS)
 
 # G22: reorder(), swejpl.c's byte-swapping path, which measured 0.00% --
 # de200.eph matches this host's byte order, so eleven call sites never fire.
@@ -494,8 +498,9 @@ check-fictlt: fictlt
 check-obliq: obliq
 	@env -u SE_EPHE_PATH ./obliq
 
-# G29: the default nutation is full IAU 2000A, and its quarter-day grid
-# reproduces the direct series within 0.05 uas. Moshier, no files.
+# G29: the default nutation is full IAU 2000A, and its grid (day-apart nodes,
+# septic Hermite) reproduces the direct series within 0.05 uas. Moshier, no
+# files.
 check-nutgrid: nutgrid
 	@env -u SE_EPHE_PATH ./nutgrid
 
@@ -509,6 +514,12 @@ check-sidnod: sidnod
 # line carrying SIMBAD's. Moshier; writes and removes .spicarv.d.
 check-spicarv: spicarv
 	@env -u SE_EPHE_PATH ./spicarv
+
+# G32: the default nutation costs about what IAU 2000B did, at hourly, daily
+# and scattered spacings alike (a ratio to 2000B, so machine speed cancels).
+# Moshier, no files.
+check-nutspeed: nutspeed
+	@env -u SE_EPHE_PATH ./nutspeed
 
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
@@ -613,7 +624,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f dtobs fictlt obliq nutgrid sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f dtobs fictlt obliq nutgrid nutspeed sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
