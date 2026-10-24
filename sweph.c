@@ -6303,8 +6303,9 @@ static void nut_matrix(struct nut *nu, struct epsilon *oe)
  * The Swiss files and Moshier do not carry one: the file's DE number names
  * the JPL header the value is taken from (ssd.jpl.nasa.gov/ftp/eph/planets/
  * ascii, header.4xx, GROUP 1041, read 2026-10-24); Moshier's lunar theory
- * is fitted to DE404, whose constants are DE403's (swi_get_denum() answers
- * 403 for it). DE440 and DE441 share one set, as do DE430/431 and DE405/406.
+ * is fitted to DE404, whose constants are taken to be DE403's
+ * (swi_get_denum() answers 403 for it; DE404's own header is not on JPL's
+ * server, so that is assumed, and DE403 to DE405 is 3e-9 relative). DE440 and DE441 share one set, as do DE430/431 and DE405/406.
  * The nearest generation is taken for a DE number between them. */
 static double gm_earth_moon(swe_ctx *ctx, int32 epheflag)
 {

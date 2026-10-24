@@ -1595,7 +1595,12 @@ already loaded). The Swiss files and Moshier carry no constants: the Moon
 file's DE number names the JPL header the value is taken from (DE440/441,
 DE430/431, DE405/406, DE403, else DE200; the pairs share one set of
 constants), and Moshier, whose lunar theory is fitted to DE404 and for which
-`swi_get_denum()` answers 403, takes DE403's. EMRAT is not needed: GMB is
+`swi_get_denum()` answers 403, takes DE403's. (DE404 has no header on
+JPL's server, ssd.jpl.nasa.gov/ftp/eph/planets/ascii, checked 2026-10-24,
+so that it shares DE403's constants is assumed; DE403 and DE405 differ by
+3e-9 relative, far inside Moshier's own error. The other values were
+checked against header.200, .403, .405, .430_572, .440 and .441 the same
+day, to the last digit.) EMRAT is not needed: GMB is
 the sum. Upstream's constant stays under `SWE_UPSTREAM_COMPAT`. G38
 `tests/apogm.c`: the apogee DISTANCE the library reports, a (1 + e),
 together with the Moon's geometric geocentric state it was fitted to
