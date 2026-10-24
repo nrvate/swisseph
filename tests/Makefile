@@ -277,7 +277,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-moonlt check-obliq check-nutgrid check-sidnod check-spicarv check-nutspeed check-eopload \
+       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-moonlt check-jpltdb check-obliq check-nutgrid check-sidnod check-spicarv check-nutspeed check-eopload \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -352,6 +352,9 @@ fictlt: fictlt.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 moonlt: moonlt.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+jpltdb: jpltdb.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 obliq: obliq.c $(SWEOBJ_STD)
@@ -503,6 +506,12 @@ check-fictlt: fictlt
 check-moonlt: moonlt
 	@env -u SE_EPHE_PATH ./moonlt $(EPHE)
 
+# G34: the JPL ephemeris is read at TDB, its argument: JPL's own testpo.200
+# positions of the Moon and the Earth (testpo200.txt) from de200.eph at the
+# TT whose TDB is the row's JED.
+check-jpltdb: jpltdb
+	@env -u SE_EPHE_PATH ./jpltdb $(EPHE) testpo200.txt
+
 # G28: the Vondrak 2011 mean obliquity is the angle between the model's
 # poles, not the fitted series. Moshier; refereed values, no fixture file.
 check-obliq: obliq
@@ -634,7 +643,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f dtobs fictlt moonlt obliq nutgrid nutspeed sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f dtobs fictlt moonlt jpltdb obliq nutgrid nutspeed sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
@@ -836,7 +845,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f dtobs fictlt moonlt obliq nutgrid sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f dtobs fictlt moonlt jpltdb obliq nutgrid sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.

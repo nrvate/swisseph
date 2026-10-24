@@ -2624,6 +2624,9 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
   (void) iflag; /* currently not used */
   /* we assume Teph ~= TDB ~= TT. The maximum error is < 0.002 sec, 
    * corresponding to an ephemeris error < 0.001 arcsec for the moon */
+  /* This fork reads at TDB: state() in swejpl.c and sweph() add
+   * swi_tdb_minus_tt() to the offset into the record (UPSTREAM-BUGS 24).
+   * The formula below also divides by 8640 where a day is 86400 s. */
   /* double tjd_tdb, T;
      T = (tjd - 2451545.0)/36525.0;
      tjd_tdb = tjd + (0.001657 * sin(628.3076 * T + 6.2401)
@@ -2948,7 +2951,15 @@ again:
     }
   }
   /* evaluate chebyshew polynomial for tjd */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 24: the files' argument is TDB, and tjd is TT. Added to
+   * the offset into the segment, not to tjd, which would round it to the
+   * 40 us a JD resolves; an instant within 1.66 ms of a segment's end
+   * evaluates a hair outside [-1, 1], where the polynomial is continuous. */
+  t = ((tjd - pdp->tseg0) + swi_tdb_minus_tt(ctx, tjd)) / pdp->dseg;
+#else
   t = (tjd - pdp->tseg0) / pdp->dseg;
+#endif
   t = t * 2 - 1;
   /* speed is needed, if
    * 1. true position is being computed before applying light-time etc.

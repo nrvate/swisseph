@@ -137,10 +137,50 @@ static double moon_lighttime(void)
   return w;
 }
 
+/* Defect 24: the JPL file is read at TT where its argument is TDB. The worst
+ * barycentric Earth from de200.eph against JPL's testpo.200 rows
+ * (testpo200.txt), asked at the TT whose TDB is the row's JED, in metres:
+ * 50 m of Earth motion in the annual 1.66 ms (G34 holds the Moon too). */
+static double jpl_tt_read(void)
+{
+  int32 f = SEFLG_JPLEPH | SEFLG_BARYCTR | SEFLG_TRUEPOS | SEFLG_J2000 |
+            SEFLG_ICRS | SEFLG_NONUT | SEFLG_EQUATORIAL | SEFLG_XYZ | SEFLG_SPEED;
+  char s[AS_MAXCH] = "", line[256], date[32];
+  double w = 0;
+  FILE *pf = fopen("testpo200.txt", "r");
+  if (pf == NULL)
+    return 1e9;
+  swe_close(); swe_set_ephe_path((char *) EPHE); swe_set_jpl_file("de200.eph");
+  while (fgets(line, sizeof(line), pf) != NULL) {
+    int de, targ, ctr, k;
+    double jed, val, tt, T, d, x[6];
+    if (line[0] == '#' || sscanf(line, "%d %31s %lf %d %d %d %lf", &de, date,
+        &jed, &targ, &ctr, &k, &val) != 7 || targ != 3)
+      continue;
+    T = (jed - 2451545.0) / 36525.0;   /* USNO Circular 179, eq. 2.6 */
+    d = (0.001657 * sin(628.3076 * T + 6.2401)
+         + 0.000022 * sin(575.3385 * T + 4.2970)
+         + 0.000014 * sin(1256.6152 * T + 6.1969)
+         + 0.000005 * sin(606.9777 * T + 4.0212)
+         + 0.000005 * sin(52.9691 * T + 0.4444)
+         + 0.000002 * sin(21.3299 * T + 5.5431)
+         + 0.000010 * T * sin(628.3076 * T + 4.2490)) / 86400.0;
+    tt = jed - d;
+    if (swe_calc(tt, SE_EARTH, f, x, s) < 0) {
+      fclose(pf);
+      return 1e9;
+    }
+    d = fabs(x[k - 1] + x[k + 2] * ((jed - tt) - d) - val) * 1.495978707e11;
+    if (d > w) w = d;
+  }
+  fclose(pf);
+  return w;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt;
+  double drift, moonlt, jpltt;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -150,6 +190,7 @@ int main(int argc, char **argv)
   wiped  = eclnut_wipes_constants();
   pheno  = pheno_accepts_eclnut();
   moonlt = moon_lighttime();
+  jpltt  = jpl_tt_read();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -190,6 +231,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moon light time        %.4f mas      FAIL: expected %s\n",
            moonlt, WANT_DEFECT ? "> 0.5 mas" : "< 0.01 mas");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jpltt > 10 && jpltt < 1e8) : (jpltt < 1))
+    printf("  JPL read at TT         %.3f m        OK\n", jpltt);
+  else {
+    printf("  JPL read at TT         %.3f m        FAIL: expected %s\n",
+           jpltt, WANT_DEFECT ? "> 10 m" : "< 1 m");
     bad++;
   }
 

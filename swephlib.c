@@ -161,6 +161,29 @@ double swi_mod2PI(double x)
 }
 
 
+/* TDB - TT at the geocentre, in days, for a TT Julian date: the seven
+ * terms of USNO Circular 179 (Kaplan 2005), eq. 2.6. The JPL ephemerides
+ * and the Swiss files fitted to them take TDB as their argument
+ * (UPSTREAM-BUGS 24). Against the full Fairhead & Bretagnon series: 9 us
+ * worst over 1600-2169, 28 us over 1-3000, 1 ms at -13000 and 17000, where
+ * its linear term is extrapolated; the term reading TT drops is 1.66 ms. */
+double swi_tdb_minus_tt(swe_ctx *ctx, double tjd)
+{
+  double T;
+  if (ctx->tdb_np.valid && ctx->tdb_np.tjd == tjd)
+    return ctx->tdb_np.val;
+  T = (tjd - J2000) / 36525.0;
+  ctx->tdb_np.tjd = tjd;
+  ctx->tdb_np.valid = TRUE;
+  return ctx->tdb_np.val = (0.001657 * sin(628.3076 * T + 6.2401)
+        + 0.000022 * sin(575.3385 * T + 4.2970)
+        + 0.000014 * sin(1256.6152 * T + 6.1969)
+        + 0.000005 * sin(606.9777 * T + 4.0212)
+        + 0.000005 * sin(52.9691 * T + 0.4444)
+        + 0.000002 * sin(21.3299 * T + 5.5431)
+        + 0.000010 * T * sin(628.3076 * T + 4.2490)) / 86400.0;
+}
+
 double swi_angnorm(double x)
 {
   if (x < 0.0 )

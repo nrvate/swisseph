@@ -684,6 +684,9 @@ struct epsilon {
  *   - the Moon's light time was taken once, from the distance at the instant
  *     of observation, and read at that instant rounded to a double
  *     (1.18 mas; UPSTREAM-BUGS 23, G33)
+ *   - the JPL file and the Swiss files read at TT, where their argument is
+ *     TDB (45 m on the barycentric Earth, 0.88 mas on the Moon;
+ *     UPSTREAM-BUGS 24, G34)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1204,6 +1207,10 @@ struct swe_ctx {
   struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
   struct nut_memo nut_np;	/* see struct nut_memo */
   struct nut_grid_slot nut_grid[SWI_NUT_GRID_SLOTS];
+  /* the last TDB - TT, swi_tdb_minus_tt(): a function of the instant
+   * alone, so it can never go stale; the reads of one calculation come in
+   * groups at one instant (Sun, Moon and EMB at t, then at t - tau) */
+  struct { double tjd, val; AS_BOOL valid; } tdb_np;
   struct dt_memo dt_np;		/* see struct dt_memo */
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;

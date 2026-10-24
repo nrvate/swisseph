@@ -59,6 +59,7 @@ worst were in code that had never executed even once.
 | 21 | A sidereal node or apsis carries the nutation in longitude | Correctness | `swecl.c` |
 | 22 | The built-in Spica record's radial velocity is a stale catalogue value | Data | `sweph.c` |
 | 23 | The Moon's light time is taken once, and read at a rounded instant | Correctness | `sweph.c` |
+| 24 | The ephemeris files are read at TT; their argument is TDB | Correctness | `swejpl.c`, `sweph.c` |
 
 ---
 
@@ -1372,6 +1373,47 @@ is not re-read either. G33 `tests/moonlt.c`: the astrometric direction equals
 M(t - tau) - O(t) built from this library's own geometric vectors within
 0.01 mas on the files and JPL (0.00007 measured) and does not depend on
 `SEFLG_SPEED`; check-compat (G24) asserts the compat build keeps the 1.18 mas.
+
+## 24. The ephemeris files are read at TT; their argument is TDB
+
+**Severity: Correctness (0.88 mas on the Moon, 0.06 on the Sun, 45 m on the barycentric Earth)**
+**Where:** `swejpl.c`, `state()`; `sweph.c`, `sweph()`
+
+A JPL ephemeris takes TDB as its time argument (Teph, which for DE200 to
+DE441 is TDB to the precision that matters). Swiss passes the TT it is
+given: `jplplan()` says "we assume Teph ~= TDB ~= TT. The maximum error is
+< 0.002 sec, corresponding to an ephemeris error < 0.001 arcsec for the
+moon", with the conversion written out and commented off. TDB - TT is an
+annual 1.66 ms; the Moon's 1 km/s against the Earth makes that up to 1.7 m,
+**0.88 mas**, inside the comment's 1 mas but the largest single term
+between Swiss and an ephemeris read correctly, and the barycentric Earth's
+30 km/s makes it **45 m** (testpo.200's rows, worst). The commented formula
+also divides seconds by 8640.
+
+The Swiss files take the same argument as the JPL file they were fitted to:
+over 2000-2020 the along-track offset of the Swiss Moon from DE441 read at
+the same number has an annual term of 0.006 ms, where a file fitted on a
+converted argument would show 1.657. So both readers carry the defect.
+Moshier is left alone: its theory takes TDT as its argument, and its Moon is
+766 mas from the Swiss files on average.
+
+Found comparing with Ephemeris Prometheia, which reads at TDB: with entry
+23, this accounts for all of Swiss's astrometric Moon difference.
+
+**Fix, as done here:** `swi_tdb_minus_tt()` (`swephlib.c`), the seven terms
+of USNO Circular 179 eq. 2.6, within 9 us of the full Fairhead & Bretagnon
+series over 1600-2169 and 28 us over 1-3000 (1 ms at -13000 and 17000,
+where its linear term is extrapolated), with a one-entry memo per context.
+It is added to the offset into the record, `(tjd - tseg0) + dtdb` for the
+Swiss files and the fraction of the day in `state()`, with the carry into
+the day, never to tjd itself, which would round it to the 40 us a JD
+resolves near the present. Cost: +0.02-0.2 us a call at hourly steps, +3%
+at scattered instants. G34 `tests/jpltdb.c`: JPL's own testpo.200 rows for
+the geocentric Moon and the barycentric Earth (`tests/testpo200.txt`), each
+asked at the TT whose TDB is its JED, match to 7 mm (testpo's last digit),
+where the compat build misses by 1.5 m and 45 m; a G24 case asserts both.
+Against Prometheia on DE440 at twelve dates 1600-2600, the astrometric Moon
+went from 1.340 mas to 0.011 and every planet is within 0.002.
 
 ## How these were found
 

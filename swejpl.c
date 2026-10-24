@@ -73,6 +73,7 @@
 #include "swephexp.h"
 #include "sweph.h"
 #include "swejpl.h"
+#include "swephlib.h"
 
 #if MSDOS
   typedef __int64 off_t64;
@@ -812,6 +813,20 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
   s = et - .5;
   et_mn = floor(s);
   et_fr = s - et_mn;	/* fraction of days since previous midnight */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 24: the file's argument is TDB, and et is TT. Added to
+   * the fraction, not to et, which would round it to the 40 us a JD
+   * resolves, and carried into the day so the record and interp()'s
+   * sub-interval are those of the TDB instant. */
+  et_fr += swi_tdb_minus_tt(ctx, et);
+  if (et_fr < 0) {
+    et_fr += 1;
+    et_mn -= 1;
+  } else if (et_fr >= 1) {
+    et_fr -= 1;
+    et_mn += 1;
+  }
+#endif
   et_mn += .5;	/* midnight before epoch */
   /*       error return for epoch out of range */
   if (et < js->eh_ss[0] || et > js->eh_ss[1]) {

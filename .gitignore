@@ -58,6 +58,8 @@
 !/tests/Makefile
 !/tests/baseline.txt
 !/tests/*.baseline
+# JPL's testpo.200 rows for G34, by name: the gates write *.txt of their own
+!/tests/testpo200.txt
 # Stand-in Windows headers. Deliberately not `!/tests/*.h` -- the root
 # sweph.h has been copied into tests/ by accident before, and shipped.
 !/tests/winstub/
