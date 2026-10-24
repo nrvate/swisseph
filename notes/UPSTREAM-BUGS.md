@@ -64,6 +64,7 @@ worst were in code that had never executed even once.
 | 26 | A heliocentric light time is measured from the barycentre on its second pass | Correctness | `sweph.c` |
 | 27 | The topocentric observer is placed about the mean pole of date | Correctness | `sweph.c` |
 | 28 | The osculating lunar apogee is fitted with a GM from a different almanac | Correctness | `sweph.c`, `swejpl.c` |
+| 29 | The long-term sidereal time follows delta t | Correctness | `swephlib.c` |
 
 ---
 
@@ -1450,15 +1451,18 @@ default (0.00004" measured); the compat build fails 10 of 12. A G24 case.
 Sidereal time moves by the old step, constant, outside 1850-2050: +1.908"
 after 2050 and -0.097" before 1850.
 
-**Not changed: the delta-t coupling itself.** Away from the boundaries the
-0.041" per second remains. Against the IERS 2010 expression, the default is
+**The delta-t coupling itself** was then fixed as entry 29; the offsets
+remain, now a few milliarcseconds (Vondrak against the IAU 2006
+polynomial at the boundary). What follows is as first written. Away from
+the boundaries the 0.041" per second remains. Against the IERS 2010 expression, the default is
 +37" at 1000, +328" at year 0 and +2382" (0.66 deg) at -3000, of the
 order of 0.041" times delta t (60", 434", 3082"; the rest is the two
 precession treatments), where sidereal time at a given UT1 is set by the
 Earth's rotation, not the Sun. Removing it would move every house before
 1850 by tens of arcseconds at 1500 and by most of a degree of RAMC in
 antiquity, a departure from upstream that every historical chart would
-see, so it is left as a decision rather than made here.
+see, so it was left as a decision rather than made here. (Decided: fix
+it. See 29.)
 `SEMOD_SIDT_IERS_CONV_2010` already gives the ERA-based value at every
 date (its precession polynomial is the IAU 2006 one, for near J2000).
 
@@ -1611,6 +1615,74 @@ number) and de200.eph (whose header the test parses itself, independently
 of the library's reader). Before: all 12 rows fail, +3.47e-8 Moshier,
 +3.26e-8 Swiss DE441, +3.07e-9 DE200. After: 1.6e-13. check-compat (G24)
 asserts the compat build keeps 3.5e-8 under Moshier.
+
+## 29. The long-term sidereal time follows delta t
+
+**Severity: Correctness (+37" at 1000, +328" at year 0, +796" at -999, +2382" at -3000 against the Earth rotation angle; every house cusp before 1850 and after 2050 follows)**
+**Where:** `swephlib.c`, `sidtime_long_term()`, `swe_sidtime0_r()`
+
+Sidereal time at a UT1 instant is the Earth rotation angle, a linear
+function of UT1, plus the equinox's accumulated precession in right
+ascension, a function of TT: the IERS Conventions 2010, eq. 5.30-5.32.
+Delta t enters only through the precession, 0.00015" per 100 s.
+`sidtime_long_term()`, the default (`SEMOD_SIDT_LONGTERM`) outside
+1850-2050, took it instead as the hour angle of the mean Sun plus the mean
+Earth's longitude evaluated at TT for that UT instant (Simon et al. 1994),
+so every second of delta t moved it by the Sun's mean motion: **4.1069"
+per 100 s**, measured at every epoch from -1000 to 2200 by raising delta t
+through `swe_set_delta_t_userdef()`. The IERS 2010 model moved 0.0001".
+With delta t at hours in antiquity, the default stood against the IERS
+expression at +37" at 1000, +328" at year 0, +2382" (0.66 deg of RAMC) at
+-3000 -- of the order of 0.041" times delta t, the rest being the two
+precession treatments.
+
+**Fix, as done here:** outside 1850-2050 the default is now ERA(UT1) +
+0.014506" + c T + A(T), the IERS 2010 construction with the IAU 2006
+polynomial for A replaced by A integrated from the context's own
+precession matrices, so it holds wherever the precession model does
+(Vondrak 2011 by default, +-200 millennia):
+- A(T) is the integral, from J2000, of the rotation rate of the mean
+  equinox about the mean pole of date, -(dM/dt M^T)[1][0] for M =
+  J2000 -> mean of date, the rate by central difference over 50 days. Its
+  integral is the equinox's motion against a non-rotating origin.
+- c = -0.003874"/cy: on the IAU 2006 matrices that rate at J2000 is
+  zeta_A' + z_A' = 4612.160408"/cy, where the IAU 2006 sidereal time has
+  4612.156534. The difference is the secular rate of the CIO locator s,
+  which comes from precession-nutation coupling (Capitaine et al. 2003)
+  and which no precession matrix carries.
+- So corrected, the integral on the IAU 2006 matrices reproduces the IAU
+  2006 polynomial to 0.09 mas over 1500-2500, which checks the method and
+  the constant together (G39).
+- A is tabulated per context, lazily outward from J2000, at nodes one
+  century apart with the rate at each, and interpolated by a cubic Hermite
+  polynomial (struct `sidt_pra_memo`, keyed by value on the two precession
+  models). Eight-point Gauss-Legendre per node; panels of 10 centuries
+  against 1 agree to 1e-7". Beyond +-400 centuries it integrates from the
+  last node on each call.
+- The complementary terms of the IERS expression are kept, and the 1850 and
+  2050 offsets of entry 25 now absorb a few milliarcseconds.
+- Cost: none measurable on `swe_houses()` before 1850 (52.2 to 51.8 us, it
+  no longer computes a precession and a nutation per call); the table is
+  built once per context and precession model, 0.2 ms the first time a
+  date in 1500 is asked for, 1.6 ms for -3000, 4.8 ms for -13000.
+
+The new default against the IERS 2010 expression: -0.046" at 1000, -0.29"
+at year 0, -1.17" at -1000, -10.1" at -3000, +0.030" at 3000, within
+0.001" over 1800-2200 -- Vondrak 2011 against the IAU 2006 polynomial,
+which is meant for near J2000. In G1 sidereal time moved by -796" at -999,
+-328" at year 1, -15.6" at 1300, -0.12" at 2100, -94" at 3000, and every
+house, topocentric and Makransky row with it. Upstream's formula stays
+under `SWE_UPSTREAM_COMPAT`. `swe_sidtime0()` called with eps = 0 now
+adds nut * cos(0) like the IERS branch, where the old long-term formula
+computed a nutation of its own in that case.
+
+G39 `tests/sidera.c`: delta t + 100 s moves sidereal time by less than
+0.001" at nine epochs from -50000 to +50000 (0.00014-0.00015" measured;
+4.1" on the compat build); on the IAU 2006 precession it reproduces the
+IERS 2010 expression within 0.2 mas over 1500-2500 (0.09 mas measured; up
+to 19" on the compat build); and it is continuous where the table ends,
+within what a JD resolves there (4.8 mas). G35 still holds the 1850 and
+2050 splices. A G24 case asserts the delta-t coupling both ways.
 
 ## How these were found
 

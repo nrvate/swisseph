@@ -284,10 +284,28 @@ static double apogee_gm_off(void)
   return fabs(g1 / gmb403 - 1.0);
 }
 
+/* Defect 29: the long-term sidereal time follows delta t at the Sun's mean
+ * motion. Raising delta t 100 s at 1000-01-01 0h UT, in arcsec: 4.1" on the
+ * compat build, the precession rate's 0.00015" shipped (G39 holds the rest). */
+static double sidt_follows_deltat(void)
+{
+  double jd = 2086307.5, dt, s0, s1, d;
+  swe_close();
+  dt = swe_deltat_ex(jd, -1, NULL);
+  s0 = swe_sidtime0(jd, 23.4, 0);
+  swe_set_delta_t_userdef(dt + 100.0 / 86400.0);
+  s1 = swe_sidtime0(jd, 23.4, 0);
+  swe_set_delta_t_userdef(SE_DELTAT_AUTOMATIC);
+  d = s1 - s0;
+  if (d > 12) d -= 24;
+  if (d < -12) d += 24;
+  return d * 54000;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt, sidstep, hlt, obs, gm;
+  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -299,6 +317,7 @@ int main(int argc, char **argv)
   moonlt = moon_lighttime();
   jpltt  = jpl_tt_read();
   sidstep = sidt_splice_step();
+  siddt = sidt_follows_deltat();
   hlt    = helio_lt_from_barycentre();
   obs    = observer_off_true_pole();
   gm     = apogee_gm_off();
@@ -386,6 +405,14 @@ int main(int argc, char **argv)
   }
 
   swe_close();
+  if (WANT_DEFECT ? (fabs(siddt) > 1) : (fabs(siddt) < 0.001))
+    printf("  sidereal follows dT    %+.6f\"     OK\n", siddt);
+  else {
+    printf("  sidereal follows dT    %+.6f\"     FAIL: expected %s\n",
+           siddt, WANT_DEFECT ? "> 1\"" : "< 0.001\"");
+    bad++;
+  }
+
   printf(bad ? "G24 FAIL\n" : "G24 PASS\n");
   return bad ? 1 : 0;
 }

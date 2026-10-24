@@ -690,6 +690,9 @@ struct epsilon {
  *   - the long-term sidereal time spliced at 1850 and 2050 by constant
  *     offsets fitted under an older delta t (-0.097" and -1.908" steps;
  *     UPSTREAM-BUGS 25, G35)
+ *   - the long-term sidereal time taken from the mean Sun at TT, so it
+ *     followed delta t at 0.041" a second (+2382" at -3000; UPSTREAM-BUGS
+ *     29, G39)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -933,21 +936,45 @@ struct sidt_memo {
   AS_BOOL valid;
 };
 
-/* The offsets that splice sidtime_long_term() onto the IERS 2010 sidereal
- * time at 1850 and 2050 (swephlib.c, sidt_lterm_offset(); UPSTREAM-BUGS
+/* The offsets that splice the long-term sidereal time onto the IERS 2010
+ * one at 1850 and 2050 (swephlib.c, sidt_lterm_offset(); UPSTREAM-BUGS
  * 25), one slot per boundary. Each is the difference of the two formulas
  * at its boundary, so it depends on everything they read: the models, and
- * delta t at the boundary and at J2000 (sidtime_long_term() takes the
- * obliquity at J2000 + delta t). All of that is the key, by value, so a
- * changed model or delta t misses; a configuration generation would not
- * do, since get_aya_correction() overrides astro_models[] mid-calculation
- * without bumping it (see struct nut_memo). */
+ * delta t at the boundary (and at J2000, which upstream's
+ * sidtime_long_term() read; kept in the key, harmless). All of that is the
+ * key, by value, so a changed model or delta t misses; a configuration
+ * generation would not do, since get_aya_correction() overrides
+ * astro_models[] mid-calculation without bumping it (see struct
+ * nut_memo). */
 struct sidt_splice_memo {
   struct {
     double dt_b, dt_j2000, ofs;
     int32 models[SEI_NMODELS];
     AS_BOOL valid;
   } slot[2];
+};
+
+/* The precession in right ascension accumulated since J2000, the part of
+ * the long-term sidereal time that is not Earth rotation (swephlib.c,
+ * sidt_pra(); UPSTREAM-BUGS 29): the integral of the mean-of-date frame's
+ * rotation about its pole, from the context's own precession model, at
+ * nodes SWI_SIDT_PRA_STEP centuries apart on each side of J2000, with the
+ * rate at each node, for a cubic Hermite polynomial between two. Built
+ * outward from J2000 as far as asked, once per precession model. Keyed by
+ * value on the two precession models swi_precess() reads (the only inputs
+ * the integral has), two slots, for the reason given at struct nut_memo. */
+#define SWI_SIDT_PRA_STEP   1.0	/* centuries */
+#define SWI_SIDT_PRA_NODES  400	/* per side: +-400 centuries */
+struct sidt_pra_table {
+  int32 prec_long, prec_short;
+  int nnode[2];		/* nodes computed, [0] before J2000, [1] after */
+  double a[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec */
+  double w[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec per century */
+  AS_BOOL valid;
+};
+struct sidt_pra_memo {
+  struct sidt_pra_table slot[2];
+  int next;
 };
 
 /* Vondrak's ten periodic terms in swi_ldp_peps() (swephlib.c).
@@ -1234,6 +1261,7 @@ struct swe_ctx {
   struct interpol interpol;
   struct sidt_memo sidt_np;	/* see struct sidt_memo */
   struct sidt_splice_memo sidt_splice;	/* see struct sidt_splice_memo */
+  struct sidt_pra_memo sidt_pra;	/* see struct sidt_pra_memo */
   struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
   struct nut_memo nut_np;	/* see struct nut_memo */
   struct nut_grid_slot nut_grid[SWI_NUT_GRID_SLOTS];
