@@ -69,6 +69,9 @@ worst were in code that had never executed even once.
 | 31 | The three-point speed is the slope at t + dt, not at t | Correctness | `sweph.c`, `swemmoon.c` |
 | 32 | The Moon's speed leaves out the rate of its light time | Correctness | `sweph.c` |
 | 33 | Speeds in the ecliptic of date leave out its turning | Correctness | `sweph.c` |
+| 34 | The aberration rate is the observer's velocity change over the light time | Correctness | `sweph.c` |
+| 35 | A planet's light-time rate is a one-day difference along a straight line | Correctness | `sweph.c` |
+| 36 | The topocentric observer turns at the rate per UT day, per TT day | Correctness | `sweph.c` |
 
 ---
 
@@ -1825,9 +1828,9 @@ Left alone on purpose: `swi_plan_for_osc_elem()`, which turns the Moon's
 or a planet's state into the ecliptic to fit osculating elements; those
 need the inertial velocity in the frame of the instant, and the node's
 speed is taken from nodes differenced a step apart, which already carry
-the turning. Not done: `swe_nod_aps_r()` with the osculating method
+the turning. Not done here: `swe_nod_aps_r()` with the osculating method
 (1.3e-5 deg/day in latitude, ecliptic and equatorial alike), whose
-speeds take a different route.
+speeds take a different route (entry 37).
 
 G41 `tests/eclspeed.c`: twelve speeds against five-point differences,
 within 1e-6 deg/day, and 2.5e-7 where only the mean obliquity's rate is
@@ -1836,6 +1839,108 @@ on the Sun (8.4e-9 shipped, 7.2e-6 compat). G1: 5,810 rows, speeds
 only (latitude by up to 2.2e-5, longitude by ~5e-7 through the
 latitude), and the Moon's node-crossing results by 0.3 mas, which iterate
 on the latitude speed. G17: last digits of six speeds.
+
+## 34. The aberration rate is the observer's velocity change over the light time
+
+**Severity: Correctness (3.2e-4 deg/day on the topocentric Sun's speed, a few per cent of the diurnal aberration rate on every topocentric body, up to 7.4e-5 AU/day on distance rates, 2e-6 deg/day on distant bodies' longitude speeds); upstream answered the topocentric case from three positions instead**
+**Where:** `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`, `app_pos_etc_moon()`, `app_pos_etc_sun()`, `swe_calc_r()`
+
+Aberration moves the apparent place by about tau V across the line of
+sight, V the observer's barycentric velocity and tau the light time, so
+the apparent velocity carries tau dV/dt. The paths took that term as
+V(t) - V(t - tau), the observer's velocity at the instant of observation
+less at the instant the light left, added whole. Four things were wrong
+with it:
+
+1. **A turning observer.** A site on the Earth turns 2.5-5 deg in a
+   planet's light time; V(t) - V(t - tau) for its 0.46 km/s is then a
+   chord, not tau a(t), and off by a few per cent of a diurnal aberration
+   rate of 5.6e-4 deg/day. Upstream knew: `swe_calc_r()` sent every
+   topocentric request with aberration to the three-point speed (three
+   positions 8.64 s apart, three times the cost, and their 0.1 mas
+   roughness, ~3e-5 deg/day on the Moon; with entry 31, the slope at
+   t + dt, 1.3e-3).
+2. **The Sun had no such term.** `app_pos_etc_sun()` applied aberration
+   with the velocity at t and no rate: 3.2e-4 deg/day topocentric, and
+   the Moon's 0.6% of the Earth's acceleration, 5.6e-7 deg/day,
+   geocentric.
+3. **Its radial part.** Aberration keeps the distance to first order in
+   v/c, so only the transverse part of tau a turns the apparent place; the
+   whole vector moved the distance rate: 7.4e-5 AU/day on Pluto, 5.1e-5 on
+   Neptune, 4e-6 on Mars (also found by the scan, `tests/scan`).
+4. **Second order.** V(t) - V(t - tau) is tau a at the midpoint, off by
+   tau^2 a'/2: 1% of the rate at a light time of a day, 1.9e-6 deg/day on
+   Nibiru, 2e-7 on Pluto.
+
+**Fix, as done here:** the observer's part is the Earth's plus the
+site's. The site's is tau times its acceleration at t, a central
+difference of `swi_get_observer()`'s velocity over +-0.001 day
+(`observer_accel()`, `observer_at_lt()`); the Earth's keeps the
+difference of the two ephemeris reads, plus tau^2 a'/2 with a' the
+rate of the Sun's pull at t from the heliocentric state alone
+(`earth_at_lt()`). Not from the two reads' positions: across a segment
+of the Swiss files those disagree with the velocities by 1e-9 AU (at
+-3001 and 3000), 2e-5 deg/day once divided by tau; and on Moshier, whose
+Earth velocity is a backward difference over 1e-4 day, the same
+expression would triple that velocity's 1.5e-8 AU/day lag. The Moon's
+part of a', 7.5%, is left out. The sum goes in less its part along the
+line of sight (`add_aberr_rate()`). The Sun's path reads the Earth at
+t - tau for it (one more read, +7% on a geocentric Sun with speed). The
+forced three-point path is gone; `SEFLG_SPEED3` still asks for it, and a
+topocentric speed costs 24 us instead of 31-43.
+
+G43 `tests/topospeed.c`: the topocentric Sun, Moon, Mercury, Venus, Mars
+and Jupiter at Zurich and 70 N, nine dates -999..2100, against
+five-point differences on binary-fraction instants, within 1e-6 deg/day
+(measured <= 5.6e-7 on the Moon, 2e-7 on the planets); the upstream
+build fails all twelve, by up to 1.5e-3 on the Moon. G24:
+`topo_sun_speed_off`, 1.6e-9 shipped, 3.4e-6 compat. Geocentric, every
+planet's longitude speed is now within 1.1e-7 deg/day on the Swiss
+files, the distance rates within 1.4e-8 AU/day.
+
+## 35. A planet's light-time rate is a one-day difference along a straight line
+
+**Severity: Correctness (3e-6 deg/day on Mercury's geocentric speed, 1.5e-4 heliocentric; 6.9e-5 AU/day on Pluto's distance rate, 5.4e-4 on a fictitious body's)**
+**Where:** `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`, `swe_calc_pctr_r()`
+
+The light time changes as the body and the observer move, and the
+apparent velocity is v_P (1 - dtau/dt) - v_O. These paths took the
+dtau/dt part as the change, over one day, of the light-time
+displacement of the body moved linearly along its velocity (`xxsp`, "true
+position - apparent position at time t-1"). That is the rate a day back
+along a straight line, off by the curvature of a day's motion: Mercury's
+geocentric speed by 3e-6 deg/day and 1.5e-4 heliocentric (scan, B7),
+Pluto's distance rate by 6.9e-5 AU/day, a planetocentric speed by
+6.4e-7.
+
+**Fix, as done here:** dtau/dt = rho^.(v_P - v_O) / (c + rho^.v_P),
+exactly, from the solved light time's own vectors (`lt_rate_exact()`),
+as entry 32 does for the Moon. Mercury 4.8e-8 deg/day, Pluto's
+distance rate 1.5e-8 AU/day, planetocentric 3.3e-8. G24
+`mercury_lt_rate_off`: 7.0e-8 shipped, 5.9e-6 compat.
+
+## 36. The topocentric observer turns at the rate per UT day, per TT day
+
+**Severity: Correctness (3e-6 deg/day on the topocentric Moon's speed at -999; 3e-8 now)**
+**Where:** `sweph.c`: `swi_get_observer()`
+
+The site's velocity was EARTH_ROT_SPEED, the Earth's turning per day of
+UT1. Positions are functions of TT, and per TT day the Earth turns by
+that times dUT1/dTT = 1 - d(delta t)/dTT. Far from now delta t changes by
+~1800 s a century, 5e-7 of the rotation.
+
+**Fix, as done here:** the rate times 1 - d(delta t)/dt, the latter by a
+central difference of the context's delta t over +-1 day. G24
+`topo_moon_ancient_off` (-999, true positions without aberration, so
+nothing else is at stake): 4.5e-7 shipped, 3.2e-6 compat; G43's
+ancient dates hold it with aberration.
+
+The G1 baseline moved on 7,035 rows for the three together: speeds only
+(Pluto's distance rate by 7.3e-5 AU/day, the fictitious bodies' by up to
+5.4e-4, each checked against a difference of the returned positions),
+and positions by at most 3.9e-11 deg topocentric and 9.3e-10 day on the
+occultation and eclipse times that iterate on a topocentric speed. G17:
+twelve speed digits.
 
 ## How these were found
 

@@ -703,6 +703,15 @@ struct epsilon {
  *     speed (4.3e-4 deg/day topocentric; UPSTREAM-BUGS 32, G40)
  *   - speeds rotated into or out of the ecliptic of date without its
  *     turning, the obliquity's rate (1.6e-5 deg/day; UPSTREAM-BUGS 33, G41)
+ *   - the aberration rate taken as the observer's velocity change over the
+ *     light time, whole: a chord for a turning site, none on the Sun,
+ *     radial too, and first-order only (3.2e-4 deg/day topocentric,
+ *     7.4e-5 AU/day on Pluto's distance rate); and with it the forced
+ *     three-point topocentric speed (UPSTREAM-BUGS 34, G43)
+ *   - a planet's light-time rate taken as a one-day straight-line
+ *     difference (3e-6 deg/day on Mercury; UPSTREAM-BUGS 35)
+ *   - the topocentric observer turning EARTH_ROT_SPEED per TT day, not
+ *     per UT day (3e-6 deg/day on the Moon at -999; UPSTREAM-BUGS 36)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

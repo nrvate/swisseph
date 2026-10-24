@@ -339,6 +339,63 @@ static double ecl_lat_speed_off(void)
   return fabs(x[4] - r);
 }
 
+/* A speed against a five-point difference of its own longitude, deg/day,
+ * at an instant and a step that are binary fractions (t + k h exact). */
+static double lon_speed_off(int ipl, int32 fl, double jd)
+{
+  double x[6], f[5][6], h = 1.0 / 256, r, d[5];
+  char serr[256];
+  int k;
+  jd = floor(jd * 256) / 256;
+  swe_calc(jd, ipl, fl | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_calc(jd + (k - 2) * h, ipl, fl, f[k], serr);
+  for (k = 0; k < 5; k++) {
+    d[k] = f[k][0] - f[2][0];
+    if (d[k] > 180) d[k] -= 360;
+    if (d[k] < -180) d[k] += 360;
+  }
+  r = (d[0] - 8 * d[1] + 8 * d[3] - d[4]) / (12 * h);
+  return fabs(x[3] - r);
+}
+
+/* UPSTREAM-BUGS 34: the topocentric Sun's analytic speed with aberration
+ * (no term for the site's turning; upstream reached it only through
+ * SEFLG_SPEED3, as the analytic path was not used). Here through the
+ * default path, which upstream sends to three points: 7e-6 there. */
+static double topo_sun_speed_off(void)
+{
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 47.37, 400);
+  return lon_speed_off(SE_SUN, SEFLG_SWIEPH | SEFLG_TOPOCTR, 2461338.137);
+}
+
+/* UPSTREAM-BUGS 35: Mercury's geocentric speed, the light time's rate taken
+ * over a day */
+static double mercury_lt_rate_off(void)
+{
+  double w = 0, d;
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 9; k++)
+    if ((d = lon_speed_off(SE_MERCURY, SEFLG_SWIEPH, 2378496.5 + k * 13698.6 + 0.137)) > w)
+      w = d;
+  return w;
+}
+
+/* UPSTREAM-BUGS 36: the topocentric Moon at -999, true positions, the
+ * site turning per UT day instead of per TT day */
+static double topo_moon_ancient_off(void)
+{
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 47.37, 400);
+  return lon_speed_off(SE_MOON, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_TRUEPOS | SEFLG_NOABERR,
+                       2451545.0 - 2999 * 365.25 + 0.137);
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -362,7 +419,7 @@ static double era_scatter(void)
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd;
+  double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -382,6 +439,9 @@ int main(int argc, char **argv)
   spd3   = moon_speed_off(0);
   spdlt  = moon_speed_off(SEFLG_NOABERR);
   latspd = ecl_lat_speed_off();
+  toposun = topo_sun_speed_off();
+  merclt = mercury_lt_rate_off();
+  moonanc = topo_moon_ancient_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -503,6 +563,30 @@ int main(int argc, char **argv)
   else {
     printf("  ecliptic turning       %.2e deg/day FAIL: expected %s\n",
            latspd, WANT_DEFECT ? "> 2e-6" : "< 2e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (toposun > 2e-6) : (toposun < 2e-7))
+    printf("  topocentric Sun speed  %.2e deg/day OK\n", toposun);
+  else {
+    printf("  topocentric Sun speed  %.2e deg/day FAIL: expected %s\n",
+           toposun, WANT_DEFECT ? "> 2e-6" : "< 2e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (merclt > 1e-6) : (merclt < 3e-7))
+    printf("  planet light-time rate %.2e deg/day OK\n", merclt);
+  else {
+    printf("  planet light-time rate %.2e deg/day FAIL: expected %s\n",
+           merclt, WANT_DEFECT ? "> 1e-6" : "< 3e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moonanc > 1.5e-6) : (moonanc < 1e-6))
+    printf("  site turns per TT day  %.2e deg/day OK\n", moonanc);
+  else {
+    printf("  site turns per TT day  %.2e deg/day FAIL: expected %s\n",
+           moonanc, WANT_DEFECT ? "> 1.5e-6" : "< 1e-6");
     bad++;
   }
 

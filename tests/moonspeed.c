@@ -16,10 +16,13 @@
  * without nutation (so no frame of date turns underneath), against a
  * five-point difference of the library's own positions, h = 0.01 day,
  * good to ~3e-6 deg/day on the topocentric Moon. Swiss files, de200.eph
- * and Moshier, 13 dates 1800-2100, Zurich. The three-point cases carry
- * the positions' 0.1 mas roughness over 8.64 s, ~3e-5 deg/day.
+ * and Moshier, 13 dates 1800-2100, Zurich. The SEFLG_SPEED3 cases carry
+ * the positions' 0.1 mas roughness over 8.64 s, ~3e-5 deg/day. The
+ * topocentric speed with aberration was three-point too until bug 34; it
+ * is analytic now, and held to the analytic limit on the files.
  *
- * Moshier is checked on the three-point cases only. Its Moon is moved
+ * Moshier is checked on the three-point cases, and on the topocentric one
+ * to the three-point limit. Its Moon is moved
  * back by the light time along its velocity at t (app_pos_etc_moon()), so
  * its analytic speed lacks tau times the Moon's acceleration, 1.3e-4
  * deg/day from the Sun's pull alone; re-reading its series at t - tau would
@@ -70,7 +73,7 @@ int main(int argc, char **argv)
   /* limits for the files, then for Moshier; 0: printed, not judged */
   struct { int ipl; int32 fl, fspeed; const char *sz; double lim, limMosh; } rgCase[] = {
     {SE_MOON, 0, SEFLG_SPEED, "Moon geocentric", 5e-6, 0},
-    {SE_MOON, SEFLG_TOPOCTR, SEFLG_SPEED, "Moon topocentric (3-point)", 1e-4, 1e-4},
+    {SE_MOON, SEFLG_TOPOCTR, SEFLG_SPEED, "Moon topocentric", 5e-6, 1e-4},
     {SE_MOON, SEFLG_TOPOCTR | SEFLG_NOABERR, SEFLG_SPEED, "Moon topocentric, no aberr", 5e-6, 0},
     {SE_MOON, 0, SEFLG_SPEED3, "Moon SEFLG_SPEED3", 5e-5, 5e-5},
     {SE_MARS, 0, SEFLG_SPEED3, "Mars SEFLG_SPEED3", 1e-5, 1e-5},

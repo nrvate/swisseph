@@ -214,6 +214,16 @@ static void nut_matrix(struct nut *nu, struct epsilon *oec);
 static void calc_epsilon(swe_ctx *ctx, double tjd, int32 iflag, struct epsilon *e);
 static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *serr);
 static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *serr); 
+#ifndef SWE_UPSTREAM_COMPAT
+static void add_aberr_rate(double *xx, const double *xobs, const double *xobs2);
+static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xeteval, const double *xe, double *xout);
+static void lt_rate_exact(const double *xx, const double *xo, double *xxsp);
+static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, const double *u,
+                          double *acc, char *serr);
+static int observer_at_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
+                          const double *xobs, const double *xeteval,
+                          const double *xe, const double *xx, double *xobs2, char *serr);
+#endif
 static double meff(double r);
 static void denormalize_positions(double *x0, double *x1, double *x2);
 static void calc_speed(double *x0, double *x1, double *x2, double dt);
@@ -432,8 +442,15 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     use_speed3 = TRUE;
   /* topocentric with SEFLG_SPEED is not good if aberration is included. 
    * in such cases we calculate speed from three positions */
+#ifdef SWE_UPSTREAM_COMPAT
   if ((iflag & SEFLG_SPEED) && (iflag & SEFLG_TOPOCTR) && !(iflag & SEFLG_NOABERR)) 
     use_speed3 = TRUE;
+#endif
+  /* Not any more (bugs 31, 32, 34): the analytic topocentric speed now
+   * carries the light time's rate and the observer's turning, and is the
+   * rate of the position to ~1e-6 deg/day, where the three positions 8.64 s
+   * apart carry their 0.1 mas roughness, ~3e-5 on the Moon, at three times
+   * the cost. SEFLG_SPEED3 still asks for them. */
   /* cartesian flag excludes radians flag */
   if ((iflag & SEFLG_XYZ) && (iflag & SEFLG_RADIANS))
     iflag = iflag & ~SEFLG_RADIANS;
@@ -3405,13 +3422,22 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
     if (iflag & SEFLG_SPEED) {
       /* observer position for t(light-time) */
       if (iflag & SEFLG_TOPOCTR) {
+#ifndef SWE_UPSTREAM_COMPAT
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xx, xobs2, serr) != OK)
+          return ERR;
+#else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
           return ERR;
         for (i = 0; i <= 5; i++)
           xobs2[i] += xearth[i];
+#endif
       } else {
+#ifndef SWE_UPSTREAM_COMPAT
+        earth_at_lt(ctx, pedp->teval, t, pedp->x, xearth, xobs2);
+#else
         for (i = 0; i <= 5; i++)
           xobs2[i] = xearth[i];
+#endif
       }
     }
   }
@@ -3419,6 +3445,10 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
    * conversion to geocenter     * 
    *******************************/
   if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR)) {
+#ifndef SWE_UPSTREAM_COMPAT
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_TRUEPOS))
+      lt_rate_exact(xx, xobs, xxsp);
+#endif
     /* subtract earth */
     for (i = 0; i <= 5; i++) 
       xx[i] -= xobs[i]; 
@@ -3453,10 +3483,15 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
      * the difference of speed of the earth between t and t-dt. 
      * Neglecting this would involve an error of several 0.1"
      */
+#ifndef SWE_UPSTREAM_COMPAT
+    if (iflag & SEFLG_SPEED)
+      add_aberr_rate(xx, xobs, xobs2);
+#else
     if (iflag & SEFLG_SPEED) {
       for (i = 3; i <= 5; i++) 
 	xx[i] += xobs[i] - xobs2[i];
     }
+#endif
   }
   if (!(iflag & SEFLG_SPEED))
     for (i = 3; i <= 5; i++)
@@ -4281,19 +4316,32 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	return(retc);
 #endif
       if (iflag & SEFLG_TOPOCTR) {
+#ifndef SWE_UPSTREAM_COMPAT
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xx, xobs2, serr) != OK)
+          return ERR;
+#else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
           return ERR;
         for (i = 0; i <= 5; i++)
           xobs2[i] += xearth[i];
+#endif
       } else {
+#ifndef SWE_UPSTREAM_COMPAT
+        earth_at_lt(ctx, pedp->teval, t, pedp->x, xearth, xobs2);
+#else
         for (i = 0; i <= 5; i++)
           xobs2[i] = xearth[i];
+#endif
       }
     }
   }
   /*******************************
    * conversion to geocenter     * 
    *******************************/
+#ifndef SWE_UPSTREAM_COMPAT
+  if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_TRUEPOS))
+    lt_rate_exact(xx, xobs, xxsp);
+#endif
   for (i = 0; i <= 5; i++) 
     xx[i] -= xobs[i]; 
   if (!(iflag & SEFLG_TRUEPOS)) {
@@ -4326,9 +4374,14 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
      * the difference of speed of the earth between t and t-dt. 
      * Neglecting this would involve an error of several 0.1"
      */
+#ifndef SWE_UPSTREAM_COMPAT
+    if (iflag & SEFLG_SPEED)
+      add_aberr_rate(xx, xobs, xobs2);
+#else
     if (iflag & SEFLG_SPEED)
       for (i = 3; i <= 5; i++) 
 	xx[i] += xobs[i] - xobs2[i];
+#endif
   }
 #ifndef SWE_UPSTREAM_COMPAT
   /* ICRS to J2000, as app_pos_etc_plan() does for a planet. The elements
@@ -4641,19 +4694,32 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       if (retc != OK)
 	return retc;
       if (iflag & SEFLG_TOPOCTR) {
+#ifndef SWE_UPSTREAM_COMPAT
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xx, xobs2, serr) != OK)
+          return ERR;
+#else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
           return ERR;
         for (i = 0; i <= 5; i++)
           xobs2[i] += xearth[i];
+#endif
       } else {
+#ifndef SWE_UPSTREAM_COMPAT
+        earth_at_lt(ctx, pedp->teval, t, pedp->x, xearth, xobs2);
+#else
         for (i = 0; i <= 5; i++)
           xobs2[i] = xearth[i];
+#endif
       }
     }
   }
   /*******************************
    * conversion to geocenter     *
    *******************************/
+#ifndef SWE_UPSTREAM_COMPAT
+  if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_TRUEPOS))
+    lt_rate_exact(xx, xobs, xxsp);
+#endif
   for (i = 0; i <= 5; i++)
     xx[i] -= xobs[i];
   if (!(iflag & SEFLG_TRUEPOS)) {
@@ -4686,9 +4752,14 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
      * the difference of speed of the earth between t and t-dt.
      * Neglecting this would involve an error of several 0.1"
      */
+#ifndef SWE_UPSTREAM_COMPAT
+    if (iflag & SEFLG_SPEED)
+      add_aberr_rate(xx, xobs, xobs2);
+#else
     if (iflag & SEFLG_SPEED)
       for (i = 3; i <= 5; i++)
 	xx[i] += xobs[i] - xobs2[i];
+#endif
   }
   /* save J2000 coordinates; required for sidereal positions */
   for (i = 0; i <= 5; i++)
@@ -4749,6 +4820,149 @@ if (1) {
 /* multiplies cartesian equatorial coordinates with previously
  * calculated nutation matrix. also corrects speed. 
  */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 34: aberration moves the apparent place by about tau V, V the
+ * observer's barycentric velocity, so its rate carries tau dV/dt. The
+ * planets', the Moon's and the fictitious bodies' paths took that as
+ * V(t) - V(t - tau), the velocity at the instant of observation less the
+ * velocity at the instant the light left. For the Earth's annual and
+ * monthly motion, which is linear over minutes, that is the same thing; for
+ * a topocentric observer turning with the Earth it is not -- the site turns
+ * through 2.5-5 deg in a planet's light time, a few per cent of a diurnal
+ * aberration rate of 5.6e-4 deg/day (0.32" a turn) -- and the Sun's path
+ * had no such term at all (3.2e-4 deg/day topocentric). Which is why
+ * swe_calc() computed every topocentric speed with aberration from three
+ * positions instead. The observer's own part is now tau a(t), a = the site's
+ * acceleration by a central difference of its velocity over +-0.001 day
+ * ((omega h)^2 / 6 = 7e-6 of it), less its part along the line of sight u:
+ * aberration keeps the distance to first order in v/c (|A(u, V)| = |u| +
+ * O(v^2)), so only a's transverse part turns the apparent place. */
+static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, const double *u,
+                          double *acc, char *serr)
+{
+  const double h = 0.001;
+  double xp[6], xm[6], ru, au = 0;
+  int i;
+  if (swi_get_observer(ctx, tjd + h, iflag | SEFLG_NONUT, NO_SAVE, xp, serr) != OK
+      || swi_get_observer(ctx, tjd - h, iflag | SEFLG_NONUT, NO_SAVE, xm, serr) != OK)
+    return ERR;
+  for (i = 0; i <= 2; i++)
+    acc[i] = (xp[i+3] - xm[i+3]) / (2 * h);
+  ru = sqrt(square_sum(u));
+  for (i = 0; i <= 2; i++)
+    au += acc[i] * u[i] / ru;
+  for (i = 0; i <= 2; i++)
+    acc[i] -= au * u[i] / ru;
+  return OK;
+}
+
+/* The Earth at the instant the light left, t, as the aberration rate term
+ * reads it. That term wants tau a(teval), the observer's acceleration now
+ * times the light time; V(teval) - V(t) is tau a at the midpoint, off by
+ * tau^2 a'/2, 1% of the rate at a light time of a day (2e-6 deg/day on
+ * Nibiru, 2e-7 on Pluto). a' is taken as the Sun's pull's rate on the
+ * Earth at teval, -GM (v/r^3 - 3 r (r.v)/r^5), from the heliocentric state
+ * alone: not from the two reads' positions, which can disagree with their
+ * velocities by 1e-9 AU across a segment of the Swiss files (at -3001 and
+ * 3000), 3e-6 deg/day once divided by tau. The Moon's part of a', 7.5%,
+ * is left out. Below 1e-3 day (the Moon) the term is under 1e-5 of the
+ * rate and is skipped. Sets xout to xe with the velocity V(t) - tau^2 a'/2. */
+static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xeteval, const double *xe, double *xout)
+{
+  const double gm = HELGRAVCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT);
+  struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
+  double tau = teval - t, r[6], rr, rv = 0, jerk;
+  int i;
+  for (i = 0; i <= 5; i++)
+    xout[i] = xe[i];
+  if (tau < 1e-3)
+    return;
+  /* Moshier: the Earth is heliocentric already */
+  for (i = 0; i <= 5; i++)
+    r[i] = xeteval[i];
+  if (ctx->pldat[SEI_EARTH].iephe != SEFLG_MOSEPH) {
+    if (psdp->teval != teval)
+      return;
+    for (i = 0; i <= 5; i++)
+      r[i] -= psdp->x[i];
+  }
+  rr = sqrt(square_sum(r));
+  for (i = 0; i <= 2; i++)
+    rv += r[i] * r[i+3];
+  for (i = 0; i <= 2; i++) {
+    jerk = -gm * (r[i+3] - 3 * r[i] * rv / (rr * rr)) / (rr * rr * rr);
+    xout[i+3] -= tau * tau / 2 * jerk;
+  }
+}
+
+/* The observer at the instant the light left, t, as the aberration rate
+ * term xobs - xobs2 uses it: the Earth's state at t, xe, and the site's
+ * velocity at teval less tau a(teval). xobs is the barycentric observer at
+ * teval, xeteval the Earth there, xx the barycentric body (for the line of
+ * sight). Only xobs2's velocity is read. */
+static int observer_at_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
+                          const double *xobs, const double *xeteval,
+                          const double *xe, const double *xx, double *xobs2, char *serr)
+{
+  double acc[3], u[3], xel[6];
+  int i;
+  for (i = 0; i <= 2; i++)
+    u[i] = xx[i] - xobs[i];
+  if (observer_accel(ctx, teval, iflag, u, acc, serr) != OK)
+    return ERR;
+  earth_at_lt(ctx, teval, t, xeteval, xe, xel);
+  for (i = 0; i <= 2; i++) {
+    xobs2[i] = xel[i] + xobs[i] - xeteval[i];
+    xobs2[i+3] = xel[i+3] + xobs[i+3] - xeteval[i+3] - (teval - t) * acc[i];
+  }
+  return OK;
+}
+
+/* The aberration rate term, xobs - xobs2 (the observer's velocity at the
+ * instant of observation less that at the instant the light left, ~tau
+ * dV/dt), added to the apparent velocity xx[3..5] with its part along the
+ * line of sight taken out: aberration keeps the distance to first order,
+ * and the radial part moved the distance rate by up to 4e-6 AU/day
+ * (Mars; bug 34). */
+static void add_aberr_rate(double *xx, const double *xobs, const double *xobs2)
+{
+  double d[3], r = sqrt(square_sum(xx)), dr = 0;
+  int i;
+  for (i = 0; i <= 2; i++) {
+    d[i] = xobs[i+3] - xobs2[i+3];
+    dr += d[i] * xx[i] / r;
+  }
+  for (i = 0; i <= 2; i++)
+    xx[i+3] += d[i] - dr * xx[i] / r;
+}
+
+/* Upstream bug 35: the light time's rate was taken as the change, over a
+ * day, of the light-time displacement of a body moved linearly along its
+ * velocity (xxsp), which is off by the curvature of that day's motion:
+ * 3e-6 deg/day on Mercury's speed, 6.9e-5 AU/day on Pluto's distance rate,
+ * 5.5e-4 on a fictitious body's. It is v_P dtau/dt, dtau/dt =
+ * rho^.(v_P - v_O) / (c + rho^.v_P), exactly, from the solved light time's
+ * vectors (as the Moon's, bug 32): xx the body at t - tau and xo the
+ * observer at t, barycentric, with velocities. Sets the xxsp that the
+ * callers subtract from the speed. */
+static void lt_rate_exact(const double *xx, const double *xo, double *xxsp)
+{
+  double rho[3], r, rv = 0, rvp = 0, taudot;
+  const double c = CLIGHT * 86400.0 / AUNIT;   /* AU per day */
+  int i;
+  for (i = 0; i <= 2; i++)
+    rho[i] = xx[i] - xo[i];
+  r = sqrt(square_sum(rho));
+  for (i = 0; i <= 2; i++) {
+    rv += rho[i] * (xx[i+3] - xo[i+3]);
+    rvp += rho[i] * xx[i+3];
+  }
+  taudot = (rv / r) / (c + rvp / r);
+  for (i = 0; i <= 2; i++)
+    xxsp[i] = taudot * xx[i+3];
+}
+#endif
+
 #ifndef SWE_UPSTREAM_COMPAT
 /* Upstream bug 33: the ecliptic of date turns about the equinox as the
  * obliquity changes, and a velocity rotated into it with the same matrix
@@ -5244,6 +5458,39 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
   if (!(iflag & SEFLG_TRUEPOS) && !(iflag & SEFLG_NOABERR)) {
 		/* SEFLG_NOABERR is on, if SEFLG_HELCTR or SEFLG_BARYCTR */
     swi_aberr_light(xx, xobs, iflag);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* The aberration rate term the other paths have, which this one did not
+     * (bug 34): the observer's velocity now less at the instant the light
+     * left. The Earth's own acceleration points at the Sun, but not all of
+     * it -- the Moon's pull is 0.6% of the Sun's, 5.6e-7 deg/day of the
+     * Sun's speed -- and a site's turning not at all (3.2e-4). */
+    if (iflag & SEFLG_SPEED) {
+      double tlt = pedp->teval - sqrt(square_sum(xx)) * AUNIT / CLIGHT / 86400.0;
+      double xelt[6], xobs2[6], xb[3];
+      switch (pedp->iephe) {
+        case SEFLG_JPLEPH:
+          retc = swi_pleph(ctx, tlt, J_EARTH, J_SBARY, xelt, serr);
+          break;
+        case SEFLG_SWIEPH:
+          retc = sweplan(ctx, tlt, SEI_EARTH, SEI_FILE_PLANET, iflag, NO_SAVE, xelt, NULL, NULL, NULL, serr);
+          break;
+        default:
+          retc = swi_moshplan(ctx, tlt, SEI_EARTH, NO_SAVE, xelt, xelt, serr);
+          break;
+      }
+      if (retc != OK)
+        return retc;
+      for (i = 0; i <= 2; i++)
+        xb[i] = xx[i] + xobs[i];   /* the Sun, barycentric (Moshier: heliocentric) */
+      if (iflag & SEFLG_TOPOCTR) {
+        if (observer_at_lt(ctx, pedp->teval, tlt, iflag, xobs, pedp->x, xelt, xb, xobs2, serr) != OK)
+          return ERR;
+      } else {
+        earth_at_lt(ctx, pedp->teval, tlt, pedp->x, xelt, xobs2);
+      }
+      add_aberr_rate(xx, xobs, xobs2);
+    }
+#endif
   }
   if (!(iflag & SEFLG_SPEED))
     for (i = 3; i <= 5; i++)
@@ -5438,10 +5685,15 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
     }
 #endif
     if (iflag & SEFLG_TOPOCTR) {
+#ifndef SWE_UPSTREAM_COMPAT
+      if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xe, xx, xobs2, NULL) != OK)
+	  return ERR;
+#else
       if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, NULL) != OK)
 	  return ERR;
       for (i = 0; i <= 5; i++)
 	xobs2[i] += xe[i];
+#endif
     } else if (iflag & SEFLG_BARYCTR) {
       for (i = 0; i <= 5; i++)
 	xobs2[i] = 0;
@@ -5469,9 +5721,14 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
      * the difference of speed of the earth between t and t-dt. 
      * Neglecting this would lead to an error of several 0.1"
      */
+#ifndef SWE_UPSTREAM_COMPAT
+    if (iflag & SEFLG_SPEED)
+      add_aberr_rate(xx, xobs, xobs2);
+#else
     if (iflag & SEFLG_SPEED)
       for (i = 3; i <= 5; i++) 
         xx[i] += xobs[i] - xobs2[i];
+#endif
   }
   /* if !speedflag, speed = 0 */
   if (!(iflag & SEFLG_SPEED))
@@ -8836,7 +9093,20 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
   /* polar coordinates */
   swi_cartpol(xobs, xobs);
   /* speed */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 36: the site turns at EARTH_ROT_SPEED per day of UT1, and
+   * positions are functions of TT: per TT day it turns by that times
+   * dUT1/dTT = 1 - d(delta t)/dTT. Far from now delta t changes by ~1800
+   * s a century (-999), 5e-7 of the rotation, 2e-6 deg/day of the
+   * topocentric Moon's speed; near now 3e-8. */
+  {
+    double ddt = (swe_deltat_ex_r(ctx, tjd + 1, iflag, NULL)
+                - swe_deltat_ex_r(ctx, tjd - 1, iflag, NULL)) / 2;
+    xobs[3] = EARTH_ROT_SPEED * (1 - ddt);
+  }
+#else
   xobs[3] = EARTH_ROT_SPEED;		
+#endif
   xobs[4] = xobs[5] = 0;
   swi_polcart_sp(xobs, xobs);
   /* to AUNIT */
@@ -9706,6 +9976,10 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
    * conversion to planetocenter     * 
    *******************************/
   if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR)) {
+#ifndef SWE_UPSTREAM_COMPAT
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_TRUEPOS))
+      lt_rate_exact(xx, xxctr, xxsp);
+#endif
     /* subtract earth */
     for (i = 0; i <= 5; i++) 
       xx[i] -= xxctr[i]; 
