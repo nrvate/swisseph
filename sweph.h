@@ -669,7 +669,7 @@ struct epsilon {
  * SE_EPHE_FALLBACK=1 so the suite meets upstream's rules on ephemeris
  * substitution; this extends the same reasoning to numerical defects.
  *
- * What it restores, both proven by check-compat:
+ * What it restores, each proven by check-compat:
  *   - swi_check_ecliptic()/swi_check_nutation() keyed on epoch alone, so a
  *     value computed under SEFLG_JPLHOR was served to callers that did not
  *     ask for it (104 of 120 answers contaminated)
@@ -681,6 +681,9 @@ struct epsilon {
  *     OK; the fork refuses it
  *   - ipl * 100 in swe_calc()'s center-of-body setup overflowed int32 for a
  *     large negative id (UBSan only, so asserted by check-hostile, G25)
+ *   - the Moon's light time was taken once, from the distance at the instant
+ *     of observation, and read at that instant rounded to a double
+ *     (1.18 mas; UPSTREAM-BUGS 23, G33)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

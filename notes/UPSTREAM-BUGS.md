@@ -54,6 +54,11 @@ worst were in code that had never executed even once.
 | 16 | `swe_pheno(SE_ECL_NUT)` indexes two tables with -1 | Memory | `swecl.c` |
 | 17 | `ipl * 100` overflows int32 for a large negative body number | Robustness | `sweph.c` |
 | 18 | Changing delta t does not invalidate the cached topocentric observer | Correctness | `swephlib.c`, `sweph.c` |
+| 19 | A fictitious body's position depends on SEFLG_SPEED | Correctness | `sweph.c` |
+| 20 | A geocentric fictitious body mixes the dynamical and ICRS frames | Correctness | `swemplan.c`, `sweph.c` |
+| 21 | A sidereal node or apsis carries the nutation in longitude | Correctness | `swecl.c` |
+| 22 | The built-in Spica record's radial velocity is a stale catalogue value | Data | `sweph.c` |
+| 23 | The Moon's light time is taken once, and read at a rounded instant | Correctness | `sweph.c` |
 
 ---
 
@@ -1326,6 +1331,47 @@ the same differenced distance rate to 1e-9 AU/day; with the old value it
 fails by 2.49e-3. The other built-in records (Revati, Pushya, Mula) were
 compared with SIMBAD the same day: Pushya's radial velocity and Mula's are
 current, and Revati (zeta Psc) has no radial velocity in SIMBAD to compare.
+
+## 23. The Moon's light time is taken once, and read at a rounded instant
+
+**Severity: Correctness (up to 1.18 mas on the Moon over 1800-2100, on the Swiss files and JPL alike)**
+**Where:** `sweph.c`, `app_pos_etc_moon()`
+
+The light time of a body seen at t is the solution of
+tau = |M(t - tau) - O(t)| / c: the distance from where the Moon was when the
+light left it to where the observer is when it arrives. `app_pos_etc_moon()`
+takes it once, from the distance at the instant of observation,
+tau0 = |M(t) - O(t)| / c, reads the Moon at t - tau0, and stops. The Moon
+moves about 30 km/s against the barycentre during its 1.3 s of light time,
+so the distance it was read at is out by up to ~40 km, tau0 by up to
+0.13 ms, and the position by **up to 1.08 mas**. A planet on the files
+takes two passes (`app_pos_etc_plan()`); the Moon took one.
+
+The instant read, t - tau0, is also a Julian date in one double, which near
+the present resolves about 40 microseconds. The Moon covers 1.2 m in that,
+**up to 0.18 mas more**, because the rounding is never carried back. The two
+together reach 1.18 mas (G33, 40 dates in 1800-2100, geocentric), and 0.07
+heliocentric, where the light time is 500 s and the observer the Sun.
+
+Found by comparing Swiss's Moon with Ephemeris Prometheia's, which solves the
+light time and carries the rounding through the velocity: once both read the
+same JPL ephemeris, the recipe above (one pass, rounded instant, file read at
+TT, which is entry 24) reproduces Swiss's Moon to 0.00000 mas at eight dates,
+and the corrected recipe reproduces Prometheia's to 0.0000 mas.
+
+**Fix, as done here:** keep the one read Swiss already makes at the rounded
+t - tau0, and solve the equation from it: move the Moon along its barycentric
+velocity at t by the difference between the instant read and t - tau, and
+recompute tau from that, three times (each pass gains the factor v/c). The
+rounding is (t - (t - tau0)) - tau0, exact since the two are close. No
+second read of the ephemeris, so the cost is a few multiplications. Moshier
+extrapolates by tau0 itself and rounds nothing; it gets the iteration only.
+Its remaining 0.04 mas (0.5 heliocentric) is its own finite-difference
+velocities, far inside its 766 mas mean distance from the Swiss files, so it
+is not re-read either. G33 `tests/moonlt.c`: the astrometric direction equals
+M(t - tau) - O(t) built from this library's own geometric vectors within
+0.01 mas on the files and JPL (0.00007 measured) and does not depend on
+`SEFLG_SPEED`; check-compat (G24) asserts the compat build keeps the 1.18 mas.
 
 ## How these were found
 

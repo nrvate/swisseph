@@ -97,10 +97,50 @@ static int pheno_accepts_eclnut(void)
   return swe_pheno(2451545.0, SE_ECL_NUT, SEFLG_SWIEPH, attr, s) != ERR;
 }
 
+/* Defect 23: the Moon's light time is taken once from the distance at the
+ * instant of observation, and read at that instant rounded to a double.
+ * The worst over 40 dates in 1800-2100 of the astrometric direction against
+ * M(t - tau) - E(t) solved here on the library's own geometric vectors
+ * (G33 checks the rest), in mas. */
+static double moon_lighttime(void)
+{
+  const double c = 173.1446326846693;   /* AU per day */
+  int32 base = SEFLG_SWIEPH | SEFLG_J2000 | SEFLG_ICRS | SEFLG_NONUT | SEFLG_XYZ;
+  int32 geom = base | SEFLG_BARYCTR | SEFLG_TRUEPOS | SEFLG_SPEED;
+  char s[AS_MAXCH] = "";
+  double w = 0;
+  int id, it;
+  swe_close(); swe_set_ephe_path((char *) EPHE);
+  for (id = 0; id < 40; id++) {
+    double jd = 2378496.5 + id * 2739.325 + id * 0.0371;
+    double xa[6], xo[6], xb[6], d[3], tau = 0, tr, e, r, dot;
+    if (swe_calc(jd, SE_MOON, base | SEFLG_NOABERR | SEFLG_NOGDEFL, xa, s) < 0 ||
+        swe_calc(jd, SE_EARTH, geom, xo, s) < 0)
+      return 1e9;
+    for (it = 0; it < 20; it++) {
+      tr = jd - tau;
+      if (swe_calc(tr, SE_MOON, geom, xb, s) < 0)
+        return 1e9;
+      e = (jd - tr) - tau;
+      d[0] = xb[0] + xb[3] * e - xo[0];
+      d[1] = xb[1] + xb[4] * e - xo[1];
+      d[2] = xb[2] + xb[5] * e - xo[2];
+      r = sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+      tau = r / c;
+    }
+    dot = xa[0]*d[0] + xa[1]*d[1] + xa[2]*d[2];
+    e = sqrt(pow(xa[1]*d[2] - xa[2]*d[1], 2) + pow(xa[2]*d[0] - xa[0]*d[2], 2)
+             + pow(xa[0]*d[1] - xa[1]*d[0], 2));
+    e = atan2(e, dot) * 206264806.247;   /* acos cannot resolve 1e-8 rad */
+    if (e > w) w = e;
+  }
+  return w;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
-  double drift;
+  double drift, moonlt;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -109,6 +149,7 @@ int main(int argc, char **argv)
   drift  = pctr_drift();
   wiped  = eclnut_wipes_constants();
   pheno  = pheno_accepts_eclnut();
+  moonlt = moon_lighttime();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -141,6 +182,14 @@ int main(int argc, char **argv)
   else {
     printf("  pheno(SE_ECL_NUT)      %s        FAIL: expected %s\n",
            pheno ? "accepted" : "refused ", WANT_DEFECT ? "the defect" : "none");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moonlt > 0.5) : (moonlt < 0.01))
+    printf("  Moon light time        %.4f mas      OK\n", moonlt);
+  else {
+    printf("  Moon light time        %.4f mas      FAIL: expected %s\n",
+           moonlt, WANT_DEFECT ? "> 0.5 mas" : "< 0.01 mas");
     bad++;
   }
 

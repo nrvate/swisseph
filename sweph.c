@@ -5197,6 +5197,9 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
   int i;
   int32 flg1, flg2;
   double xx[6], xxsv[6], xobs[6], xxm[6], xs[6], xe[6], xobs2[6], dt;
+#ifndef SWE_UPSTREAM_COMPAT
+  double vb[3];
+#endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
   struct plan_data *pdp = &ctx->pldat[SEI_MOON];
@@ -5259,6 +5262,10 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
   if ((iflag & SEFLG_TRUEPOS) == 0) {
     dt = sqrt(square_sum(xxm)) * AUNIT / CLIGHT / 86400.0;     
     t = pdp->teval - dt;
+#ifndef SWE_UPSTREAM_COMPAT
+    for (i = 0; i <= 2; i++)
+      vb[i] = xx[i+3];	/* barycentric velocity at teval, every ephemeris */
+#endif
     switch(pdp->iephe) {
       case SEFLG_JPLEPH:
         retc = swi_pleph(ctx, t, J_MOON, J_EARTH, xx, serr);
@@ -5291,6 +5298,31 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
         }
         break;
     } 
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 23: the light time was taken once, from the distance at
+     * teval, |M(teval) - O(teval)| / c, where it is defined by
+     * tau = |M(teval - tau) - O(teval)| / c (up to 1.08 mas over 1800-2100),
+     * and the Moon was then read at teval - dt rounded to a double (40 us
+     * near the present, up to 0.18 mas more). Solve the equation from the
+     * one read already made, moving the Moon along its barycentric velocity
+     * by the difference between the instant read and teval - tau; each pass
+     * gains the factor v/c, so three are exact. The rounding is recovered
+     * as (teval - t) - dt, exact since t is near teval; Moshier extrapolates
+     * by dt itself and rounds nothing. */
+    {
+      double eps0 = (pdp->iephe == SEFLG_MOSEPH) ? 0 : (pdp->teval - t) - dt;
+      double dtk = dt, e = eps0, xk[3];
+      int k;
+      for (k = 0; k < 3; k++) {
+        for (i = 0; i <= 2; i++)
+          xk[i] = xx[i] + e * vb[i] - xobs[i];
+        dtk = sqrt(square_sum(xk)) * AUNIT / CLIGHT / 86400.0;
+        e = eps0 + dt - dtk;
+      }
+      for (i = 0; i <= 2; i++)
+        xx[i] += e * vb[i];
+    }
+#endif
     if (iflag & SEFLG_TOPOCTR) {
       if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, NULL) != OK)
 	  return ERR;
