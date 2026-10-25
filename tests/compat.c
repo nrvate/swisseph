@@ -3894,6 +3894,96 @@ static double jpl_open_tid_off(void)
   return v;
 }
 
+/* dir: links to EPHE's files but de200.eph, and de200.eph under the name
+ * jf; 0, or -1 */
+static int jpl_alias_dir(char *dir, const char *jf)
+{
+  char ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  struct dirent *e;
+  DIR *d;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strcmp(e->d_name, "de200.eph") != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  snprintf(p, sizeof p, "%s/de200.eph", ephe);
+  snprintf(q, sizeof q, "%s/%s", dir, jf);
+  return symlink(p, q);
+}
+
+static void rm_dir(const char *dir)
+{
+  char q[PATH_MAX + 300];
+  struct dirent *e;
+  DIR *d;
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+}
+
+/* swe_calc_ut()'s JPL Moon in AD 1700 with no JPL file set, the first call
+ * against the second, deg, the larger of: a path whose de431.eph (the
+ * default name) is de200.eph, and, after swe_close(), a path without
+ * de431.eph whose de406.eph (the calculation's fallback) is; 1 if the
+ * fallback's warning is not in the first call's serr. Upstream's first
+ * delta t takes the default term, the calculation then opening the file:
+ * 40.0057511 deg for 40.0039618 both (UPSTREAM-BUGS 165). No JPL file may
+ * have been set, so main() calls this first and it runs in a forked
+ * child. */
+static double jpl_dft_moon_off(void)
+{
+  char da[] = "/tmp/compatdfaXXXXXX", db[] = "/tmp/compatdfbXXXXXX";
+  double v = -1;
+  int fd[2];
+  pid_t pid;
+  if (jpl_alias_dir(da, SE_FNAME_DFT) == 0 && jpl_alias_dir(db, SE_FNAME_DFT2) == 0
+      && pipe(fd) == 0) {
+    fflush(stdout);
+    if ((pid = fork()) == 0) {
+      double x[6], y[6], r = 0;
+      char serr[256];
+      close(fd[0]);
+      swe_set_ephe_path(da);
+      if (swe_calc_ut(2341972.5, SE_MOON, SEFLG_JPLEPH, x, serr) < 0
+          || swe_calc_ut(2341972.5, SE_MOON, SEFLG_JPLEPH, y, serr) < 0)
+        x[0] = 1e9;
+      r = fabs(swe_difdeg2n(x[0], y[0]));
+      swe_close();
+      swe_set_ephe_path(db);
+      *serr = '\0';
+      if (swe_calc_ut(2341972.5, SE_MOON, SEFLG_JPLEPH, x, serr) < 0)
+        x[0] = 1e9;
+      if (strstr(serr, SE_FNAME_DFT2) == NULL)
+        r = 1;
+      else if (swe_calc_ut(2341972.5, SE_MOON, SEFLG_JPLEPH, y, serr) < 0)
+        r = 1e9;
+      else if (fabs(swe_difdeg2n(x[0], y[0])) > r)
+        r = fabs(swe_difdeg2n(x[0], y[0]));
+      _exit(write(fd[1], &r, sizeof r) == (ssize_t) sizeof r ? 0 : 3);
+    }
+    close(fd[1]);
+    if (pid < 0 || read(fd[0], &v, sizeof v) != (ssize_t) sizeof v)
+      v = -1;
+    close(fd[0]);
+    if (pid > 0)
+      waitpid(pid, NULL, 0);
+  }
+  rm_dir(da);
+  rm_dir(db);
+  return v;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 after the path,
  * swe_set_jpl_file("de200.eph") and the path again by another string, the
  * first call against the second, deg. Upstream's path setter forgets the
@@ -4023,7 +4113,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4033,6 +4123,7 @@ int main(int argc, char **argv)
   dtpath = calc_ut_first_path_off();  /* so does this */
   pathwarn = path_warn_first_count(); /* and this */
   jplopen = jpl_open_tid_off();       /* and this: no JPL file set */
+  jpldft = jpl_dft_moon_off();        /* and this */
   modtid = models_tid_off();
   nodmosh = nodaps_mosh_lat_off();
 
@@ -5131,6 +5222,14 @@ int main(int argc, char **argv)
   else {
     printf("  JPL Moon, named late   %.2e deg FAIL: expected %s\n",
            jplnamed, WANT_DEFECT ? "> 1e-3" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jpldft > 1e-3 && jpldft < 0.5) : (jpldft == 0))
+    printf("  JPL Moon, default file %.2e deg OK\n", jpldft);
+  else {
+    printf("  JPL Moon, default file %.2e deg FAIL: expected %s\n",
+           jpldft, WANT_DEFECT ? "> 1e-3, < 0.5" : "0");
     bad++;
   }
 

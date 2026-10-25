@@ -72,6 +72,13 @@
  * after the path again before bug 148: the configuration did not record
  * that a file had been named.
  *
+ * The defect (UPSTREAM-BUGS 165): with no JPL file set, a JPLEPH delta t
+ * knew no DE number and took the default term, and the calculation after
+ * it opened the default file, de431.eph, by its name: with a de431.eph
+ * that is de200.eph, the first UT JPL Moon in AD 1700 40.0057507520 deg
+ * and the second 40.0039614086 in a fresh process too, and the JPLEPH
+ * delta t 14.286718 s before a JPL calculation and 3.012003 after one.
+ *
  * The check, each case in a forked, pristine process: the path and
  * swe_set_jpl_file("de200.eph"); the reader computes a JPL Sun at J2000,
  * which opens the file; then the last setter: none, the path again by
@@ -80,8 +87,12 @@
  * (de406.eph, the branch for a JPL file alone, as a control); or the first
  * path a /tmp directory of links without de200.eph and the last setter
  * the path to EPHEDIR, or a second such directory, de200.eph then linked
- * into it and the last setter swe_close() (bug 164); or the first
- * path is a /tmp directory of links with its own swe_deltat.txt,
+ * into it and the last setter swe_close() (bug 164); or no JPL file set
+ * and the path a /tmp directory whose de431.eph is de200.eph, with no last
+ * setter, or the path again by another string, or the first path a
+ * directory with no JPL file, where the readers that compute first also
+ * ask a JPLEPH delta t, and the last setter that directory (bug 165); or
+ * the first path is a /tmp directory of links with its own swe_deltat.txt,
  * seleapsec.txt, sefstars.txt (Sirius and Aldebaran 10 s of RA on) and
  * seorbel.txt (Cupido 1 deg on, under another name), and the last setter
  * the path to EPHEDIR. The readers: the setting thread, a thread that
@@ -104,8 +115,8 @@
  * process given the final settings -- the last path and the JPL file's
  * name, which the path setters keep -- on its main thread and nothing
  * else, no Sun: the guess follows the configuration, and a calculation
- * does not choose for it (as G128's closecalc). 7 settings x 5 readers x
- * 5 observations = 175 checks, and 1 more: the first path's tables, read
+ * does not choose for it (as G128's closecalc). 10 settings x 5 readers x
+ * 5 observations = 250 checks, and 1 more: the first path's tables, read
  * alone, move every one of those values.
  *
  * Measured before the fixes, 22 of the first 48 (4 settings, the first 4
@@ -129,13 +140,23 @@
  * settings on all 5 readers alike: the JPLEPH delta t 14.286718 s and
  * swe_deltat() 15.091463 for 3.012003, after the JPL Sun the getter
  * -25.936 for -23.8946 and swe_deltat() in 1800 18.902020 s for
- * 14.438958, the first Moon 40.0057507520 deg for the second's. The fixes
- * of 137 and 147 are in both builds (the adoption and the memo are this
- * fork's), 138's, 145's, 148's and 164's in the shipped build only. The
- * compat build (SWE_UPSTREAM_COMPAT) fails 85 of 176, with the fixes and
- * without, by upstream behaviour it restores -- in bug 164's two settings
- * 30, the first JPLEPH delta t and Moon as bug 148's (10 each) and bug
- * 145's (10); in the others 55 of 126:
+ * 14.438958, the first Moon 40.0057507520 deg for the second's. Bug 165's
+ * 18 of 251, in its three settings: the first Moon on all 5 readers in
+ * each (15), and with no last setter the JPLEPH delta t 3.012003 s for
+ * 14.286718 on the 3 readers that computed a JPL Sun first. The fixes of
+ * 137 and 147 are in both builds (the adoption and the memo are this
+ * fork's), 138's, 145's, 148's, 164's and 165's in the shipped build only.
+ * The compat build (SWE_UPSTREAM_COMPAT) fails 137 of 251, with the fixes
+ * and without, by upstream behaviour it restores -- in bug 165's three
+ * settings 52: the first Moon (15); the JPLEPH delta t (7), on the 3
+ * readers as here before the fix (swe_deltat() following the open file
+ * too, bug 103), a new thread's first-call warning (bug 110) in each
+ * setting and, after the path again, the running thread's delta t before
+ * its sync (bugs 124, 128); the getter and swe_deltat() after the JPL Sun
+ * following the file it opened (bugs 103, 138; 15); and the flag-0 delta
+ * t (bug 145's, 15); in bug 164's two settings 30, the first JPLEPH delta t and
+ * Moon as bug 148's (10 each) and bug 145's (10); in the others 55 of
+ * 126:
  * bug 145's 25, upstream's 0; bug 148's 18 -- after the path again and
  * the tables' path the JPL DE number forgotten, so the first JPLEPH delta
  * t takes the default term (14.286718 s) on the setting thread, a new
@@ -183,6 +204,8 @@
 static char EPHE[PATH_MAX], SAMEDIR[PATH_MAX + 8], NOFILE[] = "/tmp/jpldenumXXXXXX";
 static char TABDIR[] = "/tmp/jpldenumtXXXXXX";
 static char LATEDIR[] = "/tmp/jpldenumlXXXXXX";	/* bug 164: de200.eph linked in late */
+static char DFTDIR[] = "/tmp/jpldenumdXXXXXX";	/* bug 165: its de431.eph is de200.eph */
+static char DFTSAME[PATH_MAX + 8];
 
 /* bug 147: TABDIR's own tables, each moving what it gives */
 static const char *DELTAT = "1990 80.0\n";	/* 56.86 s built in */
@@ -195,12 +218,15 @@ static const char *ORBEL =			/* Cupido 1 deg on, renamed */
 static const char *const TABFILES[] = { "swe_deltat.txt", "seleapsec.txt", "sefstars.txt",
                                         "seorbel.txt", NULL };
 
-enum { K_SET, K_SAMEDIR, K_NOFILE, K_JPLONLY, K_TABLES, K_NAMED, K_NAMECLOSE, NK };
+enum { K_SET, K_SAMEDIR, K_NOFILE, K_JPLONLY, K_TABLES, K_NAMED, K_NAMECLOSE, K_DFTKEEP, K_DFT,
+       K_DFTLATE, NK };
 static const char *KN[NK] = {
   "the path and de200.eph", "then the path again (EPHEDIR/.)",
   "then a path without de200.eph", "then a JPL file not there",
   "a path with its own tables then EPHEDIR",
-  "de200.eph not there, then EPHEDIR", "de200.eph not there, linked, swe_close()" };
+  "de200.eph not there, then EPHEDIR", "de200.eph not there, linked, swe_close()",
+  "no JPL file set, de431.eph de200's", "no JPL file set, de431.eph de200's, path again",
+  "no JPL file at all, then de431.eph" };
 enum { R_MAIN, R_RUN, R_NEW, R_CTX, R_CTXNEW, NR };
 static const char *RN[NR] = { "setting thread", "running thread", "new thread",
                               "explicit context", "context made after" };
@@ -301,10 +327,27 @@ static void late_link(int on)
     perror(q);
 }
 
+/* bug 165: DFTDIR's de431.eph, the default name, a link to de200.eph */
+static int dft_link(void)
+{
+  char p[PATH_MAX + 300], q[PATH_MAX + 300];
+  snprintf(p, sizeof p, "%s/de200.eph", EPHE);
+  snprintf(q, sizeof q, "%s/%s", DFTDIR, SE_FNAME_DFT);
+  return symlink(p, q);
+}
+
 static void first_setters(swe_ctx *c)
 {
   if (K == K_NAMECLOSE)
     late_link(0);
+  if (K == K_DFT || K == K_DFTKEEP) {	/* bug 165: no JPL file set, the default name's */
+    set_path(c, DFTDIR);
+    return;
+  }
+  if (K == K_DFTLATE) {
+    set_path(c, NOFILE);
+    return;
+  }
   set_path(c, K == K_TABLES ? TABDIR : K == K_NAMED ? NOFILE : K == K_NAMECLOSE ? LATEDIR : EPHE);
   set_jpl(c, "de200.eph");
 }
@@ -317,6 +360,8 @@ static void last_setter(swe_ctx *c)
   case K_JPLONLY: set_jpl(c, "de406.eph"); break;
   case K_TABLES: set_path(c, EPHE); break;
   case K_NAMED: set_path(c, EPHE); break;
+  case K_DFT: set_path(c, DFTSAME); break;
+  case K_DFTLATE: set_path(c, DFTDIR); break;
   case K_NAMECLOSE:		/* the file installed, then the close */
     late_link(1);
     if (c != NULL)
@@ -333,6 +378,10 @@ static void last_setter(swe_ctx *c)
  * setter keeps -- in a fresh process, each once */
 static void final_setters(swe_ctx *c)
 {
+  if (K == K_DFTKEEP || K == K_DFT || K == K_DFTLATE) {	/* bug 165: the path alone */
+    set_path(c, K == K_DFT ? DFTSAME : DFTDIR);
+    return;
+  }
   switch (K) {
   case K_SAMEDIR: set_path(c, SAMEDIR); break;
   case K_NOFILE: set_path(c, NOFILE); break;
@@ -412,6 +461,11 @@ static void warm(swe_ctx *c)
     (void) dt(c, T_1990);
   } else
     jpl_sun(c);
+  if (K == K_DFTLATE) {		/* bug 165: a JPLEPH delta t finding no file */
+    char serr[AS_MAXCH];
+    (void) (c != NULL ? swe_deltat_ex_r(c, T_1700, SEFLG_JPLEPH, serr)
+                      : swe_deltat_ex(T_1700, SEFLG_JPLEPH, serr));
+  }
 }
 
 static void observe(swe_ctx *c, struct obs *a)
@@ -580,18 +634,22 @@ int main(int argc, char **argv)
     static const char *const NODE200[] = { "de200.eph", NULL };
     if (mkdtemp(NOFILE) == NULL || link_all(EPHE, NOFILE, NODE200) != 0
         || mkdtemp(LATEDIR) == NULL || link_all(EPHE, LATEDIR, NODE200) != 0
+        || mkdtemp(DFTDIR) == NULL || link_all(EPHE, DFTDIR, NODE200) != 0
+        || dft_link() != 0
         || mkdtemp(TABDIR) == NULL || link_all(EPHE, TABDIR, TABFILES) != 0
         || write_file(TABDIR, TABFILES[0], DELTAT) != 0
         || write_file(TABDIR, TABFILES[1], LEAPSEC) != 0
         || write_file(TABDIR, TABFILES[2], STARS) != 0
         || write_file(TABDIR, TABFILES[3], ORBEL) != 0) {
-      printf("G132 FAIL: could not make %s, %s and %s\n", NOFILE, LATEDIR, TABDIR);
+      printf("G132 FAIL: could not make %s, %s, %s and %s\n", NOFILE, LATEDIR, DFTDIR, TABDIR);
       unlink_all(NOFILE);
       unlink_all(LATEDIR);
+      unlink_all(DFTDIR);
       unlink_all(TABDIR);
       return 1;
     }
   }
+  snprintf(DFTSAME, sizeof DFTSAME, "%s/.", DFTDIR);
   printf("G132: the JPL DE number behind the automatic tidal term, and the path's tables\n");
   for (O = 0; O < NO; O++)
     for (K = 0; K < NK; K++) {
@@ -665,6 +723,7 @@ int main(int argc, char **argv)
     }
   unlink_all(NOFILE);
   unlink_all(LATEDIR);
+  unlink_all(DFTDIR);
   unlink_all(TABDIR);
   if (bad) {
     printf("G132 FAIL: %d of %d\n", bad, n);

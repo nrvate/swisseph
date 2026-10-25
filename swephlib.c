@@ -4191,7 +4191,7 @@ int32 swi_guess_ephe_flag(swe_ctx *ctx)
 int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int32 *denumret, double *tid_acc, char *serr)
 {
   (void) tjd_ut;
-  (void) serr;
+  (void) serr;	/* used by bug 165's open, shipped build */
   iflag &= SEFLG_EPHMASK;
   if (ctx->is_tid_acc_manual) {
     *tid_acc = ctx->tid_acc;
@@ -4221,6 +4221,15 @@ int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int
   }
   if (denum == 0) {
     if (iflag & SEFLG_JPLEPH) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 165: no DE number known for the JPL file -- none set
+       * and read, none open -- so the default term, until the calculation
+       * after this delta t opened the file by its name (the default one
+       * when none was set): its first answer differed from its second. The
+       * file it opens is opened now (see sweph.c). */
+      if (!ctx->jpl_file_is_open && ctx->jpldenum_cfg == 0)
+	swi_jpl_open_first_use(ctx, serr);
+#endif
       if (ctx->jpl_file_is_open) {
 	denum = ctx->jpldenum;
       } else if (ctx->jpldenum_cfg != 0) {

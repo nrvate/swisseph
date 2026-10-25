@@ -197,6 +197,7 @@ worst were in code that had never executed even once.
 | 161 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, on a JPL file of DE 403 or later, `swi_bias()` puts the frame bias (23 mas) and the Horizons offset in right ascension (-51.26 mas) in from tjd >= 1962 Jan 20, where the precession and nutation change after it, and is given the instant the body was read at, the true Sun 0: over the light time after the step every body 1.1e-5 deg off (the true Sun at every date after it), at the step Polaris 4.95e-5 deg in right ascension, SEFLG_SPEED3 0.162 deg/day | Correctness | `sweph.c`, `swephlib.c` |
 | 162 | Under SEFLG_JPLHOR_APPROX (`SEMOD_JPLHORA_1`, and `_3` after 1962 Jan 20), on a JPL file of DE 403 or later, `swi_approx_jplhor()` turns the position about the pole by the Horizons offset in right ascension (-51 to -53 mas) and not the velocity: speeds off their places' rate, the Moon's latitude 1.46e-6 deg/day, its right ascension 5.6e-7, Mars's 1.25e-7, the Sun's latitude 1.02e-7; distance rates 7.2e-9 AU/day on Mars | Correctness | `swephlib.c` |
 | 164 | A JPL file whose `swe_set_jpl_file()` failed along the path then set, and a path where it is (or the file installed there and `swe_close()`): no DE number was read, so the path setter and the close read none, and the first UT JPL Moon in AD 1700 is 40.0057507520 deg and the second 40.0039614086, `swe_deltat()` 15.091463 s, where a fresh process given that path and the file answers 40.0039614086 twice and 3.012003 s -- on every thread and context | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
+| 165 | With no JPL file set, a JPLEPH delta t knows no DE number and takes the default tidal term, and the calculation after it opens the default file, de431.eph, by its name (or its fallback de406.eph): with a de431.eph that is de200.eph the first UT JPL Moon in AD 1700 40.0057507520 deg and the second 40.0039614086 in a fresh process, the JPLEPH delta t 14.286718 s before a JPL calculation and 3.012003 after one | Correctness (behaviour) | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h` |
 
 ---
 
@@ -11159,6 +11160,100 @@ Moon (bug 148's, 10 each) and the flag-0 delta t (bug 145's, 10). G24
 `jpl_named_moon_off`, the first UT JPL Moon in AD 1700 after the
 directory without the file, de200.eph and EPHEDIR against the second: 0
 shipped, 1.79e-3 deg compat (and shipped before the fix).
+
+## 165. With no JPL file set, the first JPLEPH delta t takes the default tidal term and the calculation after it opens the default file by its name: the first answer differs from the second, in a fresh process too
+
+**Severity: Correctness (behaviour: call order -- the first UT JPL Moon in AD 1700 1.79e-3 deg off the second where de431.eph is not DE431, the JPLEPH delta t 11.27 s apart before and after a JPL calculation; with de431.eph missing and the fallback's de406.eph, by -25.826 for -25.80, 0.154 s in AD 1700 by the same proportion -- on every thread and context)**
+**Where:** upstream `swephlib.c` `swi_get_tid_acc()` (the JPL file's DE number only when it is open), `sweph.c` `open_jpl_file()` (the fallback to de406.eph); here `swephlib.c`: `swi_get_tid_acc()`; `sweph.c`: new `swi_jpl_open_first_use()` and `jpl_open_note_say()`, `open_jpl_file()`, `swecalc()` and `jplplan()` (their opens), `swi_close_keep_topo_etc()`, `ctx_release()`; `sweconfig.c`: `swi_config_apply()`; `sweph.h`
+
+Entry 148's noticed item. With no `swe_set_jpl_file()` the JPL file's
+name is the default, `SE_FNAME_DFT` (de431.eph), and nothing has read its
+DE number: `jpldenum_cfg` is published by the setter alone (the
+2026-09-16 review's F4), and the file is open only once a calculation has
+opened it. So a JPLEPH delta t took the default term, -25.80, and the
+calculation after it opened the file by its name, its term the file's
+from then on. With a de431.eph that is de200.eph (a /tmp directory of
+links), in a fresh process given that path alone: `swe_calc_ut()`'s JPL
+Moon in AD 1700 40.0057507520 deg on the first call and 40.0039614086 on
+the second; `swe_deltat_ex()` in AD 1700 with SEFLG_JPLEPH 14.286718 s
+before any JPL calculation and 3.012003 after a JPL Sun; the same on a
+thread running across the path, a thread started and a context made
+after it, and an explicit context. Where de431.eph is missing and
+de406.eph is there, the calculation's fallback opens de406.eph ("Error
+with JPL ephemeris file de431.eph: ... Defaulting to de406.eph", only when
+there is a serr to write it in) and rewrites the name: the same two
+Moons with that warning on the first, where de406.eph is de200.eph; with
+a real DE406 its -25.826 for -25.80, 0.154 s of delta t in AD 1700 and
+2.4e-5 deg of the Moon by the same proportion (no DE406 file here). With
+a real DE431 file the term is the default's, and no answer moves. The
+compat build the same (40.0057510966, then 40.0039617599).
+
+The decision. The default name does not count as named for bug 164's
+flag: the path setter would then open de431.eph at every path change for
+every caller, or try it where none is installed (a failed `fopen()` per
+path element), and the guess (`swe_deltat()`, and the functions without a
+flag, bug 132) would turn JPL wherever a de431.eph is found, DE431's
+-25.80 for the Swiss files' -25.936 (11.29 s of delta t in AD 1000), for a
+configuration that names no JPL file (entry 138: a calculation does not
+choose for the guess). The file a JPLEPH request uses is the default
+file, or its fallback, along the path: its DE number is read where it is
+first needed, as bug 107 reads the moon file's at the first tidal term.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`; the compat
+build keeps upstream's first and second answers):
+- `swi_get_tid_acc()`, for SEFLG_JPLEPH with no DE number -- no file
+  open, none published -- opens the file first
+  (`swi_jpl_open_first_use()`), as the calculation would: its name along
+  the path, and the fallback to de406.eph only when the delta t has a
+  serr, as the calculation's open falls back only with one (in
+  `swe_calc_ut()` and the other UT functions the two are the same
+  buffer). The file stays open for the calculation, which opens nothing
+  then. The guess stays Swiss; nothing is published (F4).
+- The fallback's warning, which the calculation's own open wrote, is
+  written into the delta t's serr and kept for the calculation that finds
+  the file open (`jpl_open_note`, emptied by every open), which writes it
+  where its open would have (`jpl_open_note_say()` in `swecalc()` and
+  `jplplan()`): `swe_calc()` clears serr at its start, so the first
+  `swe_calc_ut()` would otherwise have lost it.
+- Where the file is not found the delta t answers as before, the default
+  term, without the open's error in its serr, and does not try again
+  until a file opens or a setter, `swe_close()` or an adopted path or
+  file changes what would be found (`jpl_first_missed`); the calculation
+  retries its own open at every call, as upstream's does. A default name
+  tried with no serr has not tried de406.eph, so that miss is not kept.
+- The opens, `fopen()` interposed, before and after: the path whose
+  de431.eph is de200.eph and two UT JPL Moons, 1 call and 1 open both;
+  100 more, none both; 100 rounds of a path change and a JPL Moon, 200
+  calls and 100 opens both; with a Swiss Moon, 300 calls and no open both;
+  the de406.eph fallback and two Moons, 2 calls and 1 open both; no JPL
+  file anywhere, the fallback allowed, two UT JPL Moons 6 .eph calls
+  before and 8 after (the first delta t's try of de431.eph and de406.eph)
+  and 100 more 300 both. The resolver is on the hot path, the new branch
+  only for SEFLG_JPLEPH: calc-swieph 12266746003 instructions before and
+  12266746129 after, calc-moseph 23333308548 and 23333308874.
+
+G132 (`tests/jpldenum.c`, entry 137) gains three settings with no JPL file
+set: the path a directory whose de431.eph is de200.eph and no last
+setter, or the path again by another string, or the first path a
+directory with no JPL file (its readers asking a JPLEPH delta t too) and
+the last setter the de431.eph directory, each against a fresh process
+given the final path alone: 10 settings x 5 readers x 5 observations and
+one check, 251 pass. Before the fix 18 fail: the first Moon on all 5
+readers in each setting (15), and with no last setter the JPLEPH delta t
+3.012003 s for the fresh process's 14.286718 on the 3 readers that
+computed a JPL Sun first. The compat build fails 137 of 251 with the fix
+and without: entry 164's 85 of 176, and in the three settings 52 by the
+upstream behaviour it restores (the first Moon, 15; the JPLEPH delta t,
+7; the getter and `swe_deltat()` after a JPL Sun following the open file,
+bugs 103 and 138, 15; the flag-0 delta t, bug 145's, 15). The fallback's
+warning does not fit G132's bit-for-bit serr (a reader that opened the
+file before reports nothing), so G24 takes it: `jpl_dft_moon_off`, in a
+forked child called first, the first UT JPL Moon in AD 1700 against the
+second along the de431.eph-is-de200 path, and after `swe_close()` along a
+path without de431.eph whose de406.eph is, the larger, 1 if the first
+call's serr lacks the fallback's warning: 0 shipped, 1.79e-3 deg compat
+(and shipped before the fix); with the warning not carried to the
+calculation, 1.
 
 ## How these were found
 

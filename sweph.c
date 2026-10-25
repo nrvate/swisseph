@@ -248,6 +248,9 @@ static int32 plaus_iflag(swe_ctx *ctx, int32 iflag, int32 ipl, double tjd, char 
 static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, double tdate, int32 iflag, 
     double *xx, double *x2000, struct epsilon *oe, char *serr);
 static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *serr);
+#ifndef SWE_UPSTREAM_COMPAT
+static void jpl_open_note_say(swe_ctx *ctx, char *serr);
+#endif
 static void free_planets(swe_ctx *ctx);
 #ifndef SWE_UPSTREAM_COMPAT
 static void planets_forget_instants(swe_ctx *ctx);
@@ -1304,6 +1307,10 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	    goto sweph_sbar;
 	}
 #ifndef SWE_UPSTREAM_COMPAT
+	else
+	  jpl_open_note_say(ctx, serr);	/* bug 165 */
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
 	/* Upstream bug 84: the Sun was read into its slot without the slot's
 	 * ephemeris, and app_pos_etc_sbar() finishes it at the Earth slot's
 	 * instant, which nothing here set: on a fresh context its speeds
@@ -2161,6 +2168,9 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
   /* close JPL file */
   swi_close_jpl_file(ctx);
   ctx->jpl_file_is_open = FALSE;
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->jpl_first_missed = FALSE;	/* bug 165: the next path or file is tried */
+#endif
   ctx->jpldenum = 0;
   /* close fixed stars */
   if (ctx->fixfp != NULL) {
@@ -2261,6 +2271,9 @@ static void ctx_release(swe_ctx *ctx)
   /* close JPL file */
   swi_close_jpl_file(ctx);
   ctx->jpl_file_is_open = FALSE;
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->jpl_first_missed = FALSE;	/* bug 165: the next path or file is tried */
+#endif
   ctx->jpldenum = 0;
   /* close fixed stars */
   if (ctx->fixfp != NULL) {
@@ -3255,6 +3268,58 @@ void swi_denum_reread(swe_ctx *ctx)
   }
   ctx->tid_acc = tid_acc;
 }
+
+/* Upstream bug 165: with no DE number for the JPL file -- none published
+ * by swe_set_jpl_file() (jpldenum_cfg), none open -- a JPLEPH delta t took
+ * the default tidal term, and the calculation after it opened the file by
+ * its name: in a fresh process given only a path whose de431.eph (the
+ * default name, SE_FNAME_DFT) is de200.eph, swe_calc_ut()'s JPL Moon in AD
+ * 1700 was 40.0057507520 deg on the first call and 40.0039614086 on the
+ * second, the JPLEPH delta t 14.286718 s before a JPL calculation and
+ * 3.012003 after one; the same where de431.eph is missing and the
+ * calculation's fallback opens de406.eph (-25.826 for -25.80). The file
+ * the calculation would open is opened here, as it opens it -- its serr,
+ * and so the fallback to de406.eph only when there is one to warn in --
+ * and stays open for it. The fallback's warning, which the calculation's
+ * own open wrote, is owed to that calculation (jpl_open_note_say()). Where
+ * the file is not found the attempt is not made again until a file opens
+ * or a setter, swe_close() or an adoption changes what would be found
+ * (jpl_first_missed): the calculation retries its own open at every call,
+ * as upstream's does. The tidal term of the call under way is resolved by
+ * the caller. */
+void swi_jpl_open_first_use(swe_ctx *ctx, char *serr)
+{
+  double ss[3];
+  char fnam[AS_MAXCH], s[AS_MAXCH];
+  char *sp = (serr != NULL) ? s : NULL;	/* the calculation's say on de406.eph */
+  if (ctx->jpl_file_is_open || ctx->jpl_first_missed)
+    return;
+  strcpy(fnam, ctx->jplfnam);
+  *s = '\0';
+  if (open_jpl_file(ctx, ss, ctx->jplfnam, ctx->ephepath, sp) != OK) {
+    /* once, until something changes -- but the default name tried with
+     * no serr has not tried de406.eph, which a call with one would. The
+     * delta t still answers, as before, without the calculation's error. */
+    if (serr != NULL || strstr(fnam, SE_FNAME_DFT) == NULL)
+      ctx->jpl_first_missed = TRUE;
+  } else if (sp != NULL && strcmp(fnam, ctx->jplfnam) != 0) {
+    strcpy(serr, s);		/* the fallback's warning, as the open gives it */
+    strcpy(ctx->jpl_open_note, s);
+  }
+}
+
+/* bug 165: the warning the open of the file now open owes a calculation
+ * that finds it open, as that calculation's own open would have written
+ * it (open_jpl_file() empties it) */
+static void jpl_open_note_say(swe_ctx *ctx, char *serr)
+{
+  if (*ctx->jpl_open_note == '\0')
+    return;
+  if (serr != NULL) {
+    strcpy(serr, ctx->jpl_open_note);
+    *ctx->jpl_open_note = '\0';
+  }
+}
 #endif
 
 /* calculates obliquity of ecliptic and stores it together
@@ -3789,6 +3854,10 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
     if (retc != OK)
       return (retc);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  else
+    jpl_open_note_say(ctx, serr);	/* bug 165 */
+#endif
   if (do_earth) {
     /* barycentric earth */
 #ifndef SWE_UPSTREAM_COMPAT
@@ -13070,6 +13139,7 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
 #ifndef SWE_UPSTREAM_COMPAT
   if (fpath == ctx->ephepath)
     swi_ephe_path_name_first_use(ctx);	/* bug 107 */
+  *ctx->jpl_open_note = '\0';	/* bug 165: owed for the file open, if any */
 #endif
   retc = swi_open_jpl_file(ctx, ss, fname, fpath, serr);
   /* If we fail with default JPL ephemeris (DE431), we try the second default
@@ -13097,6 +13167,7 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
     ctx->jpldenum = swi_get_jpl_denum(ctx);
     ctx->jpl_file_is_open = TRUE;
 #ifndef SWE_UPSTREAM_COMPAT
+    ctx->jpl_first_missed = FALSE;	/* bug 165 */
     /* Upstream bug 138: the automatic term was set for the file opened,
      * and a calculation opens it lazily, while swe_deltat()'s guess follows
      * the JPL file the configuration sets (bug 103): after the path,

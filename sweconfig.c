@@ -428,6 +428,7 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
       ctx->jpl_file_is_open = FALSE;
     }
     ctx->jpldenum = 0;
+    ctx->jpl_first_missed = FALSE;	/* bug 165: the new file is tried */
     /* Upstream bug 119: the positions the old JPL file filled stayed, and
      * jplplan()'s Earth, cached on the instant and the ephemeris alone,
      * answered from it: after another thread's swe_set_jpl_file() from
@@ -458,6 +459,7 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
      * (swi_close_keep_topo_etc() zeroes it). Zeroed with the file, as the
      * jpl_only branch above zeroes it. */
     ctx->jpldenum = 0;
+    ctx->jpl_first_missed = FALSE;	/* bug 165: the new path is tried */
     swi_close_ephe_files(ctx, FORGET_DENUM);
     swi_free_fict_lines(ctx);
     /* Upstream bug 147, in both builds (the adoption is this fork's): the

@@ -1342,6 +1342,11 @@ struct epsilon {
  *     named it and failed along the path then set: after a path without
  *     de200.eph, de200.eph and a path with it, the first UT JPL Moon in AD
  *     1700 1.79e-3 deg off the second (UPSTREAM-BUGS 164, G132)
+ *   - a JPLEPH delta t with no JPL file set taking the default tidal term
+ *     until a calculation opens the default file by its name: with a
+ *     de431.eph that is de200.eph, the first UT JPL Moon in AD 1700
+ *     1.79e-3 deg off the second, in a fresh process (UPSTREAM-BUGS 165,
+ *     G132, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1969,6 +1974,14 @@ struct swe_ctx {
    * calculation's fallback to de406.eph rewrites it. Published with
    * SWI_CFG_PATH; never set under SWE_UPSTREAM_COMPAT. */
   AS_BOOL jpl_named;
+  /* bug 165: the de406.eph fallback's warning when the first JPLEPH delta t
+   * opened the file, for the calculation that would have opened it; ""
+   * when none is owed. Under SWE_UPSTREAM_COMPAT always "". */
+  char jpl_open_note[AS_MAXCH];
+  /* bug 165: that first-use open failed, and nothing has changed since --
+   * no open, setter, close or adopted path or file -- so a delta t does not
+   * try it again; the calculation still does, at each call, as upstream */
+  AS_BOOL jpl_first_missed;
   int32 last_epheflag;
   AS_BOOL geopos_is_set;
   AS_BOOL ayana_is_set;
@@ -2175,6 +2188,9 @@ extern AS_BOOL swi_ephe_path_none(swe_ctx *ctx);
 /* The DE numbers swe_close() forgot, read again along the kept path, as
  * the setters read them (UPSTREAM-BUGS 131). */
 extern void swi_denum_reread(swe_ctx *ctx);
+/* The JPL file a JPLEPH calculation opens, opened by the first JPLEPH
+ * tidal term that knows no DE number for it (UPSTREAM-BUGS 165). */
+extern void swi_jpl_open_first_use(swe_ctx *ctx, char *serr);
 #endif
 /* The IERS corrections of an adopted JPL file, loaded as its setter loads
  * them (UPSTREAM-BUGS 143; both builds, the adoption being this fork's) */
