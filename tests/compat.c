@@ -418,6 +418,25 @@ static double aya_star_rate_off(void)
   return fabs(xt[3] - xs[3] - r);
 }
 
+/* UPSTREAM-BUGS 117: the mean apogee's longitude speed, Swiss files, at
+ * a binary instant, against a five-point difference over 2^-4 day,
+ * deg/day. Upstream divides x(t) - x(t - 0.001) by 0.001, the rounded
+ * step being 0.001 to half an ulp of the date */
+static double mean_apog_speed_off(void)
+{
+  double t = floor(2460000.3 * 256) / 256, h = 1.0 / 16, x[6], f[5][6], d1, d2;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_MEAN_APOG, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_calc(t + (k - 2) * h, SE_MEAN_APOG, SEFLG_SWIEPH, f[k], serr);
+  d1 = swe_difdeg2n(f[3][0], f[1][0]);
+  d2 = swe_difdeg2n(f[4][0], f[0][0]);
+  return fabs(x[3] - (8 * d1 - d2) / (12 * h));
+}
+
 /* UPSTREAM-BUGS 97: 10 deg split into nakshatras under SE_SIDM_USER, the
  * place read back from nakshatra, degrees and minutes, less 10, deg. The
  * Sheoran test was a bit mask that 255 passes: 3 deg 20' */
@@ -2501,7 +2520,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2602,6 +2621,7 @@ int main(int argc, char **argv)
   ayastar = aya_star_rate_off();
   filejoin = file_join_off();
   usernak = user_nakshatra_off();
+  mapogspd = mean_apog_speed_off();
   moonnbr = moon_neighbour_off();
   refused = refused_file_off();
   fictstar = fict_star_parse();
@@ -3256,6 +3276,13 @@ int main(int argc, char **argv)
   else {
     printf("  deflection rate in disc %.2e deg/day FAIL: expected %s\n",
            defldisc, WANT_DEFECT ? "> 1e-6" : "< 2e-8");
+    bad++;
+  }
+  if (WANT_DEFECT ? (mapogspd > 5e-9) : (mapogspd < 1e-9))
+    printf("  mean apogee speed       %.2e deg/day OK\n", mapogspd);
+  else {
+    printf("  mean apogee speed       %.2e deg/day FAIL: expected %s\n",
+           mapogspd, WANT_DEFECT ? "> 5e-9" : "< 1e-9");
     bad++;
   }
   if (WANT_DEFECT ? (usernak > 3) : (usernak < 1e-9))

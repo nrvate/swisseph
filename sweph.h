@@ -1087,6 +1087,10 @@ struct epsilon {
  *     SID group, so the tidal acceleration it sets was lost at the default
  *     context's next sync (-25.936 for -25.826 after "SE1.80", 9.13 s of
  *     delta t in AD 1000; UPSTREAM-BUGS 116, G113)
+ *   - swe_calc()'s mean node and mean apogee speeds as (x(t) - x(t -
+ *     0.001)) / 0.001 with t - 0.001 rounded: the step off by half an ulp
+ *     of the date, 1.2e-8 deg/day on the node, 2.5e-8 on the apogee
+ *     (UPSTREAM-BUGS 117, G114)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

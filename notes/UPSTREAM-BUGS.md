@@ -148,6 +148,7 @@ worst were in code that had never executed even once.
 | 114 | A seorbel.txt element term reads a power "T5" to "T9" as nothing, "T0" as T, "T 2" as T2 times 2, a number ".0" as 1 and "1.2.3" as 1.2, all without an error | Correctness | `swemplan.c` |
 | 116 | `swe_set_astro_models()` of a version before 2.01 sets the tidal acceleration but publishes only the SID group, so the default context's next sync puts the automatic term back (this fork's) | Correctness | `swephlib.c` |
 | 109 | Moshier's fictitious bodies, fixed stars and apparent light time stay heliocentric, and its heliocentric Moon's speed is off its positions | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
+| 117 | `swe_calc()`'s mean node and mean apogee speeds divide by 0.001 a step that is not 0.001 | Correctness | `sweph.c` |
 
 ---
 
@@ -7225,6 +7226,59 @@ Noticed, not fixed: `swe_set_ephe_fallback()` belongs to no configuration
 group, so a second thread sharing the default context does not see it
 (main thread 1, second thread 0, `SE_EPHE_FALLBACK` unset), unlike every
 other setter.
+
+## 117. `swe_calc()`'s mean node and mean apogee speeds divide by 0.001 a step that is not 0.001
+
+**Severity: Correctness (the mean node's longitude speed up to 1.2e-8 deg/day off the rate of its positions, the mean apogee's longitude 2.5e-8 and latitude 2.1e-8, on every ephemeris and frame)**
+**Where:** `sweph.c`: `swecalc()`, the SE_MEAN_NODE and SE_MEAN_APOG branches
+
+The speed was `(x(t) - x(t - MEAN_NODE_SPEED_INTV)) / MEAN_NODE_SPEED_INTV`,
+0.001 day. `t - 0.001` is rounded to a double, so the interval actually
+taken is 0.001 to half an ulp of the date: 2.3e-10 day near the present,
+2.3e-7 of the step. On the node's 0.053 deg/day that is up to 1.2e-8
+deg/day; at binary-fraction instants the rounding is nearly the same for
+every date of a binade, -7.4e-9 to -9.8e-9 at every one of 18 dates
+1271-3000. The apogee
+(0.111 deg/day) is off by 2.5e-8 in longitude, and its latitude, the
+projection of the inclined mean orbit, by 2.1e-8 with half the
+projection's curvature times the step added. Measured against five-point
+differences of the positions at binary-fraction instants, the same over
+2^-2 to 2^-6 day, so the speed's and not the reference's; the same on
+the Swiss files, Moshier and de200, with and without SEFLG_NONUT, J2000
+and equatorial (1.09e-8 / 4.6e-9 latitude equatorial for the node, 2.9e-8
+/ 2.6e-8 for the apogee): the mean elements are Moshier's on every
+ephemeris, and the frame rates are not where it is lost. Not the series'
+time-derivative terms, the frame of date's turning or the nutation and
+precession of the ecliptic: those would differ between the frames.
+
+**Fix, as done here:** the central difference over the interval actually
+taken around tjd +- 2^-5 day, as `swe_nod_aps()`'s mean points since entry
+55 (truncation 6e-12 deg/day on the apogee's latitude); the position read
+last, at tjd. Upstream's code is under `SWE_UPSTREAM_COMPAT`. After, at 60
+dates -3000..3000: the node 1.4e-10 deg/day, the apogee 2.4e-10 (both at
+-2595, the ancient positions' own noise: 5.2e-10 against a reference over
+2^-6 day, 1.4e-10 over 2^-4), 1.7e-11 and 4.6e-11 1600-2160. Positions do
+not move (1280 node and apogee places, eight flag sets with and without
+SEFLG_SPEED, sidereal and topocentric included, bit-identical). One mean-element evaluation more per call.
+
+G114 `tests/meanspeed.c`: SE_MEAN_NODE and SE_MEAN_APOG, of date, without
+nutation, J2000 and equatorial, the Swiss files and Moshier at 24 dates
+-3000..3000 and de200 at 12 dates 1600..2160, longitude and latitude speed
+against five-point differences over 2^-4 day within 2e-9 deg/day
+(measured <= 1.3e-10; de200 <= 3.1e-11): 480 checks. The build before the
+fix fails all 480 (8.9e-9 to 2.5e-8), the upstream build all 480 too (up
+to 1.4e-5 deg/day, earlier entries' frame rates not there either). G24
+`mean_apog_speed_off`: the apogee's longitude speed at JD 2460000.3,
+2.6e-12 deg/day shipped, 3.9e-7 compat (upstream's other frame terms with
+it). G53, G54, G63 and G24 pass.
+
+Measured with it, not fixed:
+- `corr_mean_node()` and `corr_mean_apog()` interpolate their correction
+  tables linearly per century, so the positions' rate jumps at each
+  century boundary: within 2^-5 day of one the central difference takes
+  the mean of the two slopes, as any difference must (a five-point
+  reference over +-1 day there is off by up to 9.9e-9 deg/day). A kink in
+  the positions themselves, upstream's model; left.
 
 ## How these were found
 

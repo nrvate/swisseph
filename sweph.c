@@ -1254,6 +1254,28 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     ndp = &ctx->nddat[SEI_MEAN_NODE];
     xp = ndp->xreturn;
     xp2 = ndp->x;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 117: the speed was (x(t) - x(t - 0.001)) / 0.001, with
+     * t - 0.001 rounded to a double: the step taken is 0.001 to half an
+     * ulp of the date, 2.3e-10 day near the present, 2.3e-7 of it, so
+     * 1.2e-8 deg/day of the node's 0.053 off the rate of its positions
+     * (8.5e-9 at the present), and the mean apogee's 0.111 by 2.5e-8,
+     * its latitude also off by half the projection's curvature times the
+     * step (2.1e-8 together). Now the central difference over the
+     * interval actually taken around tjd +- 2^-5 day, as swe_nod_aps()'s
+     * mean points (bug 55): its truncation is 6e-12 deg/day on the
+     * apogee's latitude. The position is read last, at tjd. */
+    {
+      double xm[6], tp = tjd + 1.0 / 32, tm = tjd - 1.0 / 32;
+      if (swi_mean_node(ctx, tm, xm, serr) == ERR
+          || swi_mean_node(ctx, tp, xp2 + 3, serr) == ERR)
+        goto return_error;
+      xp2[3] = swe_difrad2n(xp2[3], xm[0]) / (tp - tm);
+      retc = swi_mean_node(ctx, tjd, xp2, serr);
+      if (retc == ERR)
+        goto return_error;
+    }
+#else
     retc = swi_mean_node(ctx, tjd, xp2, serr);
     if (retc == ERR)
       goto return_error;
@@ -1262,6 +1284,7 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     if (retc == ERR)
       goto return_error;
     xp2[3] = swe_difrad2n(xp2[0], xp2[3]) / MEAN_NODE_SPEED_INTV;
+#endif
     xp2[4] = xp2[5] = 0;
     ndp->teval = tjd;
     ndp->xflgs = -1; 	
@@ -1293,6 +1316,20 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     ndp = &ctx->nddat[SEI_MEAN_APOG];
     xp = ndp->xreturn;
     xp2 = ndp->x;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 117: as the mean node's above */
+    {
+      double xm[6], tp = tjd + 1.0 / 32, tm = tjd - 1.0 / 32;
+      if (swi_mean_apog(ctx, tm, xm, serr) == ERR
+          || swi_mean_apog(ctx, tp, xp2 + 3, serr) == ERR)
+        goto return_error;
+      xp2[3] = swe_difrad2n(xp2[3], xm[0]) / (tp - tm);
+      xp2[4] = (xp2[4] - xm[1]) / (tp - tm);
+      retc = swi_mean_apog(ctx, tjd, xp2, serr);
+      if (retc == ERR)
+        goto return_error;
+    }
+#else
     retc = swi_mean_apog(ctx, tjd, xp2, serr);
     if (retc == ERR)
       goto return_error;
@@ -1302,6 +1339,7 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
       goto return_error;
     for(i = 0; i <= 1; i++)
       xp2[3+i] = swe_difrad2n(xp2[i], xp2[3+i]) / MEAN_NODE_SPEED_INTV;
+#endif
     xp2[5] = 0;
     ndp->teval = tjd;
     ndp->xflgs = -1; 	
