@@ -914,6 +914,10 @@ struct epsilon {
  *     SE_EPHE_PATH as swe_calc() does (sefstars.txt not found), and a
  *     path change zeroed the astronomical models (18.27 s of delta t in
  *     AD 1000; UPSTREAM-BUGS 98, G97)
+ *   - SE_TIDAL_AUTOMATIC stored -25.80 until the next delta t, and
+ *     swe_get_tid_acc() did not initialise (0 as the first call), so it
+ *     read 0.136 off the value the next delta t uses (UPSTREAM-BUGS 101,
+ *     G100)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

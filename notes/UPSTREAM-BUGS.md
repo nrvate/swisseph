@@ -130,6 +130,7 @@ worst were in code that had never executed even once.
 | 96 | An Earth-centred fictitious body's light-time place on Moshier jitters with the second read of the Earth | Correctness | `sweph.c` |
 | 89 | At the Swiss files' 600-year joins an open file answers past its nominal end, so the answer depends on the file an earlier call left open | Correctness | `sweph.c`, `sweph.h` |
 | 98 | A star function as the first call ignores `SE_EPHE_PATH`, and a path change throws away the astronomical models | Correctness | `sweph.c` |
+| 101 | `swe_get_tid_acc()` answers -25.80 after `SE_TIDAL_AUTOMATIC` and 0 before any initialisation, and the shared configuration copies an automatic tidal acceleration (partly this fork's) | Correctness | `swephlib.c`, `sweconfig.c` |
 
 ---
 
@@ -5691,6 +5692,71 @@ a second path, 0 s shipped, 18.27 s compat. G81 (`tests/helmemo.c`) now
 holds every answer to 1e-9, bit-identical after entry 92; at 1e-9 the
 library before entry 92 fails its "Swiss again" (3.86e-8 deg). G24, G81,
 G91, G2 and the context gate pass.
+
+## 101. `swe_get_tid_acc()` answers -25.80 after `SE_TIDAL_AUTOMATIC` and 0 before any initialisation, and the shared configuration copies an automatic tidal acceleration
+
+**Severity: Correctness (returned value: a tidal acceleration of 0, or 0.136 arcsec/cty^2 off; and a gate that could not see entry 98)**
+**Where:** `swephlib.c`: `swe_set_tid_acc_r()`, `swe_get_tid_acc_r()`; `sweconfig.c`: `swi_config_apply()`; `tests/firstset.c` (G82)
+
+The tidal acceleration a context holds is, when automatic, the one the
+last delta t resolved: `swe_deltat()` and `swe_deltat_ex()` resolve it
+afresh on every call (`calc_deltat()` -> `swi_set_tid_acc()`), so they
+were right everywhere measured -- straight after `swe_set_ephe_path()`,
+after `swe_set_jpl_file()`, after `SE_TIDAL_AUTOMATIC`, with no
+calculation between (AD 1000: 1474.79 s Swiss, 1305.37 s de200,
+1445.25 s Moshier, as after a calculation). `swe_get_tid_acc()` only
+reads the field, and the field was wrong in three ways:
+
+- `swe_set_tid_acc(SE_TIDAL_AUTOMATIC)` stored `SE_TIDAL_DEFAULT`
+  (-25.80), which only the next delta t replaced. Straight after it,
+  following a manual DE406, `swe_get_tid_acc()` answered -25.80 where a
+  fresh `swe_set_ephe_path()` answers the moon file's -25.936; with the
+  de200 file open -25.80 for -23.8946; after a Moshier calculation -25.80
+  for the -25.936 the next delta t takes. Upstream's too (and upstream's
+  `swe_deltat()` after the Moshier case is 1463.50 s for 1474.79).
+- `swe_get_tid_acc()` did not initialise or sync: as the very first
+  library call it answered 0.0, and on a second thread 0.0 for the value
+  the first thread's path (-25.936) or `swe_set_tid_acc(SE_TIDAL_DE406)`
+  (-25.826) had set. Upstream's too (its threads share nothing).
+- This fork's: `swi_config_apply()` compared and copied the tidal
+  acceleration whether manual or not, though `sweconfig.h` says an
+  automatic one is each context's own, from its files. So the first sync
+  after `swe_set_ephe_path()` put the master's -25.80 over the -25.936 the
+  path had just derived (hidden while only a delta t, which re-resolves,
+  read it), a context from `swe_ctx_new()` answered -25.80, and an
+  adopted path left the old path's value.
+
+And G82 (`tests/firstset.c`) compared its `SE_EPHE_PATH` orders (bare,
+renv) with a reference warmed by `SE_EPHE_PATH` too, which lost a setting
+the same way they did: entry 98's lost `swe_set_astro_models()` (1.17e-5
+deg in the obliquity) passed. Its header said this fork "already keeps"
+the models set first; it did only after `swe_set_ephe_path()`.
+
+**Fix, as done here:** `SE_TIDAL_AUTOMATIC` resolves the value at once as
+`swe_deltat()` would, for the ephemeris `swi_guess_ephe_flag()` names,
+from the files open or the DE numbers published. `swe_get_tid_acc()`
+initialises and syncs first. `swi_config_apply()` adopts only a manual
+value or a change to or from one (back to automatic it resolves the
+context's own), and resolves an automatic value from an adopted path's DE
+numbers. These behind `#ifndef SWE_UPSTREAM_COMPAT`. G82's every order is
+compared with the path-warmed reference; on the build before entry 98 it
+now fails bare and renv for `swe_set_astro_models()`.
+
+Noticed, not fixed: `swe_deltat()` takes its ephemeris from
+`swi_guess_ephe_flag()` -- JPL when this context has the JPL file open --
+so after `swe_set_jpl_file("de200.eph")` the main thread answers 1305.37 s
+in AD 1000 and a second thread, which has not opened the file, 1474.79.
+
+G100 `tests/tidget.c`: `swe_get_tid_acc()` read first, then `swe_deltat()`
+in AD 1000, then `swe_get_tid_acc()` again, in nine forked scenarios
+(after a path, a path and the de200 file, automatic after DE406 with and
+without it, automatic after Moshier, the first call, a second thread after
+a path and after DE406, `swe_ctx_new()`); the reads agree within 1e-12 and
+with the named reference: 9 pass. Before the fix 7 fail, the compat build
+the same 7, the upstream build (legacy-master, without `swe_ctx_new()`) 6
+of 8. G24 `tid_auto_get_off`: 0 shipped, 0.136 compat. G82 54 pass (2
+fail on the build before entry 98). G24, G81, G91, G97, G2 and the context
+gate pass.
 
 ## How these were found
 

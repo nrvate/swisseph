@@ -235,9 +235,22 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
                    || memcmp(ctx->astro_models, c->astro_models,
                              sizeof(ctx->astro_models)) != 0
                    || ctx->ayana_is_set != c->ayana_is_set);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 101 (this fork's): an automatic tidal acceleration is
+   * the context's own, derived from its files (sweconfig.h), but it was
+   * compared and copied like a manual one, so the first sync after
+   * swe_set_ephe_path() put the master's -25.80 over the moon file's
+   * -25.936 the path had just derived: swe_get_tid_acc() answered -25.80
+   * until the next delta t. Only a manual value, or the change to or
+   * from one, is adopted now. */
+  dt_changed    = ((groups & SWI_CFG_TIDACC)
+                   && (ctx->is_tid_acc_manual != c->is_tid_acc_manual
+                    || (c->is_tid_acc_manual && ctx->tid_acc != c->tid_acc)))
+#else
   dt_changed    = ((groups & SWI_CFG_TIDACC)
                    && (ctx->tid_acc != c->tid_acc
                     || ctx->is_tid_acc_manual != c->is_tid_acc_manual))
+#endif
                   || ((groups & SWI_CFG_DELTAT)
                    && (ctx->delta_t_userdef != c->delta_t_userdef
                     || ctx->delta_t_userdef_is_set != c->delta_t_userdef_is_set));
@@ -271,8 +284,19 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     ctx->geopos_is_set = c->geopos_is_set;
   }
   if (groups & SWI_CFG_TIDACC) {
+#ifndef SWE_UPSTREAM_COMPAT
+    if (c->is_tid_acc_manual) {
+      ctx->tid_acc = c->tid_acc;
+    } else if (ctx->is_tid_acc_manual) {	/* back to automatic: this context's */
+      int32 denumret;
+      ctx->is_tid_acc_manual = FALSE;
+      swi_get_tid_acc(ctx, 0, swi_guess_ephe_flag(ctx), 0, &denumret, &ctx->tid_acc, NULL);
+    }
+    ctx->is_tid_acc_manual = c->is_tid_acc_manual;
+#else
     ctx->tid_acc           = c->tid_acc;
     ctx->is_tid_acc_manual = c->is_tid_acc_manual;
+#endif
   }
   if (groups & SWI_CFG_DELTAT) {
     ctx->delta_t_userdef        = c->delta_t_userdef;
@@ -298,6 +322,12 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     swi_hel_forget(ctx);	/* a star's magnitude is the path's (bug 82) */
     swi_fixstar_forget(ctx);	/* and its catalogue, and its file (bug 92) */
     ctx->topd.teval = SWI_TJD_NEVER;	/* other files, another site (bug 92) */
+    /* bug 101: an automatic value from the adopted path's DE numbers, as
+     * the setting thread's swe_set_ephe_path() derived it */
+    if (!ctx->is_tid_acc_manual) {
+      int32 denumret;
+      swi_get_tid_acc(ctx, 0, swi_guess_ephe_flag(ctx), 0, &denumret, &ctx->tid_acc, NULL);
+    }
 #endif
   }
   /* dt_changed is in here for the reason G26 records: the observer is built

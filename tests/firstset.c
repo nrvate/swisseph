@@ -32,7 +32,10 @@
  *   bare    action; observe, the files named by SE_EPHE_PATH (setters)
  *   reopen  path; calc; swe_close(); path; action; observe
  *   renv    SE_EPHE_PATH; calc; swe_close(); action; observe (setters)
- * against the same action in a context warm from a calculation. And with
+ * against the same action in a context warm from a calculation after
+ * swe_set_ephe_path() -- for the SE_EPHE_PATH orders too (UPSTREAM-BUGS
+ * 101: their reference was warmed by SE_EPHE_PATH as well, so it lost a
+ * setting the same way and could not see it). And with
  * no setter, the observation after swe_set_ephe_path() against the one
  * with SE_EPHE_PATH: the library's defaults either way. The observations
  * are what each setter governs (a topocentric Moon, the ayanamsa and a
@@ -56,8 +59,12 @@
  * the fix fails the same 9, after it the three shared with upstream. The
  * upstream build (3fd0f95, built with -DUPSTREAM_API, which leaves out the
  * fork-only fallback setter) fails 4 of 49: those three, and
- * swe_set_astro_models() set first (1.2e-5 deg in SE_ECL_NUT), which
- * this fork already keeps. Run as
+ * swe_set_astro_models() set first (1.2e-5 deg in SE_ECL_NUT). This fork
+ * kept that after swe_set_ephe_path() but not with the files named by
+ * SE_EPHE_PATH, where the first calculation's implicit path zeroed the
+ * models (1.17e-5 deg in the obliquity, bare and renv; UPSTREAM-BUGS 98).
+ * Against the SE_EPHE_PATH-warmed reference G82 passed with that; against
+ * the path-warmed one the build before bug 98 fails those 2. Run as
  *   firstset EPHEDIR
  */
 #include <math.h>
@@ -307,12 +314,12 @@ static const char *modename[] = { "", "", "", "", "first", "bare", "reopen", "re
 
 int main(int argc, char **argv)
 {
-  struct obs ref, refb, unset, got;
+  struct obs ref, unset, got;
   int k, m, nfail = 0, nrun = 0;
   EPHE = argc > 1 ? argv[1] : "../ephe";
   for (k = 0; k < NSET; k++) {
     double eff;
-    if (run(0, k, M_WARM, &ref) || run(0, k, M_WARMENV, &refb) || run(0, k, M_NONE, &unset)) {
+    if (run(0, k, M_WARM, &ref) || run(0, k, M_NONE, &unset)) {
       printf("  fork failed\n");
       return 2;
     }
@@ -336,7 +343,9 @@ int main(int argc, char **argv)
       nfail++;
     }
     for (m = M_FIRST; m <= M_RENV; m++) {
-      const struct obs *want = (m == M_BARE || m == M_RENV) ? &refb : &ref;
+      /* bug 101: the path-warmed reference for every order, not one
+       * warmed by SE_EPHE_PATH, which loses a setting as the order does */
+      const struct obs *want = &ref;
       double d;
       run(0, k, m, &got);
       nrun++;

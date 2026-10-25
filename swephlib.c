@@ -3793,6 +3793,13 @@ static double adjust_for_tidacc(double ans, double Y, double tid_acc, double tid
 /* returns tidal acceleration used in swe_deltat() and swe_deltat_ex() */
 double CALL_CONV swe_get_tid_acc_r(swe_ctx *ctx)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 101: as the first library call this read the context
+   * before anything had initialised it: 0, not a tidal acceleration (on a
+   * second thread, 0 for the value another thread had set). It
+   * initialises and syncs first now, as swe_deltat() does. */
+  swi_init_swed_if_start(ctx);
+#endif
   return ctx->tid_acc;
 }
 
@@ -3829,9 +3836,27 @@ void CALL_CONV swe_set_tid_acc_r(swe_ctx *ctx, double t_acc)
   swi_init_swed_if_start(ctx);
 #endif
   if (t_acc == SE_TIDAL_AUTOMATIC) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 101: automatic was set as SE_TIDAL_DEFAULT (-25.80),
+     * which only the next delta t replaced with the ephemeris's value, so
+     * swe_get_tid_acc() straight after it answered -25.80 where a fresh
+     * swe_set_ephe_path() answers the moon file's -25.936 (and
+     * swe_set_jpl_file("de200.eph") -23.8946), and after a Moshier
+     * calculation -25.80 for the -25.936 the next one on the files takes.
+     * It is resolved now as swe_deltat() resolves it, for the ephemeris
+     * swi_guess_ephe_flag() names, from the files open or the DE numbers
+     * published. */
+    double t_auto;
+    int32 denumret;
+    ctx->is_tid_acc_manual = FALSE;
+    swi_get_tid_acc(ctx, 0, swi_guess_ephe_flag(ctx), 0, &denumret, &t_auto, NULL);
+    changed = ctx->tid_acc != t_auto;
+    ctx->tid_acc = t_auto;
+#else
     changed = ctx->is_tid_acc_manual || ctx->tid_acc != SE_TIDAL_DEFAULT;
     ctx->tid_acc = SE_TIDAL_DEFAULT;
     ctx->is_tid_acc_manual = FALSE;
+#endif
     if (changed) swi_invalidate_deltat(ctx);
     swi_config_publish(ctx, SWI_CFG_TIDACC);
     return;
