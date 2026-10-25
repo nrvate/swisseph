@@ -61,6 +61,7 @@ worst were in code that had never executed even once.
 | 27 | A call on the default context adopts another thread's setter half-way through: its files closed under it, two configurations in one answer | Crash / Correctness | `sweconfig.c`, every public calculation |
 | 28 | `swe_calc(SE_ECL_NUT)` with a speed flag differences its angles as a position, reads two doubles never written, and copies stale speed slots | Memory / Correctness | `sweph.c` |
 | 29 | A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read (this fork's) | Correctness | `sweph.c` |
+| 30 | A refused Swiss file empties the constants of every file left open; the path setter crashes on a refused moon file | Correctness / Memory | `sweph.c` |
 
 ---
 
@@ -1627,6 +1628,51 @@ than 0.5 arcsec from it. With `sepl_12` missing the Sun falls to Moshier, and
 with a file and its neighbour missing serr names the file for the instant.
 Before the fix 191 rows fail (7 not finite, 72 warm differ, 112 off or
 unannounced), after it none.
+
+## 30. A refused Swiss file empties the constants of every file left open, so the next calls fail on healthy files; the path setter crashes on a refused moon file
+
+**Severity: Correctness (calls on other bodies fail "file is damaged" until each open file has been reopened) / Memory (`fclose(NULL)`: the path setter segfaults)**
+**Where:** `sweph.c`: `read_const()`'s and `get_new_segment()`'s error exits (upstream); the path setter's moon header read (this fork's)
+
+`read_const()` refuses a file that is not what its name says ("Ephemeris file
+name 'seas_06.se1' wrong; rename 'seas_00.se1'"), is damaged or short;
+`get_new_segment()` refuses one whose segment cannot be read. Both closed the
+file and ran `free_planets()`, which zeroes every body's `plan_data` -- the
+constants (`tfstart`, `dseg`, `lndx0`) of the files that stay open as well.
+The next call on one of those found its file open, skipped `read_const()`,
+and looked up a segment with `dseg` 0: an error, which closes that file and
+runs `free_planets()` again.
+
+Measured with `seas_06.se1` a link to `seas_00.se1`, after Ceres at 600.0 +
+375 days: the Sun at 600.0 + 400 "sepl_06.se1 is damaged (2)", the Moon there
+"semo_06.se1 is damaged (2)", Mars there "sepl_06.se1 is damaged (2)", and
+only Mars 1000 days on answered; a fresh context answers all four. With
+`sepl_18.se1` a copy of `sepl_12.se1`, after the Sun at 1800.0 - 100 and the
+Mercury that met it, the Moon 25 days on failed "22 coefficients instead of
+0" and Mars "semo_12.se1 is damaged (2)".
+
+A related crash: the path setter reads `semo_18.se1`'s header (this fork's
+replacement of upstream's calculation of the Moon at J2000) and on a refusal
+closed the file `read_const()` had already closed, `fclose(NULL)`:
+`swe_set_ephe_path()` segfaults with `semo_18.se1` holding `semo_12`'s data.
+
+**Fix, as done here:** a refusal closes and clears only the refused file: its
+`fidat` slot and its bodies' file data (the part of `plan_data` before
+`teval`), and the slot the numbered asteroids and planetary moons share only
+if this file had begun writing it. The other open files and their constants
+are left as they were, so nothing healthy is reopened and the calls after it
+answer as a fresh context with the same directory does. The general constants
+a refused file may have written (`gcdat`) are read by nothing. The path
+setter no longer closes the file twice.
+
+G39 `tests/refusedfile.c`, in directories in /tmp of links to the complete
+`ephe/` with one fixture each: (a) `seas_06` a copy of `seas_00`, (b)
+`seas_00` with Pallas's segment index overwritten, (c) `sepl_18` a copy of
+`sepl_12`, (d) `semo_12` a copy of `semo_06`. Each meets its refusal, after
+healthy calls that open the other files where the file needs them, and then
+answers the later calls (the Sun, Moon, Mars, Ceres) bit for bit as a fresh
+context does; (e) `semo_18` a copy of `semo_12`: the path setter survives, in
+a child process. Before the fix (a) to (d) fail, (e) crashes.
 
 ## How these were found
 

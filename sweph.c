@@ -1858,10 +1858,8 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
     char fname[AS_MAXCH];
     swi_gen_filename(J2000, SEI_MOON, fname);
     if ((fdp->fptr = swi_fopen(ctx, SEI_FILE_MOON, fname, ctx->ephepath, NULL)) != NULL) {
-      if (read_const(ctx, SEI_FILE_MOON, NULL) != OK) {
-        fclose(fdp->fptr);
-        memset((void *) fdp, 0, sizeof(struct file_data));
-      }
+      /* a refusal has closed the file and cleared its slot */
+      (void) read_const(ctx, SEI_FILE_MOON, NULL);
     }
     if (fdp->fptr != NULL)
       swi_set_tid_acc(ctx, 0, 0, fdp->sweph_denum, NULL);
@@ -2801,7 +2799,6 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
   return (OK);
 }
 
-#ifndef SWE_UPSTREAM_COMPAT
 /* The part of plan_data that belongs to the file a body is read from --
  * its constants, reference ellipse and loaded segment -- is everything
  * before teval; from there on it is the body's last result. */
@@ -2835,7 +2832,24 @@ static void file_close(swe_ctx *ctx, int ifno)
       memset((void *) &ctx->pldat[i], 0, PLAN_FILE_PART);
     }
 }
-#endif
+
+/* A file that read_const() or get_new_segment() refuses -- one that is not
+ * what its name says, damaged, or with a segment that cannot be read -- is
+ * closed and cleared alone: its slot, its bodies' file data, and the slot
+ * the numbered asteroids and the planetary moons share only if this file
+ * has written to it. The other open files keep their constants and answer
+ * the next call; free_planets() would empty theirs too, and the next calls
+ * would fail on files that are sound. */
+static void file_reject(swe_ctx *ctx, int ifno, AS_BOOL anybody)
+{
+  struct plan_data *pdp = &ctx->pldat[SEI_ANYBODY];
+  file_close(ctx, ifno);
+  if (anybody && (ifno == SEI_FILE_ANY_AST || ifno == SEI_FILE_PLMOON)) {
+    free((void *) pdp->segp);
+    free((void *) pdp->refep);
+    memset((void *) pdp, 0, PLAN_FILE_PART);
+  }
+}
 
 /* 
  * this function looks for an ephemeris file, 
@@ -5769,10 +5783,7 @@ static int get_new_segment(swe_ctx *ctx, double tjd, int ipli, int ifno, char *s
   }
   return(OK);
 return_error_gns:
-  fclose(fdp->fptr);
-  // free(fdp->fptr);  is not from malloc(), must not be freed by us
-  fdp->fptr = NULL;
-  free_planets(ctx);
+  file_reject(ctx, ifno, TRUE);
   return ERR;
 }
 
@@ -5809,6 +5820,7 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr)
   char *serr_file_damage = "Ephemeris file %s is damaged (0%s). ";
   char *smsg = "";
   int nbytes_ipl = 2;
+  AS_BOOL touched = FALSE;	/* the bodies' file data have been written to */
   fp = fdp->fptr;
   /************************************* 
    * version number of file            *
@@ -6081,6 +6093,7 @@ fendian, ifno, serr);
   /************************************* 
    * read constants of planets         * 
    *************************************/
+  touched = TRUE;
   for (kpl = 0; kpl < fdp->npl; kpl++) {
     /* get SEI_ planet number */
     ipli = fdp->ipl[kpl];
@@ -6166,10 +6179,7 @@ file_damage:
     }
   }
 return_error:
-  fclose(fdp->fptr);
-  // free(fdp->fptr);  is not from malloc(), must not be freed by us
-  fdp->fptr = NULL;
-  free_planets(ctx);
+  file_reject(ctx, ifno, touched);
   return(ERR);
 }
 
