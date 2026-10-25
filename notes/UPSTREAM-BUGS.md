@@ -132,6 +132,7 @@ worst were in code that had never executed even once.
 | 98 | A star function as the first call ignores `SE_EPHE_PATH`, and a path change throws away the astronomical models | Correctness | `sweph.c` |
 | 101 | `swe_get_tid_acc()` answers -25.80 after `SE_TIDAL_AUTOMATIC` and 0 before any initialisation, and the shared configuration copies an automatic tidal acceleration (partly this fork's) | Correctness | `swephlib.c`, `sweconfig.c` |
 | 97 | The nakshatras of `swe_split_deg()` are shifted for SE_SIDM_USER, whose 255 passes a bit-mask test for Sheoran | Correctness | `swephlib.c`, `sweph.c` |
+| 100 | A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read: NaN fresh, the last read's Moon warm (this fork's) | Correctness | `sweph.c` |
 
 ---
 
@@ -5613,7 +5614,8 @@ check refuses the instant and the file stays open, so `swemoon()`'s
 "no moon file, use Moshier" test does not fire: a fresh context returns
 the Moon as NaN with flags 0x100 and no error, a warm one 26.44179 deg,
 where upstream answers 349.29034 from Moshier; the Sun there 6.03 arcsec
-apart fresh and warm. The same before and after this fix.
+apart fresh and warm. The same before and after this fix; fixed as entry
+100.
 
 G88 `tests/filejoin.c`, bit for bit, at each of the 49 joins: (1) at J - 4,
 J - 2^-7, J, J + 2^-17, J + 2^-7, J + 2^-4, J + 2, J + 20 and J + 200 the
@@ -5834,6 +5836,71 @@ not fixed:
   rate term, +-7e-12 at 2000; Moshier noisier. Not traced; the
   shape points at the Swiss files' Earth (its monthly terms against the
   gravitational jerk `earth_at_lt_sun()` adds), not at the code's terms.
+
+## 100. A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read: NaN fresh, the last read's Moon warm (this fork's)
+
+**Severity: Correctness (with semo_12.se1 missing, the Moon NaN with no error on a fresh context, 37 deg off warm; the Sun and every geocentric body 6 arcsec apart fresh and warm)**
+**Where:** `sweph.c`: `sweph()`, F11's neighbour-file lookup (this fork's); the reader it misled is `sweplan()`'s Moon
+
+Found by entry 89 and left there. F11 (REVIEW, the 2026-09-16 review)
+made `sweph()`, when the file named for the instant is missing, open the
+neighbouring 600-year bucket's file, whose data runs a little into this
+bucket; the range check after it refuses an instant it does not hold.
+That refusal returned NOT_AVAILABLE and left the neighbour open. For
+the planets and the main asteroids the return value is what the callers
+look at -- `main_planet()` falls to Moshier with "using Moshier eph.", an
+asteroid is an error -- but `sweplan()` reads the Moon to make the Earth
+from the EMB and takes "the moon file is not open" as its sign that there
+is no moon file and the Moshier Moon is to be used. With the neighbour open
+it went on with a Moon it never read: the save area's, emptied (NaN) on a
+fresh context and the last read's on a warm one. Measured with semo_12.se1
+missing, at JD 2159377.5 (1200.0 + 20 days; semo_06's data ends at +16):
+a fresh Moon NaN with flags 0x100 and no error, a warm one (after the
+Sun 1.5 days before 1200.0) 26.44179 deg where the Moshier Moon, upstream's
+answer, is 349.29034; the Sun 6.03 arcsec apart fresh and warm, Mercury
+and every body whose Earth comes from that Moon likewise, and J2000 XYZ
+the Moon zeros. The same at every instant of the bucket beyond the
+neighbour's overrun, after it or before it (semo_18 starts 9 days early,
+so 1800.0 - 20 days with semo_12 missing). Upstream has no neighbour
+lookup: a missing moon file is closed, and the Moon is Moshier's. The
+planets' and asteroids' paths were right before; only their message
+named the neighbour's limit for the missing file.
+
+**Fix, as done here:** a neighbour that does not hold the instant is
+closed again, its bodies' file data with it, and the instant's own file
+reported as not found -- the state and message of a missing file with no
+neighbour at all, so `sweplan()` takes the Moshier Moon with "using Moshier
+eph. for moon" and a warm context answers as a fresh one. A neighbour that
+holds the instant still answers it. A file present under its own name
+that does not hold its own bucket's instants cannot occur with the
+distributed files (the Moon's files outlast the planets' at both ends of
+the ephemeris, and `read_const()` refuses a file under another bucket's
+name), so `sweplan()`'s test is unchanged. The open path only; no
+calculation that finds its file is touched.
+
+Not this entry's, and left (upstream's too): a `read_const()` error -- a
+file under another bucket's name, "Ephemeris file name 'seas_06.se1'
+wrong; rename 'seas_00.se1'" -- runs `free_planets()`, which empties the
+constants of the files that stay open, so the next calls fail on them:
+after Ceres in 600.0 + 375 days with seas_06.se1 a copy of seas_00.se1,
+the Sun 25 days later "sepl_06.se1 is damaged (2)", Mars there "semo_06.se1
+is damaged (2)", Mars 1000 days on "sepl_06.se1 is damaged (2)", and only
+the fourth call answers; the same in the compat build.
+
+G99 `tests/missfile.c`, in two directories of links in /tmp, (a) without
+semo_12, sepl_18 and seas_06, (b) without semo_18, sepl_12 and seas_12, at
+15 instants about 600.0, 1200.0 and 1800.0 (inside and past each
+neighbour's overrun, both sides), nine bodies, four flag sets with speed:
+(1) every answer an error or finite; (2) warm from five calls equal to
+fresh, bit for bit; (3) within 60 arcsec of the complete directory's, and
+"Moshier" in serr when more than 0.5 arcsec from it. 1080 rows, none
+fail; ts20 before the fix fails 215 (21 not finite, 84 warm, 110 off or
+unannounced, all through the Moon), the upstream build, which has no
+neighbour lookup, 320 (all check 2). G24 `moon_neighbour_off`, asserted the same both
+ways because the lookup is this fork's: the Moon at JD 2159377.5 with
+semo_12 missing, fresh against warm from 1200.0 + 10, 0 shipped and compat,
+1e9 (NaN) before the fix. G24, G62, G83 and G88 pass; G99 also under ASan
+and UBSan.
 
 ## How these were found
 

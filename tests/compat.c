@@ -17,6 +17,8 @@
  *
  *   compat <ephe-dir>
  */
+#include <dirent.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1699,6 +1701,54 @@ static double file_join_off(void)
   return fabs(swe_difdeg2n(x[0], y[0])) * 3.6e6;
 }
 
+/* UPSTREAM-BUGS 100: with semo_12.se1 missing (a directory of links to
+ * the others), the Moon at JD 2159377.5, 1200.0 + 20 days, past the end of
+ * semo_06's data: fresh against warm from 1200.0 + 10, where semo_06
+ * answers, deg; 1e9 if either is not finite. The neighbour-file lookup
+ * that went wrong (F11) is this fork's and absent under the switch, whose
+ * build takes the Moshier Moon both times: 0 both ways, the shipped build
+ * NaN fresh and 37 deg off warm before the fix. */
+static double moon_neighbour_off(void)
+{
+  char dir[] = "/tmp/compatmoXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double t = 2159377.5, x[6], y[6], r = -1;
+  int32 fl = SEFLG_SWIEPH | SEFLG_SPEED;
+  char serr[256];
+  struct dirent *e;
+  DIR *d;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strcmp(e->d_name, "semo_12.se1") != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  swe_close();
+  swe_set_ephe_path(dir);
+  if (swe_calc(t, SE_MOON, fl, x, serr) >= 0) {
+    swe_close();
+    swe_set_ephe_path(dir);
+    swe_calc(t - 10, SE_MOON, fl, y, serr);
+    if (swe_calc(t, SE_MOON, fl, y, serr) >= 0)
+      r = (isfinite(x[0]) && isfinite(y[0])) ? fabs(swe_difdeg2n(x[0], y[0])) : 1e9;
+  }
+  swe_close();
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+  swe_set_ephe_path(EPHE);
+  return r;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -1931,7 +1981,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2022,6 +2072,7 @@ int main(int argc, char **argv)
   ayastar = aya_star_rate_off();
   filejoin = file_join_off();
   usernak = user_nakshatra_off();
+  moonnbr = moon_neighbour_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2693,6 +2744,14 @@ int main(int argc, char **argv)
   else {
     printf("  Sun past a file join   %.2e mas FAIL: expected %s\n",
            filejoin, WANT_DEFECT ? "> 1" : "0");
+    bad++;
+  }
+
+  /* the same both ways: the code it fixes is this fork's (see the function) */
+  if (moonnbr == 0)
+    printf("  Moon, neighbour refused %.2e deg OK\n", moonnbr);
+  else {
+    printf("  Moon, neighbour refused %.2e deg FAIL: expected 0\n", moonnbr);
     bad++;
   }
 

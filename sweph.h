@@ -1009,6 +1009,10 @@ struct epsilon {
  *     (sid_mode & 39) == 39, which SE_SIDM_USER (255) passes: a
  *     user-defined ayanamsa's nakshatras 3 deg 20' early (UPSTREAM-BUGS
  *     97, G96)
+ *   - (nothing for UPSTREAM-BUGS 100: the neighbour-file lookup it closes
+ *     again when the neighbour does not hold the instant is this fork's
+ *     and absent under the switch; G24 asserts both builds take the
+ *     Moshier Moon there, G99)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

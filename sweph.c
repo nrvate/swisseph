@@ -3135,6 +3135,21 @@ static void file_spare_drop(swe_ctx *ctx, int ifno)
     }
 }
 
+/* the open file closed, its bodies' file data with it (UPSTREAM-BUGS 100) */
+static void file_close_open(swe_ctx *ctx, int ifno)
+{
+  int i;
+  if (ctx->fidat[ifno].fptr != NULL)
+    fclose(ctx->fidat[ifno].fptr);
+  memset((void *) &ctx->fidat[ifno], 0, sizeof(struct file_data));
+  for (i = 0; i < SEI_NPLANETS; i++)
+    if (file_of_body(i) == ifno) {
+      free((void *) ctx->pldat[i].segp);
+      free((void *) ctx->pldat[i].refep);
+      memset((void *) &ctx->pldat[i], 0, PLAN_FILE_PART);
+    }
+}
+
 /* the file answers tjd: inside its data and the nominal span it is for */
 static AS_BOOL file_answers(const struct file_data *f, double tjd)
 {
@@ -3245,6 +3260,8 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
   if (fdp->fptr == NULL) {
 #ifndef SWE_UPSTREAM_COMPAT
     int ineighbour = 0;
+    char serr_own[AS_MAXCH];	/* why the instant's own file did not open */
+    *serr_own = '\0';
 #endif
     swi_gen_filename(tjd, ipli, fname); 
     strcpy(subdirnam, fname);
@@ -3303,6 +3320,8 @@ again:
        * cover. Planets, the Moon and the main asteroid files only: a
        * numbered asteroid's or a planetary moon's file is one file. */
       if (ipli < SE_PLMOON_OFFSET && ipl != SEI_ANYBODY) {
+        if (ineighbour == 0 && serr != NULL)
+          snprintf(serr_own, AS_MAXCH, "%s", serr);
         while (ineighbour < 2) {
           swi_gen_filename(tjd + (ineighbour++ == 0 ? -3652.5 : 3652.5),
                            ipli, s);
@@ -3321,6 +3340,20 @@ again:
 #ifndef SWE_UPSTREAM_COMPAT
     /* the span of the instant's own bucket, if a neighbour answers it */
     if (ipli < SE_PLMOON_OFFSET && ipl != SEI_ANYBODY) {
+      /* Upstream bug 100 (this fork's, F11): a neighbour that does not
+       * hold the instant either was left open by the range check below, so
+       * the file looked present: sweplan(), which takes "the moon file is
+       * not open" as its sign to use the Moshier Moon, went on with a Moon
+       * it never read -- NaN with no error fresh, the last read's Moon warm
+       * (semo_12 missing, JD 2159377.5: 26.44 deg for 349.29). Closed now,
+       * and the instant's own file reported missing, as with no neighbour
+       * at all. */
+      if (ineighbour > 0 && (tjd < fdp->tfstart || tjd > fdp->tfend)) {
+        file_close_open(ctx, ifno);
+        if (serr != NULL)
+          snprintf(serr, AS_MAXCH, "%s", serr_own);
+        return(NOT_AVAILABLE);
+      }
       file_nominal_span(tjd, ipli, fname, &fdp->tnom0, &fdp->tnom1);
     } else {
       fdp->tnom0 = -HUGE_VAL;	/* one file for all time */
