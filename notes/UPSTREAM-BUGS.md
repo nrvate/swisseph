@@ -2073,7 +2073,8 @@ upstream has it: that path does not set SEFLG_NONUT as `swe_calc()`'s
 J2000 obliquity and applies the nutation to J2000 coordinates; the Moon's
 mean node from `swe_nod_aps()` under SEFLG_J2000 is 7.8" in longitude
 and 6.9" in latitude from `swe_calc(SE_MEAN_NODE)` under the same flag,
-where of date they agree to 1e-6 deg. A position defect, not fixed here.
+where of date they agree to 1e-6 deg. A position defect, not fixed here;
+fixed as entry 47 (4.6e-9" now).
 
 ## 38. `swe_nod_aps()` returns the mean apsides' latitude as its speed
 
@@ -5160,7 +5161,9 @@ ends and sepl_18.se1 begins), with the probe's stencil across it; the speed
 there is right against a stencil on either side (1.8e-11 over 2^-6..2^-8
 day). (The fictitious bodies' own heliocentric apparent speed at exactly
 that instant is 8.2e-7 deg/day off, at any step, Swiss only, and right
-0.25 day either side: not fixed here.)
+0.25 day either side: not fixed here. Fixed as entry 89: at exactly 1800.0
+the speed is now the newer file's, as are the positions there, within
+1.7e-9 deg/day of a one-sided difference over 2^-12 day on that side.)
 
 **Fix, as done here:** after `plaus_iflag()`, the default ayanamsa for a
 sidereal request, `swi_check_ecliptic()` and `swi_check_nutation()` for
@@ -5776,6 +5779,7 @@ Noticed, not fixed: `swe_deltat()` takes its ephemeris from
 `swi_guess_ephe_flag()` -- JPL when this context has the JPL file open --
 so after `swe_set_jpl_file("de200.eph")` the main thread answers 1305.37 s
 in AD 1000 and a second thread, which has not opened the file, 1474.79.
+Fixed as entry 103.
 
 G100 `tests/tidget.c`: `swe_get_tid_acc()` read first, then `swe_deltat()`
 in AD 1000, then `swe_get_tid_acc()` again, in nine forked scenarios
