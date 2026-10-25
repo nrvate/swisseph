@@ -188,6 +188,7 @@ worst were in code that had never executed even once.
 | 150 | `swe_calc_pctr()` returns the caller's flags, not the ephemeris that answered: with the fallback allowed and the JPL file alone missing Mars from Jupiter returns 257 (SEFLG_JPLEPH) with the Swiss answer bit for bit, and with the Moon files missing the Moon from Mars 258 (SEFLG_SWIEPH) with Moshier's Moon | Correctness (behaviour) | `sweph.c` |
 | 157 | `SE_SIDM_LAHIRI_ICRC`'s mean ayanamsa at its epoch is 23.25 deg less 0.00464207 deg (16.7115"), the broken Woolard series' dpsi there (entry 151), not Woolard's 16.792088": with the series fixed, mode 46 with `SE_SIDBIT_PREC_ORIG` gives a true ayanamsa of 23 deg 15' 0.0806" on 1956 Mar 21 for the Calendar Reform Committee's 23 deg 15' 00" | Correctness | `sweph.h` |
 | 154 | `swe_set_jpl_file()` of a file below DE 403, or of one not there, keeps the IERS corrections a DE 403 file loaded from the same directory: SEFLG_JPLHOR answers A's dpsi under its own return flag where a fresh process falls to SEFLG_JPLHOR_APPROX, 4.2e-2" on G134's fixtures, on the setter's thread and an explicit context | Correctness (behaviour) | `sweph.c` |
+| 155 | `load_dpsi_deps()` allocates its two tables anew over those a load it gave up on left (a day missing, -2; eop_finals.txt broken off, -3): 589824 bytes leaked a reload | Memory | `sweph.c` |
 
 ---
 
@@ -10022,7 +10023,8 @@ Noticed, not fixed:
   for eop_finals.txt) the next load, by `swe_set_jpl_file()` of another
   file and the fixture again, allocates both anew: 589824 bytes more
   mapped each time (two 292200-byte tables). It does not close the file
-  when an allocation fails (by reading). Both builds.
+  when an allocation fails (by reading). Both builds. Fixed as entry 155
+  (the tables).
 
 ## 151. Woolard's nutation turns the Moon's mean anomaly at 10^4 times its rate: its five terms in it cycle every 3.97 minutes, dpsi up to 0.236" off the series
 
@@ -10681,6 +10683,46 @@ all but the other way round and the adopting thread; the compat build
 fails the same 10 (and entry 144's 8). G24 `eop_jpl_kept_off`: dpsi at
 Jan 7.37 after A, the fixture and de200.eph against a fresh context's: 0
 shipped (4.20e-2" before the fix), 4.19e-2" compat.
+
+## 155. `load_dpsi_deps()` loads again over the tables a load it gave up on left allocated: two tables, 589824 bytes, leaked a reload
+
+**Severity: Memory (a leak: 589824 bytes a reload after an IERS file the loader gave up on), both builds**
+**Where:** `sweph.c`: `load_dpsi_deps()`
+
+Entry 144's noticed item. `load_dpsi_deps()` allocates `dpsi[]` and
+`deps[]` (36525 doubles, 292200 bytes each) before it reads
+eop_1962_today.txt, and a file it gives up on -- a day missing
+(`eop_dpsi_loaded` -2), or an eop_finals.txt that breaks off (-3) --
+leaves them allocated with the flag at or below 0. Its load-once guard
+only skips a load above 0, so the next `swe_set_jpl_file()` of a DE 403
+file (in the shipped build another name: the same one again is entry
+103's early return) allocated both anew over them, and only `swe_close()`
+(since entry 144 a path change too) freed the last pair. Measured with mallinfo2() (`uordblks` + `hblkhd`) over ten
+`swe_set_jpl_file()`s in turn of G19's DE431 fixture and another name of
+it: 4718592 bytes more after the last eight, 589824 a load (two tables
+of 294912 mapped), with a day missing and with eop_finals.txt broken off
+alike; the fixture and de200.eph in turn 2359296 (four loads), which
+entry 154's fix closes in the shipped build, de200.eph's setter freeing
+them. Both builds.
+
+**Fix, as done here:** `load_dpsi_deps()` frees what a previous load
+left before it allocates: nothing reads the tables while
+`eop_dpsi_loaded` <= 0 (`plaus_iflag()`, and since entry 142
+`swi_jplhor_plaus()` for every other reader, take SEFLG_JPLHOR as
+SEFLG_JPLHOR_APPROX there). In both builds, as entry 104's crash fix: a
+leak's fix, it changes no answer, and the compat build reproduces
+upstream's answers, not its leaks. No hot path: the loader runs in the
+setters and the adoption.
+
+G134 `tests/eopfollow.c`, extended with 3 checks, each in a forked
+process: the ten setters with a day missing, with eop_finals.txt broken
+off, and of the fixture and de200.eph with a day missing; the bytes
+allocated after the last eight may not grow by one table, and no IERS
+file may be left open. calloc() is the gate's own, counting the tables
+(20, 20 and 10 asked for). 97 checks; before the fix the first two fail
+(4718592 bytes), the third in the compat build (2359296), all three on
+the tip before entry 154; after it both builds pass the three. No G24
+case: the fix is in both builds.
 
 ## How these were found
 

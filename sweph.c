@@ -2758,6 +2758,16 @@ void load_dpsi_deps(swe_ctx *ctx)
   double dpsi, deps, TJDOFS = 2400000.5;
   if (ctx->eop_dpsi_loaded > 0)
     return;
+  /* Upstream bug 155: a load given up on (-2, a day missing; -3,
+   * eop_finals.txt broken off) left its tables, and the next one, by
+   * swe_set_jpl_file() of another DE 403 file, allocated both anew: 589824
+   * bytes more each time, 4718592 over eight (G134). Nothing reads them
+   * while eop_dpsi_loaded <= 0 (bug 142); they go before the new ones. In
+   * both builds, as a leak's fix: no answer changes. */
+  free(ctx->dpsi);
+  free(ctx->deps);
+  ctx->dpsi = NULL;
+  ctx->deps = NULL;
   fp = swi_fopen(ctx, -1, DPSI_DEPS_IAU1980_FILE_EOPC04, ctx->ephepath, NULL);
   if (fp == NULL) {
     ctx->eop_dpsi_loaded = ERR;

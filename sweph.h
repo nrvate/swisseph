@@ -1305,6 +1305,9 @@ struct epsilon {
  *     DE431 fixture and de200.eph, SEFLG_JPLHOR answered A's dpsi where a
  *     fresh process falls to SEFLG_JPLHOR_APPROX (4.2e-2"; UPSTREAM-BUGS
  *     154, G134). A thread adopting the file drops them in both builds
+ *   - (nothing for UPSTREAM-BUGS 155: load_dpsi_deps() freeing the tables
+ *     a load it gave up on left is in both builds, a leak's fix that
+ *     changes no answer; G134)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

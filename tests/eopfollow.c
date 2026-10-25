@@ -94,10 +94,26 @@
  * ayanamsa the same. The thread adopting de200.eph passes (entry 143
  * drops them there), and de200.eph then the fixture loads A's, as before.
  * The upstream build fails the 10, the fix being behind
- * SWE_UPSTREAM_COMPAT (-13.530688" for its -13.488785"). Run as
+ * SWE_UPSTREAM_COMPAT (-13.530688" for its -13.488785").
+ *
+ * And the tables a load leaves (UPSTREAM-BUGS 155): a load given up on
+ * (-2, a day missing; -3, an eop_finals.txt that breaks off) left both,
+ * and the next swe_set_jpl_file() of a DE 403 file allocated them anew.
+ * Ten swe_set_jpl_file()s in turn of the fixture and another name of it,
+ * in the directory with a day missing and in one whose eop_finals.txt
+ * breaks off, and of the fixture and de200.eph in the first: the bytes
+ * allocated (mallinfo2(), mapped or not) after the last eight may not grow
+ * by one table (292200 bytes); calloc() is this file's, counting them. 3
+ * checks, 97 in all. Measured before the fix: 4718592 bytes more (8 x
+ * 589824, two tables of 294912 mapped a load) in the first two, 2359296 in
+ * the third (bug 154's fix closes that one in the shipped build); after,
+ * none, in both builds. Run as
  *   eopfollow EPHEDIR
  */
+#include <dirent.h>
+#include <errno.h>
 #include <limits.h>
+#include <malloc.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
@@ -114,12 +130,67 @@
 #define NV 48
 #define JH (SEFLG_JPLEPH | SEFLG_JPLHOR)
 #define JPL_FIXTURE "de431fixture.eph"
+#define JPL_FIXTURE2 "de431fixture2.eph"	/* the same, another name */
 
 static const char *EPHE;
 static const double GEO[3] = { 8.55, 47.37, 400 };
-/* EPHE, the fixtures: A, B (other corrections), N (none), G (a gap) */
-enum { D_EPHE, D_A, D_B, D_N, D_G, ND };
+/* EPHE, the fixtures: A, B (other corrections), N (none), G (a gap), F (A's
+ * and an eop_finals.txt that breaks off) */
+enum { D_EPHE, D_A, D_B, D_N, D_G, D_F, ND };
 static char DIRS[ND][512];
+
+/* UPSTREAM-BUGS 155: the corrections' tables are counted at calloc(). This
+ * definition takes the process's every calloc(), the library objects linked
+ * in here among them, and makes it of malloc() and a memset() through a
+ * pointer that no compiler folds back into a calloc(). It counts only where
+ * that check sets it, in its single-threaded children. */
+#define TABLE ((size_t) 36525 * sizeof (double))	/* SWE_DATA_DPSI_DEPS */
+static int counting, ntable;
+static void *(*volatile fill)(void *, int, size_t) = memset;
+void *calloc(size_t n, size_t s)
+{
+  void *p;
+  if (s != 0 && n > (size_t) -1 / s) {
+    errno = ENOMEM;
+    return NULL;
+  }
+  if (counting && n * s == TABLE)
+    ntable++;
+  if ((p = malloc(n * s)) != NULL)
+    fill(p, 0, n * s);
+  return p;
+}
+
+/* the bytes allocated, mapped or not */
+static double live_bytes(void)
+{
+  struct mallinfo2 m = mallinfo2();
+  return (double) m.uordblks + (double) m.hblkhd;
+}
+
+/* the descriptors open on an IERS corrections file */
+static int eop_fds(void)
+{
+  DIR *d = opendir("/proc/self/fd");
+  struct dirent *e;
+  char p[300], l[PATH_MAX];
+  int n = 0;
+  if (d == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL) {
+    ssize_t k;
+    if (e->d_name[0] == '.')
+      continue;
+    snprintf(p, sizeof p, "/proc/self/fd/%s", e->d_name);
+    if ((k = readlink(p, l, sizeof l - 1)) < 0)
+      continue;
+    l[k] = '\0';
+    if (strstr(l, "/eop_") != NULL)
+      n++;
+  }
+  closedir(d);
+  return n;
+}
 
 struct obs {
   int ret;
@@ -519,6 +590,35 @@ static void run4(int k, int p, int fresh, struct obs *o)
   swe_ctx_free(c);
 }
 
+/* The tables a load leaves (UPSTREAM-BUGS 155): NR swe_set_jpl_file()s in
+ * turn of the fixture and another name of it in the directory with a day
+ * missing (-2), the same in the one whose eop_finals.txt breaks off (-3),
+ * and the fixture and de200.eph in turn in the first. The bytes allocated
+ * after the second and after the last (v[0], v[1]), the tables asked for
+ * (v[2]), the corrections' files open (v[3]). */
+#define NR 10
+enum { L_GAP, L_FINALS, L_DE200, NL };
+static const char *LN[NL] = { "a day missing, two DE 431 names",
+  "eop_finals.txt broken off, two DE 431 names",
+  "a day missing, the fixture and de200.eph" };
+static void run5(int l, int unused, int fresh, struct obs *o)
+{
+  int i;
+  (void) unused;
+  (void) fresh;
+  memset(o, 0, sizeof *o);
+  swe_set_ephe_path(DIRS[l == L_FINALS ? D_F : D_G]);
+  counting = 1;
+  for (i = 0; i < NR; i++) {
+    setjpl(NULL, i % 2 == 0 ? JPL_FIXTURE : l == L_DE200 ? "de200.eph" : JPL_FIXTURE2);
+    if (i == 1)
+      o->v[0] = live_bytes();
+  }
+  o->v[1] = live_bytes();
+  o->v[2] = ntable;
+  o->v[3] = eop_fds();
+}
+
 /* run(k, p, fresh) in a forked process: 0, -1 if it failed, or the signal
  * that ended it */
 static int in_child(void (*run)(int, int, int, struct obs *), int k, int p,
@@ -619,11 +719,32 @@ static int write_eop(const char *path, double a, double b, double c, double d, i
   return fclose(fp);
 }
 
-static const char *SUB[ND] = { NULL, "", "/B", "/N", "/G" };
+/* eop_finals.txt (finals.all columns: the MJD at 7, dpsi and deps of
+ * Bulletin B at 168 and 178, mas) for the days listed */
+static int write_finals(const char *path, const int *mjd, int n)
+{
+  FILE *fp = fopen(path, "w");
+  char l[200];
+  int i;
+  if (fp == NULL)
+    return -1;
+  for (i = 0; i < n; i++) {
+    memset(l, ' ', sizeof l - 1);
+    l[sizeof l - 1] = '\0';
+    l[7 + snprintf(l + 7, 8, "%5d", mjd[i])] = ' ';
+    l[168 + snprintf(l + 168, 9, "%7.3f", -50.0 - i)] = ' ';
+    l[178 + snprintf(l + 178, 9, "%7.3f", -5.0)] = ' ';
+    fprintf(fp, "%s\n", l);
+  }
+  return fclose(fp);
+}
+
+static const char *SUB[ND] = { NULL, "", "/B", "/N", "/G", "/F" };
 static int make_fixtures(void)
 {
   char p[600], base[400], de200[PATH_MAX], q[PATH_MAX + 20];
   const char *tmp = getenv("TMPDIR");
+  static const int fgap[2] = { 51584, 51586 };
   int d;
   if (snprintf(base, sizeof base, "%s/eopfollow.XXXXXX", tmp && *tmp ? tmp : "/tmp")
       >= (int) sizeof base || mkdtemp(base) == NULL)
@@ -638,10 +759,19 @@ static int make_fixtures(void)
     snprintf(p, sizeof p, "%s/%s", DIRS[d], JPL_FIXTURE);
     if (write_jpl(p) != 0)
       return -1;
+    snprintf(p, sizeof p, "%s/%s", DIRS[d], JPL_FIXTURE2);
+    if (write_jpl(p) != 0)
+      return -1;
     snprintf(p, sizeof p, "%s/de200.eph", DIRS[d]);
     if (symlink(de200, p) != 0)
       return -1;
   }
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[D_F]);
+  if (write_eop(p, -0.05, -1e-5, -0.005, -1e-6, 0) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/eop_finals.txt", DIRS[D_F]);
+  if (write_finals(p, fgap, 2) != 0)
+    return -1;
   snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[D_A]);
   if (write_eop(p, -0.05, -1e-5, -0.005, -1e-6, 0) != 0)
     return -1;
@@ -663,9 +793,13 @@ static void remove_fixtures(void)
       continue;
     snprintf(p, sizeof p, "%s/%s", DIRS[d], JPL_FIXTURE);
     unlink(p);
+    snprintf(p, sizeof p, "%s/%s", DIRS[d], JPL_FIXTURE2);
+    unlink(p);
     snprintf(p, sizeof p, "%s/de200.eph", DIRS[d]);
     unlink(p);
     snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[d]);
+    unlink(p);
+    snprintf(p, sizeof p, "%s/eop_finals.txt", DIRS[d]);
     unlink(p);
     rmdir(DIRS[d]);
   }
@@ -776,6 +910,20 @@ int main(int argc, char **argv)
         nfail++;
       }
     }
+  for (x = 0; x < NL; x++) {
+    struct obs o;
+    n++;
+    if (in_child(run5, x, 0, 0, &o) != 0) {
+      printf("    %d loads, %s: child failed\n", NR, LN[x]);
+      nfail++;
+      continue;
+    }
+    if (o.v[1] - o.v[0] >= (double) TABLE || o.v[3] != 0) {
+      printf("    %d loads, %s: %.0f bytes more after the last %d (%.0f tables asked for),"
+             " %.0f files open FAIL\n", NR, LN[x], o.v[1] - o.v[0], NR - 2, o.v[2], o.v[3]);
+      nfail++;
+    }
+  }
   remove_fixtures();
   if (nfail)
     printf("G134 FAIL: %d of %d\n", nfail, n);
