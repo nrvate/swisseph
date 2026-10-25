@@ -1269,6 +1269,10 @@ struct epsilon {
  *     deg, the subtracted 16.7115" being that broken Woolard's dpsi there:
  *     with Woolard fixed the true ayanamsa at the epoch is 23 deg 15'
  *     0.0806" for the committee's 23 deg 15' (UPSTREAM-BUGS 157, G138)
+ *   - swe_calc_pctr()'s centre read at the light-time instant overwritten
+ *     by the body's before it was tested: a centre whose files begin
+ *     after that instant taken as zero there, the speed 0.130 deg/day off
+ *     upstream, returned OK (UPSTREAM-BUGS 158, G144)
  *   - (nothing for UPSTREAM-BUGS 152: the default nutation's grid, which
  *     left the IAU 2000A series past 5e8 days and now gives way to it at
  *     4e8, is this fork's; the compat build's default, 2000B, is computed

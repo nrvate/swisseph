@@ -190,6 +190,7 @@ worst were in code that had never executed even once.
 | 154 | `swe_set_jpl_file()` of a file below DE 403, or of one not there, keeps the IERS corrections a DE 403 file loaded from the same directory: SEFLG_JPLHOR answers A's dpsi under its own return flag where a fresh process falls to SEFLG_JPLHOR_APPROX, 4.2e-2" on G134's fixtures, on the setter's thread and an explicit context | Correctness (behaviour) | `sweph.c` |
 | 155 | `load_dpsi_deps()` allocates its two tables anew over those a load it gave up on left (a day missing, -2; eop_finals.txt broken off, -3): 589824 bytes leaked a reload | Memory | `sweph.c` |
 | 156 | `load_dpsi_deps()` leaves eop_1962_today.txt open when a table's allocation fails, `dpsi[]` allocated when `deps[]`'s does, and eop_finals.txt open when a full table meets more days | Memory | `sweph.c` |
+| 158 | `swe_calc_pctr()` overwrites the return of the centre's read at the light-time instant with the body's before testing it: a centre whose files begin between that instant and the date is taken as zero there, and Mars from Ceres in the first 0.024 day of seas_18.se1 returns 258 with a longitude speed 5.09e-3 deg/day off (0.130 upstream) | Correctness | `sweph.c` |
 
 ---
 
@@ -10582,6 +10583,8 @@ Noticed, not fixed (not this entry's): the light-time read of the centre
 overwrites `retc` before it is tested, so its failure is not seen (only
 the body's read after it is): the aberration rate then takes a zeroed
 centre. Not reached in any measured case; both reads use the same files.
+Fixed as entry 158, which reaches it with a centre whose files begin
+later than the body's.
 
 G133 `tests/fbbary.c` (i), at its two instants: the complete directory's
 the ephemeris asked; JPL asked, the JPL file alone missing, the fallback
@@ -10758,6 +10761,56 @@ compat build failing only entries 144's and 154's 18, behind the switch).
 No G24 case: the fix is in both builds. With the three fixes (entries
 154-156) G19, G103, G116, G122, G127, G132, G24, G2 (check-threads) and
 check-ctx pass.
+
+## 158. `swe_calc_pctr()` overwrites the centre's light-time read's return with the body's before testing it: a centre whose files begin after the light-time instant is taken as zero there, the speed 5.09e-3 deg/day off
+
+**Severity: Correctness (the speed off, returned OK: 5.09e-3 deg/day on Mars from Ceres, 0.130 in the compat build; the position right)**
+**Where:** `sweph.c`: `swe_calc_pctr()`
+
+Entry 150's noticed item. After solving the light time, `swe_calc_pctr()`
+reads the centre and then the body again at t = tjd - tau, both into
+`retc`, and tests `retc` only at the end, so a failure of the centre's
+read is never seen: `swe_calc()` zeroes its output on ERR, and the
+centre's vector at t enters the aberration rate as zero. Upstream adds the
+centre's velocity at tjd less that at t to the body's velocity (bug 34's
+first-order term); the shipped build, since entry 77, takes the centre's
+acceleration at tjd from its velocities at t, tjd and tjd + 2^-10. The
+position does not read it.
+
+Both reads use the same files when the centre and the body are planets.
+They do not when the centre's files begin later than the body's, so the
+centre's read at tjd succeeds and the one at t, a light time earlier,
+does not. Mars from Ceres in a directory of seas_18.se1 (Ceres from 1800
+Jan 1, JD 2378496.5) and sepl_12, sepl_18, semo_12 and semo_18, at t0 +
+k/256 + 2^-10 day, k = 0..5 (tau is 0.024 day there): return 258
+(SEFLG_SWIEPH | SEFLG_SPEED), the longitude speed 0.276774 deg/day where
+five-point differences give 0.281859, 5.09e-3 off; the compat build
+0.151762, 0.130 off. The answer with SEFLG_SPEED is wrong exactly in that
+window and right after it (3.5e-12 deg/day). The positions in the window
+step by -2.6e-8 deg from those after it, with SEFLG_SPEED or without:
+that is the files' own junction at 1800 Jan 1, Mars at t being read from
+sepl_12.se1 there and from sepl_18.se1 after, not this.
+
+**Fix, as done here:** the shipped build reads the centre at t only where
+the speed's aberration rate needs it (SEFLG_SPEED without SEFLG_NOABERR),
+tests that read, and refuses the call when it fails, with its error
+message, as the read at tjd + 2^-10 for the same rate already does. The
+position without the speed, and SEFLG_SPEED | SEFLG_NOABERR, need no
+centre at t and are answered. Behind `#ifndef SWE_UPSTREAM_COMPAT`. One
+read fewer without the speed or the aberration, no hot path otherwise.
+
+G144 `tests/pctredge.c`, in that directory: (a) at the six instants
+SEFLG_SPEED is refused, naming seas_12.se1; (b) the same instants answer
+OK without the speed and with SEFLG_NOABERR; (c) at four instants beyond
+the window, every stencil point in sepl_18.se1, the speeds within 1e-8
+deg/day and 1e-11 AU/day of five-point differences over 2^-7 day: 3.5e-12
+deg/day. 30 checks pass. Before the fix (a) fails its 6 (258); the compat
+build fails 18, these 6 and (c)'s 12 by its own speeds, 1.7e-6 deg/day
+(entry 77). G117, G76, G47, G92, G104, G126, G133, G77, G62, G99 and G24
+pass.
+
+G24 `pctr_ctr_edge_ret`: Mars from Ceres with SEFLG_SPEED at t0 + 2^-10
+day in that directory, the return: -1 shipped, 258 compat.
 
 ## How these were found
 

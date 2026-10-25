@@ -1980,6 +1980,45 @@ static double pctr_ephe_ret(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 158: swe_calc_pctr() of Mars from Ceres with SEFLG_SPEED
+ * at 1800 Jan 1 + 2^-10 day, in a directory of seas_18.se1 (Ceres from
+ * 1800 Jan 1) and the planet and Moon files of 1200-2400: the return.
+ * The centre's read at the light-time instant, 0.024 day before, fails,
+ * and the body's read overwrote its return: 258 with the speed taken from
+ * a zeroed centre (0.130 deg/day off, 5.09e-3 in the shipped build before
+ * the fix); refused now, -1. */
+static double pctr_ctr_edge_ret(void)
+{
+  static const char *f[] = { "sepl_12.se1", "sepl_18.se1", "semo_12.se1", "semo_18.se1",
+                             "seas_18.se1" };
+  char base[400], p[480], q[PATH_MAX + 20], src[PATH_MAX];
+  const char *tmp = getenv("TMPDIR");
+  double x[6], r = 1e9;
+  char serr[256];
+  int i, n = 0;
+  snprintf(base, sizeof base, "%s/compat158.XXXXXX", tmp && *tmp ? tmp : "/tmp");
+  if (mkdtemp(base) == NULL)
+    return r;
+  for (; n < 5; n++) {
+    snprintf(q, sizeof q, "%s/%s", EPHE, f[n]);
+    snprintf(p, sizeof p, "%s/%s", base, f[n]);
+    if (realpath(q, src) == NULL || symlink(src, p) != 0)
+      goto out;
+  }
+  swe_close();
+  swe_set_ephe_path(base);
+  r = swe_calc_pctr(2378496.5 + 1.0 / 1024, SE_MARS, SE_CERES, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+out:
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (i = 0; i < n; i++) {
+    snprintf(p, sizeof p, "%s/%s", base, f[i]);
+    unlink(p);
+  }
+  rmdir(base);
+  return r;
+}
+
 /* UPSTREAM-BUGS 149: swe_nod_aps() of Mars on Moshier, barycentric,
  * osculating, at 2000 Jul 1.5: the return. It answered 0 (OK) with
  * Moshier's heliocentric points, the ascending node 49.5626 deg where the
@@ -3767,7 +3806,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3894,6 +3933,7 @@ int main(int argc, char **argv)
   toputr = topo_ut_round_off();
   nodmb = nodaps_mosh_bary_ret();
   pctreph = pctr_ephe_ret();
+  pctredge = pctr_ctr_edge_ret();
   starkept = star_load_kept();
   eoppath = eop_path_kept_off();
   eopjpl = eop_jpl_kept_off();
@@ -4756,6 +4796,14 @@ int main(int argc, char **argv)
   else {
     printf("  pctr ephemeris returned %.0f FAIL: expected %s\n",
            pctreph, WANT_DEFECT ? "257" : "258");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (pctredge == 258) : (pctredge == ERR))
+    printf("  pctr centre's files begun after t %.0f OK\n", pctredge);
+  else {
+    printf("  pctr centre's files begun after t %.0f FAIL: expected %s\n",
+           pctredge, WANT_DEFECT ? "258" : "-1");
     bad++;
   }
 

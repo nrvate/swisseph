@@ -13937,10 +13937,24 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
       for (i = 0; i <= 2; i++) 
         xxsp[i] = xx0[i] - xx[i] - xxsp[i];
     }
-    retc = swe_calc_r(ctx, t, iplctr, iflag2, xxctr2, serr);
 #ifndef SWE_UPSTREAM_COMPAT
-    if (retc != ERR)
+    /* Upstream bug 158: the centre's read at t was assigned to retc and
+     * overwritten by the body's before it was tested, so a centre whose
+     * files begin between t and tjd was taken as zero there: Mars from
+     * Ceres in the first 0.024 day of seas_18.se1 (1800 Jan 1), the
+     * planet files of 1600-2400 present, returned 258 with a longitude
+     * speed 5.09e-3 deg/day off (0.130 in the compat build), the position
+     * right. Only the aberration rate's centre acceleration below reads
+     * it, so it is read for that alone, and its failure refuses the call
+     * as the read at tjd + 2^-10 there does. */
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_NOABERR)) {
+      retc = swe_calc_r(ctx, t, iplctr, iflag2, xxctr2, serr);
+      if (retc == ERR)
+        return ERR;
       ephe_used = pctr_ephe_lower(ephe_used, retc);	/* bug 150 */
+    }
+#else
+    retc = swe_calc_r(ctx, t, iplctr, iflag2, xxctr2, serr);
 #endif
     retc = swe_calc_r(ctx, t, ipl, iflag2, xx, serr);
 #ifndef SWE_UPSTREAM_COMPAT
