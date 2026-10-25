@@ -415,6 +415,19 @@ static double aya_star_rate_off(void)
   return fabs(xt[3] - xs[3] - r);
 }
 
+/* UPSTREAM-BUGS 97: 10 deg split into nakshatras under SE_SIDM_USER, the
+ * place read back from nakshatra, degrees and minutes, less 10, deg. The
+ * Sheoran test was a bit mask that 255 passes: 3 deg 20' */
+static double user_nakshatra_off(void)
+{
+  int d, m, sec, n;
+  double fr;
+  swe_set_sid_mode(SE_SIDM_USER, 2451545.0, 23.5);
+  swe_split_deg(10.0, SE_SPLIT_DEG_NAKSHATRA | SE_SPLIT_DEG_ROUND_SEC, &d, &m, &sec, &fr, &n);
+  swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+  return fabs(n * 40.0 / 3 + d + m / 60.0 - 10);
+}
+
 /* UPSTREAM-BUGS 34 in swe_nod_aps(): Pluto's osculating ascending node
  * seen from Zurich, its longitude speed against a five-point difference,
  * deg/day; the aberration rate was upstream's chord, 3e-4 off */
@@ -1918,7 +1931,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2008,6 +2021,7 @@ int main(int argc, char **argv)
   eclnut = ecl_nut_speed3_off();
   ayastar = aya_star_rate_off();
   filejoin = file_join_off();
+  usernak = user_nakshatra_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2625,6 +2639,13 @@ int main(int argc, char **argv)
   else {
     printf("  deflection rate in disc %.2e deg/day FAIL: expected %s\n",
            defldisc, WANT_DEFECT ? "> 1e-6" : "< 2e-8");
+    bad++;
+  }
+  if (WANT_DEFECT ? (usernak > 3) : (usernak < 1e-9))
+    printf("  USER nakshatra shift    %.2e deg     OK\n", usernak);
+  else {
+    printf("  USER nakshatra shift    %.2e deg     FAIL: expected %s\n",
+           usernak, WANT_DEFECT ? "> 3" : "0");
     bad++;
   }
   if (WANT_DEFECT ? (ayastar > 1e-7) : (ayastar < 2e-10))

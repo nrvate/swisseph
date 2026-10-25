@@ -1005,6 +1005,10 @@ struct epsilon {
  *     before them): a context warm from one side of a join answered just
  *     across it from that side's file (the barycentric Sun 47.6 mas at JD
  *     2378496.6 after a call 1.5 days before; UPSTREAM-BUGS 89, G88)
+ *   - split_deg_nakshatra() tested for the Sheoran ayanamsa as a bit mask,
+ *     (sid_mode & 39) == 39, which SE_SIDM_USER (255) passes: a
+ *     user-defined ayanamsa's nakshatras 3 deg 20' early (UPSTREAM-BUGS
+ *     97, G96)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

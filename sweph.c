@@ -4372,7 +4372,13 @@ static int32 get_ayanamsa(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
      && (sid_mode ==  SE_SIDM_TRUE_CITRA 
       || sid_mode == SE_SIDM_TRUE_REVATI 
       || sid_mode == SE_SIDM_TRUE_PUSHYA 
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 97: the unmasked mode, here alone of the list; equal
+       * in effect, swe_set_sid_mode() keeping no SIDBITs on a star mode */
+      || sid_mode == SE_SIDM_TRUE_SHEORAN 
+#else
       || sip->sid_mode == SE_SIDM_TRUE_SHEORAN 
+#endif
       || sid_mode == SE_SIDM_TRUE_MULA 
       || sid_mode == SE_SIDM_GALCENT_0SAG
       || sid_mode == SE_SIDM_GALCENT_COCHRANE

@@ -131,6 +131,7 @@ worst were in code that had never executed even once.
 | 89 | At the Swiss files' 600-year joins an open file answers past its nominal end, so the answer depends on the file an earlier call left open | Correctness | `sweph.c`, `sweph.h` |
 | 98 | A star function as the first call ignores `SE_EPHE_PATH`, and a path change throws away the astronomical models | Correctness | `sweph.c` |
 | 101 | `swe_get_tid_acc()` answers -25.80 after `SE_TIDAL_AUTOMATIC` and 0 before any initialisation, and the shared configuration copies an automatic tidal acceleration (partly this fork's) | Correctness | `swephlib.c`, `sweconfig.c` |
+| 97 | The nakshatras of `swe_split_deg()` are shifted for SE_SIDM_USER, whose 255 passes a bit-mask test for Sheoran | Correctness | `swephlib.c`, `sweph.c` |
 
 ---
 
@@ -5757,6 +5758,82 @@ the same 7, the upstream build (legacy-master, without `swe_ctx_new()`) 6
 of 8. G24 `tid_auto_get_off`: 0 shipped, 0.136 compat. G82 54 pass (2
 fail on the build before entry 98). G24, G81, G91, G97, G2 and the context
 gate pass.
+
+## 97. The nakshatras of `swe_split_deg()` are shifted for SE_SIDM_USER, whose 255 passes a bit-mask test for Sheoran
+
+**Severity: Correctness (every nakshatra split under a user-defined ayanamsa 3 deg 20' early: 10 deg read as Bharani 0 deg, not Ashvini 10)**
+**Where:** `swephlib.c`: `split_deg_nakshatra()` (through `swe_split_deg()` with SE_SPLIT_DEG_NAKSHATRA); `sweph.c`: `get_ayanamsa()`'s missing-path warning
+
+`split_deg_nakshatra()` moves the place by 3 deg 20' for the Sheoran
+"Vedic" ayanamsa (its 0 Aries is 3 deg 20' of Ashvini), and tested the
+mode as `(sid_mode & SE_SIDM_TRUE_SHEORAN) == SE_SIDM_TRUE_SHEORAN`, a bit
+mask on a mode number. 39 is binary 100111; SE_SIDM_USER, 255, has every
+one of those bits, with or without SIDBITs above it. Of the stored modes
+(0..46, USER, either with SIDBITs) only Sheoran and USER pass. Measured
+with `swe_split_deg(10, SE_SPLIT_DEG_NAKSHATRA)`: Fagan/Bradley and
+Lahiri, with or without a SIDBIT, Ashvini 10 deg 00'; SE_SIDM_USER (255,
+1279, 2303) Bharani 0 deg 00', as Sheoran.
+
+The second comparison named in the report, the "call swe_set_ephe_path()"
+warning in `get_ayanamsa()` testing `sip->sid_mode == SE_SIDM_TRUE_SHEORAN`
+where the rest of its list tests the masked `sid_mode`, changes nothing:
+`swe_set_sid_mode()` stores a star mode without its SIDBITs, so the two are
+equal for every mode that can be set. Made the masked one for the list's
+sake. Every other comparison of a mode number in the library takes
+`sid_mode % SE_SIDBITS` first (`swe_set_sid_mode()`,
+`get_aya_correction()`, `get_ayanamsa()`, `swe_get_ayanamsa_name()`), and
+the SIDBIT tests (`swehouse.c`, `swecl.c`, `sweph.c`) test bits that are
+bits. Not the library's, and left: `swetest.c` decides whether to pass
+`-sidudef`'s t0 and value with `if (sid_mode & SE_SIDM_USER)`, true for
+every mode but 0; harmless, since `swe_set_sid_mode()` takes t0 and the
+value from its table for a predefined mode.
+
+**Fix, as done here:** the mode itself, `sid_mode % SE_SIDBITS ==
+SE_SIDM_TRUE_SHEORAN`; the warning's comparison masked too. Upstream's
+code is under `SWE_UPSTREAM_COMPAT`. The Sheoran shift's constant,
+3.33333333333333, leaves 5 deg at 8 deg 19' 59.99999" unrounded: below the
+precision floor, left.
+
+G96 `tests/nakshatra.c`: 5 deg and 10 deg split into nakshatras, rounded
+to the second, under the 47 predefined modes, USER alone and with
+USER_UT, ECL_DATE, ECL_T0 and SSY_PLANE, Sheoran with ECL_DATE and Lahiri
+with four SIDBITs: Ashvini 5 deg 00' and 10 deg 00' but in Sheoran,
+Ashvini 8 deg 20' and Bharani 0 deg 00' there: 114 checks. The build
+before the fix and the upstream build fail the 10 USER ones. G24
+`user_nakshatra_off`: USER's 10 deg read back, 0 shipped, 3.33 deg compat.
+
+Measured with it, below the precision floor (1e-9 deg, 1e-8 deg/day) and
+not fixed:
+
+- **A planet's light-time velocity at the instant read.** With default
+  flags Mercury's geocentric speed is 4-6e-11 deg/day off five-point
+  differences at some dates (1990, 2200), the same at every step from
+  2^-5 to 2^-9 day, and 1.7e-11 with SEFLG_TRUEPOS. It is the light time,
+  not the aberration or the deflection: the same with SEFLG_NOABERR |
+  SEFLG_NOGDEFL, 9.0e-11 at the worst of 400 dates 1900-2100, 1.25e-11
+  rms (Venus 2.1e-11, 3.5e-12 rms; Mars at its floor; de200 8.0e-11;
+  Moshier 8.1e-11; `swe_calc_pctr()` Mercury from Mars 8.3e-11). After the
+  read at t = teval - dt, `app_pos_etc_plan()` moves the body to the
+  emission instant along a velocity, by t's rounding (bug 63) and by the
+  Newton step on the light time (bug 78), about 1e-9 day together, and
+  keeps the velocity read at t: off by the acceleration times that shift,
+  each part about half. Moving the velocity too, by the shift times
+  (v(teval) - v(t)) / (teval - t) as the Moon's path does (bug 73), gave
+  1.6e-11 worst and 3.3e-12 rms on Mercury, the true positions' floor
+  (pctr 1.8e-11, JPL 1.8e-11, Venus 1.6e-11); written and reverted under
+  the floor. The fictitious bodies' light-time positions (bug 81) and
+  `swe_calc_pctr()` (77) have the same shape; Waldemath's and the White
+  Moon's residuals are their geocentric cancellation's noise (4e-12 deg
+  per position) all the same.
+- **G51's geocentric 2.5e-11 deg/day** is not the above: the light time is
+  the same with and without aberration and cancels in G51's difference
+  (unchanged by the fix above). Over 2^-8 day it is the reference's noise
+  (4.8e-11 over 2^-9); over 2^-4 to 2^-7 day it stays at 1.5e-11, Jupiter
+  at 500 AD alone (every other body and date <= 9e-12), a 28-day
+  sawtooth of +-1.5e-11 with jumps every 28 days, 5e-6 of the aberration
+  rate term, +-7e-12 at 2000; Moshier noisier. Not traced; the
+  shape points at the Swiss files' Earth (its monthly terms against the
+  gravitational jerk `earth_at_lt_sun()` adds), not at the code's terms.
 
 ## How these were found
 

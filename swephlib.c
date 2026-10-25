@@ -4992,7 +4992,15 @@ static void split_deg_nakshatra(swe_ctx *ctx, double ddeg, int32 roundflag, int3
     ddeg = 0;
   }
   // Sheoran "Vedic" ayanamsha: 0 Aries = 3°20 Ashvini
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 97: the mode was tested as a bit mask, sid_mode & 39 ==
+   * 39, which SE_SIDM_USER (255, with any SIDBITs) passes too: a
+   * user-defined ayanamsa's nakshatras began 3 deg 20' early (10 deg in
+   * Bharani 0 deg, not Ashvini 10). The mode itself, less the SIDBITs. */
+  if (ctx->sidd.sid_mode % SE_SIDBITS == SE_SIDM_TRUE_SHEORAN)
+#else
   if ((ctx->sidd.sid_mode & SE_SIDM_TRUE_SHEORAN) == SE_SIDM_TRUE_SHEORAN)
+#endif
     ddeg = swe_degnorm(ddeg + 3.33333333333333);
   if (roundflag & SE_SPLIT_DEG_ROUND_DEG) {
     dadd = 0.5;
