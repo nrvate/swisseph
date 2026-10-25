@@ -4328,6 +4328,44 @@ static double moonless_tid_off(void)
   return fabs(a - b) * 86400;
 }
 
+/* swe_deltat_ex() in AD 1500 with SEFLG_SWIEPH along a directory without
+ * the files for J2000, semo_18.se1 and sepl_18.se1 (links to EPHE's other
+ * files), against EPHE, s, each on a context made and given its path.
+ * Upstream reads the DE number from those two alone, so the first delta t
+ * takes the default term, 291.693033 s for 294.255183, 2.56
+ * (UPSTREAM-BUGS 175). */
+static double noj2000_tid_off(void)
+{
+  char dir[] = "/tmp/compatno18XXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double a = 0, b = 1e9;
+  struct dirent *e;
+  swe_ctx *c;
+  DIR *d;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strcmp(e->d_name, "semo_18.se1") != 0
+        && strcmp(e->d_name, "sepl_18.se1") != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, dir);
+    a = swe_deltat_ex_r(c, 2268923.5, SEFLG_SWIEPH, NULL);
+    swe_ctx_free(c);
+  }
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, EPHE);
+    b = swe_deltat_ex_r(c, 2268923.5, SEFLG_SWIEPH, NULL);
+    swe_ctx_free(c);
+  }
+  rm_dir(dir);
+  return fabs(a - b) * 86400;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 after the path,
  * swe_set_jpl_file("de200.eph") and the path again by another string, the
  * first call against the second, deg. Upstream's path setter forgets the
@@ -4457,7 +4495,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4609,6 +4647,7 @@ int main(int argc, char **argv)
   jplmoon = jpl_path_moon_off();
   jplnamed = jpl_named_moon_off();
   moonless = moonless_tid_off();
+  noj2000 = noj2000_tid_off();
   dtflag0 = dt_flag0_off();
   closekeep = close_keeps_off();	/* last: see the function */
 
@@ -5649,6 +5688,14 @@ int main(int argc, char **argv)
   else {
     printf("  delta t, no moon file  %.2e s FAIL: expected %s\n",
            moonless, WANT_DEFECT ? "> 10" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (noj2000 > 2) : (noj2000 == 0))
+    printf("  delta t, no J2000 file %.2e s OK\n", noj2000);
+  else {
+    printf("  delta t, no J2000 file %.2e s FAIL: expected %s\n",
+           noj2000, WANT_DEFECT ? "> 2" : "0");
     bad++;
   }
 

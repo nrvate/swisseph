@@ -1402,6 +1402,11 @@ struct epsilon {
  *     Earth's and the Sun's osculating apsides 8.0e-3 deg off at 2000, their
  *     speeds 4.7e-8 deg/day off their positions' rate (UPSTREAM-BUGS 180,
  *     G143, G104, G24)
+ *   - the Swiss files' DE number read from the files for J2000 alone:
+ *     without semo_18.se1 and sepl_18.se1 the first delta t the default
+ *     term until a Swiss Moon opens another span's moon file, in AD 1500
+ *     2.56 s off and the first UT Moon there 3.8e-4 deg off the second
+ *     (UPSTREAM-BUGS 175, G142, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -2019,7 +2024,9 @@ struct swe_ctx {
   /* bug 166: the planet file's DE number, read at J2000 when the moon
    * file's header was not found, for the Swiss files' tidal term; 0 when
    * the moon file's was, or neither. Published with SWI_CFG_PATH, owed with
-   * the moon file's after swe_close(); never set under SWE_UPSTREAM_COMPAT. */
+   * the moon file's after swe_close(); never set under SWE_UPSTREAM_COMPAT.
+   * Bug 175: with neither J2000 file, another span's moon file's number is
+   * sweph_denum_moon, else another span's planet file's this. */
   int32 sweph_denum_planet;
   int32 jpldenum_cfg;
   /* bug 131: the DE numbers swe_close() forgot that the kept path and JPL

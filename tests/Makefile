@@ -1382,7 +1382,10 @@ check-jplhorbias: jplhorbias
 # swe_nod_aps_ut()'s mean node and apogee, bit for bit as with the complete
 # directory -- on the setting thread, new and running threads, a context
 # made after, an explicit context, SE_EPHE_PATH's first use and after
-# swe_close() (UPSTREAM-BUGS 166). A /tmp directory of links.
+# swe_close() (UPSTREAM-BUGS 166). And without the files for J2000, the
+# other spans' DE number from the first call: delta t and the getter, a UT
+# body in AD 1500 twice, delta t in 1900, as with the complete directory
+# (UPSTREAM-BUGS 175). /tmp directories of links.
 check-moonlesstid: moonlesstid
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./moonlesstid $(EPHE)
 

@@ -259,6 +259,7 @@ static void ephe_switch_forget(swe_ctx *ctx);
 static void ephe_path_read_moon(swe_ctx *ctx);
 #ifndef SWE_UPSTREAM_COMPAT
 static void file_close_open(swe_ctx *ctx, int ifno);
+static AS_BOOL file_on_path(const char *ephepath, const char *fname);	/* bug 175 */
 #endif
 static void ctx_release(swe_ctx *ctx);
 static void dpsi_deps_free(swe_ctx *ctx);
@@ -2466,6 +2467,56 @@ static int32 ephe_path_read_planet(swe_ctx *ctx)
   file_nominal_span(J2000, SEI_EARTH, fname, &fdp->tnom0, &fdp->tnom1);	/* bug 89 */
   return fdp->sweph_denum;
 }
+
+/* bug 175: neither file for J2000 along the path. The moon files of the
+ * other 600-year spans, nearest J2000 first, then the planet files: the
+ * first one on the path (looked up as swi_fopen() finds it, bug 118's
+ * file_on_path(), so a path with none opens nothing) opened, its header
+ * read as the J2000 file's and kept open for the calculations with the
+ * span it answers for, its DE number published as that file's would be.
+ * A file the same path again finds open, or kept as the spare (bug 89),
+ * is taken as it is. */
+static void ephe_path_read_other(swe_ctx *ctx)
+{
+  static const int ifno[2] = { SEI_FILE_MOON, SEI_FILE_PLANET };
+  static const int ipli[2] = { SEI_MOON, SEI_EARTH };
+  const double span = NCTIES * 100 * 365.25;
+  char fname[AS_MAXCH];
+  int j, k;
+  for (j = 0; j < 2; j++) {
+    struct file_data *fdp = &ctx->fidat[ifno[j]];
+    const struct file_data *kept = fdp->fptr != NULL ? fdp
+      : ctx->fidat_spare[ifno[j]].fptr != NULL ? &ctx->fidat_spare[ifno[j]] : NULL;
+    if (kept != NULL) {
+      if (j == 0)
+        ctx->sweph_denum_moon = kept->sweph_denum;
+      else
+        ctx->sweph_denum_planet = kept->sweph_denum;
+      return;
+    }
+    for (k = 1; k <= 2 * (int) ((MOSHNDEPH_END - MOSHNDEPH_START) / span); k++) {
+      double t = J2000 + ((k & 1) ? -1 : 1) * ((k + 1) / 2) * span;
+      if (t < MOSHNDEPH_START || t > MOSHNDEPH_END)
+        continue;
+      swi_gen_filename(t, ipli[j], fname);
+      if (!file_on_path(ctx->ephepath, fname)
+          || (fdp->fptr = swi_fopen(ctx, ifno[j], fname, ctx->ephepath, NULL)) == NULL)
+        continue;
+      if (read_const(ctx, ifno[j], NULL) != OK) {
+        memset((void *) fdp, 0, sizeof(struct file_data));	/* closed by it (bug 104) */
+        continue;
+      }
+      file_nominal_span(t, ipli[j], fname, &fdp->tnom0, &fdp->tnom1);	/* bug 89 */
+      if (j == 0) {
+        ctx->sweph_denum_moon = fdp->sweph_denum;
+        swi_set_tid_acc(ctx, 0, 0, fdp->sweph_denum, NULL);
+      } else {
+        ctx->sweph_denum_planet = fdp->sweph_denum;
+      }
+      return;
+    }
+  }
+}
 #endif
 
 static void ephe_path_read_moon(swe_ctx *ctx)
@@ -2518,6 +2569,18 @@ static void ephe_path_read_moon(swe_ctx *ctx)
     ctx->sweph_denum_planet = 0;
   else if (ctx->fidat[SEI_FILE_PLANET].fptr == NULL)
     ctx->sweph_denum_planet = ephe_path_read_planet(ctx);
+  /* Upstream bug 175: with neither J2000 file, semo_18.se1 nor
+   * sepl_18.se1, and other spans' files along the path, no DE number was
+   * read, so the first delta t took the default term until a calculation
+   * opened a moon file: in AD 1500 291.693033 s, then 294.255183 after a
+   * Swiss Moon opened semo_12.se1, the first Moon 158.4001317882 deg and
+   * the second 158.4005084277 (3.8e-4), and with the planet files alone
+   * (no moon files, no sepl_18.se1) the default term throughout. Every
+   * file of a set is of one DE integration (ephe/'s 153: DE441), so the
+   * set's number is read from the first other span's file found, moon
+   * files first (ephe_path_read_other()). */
+  if (fdp->fptr == NULL && ctx->sweph_denum_planet == 0)
+    ephe_path_read_other(ctx);
 #endif
 }
 
@@ -2634,7 +2697,9 @@ AS_BOOL swi_ephe_path_none(swe_ctx *ctx)
   if (sp != NULL && *sp != '\0' && strlen(sp) <= AS_MAXCH-1-13)
     return FALSE;			/* as ephe_path_resolve() takes it */
   swi_ephe_path_name_first_use(ctx);	/* the default path, the moon file */
-  if (ctx->fidat[SEI_FILE_MOON].fptr != NULL)
+  /* bug 175: or the planet file, another span's file it read its DE
+   * number from (the moon file's too) */
+  if (ctx->fidat[SEI_FILE_MOON].fptr != NULL || ctx->fidat[SEI_FILE_PLANET].fptr != NULL)
     return FALSE;
   swi_gen_filename(J2000, SEI_EARTH, fname);
   if (file_on_path(ctx->ephepath, fname) || file_on_path(ctx->ephepath, ctx->jplfnam))

@@ -209,6 +209,7 @@ worst were in code that had never executed even once.
 | 176 | `swe_nod_aps()` turns the osculating ellipse of a request fallen to Moshier by the frame bias of the DE number asked: SEFLG_JPLEPH on de200 outside its years leaves Moshier's state in DE200's frame, unbiased, where `swe_calc()` takes the ephemeris that answered: Mars's node at 1500 1.58e-4 deg off the Moshier request's, the Moon's 6.5e-5 | Correctness (behaviour) | `swecl.c` |
 | 178 | `swe_nod_aps()` gives its heliocentric and barycentric points aberration (the Sun's barycentric velocity) and `swi_deflect_light()`'s deflection, whose observer is the Earth whatever the centre, where `swe_calc()` gives those places neither: Jupiter's heliocentric mean descending node at J2000, in line with the Sun from the Earth, 9.6e-4 deg off, its barycentric speeds 3.4e-2 deg/day, Mars's points 4.1e-6 deg | Correctness (behaviour) | `swecl.c` |
 | 180 | `swe_nod_aps()` on Moshier builds the Earth-Moon barycentre as Moshier's Earth plus Moshier's Moon, where that Earth is the EMB less the short lunar series' Moon (0.24 deg away at 2000): the EMB 1.3e-7 AU off the series', the Earth's and the Sun's osculating apsides wobbling 8.0e-3 deg (4.1e-2 at -3000), their speeds 4.7e-8 deg/day off their positions' rate at every epoch | Correctness | `swecl.c` |
+| 175 | With neither file for J2000 (semo_18.se1, sepl_18.se1) and other spans' along the path, no DE number was read, so the first delta t took the default tidal term until a Swiss Moon opened another span's moon file: in AD 1500 291.693033 s, then 294.255183, the first UT Moon 158.4001317882 deg and the second 158.4005084277 (3.8e-4); with the planet files alone and no sepl_18.se1 the default throughout, the heliocentric Mars there 1.56e-5 deg off -- on every thread and context | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -12158,6 +12159,97 @@ perihelion on Moshier at 2000 Jan 30.5, its longitude speed less the
 five-point difference of its positions: 7.2e-11 deg/day shipped (3.18e-8
 before the fix), 1.23e-3 compat (with upstream's rougher speeds, entry
 80).
+
+## 175. Without the files for J2000 the Swiss files' DE number is read from none: the first delta t takes the default tidal term until a calculation opens a moon file, the first Moon in AD 1500 3.8e-4 deg off the second
+
+**Severity: Correctness (behaviour: call order -- delta t in AD 1500 2.56 s off before a Swiss Moon there opens its file, the first UT Moon 3.8e-4 deg off the second; with the planet files alone the default term throughout, the heliocentric Mars in AD 1500 1.56e-5 deg off -- on every thread and context)**
+**Where:** upstream `sweph.c` `swe_set_ephe_path()` (the moon file's header read at J2000 alone); here `sweph.c`: `ephe_path_read_moon()`, new `ephe_path_read_other()`, `swi_ephe_path_none()`
+
+Entry 166's noticed item. The path setter reads the DE number from the
+files for J2000, semo_18.se1 (bug 101) and, without it, sepl_18.se1 (bug
+166). With neither along the path and other spans' files there (links to
+EPHEDIR's files but those two), it read none, and the first delta t took
+the default term, -25.80, until a Swiss Moon opened another span's moon
+file, whose number the term follows from then on: `swe_deltat_ex()` in AD
+1500 291.693033 s, after a Swiss Moon there 294.255183; the first UT Moon
+158.4001317882 deg, the second 158.4005084277 (3.8e-4), EPHEDIR's both
+times; the getter -25.80 for -25.936 until then. With the planet files of
+the other spans alone (no moon file, no sepl_18.se1) no calculation opens
+a moon file, and the term was the default throughout: the heliocentric
+Mars in AD 1500 59.4283715176 deg for 59.4283871221 (1.56e-5), delta t in
+1900 -1.990764 s for -1.953326 (no file there; bug 166's planet-file case
+for the other spans). The same on a thread, a context, a first use by
+`SE_EPHE_PATH` and after `swe_close()`, and in the compat build,
+upstream's. Before entry 166 too.
+
+The number to read. Every file of a set is made from one DE integration,
+and its header names it: the 153 .se1 files in ephe/ (sepl, semo and seas,
+all 51 spans) name DE441. The term is that integration's lunar n-dot
+(entry 166), so it is the set's, whichever of its files is read: the moon
+files first, the lunar ephemeris's own number as at J2000, then the planet
+files (bug 166's case), the span nearest J2000 first, the file kept open
+being then the one most calculations read. Read where the J2000 files are
+read, by the path setter, it is published with the path and every reader
+has it from the first call, the getter too. Reading instead, at the first
+delta t, the file of that instant (bug 165's way for JPL) would leave the
+getter, which has no instant, on the default, and a delta t at an
+instant with no file (1900 here) on whatever moon file a calculation had
+left open: -25.80 fresh, -25.936 after a Moon in 1500.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`; the compat
+build keeps upstream's default term):
+- `ephe_path_read_moon()`, when neither J2000 file's header was found,
+  looks for the other spans' moon files, nearest J2000 first, then their
+  planet files (`ephe_path_read_other()`): each name looked up along the
+  path as `swi_fopen()` finds it, but not opened (bug 118's
+  `file_on_path()`), the first found opened, its header read and kept open
+  with the span it answers for (bug 89), its DE number published as the
+  J2000 file's (`sweph_denum_moon`, or bug 166's `sweph_denum_planet`), so
+  the setters, the same path again, bug 107's first use, bug 131's reading
+  after `swe_close()` and every thread and context taking the path carry
+  it. A file the same path again finds open, or kept as the spare, is
+  taken as it is.
+- Bug 110's first-call warning ("Please call swe_set_ephe_path() ...") is
+  not due where the default path holds such a file: `swi_ephe_path_none()`
+  takes the planet file the path read too, as it took the moon file. With
+  a working directory holding semo_12.se1 and sepl_12.se1, or sepl_12.se1
+  alone, and no path set, the first `swe_deltat_ex()` in AD 1500 answered
+  291.693033 s with the warning; now 294.255183 without it. With no Swiss
+  file there it is due as before.
+- Now delta t, `swe_deltat()`, the getter, the first and second Moon in
+  AD 1500 and the heliocentric Mars there answer bit for bit as EPHEDIR,
+  in both directories, on every reader.
+- The opens, `fopen()` and `stat()` interposed, 100 rounds after a
+  warm-up, before and after. Without the J2000 files (and with semo_12.se1
+  and sepl_12.se1 alone): a path and two Swiss Moons in 1500, 4 calls and
+  2 opens both, 0 stat() calls before and 1 after; 100 path changes, each
+  with a Moon, 400 and 200 both, 100 stat() after (the setter opens
+  semo_12.se1, which the Moon then reads); the same path again and a Moon
+  0 both. With the other spans' planet files alone and a heliocentric
+  Mars in 1900 (no file there): a path change 400 calls and no open
+  before, 500 and 100 after (sepl_12.se1, as a fresh process given that
+  path opens it), 5100 stat() calls; the same path again 400 calls and no
+  open both, 5000 stat() calls (bug 118's look for a moon file installed
+  since, 50 names; the planet file found as the spare). EPHEDIR's counts
+  unchanged. In a directory with no Swiss file at all every setter call,
+  the same path again too, looks the 100 names up, 100 stat() calls a
+  path element: a path and a Moshier Mars 66 us a round before, 220
+  after. Not a calculation's hot path.
+
+G142 `tests/moonlesstid.c` (entry 166) gains two directories: EPHEDIR's
+files but semo_18.se1 and sepl_18.se1, and those but every moon file too;
+on its 7 readers, strict, the getter, `swe_deltat_ex()` in AD 1500 and
+`swe_deltat()` there, a UT body there twice (the Moon; the heliocentric
+Mars without the moon files), delta t in 1900 and the getter again, each
+bit for bit as the same reader given EPHEDIR: 14 checks more, 28 pass.
+Before the fix the 14 fail; the compat build fails 26 of 28 with the fix
+and without: entry 166's 14 and 12 of these (the first use by
+`SE_EPHE_PATH` and the reading after `swe_close()` with the other moon
+files match EPHEDIR's, which takes the default term first there too: bugs
+107 and 131, restored). G24 `noj2000_tid_off`, delta t in AD 1500 along
+the directory without the J2000 files against EPHEDIR, each on a context
+made and given its path: 0 shipped, 2.56 s compat (and shipped before the
+fix).
 
 ## How these were found
 

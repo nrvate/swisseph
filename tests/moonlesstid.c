@@ -33,7 +33,32 @@
  * -25.936 and the values above; the compat build (SWE_UPSTREAM_COMPAT),
  * which keeps upstream's default term, fails the 14 with the fix and
  * without. The upstream build fails as the compat build on its main
- * thread. Run as
+ * thread.
+ *
+ * UPSTREAM-BUGS 175: with neither file for J2000 (semo_18.se1,
+ * sepl_18.se1) and other spans' files along the path, no DE number was
+ * read at all, so the first delta t took the default term until a Swiss
+ * Moon opened a moon file: in AD 1500 291.693033 s, then 294.255183, the
+ * first UT Moon there 158.4001317882 deg and the second 158.4005084277;
+ * with the planet files alone and no sepl_18.se1 the default throughout.
+ * Checked, strict, on the same 7 readers for a directory of links to
+ * EPHEDIR's files but semo_18.se1 and sepl_18.se1, and one with neither
+ * those nor any moon file: the getter first, swe_deltat_ex() in AD 1500
+ * with SEFLG_SWIEPH, swe_deltat() there, a UT body there twice (the Moon,
+ * the heliocentric Mars in the directory without moon files), delta t in
+ * 1900 (no file there) and the getter again, bit for bit as the same
+ * reader given EPHEDIR: 14 checks more, 28 in all. Measured: the 28
+ * pass. Before the fix the 14 fail: the first getter -25.80 for -25.936,
+ * delta t and swe_deltat() in AD 1500
+ * 291.693033 s for 294.255183, the first Moon 158.4001317882 deg for
+ * 158.4005084277, the second right; without the moon files too the
+ * heliocentric Mars there 59.4283715176 for 59.4283871221 both times,
+ * delta t in 1900 -1.990764 s for -1.953326 and the getter -25.80 after.
+ * The compat build fails 26 of the 28: the 14 above and 12 of these; the
+ * first use by SE_EPHE_PATH and the reading after swe_close() of the
+ * directory with its other moon files pass, EPHEDIR's taking the default
+ * term first there too (bugs 107 and 131, restored).
+ * Run as
  *   moonlesstid EPHEDIR
  */
 #include <dirent.h>
@@ -48,11 +73,15 @@
 
 #define T_1900 2415020.5
 #define T_1000 2086308.0
+#define T_1500 2268923.5
 #define NV     8
 
 static char EPHE[PATH_MAX], NOMOON[] = "/tmp/moonlesstidXXXXXX";
+static char NO18[] = "/tmp/moonlesstidXXXXXX";	/* bug 175: no J2000 files */
+static char PLNO18[] = "/tmp/moonlesstidXXXXXX";	/* nor any moon file */
 static const char *DIR_;	/* the directory the reader is given */
-static int O;			/* 0: strict, 1: the fallback allowed */
+static int O;			/* 0: strict, 1: the fallback allowed, 2: bug 175's */
+static int B;			/* O 2: the body, the Moon or the heliocentric Mars */
 
 enum { R_MAIN, R_NEW, R_RUN, R_CTXNEW, R_CTX, R_ENV, R_CLOSE, NR };
 static const char *RN[NR] = { "setting thread", "new thread", "running thread",
@@ -63,18 +92,22 @@ struct obs { double v[NV]; };
 static struct obs out;
 static pthread_barrier_t b1, b2;
 
-static int link_moonless(void)
+/* links to EPHEDIR's files in dir, but the moon files (which 0), the two
+ * for J2000 (1), or both (2) */
+static int link_moonless(char *dir, int which)
 {
-  DIR *d = opendir(EPHE);
+  DIR *d;
   struct dirent *e;
   char p[PATH_MAX + 300], q[PATH_MAX + 300];
-  if (d == NULL)
+  if (mkdtemp(dir) == NULL || (d = opendir(EPHE)) == NULL)
     return -1;
   while ((e = readdir(d)) != NULL) {
-    if (e->d_name[0] == '.' || strncmp(e->d_name, "semo", 4) == 0)
+    int moon = strncmp(e->d_name, "semo", 4) == 0;
+    int j2000 = strcmp(e->d_name, "semo_18.se1") == 0 || strcmp(e->d_name, "sepl_18.se1") == 0;
+    if (e->d_name[0] == '.' || (which != 1 && moon) || (which != 0 && j2000))
       continue;
     snprintf(p, sizeof p, "%s/%s", EPHE, e->d_name);
-    snprintf(q, sizeof q, "%s/%s", NOMOON, e->d_name);
+    snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
     if (symlink(p, q) != 0) {
       closedir(d);
       return -1;
@@ -106,6 +139,22 @@ static void observe(swe_ctx *c, struct obs *a)
   double x[6], xn[6], xs[6], xp[6], xa[6];
   char serr[AS_MAXCH];
   memset(a, 0, sizeof *a);
+  if (O == 2) {			/* bug 175 */
+    int32 fl = SEFLG_SWIEPH | (B == SE_MARS ? SEFLG_HELCTR : 0);
+    int k;
+    a->v[0] = c != NULL ? swe_get_tid_acc_r(c) : swe_get_tid_acc();
+    a->v[1] = (c != NULL ? swe_deltat_ex_r(c, T_1500, SEFLG_SWIEPH, NULL)
+                         : swe_deltat_ex(T_1500, SEFLG_SWIEPH, NULL)) * 86400;
+    a->v[2] = (c != NULL ? swe_deltat_r(c, T_1500) : swe_deltat(T_1500)) * 86400;
+    for (k = 3; k <= 4; k++)
+      if ((c != NULL ? swe_calc_ut_r(c, T_1500, B, fl, x, serr)
+                     : swe_calc_ut(T_1500, B, fl, x, serr)) >= 0)
+        a->v[k] = x[0];
+    a->v[5] = (c != NULL ? swe_deltat_ex_r(c, T_1900, SEFLG_SWIEPH, NULL)
+                         : swe_deltat_ex(T_1900, SEFLG_SWIEPH, NULL)) * 86400;
+    a->v[6] = c != NULL ? swe_get_tid_acc_r(c) : swe_get_tid_acc();
+    return;
+  }
   if (O == 0) {
     a->v[0] = c != NULL ? swe_get_tid_acc_r(c) : swe_get_tid_acc();
     a->v[1] = (c != NULL ? swe_deltat_ex_r(c, T_1000, SEFLG_SWIEPH, NULL)
@@ -242,7 +291,7 @@ static int get(int r, const char *dir, struct obs *a)
 int main(int argc, char **argv)
 {
   struct obs ref, a;
-  int r, i, bad = 0, n = 0;
+  int r, i, k, bad = 0, n = 0;
   if (argc != 2) {
     fprintf(stderr, "usage: moonlesstid EPHEDIR\n");
     return 2;
@@ -251,16 +300,25 @@ int main(int argc, char **argv)
     perror(argv[1]);
     return 2;
   }
-  if (mkdtemp(NOMOON) == NULL || link_moonless() != 0) {
-    printf("G142 FAIL: could not make %s\n", NOMOON);
+  if (link_moonless(NOMOON, 0) != 0 || link_moonless(NO18, 1) != 0
+      || link_moonless(PLNO18, 2) != 0) {
+    printf("G142 FAIL: could not make the directories in /tmp\n");
     unlink_all(NOMOON);
+    unlink_all(NO18);
+    unlink_all(PLNO18);
     return 1;
   }
-  printf("G142: without the moon files, the Swiss tidal term of the planet files\n");
-  for (O = 0; O < 2; O++)
+  printf("G142: without the moon files, the Swiss tidal term of the planet files;"
+         " without the J2000 files, the other spans' (bug 175)\n");
+  for (k = 0; k < 4; k++)	/* k 2, 3: bug 175's observation, O 2 */
     for (r = 0; r < NR; r++, n++) {
-      if (get(r, EPHE, &ref) != 0 || get(r, NOMOON, &a) != 0) {
-        printf("  %s, %s: could not run\n", RN[r], O ? "fallback" : "strict");
+      const char *dir = k < 2 ? NOMOON : k == 2 ? NO18 : PLNO18;
+      const char *what = k == 0 ? "strict" : k == 1 ? "fallback"
+                       : k == 2 ? "no J2000 files" : "no J2000 files, no moon files";
+      O = k < 2 ? k : 2;
+      B = k == 2 ? SE_MOON : SE_MARS;
+      if (get(r, EPHE, &ref) != 0 || get(r, dir, &a) != 0) {
+        printf("  %s, %s: could not run\n", RN[r], what);
         bad++;
         continue;
       }
@@ -275,7 +333,7 @@ int main(int argc, char **argv)
       }
       if (memcmp(a.v, ref.v, sizeof a.v) == 0)
         continue;
-      printf("  %s, %s: FAIL\n   ", RN[r], O ? "fallback" : "strict");
+      printf("  %s, %s: FAIL\n   ", RN[r], what);
       for (i = 0; i < NV; i++)
         printf(" %.12g", a.v[i]);
       printf("\n    want");
@@ -288,7 +346,14 @@ int main(int argc, char **argv)
   if (get(R_MAIN, NOMOON, &a) == 0)
     printf("  without the moon files: tidal term %.4f, delta t in AD 1000 %.6f s,"
            " in 1900 %.6f s\n", a.v[0], a.v[1], a.v[2]);
+  O = 2;
+  B = SE_MOON;
+  if (get(R_MAIN, NO18, &a) == 0)
+    printf("  without the J2000 files: tidal term %.4f, delta t in AD 1500 %.6f s,"
+           " the UT Moon there %.10f, %.10f\n", a.v[0], a.v[1], a.v[3], a.v[4]);
   unlink_all(NOMOON);
+  unlink_all(NO18);
+  unlink_all(PLNO18);
   if (bad) {
     printf("G142 FAIL: %d of %d\n", bad, n);
     return 1;
