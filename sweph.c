@@ -5567,14 +5567,32 @@ static int32 swe_get_ayanamsa_ex_r_body(swe_ctx *ctx, double tjd_et, int32 iflag
 {
   struct nut nuttmp;
   struct nut *nutp = &nuttmp;	/* dummy assign, to silence gcc warning */
-  int32 retval = swi_get_ayanamsa_ex(ctx, tjd_et, iflag, daya, serr);
+  int32 retval;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 223: the nutation added here took the JPL Horizons flags,
+   * which the ayanamsa's precession never takes (swi_get_ayanamsa_ex()
+   * keeps the ephemeris bits alone) and plaus_iflag() drops from every
+   * sidereal place: at 1950, Lahiri, on de200, the Swiss files and
+   * Moshier alike, the ayanamsa with SEFLG_JPLHOR_APPROX (or SEFLG_JPLHOR
+   * fallen to it) 1.72e-5 deg off the one without, and the sidereal
+   * houses' cusps -1.72e-5 with it, while sidereal Mars did not move. The
+   * ayanamsa is the sidereal frame's and takes no Horizons flag now, so
+   * that a tropical place the flags do not reach, less it, is the
+   * sidereal place, with the flags as without; bug 142's read of the
+   * corrections' table cannot arise here. */
+  iflag &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+  retval = swi_get_ayanamsa_ex(ctx, tjd_et, iflag, daya, serr);
+#else
+  retval = swi_get_ayanamsa_ex(ctx, tjd_et, iflag, daya, serr);
   /* Upstream bug 142: the nutation took SEFLG_JPLHOR without the IERS
    * corrections, which swi_get_ayanamsa_ex()'s plaus_iflag() turns into
    * SEFLG_JPLHOR_APPROX, and read their table, NULL: on de200, the
    * ayanamsa, its _ut form and the sidereal houses with SEFLG_JPLEPH |
    * SEFLG_JPLHOR crashed (SIGSEGV at J2000). As swe_calc() takes it now
-   * (swi_jplhor_plaus()), the warning in serr as there. Both builds. */
+   * (swi_jplhor_plaus()), the warning in serr as there. In this build;
+   * the shipped one takes no Horizons flag here (bug 223). */
   iflag = swi_jplhor_plaus(ctx, iflag);
+#endif
   if (!(iflag & SEFLG_NONUT)) {
 #ifndef SWE_UPSTREAM_COMPAT
     /* Upstream bug 134: the nutation kept at the instant was taken for

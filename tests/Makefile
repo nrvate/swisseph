@@ -284,7 +284,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-moonlt check-jpltdb check-sidsplice check-sidera check-obliq check-nutgrid check-sidnod check-spicarv check-nutspeed check-eopload \
-       check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-meanspeed check-oscspeed check-callorder check-filejoin check-missfile check-moonfile check-hdrbound check-fictstar check-starfail check-pathset check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary check-modelstid check-adoptfiles check-fbshare check-cfghold check-closekeep check-searchhold check-nutintp check-closesurvive check-holdstart check-orbelbias check-timeequ check-sunmemo check-closetid check-jpldenum check-fbbary check-eopfollow check-woolard check-framestep check-pctredge check-jplhorbias check-moonlesstid check-nodcentre check-nutderiv check-nodapshel check-eclnutrange check-moshemb check-housejplhora check-framehold check-spanedge check-nodaposcrate check-nutseries check-sidtrange check-nodbias \
+       check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-meanspeed check-oscspeed check-callorder check-filejoin check-missfile check-moonfile check-hdrbound check-fictstar check-starfail check-pathset check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary check-modelstid check-adoptfiles check-fbshare check-cfghold check-closekeep check-searchhold check-nutintp check-closesurvive check-holdstart check-orbelbias check-timeequ check-sunmemo check-closetid check-jpldenum check-fbbary check-eopfollow check-woolard check-framestep check-pctredge check-jplhorbias check-moonlesstid check-nodcentre check-nutderiv check-nodapshel check-eclnutrange check-moshemb check-housejplhora check-framehold check-spanedge check-nodaposcrate check-nutseries check-sidtrange check-nodbias check-sidhorflag \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -435,6 +435,9 @@ sidtrange: sidtrange.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 nodbias: nodbias.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+sidhorflag: sidhorflag.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 eclnutrange: eclnutrange.c $(SWEOBJ_STD)
@@ -1489,12 +1492,14 @@ check-moshemb: moshemb
 
 # G156: across SEMOD_JPLHORA_3's step at 1962 Jan 20 the sidereal house
 # speeds are each side's own rate: with SEFLG_JPLHOR_APPROX (and SEFLG_JPLHOR
-# fallen to it) the ayanamsa's nutation steps there, and its rate does not
+# fallen to it) the ayanamsa's nutation stepped there, and its rate did not
 # reach across it. On de200 and the Swiss files at Zurich, tropical and
-# sidereal (Lahiri, True Citra, the ecliptic of date), ten house systems,
+# sidereal (Lahiri, True Citra, the ecliptic of date), eleven house systems,
 # with and without the flag, the cusps' and ascmc's speeds against
-# five-point differences on the instant's side; the houses that take no
-# flag the same with it as without, bit for bit (UPSTREAM-BUGS 203).
+# five-point differences on the instant's side (UPSTREAM-BUGS 203); every
+# house, tropical and sidereal, the same with the flag as without, bit for
+# bit (UPSTREAM-BUGS 223); Makransky's speeds in ARMC the rate of its
+# cusps, and the cusps smooth (UPSTREAM-BUGS 224).
 check-housejplhora: housejplhora
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./housejplhora $(EPHE)
 
@@ -1559,6 +1564,17 @@ check-sidtrange: sidtrange
 # SEFLG_ICRS bit for bit (UPSTREAM-BUGS 221).
 check-nodbias: nodbias
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodbias $(EPHE)
+
+# G164: the JPL Horizons flags reach no sidereal output, and the Gauquelin
+# sectors' frame takes them as the body's place does. On de200, the Swiss
+# files and Moshier, with SEFLG_JPLHOR_APPROX and SEFLG_JPLHOR: the
+# ayanamsa and its _ut form, sidereal places, stars and swe_nod_aps(), the
+# sidereal houses of every method, and the sectors of places no flag
+# reaches, bit for bit as without the flag; tropical less the ayanamsa is
+# sidereal with the same flags; each sector in its place's own frame
+# (UPSTREAM-BUGS 223).
+check-sidhorflag: sidhorflag
+	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./sidhorflag $(EPHE)
 
 # G108: Moshier's fictitious bodies, fixed stars, apparent distances and
 # heliocentric Moon see the barycentre: fictitious and orbel bodies and
@@ -1862,7 +1878,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed housespeed housefix houseresid starspeed defldisc startopodefl starflags tjdzero nutrate nutobliq staraberr moshvel orbelspeed fictneg fictbuiltin lunarpull lunarpulleph nodaps2 intpaps node3speed moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra meanspeed moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile moonfile hdrbound hdrbound_ubsan fictstar starfail pathset helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary modelstid adoptfiles fbshare cfghold closekeep searchhold nutintp closesurvive holdstart orbelbias timeequ sunmemo closetid jpldenum fbbary eopfollow woolard framestep pctredge jplhorbias moonlesstid nodcentre nutderiv nodapshel eclnutrange moshemb housejplhora framehold spanedge nodaposcrate nutseries sidtrange nodbias .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed housespeed housefix houseresid starspeed defldisc startopodefl starflags tjdzero nutrate nutobliq staraberr moshvel orbelspeed fictneg fictbuiltin lunarpull lunarpulleph nodaps2 intpaps node3speed moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra meanspeed moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile moonfile hdrbound hdrbound_ubsan fictstar starfail pathset helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary modelstid adoptfiles fbshare cfghold closekeep searchhold nutintp closesurvive holdstart orbelbias timeequ sunmemo closetid jpldenum fbbary eopfollow woolard framestep pctredge jplhorbias moonlesstid nodcentre nutderiv nodapshel eclnutrange moshemb housejplhora framehold spanedge nodaposcrate nutseries sidtrange nodbias sidhorflag .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
@@ -1880,7 +1896,7 @@ clean:
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
         check-ctxfiles check-compat check-jplhor check-hostile \
-        check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-meanspeed check-oscspeed check-callorder check-filejoin check-missfile check-moonfile check-hdrbound check-fictstar check-starfail check-pathset check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary check-modelstid check-adoptfiles check-fbshare check-cfghold check-closekeep check-searchhold check-nutintp check-closesurvive check-holdstart check-orbelbias check-timeequ check-sunmemo check-closetid check-jpldenum check-fbbary check-eopfollow check-woolard check-framestep check-pctredge check-jplhorbias check-moonlesstid check-nodcentre check-nutderiv check-nodapshel check-eclnutrange check-moshemb check-housejplhora check-framehold check-spanedge check-nodaposcrate check-nutseries check-sidtrange check-nodbias \
+        check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-meanspeed check-oscspeed check-callorder check-filejoin check-missfile check-moonfile check-hdrbound check-fictstar check-starfail check-pathset check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary check-modelstid check-adoptfiles check-fbshare check-cfghold check-closekeep check-searchhold check-nutintp check-closesurvive check-holdstart check-orbelbias check-timeequ check-sunmemo check-closetid check-jpldenum check-fbbary check-eopfollow check-woolard check-framestep check-pctredge check-jplhorbias check-moonlesstid check-nodcentre check-nutderiv check-nodapshel check-eclnutrange check-moshemb check-housejplhora check-framehold check-spanedge check-nodaposcrate check-nutseries check-sidtrange check-nodbias check-sidhorflag \
         ci-image check-ci clean \
         check-dtobs check-fictlt check-moonlt check-jpltdb check-sidsplice check-sidera check-obliq check-nutgrid check-nutspeed check-sidnod check-spicarv
 
@@ -2066,7 +2082,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg fictbuiltin lunarpull lunarpulleph intpaps node3speed starspeed defldisc moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh nutrate nutobliq staraberr moshvel startopodefl starflags tjdzero housespeed housefix houseresid ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra meanspeed moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile moonfile hdrbound hdrbound_ubsan fictstar starfail pathset helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary modelstid adoptfiles fbshare cfghold closekeep searchhold nutintp closesurvive holdstart orbelbias timeequ sunmemo closetid jpldenum fbbary eopfollow woolard framestep pctredge jplhorbias moonlesstid nodcentre nutderiv nodapshel eclnutrange moshemb housejplhora framehold spanedge nodaposcrate nutseries sidtrange nodbias .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg fictbuiltin lunarpull lunarpulleph intpaps node3speed starspeed defldisc moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh nutrate nutobliq staraberr moshvel startopodefl starflags tjdzero housespeed housefix houseresid ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra meanspeed moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile moonfile hdrbound hdrbound_ubsan fictstar starfail pathset helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary modelstid adoptfiles fbshare cfghold closekeep searchhold nutintp closesurvive holdstart orbelbias timeequ sunmemo closetid jpldenum fbbary eopfollow woolard framestep pctredge jplhorbias moonlesstid nodcentre nutderiv nodapshel eclnutrange moshemb housejplhora framehold spanedge nodaposcrate nutseries sidtrange nodbias sidhorflag .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.

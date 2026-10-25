@@ -561,19 +561,9 @@ static int swe_houses_ex2_r_body(swe_ctx *ctx, double tjd_ut,
     double hd = fmax(tp + swe_deltat_ex_r(ctx, tp, iflag, NULL) - tjde,
                      tjde - (tm + swe_deltat_ex_r(ctx, tm, iflag, NULL)));
     hr.side = swi_frame_step_side(ctx, tjde, hd, 0, SWI_FRAME_PREC | SWI_FRAME_EPS);
-    /* Upstream bug 203: the sidereal houses' ayanamsa (sidereal_houses_trad())
-     * takes its nutation with the caller's flags, so with SEFLG_JPLHOR_APPROX
-     * under SEMOD_JPLHORA_3 (and SEFLG_JPLHOR fallen to it) it steps at 1962
-     * Jan 20, 7.17e-2" in dpsi (UPSTREAM-BUGS 153), and its difference
-     * reached across: on de200 every sidereal cusp and ascmc speed 6.38e-4
-     * deg/day off its cusps' rate within 1/64 day of the step (Lahiri, True
-     * Citra, the ecliptic of date). Now that step chooses the side too. The
-     * house frames and the auxiliary frames of the ecliptic of t0 and the
-     * solar system plane take no flags, and with SEFLG_NONUT the ayanamsa
-     * no nutation: no step there. */
-    if (hr.side == 0 && (iflag & SEFLG_SIDEREAL) && !(iflag & SEFLG_NONUT)
-        && !(sip->sid_mode & (SE_SIDBIT_ECL_T0 | SE_SIDBIT_SSY_PLANE)))
-      hr.side = swi_frame_step_side(ctx, tjde, hd, iflag, SWI_FRAME_NUT);
+    /* No test of the nutation's model: the house frames take no flags, and
+     * since bug 223 neither does the sidereal houses' ayanamsa, whose
+     * SEFLG_JPLHOR_APPROX step at 1962 Jan 20 bug 203 tested for here. */
     if (hr.side != 0) {
       tm = tjd_ut + hr.side * HOUSE_SPEED_DT;
       tp = tjd_ut + 2 * hr.side * HOUSE_SPEED_DT;
@@ -1252,7 +1242,9 @@ int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
      * Porphyry) is dropped for a one-sided three-point difference on the
      * other. The step is ARMC's; per day at ARMCS, as above. */
     static const double koff[4] = {-2, -1, 1, 2};
-    /* Makransky's cusps are rough at 2e-10 deg; four times the step */
+    /* Makransky's cusps keep 4e-13 deg of rounding (and lost digits near
+     * w = 90, 270 deg before bug 224): four times the step, 4.4e-9
+     * deg/day at worst over 60S-58N, where 2^-8 leaves 1.7e-8 */
     double d = hsys == 'i' ? 4 * HOUSE_SPEED_DARMC : HOUSE_SPEED_DARMC;
     struct houses hk[4];
     int k, rk[4];
@@ -3810,7 +3802,22 @@ static int sunshine_solution_makransky(double ramc, double lat, double ecl, stru
 	  cu = 270;
       } else {
 	// r is between 0 and 90
+#ifndef SWE_UPSTREAM_COMPAT
+	/* Upstream bug 224: cos m tan w, as w nears 90 or 270 deg, took
+	 * cos m of an m rounded near 90 deg times tan w near its pole: the
+	 * cusp lost digits as 1 / |w - 270|, against a long double
+	 * reference 1.6e-12 deg / |w - 270| (cusp 9 at 47N: 1.6e-7 deg at
+	 * 1e-5 deg from it, 0.72 within 1e-11), and the ARMC difference of
+	 * the speeds (bug 41) took that: cusp 9 at TT 2437683.0, Zurich,
+	 * 1.6e-7 deg/day off its cusps' rate with w 0.019 deg from 270,
+	 * 4.9e-4 nearer. cos m = |cos w| / hypot(cos w, tan pole), so the
+	 * product is |sin w| / hypot(cos w, tan pole), with no
+	 * cancellation: within 3.8e-13 deg of the reference at 60S-58N,
+	 * 1e-13 near w = 270. */
+        r = atand(fabs(sind(w)) / (hypot(cosd(w), tand(pole)) * fabs(cosd(z))));
+#else
         r = atand(fabs(cosd(m) * tand(w) / cosd(z)));
+#endif
 	if (w < 90)
 	  cu = r;
 	else if (w > 90 && w < 180)

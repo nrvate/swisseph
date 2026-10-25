@@ -244,6 +244,8 @@ worst were in code that had never executed even once.
 | 209 | The long-term sidereal time integrates past its table's 400 centuries in 10-century panels on every call, out to any date: `swe_sidtime()` 1.1 s at J 1e10 and some 140 s at 1e12, and the houses, `swe_azalt()`, `swe_azalt_rev()` and `swe_gauquelin_sector()` with it; past 7.8e14 the panel count's cast overflows, at -1e300 and -inf (TT NaN) `(int) floor(NaN)` indexes the table: SIGSEGV; and the houses take any date, ERR "within polar circle" with their cusps filled at 1e20, NaN from 1e84 | Correctness (behaviour) | `swephlib.c`, `swehouse.c`, `sweph.h` |
 | 214 | `swe_sidtime()`, `swe_sidtime0()`, `swe_azalt()` and `swe_azalt_rev()` answer any date with no error to return: NaN at 1e84, -+1e300, -+inf and NaN, a number past 1e12; and the azimuth's ecliptic forms do not read SE_ECL_NUT's return, so from UT 8.13e11, where it refuses at TT past 1e12, they turn by 0 | Correctness (behaviour) | `swephlib.c`, `swecl.c`, `swehouse.c` |
 | 221 | `swe_nod_aps()` changes the centre of its J2000 points by adding and taking away the barycentric Sun and Earth in the ephemeris's frame, ICRS for DE 403 and later: every point off by the frame bias times the vectors that do not cancel, a planet's geocentric points 3.5e-8 AU off its heliocentric ones less the Earth at J2000 (9.6e-8 AU over -3000..3000, 2.6e-6 deg on Mercury's apparent perihelion), the Moon's heliocentric and barycentric points 9.6e-8 AU (1.9e-6 deg), the barycentric points 9.7e-10 AU; the files, Moshier and DE4xx, not with SEFLG_ICRS or on de200 | Correctness (behaviour) | `swecl.c` |
+| 223 | `swe_get_ayanamsa_ex()` and its `_ut` form add the nutation of the caller's JPL Horizons flags, which `plaus_iflag()` drops from every sidereal place and the ayanamsa's precession never takes, and the traditional sidereal houses subtract it: at 1950, Lahiri, the ayanamsa and every sidereal cusp 1.72e-5 deg off with SEFLG_JPLHOR_APPROX (1.99e-5 before the 1962 step), on de200, the Swiss files and Moshier alike, while sidereal Mars does not move; `swe_gauquelin_sector()`'s frame takes the flags where the body's place does not, 1.9e-6 sector | Correctness (behaviour) | `sweph.c`, `swehouse.c`, `swecl.c` |
+| 224 | Makransky's Sunshine cusps lose digits as their right ascension w nears 90 or 270 deg, cos m tan w with m rounded near 90: 1.6e-12 deg / \|w - 270\|, 0.72 deg within 1e-11 deg of it, and the ARMC difference of their speeds takes that: cusp 9 at TT 2437683.0, Zurich, 1.6e-7 deg/day off its cusps' rate, 4.9e-4 nearer | Correctness | `swehouse.c` |
 
 ---
 
@@ -9964,6 +9966,13 @@ houses' own nutation of no flags builds just before (entry 134's unkeyed
 nodes); after the fix it passes all 48. No G24 case: the fix is in both
 builds.
 
+Since entry 223 the shipped build's `swe_get_ayanamsa_ex()`, and so the
+sidereal houses, takes no Horizons flag at all, and the Gauquelin
+sectors' methods 0 and 1 take the Horizons bits their body's call
+returned, SEFLG_JPLHOR_APPROX among them; the `swi_jplhor_plaus()` calls
+of this fix in those two functions are the compat build's alone. G134
+passes in both.
+
 ## 143. A thread or context that adopts another thread's `swe_set_jpl_file()` never loads the IERS corrections, so its SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX where the setter's does not (this fork's)
 
 **Severity: Correctness (behaviour: a setting without effect on every context but the setter's; dpsi, the ayanamsa and every place of date under SEFLG_JPLHOR 4.2e-2" off the setter's on G134's fixtures)**
@@ -13554,21 +13563,28 @@ largest: 5.98e-10 deg/day shipped (6.38e-4 before the fix), 5.40e-5
 compat.
 
 Noticed, not fixed:
-- BEHAVIOUR. `swe_get_ayanamsa_ex()`, and with it the sidereal houses,
-  takes SEFLG_JPLHOR_APPROX's nutation from the caller's flags, where
-  `plaus_iflag()` drops the Horizons flags from every sidereal place (and
-  from any request without SEFLG_JPLEPH): before 1962 Jan 20 the ayanamsa
-  with the flag is 1.72e-5 deg off the one without (Lahiri at 1950, on
-  de200, the Swiss files and Moshier alike), the sidereal houses' cusps
-  -1.72e-5, while sidereal Mars is the same with the flag as without.
-- RESIDUAL. Makransky's Sunshine ('i') cusp 9 speed at TT 2437683.0 at
-  Zurich is 1.6e-7 deg/day off five-point differences of its cusps,
-  steady over 2^-10 to 2^-14 day (-1.61e-7, -1.64e-7, -1.81e-7), with
-  the flag or without, tropical or sidereal, on de200 (4.2e-7 on
-  Moshier); its partials in the declination and the obliquity converge
-  to 1e-9, which leaves the ARMC's difference over entry 41's 4 x 2^-8
-  deg of cusps rough at 2e-10 deg (not measured further). Left out of
-  G156.
+- BEHAVIOUR (entry 223). `swe_get_ayanamsa_ex()`, and with it the
+  sidereal houses, takes SEFLG_JPLHOR_APPROX's nutation from the
+  caller's flags, where `plaus_iflag()` drops the Horizons flags from
+  every sidereal place (and from any request without SEFLG_JPLEPH):
+  before 1962 Jan 20 the ayanamsa with the flag is 1.72e-5 deg off the
+  one without (Lahiri at 1950, on de200, the Swiss files and Moshier
+  alike), the sidereal houses' cusps -1.72e-5, while sidereal Mars is
+  the same with the flag as without.
+- RESIDUAL (entry 224). Makransky's Sunshine ('i') cusp 9 speed at TT
+  2437683.0 at Zurich is 1.6e-7 deg/day off five-point differences of
+  its cusps, steady over 2^-10 to 2^-14 day (-1.61e-7, -1.64e-7,
+  -1.81e-7), with the flag or without, tropical or sidereal, on de200
+  (4.2e-7 on Moshier); its partials in the declination and the obliquity
+  converge to 1e-9, which leaves the ARMC's difference over entry 41's 4
+  x 2^-8 deg of cusps rough at 2e-10 deg (not measured further). Left
+  out of G156.
+
+Since entry 223 the ayanamsa takes no Horizons flag, so neither does any
+house and the nutation's step is out of the houses' reach: the side test
+above is removed, the houses' test of the precession's and obliquity's
+models alone as before, and G156 (b) asserts every house the same with
+the flag as without. Makransky joined G156 with entry 224.
 
 ## 197. A save-area answer skips entry 120's strict test: after `swe_set_ephe_fallback(0)` the same request in the same context answers from the Moon of Moshier, where a fresh strict context refuses it
 
@@ -15192,6 +15208,233 @@ G24 `nodaps_frame_off`: Mars's osculating geocentric points at J2000
 less its heliocentric ones and the Earth's heliocentric place, geometric
 ecliptic of date on the files: 5.0e-16 AU shipped (3.52e-8 before the
 fix), 3.52e-8 compat.
+
+## 223. `swe_get_ayanamsa_ex()` and its `_ut` form, and so the sidereal houses, take the nutation of the JPL Horizons flags that `plaus_iflag()` drops from every sidereal place, and the Gauquelin sectors' frame takes them where the body's place does not: at 1950, Lahiri, the ayanamsa and the sidereal cusps 1.72e-5 deg off with SEFLG_JPLHOR_APPROX, sidereal Mars not at all
+
+**Severity: Correctness (behaviour: a flag applied to one part of a result and not the other; within one sidereal chart with the same flags the cusps 1.72e-5 to 1.99e-5 deg from the planets before 1962 Jan 20, with SEFLG_JPLHOR_APPROX or SEFLG_JPLHOR fallen to it, on de200, the Swiss files and Moshier alike; the Gauquelin sectors of places no flag reaches 1.9e-6 sector)**
+**Where:** `sweph.c`: `swe_get_ayanamsa_ex_r_body()`; `swehouse.c`: `swe_houses_ex2_r_body()`; `swecl.c`: `swe_gauquelin_sector_r_body()`
+
+Entry 203's noticed item. What the flags are for, by the manual and the
+code:
+- swephprg 5.9: SEFLG_JPLHOR reproduces the apparent places of JPL
+  Horizons (IAU 1976 precession, IAU 1980 nutation with the daily IERS
+  corrections), SEFLG_JPLHOR_APPROX approximates them; "the Horizons mode
+  works only with planets and fixed stars. With lunar nodes and apsides, we
+  use our standard methods", and (the 2.07 notes) "this applies to JPL
+  Horizons mode only (SEFLG_JPLHOR and SEFLG_JPLHOR_APPROX together with an
+  original JPL ephemeris file)". Horizons has no sidereal zodiac.
+- `plaus_iflag()` drops both for SEFLG_SIDEREAL ("if sidereal bit is set,
+  set also no_nutation bit / also turn JPL Horizons mode off"), for every
+  ephemeris but SEFLG_JPLEPH, and for the nodes, apsides and fictitious
+  bodies; the sidereal places, stars and `swe_nod_aps()` take none.
+- The ayanamsa's precession (`get_ayanamsa()`) keeps the ephemeris bits
+  alone and precesses with no flags; 12.2 documents `swe_get_ayanamsa_ex()`'s
+  iflag as the ephemeris, SEFLG_NONUT and, for the true ayanamshas,
+  SEFLG_TRUEPOS, SEFLG_NOABERR and SEFLG_NOGDEFL, and "pos_sid = pos_trop -
+  ayanamsha".
+- The house frames take no flags (entries 142, 203); `swe_house_pos()`
+  takes none (its ARMC, obliquity and place are the caller's).
+
+So upstream meant the flags for the apparent tropical place of a planet or
+a star from a JPL file. But `swe_get_ayanamsa_ex()` added `swi_nutation()`
+of the caller's flags to the ayanamsa (since entry 142 through
+`swi_jplhor_plaus()`, so SEFLG_JPLHOR without the corrections as
+SEFLG_JPLHOR_APPROX), on every ephemeris, and the traditional sidereal
+houses subtract it; `swe_gauquelin_sector()`'s methods 0 and 1 took the
+house frame's obliquity and nutation with the flags as given. Measured,
+Lahiri, with SEFLG_JPLHOR_APPROX against the same call without it (and
+SEFLG_JPLHOR the same, fallen to it):
+- `swe_get_ayanamsa_ex()` and `_ut()`: 1.75e-5 deg at 1800, 1.72e-5 at
+  1950, 1.99e-5 just before 1962 Jan 20, none after it (`SEMOD_JPLHORA_3`'s
+  nutation is the chosen model's there, entry 153), on de200, the Swiss
+  files and Moshier alike, True Citra the same; with SEFLG_NONUT none;
+- the sidereal houses of the traditional method, every cusp and ascmc,
+  -1.72e-5 at 1950; the ecliptic of t0's and the solar system plane's
+  (auxiliary frames of no flags) none;
+- sidereal Mars, the Sun, the Moon, the nodes, Spica, `swe_nod_aps()` of
+  Mars: none;
+- "tropical less the ayanamsa is sidereal", exact without the flag (0):
+  with it -1.72e-5 for Mars on the Swiss files and Moshier, whose tropical
+  place does not take it either, and on de200 -4.18e-5, of which -2.46e-5
+  is the flag's movement of the tropical place itself;
+- `swe_gauquelin_sector()` method 0 at 1950, Zurich: Mars on the Swiss
+  files and Moshier 1.49e-6 sector (Spica 1.27e-6), the mean and true nodes
+  on de200 1.57e-6, sidereal Mars 1.41e-6, their places not moving.
+
+The rule taken: the Horizons flags reach no sidereal output, and a frame a
+place is set in takes them as that place's own call does. Two readings
+would put one chart's planets and cusps in one frame with the same flags:
+(1) no sidereal output takes the flags -- the ayanamsa drops them as its
+precession, the sidereal places, the stars and `swe_nod_aps()` already
+do; (2) everything they can reach takes them, the sidereal places too.
+(1) is upstream's own (`plaus_iflag()`, the manual), changes no sidereal
+place, and keeps the true ayanamshas' stars where they fix the zodiac
+(True Citra's ayanamsa is Spica's place without the flag, so under (2) a
+flagged sidereal Spica would sit off 180 deg by the flag's own movement
+of the star);
+under (2) the sidereal cusps, of house frames that take no flags, would
+still be off the planets. Under (1), "tropical less
+`swe_get_ayanamsa_ex()` is sidereal" holds with the flags as without
+wherever the tropical place is the one the sidereal place is made from:
+every place on the Swiss files and Moshier, the nodes, apsides and
+fictitious bodies, the house cusps (0 at the six dates, G164 (b)); on a
+JPL file, where the flag moves the tropical place into Horizons' frame of
+date, the residual is that movement and no more, tropical(F) -
+tropical(0) (1.1e-13 deg beyond it), where before it was 1.72e-5 to
+1.99e-5 beyond it.
+
+**Fix, as done here:**
+- `swe_get_ayanamsa_ex()` (and `_ut` through it) clears SEFLG_JPLHOR and
+  SEFLG_JPLHOR_APPROX before anything: the value is the call's without
+  them, and no "default to SEFLG_JPLHOR_APPROX" warning is written, as
+  none is for a sidereal `swe_calc()`. Entry 142's `swi_jplhor_plaus()`
+  there is in the compat build alone now, where upstream's nutation keeps
+  the flag.
+- The sidereal houses so take none; entry 203's side test, which asked
+  `swi_frame_step_side()` for the nutation's model with the caller's flags,
+  found a step the ayanamsa no longer has and would only have taken a
+  one-sided rate there (the flagged speeds then not the unflagged ones):
+  removed, the house frames' test of the precession's and obliquity's
+  models alone as before entry 203.
+- `swe_gauquelin_sector()` methods 0 and 1 compute the body first and take
+  the frame's obliquity and nutation with the Horizons bits its call
+  returned: entry 142's SEFLG_JPLHOR_APPROX for SEFLG_JPLHOR without the
+  corrections, none where the place takes none. The compat build keeps
+  upstream's order and entry 142's flags.
+- All three behind `#ifndef SWE_UPSTREAM_COMPAT`.
+- After: every sidereal output above with either flag bit for bit the call
+  without it, and the sectors of places no flag reaches; the sectors of
+  places the flag reaches (de200's planets and stars) as before, now
+  checked against `swe_house_pos()` in their own call's frame (0).
+- Elsewhere bit for bit, against the tip, on 254826 outputs: the ayanamsa
+  and its `_ut` form with and without SEFLG_NONUT, sidereal `swe_calc()`
+  of the Sun, Moon, Mars, both nodes and the osculating apogee with speed,
+  sidereal Spica, sidereal `swe_nod_aps()` of Mars, `swe_houses_ex2()` of 26
+  systems with speeds, tropical and sidereal, with and without SEFLG_NONUT,
+  at 47N, 34S, 60N and 0.5N, and `swe_gauquelin_sector()` methods 0 and 1
+  of the Moon, Mars, both nodes and Chiron, tropical and sidereal, and of
+  Aldebaran; six sidereal settings (Lahiri, True Citra, Fagan/Bradley,
+  Lahiri on the ecliptic of t0, of date and the solar system plane),
+  de200, the Swiss files and Moshier, without a Horizons flag and with
+  each, nine dates 1800..2100
+  (three about the 1962 step): without a flag nothing differs but
+  Makransky's houses (entry 224); with one, only what is named above, and
+  the tropical places and sectors on de200 are as before. 28800 sectors of
+  methods 0 and 1 without a flag, 400 dates 1800..2100, the interpolated
+  nutation on and off: bit for bit.
+- Cost: no hot path (one mask in `swe_get_ayanamsa_ex()`; the houses lose
+  a test; the sectors reorder their calls).
+
+G164 `tests/sidhorflag.c`: (a) on de200, the Swiss files and Moshier, with
+SEFLG_JPLHOR_APPROX and with SEFLG_JPLHOR, at 1800, 1950, the 1962 step
+-+ 2^-8 day, 2000 and 2100: the ayanamsa and its `_ut` form with and
+without SEFLG_NONUT (Lahiri, True Citra), sidereal places and Spica (four
+settings), sidereal `swe_nod_aps()`, the sidereal houses of five systems
+with speeds in every method, and the sectors of places no flag reaches,
+each the same with the flag as without, values and returns bit for bit,
+234 checks; (b) tropical less the ayanamsa is sidereal with the flags,
+within 1e-10 deg, for the mean node, Mars (on de200 less the tropical
+place's own movement) and the Placidus cusps, 18 checks; (c) the sector
+`swe_house_pos()` of the place in the frame of its own call's Horizons
+bits, within 1e-11 sector, Mars, the Moon, Spica and the mean node on the
+three ephemerides without a flag and with each, 36 checks. 288 checks;
+before the fix 150 fail (120, 12, 18), after (b) within 1.1e-13 deg and
+(c) 0. The upstream build fails 170: those but 6 of Makransky's house
+rows, whose ayanamsa there takes the nutation the Sun's call left at the
+instant, unkeyed (entry 134), and 26 more: its sidereal Spica's returns,
+which carry the caller's Horizons bits, and `swe_nod_aps()` of Mars on the
+Swiss files at one date, 4.1e-8 deg. G156 (b) now takes the traditional
+method's houses too (Lahiri, True Citra, the ecliptic of date): 66 of its
+154 checks fail before the fix, 54 upstream. G24 `sid_jplhor_off`: Lahiri
+at 1950 on the Swiss files, the largest change with SEFLG_JPLHOR_APPROX of
+the ayanamsa, the sidereal Placidus Ascendant and (as deg) Mars's sector:
+0 shipped, 1.72e-5 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_gauquelin_sector()` methods 0 and 1 with SEFLG_SIDEREAL
+  set the sidereal place in the tropical house frame: Mars at 1950 on the
+  Swiss files, Lahiri, 2.62 sectors off the call without it (its
+  ayanamsa's 23 deg). The manual gives iflag as the ephemeris and
+  SEFLG_TOPOCTR.
+
+## 224. Makransky's Sunshine cusps lose digits as their right ascension w nears 90 or 270 deg, 1.6e-12 deg / |w - 270| (0.72 deg within 1e-11 deg of it), and their speeds take it through the ARMC difference: cusp 9 at TT 2437683.0, Zurich, 1.6e-7 deg/day off its cusps' rate
+
+**Severity: Correctness (residual above the floor: positions more than 1e-9 deg off within 1.6e-3 deg of w = 90 or 270 deg, 1.6e-4 within 1e-8, 0.72 within 1e-11; speeds 1.6e-7 deg/day with w 0.019 deg away, up to 4.9e-4 nearer; every Makransky (`'i'`) cusp, tropical or sidereal)**
+**Where:** `swehouse.c`: `sunshine_solution_makransky()`
+
+Entry 203's noticed item. Each cusp is projected from w, the right
+ascension of its house circle's point (w = rah -+ q, which moves with the
+ARMC), by m = atan(|tan pole / cos w|), z = m -+ the obliquity and r =
+atan(|cos m tan w / cos z|). As w nears 90 or 270 deg, m nears 90 and is
+rounded there to an ulp of 90 deg, so cos m takes a relative error of
+2.5e-16 / cos m, and tan w, near its pole, multiplies it up: against a long
+double evaluation of the same formulas the cusp is off by 1.6e-12 deg / |w
+- 270| at worst (cusp 9 at 47.37N, obliquity 23.44217, the Sun's
+declination -20.5796: 1.6e-7 deg within 1e-5 deg of it, 1.6e-4 within
+1e-8, 0.72 within 1e-11; 5e-12 at 0.1 deg). The speeds, entry 41's five
+points over 4 x 2^-8 deg of ARMC (four times the other systems' step, for
+this roughness), take the error of the stencil's cusps: at TT 2437683.0
+at Zurich (de200, delta t 2^-11) cusp 9's w is 270.0188 and the stencil
+reaches 269.987: its speed -1.61e-7, -1.64e-7, -1.64e-7, -1.54e-7 and
+-1.81e-7 deg/day off five-point differences of the cusps over 2^-10 ..
+2^-14 day; its rate in ARMC 0.862381117082 for the reference's
+0.862381117539 (2^-2 .. 2^-4 deg of ARMC, and the long double), 4.6e-10
+per deg of ARMC; the partials in the obliquity and the declination
+converge to 1e-9 (entry 203's measurement). Over ARMC 0..360 every 0.37
+deg, 60S..58N, the declination -23.4..23.1: the cusps 4.6e-10 deg off the
+reference, the ARMC speeds 4.9e-4 deg/day (1.1e-7 beyond 0.1 deg of w =
+90 or 270). The same tropical or sidereal, with a Horizons flag or
+without; Treindl's Sunshine (`'I'`), the other systems, and the Asc and MC
+are not affected.
+
+**Fix, as done here:** cos m = |cos w| / hypot(cos w, tan pole), exactly,
+so r is atan(|sin w| / (hypot(cos w, tan pole) |cos z|)), the same angle
+with nothing cancelling (z, m and the branches as before; w = 90 or 270
+exactly keeps its own branch). Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+Entry 41's step for `'i'` stays: the cusps keep 4e-13 deg of rounding, and
+over the scan below 2^-8 deg leaves 1.7e-8 deg/day where 4 x 2^-8 leaves
+4.4e-9.
+- After: the cusps within 3.8e-13 deg of the long double reference over
+  that scan (2.1e6 cusps), 1.0e-13 within 1e-4 deg of w = 270; the ARMC
+  speeds within 4.4e-9 deg/day of its rate. Cusp 9 at TT 2437683.0
+  2.6e-9, -1.4e-9, -1.7e-9, -1.8e-9 and 1.0e-8 deg/day off the time
+  references over 2^-10 .. 2^-14 day (on Moshier -3.6e-10 at 2^-12, 4.7e-8
+  before). Over a day of instants 2^-9 apart from 1962 Jan 18.5, 2000 Jan
+  1.5 and 2023 Feb 24.75, at 47N, 60N, 0.5N, 34S and 55S, de200, against
+  five-point differences over 2^-12 and 2^-13 day Richardson-combined: Makransky 1.6e-8 to 5.4e-8 deg/day, where it
+  was 2.7e-6 at 47N, 8.7e-7 at 60N, 4.4e-7 at 34S and 4.3e-7 at 55S (at
+  0.5N 1.7e-8 either way); Treindl's 2.3e-8 to 6.0e-8 at the same
+  instants, unchanged. That is the references' own floor, every system's:
+  the MC's speed is 1.5e-8 off them at 2^-13 day at one of these instants
+  in every system (the ARMC's rounding), and the fast cusps' truncation
+  (the Asc at 60N, 1579 deg/day, 9e-8 at 2^-13).
+- Makransky's cusps move by 2.3e-13 deg at most, its speeds by 6.8e-9
+  deg/day, on entry 223's sample away from w = 90 and 270; every other
+  output there bit for bit.
+
+G156 `tests/housejplhora.c`: Makransky joins (a)'s systems (at its 105
+instants within 1/64 day 3.7e-8 deg/day, the rest 1.07e-8; before the fix
+the rest 1.64e-7 on de200, 12 of the 352 checks failing), and (c) is new:
+Makransky's cusps by `swe_houses_armc_ex2()` at 47N, 60N and 34S, the Sun's
+declination -20.58 and 23.4, over a turn of ARMC 2^-4 deg apart (2^-7 off
+the grid): the speeds against five-point differences over 2^-4 and 2^-5
+deg Richardson-combined within 1e-8 deg/day, 4.83e-9 (3.56e-6 before the
+fix, 3.8e-5 upstream, its speeds over one second), and each cusp against
+the quartic of its neighbours 2^-8 and 2^-7 deg away within 1e-11 deg,
+2.3e-13 (7.2e-10 before and upstream). 508 checks; before bugs 223 and
+224 80 fail, upstream 408. G24 `makransky_cusp_off`: cusp 9 at 47.37N
+over ARMC 305.76923539598 -+ 2e-9 deg (w = 270) against the quartic of
+its neighbours 2^-7 and 2^-6 deg away: 8.5e-14 deg shipped, 0.195 compat.
+
+Noticed, not fixed:
+- RESIDUAL (1e-10 deg in position, below the floor). The MC (and with it
+  the Asc's argument) is set to 90 or 270 exactly within 1e-10 deg
+  (VERY_SMALL) of an ARMC of 90 or 270 (`CalcH()`, `swi_armc_to_mc()`),
+  a 1e-10 deg step in the cusps there; a speed differenced in ARMC (B F I
+  i L M Q S X Y U) whose stencil lands within it takes 1.0e-6 deg/day
+  (Makransky's Asc at ARMC 270 - 2^-5, a stencil point on 270 exactly).
+  A stencil point within 1e-10 deg of an ARMC of 90 or 270 is a chance of
+  a few in 1e12 per call.
 
 ## How these were found
 

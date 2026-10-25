@@ -4542,6 +4542,83 @@ static double house_jplhora_speed_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 223: the JPL Horizons flags in sidereal output. Lahiri at
+ * 1950 (TT JD 2433282.5) on the Swiss files, which no Horizons flag
+ * reaches: the largest of the ayanamsa's change with SEFLG_JPLHOR_APPROX,
+ * the sidereal Placidus Ascendant's at Zurich, and (as deg, a sector being
+ * 10 deg) the Gauquelin sector's of Mars, method 0, deg. Upstream's
+ * ayanamsa took the flag's nutation and its sector's frame the flag:
+ * 1.72e-5. -1 if a call fails. */
+static double sid_jplhor_off(void)
+{
+  const double t = 2433282.5;
+  double a0, a1, c0[13], c1[13], m0[10], m1[10], g0, g1, geo[3] = { 8.55, 47.37, 400 };
+  double tu, r;
+  int32 f0 = SEFLG_SWIEPH, f1 = SEFLG_SWIEPH | SEFLG_JPLHOR_APPROX;
+  swe_ctx *c = swe_ctx_new();
+  char serr[256];
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+  tu = t - swe_deltat_ex_r(c, t, f0, NULL);
+  if (swe_get_ayanamsa_ex_r(c, t, f0, &a0, serr) < 0
+      || swe_get_ayanamsa_ex_r(c, t, f1, &a1, serr) < 0
+      || swe_houses_ex2_r(c, tu, f0 | SEFLG_SIDEREAL, 47.37, 8.55, 'P', c0, m0, NULL, NULL, serr) < 0
+      || swe_houses_ex2_r(c, tu, f1 | SEFLG_SIDEREAL, 47.37, 8.55, 'P', c1, m1, NULL, NULL, serr) < 0
+      || swe_gauquelin_sector_r(c, tu, SE_MARS, NULL, f0, 0, geo, 0, 0, &g0, serr) < 0
+      || swe_gauquelin_sector_r(c, tu, SE_MARS, NULL, f1, 0, geo, 0, 0, &g1, serr) < 0) {
+    swe_ctx_free(c);
+    return -1;
+  }
+  swe_ctx_free(c);
+  r = fabs(a1 - a0);
+  if (fabs(swe_difdeg2n(m1[0], m0[0])) > r)
+    r = fabs(swe_difdeg2n(m1[0], m0[0]));
+  if (10 * fabs(g1 - g0) > r)
+    r = 10 * fabs(g1 - g0);
+  return r;
+}
+
+/* UPSTREAM-BUGS 224: Makransky's Sunshine cusps as their right ascension w
+ * nears 270 deg. Cusp 9 by swe_houses_armc_ex2() at 47.37N, obliquity
+ * 23.442171340053, the Sun's declination -20.579591278159, over ARMC
+ * 305.76923539598 -+ 2e-9 deg (w = 270 there) 1e-11 apart, against the
+ * quartic of its neighbours 2^-7 and 2^-6 deg away, the largest, deg.
+ * Upstream's cos m tan w lost digits as 1 / |w - 270|: 0.195 deg at the
+ * nearest of these ARMCs, 1.1e-4 at 4e-10 deg from it. -1 if a call
+ * fails. */
+static double makransky_cusp_off(void)
+{
+  const double a0 = 305.76923539598, d = 1.0 / 128, lat = 47.37, eps = 23.442171340053;
+  const double dec = -20.579591278159;
+  double r = 0;
+  swe_ctx *c = swe_ctx_new();
+  int k, j;
+  if (c == NULL)
+    return -1;
+  for (k = -200; k <= 200; k++) {
+    static const double o[5] = { 0, -2, -1, 1, 2 };
+    double a = a0 + k * 1e-11, v[5], e;
+    for (j = 0; j < 5; j++) {
+      double cu[13], am[10];
+      am[9] = dec;
+      if (swe_houses_armc_ex2_r(c, a + o[j] * d, lat, eps, 'i', cu, am, NULL, NULL, NULL) < 0) {
+        swe_ctx_free(c);
+        return -1;
+      }
+      v[j] = cu[9];
+    }
+    for (j = 1; j < 5; j++)
+      v[j] = swe_difdeg2n(v[j], v[0]);
+    e = fabs((4 * (v[2] + v[3]) - (v[1] + v[4])) / 6);
+    if (e > r)
+      r = e;
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 154: the IERS corrections across swe_set_jpl_file() of a
  * file below DE 403. G134's directory A (its corrections, de200.eph linked
  * in): path A, the DE431 fixture, SE_ECL_NUT with SEFLG_JPLHOR at 2000 Jan
@@ -5780,7 +5857,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5955,6 +6032,8 @@ int main(int argc, char **argv)
   eclnonut = ecl_nut_nonut_stale();
   nut80jit = nut80_args_jitter();
   nut00b = nut00b_sofa_off();
+  sidhor = sid_jplhor_off();
+  makrcusp = makransky_cusp_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -7414,6 +7493,22 @@ int main(int argc, char **argv)
   else {
     printf("  sidtime, azalt past 1e12 %.0f/17 answered FAIL: expected %s\n",
            sidtfar, WANT_DEFECT ? "17" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (sidhor > 1e-6) : (sidhor >= 0 && sidhor < 1e-12))
+    printf("  sidereal with JPLHOR_APPROX %.2e deg OK\n", sidhor);
+  else {
+    printf("  sidereal with JPLHOR_APPROX %.2e deg FAIL: expected %s\n",
+           sidhor, WANT_DEFECT ? "> 1e-6" : "< 1e-12");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (makrcusp > 1e-6) : (makrcusp >= 0 && makrcusp < 1e-11))
+    printf("  Makransky cusp at w 270 %.2e deg OK\n", makrcusp);
+  else {
+    printf("  Makransky cusp at w 270 %.2e deg FAIL: expected %s\n",
+           makrcusp, WANT_DEFECT ? "> 1e-6" : "< 1e-11");
     bad++;
   }
 

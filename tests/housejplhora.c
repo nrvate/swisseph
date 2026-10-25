@@ -1,20 +1,28 @@
 /* housejplhora.c -- G156: across SEMOD_JPLHORA_3's step at 1962 Jan 20 the
- * sidereal house speeds are each side's own rate.
+ * sidereal house speeds are each side's own rate; no house takes the
+ * Horizons flags; Makransky's speeds are its cusps' rate.
  *
  * The defect (UPSTREAM-BUGS 203): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), and SEFLG_JPLHOR fallen to it without
  * the IERS corrections, the nutation is IAU 1980 plus a fixed offset up to
  * and including JD 2437684.5 and the chosen model after it, a step of
  * 7.17e-2" in dpsi (UPSTREAM-BUGS 153). swe_houses_ex2()'s house frames
- * take no flags, but the sidereal houses' ayanamsa takes its nutation with
+ * take no flags, but the sidereal houses' ayanamsa took its nutation with
  * the caller's (swe_get_ayanamsa_ex()), and its rate, a difference of the
  * ayanamsa over the house frames 1/64 day either side (UPSTREAM-BUGS 43,
  * 187), reached across the step: on de200 at Zurich every sidereal cusp
  * and ascmc speed 6.38e-4 deg/day off its cusps' rate within 1/64 day of
  * it, in every house system, Lahiri, True Citra and Lahiri on the ecliptic
- * of date alike, on the Swiss files too (the ayanamsa keeps the flag
- * there). The tropical houses, the ecliptic of t0's and the solar system
- * plane's, and SEFLG_NONUT's take no flag, and no step.
+ * of date alike, on the Swiss files too. Bug 203's fix took that side's
+ * rate; since UPSTREAM-BUGS 223 the ayanamsa takes no Horizons flag, and
+ * so neither does any house: the cusps of the traditional method had been
+ * -2.0e-5 deg off with the flag before the step (-1.72e-5 at 1950), none
+ * after it. UPSTREAM-BUGS 224: Makransky's Sunshine ('i')
+ * cusps lost digits as w, the right ascension its cusp is projected from,
+ * neared 90 or 270 deg (cos m tan w with m rounded near 90), 1.1e-4 deg at
+ * 4e-10 deg from it, and the ARMC difference of its speeds took them: cusp
+ * 9 1.6e-7 deg/day off at TT 2437683.0, 1.5 day before the step, 3.6e-6
+ * nearer.
  *
  * Check (a): de200 (and the Swiss files with SEFLG_JPLHOR_APPROX), Zurich,
  * delta t 2^-11 day, the 105 instants about the step (TT; the UT 2^-11 day
@@ -22,28 +30,39 @@
  * and t -+ 2^-k for k = 7..26. Tropical, Lahiri, True Citra and Lahiri on
  * the ecliptic of date, without the flag, with SEFLG_JPLHOR_APPROX and with
  * SEFLG_JPLHOR; Placidus, Koch, Porphyry, Regiomontanus, Campanus, equal,
- * Alcabitius, Morinus, azimuthal and Sunshine (Treindl): the 12 cusps' and
- * 8 ascmc's speeds against five-point differences over 2^-12 day of the
- * same call's cusps on the instant's side, central where the stencil keeps
- * to it, one-sided where it would cross (G139 check (a)'s); the worst
- * within 1/64 day of the step and the rest, each within 1e-7 deg/day. 320
- * checks. (Makransky's Sunshine, 'i', is left out: its cusps are rough at
- * 2e-10 deg, UPSTREAM-BUGS 41, and its speed 1.6e-7 off the reference at
- * one instant, 1.5 day before the step, with the flag or without.)
- * Check (b): the houses that take no flag -- tropical, Lahiri on the
- * ecliptic of t0 and on the solar system plane, Lahiri with SEFLG_NONUT --
- * with SEFLG_JPLHOR_APPROX and with SEFLG_JPLHOR equal the call without,
- * the cusps, ascmc and their speeds bit for bit at the 105 instants, the
- * same ten systems: 80 checks.
+ * Alcabitius, Morinus, azimuthal, Sunshine (Treindl) and Makransky: the 12
+ * cusps' and 8 ascmc's speeds against five-point differences over 2^-12
+ * day of the same call's cusps on the instant's side, central where the
+ * stencil keeps to it, one-sided where it would cross (G139 check (a)'s);
+ * the worst within 1/64 day of the step and the rest, each within 1e-7
+ * deg/day. 352 checks.
+ * Check (b): every house -- tropical, Lahiri on the ecliptic of t0 and on
+ * the solar system plane, Lahiri with SEFLG_NONUT, and the traditional
+ * method's Lahiri, True Citra and Lahiri on the ecliptic of date -- with
+ * SEFLG_JPLHOR_APPROX and with SEFLG_JPLHOR equal the call without, the
+ * cusps, ascmc and their speeds bit for bit at the 105 instants, the same
+ * eleven systems: 154 checks.
+ * Check (c): Makransky's cusps by swe_houses_armc_ex2() at 47N, 60N and
+ * 34S, the Sun's declination -20.58 and 23.4 deg, over a turn of ARMC 2^-4
+ * deg apart: the speeds (at ARMCS) against five-point differences of the
+ * cusps over 2^-4 and 2^-5 deg of ARMC, Richardson-combined, within 1e-8
+ * deg/day, and each cusp against the quartic of its neighbours 2^-8 and
+ * 2^-7 deg away within 1e-11 deg. 2 checks.
  *
  * Measured: (a) within 1/64 day 5.06e-8 deg/day at worst (azimuthal; the
  * one-sided reference's noise, 5.03e-8 without the flag, 3.6e-8 for the
- * other systems), the rest 1.24e-8; before the fix 90 of the 400 fail, all
- * within 1/64 day, 6.38e-4 on every sidereal row with a flag, the rest as
- * now; (b) holds before and after. The upstream build fails 320 of 400,
- * all of (a) (its speeds at ARMCS, UPSTREAM-BUGS 42: equal houses 5.4e-5 to
- * 6.6e-5 deg/day, Koch 199, Porphyry 395; the sidereal ones without the
- * ayanamsa's rate, bug 43); its (b) holds. Run as
+ * other systems), the rest 1.24e-8 (Makransky 3.7e-8 and 1.07e-8); (b)
+ * all equal; (c) 4.83e-9 deg/day and 2.3e-13 deg. Before bug 203's fix 90
+ * of (a)'s first 320 failed, all within 1/64 day (6.38e-4); before bugs
+ * 223 and 224 80 of the 508 fail: 12 of (a), Makransky's rest on de200
+ * (1.64e-7), 66 of (b), the traditional method's with either flag (73 of
+ * the 105 instants), and (c) (3.56e-6 deg/day, 7.2e-10 deg). The upstream
+ * build fails 408 of 508: all of (a) (its speeds at ARMCS, UPSTREAM-BUGS
+ * 42: equal houses 5.4e-5 to 6.6e-5 deg/day, Koch 199, Porphyry 395; the
+ * sidereal ones without the ayanamsa's rate, bug 43), 54 of (b) (the
+ * traditional method's but Sunshine's, whose ayanamsa there takes the
+ * nutation the Sun's call left at the instant, unkeyed, bug 134), and (c)
+ * (its ARMC speeds over one second, 3.8e-5). Run as
  *   housejplhora EPHEDIR
  */
 #include <math.h>
@@ -99,7 +118,7 @@ static const struct {
 } SH[] = {
   { 'P', "Placidus" }, { 'K', "Koch" }, { 'O', "Porphyry" }, { 'R', "Regiomontanus" },
   { 'C', "Campanus" }, { 'E', "equal" }, { 'B', "Alcabitius" }, { 'M', "Morinus" },
-  { 'H', "azimuthal" }, { 'I', "Sunshine" },
+  { 'H', "azimuthal" }, { 'I', "Sunshine" }, { 'i', "Makransky" },
 };
 #define NSH ((int) (sizeof SH / sizeof SH[0]))
 
@@ -212,6 +231,10 @@ static int check_b(const char *ephe)
     { SE_SIDM_LAHIRI | SE_SIDBIT_ECL_T0, SEFLG_SIDEREAL, "Lahiri, ecl. of t0" },
     { SE_SIDM_LAHIRI | SE_SIDBIT_SSY_PLANE, SEFLG_SIDEREAL, "Lahiri, ssy plane" },
     { SE_SIDM_LAHIRI, SEFLG_SIDEREAL | SEFLG_NONUT, "Lahiri, NONUT" },
+    /* the traditional method's, since UPSTREAM-BUGS 223 */
+    { SE_SIDM_LAHIRI, SEFLG_SIDEREAL, "Lahiri" },
+    { SE_SIDM_TRUE_CITRA, SEFLG_SIDEREAL, "True Citra" },
+    { SE_SIDM_LAHIRI | SE_SIDBIT_ECL_DATE, SEFLG_SIDEREAL, "Lahiri, ecl. of date" },
   };
   static const int32 XF[2] = { SEFLG_JPLHOR_APPROX, SEFLG_JPLHOR };
   double tq[105];
@@ -250,8 +273,79 @@ static int check_b(const char *ephe)
       }
     swe_ctx_free(c);
   }
-  printf("  (b) tropical, ecl. of t0, ssy plane, NONUT: with the flag as without, %d instants"
+  printf("  (b) every house, tropical and sidereal: with the flag as without, %d instants"
          " differ\n", nd);
+  return 0;
+}
+
+/* Makransky's cusps at ARMC a, lat, eps 23.44 and the Sun's declination
+ * dec, by swe_houses_armc_ex2() (the speeds at ARMCS when cs is given);
+ * -1 if it answers Porphyry */
+static int makr(swe_ctx *c, double a, double lat, double dec, double *cu, double *cs)
+{
+  double am[10], as[10];
+  am[9] = dec;
+  return swe_houses_armc_ex2_r(c, swe_degnorm(a), lat, 23.44, 'i', cu, am, cs, as, NULL) < 0
+         ? -1 : 0;
+}
+
+/* Check (c): Makransky's speeds in ARMC, and the cusps they are the rate
+ * of, over a whole turn of ARMC (2^-4 deg apart, 2^-7 off the grid so
+ * that no stencil lands on an ARMC of 90 or 270 deg, where the MC and the
+ * Asc are set within 1e-10 deg) */
+static int check_c(void)
+{
+  static const double LAT[3] = { 47.37, 60, -33.9 }, DEC[2] = { -20.58, 23.4 };
+  /* the reference's stencils in d = 2^-4 deg, the position's in 2^-8 */
+  static const double O[10] = { -2, -1, -0.5, 0.5, 1, 2, -2.0 / 32, -1.0 / 32, 1.0 / 32,
+                                2.0 / 32 };
+  const double ARMCS = 360.9856473350, d = 1.0 / 16;
+  swe_ctx *c = swe_ctx_new();
+  double ws = 0, wp = 0;
+  int l, q, k, i, j, ns = 0;
+  if (c == NULL)
+    return -1;
+  for (l = 0; l < 3; l++)
+    for (q = 0; q < 2; q++)
+      for (k = 0; k < 360 * 16; k++) {
+        double a = k / 16.0 + 1.0 / 128, cu[13], cs[13], v[10][13];
+        int ok = makr(c, a, LAT[l], DEC[q], cu, cs) == 0;
+        for (j = 0; j < 10 && ok; j++)
+          ok = makr(c, a + O[j] * d, LAT[l], DEC[q], v[j], NULL) == 0;
+        if (!ok)
+          continue;
+        for (i = 1; i <= 12; i++) {
+          double x[10], s1, s2, e;
+          for (j = 0; j < 10; j++)
+            x[j] = swe_difdeg2n(v[j][i], cu[i]);
+          if (fabs(x[0]) > 10 || fabs(x[5]) > 10)
+            continue;	/* a cusp across the stencil's ends jumps */
+          /* five points over d and d/2, Richardson-combined */
+          s1 = (8 * (x[4] - x[1]) - (x[5] - x[0])) / (12 * d);
+          s2 = (8 * (x[3] - x[2]) - (x[4] - x[1])) / (6 * d);
+          e = fabs(cs[i] - (16 * s2 - s1) / 15 * ARMCS);
+          if (e > ws)
+            ws = e;
+          /* the cusp against the quartic of its neighbours 2^-8 and 2^-7
+           * deg away */
+          e = fabs((4 * (x[7] + x[8]) - (x[6] + x[9])) / 6);
+          if (e > wp)
+            wp = e;
+          ns++;
+        }
+      }
+  swe_ctx_free(c);
+  n += 2;
+  if (!(ws <= 1e-8)) {
+    bad++;
+    printf("    FAIL Makransky's speeds in ARMC: %.2e deg/day > 1e-8\n", ws);
+  }
+  if (!(wp <= 1e-11)) {
+    bad++;
+    printf("    FAIL Makransky's cusps against their neighbours: %.2e deg > 1e-11\n", wp);
+  }
+  printf("  (c) Makransky, %d cusps at 47N, 60N and 34S: speeds in ARMC within %.2e deg/day,"
+         " cusps %.2e deg\n", ns, ws, wp);
   return 0;
 }
 
@@ -262,10 +356,13 @@ int main(int argc, char **argv)
     fprintf(stderr, "usage: housejplhora EPHEDIR\n");
     return 2;
   }
-  printf("G156: the sidereal house speeds across SEMOD_JPLHORA_3's 1962 step are each side's rate\n");
+  printf("G156: the sidereal house speeds across SEMOD_JPLHORA_3's 1962 step are each side's rate;"
+         " no house takes the Horizons flags; Makransky's speeds are its cusps' rate\n");
   r = check_a(argv[1]);
   if (r == 0)
     r = check_b(argv[1]);
+  if (r == 0)
+    r = check_c();
   if (r < 0) {
     printf("G156 FAIL: ERROR\n");
     return 1;

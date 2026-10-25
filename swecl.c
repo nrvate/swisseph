@@ -7878,19 +7878,45 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
    */
   if (imeth == 0 || imeth == 1) {
     int32 iflag_nut;
+#ifndef SWE_UPSTREAM_COMPAT
+    int32 retflag;
+#endif
     t_et = t_ut + swe_deltat_ex_r(ctx, t_ut, iflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 223: the house frame's obliquity and nutation took the
+     * JPL Horizons flags as given, where the body's own call drops them
+     * (plaus_iflag(): every request on the Swiss files or Moshier, every
+     * sidereal one, the nodes, apsides and fictitious bodies): at 1950,
+     * Zurich, with SEFLG_JPLHOR_APPROX, method 0 moved Mars on the Swiss
+     * files by 1.49e-6 sector, the mean node on de200 by 1.57e-6 and
+     * sidereal Mars by 1.41e-6, their places not at all. The body comes
+     * first now, and the frame takes the Horizons bits its call answered
+     * with: bug 142's SEFLG_JPLHOR_APPROX for SEFLG_JPLHOR without the
+     * IERS corrections, and none where the place takes none. */
+    if (do_fixstar)
+      retflag = swe_fixstar_r(ctx, starname, t_et, iflag, x0, serr);
+    else
+      retflag = swe_calc_r(ctx, t_et, ipl, iflag, x0, serr);
+    if (retflag == ERR)
+      return ERR;
+    iflag_nut = (iflag & ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
+                | (retflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX));
+#else
     /* Upstream bug 142: the obliquity and the nutation took SEFLG_JPLHOR
      * without the IERS corrections, which the body's swe_calc() turns into
      * SEFLG_JPLHOR_APPROX, and the nutation read their table, NULL: on
      * de200 methods 0 and 1 with SEFLG_JPLEPH | SEFLG_JPLHOR crashed
      * (SIGSEGV at J2000), for a planet or a star. They take the flag as
-     * that swe_calc() does now. Both builds. */
+     * that swe_calc() does now. In this build; the shipped one takes the
+     * Horizons bits the body's call returned (bug 223), which have it so. */
     iflag_nut = swi_jplhor_plaus(ctx, iflag);
+#endif
     eps = swi_epsiln(ctx, t_et, iflag_nut) * RADTODEG;
     swi_nutation(ctx, t_et, iflag_nut, nutlo);
     nutlo[0] *= RADTODEG;
     nutlo[1] *= RADTODEG;
     armc = swe_degnorm(swe_sidtime0_r(ctx, t_ut, eps + nutlo[1], nutlo[0]) * 15 + geopos[0]);
+#ifdef SWE_UPSTREAM_COMPAT
     if (do_fixstar) {
       if (swe_fixstar_r(ctx, starname, t_et, iflag, x0, serr) == ERR)
 	return ERR;
@@ -7898,6 +7924,7 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
       if (swe_calc_r(ctx, t_et, ipl, iflag, x0, serr) == ERR)
 	return ERR;
     }
+#endif
     if (imeth == 1) 
       x0[1] = 0;
     *dgsect = swe_house_pos_r(ctx, armc, geopos[1], eps + nutlo[1], 'G', x0, NULL);

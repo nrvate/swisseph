@@ -1579,6 +1579,16 @@ struct epsilon {
  *     its J2000 points: Mars's geocentric points 3.5e-8 AU off its
  *     heliocentric ones less the Earth at J2000, the planets' 9.6e-8 AU
  *     over -3000..3000 (UPSTREAM-BUGS 221, G163, G24)
+ *   - swe_get_ayanamsa_ex() and its _ut form adding the nutation of the
+ *     caller's JPL Horizons flags, which plaus_iflag() drops from every
+ *     sidereal place, and the traditional sidereal houses with it; and
+ *     swe_gauquelin_sector()'s frame taking the flags where the body's
+ *     place does not: Lahiri at 1950 on the Swiss files with
+ *     SEFLG_JPLHOR_APPROX 1.72e-5 deg (UPSTREAM-BUGS 223, G164, G24)
+ *   - Makransky's Sunshine cusps as cos m tan w with m rounded near 90
+ *     deg, losing digits as w nears 90 or 270: 0.195 deg on cusp 9 at
+ *     47.37N within 2e-9 deg of ARMC of w = 270 (UPSTREAM-BUGS 224, G156,
+ *     G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
