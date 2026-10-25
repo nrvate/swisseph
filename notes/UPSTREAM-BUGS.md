@@ -97,6 +97,7 @@ worst were in code that had never executed even once.
 | 68 | Three house residues: Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps 13..36 after the Porphyry fallback, ARMC's rate for a Placidus cusp on an equinox point | Correctness | `swehouse.c` |
 | 64 | The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms | Correctness | `swecl.c` |
 | 67 | The star functions return the caller's flags, and an emptied nutation cache answers for JD 0 | Correctness | `sweph.c`, `sweconfig.c` |
+| 52 | The aberration rate term is first order in v/c | Correctness | `sweph.c` |
 
 ---
 
@@ -3075,6 +3076,66 @@ the JPL row proven to have fallen back; the ayanamsa at tjd 0 against 1e-9
 deg shipped, 4.2e-4 compat. G1: none of its 90 star rows moves (all
 rf=258 both ways: flags used equal flags asked); the golden transcript is
 byte-identical before and after. G49, G57, G60 unchanged.
+
+## 52. The aberration rate term is first order in v/c
+
+**Severity: Correctness (2.8-3.2e-8 deg/day on every topocentric longitude speed, up to 2e-8 on latitude speeds; +4-5e-9 deg/day on every geocentric one)**
+**Where:** `sweph.c`: `add_aberr_rate()`, `observer_accel()`; through them `app_pos_etc_plan()`, `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`, `app_pos_etc_moon()`, `app_pos_etc_sun()`, and `swe_nod_aps_r()` by `swi_aberr_rate()`
+
+The aberrated place A(u, v), v = V/c, moves with the observer's velocity,
+and the rate term (entry 34) is its derivative along dv/dt = a / c. It was
+taken as tau a less its part along the line of sight: the first order in
+v/c. And a site's acceleration had its radial part stripped before that,
+on the ground that aberration keeps the distance to first order. The
+derivative has a second-order part, terms in v times dv of relative size
+v/c = 1e-4; a radial dv turns the place by v_perp |dv| / 2. On a site,
+the centripetal acceleration (1.7e-3 AU/day^2 at the equator) against the
+Earth's orbital velocity: 4.5e-5 of the diurnal aberration rate, scaling
+with cos(latitude) and signed by the hour. Topocentric longitude speeds
+with aberration were off their positions' rate by 2.5e-8 deg/day on the
+Sun at the equator, 1.8e-8 at 47N, 1.1e-8 at 70N; 2-3.5e-8 on the planets;
+against 2e-9 with SEFLG_NOABERR. Geocentric, the Earth's own acceleration
+gave +4-5e-9 deg/day on the Sun at every epoch and on every body. A
+decomposition at Jupiter, topocentric: the change of the place with the
+geometric direction (the backward difference in `swi_aberr_light()`)
+agrees with its numerical rate to 5e-11 deg/day; the change with V, taken
+exactly along the true a, to 6e-12; the first-order formula is off by up
+to 2.2e-8, and the stripped a, exactly differentiated, by 1.6e-8. Both
+had to go: replacing only the formula moved the topocentric Sun from
+2.15e-8 to 1.66e-8. Upstream's term is the chord V(t) - V(t - tau), added
+whole, so the second-order part is missing there too (upstream sent
+topocentric speeds through three positions instead).
+
+**Fix, as done here:** `add_aberr_rate()` adds the exact derivative of
+A(u, v) = (b u + f2 |u| v) / (1 + f1) along w = d / |u|, d the observer's
+velocity difference (tau a; |u| / c is the light time), at the geometric
+place u, which is the apparent one aberrated back by -v (exact: A(A(u, v),
+-v) = u and |A| = |u| to rounding). `observer_accel()` returns the whole
+of the site's acceleration. Over 15 bodies, 10 epochs -2900..2900,
+against five-point differences: the topocentric Sun 2.15e-8 to 2.9e-9
+(<= 3e-9 at 0, 47 and 70 deg latitude, the level without aberration),
+Jupiter 2.1e-8 to 8.2e-9 (its ephemeris' own, the same geocentric),
+topocentric latitude speeds 6e-9..1e-8 to 6e-10..3e-9; the geocentric Sun
+5.5e-9 to 1.5e-9. Positions unchanged; the cost is not measurable (a
+topocentric Sun or Jupiter with speed 22.6-23 us/call before and after,
+calc-swieph and calc-moseph within the bench's noise). Left: the Moon's
+part of the Earth's jerk, left out of `earth_at_lt_sun()`'s light-time
+series (entry 34), gives tau j / 2c, a lunar-month wave of 1.2e-8 deg/day
+on Neptune, 4.6e-9 on Saturn, the aberration's part of their geocentric
+speeds.
+
+G51 `tests/aberrspeed.c`: the Sun, Mercury, Venus, Mars, Jupiter and
+Ceres, ten epochs, geocentric of date and J2000 equatorial, topocentric of
+date and J2000 equatorial at 0, 47.37, 70 and -33.9 deg; the residual
+against a five-point difference with aberration less that without, so the
+ephemeris' own speed noise cancels. Angles within 5e-9 deg/day (measured
+<= 3.3e-9), the distance rate within 1e-11 of the distance per day
+(<= 5.4e-12). Before the fix all ten sets failed (1.4-3.2e-8 topocentric,
+6.5-6.8e-9 geocentric); the upstream build fails all 20 (5.3e-7 and
+1.7-2.7e-5 deg/day, 3e-7..1.8e-6 of the distance per day). G24
+`topo_aberr_second_order_off`: the aberration's part of the topocentric
+Sun's longitude speed on the equator in 1990, 5.4e-10 deg/day shipped
+(3.1e-8 before), 3.0e-6 compat.
 
 ## How these were found
 

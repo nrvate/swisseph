@@ -808,6 +808,10 @@ struct epsilon {
  *   - the star functions returned the caller's flags, not the flags used,
  *     and an emptied nutation cache (tnut 0) answered for JD 0 (4.2e-4 deg
  *     in the ayanamsa; UPSTREAM-BUGS 67, G66)
+ *   - add_aberr_rate() took the aberration rate term as tau a less its
+ *     radial part, first order in v/c, a site's acceleration stripped of
+ *     its radial part (3e-8 deg/day on topocentric speeds, +5e-9
+ *     geocentric; UPSTREAM-BUGS 52, G51)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

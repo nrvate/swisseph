@@ -218,11 +218,10 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
 static void add_aberr_rate(double *xx, const double *xobs, const double *xobs2);
 static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xeteval, const double *xe, double *xout);
 static void lt_rate_exact(const double *xx, const double *xo, double *xxsp);
-static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, const double *u,
-                          double *acc, char *serr);
+static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, char *serr);
 static int observer_at_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
                           const double *xobs, const double *xeteval,
-                          const double *xe, const double *xx, double *xobs2, char *serr);
+                          const double *xe, double *xobs2, char *serr);
 #endif
 static double meff(double r);
 static void denormalize_positions(double *x0, double *x1, double *x2);
@@ -3451,7 +3450,7 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
       /* observer position for t(light-time) */
       if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xx, xobs2, serr) != OK)
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xobs2, serr) != OK)
           return ERR;
 #else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
@@ -4356,7 +4355,7 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 #endif
       if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xx, xobs2, serr) != OK)
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xobs2, serr) != OK)
           return ERR;
 #else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
@@ -4734,7 +4733,7 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
 	return retc;
       if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xx, xobs2, serr) != OK)
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xobs2, serr) != OK)
           return ERR;
 #else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
@@ -4925,25 +4924,18 @@ if (1) {
  * acceleration by a central difference of its velocity over +-2^-11 day
  * ((omega h)^2 / 6 = 1.6e-6 of it, a binary step so t +- h is exact; a
  * step of 2^-8 day cost 1e-4, 2e-8 deg/day on topocentric latitude
- * speeds), less its part along the line of sight u:
- * aberration keeps the distance to first order in v/c (|A(u, V)| = |u| +
- * O(v^2)), so only a's transverse part turns the apparent place. */
-static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, const double *u,
-                          double *acc, char *serr)
+ * speeds). It is the whole of a: add_aberr_rate() takes what turns
+ * the apparent place from it (bug 52). */
+static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, char *serr)
 {
   const double h = 1.0 / 2048;
-  double xp[6], xm[6], ru, au = 0;
+  double xp[6], xm[6];
   int i;
   if (swi_get_observer(ctx, tjd + h, iflag | SEFLG_NONUT, NO_SAVE, xp, serr) != OK
       || swi_get_observer(ctx, tjd - h, iflag | SEFLG_NONUT, NO_SAVE, xm, serr) != OK)
     return ERR;
   for (i = 0; i <= 2; i++)
     acc[i] = (xp[i+3] - xm[i+3]) / (2 * h);
-  ru = sqrt(square_sum(u));
-  for (i = 0; i <= 2; i++)
-    au += acc[i] * u[i] / ru;
-  for (i = 0; i <= 2; i++)
-    acc[i] -= au * u[i] / ru;
   return OK;
 }
 
@@ -5036,14 +5028,14 @@ static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xete
  * term xobs - xobs2 uses it: the Earth's state at t, xe, and the site's
  * velocity at teval less tau a(teval). xobs is the barycentric observer at
  * teval, xeteval the Earth there, xsun the barycentric Sun there (or
- * NULL), u the line of sight. Only xobs2's velocity is read. */
+ * NULL). Only xobs2's velocity is read. */
 static int observer_at_lt_sun(swe_ctx *ctx, double teval, double t, int32 iflag,
                               const double *xobs, const double *xeteval, const double *xsun,
-                              const double *xe, const double *u, double *xobs2, char *serr)
+                              const double *xe, double *xobs2, char *serr)
 {
   double acc[3], xel[6];
   int i;
-  if (observer_accel(ctx, teval, iflag, u, acc, serr) != OK)
+  if (observer_accel(ctx, teval, iflag, acc, serr) != OK)
     return ERR;
   earth_at_lt_sun(ctx, teval, t, xeteval, xsun, xe, xel);
   for (i = 0; i <= 2; i++) {
@@ -5053,36 +5045,68 @@ static int observer_at_lt_sun(swe_ctx *ctx, double teval, double t, int32 iflag,
   return OK;
 }
 
-/* the same, xx the barycentric body, the Sun from the save area */
+/* the same, the Sun from the save area */
 static int observer_at_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
                           const double *xobs, const double *xeteval,
-                          const double *xe, const double *xx, double *xobs2, char *serr)
+                          const double *xe, double *xobs2, char *serr)
 {
   struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
-  double u[3];
-  int i;
-  for (i = 0; i <= 2; i++)
-    u[i] = xx[i] - xobs[i];
   return observer_at_lt_sun(ctx, teval, t, iflag, xobs, xeteval,
-                            psdp->teval == teval ? psdp->x : NULL, xe, u, xobs2, serr);
+                            psdp->teval == teval ? psdp->x : NULL, xe, xobs2, serr);
 }
 
 /* The aberration rate term, xobs - xobs2 (the observer's velocity at the
  * instant of observation less that at the instant the light left, ~tau
- * dV/dt), added to the apparent velocity xx[3..5] with its part along the
- * line of sight taken out: aberration keeps the distance to first order,
- * and the radial part moved the distance rate by up to 4e-6 AU/day
- * (Mars; bug 34). */
+ * dV/dt), added to the apparent velocity xx[3..5].
+ * Upstream bug 52: bug 34's fix added this d = tau a less its part along
+ * the line of sight, the first-order derivative of the aberrated place
+ * A(u, v) in v = V/c, with a site's acceleration stripped of its radial
+ * part beforehand. The aberrated place moves with v at second order too,
+ * by terms in v times dv of relative size v/c = 1e-4, and a radial dv
+ * turns it by v_perp |dv| / 2: a site's centripetal 1.7e-3 AU/day^2
+ * against the Earth's orbital v, 4.5e-5 of the diurnal aberration rate,
+ * 1.1-3.5e-8 deg/day on every topocentric longitude speed (the Sun's
+ * 2.5e-8 on the equator, 1.8e-8 at 47N, signed by the hour), against
+ * 2e-9 without aberration; geocentric, the Earth's own acceleration gave
+ * +4-5e-9 deg/day on every body, the Sun's at every epoch. The term is
+ * now the exact derivative of A along w = d / |u| (= a / c, the light
+ * time being |u| / c), at the geometric place u, which is the apparent
+ * one aberrated back by -v (A(A(u, v), -v) = u, |A| = |u|, to rounding),
+ * with the whole of a; its radial part is the distance's own, second
+ * order (bug 34's 4e-6 AU/day on Mars was the first-order d's). */
 static void add_aberr_rate(double *xx, const double *xobs, const double *xobs2)
 {
-  double d[3], r = sqrt(square_sum(xx)), dr = 0;
+  double v[3], mv[3], u[3], w[3], dn[3];
+  double ru = sqrt(square_sum(xx)), v2, b_1, f1, f2, vw = 0, uw = 0, db, df1, df2;
   int i;
   for (i = 0; i <= 2; i++) {
-    d[i] = xobs[i+3] - xobs2[i+3];
-    dr += d[i] * xx[i] / r;
+    v[i] = xobs[i+3] / 24.0 / 3600.0 / CLIGHT * AUNIT;
+    mv[i] = -v[i];
   }
+  v2 = square_sum(v);
+  b_1 = sqrt(1 - v2);
+  /* the geometric place: the apparent one, aberrated by -v */
+  f1 = dot_prod(xx, mv) / ru;
+  f2 = 1.0 + f1 / (1.0 + b_1);
   for (i = 0; i <= 2; i++)
-    xx[i+3] += d[i] - dr * xx[i] / r;
+    u[i] = (b_1 * xx[i] + f2 * ru * mv[i]) / (1.0 + f1);
+  /* A(u, v) = (b u + f2 |u| v) / (1 + f1), f1 = u.v / |u|,
+   * f2 = 1 + f1 / (1 + b), b = sqrt(1 - v^2); its derivative along w,
+   * with A = xx */
+  f1 = dot_prod(u, v) / ru;
+  f2 = 1.0 + f1 / (1.0 + b_1);
+  for (i = 0; i <= 2; i++) {
+    w[i] = (xobs[i+3] - xobs2[i+3]) / ru;
+    vw += v[i] * w[i];
+    uw += u[i] * w[i];
+  }
+  db = -vw / b_1;
+  df1 = uw / ru;
+  df2 = df1 / (1.0 + b_1) - f1 * db / ((1.0 + b_1) * (1.0 + b_1));
+  for (i = 0; i <= 2; i++) {
+    dn[i] = db * u[i] + df2 * ru * v[i] + f2 * ru * w[i];
+    xx[i+3] += (dn[i] - xx[i] * df1) / (1.0 + f1);
+  }
 }
 
 /* Bug 34's aberration rate for swe_nod_aps(), whose points are not made
@@ -5096,7 +5120,7 @@ int swi_aberr_rate(swe_ctx *ctx, double teval, double t, int32 iflag, const doub
 {
   double xobs2[6];
   if (iflag & SEFLG_TOPOCTR) {
-    if (observer_at_lt_sun(ctx, teval, t, iflag, xobs, xeteval, xsun, xe, xx, xobs2, serr) != OK)
+    if (observer_at_lt_sun(ctx, teval, t, iflag, xobs, xeteval, xsun, xe, xobs2, serr) != OK)
       return ERR;
   } else {
     earth_at_lt_sun(ctx, teval, t, xeteval, xsun, xe, xobs2);
@@ -5826,7 +5850,7 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
      * Sun's speed -- and a site's turning not at all (3.2e-4). */
     if (iflag & SEFLG_SPEED) {
       double tlt = pedp->teval - sqrt(square_sum(xx)) * AUNIT / CLIGHT / 86400.0;
-      double xelt[6], xobs2[6], xb[3];
+      double xelt[6], xobs2[6];
       switch (pedp->iephe) {
         case SEFLG_JPLEPH:
           retc = swi_pleph(ctx, tlt, J_EARTH, J_SBARY, xelt, serr);
@@ -5840,10 +5864,8 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
       }
       if (retc != OK)
         return retc;
-      for (i = 0; i <= 2; i++)
-        xb[i] = xx[i] + xobs[i];   /* the Sun, barycentric (Moshier: heliocentric) */
       if (iflag & SEFLG_TOPOCTR) {
-        if (observer_at_lt(ctx, pedp->teval, tlt, iflag, xobs, pedp->x, xelt, xb, xobs2, serr) != OK)
+        if (observer_at_lt(ctx, pedp->teval, tlt, iflag, xobs, pedp->x, xelt, xobs2, serr) != OK)
           return ERR;
       } else {
         earth_at_lt(ctx, pedp->teval, tlt, pedp->x, xelt, xobs2);
@@ -6046,7 +6068,7 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
 #endif
     if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-      if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xe, xx, xobs2, NULL) != OK)
+      if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xe, xobs2, NULL) != OK)
 	  return ERR;
 #else
       if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, NULL) != OK)

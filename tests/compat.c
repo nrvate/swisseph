@@ -858,6 +858,33 @@ static double mosh_speed_off(void)
   return fmax(a, b);
 }
 
+/* UPSTREAM-BUGS 52: the aberration's part of the topocentric Sun's
+ * longitude speed on the equator in 1990 (the residual against a
+ * five-point difference with aberration less that without), deg/day. Bug
+ * 34's term was first order in v/c, a site's radial acceleration stripped:
+ * 3.1e-8 here, a turning site against the Earth's orbital v; now 5.4e-10.
+ * Upstream has no such term for the Sun at all: 3.0e-6. */
+static double topo_aberr_second_order_off(void)
+{
+  double t = floor(2447892.5 * 256) / 256, h = 1.0 / 256, r[2];
+  char serr[256];
+  int c, k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 0, 400);
+  for (c = 0; c < 2; c++) {
+    int32 fl = SEFLG_SWIEPH | SEFLG_TOPOCTR | (c ? SEFLG_NOABERR : 0);
+    double x[6], f[5][6], d[5];
+    swe_calc(t, SE_SUN, fl | SEFLG_SPEED, x, serr);
+    for (k = 0; k < 5; k++)
+      swe_calc(t + (k - 2) * h, SE_SUN, fl, f[k], serr);
+    for (k = 0; k < 5; k++)
+      d[k] = swe_difdeg2n(f[k][0], f[2][0]);
+    r[c] = x[3] - (d[0] - 8 * d[1] + 8 * d[3] - d[4]) / (12 * h);
+  }
+  return fabs(r[0] - r[1]);
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -1003,7 +1030,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1052,6 +1079,7 @@ int main(int argc, char **argv)
   moshr = mosh_rough();
   moshs = mosh_speed_off();
   moonpull = far_body_moon_pull_off();
+  abr2 = topo_aberr_second_order_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1397,6 +1425,14 @@ int main(int argc, char **argv)
   else {
     printf("  far body, Moon's pull  %.2e deg/day FAIL: expected %s\n",
            moonpull, WANT_DEFECT ? "> 1e-5" : "< 2e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (abr2 > 1e-6) : (abr2 < 8e-9))
+    printf("  aberr. rate 2nd order  %.2e deg/day OK\n", abr2);
+  else {
+    printf("  aberr. rate 2nd order  %.2e deg/day FAIL: expected %s\n",
+           abr2, WANT_DEFECT ? "> 1e-6" : "< 8e-9");
     bad++;
   }
 
