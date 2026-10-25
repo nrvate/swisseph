@@ -311,6 +311,9 @@ worst were in code that had never executed even once.
 | 280 | The eclipse, rise and set, and heliacal UT functions pass on their TT call's message naming its TT: at UT 1e12 "jd 1281959700055.5513 outside ...", on Moshier at UT 1e7 "jd 10000016.066403"; the true horizon's rise a TT before the UT asked | Correctness (error reporting) | `swecl.c`, `swehel.c`, `swephlib.c` |
 | 282 | `swe_date_conversion()` of an illegal date returns ERR and still sets `*tjd` (2000 Feb 30 as Mar 1): kept, as its own documentation says and swephgen4.c relies on | Documentation (behaviour kept) | `swedate.c`, `swephexp.h` |
 | 286 | `swe_heliacal_ut()` answers from a fallen ephemeris with an empty serr: de200.eph missing, 30 of 72 answers at J2000, 30 of 72 past its end | Correctness (error reporting) | `swehel.c` |
+| 283 | Under the three formula sidereal times (IAU 1976, IAU 2006, IERS 2010) `swe_sidtime()` takes the mean obliquity of a polynomial precession model past its range, where entry 217 refuses it, into its equation of the equinoxes: 1.81e-3 deg off Vondrak 2011's obliquity's at J2000 + 400 centuries under "0,8,0,0,0,0,0,3", 6.15e-3 at + 1000 under "0,2,0,0,0,0,0,2"; and answers past entry 196's bound at UT 1e12 (TT 1.28e12) | Correctness (behaviour) | `swephlib.c` |
+| 284 | The nutation is taken at any date within entry 196's bound, 1e12 days, far past where its series mean anything: its main term 13% off its value at the obliquity of date at -13200 and +17191, 100% at -+1000 centuries, the nutation in longitude 510" at 1e9 days and 13 deg at 1e11; `SE_ECL_NUT`, `swe_sidtime()`, the houses, the true ayanamsa and a star with no Earth answer from it under every nutation model | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `swehouse.c` |
+| 285 | A topocentric site's long-term sidereal time chooses its precession model at the site's UT + the default delta t, not at its call's TT: within 0.297 s after a short-term window's edge on the Swiss files (0.481 s before it on Moshier) the site's frame the other model's, the topocentric Moon 2.91e-7 deg off under "0,9,1" at J2000 - 2 centuries, Polaris's topocentric right ascension speed 1.83e-4 deg/day | Correctness | `swephlib.c`, `sweph.c` |
 
 ---
 
@@ -20215,6 +20218,203 @@ Noticed, not fixed:
 - BEHAVIOUR. -fW and -fw on cusp rows print the pseudo radius 1 as 1 AU,
   0.000015813 light years and 149597870.7 km, where -fR and -fr are
   skipped there.
+
+## 283. Under the formula sidereal times `swe_sidtime()` takes a polynomial precession model's mean obliquity past its range into its equation of the equinoxes: 1.81e-3 deg off Vondrak 2011's obliquity's at J2000 + 400 centuries under "0,8,0,0,0,0,0,3", 6.15e-3 at + 1000 under "0,2,0,0,0,0,0,2"
+
+**Severity: Correctness (behaviour: a value answered from an obliquity the library refuses, by a function with no error return; with `SE_MODEL_SIDT` set to IAU 1976, IAU 2006 or IERS 2010 by `swe_set_astro_models()` and a polynomial precession model, past its range; and past entry 196's bound under every model)**
+**Where:** `swephlib.c`: `swe_sidtime_r_body()`
+
+Entry 256's noticed item. Under SEMOD_SIDT_IAU_1976, _IAU_2006 and
+_IERS_2010 `swe_sidtime()` is the mean sidereal time's formula plus the
+equation of the equinoxes, dpsi cos(eps), eps the mean obliquity
+`swi_epsiln()` gives at TT = UT + delta t. Entry 217 refuses a polynomial
+model's obliquity past its range (SE_ECL_NUT, the houses, the ayanamsa),
+and entry 256 bounds the long-term sidereal time by its model's range,
+but the formula sidereal times took the obliquity at any date: against
+the same sidereal time with Vondrak 2011's obliquity, 1.81e-3 deg at
+J2000 + 400 centuries under "0,8,0,0,0,0,0,3" (IAU 2006 precession, IERS
+2010 sidereal time), -6.15e-3 at + 1000 under "0,2,0,0,0,0,0,2" and
+"0,2,0,0,0,0,0,1" (Laskar 1986 with IAU 2006's and IAU 1976's). And at
+UT 1e12, whose TT 1.28e12 is past entry 196's bound where SE_ECL_NUT
+refuses, every formula answered.
+
+**Fix, as done here:** `swe_sidtime()` is NaN where SE_ECL_NUT refuses
+the obliquity or the nutation (entry 284) at its TT
+(`swi_frame_range()` with SWI_FRAME_EPS | SWI_FRAME_NUT at tjde, the
+default flags), under every sidereal time; elsewhere bit for bit. Every
+obliquity's range (the widest body range for the polynomial models,
+Owen 1990's wider, Vondrak's the bound) contains the nutation's, so in
+this build the nutation's refuses first at every date under every model
+set: entry 283's check is entry 284's in effect, kept for the rule.
+Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+
+G178 `tests/nutrange.c`, check (b): under "0,8,0,0,0,0,0,3",
+"0,2,0,0,0,0,0,2", "0,2,0,0,0,0,0,1" and "0,10,0,0,0,0,0,1", at the UT
+whose TT is 1e-4 day inside and past the obliquity's range's ends and at
+J2000 -+ 400 and + 1000 centuries, `swe_sidtime()` NaN where SE_ECL_NUT
+refuses at that TT and in [0, 24) where it answers; UT 1e12 under
+"0,0,0,0,0,0,0,3" NaN: 29 checks. Measured 0 of 29; before the fix (the
+three entries together) 21 of 29; the upstream build 1 of 29 (UT 1e12;
+its SE_ECL_NUT answers where its sidereal time does). G24
+`sidt_formula_eps_answered`: `swe_sidtime()` at J2000 + 400 centuries
+under "0,8,0,0,0,0,0,3" and + 1000 under "0,2,0,0,0,0,0,2" and
+"0,2,0,0,0,0,0,1": 0 of 3 answered shipped (3 of 3 before the fix), 3 of
+3 compat.
+
+## 284. The nutation is taken at any date within entry 196's bound, 1e12 days, far past where its series mean anything: its main term 13% off its value at the obliquity of date at -13200 and +17191, 100% at -+1000 centuries, |dpsi| 510" at 1e9 days, 13 deg at 1e11; SE_ECL_NUT, the apparent sidereal time, the houses, the true ayanamsa and a star with no Earth answer from it
+
+**Severity: Correctness (behaviour: values answered from a model past any range its sources give it, under every nutation model, past -13200 and +17191)**
+**Where:** `swephlib.c`: new `nut_model_range()`, `swi_frame_range()` (SWI_FRAME_NUT), `swe_sidtime_r_body()`; `sweph.c`: `swecalc()` (SE_ECL_NUT), `swe_get_ayanamsa_ex_r_body()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`; `swehouse.c`: `house_range()`
+
+Entry 196 bounds SE_ECL_NUT at |J| 1e12 days against hangs and NaN; it
+is no range of the nutation. Each series -- IAU 1980 (Wahr 1981), with
+or without Herring 1987's corrections, SEFLG_JPLHOR's IAU 1980, IAU
+2000A (the default, on its day grid, entry 152) and IAU 2000B, Woolard
+1953 -- sums terms (A + A' T) sin(arg), the arguments polynomials in T
+(Simon et al. 1994 to T^4, 1980's to T^3, Woolard's to T^2), the A' T
+the obliquity's secular change linearized: the main term goes as cos 2eps
+/ sin eps, -17.2064" - 0.0174666" T. None is published as valid past
+centuries: IAU 2000B to 1 mas over 1995..2050 (McCarthy & Luzum 2003,
+Cel. Mech. 85, 37), 2000A and 1980 for current epochs, Woolard's for its
+century; no documented convention extends a series (SOFA's iauNut00b
+drops the arguments' higher terms, not A' T). The Swiss Ephemeris
+documentation pairs the long-term sidereal time's IAU 2000 nutation with
+"the whole time range of JPL Ephemeris DE431", -13200 .. +17191.
+
+Measured on this tip, the five series alike: |dpsi| and |deps| at most
+18.9" and 9.88" over 40 years at J2000, rates 0.24" and 0.089" a day
+(five-point differences at 2^-6 day); at -+152 centuries 15.9"/21.4" and
+9.85"/9.97", the rates the same. The main term against its value at
+the obliquity of date (Vondrak 2011's): 0.4 .. 0.7% off at -+50
+centuries, 3.4 .. 4.5% at -+100, -12.7% and +10.1% at -13200 and +17191,
+19 .. 22% at -+200, 35 .. 37% at -+300, 100% at -+1000 (0 near -985,
+then the other sign). From 3000 centuries the arguments' T^3 and T^4
+take the rates up: IAU 2000A and 2000B 0.5"/day there, 6.5"/day at 1e4
+centuries, 325"/day at 1e9 days (IAU 1980 2.1, Woolard 0.95); |dpsi|
+510" at 1e9 days, 13 deg at 1e11. SE_ECL_NUT answered all of it OK, and
+`swe_sidtime()`, the houses, `swe_azalt()` and `swe_azalt_rev()`, the
+true ayanamsa (`swe_get_ayanamsa_ex()`) and the barycentric stars and
+heliocentric stars on Moshier (no Earth to refuse) took it.
+
+The range, the same for every model: the widest body range,
+-3100015.5 .. 8000016.5 (-13200 .. +17191, Moshier's and DE431/DE441's,
+the polynomial precession models' since entry 212), where every apparent
+place the library computes takes the nutation, the documentation puts
+it, and its main term lies within 13% of the obliquity's. Not each
+model's accuracy span (2000B's 1995 .. 2050): within the ephemerides'
+span the series are the conventional nutation the places take, and
+refusing there would refuse what the files answer; past it the series
+are polynomials evaluated away from any source.
+
+**Fix, as done here:** `swi_frame_range()` gains SWI_FRAME_NUT,
+`nut_model_range()`: past -3100015.5 .. 8000016.5, unless the flags
+carry SEFLG_NONUT, ERR with "jd ... outside the IAU 2000A nutation
+model's range -3100015.5 .. 8000016.5" (the model named, "SEFLG_JPLHOR's
+IAU 1980" under the Horizons flags). Refused there: SE_ECL_NUT (ERR, the
+outputs 0), `swe_sidtime()` (NaN, and so `swe_azalt()` and
+`swe_azalt_rev()` NaN, entry 256), the houses (`house_range()`, ERR with
+the cusps 0; with SEFLG_NONUT taken without it), `swe_get_ayanamsa_ex()`
+(ERR, the ayanamsa 0; `swe_get_ayanamsa()`, the mean one, takes none),
+and a star with no Earth (barycentric, heliocentric on Moshier; with the
+Earth the ephemeris refuses first). Under SEFLG_NONUT each
+answers as before. Within the range nothing changes, bit for bit: of
+64490 lines (14 model sets, 300 dates each inside the range, its ends
+included: SE_ECL_NUT, `swe_sidtime()` and `swe_sidtime0()`, Placidus with
+speeds, sidereal Equal, two ayanamsas, Spica geocentric, barycentric and
+heliocentric, the topocentric Moon and Mars, `swe_azalt()`) 228 differ,
+each a UT call whose TT lies past +17191 (UT within 7.5 days inside it),
+refused. Behind `#ifndef SWE_UPSTREAM_COMPAT`. Cost, `perf stat -e
+instructions:u`, bench, one repetition: calc-swieph 12286862365 ->
+12286862223, calc-moseph 23412729836 -> 23412729876, houses 19601596247
+-> 19604307952 (+0.014%; with entries 283 and 285).
+
+G178 `tests/nutrange.c`, check (a): under the default models and IAU
+1980, IAU 1987, IAU 2000A, IAU 2000B and Woolard named, at TT
+-3100015.5 and 8000016.5, the doubles past them, -1e7, 5e7, -1e9 and
+1e11: SE_ECL_NUT, the ayanamsa (Lahiri), barycentric Spica
+(`swe_fixstar2()`) and heliocentric Spica on Moshier (`swe_fixstar()`)
+answered at the ends, refused with the model and the range named past
+them, with SEFLG_NONUT answered (the ayanamsa within Vondrak's
+precession range); at the UT whose TT is 1e-4 day inside and past each
+end and at UT -1e7, 5e7, -1e9 and 1e11, `swe_sidtime()`, Placidus with
+speeds, `swe_houses()`, the houses with SEFLG_NONUT and `swe_azalt()`
+SE_EQU2HOR as the range has them; SE_ECL_NUT under SEFLG_JPLEPH |
+SEFLG_JPLHOR_APPROX past -3100015.5 naming SEFLG_JPLHOR's IAU 1980: 577
+checks. Measured 0 of 577; before the fix 277 (every refusal answered);
+the upstream build 355. G152, G159, G161, G162 and G29 follow: what they
+check answered past the range takes SEFLG_NONUT or `swi_nutation()`, and
+the refusal is checked there (G152 (b) 3168 of 3168, 1584 before the
+fix; G159 662 fail before the fix, (b) 220, (e) 400, (h) 42, and the
+upstream build 1587). G24 `nut_range_answered`: under the default models
+on Moshier SE_ECL_NUT at TT 1e9, `swe_sidtime()` at UT -1e7, Placidus at
+UT 5e7, the true ayanamsa at TT -1e7 and barycentric Spica at TT 1e9: 0
+of 5 answered shipped (5 of 5 before the fix), 5 of 5 compat. G160,
+G122, G45, G139, G155, G170, G35 and G39 pass.
+
+Noticed, not fixed:
+- BEHAVIOUR. With SEFLG_NONUT a barycentric star, and a heliocentric one
+  on Moshier, answers at any date within the bound, past Vondrak 2011's
+  precession range (-+2000 centuries) too, where entry 212 refuses the
+  ayanamsa: from its matrices, no longer rotations (entry 212: 0.14 off
+  orthonormal at -7300 centuries); Spica barycentric at TT 1e9 and 1e11
+  OK.
+
+## 285. A topocentric site's long-term sidereal time chooses its precession model at the site's UT + the default delta t, not at its call's TT: within 0.297 s after a short-term window's edge on the Swiss files (0.481 s before it on Moshier) the site the other model's, the topocentric Moon 2.91e-7 deg off under "0,9,1" at J2000 - 2 centuries, Polaris's topocentric right ascension speed 1.83e-4 deg/day
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set by `swe_set_astro_models()` or Owen 1990 the long-term model, and the long-term sidereal time: within a fraction of a second, up to 688 s at -75 centuries, of a step of the precession model, every topocentric place on the Swiss files and Moshier)**
+**Where:** `swephlib.c`: new `swi_sidtime0_tt()`, `swe_sidtime0_r_body()`, `sidt_range_at()`; `sweph.c`: `swi_get_observer()`
+
+The long-term sidereal time (SEMOD_SIDT_LONGTERM, the default; entry
+181) takes the precession model of its instant, which it finds at TT =
+UT + the default delta t (`sidt_deltat()`, iflag -1). `swi_get_observer()`
+builds a topocentric site at UT = the call's TT less that ephemeris's
+delta t, which at J2000 - 2 centuries is 18.903 s on the Swiss files and
+18.125 s on Moshier, the default's 18.606 s: so where the model steps (a
+short-term window's edge, Owen 1990's joins) the site's sidereal time was
+the other model's within 0.297 s after the step on the Swiss files and
+0.481 s before it on Moshier, its frame the call's. Measured under
+"0,9,1" at J2000 - 2 centuries against "0,1,1", whose model is the edge's
+inside throughout: the topocentric Moon 2.91e-7 deg off, its speed
+1.49e-6 deg/day, Polaris's topocentric right ascension speed 1.83e-4
+(0.008772040 against 0.008954644 deg/day; entry 259's read on the
+instant's side took the site across); at + 2 centuries the ephemerides'
+delta t is the default's and nothing steps; under "0,9,8" at - 75
+centuries the span is 688 s on the Swiss files, the Moon 2.11e-5 deg.
+
+**Fix, as done here:** `swi_sidtime0_tt()` is `swe_sidtime0_r()` for a
+site built for a call at TT tjd_tt: the long-term formula's model and
+entry 256's range at that TT (`swe_sidtime0_r_body()` and
+`sidt_range_at()` take it); `swi_get_observer()` calls it. Elsewhere bit
+for bit (entry 284's 64490 lines include the topocentric Moon and Mars).
+Behind `#ifndef SWE_UPSTREAM_COMPAT`; the compat build's long-term
+sidereal time is upstream's (entry 29's defect).
+
+G178 `tests/nutrange.c`, check (c): under "0,9,1" at J2000 - 2
+centuries on the Swiss files and Moshier and "0,9,8" at - 75 on the
+Swiss files, 8 instants within the span and 4 outside: the topocentric
+Moon's place (Zurich, SEFLG_SPEED) and Polaris's topocentric equatorial
+speeds against a context whose models are the call's TT's throughout
+("0,1,1" or "0,8,8" within the window, "0,9,9" outside), within 1e-10
+deg and 1e-8 deg/day: 72 checks. Measured 0 of 72, worst 1.6e-12 deg
+and 3.1e-10 deg/day; before the fix 49 of 72 (the Moon 2.91e-7 deg and
+Polaris's speed 1.83e-4 deg/day at - 2 centuries, the Moon 2.11e-5 at
+- 75); the upstream build 60 (its long-term formula and site its own:
+the Moon 1.3e-6 .. 7.2e-5 deg, Polaris's speed to 0.64 deg/day). G24
+`topo_site_window_off`: the topocentric Moon on the Swiss files under
+"0,9,1" at TT 2378495.0 + 0.15 s against "0,1,1": 0 deg shipped (2.91e-7
+before the fix), 1.31e-6 compat.
+
+Noticed, not fixed:
+- RESIDUAL (1.5e-7 deg/day). The topocentric Moon's speed within 2^-6
+  day of a step of the frame's models: `observer_accel()` differences
+  the site's velocity over -+ 2^-6 day across the step (entry 259 left
+  it under the floor at 4.2e-9 for two centuries off): under "0,9,8" at
+  J2000 - 75 centuries 1.5e-7 deg/day off the side's model alone's, 3.3e-9
+  at - 2 under "0,9,1".
+- RESIDUAL (3.0e-9 deg). Polaris topocentric on Moshier near J2000 - 2
+  centuries under "0,9,1", outside the span: its place 3.03e-9 deg off
+  "0,1,1"'s, the Sun's light-time instant on the other side of the step
+  (measured outside entry 285's span, unchanged by it).
 
 ## How these were found
 

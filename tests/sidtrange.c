@@ -24,7 +24,8 @@
  * is a failure of the gate, not of the run.
  *
  * Check (a): the cost. On a fresh context, the default models, the first
- * swe_sidtime() at 14 dates (|J| 1e8, 1e9, 1e10, 1e11, 8e11, 1e12 and the
+ * swe_sidtime0() (swe_sidtime() is NaN at every date here, past the
+ * nutation's range, bug 284) at 14 dates (|J| 1e8, 1e9, 1e10, 1e11, 8e11, 1e12 and the
  * double next inside 1e12, either sign) and 200 more about each, within
  * 10 times the first call at J2000 + 399.5 centuries (the table built) plus
  * 0.05 s, and 100 times a call about it plus 0.1 ms; then the houses with
@@ -48,8 +49,12 @@
  * houses refuse, ERR with serr naming the range and the cusps 0, and the
  * ecliptic forms are NaN; past the model's range swe_sidtime() and
  * swe_sidtime0() are NaN too, and SE_EQU2HOR and SE_HOR2EQU in every
- * output (UPSTREAM-BUGS 256). 660 dates by models, 450 of them refusing,
- * 440 of those the sidereal times too.
+ * output (UPSTREAM-BUGS 256). And where TT is past the nutation's range,
+ * -3100015.5 .. 8000016.5 (UPSTREAM-BUGS 284: every date here under every
+ * set), swe_sidtime() is NaN, the houses refuse and the equatorial and
+ * ecliptic forms are NaN under every model; swe_sidtime0(), which takes
+ * its nutation as given, answers but past the model's range. 660 dates by
+ * models, all 660 refusing, 440 of them swe_sidtime0() too.
  *
  * Check (c): past the bound and at no date. 21 dates (|J| the double past
  * 1e12, 1.5e12, 1e13, 1e20, 1e84, 1e200, 1e300, 1e308, DBL_MAX and inf,
@@ -82,7 +87,9 @@
  * houses' agree), swe_sidtime() and swe_sidtime0() in [0, 24) and the
  * Placidus ARMC in [0, 360) and the sidereal time's, bit for bit (the
  * houses refused where delta t takes TT past 1e12, bug 213: UT next
- * inside +1e12); and at
+ * inside +1e12; where TT is past the nutation's range, bug 284,
+ * swe_sidtime() NaN and the houses refused, swe_sidtime0() in [0, 24));
+ * and at
  * five dates the 401 nutations about the one that makes swe_sidtime0()'s
  * seconds 0 (some leave them just under) answer in [0, 24). 2207 a model.
  *
@@ -117,7 +124,9 @@
  * Placidus with speeds ERR naming the range with its cusps and ARMC 0,
  * swe_azalt() SE_EQU2HOR and swe_azalt_rev() SE_HOR2EQU NaN in every
  * output; elsewhere the sidereal times in [0, 24), those two finite and
- * the houses not refused for a range (but where TT is past 1e12, bug 213).
+ * the houses not refused for a range (but where TT is past 1e12, bug 213);
+ * and past the nutation's range (bug 284), under every model,
+ * swe_sidtime() NaN, the houses ERR and the equatorial forms NaN.
  * And under IAU 2006 two ends: at -13200, where the houses' TT on the
  * Swiss files lies 0.033 day after the sidereal time's (default delta
  * t's), the houses' 0.01 day inside and the sidereal time's past, the
@@ -132,13 +141,17 @@
  * the first and last within 1e-11 deg. 30 lines.
  *
  * Measured (the -O0 test build): (a) 14 of 14 bounded, the first call at
- * 1e12 0.0050 s against the table's 0.0029 (0.031 and 0.022 before bug
- * 235's analytic rate), a call there 1.1e-4 s against 2.8e-5 (the
- * nutation's arguments in double-double past 4e8 days, bug 188);
+ * 1e12 0.0063 s against the table's 0.0048 (0.031 and 0.022 before bug
+ * 235's analytic rate), a call there 6.5e-6 s against 5.9e-6 (swe_sidtime()
+ * took 1.1e-4 against 2.8e-5 before bug 284, the nutation's arguments in
+ * double-double past 4e8 days, bug 188);
  * (b) 660 of 660 as expected; (c) 273 of 273 refused or NaN; (d) 0 differ;
  * (e) 0 of 8828; (f) 0 of 108, worst 1.3e-13 deg past 5e5 days, 1.2e-11
  * within; (g) 0 of 20, worst 2.5e-12 deg; (h) 0 of 262; (i) 0 of 30, worst
- * 2.3e-13 deg. Before bugs 256 and 257: (b) 220 of 660 (the sidereal times
+ * 2.3e-13 deg. Before bug 284, 662: (b) 220 of 660 (swe_sidtime(), the
+ * houses and the forms answered past the nutation's range under the five
+ * sets whose precession answers there), (e) 400 of 8828, (h) 42 of 262.
+ * Before bugs 256 and 257: (b) 220 of 660 (the sidereal times
  * and the equatorial forms answered past the ten models' ranges), (h) 199
  * of 262 (198 dates answered, the -13200 houses OK from the refused
  * sidereal time), (i) 30 of 30, worst 5.85e-9 deg (4.2e-11 .. 6.1e-11 at
@@ -155,12 +168,12 @@
  * -1e300, -1e308, -DBL_MAX, -inf), the rest answered; (d) hung. Before
  * bugs 213 and 217, (b) 210 of 660, the houses and ecliptic forms answered
  * past the models' ranges and the houses at TT past 1e12. The upstream
- * build fails 956: (b) 450 of 660 (210 as expected), the same and the
- * ecliptic forms answered where TT is past 1e12 (its SE_ECL_NUT answers
- * there); (c) 187 of 273 (86 refused or NaN, the NaN of 1e84 and beyond
- * its only no-answers); (e) 19 of 8828; (f) 83 of 108 (IERS 2010 4.4e-8
+ * build fails 1587: (b) 660 of 660, the same, the ecliptic forms answered
+ * where TT is past 1e12 (its SE_ECL_NUT answers there) and all past the
+ * nutation's range; (c) 187 of 273 (86 refused or NaN, the NaN of 1e84
+ * and beyond its only no-answers); (e) 400 of 8828; (f) 83 of 108 (IERS 2010 4.4e-8
  * deg off within 5e5 days, its terms in plain double); (g) 16 of 20,
- * worst 2.8e-8 deg; (h) 201 of 262 (its long-term sidereal time,
+ * worst 2.8e-8 deg; (h) 241 of 262 (its long-term sidereal time,
  * upstream's, takes swi_precess() at the date); (a), (d) and (i) pass
  * (upstream's long-term formula rounds its TT terms flat over 64 JDs at
  * 1e11 .. 1e12, 2.6e-12 deg off a line). Run as
@@ -233,11 +246,13 @@ static int cost_at(double t)
   double geo[3] = {10, 50, 100}, xin[3] = {100, 1, 1}, hin[2] = {100, 20}, sg = t < 0 ? 1 : -1;
   char serr[AS_MAXCH];
   int k, bad = 0;
+  /* the long-term formula's cost: swe_sidtime0(), since swe_sidtime() is
+   * NaN past the nutation's range (bug 284), which every date here is */
   t0 = cpu();
-  s += swe_sidtime_r(c, t);
+  s += swe_sidtime0_r(c, t, 23.44, 0);
   t1 = cpu();
   for (k = 1; k <= 200; k++)
-    s += swe_sidtime_r(c, t + sg * k * 0.37);
+    s += swe_sidtime0_r(c, t + sg * k * 0.37, 23.44, 0);
   t2 = cpu();
   first = t1 - t0;
   warm = (t2 - t1) / 200;
@@ -290,24 +305,27 @@ static int answered_under(double m)
     int r, past = !(tt >= -1e12 && tt <= 1e12) || (poly && !(tt >= lo && tt <= hi)), ok = 1;
     /* and the long-term sidereal time past its model's range (bug 256) */
     int sref = poly && !(tt >= lo && tt <= hi);
+    /* and the nutation past its range, every model's (bug 284): what takes
+     * it, swe_sidtime(), the houses, the equatorial and ecliptic forms */
+    int nref = !(tt >= -3100015.5 && tt <= 8000016.5);
     s = swe_sidtime_r(c, t);
     s0 = swe_sidtime0_r(c, t, 23.44, -0.004);
-    if (sref ? !(isnan(s) && isnan(s0)) : (!isfinite(s) || !isfinite(s0)))
+    if (sref ? !(isnan(s) && isnan(s0)) : (!isfinite(s0) || (nref ? !isnan(s) : !isfinite(s))))
       ok = 0;
     serr[0] = '\0';
     r = swe_houses_ex2_r(c, t, SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
-    if (past ? !(r == ERR && strstr(serr, "outside the") != NULL && cu[1] == 0 && as[0] == 0)
+    if (past || nref ? !(r == ERR && strstr(serr, "outside the") != NULL && cu[1] == 0 && as[0] == 0)
         : ((r < 0 && strstr(serr, "outside the") != NULL)
            || !fin(cu + 1, 12) || !fin(a, 8) || !fin(cs + 1, 12) || !fin(as, 8)))
       ok = 0;
     swe_azalt_r(c, t, SE_EQU2HOR, geo, 0, 10, xin, x);
-    if (sref ? !allnan(x, 3) : !fin(x, 3)) ok = 0;
+    if (sref || nref ? !allnan(x, 3) : !fin(x, 3)) ok = 0;
     swe_azalt_rev_r(c, t, SE_HOR2EQU, geo, hin, x);
-    if (sref ? !allnan(x, 2) : !fin(x, 2)) ok = 0;
+    if (sref || nref ? !allnan(x, 2) : !fin(x, 2)) ok = 0;
     swe_azalt_r(c, t, SE_ECL2HOR, geo, 0, 10, xin, x);
-    if (past ? !allnan(x, 3) : !fin(x, 3)) ok = 0;
+    if (past || nref ? !allnan(x, 3) : !fin(x, 3)) ok = 0;
     swe_azalt_rev_r(c, t, SE_HOR2ECL, geo, hin, x);
-    if (past ? !allnan(x, 2) : !fin(x, 2)) ok = 0;
+    if (past || nref ? !allnan(x, 2) : !fin(x, 2)) ok = 0;
     if (!ok) {
       if (bad < 3)
         printf("  (b) models %s J %.17g: sidtime %g %g, houses %d asc %g asc' %g, azalt %g\n",
@@ -450,10 +468,13 @@ static int in_range_under(double m)
       v0 = swe_sidtime0_r(c, t, 23.44, -0.004);
       rh = swe_houses_ex2_r(c, t, SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
       /* the houses refuse a TT past 1e12 (bug 213), where delta t takes
-       * the double next inside UT 1e12 */
-      if (!(v >= 0 && v < 24) || !(v0 >= 0 && v0 < 24)
-          || (!(fabs(t + dt) <= 1e12) ? rh != ERR
-              : !(a[2] >= 0 && a[2] < 360) || a[2] != swe_degnorm(v * 15 + 10))) {
+       * the double next inside UT 1e12; and swe_sidtime() and the houses a
+       * TT past the nutation's range (bug 284), which that lies past too */
+      int nref = !(t + dt >= -3100015.5 && t + dt <= 8000016.5);
+      if (!(v0 >= 0 && v0 < 24)
+          || (nref ? !(isnan(v) && rh == ERR)
+              : !(v >= 0 && v < 24) || !(a[2] >= 0 && a[2] < 360)
+                || a[2] != swe_degnorm(v * 15 + 10))) {
         if (bad < 3)
           printf("  (e) models %s J %.17g: sidtime %.17g, sidtime0 %.17g, armc %.17g\n",
                  MS[(int) m], t, v, v0, a[2]);
@@ -597,7 +618,7 @@ static int lterm_range_under(double mh)
     for (i = 0; i < 10; i++) {
       double sg = s ? -1 : 1, t, tt, v, v0, x[6], y[6], cu[13], a[10], cs[13], as[10];
       char serr[AS_MAXCH];
-      int r, refused, hrefused, ok = 1;
+      int r, refused, nref, hrefused, ok = 1;
       if (i < 2)	/* TT a quarter day inside the range's end, past it */
         tt = (s ? lo : hi) + sg * (i ? 0.25 : -0.25);
       else if (i < 7)
@@ -610,10 +631,14 @@ static int lterm_range_under(double mh)
       }
       /* Vondrak 2011 answers past its range, its line (bug 209) */
       refused = lm != 9 && !(tt >= lo && tt <= hi);
-      hrefused = refused || !(fabs(tt) <= 1e12);	/* bug 213 */
+      /* the nutation past its range (bug 284): swe_sidtime(), the houses
+       * and the equatorial forms, which take it, under every model */
+      nref = !(tt >= -3100015.5 && tt <= 8000016.5);
+      hrefused = refused || nref || !(fabs(tt) <= 1e12);	/* bug 213 */
       v = swe_sidtime_r(c, t);
       v0 = swe_sidtime0_r(c, t, 23.44, -0.004);
-      if (refused ? !(isnan(v) && isnan(v0)) : !(v >= 0 && v < 24 && v0 >= 0 && v0 < 24))
+      if (refused ? !(isnan(v) && isnan(v0))
+          : !((nref ? isnan(v) : v >= 0 && v < 24) && v0 >= 0 && v0 < 24))
         ok = 0;
       serr[0] = '\0';
       r = swe_houses_ex2_r(c, t, SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
@@ -622,7 +647,7 @@ static int lterm_range_under(double mh)
         ok = 0;
       swe_azalt_r(c, t, SE_EQU2HOR, geo, 0, 10, xin, x);
       swe_azalt_rev_r(c, t, SE_HOR2EQU, geo, hin, y);
-      if (refused ? !(allnan(x, 3) && allnan(y, 2)) : !(fin(x, 3) && fin(y, 2)))
+      if (refused || nref ? !(allnan(x, 3) && allnan(y, 2)) : !(fin(x, 3) && fin(y, 2)))
         ok = 0;
       if (!ok) {
         if (bad < 3)
@@ -728,10 +753,10 @@ int main(int argc, char **argv)
     swe_ctx *c = fresh("0");
     double t0, t1, t2, s = 0, t = 2451545 + 399.5 * 36525;
     t0 = cpu();
-    s += swe_sidtime_r(c, t);
+    s += swe_sidtime0_r(c, t, 23.44, 0);	/* swe_sidtime(): NaN there, bug 284 */
     t1 = cpu();
     for (k = 1; k <= 200; k++)
-      s += swe_sidtime_r(c, t + k * 0.37);
+      s += swe_sidtime0_r(c, t + k * 0.37, 23.44, 0);
     t2 = cpu();
     swe_ctx_free(c);
     ref_first = t1 - t0;

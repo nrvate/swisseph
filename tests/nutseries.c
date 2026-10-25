@@ -48,7 +48,11 @@
  * positions take, swi_nutation()'s; in the upstream build SE_ECL_NUT's),
  * against the series evaluated in mpmath at 400
  * bits at the same double J (nt[] read from swephlib.c; the table below):
- * per decade within 1e-12 deg. 12 checks.
+ * per decade within 1e-12 deg. 12 checks. Since UPSTREAM-BUGS 284 every
+ * instant lies past the nutation's range, -3100015.5 .. 8000016.5:
+ * SE_ECL_NUT is checked refused there (the range named) and the series
+ * read from swi_nutation(), in the shipped build (before bug 284 the
+ * check stops at its first instant, SE_ECL_NUT answering).
  *
  * Check (c): IAU 2000B. SE_ECL_NUT at eight dates -1000..3500 against the
  * library's 77 terms on its Simon et al. arguments with the offsets, in
@@ -66,7 +70,8 @@
  * Check (e): SE_ECL_NUT's dpsi and deps under Woolard at 32 instants with
  * |J - J2000| log-uniform over 4e8..1e12 days, either sign, against its
  * formula evaluated in mpmath at 300 bits at the same double J (the table
- * above): per decade within 1e-12 deg. 4 checks.
+ * above): per decade within 1e-12 deg. 4 checks. Since bug 284 as (b):
+ * SE_ECL_NUT refused, the series swi_nutation()'s.
  *
  * Check (f): (d) under Woolard. 2 checks, left out of the upstream build.
  *
@@ -283,26 +288,30 @@ int main(int argc, char **argv)
         if (m == 2 && J > 0)
           continue;
 #ifndef SWE_UPSTREAM_COMPAT
-        if (m == 2) {
+        {
           /* UPSTREAM-BUGS 217: SE_ECL_NUT refuses here, the Horizons
            * approximation's obliquity Owen 1990's before 1799, past its
-           * range; the nutation is swi_nutation()'s, the positions' */
+           * range; UPSTREAM-BUGS 284: and IAU 1980's, past the nutation's
+           * range, -3100015.5 .. 8000016.5, every instant here. The
+           * nutation is swi_nutation()'s, the series' */
           double nl[2];
           serr[0] = '\0';
           if (swe_calc_r(c, J, SE_ECL_NUT, bf[m], x, serr) != ERR
-              || strstr(serr, "Owen 1990 precession model's range") == NULL) {
+              || strstr(serr, m == 2 ? "Owen 1990 precession model's range"
+                              : "nutation model's range") == NULL) {
             printf("  ERROR SE_ECL_NUT at %.8f not refused: '%s'\nG162 FAIL: ERROR\n", J, serr);
             return 1;
           }
           swi_nutation(c, J, bf[m], nl);
           x[2] = nl[0] * RADTODEG;
           x[3] = nl[1] * RADTODEG;
-        } else
-#endif
+        }
+#else
         if (swe_calc_r(c, J, SE_ECL_NUT, bf[m], x, serr) < 0) {
           printf("  ERROR SE_ECL_NUT at %.8f: %s\nG162 FAIL: ERROR\n", J, serr);
           return 1;
         }
+#endif
         for (j = 0; j < 2; j++) {
           double e = fabs(x[2 + j] - (REF80[i][col + j] + (m == 2 ? off[j] : 0)));
           if (!(e <= w[i / 8]))
@@ -367,10 +376,25 @@ int main(int argc, char **argv)
       return 1;
     }
     for (i = 0; i < 32; i++) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* UPSTREAM-BUGS 284: SE_ECL_NUT refuses past the nutation's range,
+       * every instant here: the series' swi_nutation() */
+      double nl[2];
+      serr[0] = '\0';
+      if (swe_calc_r(c, REFWOOL[i][0], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) != ERR
+          || strstr(serr, "Woolard 1953 nutation model's range") == NULL) {
+        printf("  ERROR SE_ECL_NUT at %.8f not refused: '%s'\nG162 FAIL: ERROR\n", REFWOOL[i][0], serr);
+        return 1;
+      }
+      swi_nutation(c, REFWOOL[i][0], SEFLG_MOSEPH, nl);
+      x[2] = nl[0] * RADTODEG;
+      x[3] = nl[1] * RADTODEG;
+#else
       if (swe_calc_r(c, REFWOOL[i][0], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0) {
         printf("  ERROR SE_ECL_NUT at %.8f: %s\nG162 FAIL: ERROR\n", REFWOOL[i][0], serr);
         return 1;
       }
+#endif
       for (j = 0; j < 2; j++) {
         double e = fabs(x[2 + j] - REFWOOL[i][1 + j]);
         if (!(e <= w[i / 8]))

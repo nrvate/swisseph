@@ -180,13 +180,17 @@ extern int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, in
 /* swe_sidtime0_r() without its date bound, under the caller's hold
  * (UPSTREAM-BUGS 214) */
 extern double swi_sidtime0(swe_ctx *ctx, double tjd, double eps, double nut);
+/* swe_sidtime0_r() for a topocentric site built for a call at TT tjd_tt:
+ * the long-term formula's model and range at that TT (UPSTREAM-BUGS 285) */
+extern double swi_sidtime0_tt(swe_ctx *ctx, double tjd, double tjd_tt, double eps, double nut);
 /* the chosen precession and obliquity held at J's model, and put back */
 extern void swi_frame_model_hold(swe_ctx *ctx, double J, int32 *saved);
 extern void swi_frame_model_release(swe_ctx *ctx, const int32 *saved);
 /* OK, or ERR with serr naming the range (what names the date in it: "jd",
  * "t0"): delta t's dates (bug 215); and the obliquity's and nutation's,
  * the precession and obliquity models of `which` (SWI_FRAME_PREC, _EPS)
- * as they are chosen at J under iflag each within its own (bug 217) */
+ * as they are chosen at J under iflag each within its own (bug 217), and
+ * the nutation's (SWI_FRAME_NUT, unless iflag has SEFLG_NONUT; bug 284) */
 extern int swi_deltat_range(double tjd, const char *what, char *serr);
 extern double swi_deltat_nobound(swe_ctx *ctx, double tjd, int32 iflag);
 extern int swi_frame_range(swe_ctx *ctx, double J, int32 iflag, int which,

@@ -509,13 +509,19 @@ static void houses_less_rate(int hsys, int retc, double rate, double *cusp_speed
  * tjd_ut, within its precession model's range (swi_sidt_range()), whose TT
  * takes the default delta t where tjde takes the ephemeris's: 0.033 day
  * apart at -13200 on the Swiss files, where its NaN came out as ERR "very
- * close to polar circle, switched to Porphyry" and every cusp NaN. */
+ * close to polar circle, switched to Porphyry" and every cusp NaN.
+ * Upstream bug 284: and the nutation they take at tjde within its model's
+ * range, -13200 .. +17191, unless SEFLG_NONUT (swi_frame_range()): past it
+ * the houses answered from series that are none of the Earth's, at 1e11
+ * .. 1e12 days the cusps' speeds 2.1e3 .. 7.7e3 deg/day off their
+ * five-point differences. */
 static int house_range(swe_ctx *ctx, double tjd_ut, double tjde, int32 iflag, int ito,
                        double *cusp, double *ascmc, double *cusp_speed,
                        double *ascmc_speed, char *serr)
 {
   int i;
-  if (swi_frame_range(ctx, tjde, 0, SWI_FRAME_EPS, "jd", serr) == OK
+  if (swi_frame_range(ctx, tjde, iflag & SEFLG_NONUT, SWI_FRAME_EPS | SWI_FRAME_NUT, "jd",
+                      serr) == OK
       && swi_sidt_range(ctx, tjd_ut, serr) == OK
       && (!(iflag & SEFLG_SIDEREAL) || swi_ayanamsa_range(ctx, tjde, iflag, serr) == OK))
     return OK;

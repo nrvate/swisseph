@@ -85,6 +85,13 @@
  * the houses at J2000 after refusals at 1e13, -1e300 and NaN on the same
  * context against a fresh context, bit for bit.
  *
+ * UPSTREAM-BUGS 284 refuses the nutation past its range, -3100015.5 ..
+ * 8000016.5: the cases above that are to answer past it, SE_ECL_NUT's
+ * mean obliquity at the ranges' ends and Owen 1990's, the ayanamsa and the
+ * Equal houses at Vondrak's ends, the tropical houses at UT 1e9 and the
+ * houses with speeds at -JMAX, take SEFLG_NONUT, which is what they check
+ * (G178 checks the refusal).
+ *
  * Each check runs in a child process, 60 s at most, so that a crash or a
  * hang before the fix is a failure, not the end of the run.
  *
@@ -250,7 +257,8 @@ static int check_b(void)
             fill(cs, 37);
             fill(as, 10);
             serr[0] = '\0';
-            swe_houses_ex2_r(c, tq[i], fl, 50, 10, hs[h], cu, a, cs, as, serr);
+            /* SEFLG_NONUT: the nutation is refused there (bug 284) */
+            swe_houses_ex2_r(c, tq[i], fl | SEFLG_NONUT, 50, 10, hs[h], cu, a, cs, as, serr);
             for (k = 0; k <= ito; k++)
               fin &= isfinite(cu[k]) && isfinite(cs[k]);
             for (k = 0; k < 10; k++)
@@ -406,7 +414,9 @@ static int ecl(swe_ctx *c, double t, int32 fl, int want, int band)
   int32 r;
   fill(x, 6);
   serr[0] = '\0';
-  r = swe_calc_r(c, t, SE_ECL_NUT, fl, x, serr);
+  /* answered: the mean obliquity, SEFLG_NONUT, for the nutation is
+   * refused past its own range (bug 284) */
+  r = swe_calc_r(c, t, SE_ECL_NUT, want ? fl | SEFLG_NONUT : fl, x, serr);
   n_all++;
   if (want) {
     if (r < 0 || !isfinite(x[1]) || (band && !(x[1] >= 22 && x[1] <= 25))) {
@@ -548,7 +558,8 @@ static int check_d(void)
       swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
       fill(d, 1);
       serr[0] = '\0';
-      r = swe_get_ayanamsa_ex_r(c, tv[i], SEFLG_MOSEPH, d, serr);
+      /* SEFLG_NONUT: the nutation is refused past its own range (bug 284) */
+      r = swe_get_ayanamsa_ex_r(c, tv[i], SEFLG_MOSEPH | SEFLG_NONUT, d, serr);
       ad = swe_get_ayanamsa_r(c, tv[i]);
       refd = r == ERR && d[0] == 0 && isnan(ad) && vondrak(serr);
       n_all++;
@@ -588,14 +599,17 @@ static int check_d(void)
         fill(cs, 13);
         fill(as, 10);
         serr[0] = '\0';
-        r = swe_houses_ex2_r(c, u, SEFLG_MOSEPH | SEFLG_SIDEREAL, 50, 10, 'E', cu, a, cs, as, serr);
+        /* SEFLG_NONUT here and below: the nutation's range ends inside
+         * (bug 284) */
+        r = swe_houses_ex2_r(c, u, SEFLG_MOSEPH | SEFLG_SIDEREAL | SEFLG_NONUT, 50, 10, 'E',
+                             cu, a, cs, as, serr);
         n_all++;
         if (k ? !(r == ERR && zeros(cu, 13) && zeros(cs, 13) && vondrak(serr)) : r < 0) {
           n_bad++;
           printf("    sidereal houses under Vondrak 2011 at TT %.17g: %d '%s'\n", tt, r, serr);
         }
         serr[0] = '\0';
-        rt = swe_houses_ex2_r(c, u, SEFLG_MOSEPH, 50, 10, 'E', ct, at, cst, ast, serr);
+        rt = swe_houses_ex2_r(c, u, SEFLG_MOSEPH | SEFLG_NONUT, 50, 10, 'E', ct, at, cst, ast, serr);
         n_all++;
         if (rt < 0) {
           n_bad++;
@@ -617,7 +631,7 @@ static int check_d(void)
       double cu[13], a[10];
       int32 r;
       serr[0] = '\0';
-      r = swe_houses_ex2_r(c, 1e9, SEFLG_MOSEPH, 50, 10, 'E', cu, a, NULL, NULL, serr);
+      r = swe_houses_ex2_r(c, 1e9, SEFLG_MOSEPH | SEFLG_NONUT, 50, 10, 'E', cu, a, NULL, NULL, serr);
       n_all++;
       if (r < 0 || !isfinite(cu[1])) {
         n_bad++;

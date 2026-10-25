@@ -1859,6 +1859,20 @@ struct epsilon {
  *     the TT it reached bare (UPSTREAM-BUGS 280, G160, G24)
  *   - swe_heliacal_ut() answering from a fallen ephemeris with an empty
  *     serr (UPSTREAM-BUGS 286, G160, G24)
+ *   - under the formula sidereal times swe_sidtime() answered from a
+ *     polynomial precession model's mean obliquity past its range, where
+ *     SE_ECL_NUT refuses it: at J2000 + 400 centuries under
+ *     "0,8,0,0,0,0,0,3", + 1000 under "0,2,0,0,0,0,0,2" (UPSTREAM-BUGS
+ *     283, G178, G24)
+ *   - the nutation taken at any date within the 1e12-day bound, past
+ *     -13200 .. +17191 too: SE_ECL_NUT, swe_sidtime(), the houses, the
+ *     true ayanamsa and a star with no Earth answered there (UPSTREAM-BUGS
+ *     284, G178, G24)
+ *   - a topocentric site's long-term sidereal time with its precession
+ *     model chosen at the site's UT + the default delta t, the other
+ *     model's within 0.3 s after a short-term window's edge: the
+ *     topocentric Moon 2.9e-7 deg off (the compat build's long-term
+ *     sidereal time is upstream's: 1.3e-6) (UPSTREAM-BUGS 285, G178, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

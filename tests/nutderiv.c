@@ -42,8 +42,10 @@
  * some 1e-9: 12 checks. It calls the fork's own functions and is left out
  * of the upstream build.
  *
- * Check (c): SE_ECL_NUT's dpsi and deps under the default (the direct
- * 2000A there), IAU 2000A and IAU 2000B, at 64 instants with |J - J2000|
+ * Check (c): the nutation's dpsi and deps under the default (the direct
+ * 2000A there), IAU 2000A and IAU 2000B (swi_nutation()'s, SE_ECL_NUT
+ * checked refused past the nutation's range since UPSTREAM-BUGS 284; in
+ * the upstream build SE_ECL_NUT's), at 64 instants with |J - J2000|
  * log-uniform over 4.1e8..1e9 days (|J| past 4e8 either side): their
  * fourth differences over 2^-12 day / sqrt(70), the terms' own curvature
  * 1e-16 deg, within 1e-13 deg, and where long double has a 64-bit
@@ -286,8 +288,10 @@ int main(int argc, char **argv)
 #endif
   {
     /* check (c): the direct IAU 2000A and 2000B series past the grid's
-     * 4e8 days, as SE_ECL_NUT answers them (the default's too, which is
-     * the direct 2000A there): their places' fourth differences over
+     * 4e8 days, as swi_nutation() computes them (the default's too, which
+     * is the direct 2000A there; SE_ECL_NUT refuses there since bug 284,
+     * and is checked refused; in the upstream build SE_ECL_NUT's): their
+     * places' fourth differences over
      * 2^-12 day, which the terms' own curvature puts at 1e-16 deg, and
      * against the series in long double */
     static const char *cm[3] = { "0,0,0,0", "0,0,0,3", "0,0,0,4" };
@@ -304,11 +308,28 @@ int main(int argc, char **argv)
       swe_set_astro_models_r(c, mod, 0);
       for (i = 0; i < 64; i++) {
         double v[5][6];
-        for (k = 0; k < 5; k++)
+        for (k = 0; k < 5; k++) {
+#ifndef SWE_UPSTREAM_COMPAT
+          /* UPSTREAM-BUGS 284: SE_ECL_NUT refuses past the nutation's
+           * range, -3100015.5 .. 8000016.5, every instant here: checked
+           * refused (the range named), the series swi_nutation()'s */
+          double nl[2];
+          serr[0] = '\0';
+          if (swe_calc_r(c, tq[i] + (k - 2) * h, SE_ECL_NUT, SEFLG_MOSEPH, v[k], serr) != ERR
+              || strstr(serr, "nutation model's range") == NULL) {
+            printf("  ERROR SE_ECL_NUT at %.8f not refused: '%s'\nG140 FAIL: ERROR\n", tq[i], serr);
+            return 1;
+          }
+          swi_nutation(c, tq[i] + (k - 2) * h, SEFLG_MOSEPH, nl);
+          v[k][2] = nl[0] * RADTODEG;
+          v[k][3] = nl[1] * RADTODEG;
+#else
           if (swe_calc_r(c, tq[i] + (k - 2) * h, SE_ECL_NUT, SEFLG_MOSEPH, v[k], serr) < 0) {
             printf("  ERROR SE_ECL_NUT at %.8f: %s\nG140 FAIL: ERROR\n", tq[i], serr);
             return 1;
           }
+#endif
+        }
         for (j = 2; j < 4; j++) {
           double d = (v[0][j] + v[4][j] - 4 * (v[1][j] + v[3][j]) + 6 * v[2][j]) / sqrt(70);
           if (fabs(d) > w4)

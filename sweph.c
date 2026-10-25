@@ -1364,9 +1364,13 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
    * Vondrak 2011 is a polynomial, answered at any date within bug 196's
    * bound: 1.6e51 deg at 1e12 under Laskar 1986, -1.9e26 under IAU 2006,
    * 3.5e46 under Owen 1990. Refused outside the model's range (see
-   * swi_frame_range()), with the flags resolved, before the caches. */
+   * swi_frame_range()), with the flags resolved, before the caches.
+   * Upstream bug 284: and the nutation outside its model's range, -13200
+   * .. +17191, where the series are none of the Earth's (dpsi 21.4" at
+   * +17191, 36.4" at +1000 centuries, 510" at 1e9 days, 13 deg at 1e11):
+   * refused unless SEFLG_NONUT, which takes none. */
   if (ipl == SE_ECL_NUT
-      && swi_frame_range(ctx, tjd, iflag, SWI_FRAME_EPS, "jd", serr) == ERR)
+      && swi_frame_range(ctx, tjd, iflag, SWI_FRAME_EPS | SWI_FRAME_NUT, "jd", serr) == ERR)
     return ERR;
 #endif
   /****************************************** 
@@ -6016,6 +6020,13 @@ static int32 swe_get_ayanamsa_ex_r_body(swe_ctx *ctx, double tjd_et, int32 iflag
 #ifndef SWE_UPSTREAM_COMPAT
   /* bug 212: ERR and 0, before the nutation is added */
   if (swi_ayanamsa_range(ctx, tjd_et, iflag, serr) == ERR) {
+    *daya = 0;
+    return ERR;
+  }
+  /* Upstream bug 284: and the nutation it adds past its model's range
+   * (swi_frame_range()), without the Horizons flags it takes (bug 223) */
+  if (!(iflag & SEFLG_NONUT)
+      && swi_frame_range(ctx, tjd_et, 0, SWI_FRAME_NUT, "jd", serr) == ERR) {
     *daya = 0;
     return ERR;
   }
@@ -13126,6 +13137,17 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
   if (iflag & SEFLG_SIDEREAL && !ctx->ayana_is_set)
     SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 284: a star with no Earth (barycentric, heliocentric on
+   * Moshier, as the Earth's read below) takes no ephemeris's range, and
+   * took the nutation at any date: refused past its model's range unless
+   * SEFLG_NONUT (see swi_frame_range()). With the Earth the ephemeris
+   * refuses first: every one's range lies within the nutation's. */
+  if (!(iflag & SEFLG_NONUT)
+      && ((iflag & SEFLG_BARYCTR) || ((iflag & SEFLG_HELCTR) && (iflag & SEFLG_MOSEPH)))
+      && swi_frame_range(ctx, tjd, iflag, SWI_FRAME_NUT, "jd", serr) == ERR)
+    return ERR;
+#endif
   /******************************************
    * obliquity of ecliptic 2000 and of date *
    ******************************************/
@@ -14375,8 +14397,10 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
   nut_matrix(&nuttmp, &oectmp);
   eps = oectmp.eps + nuttmp.nutlo[1];
   nut = nuttmp.nutlo[0];
-  /* apparent sidereal time */
-  sidt = swe_sidtime0_r(ctx, tjd_ut, eps * RADTODEG, nut * RADTODEG);
+  /* apparent sidereal time; Upstream bug 285: the long-term formula's
+   * model of this TT, the frame's, not of tjd_ut + the default delta t
+   * (swi_sidtime0_tt()) */
+  sidt = swi_sidtime0_tt(ctx, tjd_ut, tjd, eps * RADTODEG, nut * RADTODEG);
   sidt *= 15;	/* in degrees */
   /* Upstream bug 140: UT1 = TT - delta t is rounded to a double, 2^-31
    * day (40 us) apart at JD 2.4e6, so the site placed by it was a
@@ -15015,12 +15039,19 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
   if (iflag & SEFLG_SIDEREAL && !ctx->ayana_is_set)
     SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
-  /****************************************** 
-   * obliquity of ecliptic 2000 and of date * 
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 284, as fixstar_calc_from_struct() */
+  if (!(iflag & SEFLG_NONUT)
+      && ((iflag & SEFLG_BARYCTR) || ((iflag & SEFLG_HELCTR) && (iflag & SEFLG_MOSEPH)))
+      && swi_frame_range(ctx, tjd, iflag, SWI_FRAME_NUT, "jd", serr) == ERR)
+    return ERR;
+#endif
+  /******************************************
+   * obliquity of ecliptic 2000 and of date *
    ******************************************/
   swi_check_ecliptic(ctx, tjd, iflag);
   /******************************************
-   * nutation                               * 
+   * nutation                               *
    ******************************************/
   swi_check_nutation(ctx, tjd, iflag);
   retc = fixstar_cut_string(ctx, srecord, star, &stardata, serr);

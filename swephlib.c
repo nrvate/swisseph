@@ -3329,6 +3329,62 @@ static int frame_model_range(int m, int prec, double J, const char *what,
   return ERR;
 }
 
+/* Upstream bug 284: the nutation was taken at any date within bug 196's
+ * bound, which is a bound against hangs and NaN, not a range where the
+ * series mean anything. Each series -- IAU 1980 (Wahr 1981), with or
+ * without Herring 1987's corrections, SEFLG_JPLHOR's IAU 1980, IAU 2000A
+ * (the default, on its day grid) and 2000B, Woolard 1953 -- sums terms
+ * (A + A' T) sin(arg), the arguments polynomials in T (Simon et al. 1994
+ * to T^4, 1980's to T^3, Woolard's to T^2). Its A' T terms are the
+ * obliquity's secular decrease, 47"/cy, linearized: the main term goes as
+ * cos 2eps / sin eps, -17.2064" - 0.0174666" T (1980 -0.01742", Woolard
+ * -0.01737" from 1900), 1.0e-3 of itself a century. None is published as
+ * valid past centuries: IAU 2000B to 1 mas over 1995-2050 (McCarthy &
+ * Luzum 2003, Cel. Mech. 85, 37; SOFA, 1900-2100), 2000A and 1980 at
+ * current epochs, Woolard's for its century. Measured, the five alike
+ * (over 40 years, rates by five-point differences at 2^-6 day): |dpsi|,
+ * |deps| at most 18.9", 9.88" at J2000, rates 0.24", 0.089" a day; at
+ * -+152 centuries 15.9"/21.4", 9.85"/9.97", the rates the same. The main
+ * term against its value at the obliquity of date (Vondrak 2011's): 1%
+ * off at -+50 centuries, 4.5% at -+100, -12.7% and +10.1% at -13200 and
+ * +17191, 22% at -+200, 37% at -+300, 100% at -+1000 (0 at -985, then
+ * the other sign); from 3000 centuries the arguments' T^3 and T^4 take
+ * the rates up, 2000A and 2000B 0.5"/d there, 6.5"/d at 1e4, 325"/d at
+ * 1e9 days (1980 2.1, Woolard 0.95), 1e6"/d at 1e11, |dpsi| 510" at 1e9
+ * days and 13 deg at 1e11, where SE_ECL_NUT, the apparent sidereal time
+ * and the houses answered from them. No documented convention extends a
+ * series (SOFA's iauNut00b drops the arguments' T^2.., not A' T). So each
+ * answers over the widest range of any body, as bug 217's polynomial
+ * precession models do: the mean node's and DE431/DE441's, -13200 ..
+ * +17191, where every apparent position the library computes takes it
+ * and its main term is within 13% of the obliquity's (the Swiss
+ * Ephemeris documentation pairs the long-term sidereal time's IAU 2000
+ * nutation with that span too). Outside, what takes it is refused; under
+ * SEFLG_NONUT nothing is. */
+#define SWI_NUT_JD_START  MOSHNDEPH_START	/* -13200 */
+#define SWI_NUT_JD_END    MOSHNDEPH_END	/* +17191 */
+static int nut_model_range(swe_ctx *ctx, double J, int32 iflag, const char *what,
+                           char *serr)
+{
+  static const char *name[SEMOD_NNUT + 1] = {
+    "", "IAU 1980", "IAU 1980 with Herring 1987's", "IAU 2000A", "IAU 2000B",
+    "Woolard 1953"};
+  int m = ctx->astro_models[SE_MODEL_NUT];
+  if (J >= SWI_NUT_JD_START && J <= SWI_NUT_JD_END)
+    return OK;
+  if (serr != NULL) {
+    char sjd[SWI_JDSTR_LEN];	/* bug 243 */
+    if (m == 0)
+      m = SEMOD_NUT_DEFAULT;
+    snprintf(serr, AS_MAXCH, "%s %s outside the %s nutation model's range %.10g .. %.10g",
+             what, swi_jd_str(J, -1, sjd),
+             frame_nut_model(ctx, J, iflag) ? "SEFLG_JPLHOR's IAU 1980"
+             : m >= 1 && m <= SEMOD_NNUT ? name[m] : "chosen",
+             SWI_NUT_JD_START, SWI_NUT_JD_END);
+  }
+  return ERR;
+}
+
 int swi_frame_range(swe_ctx *ctx, double J, int32 iflag, int which,
                     const char *what, char *serr)
 {
@@ -3344,6 +3400,10 @@ int swi_frame_range(swe_ctx *ctx, double J, int32 iflag, int which,
     return ERR;
   if ((which & SWI_FRAME_PREC)
       && frame_model_range(frame_prec_model(ctx, J, iflag), 1, J, what, serr) == ERR)
+    return ERR;
+  /* bug 284: the nutation's, unless the frame takes none */
+  if ((which & SWI_FRAME_NUT) && !(iflag & SEFLG_NONUT)
+      && nut_model_range(ctx, J, iflag, what, serr) == ERR)
     return ERR;
   return OK;
 }
@@ -6181,8 +6241,10 @@ static double sidt_lterm_offset(swe_ctx *ctx, int ib, int model)
  * ERR. Vondrak 2011's range is where the integral stops, and past it the
  * accumulated precession is its line (bug 209), which takes no matrix: it
  * answers to the date bound, as its obliquity does (bug 196). Within each
- * range nothing changes, bit for bit. */
-int swi_sidt_range(swe_ctx *ctx, double tjd_ut, char *serr)
+ * range nothing changes, bit for bit.
+ * The model and TT are swe_sidtime0_r_body()'s: *tt_model if given (a
+ * site's, bug 285), else UT + sidt_deltat(). */
+static int sidt_range_at(swe_ctx *ctx, double tjd_ut, const double *tt_model, char *serr)
 {
   double tt, tc, tf = J2000 + SIDT_PRA_TFAR * 36525.0, tb = J2000 - SIDT_PRA_TFAR * 36525.0;
   int sidt_model, pm;
@@ -6192,15 +6254,26 @@ int swi_sidt_range(swe_ctx *ctx, double tjd_ut, char *serr)
   /* swe_sidtime0_r_body()'s long-term branch, its TT and model */
   if (sidt_model != SEMOD_SIDT_LONGTERM || (tjd_ut > SIDT_LTERM_T0 && tjd_ut < SIDT_LTERM_T1))
     return OK;
-  tt = tjd_ut + sidt_deltat(ctx, tjd_ut);
+  tt = tt_model != NULL ? *tt_model : tjd_ut + sidt_deltat(ctx, tjd_ut);
   pm = frame_chosen_model(ctx, tt);
   tc = tt > tf ? tf : tt < tb ? tb : tt;	/* the integral's reach */
   if (frame_model_range(pm, 1, tc, "jd", NULL) == OK)
     return OK;
   return frame_model_range(pm, 1, tt, "jd", serr);
 }
+int swi_sidt_range(swe_ctx *ctx, double tjd_ut, char *serr)
+{
+  return sidt_range_at(ctx, tjd_ut, NULL, serr);
+}
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+/* tt_model: the TT the long-term formula takes its model at, NULL for UT +
+ * sidt_deltat() (bug 285) */
+static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double nut,
+                                  const double *tt_model)
+#else
 static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double nut)
+#endif
 {
   double jd0;    	/* Julian day at midnight Universal Time */
   double secs;   	/* Time of day, UT seconds since UT midnight */
@@ -6247,8 +6320,8 @@ static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double n
 #ifndef SWE_UPSTREAM_COMPAT
   if (long_era) {
     /* bug 181: the precession model of the instant, TT, as swi_precess()
-     * chooses it */
-    int pm = frame_chosen_model(ctx, tjd + sidt_deltat(ctx, tjd));
+     * chooses it; bug 285: a site's, its call's TT */
+    int pm = frame_chosen_model(ctx, tt_model != NULL ? *tt_model : tjd + sidt_deltat(ctx, tjd));
     if (pm > SEMOD_NPREC)	/* a piece of Owen 1990 (bug 183): its table is */
       pm = SEMOD_PREC_OWEN_1990;	/* Owen's, each interval its piece's (bug 200) */
     gmst = (sidtime_era_long_deg(ctx, tjd, pm) / 15.0
@@ -6331,7 +6404,33 @@ sidtime_done:
  * the bound, which may lie past it */
 double swi_sidtime0(swe_ctx *ctx, double tjd, double eps, double nut)
 {
-  return swe_sidtime0_r_body(ctx, tjd, eps, nut);
+  return swe_sidtime0_r_body(ctx, tjd, eps, nut, NULL);
+}
+
+/* Upstream bug 285: the long-term sidereal time takes its precession model
+ * at TT = UT + the default delta t (sidt_deltat(), iflag -1), and a
+ * topocentric site's UT is its call's TT less that ephemeris's delta t
+ * (swi_get_observer()): at -2 centuries 18.903 s on the Swiss files,
+ * 18.125 s on Moshier, 18.606 s the default. So where the model steps (a
+ * short-term window's edge, Owen 1990's joins) the site's sidereal time
+ * was the other model's for 0.297 s after the step on the Swiss files and
+ * 0.481 s before it on Moshier, its frame the call's: under "0,9,1" at
+ * -2 centuries the topocentric Moon 2.91e-7 deg off, its speed 1.49e-6
+ * deg/day, Polaris's topocentric right ascension speed 1.83e-4 (bug 259's
+ * read on the instant's side took the site across). This is
+ * swe_sidtime0_r() for a site built for a call at TT tjd_tt: the model
+ * and bug 256's range at that TT. Elsewhere nothing changes, bit for
+ * bit. */
+double swi_sidtime0_tt(swe_ctx *ctx, double tjd, double tjd_tt, double eps, double nut)
+{
+  double ret;
+  if (!(tjd >= -SWI_ECL_NUT_JMAX && tjd <= SWI_ECL_NUT_JMAX))	/* bug 214 */
+    return NAN;
+  swi_config_hold(ctx);
+  ret = sidt_range_at(ctx, tjd, &tjd_tt, NULL) == OK
+        ? swe_sidtime0_r_body(ctx, tjd, eps, nut, &tjd_tt) : NAN;
+  swi_config_release(ctx);
+  return ret;
 }
 #endif
 
@@ -6346,7 +6445,7 @@ double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut
   swi_config_hold(ctx);	/* bug 124 */
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 256: past the long-term sidereal time's model's range */
-  ret = swi_sidt_range(ctx, tjd, NULL) == OK ? swe_sidtime0_r_body(ctx, tjd, eps, nut) : NAN;
+  ret = swi_sidt_range(ctx, tjd, NULL) == OK ? swe_sidtime0_r_body(ctx, tjd, eps, nut, NULL) : NAN;
 #else
   ret = swe_sidtime0_r_body(ctx, tjd, eps, nut);
 #endif
@@ -6413,8 +6512,22 @@ static double swe_sidtime_r_body(swe_ctx *ctx, double tjd_ut)
   double eps, nutlo[2] = {0, 0}, tsid;	/* calc_nutation() writes nothing for a model it does not know */
   double tjde;
   /* delta t adjusted to default tidal acceleration of the moon */
-  tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL); 
+  tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
   swi_init_swed_if_start(ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 283: the equation of the equinoxes took the mean
+   * obliquity of the chosen precession model at any date: under the three
+   * formula sidereal times (IAU 1976, IAU 2006, IERS 2010), which bug
+   * 256's range does not bound, a polynomial model's past its range,
+   * where SE_ECL_NUT refuses it (bug 217): the sidereal time 1.81e-3 deg
+   * off Vondrak 2011's obliquity's at + 400 centuries under "0,8,0,0,0,0,0,3",
+   * 6.15e-3 at + 1000 under "0,2,0,0,0,0,0,2" (and IAU 1976's); and past
+   * the bound at UT 1e12, TT 1.28e12. Upstream bug 284: and the nutation
+   * at any date (nut_model_range()). NaN now where either is refused, as
+   * SE_ECL_NUT refuses them; elsewhere bit for bit. */
+  if (swi_frame_range(ctx, tjde, 0, SWI_FRAME_EPS | SWI_FRAME_NUT, "jd", NULL) == ERR)
+    return NAN;
+#endif
   eps = swi_epsiln(ctx, tjde, 0) * RADTODEG;
   swi_nutation(ctx, tjde, 0, nutlo);
   for (i = 0; i < 2; i++)

@@ -31,17 +31,28 @@
  * named, with SEFLG_MOSEPH, SEFLG_SWIEPH and SEFLG_MOSEPH |
  * SEFLG_JPLHOR_APPROX: OK and the four finite. 1584 calls. (The other ten
  * long-term models, polynomials, answer within their own ranges since bug
- * 217, which G161 checks.)
+ * 217, which G161 checks.) Since bug 284 every one of these instants lies
+ * past the nutation's range, -3100015.5 .. 8000016.5: in the shipped build
+ * there the nutation is refused (ERR, outputs 0, that range named) and
+ * the obliquity, with SEFLG_NONUT, answers to the bound, OK and finite;
+ * 3168 calls. G178 checks the range's ends.
  *
  * Check (c): a refusal leaves nothing behind. SE_ECL_NUT at J2000 and at
- * 1e12 after refusals at 1e13, -1e300 and NaN on the same context, against
- * a fresh context, the default models: bit for bit.
+ * 1e12 (with SEFLG_NONUT: bug 284) after refusals at 1e13, -1e300 and NaN
+ * on the same context, against a fresh context, the default models: bit
+ * for bit.
  *
  * Measured: (a) 1384 of 1384 refused, (b) 1584 of 1584 finite (the largest
  * |dpsi| 125 deg, the mean obliquity 76.4 deg; under the polynomial
  * models, before bug 217, up to 1.6e51 deg), (c) 0 values differ. Before the
  * fix (a) fails, 0 of 1384 refused, every date answered with its flags,
- * and (b) and (c) pass; the upstream build fails the same. Run as
+ * and (b) and (c) pass. After bug 284 (b) 3168 of 3168 as above (the
+ * mean obliquity up to 76.4 deg), the nutation refused at each; before it
+ * (b) 1584 of 3168, the nutation answered at each. The upstream build
+ * fails (a) the same and (c), 3 values at 1e12: under SEFLG_NONUT its
+ * SE_ECL_NUT reports the nutation it last computed (J2000's on the
+ * context that took it, 0 on a fresh one); its (b), the one form, 1584 of
+ * 1584. Run as
  *   eclnutrange EPHEDIR
  */
 #include <float.h>
@@ -151,7 +162,25 @@ int main(int argc, char **argv)
         swe_set_astro_models_r(c, mod, 0);
         for (i = 0; i < 44; i++) {
           double x[6];
-          int32 r = swe_calc_r(c, tin[i], SE_ECL_NUT, flb[f], x, serr);
+          int32 r;
+#ifndef SWE_UPSTREAM_COMPAT
+          /* bug 284: the nutation refused past its model's range, -3100015.5
+           * .. 8000016.5, which every instant here is; the obliquity, under
+           * SEFLG_NONUT, answers to the bound */
+          double y[6] = { 7, 7, 7, 7, 7, 7 };
+          serr[0] = '\0';
+          r = swe_calc_r(c, tin[i], SE_ECL_NUT, flb[f], y, serr);
+          nb++;
+          if (r != ERR || strstr(serr, "nutation model's range -3100015.5 .. 8000016.5") == NULL
+              || y[0] != 0 || y[1] != 0 || y[2] != 0 || y[3] != 0 || y[4] != 0 || y[5] != 0) {
+            if (bb++ < 5)
+              printf("  (b) models %s flags %d J %.17g: the nutation not refused: return %d, %g %g %s\n",
+                     mod, flb[f], tin[i], r, y[2], y[3], serr);
+          }
+          r = swe_calc_r(c, tin[i], SE_ECL_NUT, flb[f] | SEFLG_NONUT, x, serr);
+#else
+          r = swe_calc_r(c, tin[i], SE_ECL_NUT, flb[f], x, serr);
+#endif
           nb++;
           if (r < 0 || !isfinite(x[0]) || !isfinite(x[1]) || !isfinite(x[2]) || !isfinite(x[3])) {
             if (bb++ < 5)
@@ -166,7 +195,7 @@ int main(int argc, char **argv)
         }
         swe_ctx_free(c);
       }
-  printf("  (b) |J| <= 1e12: %d of %d answered, finite (largest |dpsi| %.3g deg, |mean obliquity| %.3g)\n",
+  printf("  (b) |J| <= 1e12: %d of %d as expected, finite (largest |dpsi| %.3g deg, |mean obliquity| %.3g)\n",
          nb - bb, nb, big, bigeps);
   if (bb)
     bad++;
@@ -177,11 +206,13 @@ int main(int argc, char **argv)
     swe_ctx *c = swe_ctx_new(), *d;
     double x[6], y[6];
     for (i = 0; i < 2; i++) {
+      /* 1e12 past the nutation's range (bug 284): its obliquity */
+      int32 fl = SEFLG_MOSEPH | (i ? SEFLG_NONUT : 0);
       for (k = 0; k < 3; k++)
         swe_calc_r(c, tr[k], SE_ECL_NUT, SEFLG_MOSEPH, x, serr);
       d = swe_ctx_new();
-      if (swe_calc_r(c, tg[i], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0
-          || swe_calc_r(d, tg[i], SE_ECL_NUT, SEFLG_MOSEPH, y, serr) < 0)
+      if (swe_calc_r(c, tg[i], SE_ECL_NUT, fl, x, serr) < 0
+          || swe_calc_r(d, tg[i], SE_ECL_NUT, fl, y, serr) < 0)
         cbad++;
       else
         for (k = 0; k < 6; k++)

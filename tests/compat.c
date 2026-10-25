@@ -30,6 +30,7 @@
 #include <pthread.h>
 #include "swephexp.h"
 #include "sweph.h"	/* ctx->jpldenum: de200 read as DE 431 (de200_as_431()) */
+#include "swephlib.h"	/* swi_nutation(): far_nut() */
 
 #ifdef EXPECT_COMPAT
 # define WANT_DEFECT 1
@@ -3900,6 +3901,19 @@ static double jdate_window_off(void)
   return r;
 }
 
+/* SE_ECL_NUT's dpsi and deps, deg, in v[2] and v[3], at a date past the
+ * nutation's range, where the shipped build refuses it since UPSTREAM-BUGS
+ * 284 and the compat build answers: the series as both evaluate it,
+ * swi_nutation()'s, which is what SE_ECL_NUT answered there. 0 */
+static int far_nut(swe_ctx *c, double t, double *v)
+{
+  double nl[2];
+  swi_nutation(c, t, SEFLG_MOSEPH, nl);
+  v[2] = nl[0] * RADTODEG;
+  v[3] = nl[1] * RADTODEG;
+  return 0;
+}
+
 /* UPSTREAM-BUGS 188: the direct IAU 2000B series past 4e8 days, its
  * arguments' rounding. SE_ECL_NUT's dpsi and deps under IAU 2000B set
  * explicitly (upstream's default) at eight instants 8e8 to 1e9 days either
@@ -3912,7 +3926,7 @@ static double nut_args_jitter(void)
   static const double dj[8] = { -9.9e8, -9.3e8, -8.6e8, -8.1e8, 8.1e8, 8.6e8, 9.3e8, 9.9e8 };
   const double h = 1.0 / 4096;
   double worst = 0;
-  char serr[256], mod[] = "0,0,0,4";
+  char mod[] = "0,0,0,4";
   int d, k, j;
   swe_ctx *c = swe_ctx_new();
   if (c == NULL)
@@ -3922,7 +3936,7 @@ static double nut_args_jitter(void)
   for (d = 0; d < 8; d++) {
     double t = floor((2451545.0 + dj[d] + 0.3) * 256) / 256, v[5][6];
     for (k = 0; k < 5; k++)
-      if (swe_calc_r(c, t + (k - 2) * h, SE_ECL_NUT, SEFLG_MOSEPH, v[k], serr) < 0) {
+      if (far_nut(c, t + (k - 2) * h, v[k]) < 0) {	/* bug 284 */
         swe_ctx_free(c);
         return -1;
       }
@@ -4965,7 +4979,7 @@ static double nut80_args_jitter(void)
   static const double dj[8] = { -4.9e9, -3.8e9, -2.7e9, -2.1e9, 2.1e9, 2.7e9, 3.8e9, 4.9e9 };
   const double h = 1.0 / 4096;
   double worst = 0;
-  char serr[256], mod[] = "0,0,0,1";
+  char mod[] = "0,0,0,1";
   int d, k, j;
   swe_ctx *c = swe_ctx_new();
   if (c == NULL)
@@ -4974,7 +4988,7 @@ static double nut80_args_jitter(void)
   for (d = 0; d < 8; d++) {
     double t = floor((2451545.0 + dj[d] + 0.3) * 256) / 256, v[5][6];
     for (k = 0; k < 5; k++)
-      if (swe_calc_r(c, t + (k - 2) * h, SE_ECL_NUT, SEFLG_MOSEPH, v[k], serr) < 0) {
+      if (far_nut(c, t + (k - 2) * h, v[k]) < 0) {	/* bug 284 */
         swe_ctx_free(c);
         return -1;
       }
@@ -5104,14 +5118,14 @@ static double wool_args_far_off(void)
     {31497088417.050781, 4.2408593571454807, -0.032190305275584814},
   };
   double x[6], r = 0;
-  char serr[AS_MAXCH], mod[] = "0,0,0,5";
+  char mod[] = "0,0,0,5";
   int i, k;
   swe_ctx *c = swe_ctx_new();
   if (c == NULL)
     return -1;
   swe_set_astro_models_r(c, mod, 0);
   for (i = 0; i < 4 && r >= 0; i++) {
-    if (swe_calc_r(c, ref[i][0], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0)
+    if (far_nut(c, ref[i][0], x) < 0)	/* bug 284 */
       r = -1;
     for (k = 0; k < 2 && r >= 0; k++)
       if (fabs(x[2 + k] - ref[i][1 + k]) > r)
@@ -5749,6 +5763,105 @@ static double topo_star_window_off(void)
       r = fabs(x[3 + j] - dd);
   }
   swe_ctx_free(c);
+  return r;
+}
+
+/* UPSTREAM-BUGS 283: the formula sidereal times' equation of the
+ * equinoxes with a polynomial precession model's mean obliquity past its
+ * range. swe_sidtime() at UT J2000 + 400 centuries under
+ * "0,8,0,0,0,0,0,3" and + 1000 under "0,2,0,0,0,0,0,2" and
+ * "0,2,0,0,0,0,0,1", a fresh context each; the number answered (finite).
+ * The shipped build refuses all 3 (NaN, where SE_ECL_NUT refuses the
+ * obliquity or the nutation, bug 284); upstream answers all 3, as the
+ * shipped build did before the fix. */
+static double sidt_formula_eps_answered(void)
+{
+  static const char *mq[3] = { "0,8,0,0,0,0,0,3", "0,2,0,0,0,0,0,2", "0,2,0,0,0,0,0,1" };
+  static const double cy[3] = { 400, 1000, 1000 };
+  int i, n = 0;
+  for (i = 0; i < 3; i++) {
+    char mod[40];
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    strcpy(mod, mq[i]);
+    swe_set_astro_models_r(c, mod, 0);
+    if (isfinite(swe_sidtime_r(c, 2451545 + cy[i] * 36525.0)))
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 284: the nutation past its models' range, -3100015.5 ..
+ * 8000016.5. The default models, Moshier, a fresh context each:
+ * SE_ECL_NUT at TT 1e9, swe_sidtime() at UT -1e7, Placidus
+ * (swe_houses_ex2()) at UT 5e7 and latitude 10, the true ayanamsa
+ * (Lahiri) at TT -1e7 and barycentric Spica at TT 1e9; the number
+ * answered. The shipped build refuses all 5 (ERR, NaN); upstream answers
+ * all 5. */
+static double nut_range_answered(void)
+{
+  int i, n = 0;
+  for (i = 0; i < 5; i++) {
+    double x[6], cu[13], a[10];
+    char serr[AS_MAXCH], st[AS_MAXCH];
+    int ok = 0;
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+    switch (i) {
+    case 0: ok = swe_calc_r(c, 1e9, SE_ECL_NUT, SEFLG_MOSEPH, x, serr) >= 0; break;
+    case 1: ok = isfinite(swe_sidtime_r(c, -1e7)); break;
+    case 2: ok = swe_houses_ex2_r(c, 5e7, SEFLG_MOSEPH, 10, 8.55, 'P', cu, a, NULL, NULL, serr) >= 0; break;
+    case 3: ok = swe_get_ayanamsa_ex_r(c, -1e7, SEFLG_MOSEPH, x, serr) >= 0; break;
+    default:
+      strcpy(st, "Spica");
+      ok = swe_fixstar2_r(c, st, 1e9, SEFLG_MOSEPH | SEFLG_BARYCTR, x, serr) >= 0;
+      break;
+    }
+    n += ok;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 285: a topocentric site's sidereal time at a short-term
+ * window's edge. The topocentric Moon at Zurich on the Swiss files under
+ * "0,9,1" at TT J2000 - 2 centuries + 0.15 s, where TT less the files'
+ * delta t plus the default's lies 0.15 s before the edge, against "0,1,1",
+ * whose model is the edge's inside throughout; the larger of longitude and
+ * latitude, deg. The shipped build's site takes the call's TT's model (0;
+ * 2.91e-7 before the fix); the upstream build's site its own long-term
+ * formula's (1.31e-6). -1 if a call fails. */
+static double topo_site_window_off(void)
+{
+  const double t = 2378495.0 + 0.15 / 86400;
+  const int32 fl = SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_SPEED;
+  const char *ms[2] = { "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0" };
+  double x[2][6], r;
+  char mod[40], serr[AS_MAXCH];
+  int k;
+  for (k = 0; k < 2; k++) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    strcpy(mod, ms[k]);
+    swe_set_astro_models_r(c, mod, 0);
+    swe_set_topo_r(c, 8.55, 47.38, 400);
+    if (swe_calc_r(c, t, SE_MOON, fl, x[k], serr) < 0) {
+      swe_ctx_free(c);
+      return -1;
+    }
+    swe_ctx_free(c);
+  }
+  r = fabs(x[0][0] - x[1][0]);
+  if (fabs(x[0][1] - x[1][1]) > r)
+    r = fabs(x[0][1] - x[1][1]);
   return r;
 }
 
@@ -7681,7 +7794,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3, tzfar, utmsg, boundmsg, eclutmsg, stencilmsg, helnote;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3, tzfar, utmsg, boundmsg, eclutmsg, stencilmsg, helnote, sidtfeps, nutrng, toposidt;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -7884,6 +7997,9 @@ int main(int argc, char **argv)
   eclutmsg = ecl_msg_ut_named();
   stencilmsg = stencil_msg_named();
   helnote = heliacal_fallen_unnoted();
+  sidtfeps = sidt_formula_eps_answered();
+  nutrng = nut_range_answered();
+  toposidt = topo_site_window_off();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -9847,6 +9963,30 @@ int main(int argc, char **argv)
   else {
     printf("  heliacal fallback unnoted %.0f/3 FAIL: expected %s\n",
            helnote, WANT_DEFECT ? "3" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (sidtfeps == 3) : (sidtfeps == 0))
+    printf("  formula sidt's obliquity %.0f/3 answered OK\n", sidtfeps);
+  else {
+    printf("  formula sidt's obliquity %.0f/3 answered FAIL: expected %s\n",
+           sidtfeps, WANT_DEFECT ? "3" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nutrng == 5) : (nutrng == 0))
+    printf("  nutation past its range %.0f/5 answered OK\n", nutrng);
+  else {
+    printf("  nutation past its range %.0f/5 answered FAIL: expected %s\n",
+           nutrng, WANT_DEFECT ? "5" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (toposidt > 1e-7) : (toposidt >= 0 && toposidt < 1e-10))
+    printf("  topocentric site at a window %.2e deg OK\n", toposidt);
+  else {
+    printf("  topocentric site at a window %.2e deg FAIL: expected %s\n",
+           toposidt, WANT_DEFECT ? "> 1e-7" : "< 1e-10");
     bad++;
   }
 
