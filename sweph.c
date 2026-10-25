@@ -602,6 +602,16 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
   }
   if (iflag & SEFLG_XYZ)
     xs = xs+6;		/* cartesian coordinates */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 90 (part 2): the four angles are written to the first
+   * four slots of the save area alone, and SEFLG_EQUATORIAL or SEFLG_XYZ
+   * sent the read to slots 12.. or 6.. of the asteroids' shared area: the
+   * last such body's equatorial or cartesian place (Cupido's RA 44.77 deg
+   * as the "true obliquity" at 2460000.5, 23.4384), or zeros on a fresh
+   * context. Always the angles. */
+  if (ipl == SE_ECL_NUT)
+    xs = sd->xsaves;
+#endif
   if (ipl == SE_ECL_NUT) {
     i = 4;
   } else {

@@ -558,6 +558,13 @@ static double ecl_nut_speed3_off(void)
   for (k = 0; k < 6; k++)
     if (fabs(a[k] - b[k]) > r)
       r = fabs(a[k] - b[k]);
+  /* and with SEFLG_EQUATORIAL after Cupido's equatorial call, which
+   * upstream answers with Cupido's right ascension etc. (part 2) */
+  swe_calc(t + 0.25, SE_FICT_OFFSET + 1, SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_EQUATORIAL, b, serr);
+  swe_calc(t, SE_ECL_NUT, SEFLG_SWIEPH | SEFLG_EQUATORIAL, b, serr);
+  for (k = 0; k < 6; k++)
+    if (fabs(a[k] - b[k]) > r)
+      r = fabs(a[k] - b[k]);
   return r;
 }
 

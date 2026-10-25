@@ -4931,18 +4931,26 @@ Three small defects, found while fixing 84.
   at least once (niter is 1, or 0 from j = 0) and warned that `dt` may be
   used uninitialised at the bug 63 and 78 lines.
 
+- Part 2: `SE_ECL_NUT` with `SEFLG_EQUATORIAL` or `SEFLG_XYZ` read slots 12.. or
+  6.. of that same asteroid save area, where it writes only the first four:
+  after an equatorial Cupido call, 2460000.5 gave x[0] = 44.7721 (Cupido's
+  right ascension) for the true obliquity 23.4384, x[3] = 0.0209 for
+  0.00215, and with XYZ other bodies' coordinates; on a fresh context
+  zeros. The manual documents nothing for them. Now the four angles, x[4] =
+  x[5] = 0, whatever coordinate flags are given.
+
 **Fix, as done here:** `SE_ECL_NUT` takes no SPEED3 pass and copies no speed
 slots: with any speed flag it answers as with none, x[0..3] the true and
 mean obliquity, the nutation in longitude and in obliquity, x[4] = x[5] = 0
 (upstream documents nothing for the speed slots). The `else`, and `dt = 0`
 at the top of the function; the second changes no result.
 
-G89 `tests/eclnutspeed.c`: `SE_ECL_NUT` with no flag, SPEED and SPEED3, six
+G89 `tests/eclnutspeed.c`: part 2, the same four angles with EQUATORIAL, XYZ and both, after a Cupido call, 3 epochs, Swiss and Moshier, with and without speed flags: 324 slots, 216 fail upstream and before. Part 1: `SE_ECL_NUT` with no flag, SPEED and SPEED3, six
 epochs -2000..2800, Swiss and Moshier, degrees and radians, every slot bit
 for bit equal, x[4] = x[5] = 0, x[3] = x[0] - x[1]: 360 slots, none differ;
 valgrind 0 errors. The upstream build and ts20 before this fix fail 118 of
 360 (96 valgrind errors in the gate). G24 `ecl_nut_speed3_off`: the largest
-slot difference with SPEED3, 0 shipped, 2.16e-3 deg compat. G53, G76, G83
+slot difference with SPEED3 or EQUATORIAL after Cupido, 0 shipped, 78.5 deg compat. G53, G76, G83
 and G24 pass; `-Og -Wall -Wextra -Werror` builds every file, default and
 compat.
 

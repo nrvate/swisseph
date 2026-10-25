@@ -959,7 +959,8 @@ struct epsilon {
  *   - SEFLG_SPEED3 differenced SE_ECL_NUT's four angles as a position: the
  *     nutation in obliquity came back as the true obliquity's rate (-6.06e-6
  *     for -1.6026e-3 deg), x[4], x[5] nonzero, uninitialised reads
- *     (UPSTREAM-BUGS 90, G89)
+ *     (UPSTREAM-BUGS 90, G89); with SEFLG_EQUATORIAL or SEFLG_XYZ it read the
+ *     asteroids' save area, the last such body's coordinates
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

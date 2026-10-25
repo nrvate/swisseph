@@ -14,6 +14,14 @@
  * x[3] the nutation in obliquity, equal to x[0] - x[1]; and the RADIANS
  * flag the same way. Measured: 0 differences. The upstream build fails by
  * 1.6e-3 deg in x[3] and 5e-5 in x[4], x[5]; ts20 before this fix the same.
+ *
+ * Part 2 (UPSTREAM-BUGS 90): SEFLG_EQUATORIAL and SEFLG_XYZ sent the read to
+ * the asteroids' shared save area, 12 and 6 slots on: Cupido's right
+ * ascension (44.77 deg) came back as the true obliquity (23.44) after a
+ * Cupido call, zeros without one. The same four angles with each coordinate
+ * flag set, after a call of a different body (Cupido, equatorial, with
+ * speed), at three epochs, Swiss and Moshier, with and without speed flags:
+ * 0 differences (324 slots). Upstream and ts20 before: 216 of them fail.
  * Run as
  *   eclnutspeed EPHEDIR
  */
@@ -66,6 +74,39 @@ int main(int argc, char **argv)
           printf("  FAIL layout jd %.4f: %.9g %.9g %.9g\n", t, x[0][3], x[0][4], x[0][5]);
         }
       }
+  /* part 2: coordinate flags, after another body's call */
+  {
+    static const int32 rgCo[3] = {SEFLG_EQUATORIAL, SEFLG_XYZ, SEFLG_EQUATORIAL | SEFLG_XYZ};
+    static const double rgJd[3] = {2400000.5, 2451545.0, 2470000.5};
+    for (e = 0; e < 2; e++)
+      for (y = 0; y < 3; y++)
+        for (s = 0; s < 3; s++) {
+          double x[6], ref[6], junk[6];
+          char serr[256];
+          int32 sp = s == 1 ? SEFLG_SPEED : s == 2 ? SEFLG_SPEED3 : 0;
+          swe_calc_r(c, rgJd[y] + 0.25, SE_FICT_OFFSET + 1, rgEph[e] | SEFLG_SPEED | SEFLG_EQUATORIAL, junk, serr);
+          if (swe_calc_r(c, rgJd[y], SE_ECL_NUT, rgEph[e], ref, serr) < 0) {
+            printf("  ERROR jd %.4f: %s\n", rgJd[y], serr);
+            return 1;
+          }
+          for (r = 0; r < 3; r++) {
+            swe_calc_r(c, rgJd[y] + 0.25, SE_FICT_OFFSET + 1, rgEph[e] | SEFLG_SPEED | SEFLG_EQUATORIAL, junk, serr);
+            for (k = 0; k < 6; k++) x[k] = 7;
+            if (swe_calc_r(c, rgJd[y], SE_ECL_NUT, rgEph[e] | sp | rgCo[r], x, serr) < 0) {
+              printf("  ERROR jd %.4f: %s\n", rgJd[y], serr);
+              return 1;
+            }
+            for (k = 0; k < 6; k++) {
+              n++;
+              if (x[k] != ref[k]) {
+                bad++;
+                printf("  FAIL coord eph %d jd %.4f speed %d coord %d slot %d: %.9g vs %.9g\n",
+                       e, rgJd[y], s, r, k, x[k], ref[k]);
+              }
+            }
+          }
+        }
+  }
   swe_ctx_free(c);
   if (bad) {
     printf("G89 FAIL: %d of %d\n", bad, n);
