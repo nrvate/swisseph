@@ -1275,6 +1275,58 @@ static double topo_moon_ancient_off(void)
                        2451545.0 - 2999 * 365.25 + 0.137);
 }
 
+/* UPSTREAM-BUGS 79: Saturn's mean ascending node seen from the equator on
+ * 2026-10-24, default flags, its latitude speed against the slope of a
+ * least-squares polynomial (degree 8, 257 places 2^-11 day apart; a
+ * five-point difference cannot resolve it, see tests/nodapstopo.c),
+ * deg/day. The site's acceleration, for the aberration's rate, was a
+ * difference over +-2^-11 day, 1.6e-6 low: 3.5e-10 (upstream, through
+ * bug 34's chord, 8e-6). */
+static double topo_accel_off(void)
+{
+  enum { NS = 128, ND = 9 };
+  double jd = floor(2461338.137 * 256) / 256, h = 1.0 / 2048, x[6], f[6], u[6];
+  double a[ND][ND + 1], c[ND], v[2 * NS + 1];
+  char serr[256];
+  int32 fl = SEFLG_SWIEPH | SEFLG_TOPOCTR;
+  int i, j, k, r;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 0, 400);
+  swe_nod_aps(jd, SE_SATURN, fl | SEFLG_SPEED, SE_NODBIT_MEAN, x, u, u, u, serr);
+  for (k = -NS; k <= NS; k++) {
+    swe_nod_aps(jd + k * h, SE_SATURN, fl, SE_NODBIT_MEAN, f, u, u, u, serr);
+    v[k + NS] = f[1] - x[1];
+  }
+  for (i = 0; i < ND; i++)
+    for (j = 0; j <= ND; j++)
+      a[i][j] = 0;
+  for (k = -NS; k <= NS; k++) {
+    double s = (double) k / NS, p[ND];
+    p[0] = 1;
+    for (i = 1; i < ND; i++)
+      p[i] = p[i - 1] * s;
+    for (i = 0; i < ND; i++) {
+      for (j = 0; j < ND; j++)
+        a[i][j] += p[i] * p[j];
+      a[i][ND] += p[i] * v[k + NS];
+    }
+  }
+  for (i = 0; i < ND; i++)
+    for (r = i + 1; r < ND; r++) {
+      double q = a[r][i] / a[i][i];
+      for (j = i; j <= ND; j++)
+        a[r][j] -= q * a[i][j];
+    }
+  for (i = ND - 1; i >= 0; i--) {
+    double s = a[i][ND];
+    for (j = i + 1; j < ND; j++)
+      s -= a[i][j] * c[j];
+    c[i] = s / a[i][i];
+  }
+  return fabs(x[4] - c[1] / (NS * h));
+}
+
 /* UPSTREAM-BUGS 50: Mercury's Moshier geometric longitude at -3000 over
  * 64 consecutive JDs, its worst residual from a straight line, mas. The
  * arguments freq * T rounded at 2e-6" and more time than a JD resolves:
@@ -1571,7 +1623,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1646,6 +1698,7 @@ int main(int argc, char **argv)
   barysid = bary_sun_sid_off();
   jplstale = jpl_stale_earth_off();
   defldisc = defl_disc_rate_off();
+  toposite = topo_accel_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2199,6 +2252,14 @@ int main(int argc, char **argv)
   else {
     printf("  deflection rate in disc %.2e deg/day FAIL: expected %s\n",
            defldisc, WANT_DEFECT ? "> 1e-6" : "< 2e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (toposite > 1e-7) : (toposite < 5e-11))
+    printf("  topocentric site accel.  %.2e deg/day OK\n", toposite);
+  else {
+    printf("  topocentric site accel.  %.2e deg/day FAIL: expected %s\n",
+           toposite, WANT_DEFECT ? "> 1e-7" : "< 5e-11");
     bad++;
   }
 

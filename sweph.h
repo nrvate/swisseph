@@ -940,6 +940,9 @@ struct epsilon {
  *     the 5e-7 day before t, one-sided, off by half that step times its
  *     curvature behind the Sun's disc (1.9e-6 deg/day on Zeus and 1.8e-6
  *     on Isis-Transpluto 0.005 deg from the centre; UPSTREAM-BUGS 74, G73)
+ *   - observer_accel() took the site's acceleration as a difference over
+ *     +-2^-11 day, (omega h)^2 / 6 = 1.6e-6 low (6e-10 deg/day on every
+ *     topocentric apparent speed; UPSTREAM-BUGS 79, G78)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

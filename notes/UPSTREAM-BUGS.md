@@ -118,6 +118,7 @@ worst were in code that had never executed even once.
 | 81 | A fictitious body's light-time position is read at the rounded instant, and its elements' large terms are rounded unreduced | Correctness | `sweph.c`, `swemplan.c` |
 | 86 | The JPL barycentric Sun takes its instant of date from the Earth's slot | Correctness | `sweph.c` |
 | 84 | `jplplan()`'s Earth and Sun answer for any ephemeris, and the JPL barycentric Sun is finished at the Earth slot's instant | Correctness | `sweph.c` |
+| 79 | The topocentric site's acceleration is 1.6e-6 low | Correctness | `sweph.c` |
 
 ---
 
@@ -4606,6 +4607,62 @@ sequence). Each half of the fix is needed: without the ephemeris key 12
 rows fail (check 3), without the barycentric Sun's Earth 18 (its NaN).
 G24 `jpl_stale_earth_off`: the JPL Moon after Pluto against alone, 0 deg
 shipped, 160 compat. G24, G52, G62, G66 and G70 pass.
+
+## 79. The topocentric site's acceleration is 1.6e-6 low
+
+**Severity: Correctness (6e-10 deg/day on every topocentric apparent speed through the aberration's rate: 1.2e-9 on Neptune's mean points' longitude on the equator, 3.9e-10 on their latitude)**
+**Where:** `sweph.c`: `observer_accel()`
+
+Found as `swe_nod_aps()`'s topocentric mean points being worse than the
+geocentric ones (SEFLG_TOPOCTR, default flags): 5.5e-10 AU/day on every
+distance rate and 5.0e-8 deg/day on Mercury's longitude against a
+five-point difference at h = 2^-6 day. That much was the reference: the
+site turns at 6.3 rad/day, and the five-point's truncation, (omega h)^4 / 30
+of the diurnal parallax's rate, is exactly that at 2^-6 (16 times less per
+halving of h, measured), while below 2^-8 the site's place read at a
+rounded UT (4.7e-10 day at a JD of 2.4e6, 6e-14 AU) gives 1e-9 of noise.
+Against the slope of a least-squares polynomial (degree 8, 257 places
+2^-11 day apart; degree 10 at 2^-12 agrees to 3e-11) two defects of the
+observer were left, both shared with `swe_calc()`:
+
+- The site's velocity lacked the sidereal time's precession in right
+  ascension, the equation of the equinoxes' rate and the nutation matrix's
+  rate, 1.2-2.4e-11 AU/day (2.9e-9 deg/day on Mercury's points, 3.8e-7 on
+  the topocentric Moon). Found here and independently under entry 73,
+  whose fix (G72) is the one in the tree; nothing of this entry's is in
+  `swi_get_observer()`.
+- `observer_accel()`, the site's acceleration that the aberration's rate
+  takes (bugs 34, 52, 70), was a central difference of its velocity over
+  +-2^-11 day, (omega h)^2 / 6 = 1.6e-6 of it low: 1.9e-9 AU/day^2 on the
+  equator, a / c of the diurnal aberration's rate, 6e-10 deg/day on every
+  topocentric apparent speed. With entry 73's site velocity in place,
+  Mercury..Neptune's mean points at 0, 47 and 70 N, seven instants
+  -3000..3000: longitude 9.6e-10 (Mercury) to 1.2e-9 (Neptune) deg/day on
+  the equator, 8.3e-10 at 47 N, latitude 3.7-4.0e-10 for every planet on
+  the equator, scaling with the cosine of the site's latitude; geocentric
+  the same points are within 3.5e-10 and 2.2e-11.
+
+**Fix, as done here:** `observer_accel()` divides its difference by
+sin(omega h) / (omega h), exact for a velocity turning at omega, and takes
+it over +-2^-6 day, where the velocities' rounding (the site's turning read
+at a rounded UT) is 5e-9 of a, not 2.4e-7 as at 2^-11: within 7e-9 of a
+fit to the site's own velocity. Positions are unchanged to the bit; cost
+none (two observer reads, as before). After, the same checks: longitude
+<= 3.5e-10 deg/day (Neptune, its geocentric floor), latitude <= 1.1e-10
+(Mercury at J2000 on the equator, the rounded UT's phase), distance <=
+6.4e-11 AU/day (Neptune's node at -1, geocentric the same); Saturn's
+latitude speeds 3.5e-10 to 7e-12.
+
+G78 `tests/nodapstopo.c`: the longitude, latitude and distance speeds of
+the four mean points of Mercury..Neptune, topocentric, default flags, at
+0, 47.37 and 70 N, seven instants -3000..3000, against the fit; within
+6e-10, 2e-10 deg/day and 1e-10 AU/day. The tree before this fix (with
+entry 73's) fails 27 of its 63 checks, the upstream build all 63. G24
+`topo_accel_off`: Saturn's mean ascending node seen from the equator on
+2026-10-24, its latitude speed against the fit, 7.6e-13 deg/day shipped
+(3.5e-10 before), 8.0e-6 compat. G42, G43, G47, G54, G63, G69, G72 pass.
+G1: topocentric apparent speed rows move by up to 1e-9 deg/day, positions
+do not.
 
 ## How these were found
 

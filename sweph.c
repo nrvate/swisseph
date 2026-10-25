@@ -5251,17 +5251,26 @@ if (1) {
  * ((omega h)^2 / 6 = 1.6e-6 of it, a binary step so t +- h is exact; a
  * step of 2^-8 day cost 1e-4, 2e-8 deg/day on topocentric latitude
  * speeds). It is the whole of a: add_aberr_rate() takes what turns
- * the apparent place from it (bug 52). */
+ * the apparent place from it (bug 52).
+ * Upstream bug 79: that 1.6e-6 of a is 1.9e-9 AU/day^2 at the equator, and
+ * a / c of the diurnal aberration's rate, 6e-10 deg/day on every
+ * topocentric apparent speed (Neptune's mean points' longitude 8.3e-10
+ * at 47 N, 1.2e-9 on the equator). A central difference of a velocity
+ * turning at omega is a sin(omega h) / (omega h) exactly, so it is now
+ * divided by that, over +-2^-6 day, where the velocities' rounding (the
+ * site's turning read at a rounded UT) is 5e-9 of a, not 2.4e-7: within
+ * 7e-9 of a against a fit to the site's own velocity. */
 static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, char *serr)
 {
-  const double h = 1.0 / 2048;
+  const double h = 1.0 / 64;
+  const double wh = EARTH_ROT_SPEED * h;
   double xp[6], xm[6];
   int i;
   if (swi_get_observer(ctx, tjd + h, iflag | SEFLG_NONUT, NO_SAVE, xp, serr) != OK
       || swi_get_observer(ctx, tjd - h, iflag | SEFLG_NONUT, NO_SAVE, xm, serr) != OK)
     return ERR;
   for (i = 0; i <= 2; i++)
-    acc[i] = (xp[i+3] - xm[i+3]) / (2 * h);
+    acc[i] = (xp[i+3] - xm[i+3]) / (2 * h) * (wh / sin(wh));
   return OK;
 }
 
