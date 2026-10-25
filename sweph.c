@@ -3379,6 +3379,16 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
     /* barycentric position of observer */
     for (i = 0; i <= 5; i++)
       xobs[i] = xobs[i] + pedp->x[i];	
+  } else if (iflag & SEFLG_BARYCTR) {
+    /* The light time is measured from the centre the position is referred
+     * to: the barycentre here, the Sun below. */
+    for (i = 0; i <= 5; i++)
+      xobs[i] = 0;
+  } else if (iflag & SEFLG_HELCTR) {
+    /* under Moshier the stored positions are heliocentric already */
+    for (i = 0; i <= 5; i++)
+      xobs[i] = (pdp->iephe == SEFLG_JPLEPH || pdp->iephe == SEFLG_SWIEPH)
+                ? ctx->pldat[SEI_SUNBARY].x[i] : 0;
   } else {
     /* barycentric position of geocenter */
     for (i = 0; i <= 5; i++)
@@ -3394,6 +3404,15 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
     } else { 	/* SEFLG_MOSEPH or planet from osculating elements */
       niter = 0;
     }
+    /* Every estimate the loops below form is xx0 - dt * v, with xx0 the
+     * BARYCENTRIC position, and the distance they measure is the estimate
+     * minus xobs. So they start from the barycentric vector too, whatever
+     * the centre: for a heliocentric request xx has the Sun taken out
+     * already (above, for the SEFLG_TRUEPOS answer), and measuring the
+     * first pass from it and the later ones from xx0 - dt * v would leave
+     * the light time the barycentric distance over c. */
+    for (i = 0; i <= 5; i++)
+      xx[i] = xx0[i];
     if (iflag & SEFLG_SPEED) {
       /* 
        * Apparent speed is influenced by the fact that dt changes with
@@ -3407,11 +3426,8 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
       for (i = 0; i <= 2; i++)
 	xxsv[i] = xxsp[i] = xx[i] - xx[i+3];
       for (j = 0; j <= niter; j++) {
-	for (i = 0; i <= 2; i++) {
-	  dx[i] = xxsp[i];
-	  if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
-	    dx[i] -= (xobs[i] - xobs[i+3]);
-	}
+	for (i = 0; i <= 2; i++)
+	  dx[i] = xxsp[i] - (xobs[i] - xobs[i+3]);
 	/* new dt */
 	dt = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;     
 	for (i = 0; i <= 2; i++) { 	/* rough apparent position at t-1 */
@@ -3425,11 +3441,8 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
     }
     /* dt and t(apparent) */
     for (j = 0; j <= niter; j++) {
-      for (i = 0; i <= 2; i++) {
-	dx[i] = xx[i];
-	if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
-	  dx[i] -= xobs[i];
-      }
+      for (i = 0; i <= 2; i++)
+	dx[i] = xx[i] - xobs[i];
       dt = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;    
       /* new t */
       t = pdp->teval - dt;
@@ -4361,11 +4374,10 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
       for (i = 0; i <= 2; i++)
 	xxsv[i] = xxsp[i] = xx[i] - xx[i+3];
       for (j = 0; j <= niter; j++) {
-	for (i = 0; i <= 2; i++) {
-	  dx[i] = xxsp[i];
-	  if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
-	    dx[i] -= (xobs[i] - xobs[i+3]);
-	}
+	/* xobs is the centre the position is referred to: the Sun for a
+	 * heliocentric request, the barycentre for a barycentric one */
+	for (i = 0; i <= 2; i++)
+	  dx[i] = xxsp[i] - (xobs[i] - xobs[i+3]);
 	/* new dt */
 	dt = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;     
 	for (i = 0; i <= 2; i++) 
@@ -4377,11 +4389,8 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
     }
     /* dt and t(apparent) */
     for (j = 0; j <= niter; j++) {
-      for (i = 0; i <= 2; i++) {
-	dx[i] = xx[i];
-	if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
-	  dx[i] -= xobs[i];
-      }
+      for (i = 0; i <= 2; i++)
+	dx[i] = xx[i] - xobs[i];
       /* new dt */
       dt = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;     
       dtsave_for_defl = dt;
@@ -4415,11 +4424,8 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	return ERR;
       if (retc != OK)
 	return(retc);
-      for (i = 0; i <= 2; i++) {
-	dx[i] = xx[i];
-	if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
-	  dx[i] -= xobs[i];
-      }
+      for (i = 0; i <= 2; i++)
+	dx[i] = xx[i] - xobs[i];
       dtNew = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
       if (fabs(dtNew - dt) < 1e-12)
 	break;
@@ -4750,11 +4756,10 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       for (i = 0; i <= 2; i++)
 	xxsv[i] = xxsp[i] = xx[i] - xx[i+3];
       for (j = 0; j <= niter; j++) {
-	for (i = 0; i <= 2; i++) {
-	  dx[i] = xxsp[i];
-	  if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
-	    dx[i] -= (xobs[i] - xobs[i+3]);
-	}
+	/* xobs is the centre the position is referred to, as in
+	 * app_pos_etc_plan() */
+	for (i = 0; i <= 2; i++)
+	  dx[i] = xxsp[i] - (xobs[i] - xobs[i+3]);
 	/* new dt */
 	dt = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
 	for (i = 0; i <= 2; i++)
@@ -4766,11 +4771,8 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
     }
     /* dt and t(apparent) */
     for (j = 0; j <= niter; j++) {
-      for (i = 0; i <= 2; i++) {
-	dx[i] = xx[i];
-	if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))
-	  dx[i] -= xobs[i];
-      }
+      for (i = 0; i <= 2; i++)
+	dx[i] = xx[i] - xobs[i];
       /* new dt */
       dt = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
       dtsave_for_defl = dt;

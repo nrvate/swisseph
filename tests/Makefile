@@ -277,7 +277,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse check-gauqflags check-sidplanehouses check-fictnakshatra check-helmemo check-nutspeed check-belowsea check-topopole \
+       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse check-gauqflags check-sidplanehouses check-fictnakshatra check-helmemo check-nutspeed check-belowsea check-topopole check-hellt \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -420,6 +420,9 @@ helmemo: helmemo.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 belowsea: belowsea.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+hellt: hellt.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 topopole: topopole.c $(SWEOBJ_STD)
@@ -693,6 +696,15 @@ check-belowsea: belowsea
 	@env -u SE_EPHE_PATH ./belowsea $(EPHE)
 
 # G48: the topocentric observer turns about the true pole of date: the
+
+# G49: a heliocentric light time is measured from the Sun on every pass of
+# its iteration, for planets and fictitious bodies alike. The reference is
+# B(t - tau) - S(t) from the library's own geometric positions; SWIEPH from
+# $(EPHE) and JPLEPH from its de200.eph, so no fixture beyond ephe/.
+check-hellt: hellt
+	@env -u SE_EPHE_PATH ./hellt $(EPHE)
+
+# G49: the topocentric observer turns about the true pole of date: the
 # geocentric minus the topocentric geometric Moon is the site built from
 # the geodetic coordinates and the apparent sidereal time, to 5 cm.
 # Moshier, no files.
@@ -802,7 +814,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse gauqflags sidplanehouses fictnakshatra helmemo nutspeed belowsea topopole
+	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse gauqflags sidplanehouses fictnakshatra helmemo nutspeed belowsea topopole hellt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
