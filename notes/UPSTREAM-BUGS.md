@@ -75,16 +75,16 @@ worst were in code that had never executed even once.
 | 37 | `swe_nod_aps()` carries the ecliptic's turning about the wrong centre | Correctness | `swecl.c` |
 | 38 | `swe_nod_aps()` returns the mean apsides' latitude as its speed | Correctness | `swecl.c` |
 | 39 | The light deflection's speed is rough behind the Sun's disc | Correctness | `sweph.c` |
-| 46 | `swe_nod_aps()`'s positions depend on SEFLG_SPEED | Correctness | `swecl.c` |
-| 47 | `swe_nod_aps()` under SEFLG_J2000 is not the J2000 frame | Correctness | `swecl.c` |
-| 48 | A fictitious body's speed is a fixed ellipse's, not its elements' | Correctness | `swemplan.c` |
-| 44 | The interpolated apsides depend on SEFLG_SPEED, and x has no light time | Correctness | `sweph.c` |
-| 45 | The interpolated apsides are rough at the JD's resolution, and so are their speeds | Correctness | `swemmoon.c`, `sweph.c` |
-| 49 | A fixed star's speeds are not the rates of its position | Correctness | `sweph.c` |
 | 40 | Whole-sign, 0-Aries, Porphyry and Krusinski cusp speeds are not the cusps' rate | Correctness | `swehouse.c` |
 | 41 | Koch, Placidus and Gauquelin cusp speeds leave out the moving semi-arc; differenced systems use one second | Correctness | `swehouse.c` |
 | 42 | House speeds turn the ARMC at a constant rate and hold the obliquity still | Correctness | `swehouse.c` |
 | 43 | Sidereal house speeds are the tropical ones | Correctness | `swehouse.c` |
+| 44 | The interpolated apsides depend on SEFLG_SPEED, and x has no light time | Correctness | `sweph.c` |
+| 45 | The interpolated apsides are rough at the JD's resolution, and so are their speeds | Correctness | `swemmoon.c`, `sweph.c` |
+| 46 | `swe_nod_aps()`'s positions depend on SEFLG_SPEED | Correctness | `swecl.c` |
+| 47 | `swe_nod_aps()` under SEFLG_J2000 is not the J2000 frame | Correctness | `swecl.c` |
+| 48 | A fictitious body's speed is a fixed ellipse's, not its elements' | Correctness | `swemplan.c` |
+| 49 | A fixed star's speeds are not the rates of its position | Correctness | `sweph.c` |
 | 50 | The Moshier series round their arguments at more time than a JD resolves | Correctness | `swemplan.c`, `swemmoon.c` |
 | 51 | The Moshier velocities are differences at rounded instants | Correctness | `swemplan.c`, `swemmoon.c`, `sweph.c` |
 
@@ -2078,6 +2078,201 @@ at seven instants 1e-9 day apart within 1e-7 of each other and within
 Jupiter and (light-time rate, entry 35) Mercury. G24
 `defl_rough_off`: 6.8e-9 shipped, 1.5e-5 compat. G1: the five meff rows.
 
+## 40. Whole-sign, 0-Aries, Porphyry and Krusinski cusp speeds are not the cusps' rate
+
+**Severity: Correctness (hundreds to 1600 deg/day on a returned cusp speed)**
+**Where:** `swehouse.c`: `CalcH()` cases `W`, `N`, `O`, `U`
+
+`swe_houses_ex2()` returns cusp speeds next to the cusps. `CalcH()` seeds
+cusps 1 and 10 with the Asc's and MC's speeds and each system overwrites
+what differs. Whole signs (`W`) and 0 Aries (`N`) never did: their cusps
+stand still within a sign, but 1 and 7 kept the Asc's speed and 4 and 10
+the MC's, 326-555 deg/day at 47N and 1270 at 70N where the truth is 0
+(sidereal whole signs, computed as `E`, got the Asc's speed on all 12;
+entry 43). Porphyry's cusps 11 and 12 are MC + acmc / 3 and MC + 2 acmc /
+3, but their speeds were built on the Asc's speed instead of the MC's, off
+by the difference of the two at every latitude, 1600 deg/day at 70N; the
+Koch, Placidus and Gauquelin fallbacks inside the polar circle share the
+code. Krusinski (`U`) never took a speed: cusps 2, 3, 11, 12 and their
+opposites came back 0 (1500 deg/day at 70N).
+
+**Fix, as done here:** `W` and `N` speeds 0; Porphyry's 11 and 12 from the
+MC's speed; Krusinski differenced in ARMC as the other non-analytic
+systems are (entry 41). Positions do not move.
+
+G45 `tests/housespeed.c` (with 41-43). G24 `house_speed_off(0)`: Koch
+cusp 11 and whole-sign cusp 1 at 47N against a five-point difference,
+2.0e-10 deg/day shipped, 265 compat.
+
+## 41. Koch, Placidus and Gauquelin cusp speeds leave out the moving semi-arc
+
+**Severity: Correctness (200 deg/day on Koch cusps, 3.2-32 on Placidus at 47-60N; 1e-4 to 0.1 on the differenced systems)**
+**Where:** `swehouse.c`: `CalcH()` cases `K`, `P` (default), `G`; the interpolation in `swe_houses_armc_ex2_r()`
+
+Each analytic speed is `AscDash()`, the rate of Asc1(x, f) in x with the
+pole height f held still. For Koch the cusps are Asc1(th + k 30 + j ad3,
+fi), and ad3, a third of the MC's ascensional difference, moves with the
+MC; its rate was left out: lib 721.4 against 521.7 deg/day on cusp 11 at
+47N, 1375 for 776 at 60N. A Placidus (or Gauquelin) cusp is the fixed
+point of C = Asc1(ra, f(C)), its pole height set by the cusp's own
+declination, so the pole height moves with the cusp: 3.2 deg/day at 47N,
+32 at 60N, 54 for Gauquelin sectors. The systems without an analytic
+speed (`B F I i L M Q S X Y`) were differenced over one second of time by
+three points: the h^2 term of a fast cusp is 3.7e-7 of its rate at 70N
+(1e-4 deg/day), Q at 85N 0.1 deg/day, APC at 70S 0.02, Sunshine 9e-3.
+
+**Fix, as done here:** Koch's speed carries d(ad3)/d(ARMC) by the chain
+through sin a = sin MC sin e / cos fi, c = atan(tan fi / cos a) and
+sin(3 ad3) = sin c sin a. Placidus and Gauquelin: dC = A_x / (1 - A_f
+f'(C)), A_x and A_f the partials of Asc1 in its arguments and f'(C) the
+pole height's rate in the cusp (`PlacDer()`). The differenced systems,
+and Krusinski, by five points over 2^-8 deg of ARMC (Makransky's
+Sunshine, whose cusps are rough by 2e-10 deg, 2^-6), a side that jumps or
+falls back to Porphyry dropped for a one-sided difference. In ARMC alone,
+against a ladder of differences: Koch 4e-11 of the rate, the differenced
+systems <= 2e-9 (Q at 85N 4e-8), Placidus and Gauquelin within 1e-9 of
+the converged cusp's rate. The Placidus iteration stops at 1/360000 deg
+and leaves the cusps 3.5e-8 deg off the fixed point; differences of the
+returned cusps carry that error's rate, 2e-8 of the speed at 60N (1.1e-5
+deg/day), which tightening the iteration removes (not done: it moves
+positions). Positions do not move.
+
+G45; G24 `house_speed_off(0)` (Koch cusp 11).
+
+## 42. House speeds turn the ARMC at a constant rate and hold the obliquity still
+
+**Severity: Correctness (6e-5 deg/day on the ARMC, 1.5e-4 on the Asc and 4.8e-4 on a Regiomontanus cusp at 70N; 2.4 deg/day on Sunshine cusps)**
+**Where:** `swehouse.c`: `swe_houses_ex2_r()`, `ARMCS`, `AscDash()`
+
+Every speed was the cusp's rate in ARMC times `ARMCS`, 360.9856473350
+deg/day at every epoch, the sidereal days of a fixed solar year. The ARMC
+`swe_houses_ex2()` computes the cusps from is the library's apparent
+sidereal time: the equation of the equinoxes moves it at -3.9e-5..+6.2e-5
+deg/day about the mean rate, and the mean is off `ARMCS` by 3e-8 deg/day
+at 2000, -9e-7 at -3000, +1.3e-6 at 12000; a cusp n times as fast as the
+ARMC carries n times that. The obliquity (nutation's 1.3e-5 deg/day) was
+held still, and so was the Sun's declination of Sunshine houses (up to 0.4
+deg/day, 2.4 deg/day on a cusp at 70S).
+
+**Fix, as done here:** the ARMC's and true obliquity's rates are
+differences of the library's own values 2^-6 day of UT, the time
+argument, either side (three points; nutation's fortnightly term leaves
+2e-10 deg/day, the ARMC's rounding 2e-8 at -13000); the cusp speeds in
+ARMC are scaled to that rate, and the partials in obliquity and (Sunshine)
+declination, differences of the cusps over 2^-10 deg, times their rates
+are added. The declination's rate is swe_calc_ut()'s, per TT day, turned
+per UT day. Speeds are per day of UT, as differences of the cusps over
+the time argument are. `swe_houses_armc_ex2()` has no date and still gives
+its speeds at `ARMCS`. A call with speeds evaluates the frame twice more
+(deltat, nutation, sidereal time) and the houses two or four more times:
+17-31 us against 11-21 without speeds (-O2), upstream's speeds cost ~0.5
+us. Positions do not move.
+
+G45; G24 `house_speed_off(1)` (with 43): equal houses' Asc under Lahiri
+at 47N, 4.6e-11 deg/day shipped, 3.9e-5 compat.
+
+## 43. Sidereal house speeds are the tropical ones
+
+**Severity: Correctness (3.8-8.5e-5 deg/day on every sidereal cusp; whole signs 326-555 deg/day)**
+**Where:** `swehouse.c`: `sidereal_houses_trad()`, `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`
+
+The sidereal cusps are the tropical ones less the ayanamsa (or, on the
+ecliptic of t0 or the solar-system plane, houses of an auxiliary ARMC and
+obliquity less the auxiliary vernal point's distance), all moving; the
+speeds were passed through from the tropical computation without any of
+those rates. Sidereal whole signs, computed as equal houses, kept the
+Asc's speed on all 12 cusps.
+
+**Fix, as done here:** the ayanamsa's rate, a difference over the frame's
+TT either side, is subtracted from the cusp and ascmc speeds; on the
+ecliptic of t0 and the solar-system plane the auxiliary obliquity, ARMC
+offset and vernal-point distance (steps 1, 2 and 5, now `ecl_t0_aux()` and
+`ssypl_aux()`, the same arithmetic) are evaluated either side for their
+rates. Whole signs and 0 Aries 0. Positions do not move (checked bitwise,
+both builds). Near t0 itself (J2000 for `SE_SIDM_J2000`) the auxiliary
+vernal point's distance is an acos near 1 and rough at 1e-8 deg, in the
+positions as well.
+
+G45; G24 `house_speed_off(1)`.
+
+## 44. The interpolated apsides depend on SEFLG_SPEED, and x has no light time
+
+**Severity: Correctness (the interpolated perigee 111 mas apart with and without the speed flag, the apogee 13)**
+**Where:** `sweph.c`: `intp_apsides()`
+
+The apsis is moved back along its light time as `xx[i] -= dt * xx[i+3]`:
+the speed, zero unless SEFLG_SPEED is set, and `i` from 1, so the x
+coordinate never had it. Without the flag the position was geometric,
+with it light-time corrected in y and z only: tau v, tau ~1.2 s and v up
+to 2.3 deg/day, 111 mas on the perigee (scan C, every ephemeris and flag
+set) and 13 on the apogee.
+
+The intended position is the light-time corrected one: the code gates the
+step on SEFLG_TRUEPOS, and the osculating apogee, which the interpolated
+one smooths, is built from the Moon at t - tau.
+
+**Fix, as done here:** the apsis is computed at t - tau, as the osculating
+one is, for every flag set but TRUEPOS, with and without SEFLG_SPEED, so
+the position is the same either way, to the bit. tau is the apsis's
+distance over c, taken from the first passes of the iteration at t
+(`swi_intp_apsides_est()`): the distance is stationary at the apsis, so
+two passes put the perigee's within 4 km and one the apogee's within 1
+km (20000 dates, -10000..+12000), at most 0.0013 mas of position. The
+speed is the difference over +-2^-8 day about t - tau (bug 45), times 1 -
+dtau/dt, dtau/dt = rdot / c. Cost at -O2, against upstream: 1.3x without
+the flag (perigee 62 -> 82 us, apogee 53 -> 69), 1.03-1.13x with it
+(182 -> 205, 153 -> 157). A first version took X(t) - tau V(t), which
+needs the velocity, three apsides, on every call: 2.7x without the flag.
+
+G46 `tests/intpaps.c` (a), (b): the position with and without the flag,
+six flag sets, identical (upstream 140 mas, angle plus distance); the
+cartesian position less the TRUEPOS one is -tau V within 3.4e-3 mas (the
+frame's turning over tau; upstream 120 mas). G24 `intp_speedflag_off`:
+0 shipped, 107 mas compat. Baselines: every interpolated-apsis position
+without SEFLG_SPEED moves by tau V, with it by tau V_x.
+
+## 45. The interpolated apsides are rough at the JD's resolution, and so are their speeds
+
+**Severity: Correctness (the perigee jumps 1.3 mas between consecutive JDs, its SEFLG_SPEED3 speed is off by 1.5e-3 deg/day, its default speed by 1.1e-4)**
+**Where:** `swemmoon.c`: `swi_intp_apsides()`; `sweph.c`: `intp_apsides()`, `swe_calc_r()`
+
+`swi_intp_apsides()` finds the apsis along a line in the lunar arguments
+as the vertex of parabolas through three distances dd apart, dd = 5 deg,
+0.5, ... 1.8" (0.18" for the perigee's last, unused, pass). At dd = 18"
+and 1.8" the parabola's slope and curvature are ~1e-6 km, read from a
+distance of 3.6e5 km held to ~1e-10 km; the step is still 1-3" there,
+because the iteration converges only linearly (by ~0.15 a pass on some
+dates), and carried ~1e-4 of itself in noise. The perigee's longitude
+jumped 1.3 mas between consecutive JDs at 2100 (sescan A, S = 351), 0.14
+at -3000; the apogee 0.023 mas. The speed was the difference over +-0.1
+day, off by its h^2 term (1.1e-4 deg/day on the perigee, 1.7e-6 the
+apogee), and SEFLG_SPEED3's over +-8.64 s of the jitter (1.5e-3, 3.7e-5).
+
+**Fix, as done here:** below dd = 180" the step is the Newton step
+-r'/r'' at the iteration's centre from five points 180" apart (the
+slope's h^4 term ~1e-14 rad, its noise ~1e-11 rad); the parabolas above
+are unchanged, and so is the number of passes, so the result is
+upstream's to its noise: within 0.17 mas, smoothly (the 18" parabola's
+own h^2 bias). The unused last pass computes only its centre. The
+perigee is smooth to 1.8e-3 mas, the apogee to 1.1e-3 (S <= 1.5 on
+lon). Both speeds difference over +-2^-8 day, where the h^2 term and the
+noise over 2h balance: within 2.1e-7 deg/day of a five-point difference
+(SEFLG_SPEED and SEFLG_SPEED3; 9e-13 AU/day on the distance).
+
+Not changed: the iteration stops after five (perigee) or four (apogee)
+passes, not at its fixed point, which lies up to 1.08" away for the
+perigee (2.4 mas the apogee) over -10000..+12000; converging would move
+the positions by that much. SEFLG_J2000's latitude speed is off by up to
+4.6e-7 deg/day (-3000), from the J2000 conversion shared with the mean
+apogee (7e-7 at 12000).
+
+G46 `tests/intpaps.c` (c), (d): 64 consecutive JDs on a line within 0.01
+mas (1.8e-3; upstream 1.3), the speeds within 1e-6 deg/day of a
+five-point difference at multiples of 2^-8 day (2.1e-7; upstream 1.8e-3
+on the Lahiri SPEED3 perigee). G24 `intp_rough_off`: 1.8e-3 mas shipped,
+1.2 compat. Baselines: interpolated-apsis positions move by <= 0.17 mas
+besides entry 44's light time, their speeds by up to 1.1e-4 deg/day.
+
 ## 46. `swe_nod_aps()`'s positions depend on SEFLG_SPEED
 
 **Severity: Correctness (6-35 mas on Mars's descending node, perihelion and aphelion, the same on every planet's; 10 mas on the Sun's mean aphelion, 300 on its osculating focal point, 660 on Venus's; only with SEFLG_SPEED)**
@@ -2252,84 +2447,6 @@ it), Vulcan (55) by up to 2.8e-3 and Selena (56) by up to 4.8e-7, both
 now within 2.6e-8 and 7.8e-8 of five-point differences (were 2.8e-3
 and 4.9e-7). G17 unchanged.
 
-## 44. The interpolated apsides depend on SEFLG_SPEED, and x has no light time
-
-**Severity: Correctness (the interpolated perigee 111 mas apart with and without the speed flag, the apogee 13)**
-**Where:** `sweph.c`: `intp_apsides()`
-
-The apsis is moved back along its light time as `xx[i] -= dt * xx[i+3]`:
-the speed, zero unless SEFLG_SPEED is set, and `i` from 1, so the x
-coordinate never had it. Without the flag the position was geometric,
-with it light-time corrected in y and z only: tau v, tau ~1.2 s and v up
-to 2.3 deg/day, 111 mas on the perigee (scan C, every ephemeris and flag
-set) and 13 on the apogee.
-
-The intended position is the light-time corrected one: the code gates the
-step on SEFLG_TRUEPOS, and the osculating apogee, which the interpolated
-one smooths, is built from the Moon at t - tau.
-
-**Fix, as done here:** the apsis is computed at t - tau, as the osculating
-one is, for every flag set but TRUEPOS, with and without SEFLG_SPEED, so
-the position is the same either way, to the bit. tau is the apsis's
-distance over c, taken from the first passes of the iteration at t
-(`swi_intp_apsides_est()`): the distance is stationary at the apsis, so
-two passes put the perigee's within 4 km and one the apogee's within 1
-km (20000 dates, -10000..+12000), at most 0.0013 mas of position. The
-speed is the difference over +-2^-8 day about t - tau (bug 45), times 1 -
-dtau/dt, dtau/dt = rdot / c. Cost at -O2, against upstream: 1.3x without
-the flag (perigee 62 -> 82 us, apogee 53 -> 69), 1.03-1.13x with it
-(182 -> 205, 153 -> 157). A first version took X(t) - tau V(t), which
-needs the velocity, three apsides, on every call: 2.7x without the flag.
-
-G46 `tests/intpaps.c` (a), (b): the position with and without the flag,
-six flag sets, identical (upstream 140 mas, angle plus distance); the
-cartesian position less the TRUEPOS one is -tau V within 3.4e-3 mas (the
-frame's turning over tau; upstream 120 mas). G24 `intp_speedflag_off`:
-0 shipped, 107 mas compat. Baselines: every interpolated-apsis position
-without SEFLG_SPEED moves by tau V, with it by tau V_x.
-
-## 45. The interpolated apsides are rough at the JD's resolution, and so are their speeds
-
-**Severity: Correctness (the perigee jumps 1.3 mas between consecutive JDs, its SEFLG_SPEED3 speed is off by 1.5e-3 deg/day, its default speed by 1.1e-4)**
-**Where:** `swemmoon.c`: `swi_intp_apsides()`; `sweph.c`: `intp_apsides()`, `swe_calc_r()`
-
-`swi_intp_apsides()` finds the apsis along a line in the lunar arguments
-as the vertex of parabolas through three distances dd apart, dd = 5 deg,
-0.5, ... 1.8" (0.18" for the perigee's last, unused, pass). At dd = 18"
-and 1.8" the parabola's slope and curvature are ~1e-6 km, read from a
-distance of 3.6e5 km held to ~1e-10 km; the step is still 1-3" there,
-because the iteration converges only linearly (by ~0.15 a pass on some
-dates), and carried ~1e-4 of itself in noise. The perigee's longitude
-jumped 1.3 mas between consecutive JDs at 2100 (sescan A, S = 351), 0.14
-at -3000; the apogee 0.023 mas. The speed was the difference over +-0.1
-day, off by its h^2 term (1.1e-4 deg/day on the perigee, 1.7e-6 the
-apogee), and SEFLG_SPEED3's over +-8.64 s of the jitter (1.5e-3, 3.7e-5).
-
-**Fix, as done here:** below dd = 180" the step is the Newton step
--r'/r'' at the iteration's centre from five points 180" apart (the
-slope's h^4 term ~1e-14 rad, its noise ~1e-11 rad); the parabolas above
-are unchanged, and so is the number of passes, so the result is
-upstream's to its noise: within 0.17 mas, smoothly (the 18" parabola's
-own h^2 bias). The unused last pass computes only its centre. The
-perigee is smooth to 1.8e-3 mas, the apogee to 1.1e-3 (S <= 1.5 on
-lon). Both speeds difference over +-2^-8 day, where the h^2 term and the
-noise over 2h balance: within 2.1e-7 deg/day of a five-point difference
-(SEFLG_SPEED and SEFLG_SPEED3; 9e-13 AU/day on the distance).
-
-Not changed: the iteration stops after five (perigee) or four (apogee)
-passes, not at its fixed point, which lies up to 1.08" away for the
-perigee (2.4 mas the apogee) over -10000..+12000; converging would move
-the positions by that much. SEFLG_J2000's latitude speed is off by up to
-4.6e-7 deg/day (-3000), from the J2000 conversion shared with the mean
-apogee (7e-7 at 12000).
-
-G46 `tests/intpaps.c` (c), (d): 64 consecutive JDs on a line within 0.01
-mas (1.8e-3; upstream 1.3), the speeds within 1e-6 deg/day of a
-five-point difference at multiples of 2^-8 day (2.1e-7; upstream 1.8e-3
-on the Lahiri SPEED3 perigee). G24 `intp_rough_off`: 1.8e-3 mas shipped,
-1.2 compat. Baselines: interpolated-apsis positions move by <= 0.17 mas
-besides entry 44's light time, their speeds by up to 1.1e-4 deg/day.
-
 ## 49. A fixed star's speeds are not the rates of its position
 
 **Severity: Correctness (2.3e-3 AU/day on Spica's distance rate; 3e-8 deg/day on every latitude speed of date, every body; 3.8e-5 deg/day on `swe_fixstar()`'s sidereal speed)**
@@ -2416,126 +2533,11 @@ the galactic centre, 42 Dra and delta Dor near the ecliptic poles), five
 dates, ten flag sets, both functions: 36 checks, angles within 1e-8
 deg/day, distance rate within 1e-12 of the distance per day, XYZ within
 1.7e-10; the upstream build fails all 36. G24 `star_dist_rate_off`:
-Spica's distance rate 5.1e-7 AU/day shipped, 1.8e-3 compat. Baselines
-not regenerated here: G1 and G17 move on speeds (every speed of date, from
-(2), and the last bits of the others, from (1)); positions do not move.
-
-## 40. Whole-sign, 0-Aries, Porphyry and Krusinski cusp speeds are not the cusps' rate
-
-**Severity: Correctness (hundreds to 1600 deg/day on a returned cusp speed)**
-**Where:** `swehouse.c`: `CalcH()` cases `W`, `N`, `O`, `U`
-
-`swe_houses_ex2()` returns cusp speeds next to the cusps. `CalcH()` seeds
-cusps 1 and 10 with the Asc's and MC's speeds and each system overwrites
-what differs. Whole signs (`W`) and 0 Aries (`N`) never did: their cusps
-stand still within a sign, but 1 and 7 kept the Asc's speed and 4 and 10
-the MC's, 326-555 deg/day at 47N and 1270 at 70N where the truth is 0
-(sidereal whole signs, computed as `E`, got the Asc's speed on all 12;
-entry 43). Porphyry's cusps 11 and 12 are MC + acmc / 3 and MC + 2 acmc /
-3, but their speeds were built on the Asc's speed instead of the MC's, off
-by the difference of the two at every latitude, 1600 deg/day at 70N; the
-Koch, Placidus and Gauquelin fallbacks inside the polar circle share the
-code. Krusinski (`U`) never took a speed: cusps 2, 3, 11, 12 and their
-opposites came back 0 (1500 deg/day at 70N).
-
-**Fix, as done here:** `W` and `N` speeds 0; Porphyry's 11 and 12 from the
-MC's speed; Krusinski differenced in ARMC as the other non-analytic
-systems are (entry 41). Positions do not move.
-
-G45 `tests/housespeed.c` (with 41-43). G24 `house_speed_off(0)`: Koch
-cusp 11 and whole-sign cusp 1 at 47N against a five-point difference,
-2.0e-10 deg/day shipped, 265 compat.
-
-## 41. Koch, Placidus and Gauquelin cusp speeds leave out the moving semi-arc
-
-**Severity: Correctness (200 deg/day on Koch cusps, 3.2-32 on Placidus at 47-60N; 1e-4 to 0.1 on the differenced systems)**
-**Where:** `swehouse.c`: `CalcH()` cases `K`, `P` (default), `G`; the interpolation in `swe_houses_armc_ex2_r()`
-
-Each analytic speed is `AscDash()`, the rate of Asc1(x, f) in x with the
-pole height f held still. For Koch the cusps are Asc1(th + k 30 + j ad3,
-fi), and ad3, a third of the MC's ascensional difference, moves with the
-MC; its rate was left out: lib 721.4 against 521.7 deg/day on cusp 11 at
-47N, 1375 for 776 at 60N. A Placidus (or Gauquelin) cusp is the fixed
-point of C = Asc1(ra, f(C)), its pole height set by the cusp's own
-declination, so the pole height moves with the cusp: 3.2 deg/day at 47N,
-32 at 60N, 54 for Gauquelin sectors. The systems without an analytic
-speed (`B F I i L M Q S X Y`) were differenced over one second of time by
-three points: the h^2 term of a fast cusp is 3.7e-7 of its rate at 70N
-(1e-4 deg/day), Q at 85N 0.1 deg/day, APC at 70S 0.02, Sunshine 9e-3.
-
-**Fix, as done here:** Koch's speed carries d(ad3)/d(ARMC) by the chain
-through sin a = sin MC sin e / cos fi, c = atan(tan fi / cos a) and
-sin(3 ad3) = sin c sin a. Placidus and Gauquelin: dC = A_x / (1 - A_f
-f'(C)), A_x and A_f the partials of Asc1 in its arguments and f'(C) the
-pole height's rate in the cusp (`PlacDer()`). The differenced systems,
-and Krusinski, by five points over 2^-8 deg of ARMC (Makransky's
-Sunshine, whose cusps are rough by 2e-10 deg, 2^-6), a side that jumps or
-falls back to Porphyry dropped for a one-sided difference. In ARMC alone,
-against a ladder of differences: Koch 4e-11 of the rate, the differenced
-systems <= 2e-9 (Q at 85N 4e-8), Placidus and Gauquelin within 1e-9 of
-the converged cusp's rate. The Placidus iteration stops at 1/360000 deg
-and leaves the cusps 3.5e-8 deg off the fixed point; differences of the
-returned cusps carry that error's rate, 2e-8 of the speed at 60N (1.1e-5
-deg/day), which tightening the iteration removes (not done: it moves
-positions). Positions do not move.
-
-G45; G24 `house_speed_off(0)` (Koch cusp 11).
-
-## 42. House speeds turn the ARMC at a constant rate and hold the obliquity still
-
-**Severity: Correctness (6e-5 deg/day on the ARMC, 1.5e-4 on the Asc and 4.8e-4 on a Regiomontanus cusp at 70N; 2.4 deg/day on Sunshine cusps)**
-**Where:** `swehouse.c`: `swe_houses_ex2_r()`, `ARMCS`, `AscDash()`
-
-Every speed was the cusp's rate in ARMC times `ARMCS`, 360.9856473350
-deg/day at every epoch, the sidereal days of a fixed solar year. The ARMC
-`swe_houses_ex2()` computes the cusps from is the library's apparent
-sidereal time: the equation of the equinoxes moves it at -3.9e-5..+6.2e-5
-deg/day about the mean rate, and the mean is off `ARMCS` by 3e-8 deg/day
-at 2000, -9e-7 at -3000, +1.3e-6 at 12000; a cusp n times as fast as the
-ARMC carries n times that. The obliquity (nutation's 1.3e-5 deg/day) was
-held still, and so was the Sun's declination of Sunshine houses (up to 0.4
-deg/day, 2.4 deg/day on a cusp at 70S).
-
-**Fix, as done here:** the ARMC's and true obliquity's rates are
-differences of the library's own values 2^-6 day of UT, the time
-argument, either side (three points; nutation's fortnightly term leaves
-2e-10 deg/day, the ARMC's rounding 2e-8 at -13000); the cusp speeds in
-ARMC are scaled to that rate, and the partials in obliquity and (Sunshine)
-declination, differences of the cusps over 2^-10 deg, times their rates
-are added. The declination's rate is swe_calc_ut()'s, per TT day, turned
-per UT day. Speeds are per day of UT, as differences of the cusps over
-the time argument are. `swe_houses_armc_ex2()` has no date and still gives
-its speeds at `ARMCS`. A call with speeds evaluates the frame twice more
-(deltat, nutation, sidereal time) and the houses two or four more times:
-17-31 us against 11-21 without speeds (-O2), upstream's speeds cost ~0.5
-us. Positions do not move.
-
-G45; G24 `house_speed_off(1)` (with 43): equal houses' Asc under Lahiri
-at 47N, 4.6e-11 deg/day shipped, 3.9e-5 compat.
-
-## 43. Sidereal house speeds are the tropical ones
-
-**Severity: Correctness (3.8-8.5e-5 deg/day on every sidereal cusp; whole signs 326-555 deg/day)**
-**Where:** `swehouse.c`: `sidereal_houses_trad()`, `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`
-
-The sidereal cusps are the tropical ones less the ayanamsa (or, on the
-ecliptic of t0 or the solar-system plane, houses of an auxiliary ARMC and
-obliquity less the auxiliary vernal point's distance), all moving; the
-speeds were passed through from the tropical computation without any of
-those rates. Sidereal whole signs, computed as equal houses, kept the
-Asc's speed on all 12 cusps.
-
-**Fix, as done here:** the ayanamsa's rate, a difference over the frame's
-TT either side, is subtracted from the cusp and ascmc speeds; on the
-ecliptic of t0 and the solar-system plane the auxiliary obliquity, ARMC
-offset and vernal-point distance (steps 1, 2 and 5, now `ecl_t0_aux()` and
-`ssypl_aux()`, the same arithmetic) are evaluated either side for their
-rates. Whole signs and 0 Aries 0. Positions do not move (checked bitwise,
-both builds). Near t0 itself (J2000 for `SE_SIDM_J2000`) the auxiliary
-vernal point's distance is an acos near 1 and rough at 1e-8 deg, in the
-positions as well.
-
-G45; G24 `house_speed_off(1)`.
+Spica's distance rate 5.1e-7 AU/day shipped, 1.8e-3 compat. G1: 8170
+rows, re-baselined with the other follow-ups (the re-baseline commit
+classifies them): every speed of date by up to 2e-7 deg/day in latitude
+and 1e-7 in longitude, from (2); positions by at most 1.1e-13 deg, from
+(1)'s reordered arithmetic. G17 unchanged.
 
 ## 50. The Moshier series round their arguments at more time than a JD resolves
 
@@ -2631,9 +2633,11 @@ planets', Moon's and Earth's speeds against five-point differences (<= 1e-7
 deg/day), the true node's (< 1e-7) and apogee's (< 1e-5). The upstream
 build fails all 21. G24 `mosh_speed_off`: the Moon's and Mercury's J2000
 geometric speeds at -2500, 8.3e-10 deg/day shipped, 7.2e-6 compat.
-Baselines: G1's Moshier rows move (speeds by up to ~5e-5 deg/day, apparent
-positions by up to 0.24 mas, the true node and osculating apogee by their
-noise); not yet classified here.
+G1: 3165 rows, re-baselined with the other follow-ups. Moshier positions
+by up to 6e-8 deg and speeds by up to 2.9e-5 deg/day (the Moon's old step
+bias); the osculating apogee and true node (~illcond) by up to 21", their
+old noise; the mean node and apogee by up to 1.6e-10 deg on every
+ephemeris (the lunar mean elements' T rounding, entry 50). G17 unchanged.
 
 ## How these were found
 
