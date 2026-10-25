@@ -5431,7 +5431,11 @@ void swi_aberr_light(double *xx, double *xe, int32 iflag) {
  * xx		planet's position accounted for light-time
  * dt		dt of light-time
  */
-void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag) 
+/* The observer's site (J2000, relative to the geocenter, AU and AU/day) is
+ * a parameter, read when iflag has SEFLG_TOPOCTR: swi_deflect_light() takes
+ * it from the planets' save area, the fixed stars' paths from the site they
+ * computed for the call (Upstream bug 61). */
+static void deflect_light_site(swe_ctx *ctx, double *xx, double dt, int32 iflag, const double *xsite)
 {
   int i;
   double xx2[6];
@@ -5452,7 +5456,7 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
     xearth[i] = pedp->x[i];
   if (iflag & SEFLG_TOPOCTR)
     for (i = 0; i <= 5; i++)
-      xearth[i] += ctx->topd.xobs[i];
+      xearth[i] += xsite[i];
   /* U = planetbary(t-tau) - earthbary(t) = planetgeo */
   for (i = 0; i <= 2; i++) 
     u[i] = xx[i]; 
@@ -5643,6 +5647,11 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
   /* deflected position */
   for (i = 0; i <= 2; i++) 
     xx[i] = xx2[i];
+}
+
+void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag) 
+{
+  deflect_light_site(ctx, xx, dt, iflag, ctx->topd.xobs);
 }
 
 /* converts the sun from barycentric to geocentric,
@@ -8459,7 +8468,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   /* moved to ctx->sp.fx_struct (Phase 3c) */
   double dt = PLAN_SPEED_INTV * 0.1;
 #ifndef SWE_UPSTREAM_COMPAT
-  double xpo_p[6];
+  double xpo_p[6], xsite[6];
   /* the exact steps to the instants the observer is read at (bug 49) */
   double dm = tjd - (tjd - dt), dp = (tjd + dt) - tjd;
 #endif
@@ -8571,6 +8580,9 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
       return ERR;
     if (swi_get_observer(ctx, tjd, iflag | SEFLG_NONUT, NO_SAVE, xobs, serr) != OK)
       return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+    memcpy(xsite, xobs, sizeof(xsite));
+#endif
     /* barycentric position of observer */
     for (i = 0; i <= 5; i++) {
       xobs[i] = xobs[i] + ctx->sp.fx_struct.xearth[i];	
@@ -8615,7 +8627,17 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
    * relativistic deflection of light *
    ************************************/
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOGDEFL) == 0) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 61: the flag was masked to SEFLG_SPEED, so the Earth
+     * was the geocenter on a topocentric star: the site's 4.3e-5 AU
+     * missing from e, the site-dependent part of the deflection (3e-7 to
+     * 9e-6 arcsec for stars 5-40 degrees from the Sun) lost. The site
+     * this call computed above goes in; swi_deflect_light()'s ctx->topd
+     * is the last planet call's, and this observer is not saved there. */
+    deflect_light_site(ctx, x, 0, iflag & (SEFLG_SPEED | SEFLG_TOPOCTR), xsite);
+#else
     swi_deflect_light(ctx, x, 0, iflag & SEFLG_SPEED);
+#endif
   }
   /**********************************
    * 'annual' aberration of light   *
@@ -8730,7 +8752,17 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   /* if no ephemeris has been specified, do not return chosen ephemeris */
   if ((iflgsave & SEFLG_EPHMASK) == 0)
     iflag = iflag & ~SEFLG_DEFAULTEPH;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 61: SEFLG_SPEED was cleared from the returned flags even
+   * when the caller asked for it; swi_fixstar_calc_from_record() and
+   * swe_calc() keep it. Only what the caller did not ask for goes. (The
+   * public wrappers return their own iflag and use this value for the
+   * error test only.) */
+  if (!(iflgsave & SEFLG_SPEED))
+    iflag = iflag & ~SEFLG_SPEED;
+#else
   iflag = iflag & ~SEFLG_SPEED;
+#endif
   return iflag;
 }
 
@@ -9865,7 +9897,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   /* moved to ctx->sp.fx_record (Phase 3c) */
   double dt = PLAN_SPEED_INTV * 0.1;
 #ifndef SWE_UPSTREAM_COMPAT
-  double xpo_p[6];
+  double xpo_p[6], xsite[6];
   /* the exact steps to the instants the observer is read at (bug 49) */
   double dm = tjd - (tjd - dt), dp = (tjd + dt) - tjd;
 #endif
@@ -9975,6 +10007,9 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
       return ERR;
     if (swi_get_observer(ctx, tjd, iflag | SEFLG_NONUT, NO_SAVE, xobs, serr) != OK)
       return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+    memcpy(xsite, xobs, sizeof(xsite));
+#endif
     /* barycentric position of observer */
     for (i = 0; i <= 5; i++) {
       xobs[i] = xobs[i] + ctx->sp.fx_record.xearth[i];	
@@ -10023,7 +10058,17 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
    * relativistic deflection of light *
    ************************************/
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOGDEFL) == 0) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 61: the flag was masked to SEFLG_SPEED, so the Earth
+     * was the geocenter on a topocentric star: the site's 4.3e-5 AU
+     * missing from e, the site-dependent part of the deflection (3e-7 to
+     * 9e-6 arcsec for stars 5-40 degrees from the Sun) lost. The site
+     * this call computed above goes in; swi_deflect_light()'s ctx->topd
+     * is the last planet call's, and this observer is not saved there. */
+    deflect_light_site(ctx, x, 0, iflag & (SEFLG_SPEED | SEFLG_TOPOCTR), xsite);
+#else
     swi_deflect_light(ctx, x, 0, iflag & SEFLG_SPEED);
+#endif
   }
   /**********************************
    * 'annual' aberration of light   *

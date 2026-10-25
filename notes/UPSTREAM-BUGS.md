@@ -92,6 +92,7 @@ worst were in code that had never executed even once.
 | 55 | The mean nodes' and apsides' speeds are one-day differences | Correctness | `swecl.c`, `swemmoon.c` |
 | 58 | The nutation's rate in every speed of date is a backward difference | Correctness | `sweph.c`, `swephlib.c` |
 | 62 | The aberration rate's Earth leaves out the Moon's pull | Correctness | `sweph.c` |
+| 61 | A topocentric fixed star is deflected from the geocenter | Correctness | `sweph.c` |
 
 ---
 
@@ -2839,6 +2840,53 @@ latitude speeds within 5e-8 deg/day (measured <= 2.3e-8; the build before
 this fix fails the eight far-body rows at 1.9e-7 to 5.1e-7; the upstream
 build fails all twelve). G24: `far_body_moon_pull_off`, VEA's longitude
 speed, 2.7e-9 shipped, 3.4e-5 compat.
+
+## 61. A topocentric fixed star is deflected from the geocenter
+
+**Severity: Correctness (3e-7 to 9e-6 arcsec of the deflection, stars 5-40 degrees from the Sun; the second part is a returned value nothing reads)**
+**Where:** `sweph.c`: `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `swi_deflect_light()`
+
+Two small things in the star paths, both seen at entry 49.
+
+(1) Both paths called `swi_deflect_light(ctx, x, 0, iflag & SEFLG_SPEED)`:
+the topocentric flag never reached the deflection, so the Earth in it was
+the geocenter, the site's 4.3e-5 AU missing from the Earth-Sun vector and
+the site-dependent part of the deflection (4e-5 of it) lost: 7.4e-6 arcsec
+for Regulus 5 degrees from the Sun, 9.2e-6 for Spica, 5.3e-6 Aldebaran,
+5.2e-7 Sirius at 40. Passing the flag alone would have been worse than
+nothing: the deflection reads the site from `ctx->topd`, which the star's
+path never fills (its `swi_get_observer()` calls are NO_SAVE), so it would
+have been empty or the last planet call's. Entry 49 had that as a stale
+site; measured, the position after topocentric Mars and Moon calls at
+another site and instant equals the fresh one to the bit, because the flag
+was never passed.
+
+**Fix, as done here:** `swi_deflect_light()` is `deflect_light_site()` with the
+site as a parameter, `swi_deflect_light()` passing `ctx->topd.xobs` (planets
+and swecl.c, unchanged); the star paths pass the site they computed for
+the call, with `SEFLG_TOPOCTR` kept in the flag.
+
+(2) `fixstar_calc_from_struct()` returned its flags with `SEFLG_SPEED`
+always cleared, `swi_fixstar_calc_from_record()` and `swe_calc()` clear it
+only when the caller did not ask. Measured over twelve flag sets the public
+`swe_fixstar2()`, `swe_fixstar()` and their `_ut` forms return the caller's
+own `iflag` in every one (`swe_calc()` returns the flags it used: NONUT
+added for sidereal, NOABERR and NOGDEFL for heliocentric Moshier), and use
+the star functions' value for the error test only. The value is dead, so
+this is not observable through the library and has no gate; it now matches
+the record function. Left: the public star functions returning the caller's
+flags rather than the flags used (what `swe_fixstar_ut()`'s ephemeris
+check was written to read) is upstream's, changes every `rf` in G1's star
+rows, and is not touched here.
+
+G60 `tests/startopodefl.c`: Regulus, Spica, Aldebaran, Sirius on dates 5-40
+degrees from the Sun, two sites, both functions: the site-dependent part
+of the deflection against `g1/g2 (u.q e - u.e q)` formed from `swe_calc()`'s
+barycentric Earth and Sun and the site (geocentric minus topocentric Moon):
+off by <= 4.3e-11 arcsec, effect 3e-7 to 9e-6; and the position after other
+topocentric calls equal to the bit. The upstream build fails all 16 of
+the first (off by 100%). G24 `star_topo_defl_off`: Regulus's site-dependent
+deflection 7.4e-6 arcsec shipped, 5e-11 compat.
 
 ## How these were found
 

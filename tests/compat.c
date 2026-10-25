@@ -572,6 +572,34 @@ static double far_body_moon_pull_off(void)
   return fabs(x[3] - r);
 }
 
+/* A topocentric fixed star's deflection by the Sun: the part of it that
+ * comes from the observer's site, Regulus near the Sun on 2023-08-10,
+ * (topocentric - topocentric NOGDEFL) - (geocentric - geocentric NOGDEFL)
+ * as unit vectors of equatorial J2000 XYZ, arcsec. Upstream never passes the
+ * topocentric flag to the deflection, so the site is not in it: 0 for 7.4e-6
+ * (UPSTREAM-BUGS 61). */
+static double star_topo_defl_off(void)
+{
+  double t = 2460167.3, p[4][6], r[4], s2 = 0;
+  const int32 f = SEFLG_SWIEPH | SEFLG_EQUATORIAL | SEFLG_XYZ | SEFLG_J2000 | SEFLG_NONUT | SEFLG_NOABERR;
+  const int32 fl[4] = {f | SEFLG_TOPOCTR, f | SEFLG_TOPOCTR | SEFLG_NOGDEFL, f, f | SEFLG_NOGDEFL};
+  char serr[256], s[64];
+  int k, i;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 47.37, 400);
+  for (k = 0; k < 4; k++) {
+    strcpy(s, "Regulus");
+    swe_fixstar2(s, t, fl[k], p[k], serr);
+    r[k] = sqrt(p[k][0] * p[k][0] + p[k][1] * p[k][1] + p[k][2] * p[k][2]);
+  }
+  for (i = 0; i < 3; i++) {
+    double d = (p[0][i] / r[0] - p[1][i] / r[1]) - (p[2][i] / r[2] - p[3][i] / r[3]);
+    s2 += d * d;
+  }
+  return sqrt(s2) * 180 / M_PI * 3600;
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -830,7 +858,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -862,6 +890,7 @@ int main(int argc, char **argv)
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
   nutr = nut_rate_off();
+  startd = star_topo_defl_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -1089,6 +1118,14 @@ int main(int argc, char **argv)
   else {
     printf("  nutation rate          %.2e deg/day FAIL: expected %s\n",
            nutr, WANT_DEFECT ? "> 5e-9" : "< 3e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (startd < 1e-8) : (startd > 1e-6))
+    printf("  star topocentric defl. %.2e arcsec  OK\n", startd);
+  else {
+    printf("  star topocentric defl. %.2e arcsec  FAIL: expected %s\n",
+           startd, WANT_DEFECT ? "< 1e-8" : "> 1e-6");
     bad++;
   }
 
