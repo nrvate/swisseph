@@ -1019,6 +1019,10 @@ struct epsilon {
  *     eccentricity sqrt(1 - p / a): the osculating apogee's and perigee's
  *     speeds noisy by 1.4e-7 (SE_OSCU_APOG) and 5.5e-6 deg/day
  *     (swe_nod_aps()) on Moshier, 2.4e-8 on de200 (UPSTREAM-BUGS 95, G94)
+ *   - read_const() and get_new_segment() ran free_planets() on a file they
+ *     refused (misnamed, damaged), emptying the constants of every file
+ *     left open: the next calls failed "sepl_06.se1 is damaged (2)" until
+ *     each had been reopened (UPSTREAM-BUGS 104, G99)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

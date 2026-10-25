@@ -2066,7 +2066,8 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
     swi_gen_filename(J2000, SEI_MOON, fname);
     if ((fdp->fptr = swi_fopen(ctx, SEI_FILE_MOON, fname, ctx->ephepath, NULL)) != NULL) {
       if (read_const(ctx, SEI_FILE_MOON, NULL) != OK) {
-        fclose(fdp->fptr);
+        /* read_const() has closed it: fclose(NULL) here crashed the path
+         * setter on a refused moon file (UPSTREAM-BUGS 104) */
         memset((void *) fdp, 0, sizeof(struct file_data));
       }
 #ifndef SWE_UPSTREAM_COMPAT
@@ -3148,6 +3149,22 @@ static void file_close_open(swe_ctx *ctx, int ifno)
       free((void *) ctx->pldat[i].refep);
       memset((void *) &ctx->pldat[i], 0, PLAN_FILE_PART);
     }
+}
+
+/* A file read_const() or get_new_segment() refuses, closed and cleared
+ * alone: its slot and its bodies' file data, and the shared slot of the
+ * numbered asteroids and planetary moons only if this file wrote to it.
+ * Upstream ran free_planets(), emptying the constants of every file left
+ * open (UPSTREAM-BUGS 104). */
+static void file_reject(swe_ctx *ctx, int ifno, AS_BOOL anybody)
+{
+  struct plan_data *pdp = &ctx->pldat[SEI_ANYBODY];
+  file_close_open(ctx, ifno);
+  if (anybody && (ifno == SEI_FILE_ANY_AST || ifno == SEI_FILE_PLMOON)) {
+    free((void *) pdp->segp);
+    free((void *) pdp->refep);
+    memset((void *) pdp, 0, PLAN_FILE_PART);
+  }
 }
 
 /* the file answers tjd: inside its data and the nominal span it is for */
@@ -7590,10 +7607,16 @@ static int get_new_segment(swe_ctx *ctx, double tjd, int ipli, int ifno, char *s
   }
   return(OK);
 return_error_gns:
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 104: free_planets() here emptied the other open files'
+   * constants too (see read_const()). */
+  file_reject(ctx, ifno, TRUE);
+#else
   fclose(fdp->fptr);
   // free(fdp->fptr);  is not from malloc(), must not be freed by us
   fdp->fptr = NULL;
   free_planets(ctx);
+#endif
   return ERR;
 }
 
@@ -7630,6 +7653,9 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr)
   char *serr_file_damage = "Ephemeris file %s is damaged (0%s). ";
   char *smsg = "";
   int nbytes_ipl = 2;
+#ifndef SWE_UPSTREAM_COMPAT
+  AS_BOOL touched = FALSE;	/* the bodies' file data written to */
+#endif
   fp = fdp->fptr;
   /************************************* 
    * version number of file            *
@@ -7902,6 +7928,9 @@ fendian, ifno, serr);
   /************************************* 
    * read constants of planets         * 
    *************************************/
+#ifndef SWE_UPSTREAM_COMPAT
+  touched = TRUE;
+#endif
   for (kpl = 0; kpl < fdp->npl; kpl++) {
     /* get SEI_ planet number */
     ipli = fdp->ipl[kpl];
@@ -7987,10 +8016,21 @@ file_damage:
     }
   }
 return_error:
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 104: a refused file -- under another bucket's name,
+   * damaged -- ran free_planets(), which empties every body's constants
+   * while the other files stay open: the next calls read them with dseg 0
+   * and failed in turn, "sepl_06.se1 is damaged (2)", "semo_06.se1 is
+   * damaged (2)", three calls after a misnamed seas_06.se1 before one
+   * answered, and the spares of bug 89 went with it. Only this file and
+   * its bodies' file data are cleared now. */
+  file_reject(ctx, ifno, touched);
+#else
   fclose(fdp->fptr);
   // free(fdp->fptr);  is not from malloc(), must not be freed by us
   fdp->fptr = NULL;
   free_planets(ctx);
+#endif
   return(ERR);
 }
 

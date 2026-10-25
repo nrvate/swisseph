@@ -1113,7 +1113,9 @@ check-filejoin: filejoin
 
 # G99: a Swiss file missing, its neighbour not holding the instant, falls
 # back as a missing file does -- no NaN, no stale Moon, warm as fresh
-# (UPSTREAM-BUGS 100). Its directories are links in /tmp.
+# (UPSTREAM-BUGS 100); a refused file -- misnamed, an unreadable segment
+# index -- cleared alone, the other open files kept (UPSTREAM-BUGS 104).
+# Its directories are links and copies in /tmp.
 check-missfile: missfile
 	@env -u SE_EPHE_PATH ./missfile $(EPHE)
 

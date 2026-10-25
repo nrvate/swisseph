@@ -134,6 +134,7 @@ worst were in code that had never executed even once.
 | 97 | The nakshatras of `swe_split_deg()` are shifted for SE_SIDM_USER, whose 255 passes a bit-mask test for Sheoran | Correctness | `swephlib.c`, `sweph.c` |
 | 100 | A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read: NaN fresh, the last read's Moon warm (this fork's) | Correctness | `sweph.c` |
 | 95 | The Moshier Moon's velocity is a difference of the series, and the osculating apogee's eccentricity is sqrt(1 - p / a): the osculating apogee and perigee jitter | Correctness | `swemmoon.c`, `sweph.c`, `sweph.h` |
+| 104 | A refused Swiss file empties the constants of every file left open, so the next calls fail on healthy files; the path setter crashes on a refused moon file (the crash this fork's) | Correctness / Memory | `sweph.c` |
 
 ---
 
@@ -5886,7 +5887,8 @@ constants of the files that stay open, so the next calls fail on them:
 after Ceres in 600.0 + 375 days with seas_06.se1 a copy of seas_00.se1,
 the Sun 25 days later "sepl_06.se1 is damaged (2)", Mars there "semo_06.se1
 is damaged (2)", Mars 1000 days on "sepl_06.se1 is damaged (2)", and only
-the fourth call answers; the same in the compat build.
+the fourth call answers; the same in the compat build. Fixed as entry
+104.
 
 G99 `tests/missfile.c`, in two directories of links in /tmp, (a) without
 semo_12, sepl_18 and seas_06, (b) without semo_18, sepl_12 and seas_12, at
@@ -5994,6 +5996,63 @@ JD 2460000.297, 1.28e-8 deg/day shipped (1.05e-7 before the fix), 0.456
 compat. G74 (Moshier apogee 7.2e-8 -> 8.2e-9 deg/day against its
 reference; its 4e-7 limit not tightened), G79, G41, G86, G84, G52, G40,
 G46, G38, G54, G92 pass.
+
+## 104. A refused Swiss file empties the constants of every file left open, so the next calls fail on healthy files; the path setter crashes on a refused moon file (the crash this fork's)
+
+**Severity: Correctness (calls on other bodies fail "file is damaged" until each open file has been reopened; the healthy open files and entry 89's spares reopened) / Memory (fclose(NULL): the path setter segfaults, both builds)**
+**Where:** `sweph.c`: `read_const()`'s and `get_new_segment()`'s error exits (upstream); the path setter's moon header read (this fork's, ts.5)
+
+Found by entry 100's gate and left there. `read_const()` refuses a file
+that is not what its name says ("Ephemeris file name 'seas_06.se1' wrong;
+rename 'seas_00.se1'"), is damaged or short; `get_new_segment()` refuses
+one whose segment cannot be read. Both closed the file and ran
+`free_planets()`, which zeroes every body's `plan_data` -- the constants
+(`tfstart`, `dseg`, `lndx0`) of the files that stay open as well. The next
+call on one of those found its file open, skipped `read_const()`, and
+looked up a segment with `dseg` 0: an error, which closes that file and
+runs `free_planets()` again. Measured with seas_06.se1 a link to
+seas_00.se1, after Ceres at 600.0 + 375 days: the Sun at 600.0 + 400
+"sepl_06.se1 is damaged (2)", Mars there "semo_06.se1 is damaged (2)", Mars
+1000 days on "sepl_06.se1 is damaged (2)", and only the fourth call
+answered; a fresh context answers all three. On this fork `free_planets()`
+also drops entry 89's spares, so going back to the previous bucket
+reopened sepl, semo and seas (three opens, traced). The same in the compat
+build. A related crash: the path setter reads semo_18's header (this fork's
+ts.5 replacement of upstream's Moon calculation) and on a refusal closed
+the file `read_const()` had already closed, `fclose(NULL)`: with semo_18.se1
+holding semo_12's data, `swe_set_ephe_path()` segfaults, in both builds.
+
+**Fix, as done here:** a refusal closes and clears only the refused file:
+its `fidat` slot and its bodies' file data (the part of `plan_data` before
+`teval`), and the slot numbered asteroids and planetary moons share only
+if this file had begun writing it. The other open files, their constants
+and the spares are left as they were, so nothing healthy is reopened (the
+same trace: no opens after the refusal), and the calls after it answer as
+a fresh context with the same directory does. The general constants a
+refused file may have written (`gcdat`) are read by nothing. Upstream's
+exits are under `SWE_UPSTREAM_COMPAT`. The path setter no longer closes
+the file twice; that code is this fork's and is fixed in both builds.
+
+Not this entry's, and left: `read_const()` indexes `pldat[]` with the
+body numbers the file lists, and checks them only against
+`SE_PLMOON_OFFSET`, not `SEI_NPLANETS`. They are covered by the header's
+CRC, so a damaged file cannot reach it; only a crafted file whose CRC was
+recomputed could write past the array.
+
+G99 `tests/missfile.c`, extended: (c) a directory with copies of semo_06,
+sepl_12 and seas_00 as semo_12, sepl_18 and seas_06, and a copy of seas_00
+with Pallas's segment index overwritten (get_new_segment() refuses Pallas,
+and only Pallas). Every row of checks 1-3 there, plus two warm-ups: the
+call, then the four calls that meet a refused file (Ceres 600.0 + 375, the
+Moon 1200.0 + 20, Mercury 1800.0 + 100, Pallas 600.0 - 50000), then the
+call; and those four, then the call. (d) a copy of semo_12 as semo_18:
+setting the path does not crash, J2000 is refused for the name, the Sun at
+1800.0 - 100 answers as the complete directory's. 1728 rows, none fail;
+before the fix (c) fails 77 (warm against fresh) and (d) crashes; the
+upstream build 521 ((c) 201; (d) passes there, its fix in both builds).
+G24 `refused_file_off`: the Sun 25 days after the Ceres that met the
+misnamed seas_06, against alone, 0 shipped, 1e9 (an error) compat and
+before the fix. G24, G62, G83 and G88 pass; G99 also under ASan and UBSan.
 
 ## How these were found
 
