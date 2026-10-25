@@ -154,6 +154,7 @@ worst were in code that had never executed even once.
 | 121 | A sefstars.txt that failed to load is reread and reparsed by every later star call, a missing one searched for on every call | Performance / files | `sweph.c`, `sweph.h` |
 | 119 | A thread that adopts another thread's `swe_set_jpl_file()` keeps the old file's positions, and one that adopts another's `swe_set_ephe_path()` the old directory's segments, and answers from them (this fork's) | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h` |
 | 120 | With the Swiss Moon file missing, the Moon and the Earth come from Moshier under a SEFLG_SWIEPH flag, and the strict setting answers | Correctness (behaviour) | `sweph.c`, `sweph.h` |
+| 115 | A calculation on the default context (this fork's) adopts another thread's setter half-way through: its files closed under it (a crash on the JPL file), one answer from two configurations | Correctness (a crash; wrong answers) | `sweconfig.c`, `sweph.c`, `swecl.c` |
 
 ---
 
@@ -7653,6 +7654,80 @@ entry's):
   note (Mars at 1500 without semo_12, fallback allowed: 0x8102, empty serr).
   Its message is appended instead; G117's topocentric Mars row now requires
   the note.
+
+## 115. A calculation on the default context (this fork's) adopts another thread's setter half-way through: its files closed under it (a crash on the JPL file), one answer from two configurations
+
+**Severity: Correctness (a crash: SIGSEGV in `swejpl.c`'s `state()`; wrong answers, no error)**
+**Where:** `sweconfig.c`: `swi_config_sync()`, new `swi_config_hold()` / `swi_config_release()`; `sweph.c`: `swi_init_swed_if_start()`, the calculation entry points; `swecl.c`: `swe_nod_aps_r()` and its neighbours
+
+Found by a stress program (scratch, not in the tree): one thread drives the
+process-wide setters through a cycle -- three paths (the files; the files
+with another sefstars.txt; an empty directory), `swe_set_jpl_file()`
+between de200.eph and a missing file, a manual and the automatic tidal
+acceleration, `swe_set_astro_models()` -- while three threads calculate on
+their default contexts and every answer is compared with a fresh explicit
+context replaying the same calls. In 0.3 s a follower died in `state()`
+(`js` NULL), always in a topocentric JPL Jupiter by `swe_calc_ut()`; with
+that call left out, 412 answers of 5166 matched no state of the cycle, up
+to 2.6e-5 deg (a sidereal Moshier Venus), 5.4e-6 deg on a topocentric
+Moon.
+
+The default context adopts the shared master at `swi_init_swed_if_start()`
+-- the hook Phase 2 hangs off -- and a calculation passes it several
+times, not once: `swe_calc_ut()` at its delta t and again at `swe_calc()`;
+a topocentric `swe_calc()` from inside itself, at the observer's
+`swe_deltat_ex()` and `swe_sidtime0()`; a star at the Earth's and the
+Sun's `swe_calc()`. A setter another thread called in between was adopted
+there: `swi_config_apply()` closed the JPL file (another thread's
+`swe_set_jpl_file()`), the Swiss files and the star catalogue the
+calculation was reading, and emptied the caches it had filled, and the
+rest of the call ran on the new configuration. Where it crashed, the next
+`swi_pleph()` read the file just closed.
+
+Measured deterministically by G112, whose calculations wait on a FIFO for
+the file they read between their entry and their first nested sync while
+the main thread calls the setter: a topocentric Moshier fictitious body,
+`swe_set_astro_models()` mid-call, 4.3e-6 deg off in latitude; the same on
+de200, `swe_set_jpl_file()` to a missing file, 4.3e-6 (the file closed and
+reopened half-way); through `swe_calc_ut()` in AD 1000,
+`swe_set_tid_acc(-20)`, 4.8e-6 deg/day; Sirius by `swe_fixstar2_ut()`,
+`swe_set_astro_models()`, 1.1e-5 deg.
+
+**Fix, as done here:** the calculation entry points -- `swe_calc_r()`,
+`swe_calc_ut_r()`, `swe_calc_orbel_r()` and `_ut_r()`, the six star
+functions, `swe_calc_pctr_r()`, `swe_get_ayanamsa_ex_r()` and `_ut_r()`,
+`swe_nod_aps_r()` and `_ut_r()`, `swe_get_orbital_elements_r()`,
+`swe_orbit_max_min_true_distance_r()` -- are wrappers around their old
+bodies that call `swi_config_hold()` first and `swi_config_release()`
+last. The hold syncs once, at the outermost entry, and counts its depth in
+`ctx->cfg_hold`; `swi_config_sync()` does nothing while the depth is
+above 0. A context not yet initialised is not synced by the hold: its
+first `swi_init_swed_if_start()` starts it and syncs regardless of the
+depth (nothing of it is in use), and the depth survives that start's
+memset as `cfg_seen` does. The other public functions -- the eclipse,
+rise and heliacal searches among them -- still sync at each calculation
+they make, each of which is now one configuration; they read no file
+state across those calls. Under `SWE_UPSTREAM_COMPAT`'s `#ifndef`: the
+hold and release are no-ops and every nested sync runs, as before. The
+golden transcript is bit for bit as before (13000 rows); `bench` medians
+within the machine's noise (calc-swieph -4.6..+2.7%, calc-moseph
++2.0..+3.0%, minima within 1.2%). With the fix the stress program's
+followers, its owner and its private context gave no wrong answer over
+46200 changer calls (300 cycles) and no crash.
+
+G112 `tests/cfghold.c`: the four FIFO cases, each in a forked child; each
+answer must equal bit for bit a fresh context's with the starting
+configuration. 0 in all four; before the fix 4.3e-6, 4.3e-6, 4.8e-6 and
+1.1e-5; the compat build fails all four (0.41 deg/day in the longitude
+speed, the de200 call refused "JPL ephemeris is not available", 1.1e-2
+deg/day, 2.5e-4 in the distance speed). G24 `cfg_hold_off`: the
+models case, 0 shipped, 0.413 compat. G2, G4, G12, G20, G23, G24, G81,
+G82, G83, G91, G97, G99, G100, G102, G106, G109, G111 and cfgleak pass.
+
+Not fixed here (entry 116): `swe_set_astro_models()` with a version
+string before 2.01 sets the tidal acceleration and publishes only the
+SID group, so the default context's next sync puts the master's automatic
+one back (the stress program's inherited contexts saw it).
 
 ## How these were found
 

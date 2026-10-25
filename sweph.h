@@ -1115,6 +1115,12 @@ struct epsilon {
  *   - with the Swiss Moon file missing, the Moon and the Earth made from
  *     Moshier's Moon under a SEFLG_SWIEPH flag, answered under the strict
  *     setting: the Moon 258 at 1500 (UPSTREAM-BUGS 120, G117)
+ *   - a calculation on the default context syncing with the shared
+ *     configuration from inside itself (the observer's delta t and
+ *     sidereal time, swe_calc_ut()'s second step, a star's Earth), so
+ *     another thread's setter closed its files and emptied its caches
+ *     half-way: a crash on the JPL file, 4.3e-6..1.1e-5 deg mixed answers
+ *     (UPSTREAM-BUGS 115, G112)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1661,6 +1667,7 @@ struct swe_ctx {
   swi_gen_t cfg_seen;      /* master generation this context last adopted  */
   int32     cfg_local;     /* groups this context set itself and now owns  */
   AS_BOOL   cfg_applying;  /* re-entrancy guard while a setter is applying */
+  int32     cfg_hold;      /* depth of calculations synced at entry (bug 115) */
   AS_BOOL ephe_path_is_set;
   /* bug 103: the path was set by first use, not by a caller (implicit), and
    * the files and caches it fed are still those of that path (live: not

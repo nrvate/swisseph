@@ -5284,7 +5284,7 @@ static void nodaps_ecl_to_j2000(swe_ctx *ctx, double *x, double tjd, int32 iflag
 }
 #endif
 
-int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, 
+static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag,
                       int32  method,
                       double *xnasc, double *xndsc, 
                       double *xperi, double *xaphe, 
@@ -6232,6 +6232,19 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   return OK;
 }
 
+int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag,
+                      int32  method,
+                      double *xnasc, double *xndsc,
+                      double *xperi, double *xaphe,
+                      char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_nod_aps_r_body(ctx, tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag, 
@@ -6243,7 +6256,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
   return swe_nod_aps_r(swi_default_ctx(), tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
 }
 
-int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, 
+static int32 swe_nod_aps_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
                       int32  method,
                       double *xnasc, double *xndsc, 
                       double *xperi, double *xaphe, 
@@ -6253,6 +6266,19 @@ int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 i
   return swe_nod_aps_r(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, serr),
                       ipl, iflag, method, xnasc, xndsc, xperi, xaphe,
                       serr);
+}
+
+int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
+                      int32  method,
+                      double *xnasc, double *xndsc,
+                      double *xperi, double *xaphe,
+                      char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_nod_aps_ut_r_body(ctx, tjd_ut, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -6449,7 +6475,7 @@ static int32 get_gmsm(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, doubl
  * dret[15]     perihelion distance
  * dret[16]     aphelion distance
 */
-int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et, 
+static int32 swe_get_orbital_elements_r_body(swe_ctx *ctx, double tjd_et,
   int32 ipl, int32 iflag, 
   double *dret,
   char *serr)
@@ -6708,6 +6734,18 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   return OK;
 }
 
+int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
+  int32 ipl, int32 iflag,
+  double *dret,
+  char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_get_orbital_elements_r_body(ctx, tjd_et, ipl, iflag, dret, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_get_orbital_elements(
@@ -6916,7 +6954,7 @@ static int32 orbit_max_min_true_distance_helio(swe_ctx *ctx, double tjd_et, int 
  * dtrue	true distance (pointer to double)
  * serr	        error string
  */
-int32 CALL_CONV swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
+static int32 swe_orbit_max_min_true_distance_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
 {
   int i, j, k, retval;
   int32 iflagi = (iflag & (SEFLG_EPHMASK | SEFLG_HELCTR | SEFLG_BARYCTR));
@@ -7033,6 +7071,15 @@ int32 CALL_CONV swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, i
   *dmin = rmin;
   *dtrue = rtrue;
   return retval;
+}
+
+int32 CALL_CONV swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_orbit_max_min_true_distance_r_body(ctx, tjd_et, ipl, iflag, dmax, dmin, dtrue, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.

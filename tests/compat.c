@@ -18,12 +18,14 @@
  *   compat <ephe-dir>
  */
 #include <dirent.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <pthread.h>
 #include "swephexp.h"
@@ -2602,6 +2604,81 @@ static double path_setter_118(void)
   return bad;
 }
 
+/* A topocentric Moshier fictitious body on a worker thread's default
+ * context, swe_set_astro_models() called on the main thread while that
+ * call waits for its seorbel.txt (a FIFO the main thread fills only after
+ * the setter), against a fresh context with the starting models: the
+ * largest of the six values' differences. Upstream's call adopts the new
+ * models at its observer's swe_deltat_ex(), half-way through, and its
+ * longitude speed comes out 0.413 deg/day off (UPSTREAM-BUGS 115). */
+static const char *hold_line =
+  "J1900, J1900, 163.7409, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, ZZTESTBODY\n";
+static double hold_got[6];
+static void *hold_thread(void *arg)
+{
+  char serr[256];
+  double x[6];
+  (void) arg;
+  swe_calc(2451545.25, SE_SUN, SEFLG_MOSEPH, x, serr);
+  swe_calc(2451545.25, SE_FICT_OFFSET, SEFLG_MOSEPH | SEFLG_TOPOCTR | SEFLG_SPEED, hold_got, serr);
+  return NULL;
+}
+static double cfg_hold_off(void)
+{
+  char dir[] = "/tmp/compathoXXXXXX", fifo[PATH_MAX], reg[PATH_MAX], tmp[PATH_MAX + 8];
+  char serr[256];
+  double want[6], r = 0;
+  swe_ctx *c;
+  pthread_t th;
+  FILE *fp;
+  int fd, k;
+  if (mkdtemp(dir) == NULL)
+    return -1;
+  snprintf(reg, sizeof reg, "%s/seorbel.txt", dir);
+  snprintf(fifo, sizeof fifo, "%s/fifo", dir);
+  if (mkdir(fifo, 0700) != 0 || (fp = fopen(reg, "w")) == NULL)
+    return -1;
+  fputs(hold_line, fp);
+  fclose(fp);
+  swe_close();
+  c = swe_ctx_new();
+  swe_set_ephe_path_r(c, dir);
+  swe_set_topo_r(c, 8.55, 47.37, 400);
+  swe_calc_r(c, 2451545.25, SE_FICT_OFFSET, SEFLG_MOSEPH | SEFLG_TOPOCTR | SEFLG_SPEED, want, serr);
+  swe_ctx_free(c);
+  swe_set_ephe_path(fifo);
+  swe_set_topo(8.55, 47.37, 400);
+  snprintf(fifo, sizeof fifo, "%s/fifo/seorbel.txt", dir);
+  snprintf(tmp, sizeof tmp, "%s.new", fifo);
+  if (mkfifo(fifo, 0600) != 0 || pthread_create(&th, NULL, hold_thread, NULL) != 0)
+    return -1;
+  if ((fd = open(fifo, O_WRONLY)) < 0)	/* the worker's call has opened it */
+    return -1;
+  swe_set_astro_models("1,3,1,1,1,0,0,1", 0);
+  /* a regular file in its place, for a call that opens it again */
+  if ((fp = fopen(tmp, "w")) == NULL)
+    return -1;
+  fputs(hold_line, fp);
+  fclose(fp);
+  rename(tmp, fifo);
+  if (write(fd, hold_line, strlen(hold_line)) < 0)
+    return -1;
+  close(fd);
+  pthread_join(th, NULL);
+  for (k = 0; k < 6; k++)
+    if (fabs(hold_got[k] - want[k]) > r)
+      r = fabs(hold_got[k] - want[k]);
+  swe_set_astro_models("", 0);
+  swe_close();
+  unlink(fifo);
+  unlink(reg);
+  snprintf(fifo, sizeof fifo, "%s/fifo", dir);
+  rmdir(fifo);
+  rmdir(dir);
+  swe_set_ephe_path(EPHE);
+  return r;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -2834,7 +2911,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2941,6 +3018,7 @@ int main(int argc, char **argv)
   refused = refused_file_off();
   fictstar = fict_star_parse();
   pathset = path_setter_118();
+  cfghold = cfg_hold_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   starkept = star_load_kept();
@@ -3775,6 +3853,14 @@ int main(int argc, char **argv)
     printf("  adopted JPL file       %.2e deg OK\n", adoptjpl);
   else {
     printf("  adopted JPL file       %.2e deg FAIL: expected 0\n", adoptjpl);
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (cfghold > 1e-3) : (cfghold == 0))
+    printf("  setter mid-calculation %.2e OK\n", cfghold);
+  else {
+    printf("  setter mid-calculation %.2e FAIL: expected %s\n",
+           cfghold, WANT_DEFECT ? "> 1e-3" : "0");
     bad++;
   }
 

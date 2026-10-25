@@ -202,6 +202,15 @@ extern void swi_config_claim(swe_ctx *ctx, int32 groups);
  * this thread last synced, adopt it. One atomic load in the common case. */
 extern void swi_config_sync(swe_ctx *ctx);
 
+/* A calculation's one configuration (bug 115). swi_config_hold() syncs at
+ * the entry of a calculation -- unless it is nested in one already -- and
+ * holds every sync after it until the matching swi_config_release(), so
+ * the configuration a call started with is the one it finishes with: no
+ * file closed, no cache emptied from under it by another thread's setter.
+ * No-ops under SWE_UPSTREAM_COMPAT. */
+extern void swi_config_hold(swe_ctx *ctx);
+extern void swi_config_release(swe_ctx *ctx);
+
 /* One-shot adoption of the published configuration, for swe_ctx_new().
  * swi_config_sync() refuses non-default contexts on purpose; this is the
  * single point where a fresh context inherits. */

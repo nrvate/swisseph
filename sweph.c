@@ -345,7 +345,7 @@ char *CALL_CONV swe_get_library_path(char *s)
  * program tests only.
  * -> If no speed flag has been specified, no speed will be returned.
  */
-int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag, 
+static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 	double *xx, char *serr)
 {
   int i, j;
@@ -723,6 +723,16 @@ return_error:
   return ERR; 
 }
 
+int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
+	double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_calc_r_body(ctx, tjd, ipl, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_calc(double tjd, int ipl, int32 iflag, 
@@ -731,7 +741,7 @@ int32 CALL_CONV swe_calc(double tjd, int ipl, int32 iflag,
   return swe_calc_r(swi_default_ctx(), tjd, ipl, iflag, xx, serr);
 }
 
-int32 CALL_CONV swe_calc_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, 
+static int32 swe_calc_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
 	double *xx, char *serr)
 {
   double deltat;
@@ -753,6 +763,16 @@ int32 CALL_CONV swe_calc_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 ifla
   return retval;
 }
 
+int32 CALL_CONV swe_calc_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
+	double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_calc_ut_r_body(ctx, tjd_ut, ipl, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_calc_ut(double tjd_ut, int32 ipl, int32 iflag, 
@@ -766,7 +786,7 @@ int32 CALL_CONV swe_calc_ut(double tjd_ut, int32 ipl, int32 iflag,
  * fictitious bodies' (app_pos_etc_plan_osc, above in swecalc's flow); the
  * elements and the two-body mu come from the caller and the library's
  * constants instead of seorbel.txt. See swephexp.h for the contract. */
-int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
+static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el,
         int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
         double *xx, char *serr)
 {
@@ -972,9 +992,20 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
   return ERR;
 }
 
+int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
+        int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
+        double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_calc_orbel_r_body(ctx, tjd_et, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* UT wrapper, in the shape of swe_calc_ut_r(): delta t from the requested
  * ephemeris, recomputed if the answer came from a substituted one. */
-int32 CALL_CONV swe_calc_orbel_ut_r(swe_ctx *ctx, double tjd_ut, const double *el,
+static int32 swe_calc_orbel_ut_r_body(swe_ctx *ctx, double tjd_ut, const double *el,
         int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
         double *xx, char *serr)
 {
@@ -995,6 +1026,17 @@ int32 CALL_CONV swe_calc_orbel_ut_r(swe_ctx *ctx, double tjd_ut, const double *e
     retval = swe_calc_orbel_r(ctx, tjd_ut + deltat, el, iplctr, equinox, equinoxJd, iflag, xx, NULL);
   }
   return retval;
+}
+
+int32 CALL_CONV swe_calc_orbel_ut_r(swe_ctx *ctx, double tjd_ut, const double *el,
+        int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
+        double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_calc_orbel_ut_r_body(ctx, tjd_ut, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -1864,11 +1906,13 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
 #ifndef SWE_UPSTREAM_COMPAT
     AS_BOOL saved_naming_off = ctx->path_naming_off;
 #endif
+    int32     saved_hold  = ctx->cfg_hold;	/* bug 115: the caller's hold */
     AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
     /* ctx, not &swed: a non-default context must clear itself. */
     memset((void *) ctx, 0, sizeof(struct swe_ctx));
     ctx->cfg_seen     = saved_seen;
     ctx->cfg_local    = saved_local;
+    ctx->cfg_hold     = saved_hold;
     ctx->cfg_applying = TRUE;      /* re-arm the guard the memset cleared */
     strcpy(ctx->ephepath, SE_EPHE_PATH);
     strcpy(ctx->jplfnam, SE_FNAME_DFT);
@@ -1907,6 +1951,16 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
    * up for free. Cheap -- one atomic load and a compare -- unless the
    * configuration actually moved. No-op while a setter on this thread is
    * mid-apply. */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 115: a context started just now has nothing in use, so it adopts
+   * the master even inside a held calculation (swi_config_hold()) */
+  if (started) {
+    int32 hold = ctx->cfg_hold;
+    ctx->cfg_hold = 0;
+    swi_config_sync(ctx);
+    ctx->cfg_hold = hold;
+  } else
+#endif
   swi_config_sync(ctx);
 #ifndef SWE_UPSTREAM_COMPAT
   /* bug 118: the automatic term of the path now in effect, adopted or, if
@@ -4841,7 +4895,7 @@ void CALL_CONV swe_set_sid_mode(int32 sid_mode, double t0, double ayan_t0)
   swe_set_sid_mode_r(swi_default_ctx(), sid_mode, t0, ayan_t0);
 }
 
-int32 CALL_CONV swe_get_ayanamsa_ex_r(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
+static int32 swe_get_ayanamsa_ex_r_body(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
 {
   struct nut nuttmp;
   struct nut *nutp = &nuttmp;	/* dummy assign, to silence gcc warning */
@@ -4857,6 +4911,15 @@ int32 CALL_CONV swe_get_ayanamsa_ex_r(swe_ctx *ctx, double tjd_et, int32 iflag, 
     retval &= (~SEFLG_NONUT); // must remove flag which was added internally in swi_get_ayanamsa_ex(ctx)
   }
   return retval;
+}
+
+int32 CALL_CONV swe_get_ayanamsa_ex_r(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_get_ayanamsa_ex_r_body(ctx, tjd_et, iflag, daya, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -5240,7 +5303,7 @@ int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 iflag, doub
 #endif
 }
 
-int32 CALL_CONV swe_get_ayanamsa_ex_ut_r(swe_ctx *ctx, double tjd_ut, int32 iflag, double *daya, char *serr)
+static int32 swe_get_ayanamsa_ex_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 iflag, double *daya, char *serr)
 {
   double deltat;
   int32 retflag = OK;
@@ -5258,6 +5321,15 @@ int32 CALL_CONV swe_get_ayanamsa_ex_ut_r(swe_ctx *ctx, double tjd_ut, int32 ifla
     retflag = swe_get_ayanamsa_ex_r(ctx, tjd_ut + deltat, iflag, daya, serr);
   }
   return retflag;
+}
+
+int32 CALL_CONV swe_get_ayanamsa_ex_ut_r(swe_ctx *ctx, double tjd_ut, int32 iflag, double *daya, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_get_ayanamsa_ex_ut_r_body(ctx, tjd_ut, iflag, daya, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -11410,7 +11482,7 @@ static AS_BOOL get_builtin_star(char *star, char *sstar, char *srecord)
  * x		pointer to 6 doubles for returning position coordinates
  * serr		error return string
 **********************************************************/
-int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag, 
+static int32 swe_fixstar2_r_body(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   double *xx, char *serr)
 {
   int i;
@@ -11498,6 +11570,16 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   return retc;
 }
 
+int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
+  double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_fixstar2_r_body(ctx, star, tjd, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar2(char *star, double tjd, int32 iflag, 
@@ -11506,7 +11588,7 @@ int32 CALL_CONV swe_fixstar2(char *star, double tjd, int32 iflag,
   return swe_fixstar2_r(swi_default_ctx(), star, tjd, iflag, xx, serr);
 }
 
-int32 CALL_CONV swe_fixstar2_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag, 
+static int32 swe_fixstar2_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag,
   double *xx, char *serr)
 {
   double deltat;
@@ -11528,6 +11610,16 @@ int32 CALL_CONV swe_fixstar2_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32
   return retflag;
 }
 
+int32 CALL_CONV swe_fixstar2_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag,
+  double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_fixstar2_ut_r_body(ctx, star, tjd_ut, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar2_ut(char *star, double tjd_ut, int32 iflag, 
@@ -11547,7 +11639,7 @@ int32 CALL_CONV swe_fixstar2_ut(char *star, double tjd_ut, int32 iflag,
  * mag 		pointer to a double, for star magnitude
  * serr		error return string
 **********************************************************/
-int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr)
+static int32 swe_fixstar2_mag_r_body(swe_ctx *ctx, char *star, double *mag, char *serr)
 {
   char sstar[SWI_STAR_LENGTH + 1];
   //static TLS char slast_stardata[AS_MAXCH];
@@ -11599,6 +11691,15 @@ int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *
   return_err:
   *mag = 0;
   return retc;
+}
+
+int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_fixstar2_mag_r_body(ctx, star, mag, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -12925,7 +13026,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
  * x		pointer for returning the ecliptic coordinates
  * serr		error return string
 **********************************************************/
-int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag, 
+static int32 swe_fixstar_r_body(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   double *xx, char *serr)
 {
   int i;
@@ -12994,6 +13095,16 @@ int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   return retc;
 }
 
+int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
+  double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_fixstar_r_body(ctx, star, tjd, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar(char *star, double tjd, int32 iflag, 
@@ -13002,7 +13113,7 @@ int32 CALL_CONV swe_fixstar(char *star, double tjd, int32 iflag,
   return swe_fixstar_r(swi_default_ctx(), star, tjd, iflag, xx, serr);
 }
 
-int32 CALL_CONV swe_fixstar_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag, 
+static int32 swe_fixstar_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag,
   double *xx, char *serr)
 {
   double deltat;
@@ -13024,6 +13135,16 @@ int32 CALL_CONV swe_fixstar_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 
   return retflag;
 }
 
+int32 CALL_CONV swe_fixstar_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag,
+  double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_fixstar_ut_r_body(ctx, star, tjd_ut, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar_ut(char *star, double tjd_ut, int32 iflag, 
@@ -13043,7 +13164,7 @@ int32 CALL_CONV swe_fixstar_ut(char *star, double tjd_ut, int32 iflag,
  * mag 		pointer to a double, for star magnitude
  * serr		error return string
 **********************************************************/
-int32 CALL_CONV swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr)
+static int32 swe_fixstar_mag_r_body(swe_ctx *ctx, char *star, double *mag, char *serr)
 {
   char sstar[SWI_STAR_LENGTH + 1];
   /* moved to ctx->sp.fs1mag (Phase 3c) */
@@ -13096,6 +13217,15 @@ int32 CALL_CONV swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *s
   return retc;
 }
 
+int32 CALL_CONV swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_fixstar_mag_r_body(ctx, star, mag, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
@@ -13104,7 +13234,7 @@ int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
 }
 
 
-int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
+static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
 {
   double t = 0, dt = 0, daya[2], dtsave_for_defl = 0;
   double xx[6], xxctr[6], xxctr2[6], xx0[6], xxsv[24], xxsp[6], dx[6], xreturn[24];
@@ -13473,6 +13603,15 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   if (retc == ERR)
     return ERR;
   return(iflag);
+}
+
+int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);	/* bug 115 */
+  ret = swe_calc_pctr_r_body(ctx, tjd, ipl, iplctr, iflag, xxret, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.

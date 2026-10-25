@@ -554,6 +554,10 @@ void swi_config_sync(swe_ctx *ctx)
 
   if (ctx->cfg_applying)             /* re-entered from inside a setter */
     return;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ctx->cfg_hold > 0)             /* inside a calculation (bug 115) */
+    return;
+#endif
   /* Same reasoning as swi_config_publish(): only the default context
    * tracks the master. An explicit context inherits the configuration once,
    * at swe_ctx_new(), and is its own from then on -- otherwise a later
@@ -582,6 +586,49 @@ void swi_config_sync(swe_ctx *ctx)
   swi_config_apply(ctx, &tmp, SWI_CFG_ALL & ~ctx->cfg_local);
   ctx->cfg_applying = FALSE;
   ctx->cfg_seen = g;
+}
+
+/*======================================================================
+ * A calculation's one configuration.
+ *
+ * Upstream bug 115 (this fork's): a calculation on the default context
+ * synced at every swi_init_swed_if_start() it passed, and it passes
+ * several: swe_calc_ut() at swe_deltat_ex() and again at swe_calc(), a
+ * topocentric swe_calc() inside itself at the observer's swe_deltat_ex()
+ * and swe_sidtime0(), a star at the Earth's and the Sun's swe_calc(). A
+ * path or JPL-file change another thread published in between was adopted
+ * there, in the middle of the calculation: swi_config_apply() closed the
+ * JPL file, the Swiss files and the star catalogue the calculation was
+ * reading, and emptied the caches it had filled. A topocentric JPL Jupiter
+ * by swe_calc_ut() while another thread switched swe_set_jpl_file()
+ * between de200.eph and a missing file crashed in swejpl.c's state() on
+ * the freed file (js NULL) within 0.3 s; where nothing crashed, one call
+ * mixed two configurations -- a delta t of the old tidal acceleration
+ * with the positions of the new path. Each calculation entry syncs once,
+ * here, and holds the syncs nested in it until it returns (G112).
+ *
+ * A context that is not yet initialised is not synced here: its first
+ * swi_init_swed_if_start() starts it from scratch and syncs regardless of
+ * the hold, as nothing of it is in use yet.
+ *====================================================================*/
+void swi_config_hold(swe_ctx *ctx)
+{
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ctx->cfg_hold == 0 && ctx->swed_is_initialised)
+    swi_config_sync(ctx);
+  ctx->cfg_hold++;
+#else
+  (void) ctx;
+#endif
+}
+
+void swi_config_release(swe_ctx *ctx)
+{
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->cfg_hold--;
+#else
+  (void) ctx;
+#endif
 }
 
 /*======================================================================
