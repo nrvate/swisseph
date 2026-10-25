@@ -1830,11 +1830,36 @@ static double nodaps_mosh_lat_off(void)
   return fabs(x[4] - (f[0][1] - 8 * f[1][1] + 8 * f[3][1] - f[4][1]) / (12 * h));
 }
 
+/* UPSTREAM-BUGS 96: Waldemath on Moshier, geocentric equatorial J2000 XYZ,
+ * the largest fourth difference of its place over 2^-10 day, 64 instants
+ * from 2026-10-24, AU: 2.5e-15 shipped, 1.3e-14 before the fix, 1.2e-13
+ * compat. The Earth at the emission instant was a second read of the
+ * series, whose rounding the Earth at teval does not share. */
+static double mosh_geo_lt_jitter(void)
+{
+  const double h = 1.0 / 1024, t0 = 2461337.5;
+  double x[68][6], w = 0;
+  char serr[256];
+  int m, i;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (m = 0; m < 68; m++)
+    swe_calc(t0 + m * h, SE_WALDEMATH, SEFLG_MOSEPH | SEFLG_J2000 | SEFLG_NONUT
+             | SEFLG_EQUATORIAL | SEFLG_XYZ, x[m], serr);
+  for (m = 2; m < 66; m++)
+    for (i = 0; i < 3; i++) {
+      double d4 = x[m-2][i] - 4 * x[m-1][i] + 6 * x[m][i] - 4 * x[m+1][i] + x[m+2][i];
+      if (fabs(d4) > w)
+        w = fabs(d4);
+    }
+  return w;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1910,6 +1935,7 @@ int main(int argc, char **argv)
   vulcj = vulcan_true_jitter_off();
   orbellt = orbel_lt_flag_off();
   orbel1st = orbel_first_call_off();
+  moshgeojit = mosh_geo_lt_jitter();
   moshlt = mosh_lt_off();
   pctrsd = pctr_sun_defl_off();
   earthlr = earth_helio_lt_rate_off();
@@ -2552,6 +2578,14 @@ int main(int argc, char **argv)
   else {
     printf("  ecl_nut with SPEED3    %.2e deg FAIL: expected %s\n",
            eclnut, WANT_DEFECT ? "> 1e-4" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshgeojit > 3e-14) : (moshgeojit < 6e-15))
+    printf("  Moshier geo. fict. jitter %.2e AU OK\n", moshgeojit);
+  else {
+    printf("  Moshier geo. fict. jitter %.2e AU FAIL: expected %s\n",
+           moshgeojit, WANT_DEFECT ? "> 3e-14" : "< 6e-15");
     bad++;
   }
 

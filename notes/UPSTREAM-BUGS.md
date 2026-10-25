@@ -127,6 +127,7 @@ worst were in code that had never executed even once.
 | 87 | The precession at exactly J2000 is the identity, which the Vondrak series is not | Correctness | `swephlib.c` |
 | 91 | The ayanamsa's speed is a backward difference over 0.001 day | Correctness | `sweph.c` |
 | 92 | The fixed-star memos and catalogue outlive a new path, a path change resets a manual tidal acceleration, and the topocentric observer outlives an ephemeris switch (partly this fork's) | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
+| 96 | An Earth-centred fictitious body's light-time place on Moshier jitters with the second read of the Earth | Correctness | `sweph.c` |
 
 ---
 
@@ -5470,6 +5471,70 @@ pass. Before the fix 34 fail (stars 6 of 9, tidal 4 of 7, ephem 24 of
 tidal 4, ephem 6). G24 `tid_acc_path_off`: `swe_deltat()` in AD 1000
 after a manual DE406 and a second path, 0 s shipped, 9.13 s compat. G24,
 G81, G82, G83, G20, G70, G2 and the context gate pass.
+
+## 96. An Earth-centred fictitious body's light-time place on Moshier jitters with the second read of the Earth
+
+**Severity: Correctness (3e-15 AU rms of jitter in the place: 2.7e-11 deg on Waldemath, 3e-12 on Selena, the same on a `swe_calc_orbel()` orbit about the Earth; 3.4e-8 deg/day in a nine-point difference over 2^-10 day; Moshier only)**
+**Where:** `sweph.c`: `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`
+
+An Earth-centred set (seorbel.txt's "geo": Selena, Waldemath; or
+`swe_calc_orbel()` about the Earth) is seen from the Earth at teval, with
+its focus at the Earth at the emission instant t = teval - tau. Its
+geocentric place therefore holds E(t) - E(teval), a few 1e-7 AU, formed
+as the difference of two reads of the Earth, 1 AU vectors 4e-5 day
+apart. A Moshier read is off a smooth curve by its series' rounding, and
+the two reads do not share it. Found as the Moshier rows of a nine-point
+speed check (entry 88's note) whose residual grew as the step shrank,
+3.2e-9, 2.6e-8 and 3.4e-8 deg/day on Waldemath at 2^-8, 2^-9 and 2^-10
+day, where the Moon and the Sun on Moshier and the same bodies on the
+files stay flat: a jitter in the place, not a speed error. Measured as
+the largest fourth difference over 2^-10 day of the geocentric
+equatorial J2000 XYZ place, 64 instants at each of nine dates 1800..2150:
+
+- Moshier, apparent or without aberration: Waldemath 8.9e-14 AU (1.5e-11
+  of its distance), the Earth-centred orbit (a = 0.00684 AU) 1.0e-13,
+  Selena 8.0e-14 (1.5e-12), about 3e-15 AU rms in the place;
+- Moshier, SEFLG_TRUEPOS (no light time, E(teval) cancels): 6.7e-16,
+  1.3e-15 and 0;
+- the Swiss files 7.2e-15, 8.8e-15 and 7.8e-15 (their reads' rounding,
+  an ulp of 1 AU), de200 3.6e-15 (5.3e-13 of Waldemath's distance).
+
+The defect is upstream's (the compat build: 7.4e-13 AU on Waldemath, its
+light time otherwise unsolved too).
+
+**Fix, as done here:** below a light time of 2^-10 day (a body within
+0.17 AU) on Moshier, the Earth at t is the Earth at teval carried back
+along its own motion, E - tau V + tau^2 A / 2, A the series' acceleration
+(`swi_mosh_earth_accel()`, bug 66 part 3's second difference over
++-2^-8 day, taken once a call). E(teval) then cancels exactly against the
+observer and only the smooth -tau V + tau^2 A / 2 is left. Left out is
+tau^3 / 6 of the jerk, 6e-6 AU/day^3: 2e-16 AU at the switch, 3e-17 on
+Selena, 4e-20 on Waldemath. Only the place is replaced; the velocity is
+the read's. Cost: two Moshier Earth evaluations a call, for such bodies
+only. After, the same measure: Waldemath 3.0e-15 AU, the orbit 1.2e-15,
+Selena 1.7e-15, less than the files' own. The nine-point speed residual
+at 2^-10 day: 1.4e-9 deg/day on Waldemath (3.4e-8 before), 3.5e-10 on
+Selena (6.3e-9), 1.7e-9 on the orbit (7.2e-8); the Swiss files 3.3e-9,
+1.1e-9 and 4.4e-9. G87's Moshier geocentric rows fall from 5.1e-9 to
+2.5e-10 deg/day. Swiss and JPL are unchanged to the bit.
+
+G95 `tests/geoltearth.c`: Moshier, Waldemath and Selena through
+`swe_calc()` and the Earth-centred orbit through `swe_calc_orbel()`, nine
+dates 1800..2150: (a) the fourth difference above, apparent and without
+aberration, within 2e-14 AU; (b) the longitude, latitude and distance
+speeds (per unit distance) in the ecliptic of date against a nine-point
+difference of the positions over 2^-10 day, within 5e-9 deg/day.
+Topocentric places are left out of (a): the site's turning puts 4e-14 AU
+of real curvature into the fourth difference. The build before the fix
+fails all nine checks, the SWE_UPSTREAM_COMPAT build too. G80's
+fixed-point rows (3) on Moshier compared against a reference that read
+the Earth twice; they now take its difference E(t - tau) - E(t) from a
+degree-8 least-squares fit through 257 reads 2^-11 day apart (1e-19 AU of
+the reads' noise over a light time): Waldemath 2.4e-12 deg, Selena 1.0e-12
+off the fixed point (before the fix 6.3e-11 and 9.7e-12, which G80 now
+fails). G24 `mosh_geo_lt_jitter`: Waldemath's fourth difference at
+2026-10-24, 2.5e-15 AU shipped, 1.3e-14 before the fix, 1.2e-13 compat.
+G59, G64, G80, G87 pass.
 
 ## How these were found
 

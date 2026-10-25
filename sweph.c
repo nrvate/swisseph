@@ -218,6 +218,8 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
 static void add_aberr_rate(double *xx, const double *xobs, const double *xobs2);
 static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xeteval, const double *xe, double *xout);
 static void lt_rate_exact(const double *xx, const double *xo, double *xxsp);
+static void earth_place_at_lt(swe_ctx *ctx, double teval, double t, int *have_acc,
+                              double *acc, double *xe);
 static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, char *serr);
 static int observer_at_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
                           const double *xobs, const double *xeteval,
@@ -4649,7 +4651,8 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
   int i, j, niter, retc;
   double xx[6], dx[3], dt, dtsave_for_defl;
 #ifndef SWE_UPSTREAM_COMPAT
-  double dtNew;
+  double dtNew, acc_e[3];
+  int have_acc = FALSE;
 #endif
   double xearth[6], xsun[6], xmoon[6];
   double xxsv[6], xxsp[3]={0}, xobs[6], xobs2[6];
@@ -4785,6 +4788,8 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
     for (j = 0; j < 10; j++) {
       t = pdp->teval - dt;
       retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
+      /* Upstream bug 96: the Earth at t as the one at teval moved back */
+      earth_place_at_lt(ctx, pdp->teval, t, &have_acc, acc_e, xearth);
       if (swi_osc_el_plan(ctx, t, xx, ipl-SE_FICT_OFFSET, ipli, xearth, xsun, serr) != OK)
 	return ERR;
       if (retc != OK)
@@ -5074,7 +5079,8 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
   int i, j, niter, retc;
   double xx[6], dx[3], dt, dtsave_for_defl;
 #ifndef SWE_UPSTREAM_COMPAT
-  double dtNew;
+  double dtNew, acc_e[3];
+  int have_acc = FALSE;
 #endif
   double xearth[6], xsun[6], xmoon[6];
   double xxsv[6], xxsp[3]={0}, xobs[6], xobs2[6];
@@ -5214,6 +5220,9 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
     for (j = 0; j < 10; j++) {
       t = pdp->teval - dt;
       retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
+      /* Upstream bug 96: the Earth at t as the one at teval moved back */
+      if (iplctr == SE_EARTH)
+        earth_place_at_lt(ctx, pdp->teval, t, &have_acc, acc_e, xearth);
       for (i = 0; i <= 5; i++)
         elret[i] = el[i];
       elret[0] = el[0] - dmot * dt;
@@ -5652,6 +5661,41 @@ static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xete
 {
   struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
   earth_at_lt_sun(ctx, teval, t, xeteval, psdp->teval == teval ? psdp->x : NULL, xe, xout);
+}
+
+/* Upstream bug 96: an Earth-centred set (seorbel.txt's "geo", or
+ * swe_calc_orbel() about the Earth) is seen from the Earth at teval, its
+ * focus the Earth at the emission instant t: the body's geocentric place
+ * holds E(t) - E(teval), a few 1e-7 AU, as the difference of two reads of
+ * the Earth, 1 AU vectors. Each Moshier read is off a smooth curve by its
+ * series' rounding, and the two reads, 4e-5 day apart, do not share it:
+ * the place jittered by about 3e-15 AU rms from one instant to the next,
+ * 2.7e-11 deg on Waldemath (0.0068 AU), 3e-12 on Selena (0.053 AU); its
+ * fourth difference over 2^-10 day reached 9e-14 AU, against 1e-15 with
+ * no light time and 7e-15 on the Swiss files (an ulp of 1 AU a read), and
+ * a nine-point difference over 2^-10 day read 3.4e-8 deg/day of speed into
+ * it. Below a light time of 2^-10 day the Earth at t is now the Earth at
+ * teval carried back along its own motion, E - tau V + tau^2 A / 2, A the
+ * series' acceleration (swi_mosh_earth_accel(), once a call), so E(teval)
+ * cancels exactly against the observer and only the smooth -tau V +
+ * tau^2 A / 2 is left. Left out is tau^3 / 6 of the jerk, 6e-6 AU/day^3:
+ * 2e-16 AU at the 2^-10 day switch, 3e-17 on Selena, 4e-20 on Waldemath.
+ * Only the place is replaced; the velocity is the read's. Moshier only. */
+#define LT_EARTH_TAYLOR (1.0 / 1024)
+static void earth_place_at_lt(swe_ctx *ctx, double teval, double t, int *have_acc,
+                              double *acc, double *xe)
+{
+  const struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
+  double tau = teval - t;
+  int i;
+  if (pedp->iephe != SEFLG_MOSEPH || pedp->teval != teval || !(tau < LT_EARTH_TAYLOR))
+    return;
+  if (!*have_acc) {
+    swi_mosh_earth_accel(ctx, teval, pedp->x, acc);
+    *have_acc = TRUE;
+  }
+  for (i = 0; i <= 2; i++)
+    xe[i] = pedp->x[i] - tau * pedp->x[i+3] + tau * tau / 2 * acc[i];
 }
 
 /* The observer at the instant the light left, t, as the aberration rate

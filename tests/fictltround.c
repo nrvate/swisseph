@@ -49,7 +49,11 @@
  * dates of (1), against the light time's fixed point iterated here:
  * within 5e-12 deg (measured <= 1.5e-12) and 2e-11 (<= 3.6e-12). Before
  * part 3 the Earth-centred rows and all six orbel rows fail (2.3e-11,
- * 1.6e-5 deg); the upstream build fails all fourteen. Run as
+ * 1.6e-5 deg); the upstream build fails all fourteen. On Moshier the
+ * geocentric rows' Earth difference E(t - tau) - E(t) is a fit's, not two
+ * reads' (UPSTREAM-BUGS 96, G95: the library carries the Earth at t back
+ * along its motion): Waldemath 2.4e-12 deg, Selena 1.0e-12; before bug 96
+ * 6.3e-11 and 9.7e-12, the reads' noise. Run as
  *   fictltround EPHEDIR
  */
 #include <math.h>
@@ -144,24 +148,89 @@ static double angle(const double *a, const double *b)
                a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) * 180 / M_PI;
 }
 
+/* Moshier, Earth-centred (UPSTREAM-BUGS 96): each read of Moshier's Earth
+ * is off a smooth curve by about 3e-15 AU, and the library now carries the
+ * Earth at teval back to t - tau along its motion rather than reading it
+ * again there. So the reference's Earth difference E(t - tau) - E(t) is not
+ * two reads either: it is that of a least-squares polynomial (degree 8)
+ * through 257 reads 2^-11 day apart about t, whose difference over a light
+ * time of 4e-5 day has 1e-19 AU of the reads' noise; the body is its read
+ * at t - tau less the Earth read there. */
+#define FM 128
+#define FDEG 8
+static void earth_fit(double t, int32 cfl, double c[3][FDEG + 1])
+{
+  double a[FDEG + 1][FDEG + 2], x[6];
+  char serr[256];
+  int n = FDEG + 1, i, j, k, r, q;
+  for (q = 0; q < 3; q++) {
+    for (i = 0; i < n; i++)
+      for (j = 0; j <= n; j++)
+        a[i][j] = 0;
+    for (k = -FM; k <= FM; k++) {
+      double s = (double) k / FM, p[FDEG + 1];
+      swe_calc(t + k / 2048.0, SE_EARTH, cfl | SEFLG_HELCTR, x, serr);
+      p[0] = 1;
+      for (i = 1; i < n; i++)
+        p[i] = p[i - 1] * s;
+      for (i = 0; i < n; i++) {
+        for (j = 0; j < n; j++)
+          a[i][j] += p[i] * p[j];
+        a[i][n] += p[i] * x[q];
+      }
+    }
+    for (i = 0; i < n; i++)
+      for (r = i + 1; r < n; r++) {
+        double f = a[r][i] / a[i][i];
+        for (j = i; j <= n; j++)
+          a[r][j] -= f * a[i][j];
+      }
+    for (i = n - 1; i >= 0; i--) {
+      double s = a[i][n];
+      for (j = i + 1; j < n; j++)
+        s -= a[i][j] * c[q][j];
+      c[q][i] = s / a[i][i];
+    }
+  }
+}
+
+/* the fitted Earth at t + dx less the one at t (s = dx / (FM 2^-11)) */
+static double earth_fit_diff(const double *c, double dx)
+{
+  double s = dx * 2048.0 / FM, v = 0;
+  int i;
+  for (i = FDEG; i >= 1; i--)
+    v = (v + c[i]) * s;
+  return v;
+}
+
 static double fict_fixed_point_off(double t, int ipl, int32 eph, int hel)
 {
   char serr[256];
-  double O[6] = {0, 0, 0, 0, 0, 0}, B[6], X[6], d[3] = {0, 0, 0}, tau = 0, old = -1;
+  double O[6] = {0, 0, 0, 0, 0, 0}, B[6], E[6], X[6], d[3] = {0, 0, 0}, tau = 0, old = -1;
+  double cf[3][FDEG + 1];
   int32 cfl = eph | FR | SEFLG_TRUEPOS | SEFLG_SPEED;
   int32 bfl = cfl | (eph == SEFLG_MOSEPH ? SEFLG_HELCTR : SEFLG_BARYCTR);
-  int it, i;
+  int it, i, mgeo = eph == SEFLG_MOSEPH && !hel;
   if (eph != SEFLG_MOSEPH)
     swe_calc(t, hel ? SE_SUN : SE_EARTH, cfl | SEFLG_BARYCTR, O, serr);
   else if (!hel)
     swe_calc(t, SE_EARTH, cfl | SEFLG_HELCTR, O, serr);
+  if (mgeo)
+    earth_fit(t, cfl, cf);
   for (it = 0; it < 30 && fabs(tau - old) > 1e-18; it++) {
     double tp = t - tau, eps;
     old = tau;
     swe_calc(tp, ipl, bfl, B, serr);
     eps = (t - tp) - tau;
-    for (i = 0; i < 3; i++)
-      d[i] = B[i] + eps * B[i + 3] - O[i];
+    if (mgeo) {
+      swe_calc(tp, SE_EARTH, cfl | SEFLG_HELCTR, E, serr);
+      for (i = 0; i < 3; i++)
+        d[i] = (B[i] - E[i]) + earth_fit_diff(cf[i], tp - t) + eps * B[i + 3];
+    } else {
+      for (i = 0; i < 3; i++)
+        d[i] = B[i] + eps * B[i + 3] - O[i];
+    }
     tau = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) * AUNIT_ / CLIGHT_ / 86400;
   }
   swe_calc(t, ipl, eph | FR | SEFLG_NOABERR | SEFLG_NOGDEFL | (hel ? SEFLG_HELCTR : 0), X, serr);

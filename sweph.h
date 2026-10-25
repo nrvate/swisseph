@@ -988,6 +988,10 @@ struct epsilon {
  *     modes' curvature (1e-9, 2.1e-6 for True Revati at zeta Psc's
  *     conjunction), and 3.6e5 deg/day where the ayanamsa crosses 0
  *     (UPSTREAM-BUGS 91, G90)
+ *   - an Earth-centred fictitious body's light-time place on Moshier took
+ *     its focus from a second read of the Earth at t - tau, whose rounding
+ *     the Earth at teval does not share: 3e-15 AU rms of jitter, 2.7e-11
+ *     deg on Waldemath (UPSTREAM-BUGS 96, G95)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
