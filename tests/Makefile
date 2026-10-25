@@ -1422,7 +1422,8 @@ check-moonlesstid: moonlesstid
 # (174; /tmp directories of links); every refusal's points zeroed (179); the
 # Sun's and the Earth's heliocentric points answered strict without the moon
 # files, which they do not use (192), the planets' seen from the Earth made
-# from Moshier's Moon refused (193).
+# from Moshier's Moon refused (193); the Sun's topocentric points its
+# geocentric ones less the site (190).
 check-nodcentre: nodcentre
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodcentre $(EPHE)
 

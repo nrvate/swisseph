@@ -5541,6 +5541,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
 #ifndef SWE_UPSTREAM_COMPAT
   int32 retc0 = 0, retcs = 0, retx = 0, eph_asked, iflag_ctr = iflag;
   AS_BOOL out_bary, mosh_ctr = FALSE, moon_geo_mean = FALSE;
+  double xsite[6] = {0, 0, 0, 0, 0, 0};	/* the Sun's points' site, bug 190 */
 #endif
   double rxy, rxyz, fac, sgn;
   double sinnode, cosnode, sinincl, cosincl, sinu, cosu, cosE, cosE2;
@@ -6325,9 +6326,12 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * method alike, SEFLG_TOPOCTR the site added. On Moshier it is now the
      * Sun, the origin: the files' points to Moshier's precision, 1.8e-6
      * deg for the mean perigee (the files' observer moving with the Sun's
-     * barycentric velocity, aberration that Moshier's lacks). */
-    for (i = 0; i <= 5; i++)
+     * barycentric velocity, aberration that Moshier's lacks). The site,
+     * if any, is the Earth's below (bug 190). */
+    for (i = 0; i <= 5; i++) {
+      xsite[i] = xobs[i];
       xobs[i] = mosh_ctr ? 0 : xsun[i];
+    }
 #else
   } else if (ipl == SE_SUN && !(iflag & SEFLG_MOSEPH)) {
     for (i = 0; i <= 5; i++)
@@ -6440,6 +6444,21 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     if (ipl == SE_SUN && !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)))
       for (j = 0; j <= 5; j++)
         xp[j] = -xp[j];
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 190: the Sun's topocentric points were its geocentric
+     * ones. The site was set as the observer and then overwritten by the
+     * Sun, the observer of the Earth's orbit (bug 167), so they carried no
+     * parallax, where swe_calc()'s topocentric Sun at J2000 is 2.3e-3 deg
+     * from its geocentric one in latitude. The site is the Earth's: the
+     * Sun seen from it with the Earth at the point is the point negated
+     * less the site, as a planet's topocentric points are the geocentric
+     * ones less it, its velocity with it. The aberration's observer stays
+     * the Sun, as for the geocentric points: they carry no annual
+     * aberration, and so no diurnal one. */
+    if (ipl == SE_SUN && (iflag & SEFLG_TOPOCTR))
+      for (j = 0; j <= 5; j++)
+        xp[j] -= xsite[j];
+#endif
     /*********************
      * light deflection 
      *********************/

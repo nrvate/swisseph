@@ -1502,6 +1502,9 @@ struct epsilon {
  *     Earth plus its Moon, not the short series' Moon the Earth was made
  *     with: the Earth's longitude of perihelion 8.0e-3 deg off at 2000
  *     (UPSTREAM-BUGS 189, G107, G24)
+ *   - swe_nod_aps()'s topocentric Sun points as its geocentric ones, the
+ *     site overwritten by the Sun as the observer: no parallax, 2.3e-3 deg
+ *     in latitude at J2000 (UPSTREAM-BUGS 190, G143, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

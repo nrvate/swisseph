@@ -60,22 +60,33 @@
  * geocentric and topocentric were answered there from the Earth made from
  * Moshier's Moon, their read being heliocentric, where swe_calc() of the
  * planet refuses (Mars's at 1900 3.7e-9 deg off the complete directory's).
+ * UPSTREAM-BUGS 190: the Sun's topocentric points were its geocentric
+ * ones: the site, set as the observer, was overwritten by the Sun, so they
+ * carried no parallax (the perigee 2.7e-3 deg and 2.7e-5 AU off its
+ * topocentric place here, the focal point 8.7e-2 deg), where swe_calc()'s
+ * topocentric Sun at J2000 is 2.3e-3 deg from its geocentric one.
  *
  * The check, the complete directory, and for (f) to (i) others:
  *  (a) the Swiss files and Moshier, seven instants -3000..3000: the Sun's
  *      geocentric and topocentric perigee and apogee against the Earth's
  *      heliocentric points of the same ephemeris and method (method 0,
  *      mean, osculating, SE_NODBIT_OSCU_BAR, mean and osculating with
- *      SE_NODBIT_FOPOINT): each the Earth's at its own distance (within
- *      1e-12 AU) and in the direction of the opposite one (the perigee the
- *      aphelion's, the apogee or focal point the perihelion's; within 1e-5
- *      deg, the deflection, which takes the distance, the difference);
- *      Moshier's mean points the files' within 1e-5 deg and 1e-12 AU (the
- *      elements are the same; the files' observer moves with the Sun's
- *      barycentric velocity); and Moshier's mean points' speeds,
- *      geocentric and topocentric, against five-point differences of
- *      their positions over 2^-6 day at binary instants, within 1e-10
- *      deg/day and 1e-12 AU/day;
+ *      SE_NODBIT_FOPOINT): each the Earth's same point negated (in the
+ *      direction of the opposite one: the perigee the aphelion's, the
+ *      apogee or focal point the perihelion's), less the site for the
+ *      topocentric ones (the Sun's geometric geocentric less topocentric
+ *      place, from swe_calc() on a context of its own), its distance
+ *      within 1e-12 AU (topocentric 1e-11: the site is subtracted in the
+ *      ephemeris's frame from points in J2000's, as every body's, 1.8e-12
+ *      AU) and its direction within 1e-5 deg (the deflection, which takes
+ *      the distance, the difference); Moshier's mean points the files'
+ *      within 1e-5 deg and 1e-12 AU (the elements are the same; the files'
+ *      observer moves with the Sun's barycentric velocity); and Moshier's
+ *      mean points' speeds, geocentric and topocentric, against five-point
+ *      differences of their positions over 2^-6 day at binary instants
+ *      (topocentric nine-point: the five-point's truncation of the site's
+ *      daily turn is 3.2e-8 deg/day), within 1e-10 deg/day and 1e-12
+ *      AU/day;
  *  (b) SEFLG_SWIEPH | SEFLG_MOSEPH against SEFLG_SWIEPH, and SEFLG_JPLEPH
  *      with SEFLG_MOSEPH, SEFLG_SWIEPH or both against SEFLG_JPLEPH
  *      (de200): the Sun, the Moon, Mars, Saturn and the Earth, mean,
@@ -102,9 +113,11 @@
  *      apsides (and the focal point) of the Earth, heliocentric, and of
  *      the Sun, geocentric and topocentric, their speeds against
  *      five-point differences of their positions over 2^-6 day at binary
- *      instants, within 2e-9 deg/day (the files' topocentric Sun 1e-8, at
- *      the residual floor: 3.9e-9 there, not this check's) and 1e-12
- *      AU/day;
+ *      instants (topocentric nine-point, as (a): the focal point, 0.03 AU
+ *      out, turns with the site by 0.07 deg, and the five-point's
+ *      truncation there is 9.0e-7 deg/day), within 2e-9 deg/day (the
+ *      files' topocentric Sun 1e-8, at the residual floor: 3.9e-9 there,
+ *      not this check's) and 1e-12 AU/day;
  *  (f) the Moon's mean points (SE_NODBIT_MEAN, 0, SE_NODBIT_FOPOINT)
  *      along directories of links to EPHEDIR's files but the moon files,
  *      but the JPL file, and none, and the complete one; Swiss, JPL
@@ -148,10 +161,11 @@
  *      24 values zeroed, with the fallback within 1e-7 deg of the complete
  *      directory's; heliocentric and barycentric answered strict, bit for
  *      bit the complete directory's and the fallback's.
- * Measured: (a) distance 4.4e-16 AU, direction 7.6e-7 deg (the focal
- * point, 0.03 AU out), Moshier's mean points 2.9e-6 deg and 2.2e-16 AU off
- * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b), (c),
- * (d) 0; (e) 3.2e-10 deg/day, 1.2e-13 AU/day; (f) the node 1.1e-13 deg off
+ * Measured: (a) distance 4.4e-16 AU (topocentric 1.8e-12), direction
+ * 2.9e-6 deg (the focal point, 0.03 AU out), Moshier's mean points 2.9e-6
+ * deg and 2.2e-16 AU off the files', their speeds 3.6e-12 deg/day and
+ * 3.7e-14 AU/day; (b), (c), (d) 0; (e) 3.7e-10 deg/day (the files'
+ * topocentric Sun 3.9e-9), 1.7e-13 AU/day; (f) the node 1.1e-13 deg off
  * the mean node's, the heliocentric and barycentric points 1.6e-8 deg off;
  * (g) 0; (h) 6.5e-15 deg, the speeds 1.5e-11 deg/day; (i) the fallback 8.7e-9
  * deg. 2558 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
@@ -167,8 +181,10 @@
  * of the Moon's mean points (refused strict); before bug 179's, 18 of
  * (g)'s 22 (all but the two zeroed already); before bug 192's, all 153 of
  * (h)'s (the strict refusals); before bug 193's, the 128 geocentric and
- * topocentric rows of (i)'s 256 (answered strict). The upstream build
- * (SWE_UPSTREAM_COMPAT) fails 1905. Run as
+ * topocentric rows of (i)'s 256 (answered strict); before bug 190's,
+ * (a)'s 168 topocentric rows of its first check (3.6e-5 AU, 8.7e-2 deg;
+ * that check took them for the geocentric ones before). The upstream
+ * build (SWE_UPSTREAM_COMPAT) fails 1905. Run as
  *   nodcentre EPHEDIR
  */
 #include <dirent.h>
@@ -210,6 +226,62 @@ static double jd_of(int y)
   return floor((2451545.0 + (y - 2000) * 365.25 + 100.37) * 256) / 256;
 }
 
+/* polar (deg, deg, AU) to cartesian and back */
+static void pol2cart(const double *p, double *c)
+{
+  double l = p[0] * DEGTORAD, b = p[1] * DEGTORAD;
+  c[0] = p[2] * cos(b) * cos(l);
+  c[1] = p[2] * cos(b) * sin(l);
+  c[2] = p[2] * sin(b);
+}
+
+static void cart2pol(const double *c, double *p)
+{
+  p[0] = swe_degnorm(atan2(c[1], c[0]) * RADTODEG);
+  p[1] = atan2(c[2], sqrt(c[0] * c[0] + c[1] * c[1])) * RADTODEG;
+  p[2] = sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+}
+
+/* the topocentric site, the Sun's geometric geocentric less topocentric
+ * place, ecliptic of date, AU (bug 190), on a context of its own: a
+ * topocentric swe_calc() Sun at an instant moves the default context's
+ * topocentric Sun points there by 6e-12 deg, their speeds by 4e-11 deg/day
+ * (the build before bug 190 too; below the floor, not this check's) */
+static swe_ctx *site_ctx;
+
+static void site_of(double jd, int32 eph, double *site)
+{
+  char serr[AS_MAXCH];
+  double g[6], t[6];
+  int32 fl = eph | SEFLG_XYZ | SEFLG_TRUEPOS | SEFLG_NOABERR | SEFLG_NOGDEFL;
+  swe_calc_r(site_ctx, jd, SE_SUN, fl, g, serr);
+  swe_calc_r(site_ctx, jd, SE_SUN, fl | SEFLG_TOPOCTR, t, serr);
+  site[0] = g[0] - t[0];
+  site[1] = g[1] - t[1];
+  site[2] = g[2] - t[2];
+}
+
+/* the rate of component c (0 longitude, 1 latitude, 2 distance) of point
+ * k from its places f[j] at jd + (j - n / 2) H: the five-point central
+ * difference (n 5) or, for a topocentric point, whose site turns in a day,
+ * the nine-point one (n 9; the five-point's truncation is 3.2e-8 deg/day
+ * there over 2^-6 day, the focal point's, 0.03 AU out, 9.0e-7) */
+static double rate_of(double f[][24], int n, int k, int c, double H)
+{
+  static const double c9[4] = {4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280};
+  int m = n / 2, q;
+  double d = 0;
+  if (n == 5) {
+    double d1 = c ? f[3][6 * k + c] - f[1][6 * k + c] : swe_difdeg2n(f[3][6 * k], f[1][6 * k]);
+    double d2 = c ? f[4][6 * k + c] - f[0][6 * k + c] : swe_difdeg2n(f[4][6 * k], f[0][6 * k]);
+    return (8 * d1 - d2) / (12 * H);
+  }
+  for (q = 1; q <= 4; q++)
+    d += c9[q - 1] * (c ? f[m + q][6 * k + c] - f[m - q][6 * k + c]
+                      : swe_difdeg2n(f[m + q][6 * k], f[m - q][6 * k]));
+  return d / H;
+}
+
 /* (a) the Sun's geocentric points, bug 167 */
 static void part_a(void)
 {
@@ -217,7 +289,7 @@ static void part_a(void)
                              SE_NODBIT_MEAN | SE_NODBIT_FOPOINT, SE_NODBIT_OSCU | SE_NODBIT_FOPOINT};
   static const int32 E[2] = {SEFLG_MOSEPH, SEFLG_SWIEPH};
   const double H = 1.0 / 64;
-  double wd = 0, wr = 0, wm = 0, wmr = 0, ws = 0, wsr = 0;
+  double wd = 0, wr = 0, wrt = 0, wm = 0, wmr = 0, ws = 0, wsr = 0;
   char w[160];
   int ie, it, im, y, k, j, c;
   for (ie = 0; ie < 2; ie++)
@@ -226,16 +298,31 @@ static void part_a(void)
         for (y = -3000; y <= 3000; y += 1000) {
           double s[24], e[24], jd = jd_of(y);
           int32 fl = E[ie] | SEFLG_SPEED;
+          double site[3] = {0, 0, 0};
           int32 rs = nodaps(jd, SE_SUN, fl | (it ? SEFLG_TOPOCTR : 0), M[im], s);
           int32 re = nodaps(jd, SE_EARTH, fl | SEFLG_HELCTR, M[im], e);
+          if (it)
+            site_of(jd, E[ie], site);
           for (k = 2; k < 4; k++) {
-            double d = dir_off(s, k, e, 5 - k), r = fabs(s[6 * k + 2] - e[6 * k + 2]);
+            /* the Earth's same point negated (the direction of the
+             * opposite one), less the site (bug 190) */
+            double xe[3], ref[3], d, r;
+            pol2cart(e + 6 * k, xe);
+            for (c = 0; c < 3; c++)
+              xe[c] = -xe[c] - site[c];
+            cart2pol(xe, ref);
+            d = dir_off(s, k, ref, 0);
+            r = fabs(s[6 * k + 2] - ref[2]);
             if (d > wd) wd = d;
-            if (r > wr) wr = r;
+            if (it) {
+              if (r > wrt) wrt = r;
+            } else if (r > wr) {
+              wr = r;
+            }
             snprintf(w, sizeof w, "%s %s method %d %d, the Sun's %s against the Earth's: dist %.2e AU, dir",
                      E[ie] == SEFLG_MOSEPH ? "Moshier" : "Swiss", it ? "topo" : "geo", (int) M[im], y,
                      k == 2 ? "perigee" : "apogee", r);
-            check(rs == 0 && re == 0 && r <= 1e-12 && d <= 1e-5, "a", w, d, 1e-5);
+            check(rs == 0 && re == 0 && r <= (it ? 1e-11 : 1e-12) && d <= 1e-5, "a", w, d, 1e-5);
           }
         }
   /* Moshier's mean points the files' */
@@ -256,16 +343,15 @@ static void part_a(void)
   /* Moshier's mean points' speeds, the rates of their positions */
   for (it = 0; it < 2; it++)
     for (y = -3000; y <= 3000; y += 1000) {
-      double x[24], f[5][24], jd = jd_of(y), sa = 0, sr = 0;
+      double x[24], f[9][24], jd = jd_of(y), sa = 0, sr = 0;
       int32 fl = SEFLG_MOSEPH | (it ? SEFLG_TOPOCTR : 0);
       int32 r = nodaps(jd, SE_SUN, fl | SEFLG_SPEED, SE_NODBIT_MEAN, x);
-      for (j = 0; j < 5; j++)
-        nodaps(jd + (j - 2) * H, SE_SUN, fl, SE_NODBIT_MEAN, f[j]);
+      int n = it ? 9 : 5;
+      for (j = 0; j < n; j++)
+        nodaps(jd + (j - n / 2) * H, SE_SUN, fl, SE_NODBIT_MEAN, f[j]);
       for (k = 2; k < 4; k++)
         for (c = 0; c < 3; c++) {
-          double d1 = c ? f[3][6 * k + c] - f[1][6 * k + c] : swe_difdeg2n(f[3][6 * k], f[1][6 * k]);
-          double d2 = c ? f[4][6 * k + c] - f[0][6 * k + c] : swe_difdeg2n(f[4][6 * k], f[0][6 * k]);
-          double e = fabs(x[6 * k + 3 + c] - (8 * d1 - d2) / (12 * H));
+          double e = fabs(x[6 * k + 3 + c] - rate_of(f, n, k, c, H));
           if (c < 2 && e > sa) sa = e;
           if (c == 2 && e > sr) sr = e;
         }
@@ -275,9 +361,9 @@ static void part_a(void)
                it ? "topo" : "geo", y, sr);
       check(r == 0 && sr <= 1e-12 && sa <= 1e-10, "a", w, sa, 1e-10);
     }
-  printf("  (a) the Sun's points against the Earth's: %.2e AU, %.2e deg; Moshier's mean against the\n"
-         "      files' %.2e deg, %.2e AU; their speeds %.2e deg/day, %.2e AU/day\n",
-         wr, wd, wm, wmr, ws, wsr);
+  printf("  (a) the Sun's points against the Earth's: %.2e AU (topocentric %.2e), %.2e deg; Moshier's\n"
+         "      mean against the files' %.2e deg, %.2e AU; their speeds %.2e deg/day, %.2e AU/day\n",
+         wr, wrt, wd, wm, wmr, ws, wsr);
 }
 
 /* (b) the ephemeris bits resolved as swe_calc() resolves them, bug 168:
@@ -464,19 +550,18 @@ static void part_e(void)
     for (ib = 0; ib < 3; ib++)
       for (im = 0; im < 2; im++)
         for (y = -3000; y <= 3000; y += 500) {
-          double x[24], f[5][24], jd = jd_of(y), sa = 0, sr = 0;
+          double x[24], f[9][24], jd = jd_of(y), sa = 0, sr = 0;
           int32 fl = E[ie] | B[ib].ctr;
+          int n = B[ib].ctr == SEFLG_TOPOCTR ? 9 : 5;
           /* the files' topocentric Sun at the floor: 3.9e-9 deg/day, not
            * this entry's */
           double lim = (E[ie] == SEFLG_SWIEPH && B[ib].ctr == SEFLG_TOPOCTR) ? 1e-8 : 2e-9;
           int32 r = nodaps(jd, B[ib].ipl, fl | SEFLG_SPEED, M[im], x);
-          for (j = 0; j < 5; j++)
-            nodaps(jd + (j - 2) * H, B[ib].ipl, fl, M[im], f[j]);
+          for (j = 0; j < n; j++)
+            nodaps(jd + (j - n / 2) * H, B[ib].ipl, fl, M[im], f[j]);
           for (k = 2; k < 4; k++)
             for (c = 0; c < 3; c++) {
-              double d1 = c ? f[3][6 * k + c] - f[1][6 * k + c] : swe_difdeg2n(f[3][6 * k], f[1][6 * k]);
-              double d2 = c ? f[4][6 * k + c] - f[0][6 * k + c] : swe_difdeg2n(f[4][6 * k], f[0][6 * k]);
-              double e = fabs(x[6 * k + 3 + c] - (8 * d1 - d2) / (12 * H));
+              double e = fabs(x[6 * k + 3 + c] - rate_of(f, n, k, c, H));
               if (c < 2 && e > sa) sa = e;
               if (c == 2 && e > sr) sr = e;
             }
@@ -904,6 +989,9 @@ int main(int argc, char **argv)
   swe_set_ephe_path(argv[1]);
   swe_set_topo(8.55, 47.37, 400);
   swe_set_jpl_file("de200.eph");
+  site_ctx = swe_ctx_new();
+  swe_set_ephe_path_r(site_ctx, argv[1]);
+  swe_set_topo_r(site_ctx, 8.55, 47.37, 400);
   printf("G143: swe_nod_aps()'s change of centre is the one its points are in\n");
   part_a();
   part_b();
@@ -917,6 +1005,7 @@ int main(int argc, char **argv)
     for (int id = 1; id < ND; id++)
       unlink_dir(DIRS[id]);
   }
+  swe_ctx_free(site_ctx);
   printf("  rows %d, failed %d\n", nrow, nbad);
   printf(nbad ? "G143 FAIL: %d\n" : "G143 PASS\n", nbad);
   return nbad ? 1 : 0;

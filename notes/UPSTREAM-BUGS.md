@@ -229,6 +229,7 @@ worst were in code that had never executed even once.
 | 198 | The star functions with SEFLG_JPLEPH outside the JPL file's span return `main_planet_bary()`'s BEYOND_EPH_LIMITS as their error: on de200.eph at 1500 and 2406, the fallback allowed, Aldebaran -1 "outside JPL eph. range" by all four functions, where `swe_calc()` of Mars falls to Moshier and answers 260; strict, that message, not the downgrade's; and a fallen star went on with the ephemeris bits asked: de200's frame (2.3e-6 deg off the Moshier request), and a heliocentric star fallen to Moshier without the Sun's barycentric place (7.8e-8 deg) | Correctness (behaviour) | `sweph.c` |
 | 196 | `swe_calc(SE_ECL_NUT)` takes any date and answers it with its flags, where no other body is answered past the mean node's -3100015.5 .. 8000016.5: on Moshier under the default models the true and mean obliquity NaN from 1.3e60 days, dpsi 1.2e72 deg at 1e82 and NaN with deps from 4e82, NaN at -+inf and NaN, and at -1e300 (the empty caches' SWI_TJD_NEVER) the zeros of caches never filled, under every nutation model; past 1e12 days the series as evaluated leave the residual floor (IAU 2000B 1.5e-7 deg off at 1e12 to 3e12, 2.2 deg at 3e13 to 1e14, noise beyond) | Correctness (behaviour) | `sweph.c` |
 | 189 | `swe_get_orbital_elements()` on Moshier builds the Earth-Moon barycentre as entry 180's did, Moshier's Earth plus Moshier's Moon, where that Earth is the EMB less the short lunar series' Moon: the Earth's longitude of perihelion wobbles 8.0e-3 deg about the series' EMB's at 2000 (4.1e-2 at -3000), a 9.7e-6 and q 5.3e-6 relative, and `swe_orbit_max_min_true_distance()` with them | Correctness | `swecl.c` |
+| 190 | `swe_nod_aps()` of the Sun with SEFLG_TOPOCTR answers its geocentric points: the site, set as the observer, is overwritten by the Sun, the observer of the Earth's orbit, so they carry no parallax (the perigee 2.3e-3 deg off in latitude at J2000, Zurich; the focal point 6.8e-2), where `swe_calc()`'s topocentric Sun is 2.3e-3 deg from its geocentric one | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -13801,6 +13802,79 @@ G87 and G48 pass.
 G24 `orbel_mosh_emb_off`: the fourth difference over 2 days of the
 Earth's Moshier longitude of perihelion about 2000 Jan 30.5: 7.6e-7 deg
 shipped (1.6e-3 before the fix), 1.63e-3 compat.
+
+## 190. `swe_nod_aps()` of the Sun with SEFLG_TOPOCTR answers its geocentric points: the site is set as the observer and then overwritten by the Sun
+
+**Severity: Correctness (behaviour: the Sun's topocentric nodes and apsides are its geocentric ones, without the site's parallax, 2.3e-3 deg in latitude at J2000 from Zurich, 3.6e-4 in longitude, 1.4e-5 AU in distance; the focal point, 0.033 AU out, 6.8e-2 deg), both builds, every method**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Noticed by entry 180's work. The Sun's geocentric points are the Earth's
+orbit seen from the Sun, negated (entry 167): the observer is the Sun,
+barycentric on the files, the origin on Moshier. With SEFLG_TOPOCTR the
+site was first set as the observer (`swi_get_observer()`) and then
+overwritten by the Sun in that branch, so the topocentric points came out
+as the geocentric ones, 1.0e-9 deg apart (the deflection's site alone),
+where `swe_calc()`'s topocentric Sun at J2000 from Zurich is 3.40e-4 deg
+in longitude, 2.31e-3 in latitude and 1.42e-5 AU from its geocentric
+one. The Sun seen from the site with the Earth at a point of its orbit is
+that point negated less the site.
+
+| The Sun at J2000, Zurich, topocentric less geocentric | longitude | latitude | distance |
+|---|---|---|---|
+| `swe_calc()`'s Sun | -3.40e-4 deg | -2.31e-3 deg | -1.42e-5 AU |
+| osculating perigee, before | 3.8e-10 | 1.0e-9 | 0 |
+| osculating perigee, after | -3.62e-4 | -2.30e-3 | -1.45e-5 |
+| osculating apogee, after | 3.50e-4 | -2.23e-3 | 1.45e-5 |
+| focal point (SE_NODBIT_FOPOINT), after | 1.07e-2 | -6.78e-2 | 1.45e-5 |
+
+The mean points alike, Moshier as the files.
+
+**Fix, as done here:**
+- The site is kept and taken from the Sun's points after the negation,
+  position and velocity, as a planet's topocentric points are its
+  geocentric ones less it: the topocentric point is the geocentric one
+  less the site to 5.6e-12 AU, the velocity to 7.3e-11 AU/day over
+  -3000..3000 (the site, like every body's, is taken in the ephemeris's
+  frame from points in J2000's; noticed below). The aberration's observer
+  stays the Sun, as for the geocentric points: they carry no annual
+  aberration, and so no diurnal one.
+- The speeds are their positions' rates as before: against nine-point
+  differences over 2^-6 day 3.7e-10 deg/day on Moshier, 3.9e-9 on the
+  files (the floor's residual of entry 180), 1.7e-13 AU/day; the
+  five-point difference's own truncation of the site's daily turn is
+  3.2e-8 deg/day there, 9.0e-7 on the focal point.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+Below the floor, recorded and not fixed: the Sun's topocentric points
+depend on whether `swe_calc()` computed the topocentric Sun at the same
+instant first, by 6.2e-12 deg in position and 4.0e-11 deg/day in speed
+(Moshier's mean perigee at -3000; the build before this fix too, where
+the site entered only the deflection); Mars's points do not.
+
+Noticed, not fixed (not this entry's): `swe_nod_aps()`'s change of centre
+adds the barycentric Sun and Earth and the site, in the ephemeris's frame
+(ICRS), to points in the J2000 frame (the osculating ellipse biased once,
+entry 108): the planets' geometric geocentric points are off their
+heliocentric ones less `swe_calc()`'s heliocentric Earth by the frame
+bias of the Earth's heliocentric vector, 3.5e-8 AU at J2000, 1.1e-7 AU
+over -3000..3000 (Mercury..Jupiter, the files; 2.7e-15 with SEFLG_ICRS),
+the Moon's topocentric points off its geocentric ones less the site by
+4.8e-12 AU.
+
+G143 `tests/nodcentre.c` (a) compared the Sun's topocentric points with
+the Earth's heliocentric ones as it did the geocentric points, so it
+agreed with the defect: it now takes the Earth's point negated less the
+site (the Sun's geometric geocentric less topocentric place, from
+`swe_calc()` on a context of its own), within 1e-11 AU (1.8e-12, the
+frame above) and 1e-5 deg; and (a)'s and (e)'s topocentric speeds are
+judged against nine-point differences over 2^-6 day, which follow the
+site's turn. G143 2558 rows pass, with entries 170-193's parts; before
+the fix (a)'s 168 topocentric rows of its first check fail (3.6e-5 AU,
+8.7e-2 deg); the upstream build fails 1905 as before.
+
+G24 `nodaps_sun_topo_off`: the Sun's osculating perigee on the files at
+J2000, Zurich, topocentric less geocentric latitude: 2.30e-3 deg shipped
+(1.0e-9 before the fix), 1.5e-13 compat.
 
 ## How these were found
 
