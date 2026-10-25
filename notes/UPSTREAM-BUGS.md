@@ -302,6 +302,8 @@ worst were in code that had never executed even once.
 | 287 | On the ecliptic of t0 (`ecl_t0_aux()`; J2000, J1900, B1950 always) the houses' offset from the auxiliary vernal point is acos(), 0 .. 180, signed by the date, where it is about p (t - t0) + dpsi: for some 130 days on one side of t0 every cusp and ascmc 2 \|dvpxe\| off, a step of 2 dpsi at t0 (Zurich: -9.64e-3 deg on the ecliptic of 1900 and J1900, -7.74e-3 J2000's, -9.32e-3 Lahiri's of 1956; Placidus's cusps given to `swe_house_pos()` 4.9e-4 house off one day before 1900), the speeds 0.25 to 0.31 deg/day off within 1/64 day of it; acos() near 1 4.0e-9 deg off where dvpxe passes 0 | Correctness | `swehouse.c` |
 | 288 | On the ecliptic of t0 and the solar system plane the ascmc loops run to i <= SE_NASCMC and move ascmc[8], 0 ("ascmc[8... 9] are 0"), by the frames' offset: 336.84 deg on the ecliptic of 1900 and Lahiri's, 359.30 J1900, 0.70 J2000, 340.40 the solar system plane | Correctness | `swehouse.c` |
 | 289 | `swe_house_pos()` in the horizon system ('H') turns the place by 90 - lat where `CalcH()` takes -90 - lat south of the equator and on it: there the houses count the other way from `swe_houses()`'s cusps, the middles of houses 1 .. 12 at 33.87S 12.50, 11.52 .. 1.48, on the equator 12.56 .. 1.37 | Correctness | `swehouse.c` |
+| 294 | swetest's cusps' and axes' azimuths and altitudes are taken at 0 m (`gpos[2] = 0`), the bodies' at the observer's height: with -topo8.55,47.37,400 -at0,15 at 1.1.1950 0h UT, Zurich, the Ascendant's apparent altitude 0.4721439 for 0.4514987 (1013.25 mbar's refraction for 966.1's); with the default atmosphere a point between the horizon and the 400 m dip left unrefracted, co-Asc Munkasey at 1800 -0.652 for -0.076 | Correctness (behaviour, program) | `swetest.c` |
+| 295 | swetest's cusps' and axes' speeds in right ascension and declination, latitude, distance and the cartesian ones (the speed list's a A d D b B r R x X u U) are those the last body left: at 1.1.1950 0h UT, Zurich, Placidus, every cusp's RA speed 0.3444271 deg/day after Mars, 12.8863778 after the Moon, for the Ascendant's 246.8839427; its latitude speed Mars's 0.0179844 for 0 | Correctness (behaviour, program) | `swetest.c` |
 
 ---
 
@@ -18460,11 +18462,13 @@ Noticed, not fixed:
   0 m (`gpos[2] = 0`), the bodies' at the observer's height: at 1950,
   Zurich, -house -topo8.55,47.37,400 -at0,15 (the pressure from the
   height), the Ascendant's apparent altitude 0.4721439 for 0.4514987.
-- BEHAVIOUR. The cusps' and axes' RA and declination speeds (-fS after
-  a, A, d or D) are those the last body left in xequ[3..5], as
-  `swe_cotrans()` moves the position alone: at 1950, Zurich, -fPaS every
+  Fixed as entry 294.
+- BEHAVIOUR. The cusps' and axes' RA and declination speeds (the second
+  S of -fSS, after a, A, d or D) are those the last body left in
+  xequ[3..5], as `swe_cotrans()` moves the position alone: at 1950,
+  Zurich, -fPaSS every
   cusp's RA speed 0.3444271 deg/day after Mars, 12.8863778 after the
-  Moon.
+  Moon. Fixed as entry 295.
 
 ## 250. Across a join of the Swiss files a speed takes the two files' step for motion where its reads straddle the join
 
@@ -19709,6 +19713,146 @@ fail (72 on the tip before entries 264 and 265), the upstream build 46
 `jpl_warn_speed3_kept`: the JPL Moon with SEFLG_SPEED3 2^-16 day before
 de200.eph's end, serr the call's without the flag, 1 shipped, 0 compat.
 The gates of entry 264 pass.
+
+## 294. swetest's cusps' and axes' azimuths and altitudes are taken at 0 m, the bodies' at the observer's height: with -topo8.55,47.37,400 -at0,15 at 1.1.1950 0h UT, Zurich, the Ascendant's apparent altitude 0.4721439 for 0.4514987
+
+**Severity: Correctness (behaviour, the shipped program: the cusps' and axes' apparent altitude, -fK and -fk, with an observer above 0 m (-topo, -geopos): with -at0 every point above the horizon, with any pressure a point between the horizon and the height's dip; their azimuth and true altitude are not moved)**
+**Where:** `swetest.c`: `main()`'s house-cusp block
+
+Entry 275's noticed item. `swe_azalt()` takes the observer's height in
+geopos[2]: with atpress 0 it estimates the pressure from it, and
+`swe_refrac_extended()` takes it for the dip of the horizon. swetest gave
+the bodies geopos, the observer -topo or -geopos set with its height, and
+the cusps and axes a gpos of their own with gpos[2] = 0 (upstream's,
+kept by entry 275). Measured at Zurich (8.55E, 47.37N), -house
+-topo8.55,47.37,400:
+- -at0,15 (the pressure from the height, 966.09 mbar at 400 m): at
+  1.1.1950 0h UT the Ascendant's apparent altitude (its true altitude 0)
+  0.4721439 for 0.4514987, the refraction of 1013.25 mbar; every point
+  above the horizon likewise, house 12 21.0060235 for 21.0039279;
+- the default atmosphere (1013.25 mbar, 15 C): a point between the
+  horizon and the 400 m dip, co-Asc Munkasey at 1.1.1800 0h UT, true
+  altitude -0.6520765, apparent -0.6520765 (below the 0 m horizon,
+  unrefracted) for -0.0758318 (-0.0998835 with -at0,15);
+- over G175 (f)'s sample (P K G W N, 1800, 1950 and 2100) up to 0.576
+  deg with the default atmosphere, 0.552 with -at0,15.
+The azimuths and true altitudes take no height; the bodies' were right.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT` (a program:
+no G24 case; G175 built with the switch fails as upstream): the cusps'
+and axes' `swe_azalt()` takes geopos, the bodies' observer, height
+included. swetest's other `swe_azalt()` calls (the bodies', the diff
+modes', `local_sky_place()`'s for the ZD, which takes the true altitude)
+already took geopos; it makes no `swe_azalt_rev()` call.
+- After: against ts20's tip, 1404 runs (entry 295's): -fPhikl and
+  -fPmzadhik differ on the cusp rows with -topo or -geopos at a height,
+  in the apparent altitude alone; plain, at 0 m, bit for bit.
+- Cost: none in the library.
+
+G175 (f): the built swetest, -topo at 400 m with the default atmosphere
+and with -at0,15, -fPhik, P K G W N at 1800, 1950 and 2100: each cusp's
+and axis's altitude, azimuth and apparent altitude `swe_azalt()`'s at
+geopos with its height, within 1e-7: 10 checks. Before the fix the 10
+fail (0.576 deg), after 0. The upstream build fails the 10 (22.1 deg, the
+ARMC's azimuth of entry 275).
+
+## 295. swetest's cusps' and axes' speeds in right ascension, declination, latitude, distance and the cartesian ones are the last body's: at 1.1.1950 0h UT, Zurich, every cusp's RA speed 0.3444271 deg/day after Mars, 12.8863778 after the Moon
+
+**Severity: Correctness (behaviour, the shipped program: every cusp's and axis's speeds in the speed list, -fSS and -fss, and -fs or -fS with a format letter x X u U, for a A d D b B r R x X u U, in every house system and with every option; their longitude speeds, swe_houses_ex2()'s, were right)**
+**Where:** `swetest.c`: `main()`'s house-cusp block, new `ecl_point_equ_speed()`, `obliq_rate()` and `unit_cart_sp()`
+
+Entry 275's noticed item. The cusp loop set x[0..3] (the cusp's
+longitude, latitude 0, pseudo radius 1, longitude speed) and, since
+entry 275, xequ[0..2]; `print_line()`'s speed list prints x[4], x[5],
+xequ[3], xequ[4], xcart[3..5] and xcartq[3..5] for b B, r R, a A, d D,
+X U and x u, on a cusp row what the last body left. Measured at
+1.1.1950 0h UT, Zurich, Placidus, after Mars (-p4): every cusp's and
+axis's RA speed 0.3444271 deg/day, declination speed -0.1296648,
+latitude speed 0.0179844, distance speed -0.009708714 AU/day, cartesian
+speeds 0.010009675, -0.007415461, -0.000044433 (X) and 0.010009675,
+-0.006785413, -0.002991500 (x); after the Moon (-p1) RA 12.8863778 and
+declination 3.2258874; the Ascendant's own 246.8839427 and -103.5291822,
+the MC's 360.9856741 (the ARMC's) and -42.7778658. Without SEFLG_SPEED
+(-i2050) the leftovers were the body's zeros.
+
+Every format letter on cusp rows: l L Z, a A d D, m z, g G, i I h H k K
+are the row's own place (entries 253, 275, 294); y Y J T t p P the date
+and the name; b B r R x X u U Q n N f F j + - * / = skipped there; V v
+print nothing; in the speed list l L Z the cusp's own speed, b B r R a A
+d D x X u U the last body's (this entry). q, W and w are not the last
+body's but not the cusp's either (noticed, below).
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT` (a program:
+no G24 case), each cusp's and axis's own speeds:
+- in RA and declination those of the point whose place entry 275 prints
+  (the tropical cusp, the ARMC on the equator, the sidereal 'W' and 'N'
+  cusp moved by the Ascendant's tropical offset, whose speed is the
+  printed cusp's plus that offset's rate) on the true equator of date.
+  With lon, lon' the point's longitude and swe_houses_ex2()'s speed of
+  it and eps, eps' the true obliquity and its rate, from sin(dec) =
+  sin(eps) sin(lon) and tan(RA) = cos(eps) tan(lon):
+  RA' = (cos(eps) lon' - sin(eps) sin(lon) cos(lon) eps') / cos^2(dec),
+  dec' = (sin(eps) cos(lon) lon' + cos(eps) sin(lon) eps') / cos(dec),
+  cos^2(dec) = 1 - sin^2(eps) sin^2(lon), never 0; the ARMC's its rate
+  and 0. eps' is the central difference of SE_ECL_NUT's true obliquity
+  over -+2^-8 day by the house positions' flags (|eps'| up to 2.6e-5
+  deg/day; within 1.6e-11 of a five-point difference over 2^-6 day, 4000
+  dates 1800-2100), and within 2^-8 day of a step of the frame's models
+  (`swi_frame_step_side()`: SEFLG_JPLHOR_APPROX's at 1962 Jan 20, 6.2e-8
+  deg on de200; a short-term precession window's edge) the three-point
+  slope on the instant's side, as the houses' own (entry 187); its term
+  is up to 1.41e-5 deg/day of the speeds on G175's sample;
+- in latitude and distance 0: the cusp's latitude 0 and pseudo distance 1
+  stand still, so 0 is their rate, not a placeholder;
+- the cartesian ones the velocity of the point on the unit sphere, in
+  radii per day: X and U of the printed longitude with its speed, x and
+  u of the printed RA and declination with theirs; the cartesian places
+  are not printed on cusp rows, as before.
+Not 0 in RA and declination: swetest prints each cusp's and axis's
+longitude speed, swe_houses_ex2()'s, and the equatorial speeds are its
+transformation, so the cusps have them.
+- After: against ts20's tip, 1404 runs (none, -sid1, -j2000, -nonut, -hel,
+  -topo at 400 m with and without -at0,15, -geopos at 1200 m, Moshier,
+  -true, -speed3, -i2050; -fPLBRS, PlbrsSgj, PlbRaAdD, Phikl, Pmz,
+  Pmzadhik, PaSS, PlbradxXSS, PluUs, PQ, PlSS, PlsS, PlS; the Sun, the
+  Moon, Mars, Jupiter, the true node and Spica; P, G, W; 1800, 1950,
+  2100): every body row bit for bit; the cusp rows differ in -fPaSS,
+  -fPlbradxXSS, -fPluUs and -fPlbrsSgj (but with -i2050, whose leftovers
+  were 0), and at a height in -fPhikl and -fPmzadhik (entry 294); every
+  other run bit for bit. 468 differ.
+- Cost: none in the library; swetest asks the speeds of the tropical
+  houses where it asks those houses (house positions, the local sky).
+
+G175 (g): the built swetest after the Moon's line, -ep -fPlbradxXSS,
+plain, -sid1 and -j2000, P K G W N at 1800, 1950 and 2100: each cusp's
+and axis's RA and declination speeds against five-point central
+differences over 2^-12 day of the library's places as G175 (e) has them,
+at multiples of 2^-12 day, within 1e-7 deg/day (the library's ecliptic
+speeds' error; measured 2.0e-8, the reference's own: the ARMC's
+difference over 2^-12 day at 1800 is 1.3e-8 off its 2^-10 one, which is
+3e-10 off the library's rate), 15 checks; and on de200 with -jplhora,
+'P', 2^-9 day of TT before and after the 1962 step, 2 checks. (h): in
+the same runs the latitude and distance speeds 0 and the cartesian ones
+the velocities on the unit sphere of the printed places with their
+printed speeds, within 2e-9 (the print's 5e-10), 15 checks. Before the
+fix the 17 of (g) (up to 613 deg/day; 469 at 1962) and the 15 of (h)
+(11.7) fail, after 0; with eps' left out (g) fails its 15 by 1.41e-5
+deg/day, with its central difference across the 1962 step its 2 by
+8.0e-6. The upstream build fails the 32.
+
+Noticed, not fixed:
+- BEHAVIOUR. With the date given in TT (no -ut, swetest's default) the
+  houses take the TT for UT: `swe_houses_ex2(t, ...)` and the cusps'
+  `swe_azalt(t, ...)` with t = te, where the bodies are at te and the
+  ARMC of their MD at tut: at 1.1.1950 0h TT, Zurich, the cusps those of
+  0h UT, 28.9 s of time late, the MC's MD 0.1208767 deg for 0 (as with
+  -ut).
+- BEHAVIOUR. -fq on cusp rows prints `get_geocentric_relative_distance()`
+  of the body numbered as the row: at 1950 house 1 the Moon's 127, house
+  2 Mercury's 497, house 4 Mars's 634.
+- BEHAVIOUR. -fW and -fw on cusp rows print the pseudo radius 1 as 1 AU,
+  0.000015813 light years and 149597870.7 km, where -fR and -fr are
+  skipped there.
 
 ## How these were found
 

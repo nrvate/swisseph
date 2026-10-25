@@ -1,7 +1,7 @@
 /* localsky.c -- G175: a Gauquelin sector is the one seen from geopos and
  * leaves the caller's observer, the Earth has none, and swetest's
- * meridian and zenith distances, azimuths and altitudes are those of each
- * point's own place on the sky of date.
+ * meridian and zenith distances, azimuths, altitudes and the cusps' speeds
+ * are those of each point's own place on the sky of date.
  *
  * The defect (UPSTREAM-BUGS 273): swe_gauquelin_sector() methods 0 and 1
  * with SEFLG_TOPOCTR saw the place from the observer of swe_set_topo(),
@@ -62,15 +62,52 @@
  * sidereal 'W' and 'N' cusps the sidereal houses' plus the ayanamsa;
  * within 1e-7 (the print's 5e-8): 15 checks.
  *
+ * The defect (UPSTREAM-BUGS 294): swetest took the cusps' and axes'
+ * azimuth and altitudes at 0 m (gpos[2] = 0), the bodies' at the
+ * observer's height: with -topo8.55,47.37,400 -at0,15 (the pressure from
+ * the height) at 1.1.1950 0h UT the Ascendant's apparent altitude
+ * 0.4721439 for 0.4514987. Check (f): the built swetest with -topo at
+ * 400 m, the default atmosphere and -at0,15, -fPhik, P K G W N at the
+ * three dates: each cusp's and axis's altitude, azimuth and apparent
+ * altitude swe_azalt()'s at geopos with its height (the ARMC's
+ * equatorial), within 1e-7: 10 checks.
+ *
+ * The defect (UPSTREAM-BUGS 295): the cusps' and axes' speeds in RA and
+ * declination (-fSS after a, A, d, D), latitude and distance (b, B, r,
+ * R) and the cartesian ones (x, X, u, U) were the last body's: every
+ * cusp's RA speed 0.3444271 deg/day after Mars at 1950, 12.8863778 after
+ * the Moon. Check (g): the built swetest after the Moon's line, -ep
+ * -fPlbradxXSS, plain, -sid1 and -j2000, P K G W N at the three dates:
+ * each cusp's and axis's RA and declination speeds against five-point
+ * central differences over 2^-12 day of the library's places as (e) at
+ * instants that are multiples of 2^-12 day, within 1e-7 deg/day (the
+ * library's ecliptic speeds' error; the reference's own noise 2e-8, the
+ * ARMC's difference at 1800), 15 checks; and on de200 with -jplhora,
+ * 'P', 2^-9 day of TT before and after the 1962 Jan 20 step of its
+ * obliquity (6.2e-8 deg), the rate of the instant's side, 2 checks.
+ * Check (h): in the same runs, each cusp's and axis's latitude and
+ * distance speeds 0, its cartesian speeds the velocities on the unit
+ * sphere of its printed RA and declination, and of its longitude, with
+ * their printed speeds, within 2e-9 (the print's 5e-10): 15 checks.
+ *
  * Measured: (a) 0 sector apart, within 1e-11; (b), (c), (d) all as
- * required; (e) within 5.0e-8. Before the fix 88 of the 107 fail: all 6
+ * required; (e) and (f) within 5.0e-8; (g) within 2.0e-8, (h) 5.0e-10.
+ * Before the fix of 294 and 295 (ts20 at e8a24ab) 42 of the 149 fail:
+ * all 10 of (f) (0.576 deg with the default atmosphere: co-Asc Munkasey
+ * in 1800 between the horizon and the 400 m dip, apparent altitude
+ * -0.652 for -0.076; 0.552 with -at0,15), all 17 of (g) (up to 613
+ * deg/day; 1962: 469) and all 15 of (h) (11.7); with the obliquity's
+ * rate left out (g) fails its 15 by 1.41e-5 deg/day, with its central
+ * difference across the 1962 step its 2 by 8.0e-6. The upstream build
+ * fails 138 of the 149: 96 of the first 107 and the 42. Before the fix
+ * of 273 to 275 88 of the first 107 fail: all 6
  * of (a) (0.202 sector apart in method 0, 0.138 in method 1), 3 of (b)
  * (unset, no sector answering), all 6 of (c), 58 of (d) (-sid1 46.56 deg,
  * -j2000 4.57, -nonut 6.5e-3, -icrs 6.4e-6, -hel 110.4, -bary 110.2,
  * -i8194 179, -i4098 177.3; -speed3, -i2050 and -hel on -topo pass) and
  * all 15 of (e) (plain 0.915 deg, the Moon's altitude after -fz, 168 in
- * the diff modes; -sid1 47.1, -j2000 4.57). The upstream build fails 96
- * of the 107: those, and 8 more of (d), -i2050 23.45 deg (its SE_ECL_NUT
+ * the diff modes; -sid1 47.1, -j2000 4.57); the upstream build 96 of
+ * them: those, and 8 more of (d), -i2050 23.45 deg (its SE_ECL_NUT
  * with SEFLG_EQUATORIAL, the cusps' obliquity) and -speed3 2.1e-5 (its
  * SEFLG_SPEED3 places). Run as
  *   localsky EPHEDIR SWETEST
@@ -234,7 +271,13 @@ static void observe(swe_ctx *c, int32 eph, struct obs *o)
         memset(o->x[b][i], 0, sizeof o->x[b][i]);
       else
         serr[0] = '\0';
-      strncpy(o->serr[b][i], serr, sizeof o->serr[b][i] - 1);
+      {
+        size_t n = strlen(serr);	/* the head of serr */
+        if (n >= sizeof o->serr[b][i])
+          n = sizeof o->serr[b][i] - 1;
+        memcpy(o->serr[b][i], serr, n);
+        o->serr[b][i][n] = '\0';
+      }
     }
 }
 
@@ -364,7 +407,7 @@ static int check_c(void)
 
 /* swetest's output: a line's name and up to NV numbers */
 #define MAXL 512
-#define NV 8
+#define NV 16
 struct out {
   int nl;
   char name[MAXL][24];
@@ -373,20 +416,20 @@ struct out {
 };
 static struct out O0, O1;
 
-/* swetest at Zurich (0 m: -house) from 1.1.1800 0h UT, three dates 150
- * years apart, house system hs, format "Pmzadhik": MD, ZD, RA, decl,
- * altitude, azimuth, apparent altitude */
+/* swetest at Zurich (0 m: -house) at the dates, house system hs, format
+ * fmt ("Pmzadhik": MD, ZD, RA, decl, altitude, azimuth, apparent
+ * altitude) */
 #define JD0 2378496.5
 #define STEP 54786.375
 #define NDATE 3
 static const double LON = 8.55, LAT = 47.37;
-static int run(struct out *o, const char *bodies, char hs, const char *args)
+static int run_d(struct out *o, const char *dates, const char *bodies, char hs, const char *args,
+                 const char *fmt)
 {
-  char cmd[1024], line[512];
+  char cmd[1024], line[1024];
   FILE *fp;
-  snprintf(cmd, sizeof cmd,
-           "%s -edir%s -b1.1.1800 -n%d -s%.4f -ut0 %s -house%.2f,%.2f,%c %s -fPmzadhik -head -g,",
-           SWT, EPH, NDATE, STEP, bodies, LON, LAT, hs, args);
+  snprintf(cmd, sizeof cmd, "%s -edir%s %s %s -house%.2f,%.2f,%c %s -f%s -head -g,", SWT, EPH,
+           dates, bodies, LON, LAT, hs, args, fmt);
   fp = popen(cmd, "r");
   if (fp == NULL)
     return -1;
@@ -415,6 +458,19 @@ static int run(struct out *o, const char *bodies, char hs, const char *args)
     return -1;
   }
   return 0;
+}
+
+/* from 1.1.1800 0h UT, three dates 150 years apart */
+static int run_f(struct out *o, const char *bodies, char hs, const char *args, const char *fmt)
+{
+  char d[64];
+  snprintf(d, sizeof d, "-b1.1.1800 -n%d -s%.4f -ut0", NDATE, STEP);
+  return run_d(o, d, bodies, hs, args, fmt);
+}
+
+static int run(struct out *o, const char *bodies, char hs, const char *args)
+{
+  return run_f(o, bodies, hs, args, "Pmzadhik");
 }
 
 /* swetest's names of the axes, ascmc[0 .. 7] */
@@ -695,6 +751,234 @@ static int check_e(void)
   return 0;
 }
 
+/* a cusp's or axis's line name: k 1 .. nc the cusps, nc + 1 .. nc + 8
+ * ascmc[0 .. 7] */
+static const char *cusp_name(int k, int nc)
+{
+  static char nm[24];
+  if (k > nc)
+    return AXN[k - nc - 1];
+  snprintf(nm, sizeof nm, "house %2d", k);
+  return nm;
+}
+
+/* the library's point of cusp or axis k at tu, as (e): xh its tropical
+ * place (the sidereal 'W' and 'N' cusps, sid, the sidereal houses' plus
+ * the ayanamsa), xe its RA and declination on the true equator of date by
+ * SE_ECL_NUT's true obliquity with the flags fl, the ARMC's on the
+ * equator */
+static int cusp_ref(double tu, char hs, int sid, int k, int nc, int32 fl, double *xh,
+                    double *xe)
+{
+  int32 eph = fl & (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH);
+  double te = tu + swe_deltat_ex(tu, eph, NULL), cu[37], am[10], cus[37], ams[10];
+  double xo[6], ay = 0;
+  if (swe_houses_ex(tu, eph, LAT, LON, hs, cu, am) < 0
+      || swe_calc(te, SE_ECL_NUT, fl, xo, NULL) < 0)
+    return -1;
+  if (sid && k <= nc) {
+    if (swe_houses_ex(tu, eph | SEFLG_SIDEREAL, LAT, LON, hs, cus, ams) < 0
+        || swe_get_ayanamsa_ex(te, eph | SEFLG_SIDEREAL, &ay, NULL) < 0)
+      return -1;
+    cu[k] = swe_degnorm(cus[k] + ay);
+  }
+  xh[0] = k > nc ? am[k - nc - 1] : cu[k];
+  xh[1] = 0;
+  xh[2] = 1;
+  if (k == nc + 3) {
+    xe[0] = xh[0];
+    xe[1] = 0;
+    xe[2] = 1;
+  } else {
+    swe_cotrans(xh, xe, -xo[0]);
+  }
+  return 0;
+}
+
+/* (f) swetest's cusps' and axes' azimuth and altitudes at the observer's
+ * height, as the bodies' (UPSTREAM-BUGS 294): -topo at 400 m, with the
+ * default atmosphere and with -at0,15 (the pressure from the height),
+ * swe_azalt() at geopos of the point's ecliptic place (the ARMC's
+ * equatorial), at 1013.25 or 0 mbar and 15 C; within 1e-7 (the print's
+ * 5e-8) */
+static int check_f(void)
+{
+  static const char HS[] = "PKGWN";
+  static const char *AT[2] = { "", "-at0,15" };
+  static const double PR[2] = { 1013.25, 0 };
+  int a, h, i, k, n0 = n;
+  double ww = 0;
+  char what[256], args[128];
+  swe_set_ephe_path(EPH);
+  for (a = 0; a < 2; a++)
+    for (h = 0; HS[h] != '\0'; h++) {
+      int nc = HS[h] == 'G' ? 36 : 12;
+      double w = 0;
+      snprintf(args, sizeof args, "-topo%.2f,%.2f,400 %s", LON, LAT, AT[a]);
+      if (run_f(&O0, "-p1", HS[h], args, "Phik") < 0)
+        return -1;
+      for (i = 0; i < NDATE; i++) {
+        double tu = JD0 + i * STEP;
+        for (k = 1; k <= nc + 8; k++) {
+          double xh[3], xe[3], geo[3] = { LON, LAT, 400 }, xa[3], d;
+          int equ = k == nc + 3;
+          if (cusp_ref(tu, HS[h], 0, k, nc, SEFLG_SWIEPH, xh, xe) < 0)
+            return -1;
+          swe_azalt(tu, equ ? SE_EQU2HOR : SE_ECL2HOR, geo, PR[a], 15, equ ? xe : xh, xa);
+          xh[0] = xa[1];
+          xh[1] = xa[0];
+          xh[2] = xa[2];
+          d = line_diff(&O0, find_line(&O0, cusp_name(k, nc), i), xh, 0, 3);
+          if (d > w)
+            w = d;
+        }
+      }
+      if (w > ww)
+        ww = w;
+      snprintf(what, sizeof what, "(f) %c, 400 m, %s: the cusps' horizon %.3g off geopos's", HS[h],
+               *AT[a] ? AT[a] : "1013.25 mbar", w);
+      check(w <= 1e-7, what);
+    }
+  swe_close();
+  printf("  (f) the cusps' azimuth and altitudes at the observer's height, within %.1e: %d"
+         " checks\n", ww, n - n0);
+  return 0;
+}
+
+/* the velocity of the point p on the unit sphere (degrees, deg/day), in
+ * radii per day */
+static void unit_vel(const double *p, double *xv)
+{
+  double a = p[0] * DEGTORAD, b = p[1] * DEGTORAD, da = p[3] * DEGTORAD, db = p[4] * DEGTORAD;
+  xv[0] = -sin(a) * cos(b) * da - cos(a) * sin(b) * db;
+  xv[1] = cos(a) * cos(b) * da - sin(a) * sin(b) * db;
+  xv[2] = cos(b) * db;
+}
+
+/* the speeds of the cusps' and axes' lines of date i at tu, run with
+ * "PlbradxXSS" (l a d, the speeds l b r a d, x's three and X's three):
+ * into *wg the largest difference of the RA and declination speeds from
+ * five-point central differences over 2^-12 day of cusp_ref()'s places
+ * by the flags fl, a point jumping within the stencil skipped (*nskip);
+ * into *wh the largest of the latitude and distance speeds, and of the
+ * cartesian speeds from the velocities on the unit sphere of the printed
+ * RA and declination and longitude with their printed speeds */
+static int speeds_diff(const struct out *o, int i, double tu, char hs, int sid, int32 fl,
+                       double *wg, double *wh, int *nskip)
+{
+  const double hh = 1.0 / 4096;
+  int nc = hs == 'G' ? 36 : 12, k, j;
+  for (k = 1; k <= nc + 8; k++) {
+    int l = find_line(o, cusp_name(k, nc), i), jump = 0;
+    double ra[5], de[5], xh[3], xe[3], p[6], xv[3], d;
+    const double *v;
+    if (l < 0 || o->nv[l] != 14) {
+      *wg = *wh = 999;
+      continue;
+    }
+    v = o->v[l];
+    for (j = 0; j < 5; j++) {
+      if (cusp_ref(tu + (j - 2) * hh, hs, sid, k, nc, fl, xh, xe) < 0)
+        return -1;
+      ra[j] = xe[0];
+      de[j] = xe[1];
+      if (j > 0 && fabs(swe_difdeg2n(ra[j], ra[j - 1])) > 5)
+        jump = 1;
+    }
+    if (jump) {
+      (*nskip)++;
+    } else {
+      d = fabs(v[6] - (8 * swe_difdeg2n(ra[3], ra[1]) - swe_difdeg2n(ra[4], ra[0])) / (12 * hh));
+      if (d > *wg)
+        *wg = d;
+      d = fabs(v[7] - (8 * (de[3] - de[1]) - (de[4] - de[0])) / (12 * hh));
+      if (d > *wg)
+        *wg = d;
+    }
+    d = fmax(fabs(v[4]), fabs(v[5]));
+    p[0] = v[1];
+    p[1] = v[2];
+    p[3] = v[6];
+    p[4] = v[7];
+    unit_vel(p, xv);
+    for (j = 0; j < 3; j++)
+      d = fmax(d, fabs(v[8 + j] - xv[j]));
+    p[0] = v[0];
+    p[1] = 0;
+    p[3] = v[3];
+    p[4] = 0;
+    unit_vel(p, xv);
+    for (j = 0; j < 3; j++)
+      d = fmax(d, fabs(v[11 + j] - xv[j]));
+    if (d > *wh)
+      *wh = d;
+  }
+  return 0;
+}
+
+/* (g) swetest's cusps' and axes' RA and declination speeds (-ep -fSS)
+ * the rates of their places (e), after the Moon's line (UPSTREAM-BUGS
+ * 295), within 1e-7 deg/day (the reference's own noise 2e-8, the
+ * library's ecliptic speeds' error): plain, -sid1, -j2000, in P K G W N;
+ * and on de200 with -jplhora, P, 2^-9 day of TT before and after the
+ * 1962 Jan 20 step of its obliquity (6.2e-8 deg), the rate of te's side.
+ * (h) their latitude and distance speeds 0, their cartesian speeds (x,
+ * X) the velocities of their points on the unit sphere, within 2e-9 (the
+ * print's 5e-10). */
+static int check_g(void)
+{
+  static const char HS[] = "PKGWN";
+  static const char *OPT[] = { "", "-sid1", "-j2000" };
+  /* UT, multiples of 2^-12 day: TT 2^-9 day and more before and after */
+  static const double T62[2] = { 2437684.5 - 10.0 / 4096, 2437684.5 + 6.0 / 4096 };
+  int o, h, i, n0 = n, nskip = 0;
+  double wwg = 0, wwh = 0;
+  char what[256], args[64];
+  swe_set_ephe_path(EPH);
+  swe_set_jpl_file("de200.eph");
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  for (o = 0; o < 3; o++)
+    for (h = 0; HS[h] != '\0'; h++) {
+      int sid = o == 1 && (HS[h] == 'W' || HS[h] == 'N');
+      double wg = 0, wh = 0;
+      snprintf(args, sizeof args, "-ep %s", OPT[o]);
+      if (run_f(&O0, "-p1", HS[h], args, "PlbradxXSS") < 0)
+        return -1;
+      for (i = 0; i < NDATE; i++)
+        if (speeds_diff(&O0, i, JD0 + i * STEP, HS[h], sid, SEFLG_SWIEPH, &wg, &wh, &nskip) < 0)
+          return -1;
+      if (wg > wwg)
+        wwg = wg;
+      if (wh > wwh)
+        wwh = wh;
+      snprintf(what, sizeof what, "(g) %c, %s: the RA and declination speeds %.3g off their"
+               " places' rate", HS[h], *OPT[o] ? OPT[o] : "plain", wg);
+      check(wg <= 1e-7, what);
+      snprintf(what, sizeof what, "(h) %c, %s: the latitude, distance and cartesian speeds %.3g"
+               " off the point's own", HS[h], *OPT[o] ? OPT[o] : "plain", wh);
+      check(wh <= 2e-9, what);
+    }
+  for (i = 0; i < 2; i++) {
+    double wg = 0, wh = 0;
+    char d[64];
+    snprintf(d, sizeof d, "-bj%.10f -ut", T62[i]);
+    if (run_d(&O0, d, "-p1", 'P', "-ejplde200.eph -jplhora -ep", "PlbradxXSS") < 0
+        || speeds_diff(&O0, 0, T62[i], 'P', 0, SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX, &wg, &wh,
+                       &nskip) < 0)
+      return -1;
+    if (wg > wwg)
+      wwg = wg;
+    snprintf(what, sizeof what, "(g) P, de200 -jplhora, %s the 1962 step: the RA and declination"
+             " speeds %.3g off their places' rate", i ? "after" : "before", wg);
+    check(wg <= 1e-7, what);
+  }
+  swe_close();
+  printf("  (g) the cusps' RA and declination speeds their places' rate, within %.1e; (h) their"
+         " other speeds their own, within %.1e (%d jumping skipped): %d checks\n", wwg, wwh,
+         nskip, n - n0);
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   int r;
@@ -723,6 +1007,10 @@ int main(int argc, char **argv)
     r = check_d();
   if (r == 0)
     r = check_e();
+  if (r == 0)
+    r = check_f();
+  if (r == 0)
+    r = check_g();
   if (r < 0) {
     printf("G175 FAIL: ERROR\n");
     return 1;

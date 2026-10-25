@@ -1749,7 +1749,9 @@ check-sidhplane: sidhplane
 # leave the caller's as it was; the Earth is refused in every method; and
 # swetest's meridian and zenith distances, azimuths, altitudes and the
 # cusps' equatorial places are each point's own on the sky of date, as no
-# frame or centre option moves them (UPSTREAM-BUGS 273, 274, 275).
+# frame or centre option moves them; the cusps' horizon at the observer's
+# height and their speeds their own, not the last body's (UPSTREAM-BUGS
+# 273, 274, 275, 294, 295).
 check-localsky: localsky
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./localsky $(EPHE) ./hposswetest
 

@@ -750,6 +750,10 @@ static double house_pos_body(int32 ipl_h, int hsys);
 static void local_sky_place(double *xe, double *md, double *zd);
 static void local_sky_body(int32 ipl_h, double *md, double *zd);
 static double mdist, zdist;	/* bug 275: the meridian and zenith distances */
+static void ecl_point_equ_speed(const double *xh, double eps, double deps, double *xe);
+static void unit_cart_sp(const double *p, double *xc);
+static double obliq_rate(double tt, int32 fl, double e0);
+#define HEPS_DT (1.0 / 256)	/* bug 295: the obliquity rate's step, day */
 #endif
 static void jd_to_time_string(double jut, char *stimeout);
 static char *our_strcpy(char *to, char *from);
@@ -2079,6 +2083,7 @@ int main(int argc, char *argv[])
 	int iofs; 
 #ifndef SWE_UPSTREAM_COMPAT
 	double hcusp[37], hascmc[10], hxobl[6];	/* bug 253 */
+	double hcusp_speed[37], hascmc_speed[10], hdeps = 0;	/* bug 295 */
 	AS_BOOL hpos_own, hloc_own;
 #endif
 	if (toupper(ihsy) == 'G') // Gauquelin has 36 cusps
@@ -2122,13 +2127,24 @@ int main(int argc, char *argv[])
 	 * 0 Aries' cusps the printed ones moved by the Ascendant's offset
 	 * from the tropical), on the true equator of date; the ARMC's on the
 	 * equator. */
-	hloc_own = strpbrk(fmt, "aADdQmzIiHhKk") != NULL;
+	/* Upstream bug 295: their speeds in right ascension and declination
+	 * (-fSS after a, A, d, D), latitude and distance (b, B, r, R) and
+	 * cartesian (x, X, u, U) were the last body's: at 1.1.1950 0h UT,
+	 * Zurich, Placidus, every cusp's RA speed 0.3444271 deg/day after
+	 * Mars, 12.8863778 after the Moon. Now each point's own: its RA and
+	 * declination's rates from its ecliptic speed (swe_houses_ex2()'s)
+	 * and the true obliquity's (obliq_rate()), its latitude's and pseudo
+	 * distance's 0, its cartesian place's on the unit sphere. */
+	hloc_own = strpbrk(fmt, "aADdQmzIiHhKkxu") != NULL;
 	if (hpos_own || hloc_own) {
 	  char serr_h[AS_MAXCH];
 	  int32 hflag = hpos_flags(iflag);
-	  swe_houses_ex2(t, hflag, top_lat, top_long, ihsy, hcusp, hascmc, NULL, NULL, serr_h);
+	  swe_houses_ex2(t, hflag, top_lat, top_long, ihsy, hcusp, hascmc, hcusp_speed,
+	                 hascmc_speed, serr_h);
 	  if (swe_calc(te, SE_ECL_NUT, hflag, hxobl, serr_h) == ERR)
 	    hxobl[0] = xobl[0];
+	  else
+	    hdeps = obliq_rate(te, hflag, hxobl[0]);
 	}
 #endif
 	is_first = TRUE;
@@ -2143,35 +2159,51 @@ int main(int argc, char *argv[])
 	  x[1] = 0;	/* latitude */
 	  x[2] = 1.0;	/* pseudo radius vector */
 #ifndef SWE_UPSTREAM_COMPAT
+	  x[4] = 0;	/* bug 295: the latitude's and pseudo radius's speeds */
+	  x[5] = 0;
 	  if (hloc_own) {	/* bug 275 */
-	    double xh[6], xe[6], gpos[3];
-	    if (ipl >= iofs)
+	    double xh[6], xe[6];
+	    if (ipl >= iofs) {
 	      xh[0] = hascmc[ipl - iofs];
-	    else if (hpos_keeps_place(ihsy))
+	      xh[3] = hascmc_speed[ipl - iofs];
+	    } else if (hpos_keeps_place(ihsy)) {
 	      xh[0] = swe_degnorm(cusp[ipl] + swe_difdeg2n(hascmc[0], ascmc[0]));
-	    else
+	      xh[3] = cusp_speed[ipl] + hascmc_speed[0] - ascmc_speed[0];
+	    } else {
 	      xh[0] = hcusp[ipl];
+	      xh[3] = hcusp_speed[ipl];
+	    }
 	    xh[1] = 0;
 	    xh[2] = 1.0;
+	    xh[4] = xh[5] = 0;
 	    if (ipl == iofs + 2) {
 	      xe[0] = xh[0];
 	      xe[1] = 0;
 	      xe[2] = 1.0;
+	      xe[3] = xh[3];
+	      xe[4] = xe[5] = 0;
 	    } else {
 	      swe_cotrans(xh, xe, -hxobl[0]);
+	      ecl_point_equ_speed(xh, hxobl[0], hdeps, xe);	/* bug 295 */
 	    }
-	    for (i = 0; i < 3; i++)
+	    for (i = 0; i < 6; i++)
 	      xequ[i] = xe[i];
+	    /* Upstream bug 294: at 0 m (gpos[2] = 0), the bodies' at the
+	     * observer's height: with -topo8.55,47.37,400 -at0,15 at 1950,
+	     * the Ascendant's apparent altitude 0.4721439 for 0.4514987. Now
+	     * geopos, the bodies' observer. */
 	    if (strpbrk(fmt, "IiHhKk") != NULL) {
-	      gpos[0] = top_long;
-	      gpos[1] = top_lat;
-	      gpos[2] = 0;
 	      if (ipl == iofs + 2)
-		swe_azalt(t, SE_EQU2HOR, gpos, datm[0], datm[1], xe, xaz);
+		swe_azalt(t, SE_EQU2HOR, geopos, datm[0], datm[1], xe, xaz);
 	      else
-		swe_azalt(t, SE_ECL2HOR, gpos, datm[0], datm[1], xh, xaz);
+		swe_azalt(t, SE_ECL2HOR, geopos, datm[0], datm[1], xh, xaz);
 	    }
 	    local_sky_place(xe, &mdist, &zdist);
+	  }
+	  if (strpbrk(fmt, "XUxu") != NULL) {	/* bug 295 */
+	    unit_cart_sp(x, xcart);
+	    if (hloc_own)
+	      unit_cart_sp(xequ, xcartq);
 	  }
 #else
 	  if (ipl == iofs+2) { /* armc is already equatorial! */
@@ -2328,6 +2360,62 @@ static void local_sky_body(int32 ipl_h, double *md, double *zd)
   }
   if (ret != ERR)
     local_sky_place(xp, md, zd);
+}
+
+/* Upstream bug 295: the rates of right ascension and declination, xe[3]
+ * and xe[4], of xh, a point of the ecliptic of date at latitude 0 moving
+ * at xh[3] deg/day, whose equatorial place xe[0], xe[1] is on the equator
+ * of the obliquity eps moving at deps deg/day: from sin(dec) = sin(eps)
+ * sin(lon) and tan(RA) = cos(eps) tan(lon),
+ *   RA'  = (cos(eps) lon' - sin(eps) sin(lon) cos(lon) eps') / cos^2(dec)
+ *   dec' = (sin(eps) cos(lon) lon' + cos(eps) sin(lon) eps') / cos(dec),
+ * cos^2(dec) = 1 - sin^2(eps) sin^2(lon), never 0 for |eps| < 90; the
+ * distance's 0 */
+static void ecl_point_equ_speed(const double *xh, double eps, double deps, double *xe)
+{
+  double sl = sin(xh[0] * DEGTORAD), cl = cos(xh[0] * DEGTORAD);
+  double se = sin(eps * DEGTORAD), ce = cos(eps * DEGTORAD);
+  double cd2 = 1 - se * se * sl * sl;
+  xe[3] = (ce * xh[3] - se * sl * cl * deps) / cd2;
+  xe[4] = (se * cl * xh[3] + ce * sl * deps) / sqrt(cd2);
+  xe[5] = 0;
+}
+
+/* the rate of SE_ECL_NUT's true obliquity e0 at tt by flags fl, deg/day:
+ * the central difference over -+HEPS_DT, or within HEPS_DT of a step of
+ * the frame's models (SEFLG_JPLHOR_APPROX's at 1962 Jan 20, 6.2e-8 deg
+ * on de200; a short-term precession model's window) the three-point
+ * slope on tt's side, as the houses' (UPSTREAM-BUGS 187); 0 if refused */
+static double obliq_rate(double tt, int32 fl, double e0)
+{
+  double xa[6], xb[6];
+  char serr_h[AS_MAXCH];
+  int s = swi_frame_step_side(swi_default_ctx(), tt, HEPS_DT, fl, SWI_FRAME_EPS | SWI_FRAME_NUT);
+  if (s == 0) {
+    if (swe_calc(tt + HEPS_DT, SE_ECL_NUT, fl, xa, serr_h) == ERR
+        || swe_calc(tt - HEPS_DT, SE_ECL_NUT, fl, xb, serr_h) == ERR)
+      return 0;
+    return (xa[0] - xb[0]) / (2 * HEPS_DT);
+  }
+  if (swe_calc(tt + s * HEPS_DT, SE_ECL_NUT, fl, xa, serr_h) == ERR
+      || swe_calc(tt + 2 * s * HEPS_DT, SE_ECL_NUT, fl, xb, serr_h) == ERR)
+    return 0;
+  return (4 * (xa[0] - e0) - (xb[0] - e0)) / (2 * s * HEPS_DT);
+}
+
+/* the cartesian place and velocity, -fx's, of the point p (degrees, its
+ * distance p[2], the speeds per day) */
+static void unit_cart_sp(const double *p, double *xc)
+{
+  double l[6];
+  int i;
+  for (i = 0; i < 6; i++)
+    l[i] = p[i];
+  l[0] *= DEGTORAD;
+  l[1] *= DEGTORAD;
+  l[3] *= DEGTORAD;
+  l[4] *= DEGTORAD;
+  swi_polcart_sp(l, xc);
 }
 #endif
 
