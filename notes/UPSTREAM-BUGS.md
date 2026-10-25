@@ -63,6 +63,7 @@ worst were in code that had never executed even once.
 | 29 | A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read (this fork's) | Correctness | `sweph.c` |
 | 30 | A refused Swiss file empties the constants of every file left open; the path setter crashes on a refused moon file | Correctness / Memory | `sweph.c` |
 | 31 | Values read from an ephemeris file's header and from the delta-psi and fixed-star tables index and size arrays unchecked | Memory | `sweph.c`, `swejpl.c` |
+| 32 | `swe_house_pos()` answers a place in the wrong house: Sripati 1.0 for all of house 12 and half of house 1, the horizon system counted backwards south of the equator | Correctness | `swehouse.c` |
 
 ---
 
@@ -1755,6 +1756,37 @@ Mars, and after the JPL and table cases the Swiss Mars and the Sun, must
 answer bit for bit as a fresh context on the complete directory. All 13 fail
 before the fix. `make hdrbound_asan hdrbound_ubsan` build it under the
 sanitizers, where a removed bound is a diagnosed overflow.
+
+## 32. `swe_house_pos()` answers a place in the wrong house: Sripati ('S') 1.0 for all of house 12 and the first half of house 1, the horizon system ('H') counted the other way from the cusps south of the equator and on it
+
+**Severity: Correctness (a house position up to 11.5 houses off in Sripati, at every date and place; the horizon system's mirrored, house k answered as 13 - k, everywhere south of the equator and on it)**
+**Where:** `swehouse.c`: `swe_house_pos_r()`, cases 'S' and 'H'
+
+- Sripati's cusps are the middles of Porphyry's houses, so a place at
+  Porphyry's position p, 1 .. 13, is at Sripati's p + 0.5, 1.5 .. 13.5, of
+  which 13 .. 13.5 is house 1. The function took `hpos += 0.5; if (hpos >
+  12) hpos = 1;`: all of house 12 and the first half of house 1 answered
+  1.0. At Zurich, UT 2433282.5, a place 1e-4 of the way into house 12
+  answered 1.000000 for 12.000003, house 12's middle (Porphyry's cusp 12)
+  1.0 for 12.5. The exact-cusp test hid it at the cusps.
+- `CalcH()` computes the horizon houses as Campanus's at the co-latitude
+  with the ARMC + 180, the co-latitude 90 - lat north of the equator and
+  -90 - lat south of it and on it. `swe_house_pos()` turned the place by
+  90 - lat everywhere, so south of the equator and on it the houses ran
+  the other way from the cusps: at 33.87S the middles of houses 1 .. 12
+  answered 12.50, 11.52, 10.52 .. 1.48, on the equator 12.56 .. 1.37, at
+  60S alike.
+
+**Fix, as done here:** 'S' wraps by `if (hpos >= 13) hpos -= 12`; 'H' turns
+the place by `CalcH()`'s co-latitude, `geolat > 0 ? 90 - geolat : -90 -
+geolat`. G41 `tests/hposinhouse.c`: at 47.37N, 33.87S, the equator, 60N and
+60S and four dates 1800..2100, in every letter both functions take (A .. Y,
+a .. y), each cusp at its number within 1e-7 house (2.8e-8) and the places
+1e-6, 0.5 and 1 - 1e-6 of the way through each house in it (248 checks);
+Porphyry's cusps at Sripati's middles k + 0.5 within 1e-7 (1.8e-8; 5
+checks). Before the fix 21 of the 253 fail: 'S' and 's' at every latitude,
+'H' and 'h' at 33.87S, the equator and 60S, and all five middles checks
+(0.5 house off). Every other letter passed before.
 
 ## How these were found
 

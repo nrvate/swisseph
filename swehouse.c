@@ -2498,8 +2498,11 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
 	else
 	  hpos += 3 + (xp[0] - 180 + acmc) * 3 / acmc;
         if (hsys == 'S') {
+	  /* Sripati's cusps are the middles of Porphyry's houses, so a place
+	   * at Porphyry's 1 .. 13 is at Sripati's 1.5 .. 13.5, of which
+	   * 13 .. 13.5 is the first half of house 1 */
 	  hpos += 0.5;
-	  if (hpos > 12) hpos = 1;
+	  if (hpos >= 13) hpos -= 12;
 	}
       } else { /* Alcabitius */
 	double dek, r, sna, sda;
@@ -2769,7 +2772,10 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
       break;
     case 'H': // horizon / azimuth
       xeq[0] = swe_degnorm(mdd - 90);
-      swe_cotrans(xeq, xp, 90 - geolat);
+      /* the co-latitude CalcH() computes the cusps with: 90 - lat north of
+       * the equator, -90 - lat south of it and on it, so that the houses
+       * run the same way as the cusps there */
+      swe_cotrans(xeq, xp, geolat > 0 ? 90 - geolat : -90 - geolat);
       /* to make sure that a call with a house cusp position returns
        * a value within the house, 0.001" is added */
       xp[0] = swe_degnorm(xp[0] + MILLIARCSEC);
