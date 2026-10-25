@@ -313,7 +313,7 @@ char *CALL_CONV swe_get_library_path(char *s)
  * program tests only.
  * -> If no speed flag has been specified, no speed will be returned.
  */
-int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag, 
+static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 	double *xx, char *serr)
 {
   int i, j;
@@ -600,6 +600,16 @@ return_error:
   return ERR; 
 }
 
+int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
+	double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_calc_r_body(ctx, tjd, ipl, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_calc(double tjd, int ipl, int32 iflag, 
@@ -608,7 +618,7 @@ int32 CALL_CONV swe_calc(double tjd, int ipl, int32 iflag,
   return swe_calc_r(swi_default_ctx(), tjd, ipl, iflag, xx, serr);
 }
 
-int32 CALL_CONV swe_calc_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, 
+static int32 swe_calc_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
 	double *xx, char *serr)
 {
   double deltat;
@@ -630,6 +640,16 @@ int32 CALL_CONV swe_calc_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 ifla
   return retval;
 }
 
+int32 CALL_CONV swe_calc_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
+	double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_calc_ut_r_body(ctx, tjd_ut, ipl, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_calc_ut(double tjd_ut, int32 ipl, int32 iflag, 
@@ -643,7 +663,7 @@ int32 CALL_CONV swe_calc_ut(double tjd_ut, int32 ipl, int32 iflag,
  * fictitious bodies' (app_pos_etc_plan_osc, above in swecalc's flow); the
  * elements and the two-body mu come from the caller and the library's
  * constants instead of seorbel.txt. See swephexp.h for the contract. */
-int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
+static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el,
         int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
         double *xx, char *serr)
 {
@@ -790,9 +810,20 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
   return ERR;
 }
 
+int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
+        int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
+        double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_calc_orbel_r_body(ctx, tjd_et, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* UT wrapper, in the shape of swe_calc_ut_r(): delta t from the requested
  * ephemeris, recomputed if the answer came from a substituted one. */
-int32 CALL_CONV swe_calc_orbel_ut_r(swe_ctx *ctx, double tjd_ut, const double *el,
+static int32 swe_calc_orbel_ut_r_body(swe_ctx *ctx, double tjd_ut, const double *el,
         int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
         double *xx, char *serr)
 {
@@ -813,6 +844,17 @@ int32 CALL_CONV swe_calc_orbel_ut_r(swe_ctx *ctx, double tjd_ut, const double *e
     retval = swe_calc_orbel_r(ctx, tjd_ut + deltat, el, iplctr, equinox, equinoxJd, iflag, xx, NULL);
   }
   return retval;
+}
+
+int32 CALL_CONV swe_calc_orbel_ut_r(swe_ctx *ctx, double tjd_ut, const double *el,
+        int32 iplctr, int32 equinox, double equinoxJd, int32 iflag,
+        double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_calc_orbel_ut_r_body(ctx, tjd_ut, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -1547,8 +1589,14 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
    * sites across sweph.c and swephlib.c, so the entry points are wired
    * up for free. Cheap -- one atomic load and a compare -- unless the
    * configuration actually moved. No-op while a setter on this thread is
-   * mid-apply. */
+   * mid-apply, and inside a call that holds the configuration
+   * (swi_config_hold()), which synced at its entry. */
   swi_config_sync(ctx);
+  /* the start swi_config_hold() made, answered here as if made here */
+  if (ctx->start_unreported) {
+    ctx->start_unreported = FALSE;
+    started = 1;
+  }
   return started;
 }
 
@@ -3622,7 +3670,7 @@ void CALL_CONV swe_set_sid_mode(int32 sid_mode, double t0, double ayan_t0)
   swe_set_sid_mode_r(swi_default_ctx(), sid_mode, t0, ayan_t0);
 }
 
-int32 CALL_CONV swe_get_ayanamsa_ex_r(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
+static int32 swe_get_ayanamsa_ex_r_body(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
 {
   struct nut nuttmp;
   struct nut *nutp = &nuttmp;	/* dummy assign, to silence gcc warning */
@@ -3638,6 +3686,15 @@ int32 CALL_CONV swe_get_ayanamsa_ex_r(swe_ctx *ctx, double tjd_et, int32 iflag, 
     retval &= (~SEFLG_NONUT); // must remove flag which was added internally in swi_get_ayanamsa_ex(ctx)
   }
   return retval;
+}
+
+int32 CALL_CONV swe_get_ayanamsa_ex_r(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_get_ayanamsa_ex_r_body(ctx, tjd_et, iflag, daya, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -3923,7 +3980,7 @@ int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 iflag, doub
   return retflag;
 }
 
-int32 CALL_CONV swe_get_ayanamsa_ex_ut_r(swe_ctx *ctx, double tjd_ut, int32 iflag, double *daya, char *serr)
+static int32 swe_get_ayanamsa_ex_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 iflag, double *daya, char *serr)
 {
   double deltat;
   int32 retflag = OK;
@@ -3943,6 +4000,15 @@ int32 CALL_CONV swe_get_ayanamsa_ex_ut_r(swe_ctx *ctx, double tjd_ut, int32 ifla
   return retflag;
 }
 
+int32 CALL_CONV swe_get_ayanamsa_ex_ut_r(swe_ctx *ctx, double tjd_ut, int32 iflag, double *daya, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_get_ayanamsa_ex_ut_r_body(ctx, tjd_ut, iflag, daya, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_get_ayanamsa_ex_ut(double tjd_ut, int32 iflag, double *daya, char *serr)
@@ -3955,13 +4021,22 @@ int32 CALL_CONV swe_get_ayanamsa_ex_ut(double tjd_ut, int32 iflag, double *daya,
  * longitude of the vernal point of t referred to the
  * ecliptic of t0.
  */
-double CALL_CONV swe_get_ayanamsa_r(swe_ctx *ctx, double tjd_et)
+static double swe_get_ayanamsa_r_body(swe_ctx *ctx, double tjd_et)
 {
   double daya;
   int32 iflag = swi_guess_ephe_flag(ctx);
   // swi... function never includes nutation
   swi_get_ayanamsa_ex(ctx, tjd_et, iflag, &daya, NULL);
   return daya;
+}
+
+double CALL_CONV swe_get_ayanamsa_r(swe_ctx *ctx, double tjd_et)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_get_ayanamsa_r_body(ctx, tjd_et);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -3971,12 +4046,21 @@ double CALL_CONV swe_get_ayanamsa(double tjd_et)
   return swe_get_ayanamsa_r(swi_default_ctx(), tjd_et);
 }
 
-double CALL_CONV swe_get_ayanamsa_ut_r(swe_ctx *ctx, double tjd_ut)
+static double swe_get_ayanamsa_ut_r_body(swe_ctx *ctx, double tjd_ut)
 {
   double daya;
   int32 iflag = swi_guess_ephe_flag(ctx);
   swi_get_ayanamsa_ex(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL), 0, &daya, NULL);
   return daya;
+}
+
+double CALL_CONV swe_get_ayanamsa_ut_r(swe_ctx *ctx, double tjd_ut)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_get_ayanamsa_ut_r_body(ctx, tjd_ut);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -8000,7 +8084,7 @@ static AS_BOOL get_builtin_star(char *star, char *sstar, char *srecord)
  * x		pointer to 6 doubles for returning position coordinates
  * serr		error return string
 **********************************************************/
-int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag, 
+static int32 swe_fixstar2_r_body(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   double *xx, char *serr)
 {
   int i;
@@ -8067,6 +8151,16 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   return retc;
 }
 
+int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
+  double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_fixstar2_r_body(ctx, star, tjd, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar2(char *star, double tjd, int32 iflag, 
@@ -8075,7 +8169,7 @@ int32 CALL_CONV swe_fixstar2(char *star, double tjd, int32 iflag,
   return swe_fixstar2_r(swi_default_ctx(), star, tjd, iflag, xx, serr);
 }
 
-int32 CALL_CONV swe_fixstar2_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag, 
+static int32 swe_fixstar2_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag,
   double *xx, char *serr)
 {
   double deltat;
@@ -8097,6 +8191,16 @@ int32 CALL_CONV swe_fixstar2_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32
   return retflag;
 }
 
+int32 CALL_CONV swe_fixstar2_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag,
+  double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_fixstar2_ut_r_body(ctx, star, tjd_ut, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar2_ut(char *star, double tjd_ut, int32 iflag, 
@@ -8116,7 +8220,7 @@ int32 CALL_CONV swe_fixstar2_ut(char *star, double tjd_ut, int32 iflag,
  * mag 		pointer to a double, for star magnitude
  * serr		error return string
 **********************************************************/
-int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr)
+static int32 swe_fixstar2_mag_r_body(swe_ctx *ctx, char *star, double *mag, char *serr)
 {
   char sstar[SWI_STAR_LENGTH + 1];
   //static TLS char slast_stardata[AS_MAXCH];
@@ -8156,6 +8260,15 @@ int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *
   return_err:
   *mag = 0;
   return retc;
+}
+
+int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_fixstar2_mag_r_body(ctx, star, mag, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -8648,7 +8761,7 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
  * E = LAT - LMT
  * Input variable tjd is UT.
  */
-int32 CALL_CONV swe_time_equ_r(swe_ctx *ctx, double tjd_ut, double *E, char *serr)
+static int32 swe_time_equ_r_body(swe_ctx *ctx, double tjd_ut, double *E, char *serr)
 {
   int32 retval;
   double t, dt, x[6];
@@ -8676,6 +8789,15 @@ int32 CALL_CONV swe_time_equ_r(swe_ctx *ctx, double tjd_ut, double *E, char *ser
   return OK;
 }
 
+int32 CALL_CONV swe_time_equ_r(swe_ctx *ctx, double tjd_ut, double *E, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_time_equ_r_body(ctx, tjd_ut, E, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_time_equ(double tjd_ut, double *E, char *serr)
@@ -8700,7 +8822,7 @@ int32 CALL_CONV swe_lmt_to_lat(double tjd_lmt, double geolon, double *tjd_lat, c
   return swe_lmt_to_lat_r(swi_default_ctx(), tjd_lmt, geolon, tjd_lat, serr);
 }
 
-int32 CALL_CONV swe_lat_to_lmt_r(swe_ctx *ctx, double tjd_lat, double geolon, double *tjd_lmt, char *serr)
+static int32 swe_lat_to_lmt_r_body(swe_ctx *ctx, double tjd_lat, double geolon, double *tjd_lmt, char *serr)
 {
   int32 retval;
   double E, tjd_lmt0;
@@ -8711,6 +8833,15 @@ int32 CALL_CONV swe_lat_to_lmt_r(swe_ctx *ctx, double tjd_lat, double geolon, do
   retval = swe_time_equ_r(ctx, tjd_lmt0 - E, &E, serr);
   *tjd_lmt = tjd_lat - E;
   return retval;
+}
+
+int32 CALL_CONV swe_lat_to_lmt_r(swe_ctx *ctx, double tjd_lat, double geolon, double *tjd_lmt, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_lat_to_lmt_r_body(ctx, tjd_lat, geolon, tjd_lmt, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -9180,7 +9311,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
  * x		pointer for returning the ecliptic coordinates
  * serr		error return string
 **********************************************************/
-int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag, 
+static int32 swe_fixstar_r_body(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   double *xx, char *serr)
 {
   int i;
@@ -9241,6 +9372,16 @@ int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   return retc;
 }
 
+int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
+  double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_fixstar_r_body(ctx, star, tjd, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar(char *star, double tjd, int32 iflag, 
@@ -9249,7 +9390,7 @@ int32 CALL_CONV swe_fixstar(char *star, double tjd, int32 iflag,
   return swe_fixstar_r(swi_default_ctx(), star, tjd, iflag, xx, serr);
 }
 
-int32 CALL_CONV swe_fixstar_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag, 
+static int32 swe_fixstar_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag,
   double *xx, char *serr)
 {
   double deltat;
@@ -9271,6 +9412,16 @@ int32 CALL_CONV swe_fixstar_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 
   return retflag;
 }
 
+int32 CALL_CONV swe_fixstar_ut_r(swe_ctx *ctx, char *star, double tjd_ut, int32 iflag,
+  double *xx, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_fixstar_ut_r_body(ctx, star, tjd_ut, iflag, xx, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar_ut(char *star, double tjd_ut, int32 iflag, 
@@ -9290,7 +9441,7 @@ int32 CALL_CONV swe_fixstar_ut(char *star, double tjd_ut, int32 iflag,
  * mag 		pointer to a double, for star magnitude
  * serr		error return string
 **********************************************************/
-int32 CALL_CONV swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr)
+static int32 swe_fixstar_mag_r_body(swe_ctx *ctx, char *star, double *mag, char *serr)
 {
   char sstar[SWI_STAR_LENGTH + 1];
   /* moved to ctx->sp.fs1mag (Phase 3c) */
@@ -9340,6 +9491,15 @@ int32 CALL_CONV swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *s
   return retc;
 }
 
+int32 CALL_CONV swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_fixstar_mag_r_body(ctx, star, mag, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
@@ -9348,7 +9508,7 @@ int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
 }
 
 
-int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
+static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
 {
   double t = 0, dt, daya[2], dtsave_for_defl = 0;
   double xx[6], xxctr[6], xxctr2[6], xx0[6], xxsv[24], xxsp[6], dx[6], xreturn[24];
@@ -9620,6 +9780,15 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   return(iflag);
 }
 
+int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_calc_pctr_r_body(ctx, tjd, ipl, iplctr, iflag, xxret, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_calc_pctr(double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
@@ -9670,7 +9839,7 @@ const char * CALL_CONV swe_get_current_file_data(int ifno, double *tfstart, doub
  * jd_ut = jd - deltat(jd) or use swe_solcross_ut.
  * Errors are indicated by returning a jd < jd_et!
  *************************************************/
-double CALL_CONV swe_solcross_r(swe_ctx *ctx, double x2cross, double jd_et, int flag, char *serr)
+static double swe_solcross_r_body(swe_ctx *ctx, double x2cross, double jd_et, int flag, char *serr)
 {
   double x[6], xlp, dist;
   double jd;
@@ -9694,6 +9863,15 @@ double CALL_CONV swe_solcross_r(swe_ctx *ctx, double x2cross, double jd_et, int 
   return jd;
 }
 
+double CALL_CONV swe_solcross_r(swe_ctx *ctx, double x2cross, double jd_et, int flag, char *serr)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_solcross_r_body(ctx, x2cross, jd_et, flag, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_solcross(double x2cross, double jd_et, int flag, char *serr)
@@ -9711,7 +9889,7 @@ double CALL_CONV swe_solcross(double x2cross, double jd_et, int flag, char *serr
  * The returned time is universal time;
  * Errors are indicated by returning a jd < jd_ut!
  *************************************************/
-double CALL_CONV swe_solcross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr)
+static double swe_solcross_ut_r_body(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr)
 {
   double x[6], xlp, dist;
   double jd;
@@ -9735,6 +9913,15 @@ double CALL_CONV swe_solcross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, i
   return jd;
 }
 
+double CALL_CONV swe_solcross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_solcross_ut_r_body(ctx, x2cross, jd_ut, flag, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_solcross_ut(double x2cross, double jd_ut, int flag, char *serr)
@@ -9752,7 +9939,7 @@ double CALL_CONV swe_solcross_ut(double x2cross, double jd_ut, int flag, char *s
  * jd_ut = jd - deltat(jd);
  * Errors are indicated by returning a jd < jd_et!
  *************************************************/
-double CALL_CONV swe_mooncross_r(swe_ctx *ctx, double x2cross, double jd_et, int flag, char *serr)
+static double swe_mooncross_r_body(swe_ctx *ctx, double x2cross, double jd_et, int flag, char *serr)
 {
   double x[6], xlp, dist;
   double jd;
@@ -9774,6 +9961,15 @@ double CALL_CONV swe_mooncross_r(swe_ctx *ctx, double x2cross, double jd_et, int
     if (fabs(dist) < CROSS_PRECISION) break;
   } 
   return jd;
+}
+
+double CALL_CONV swe_mooncross_r(swe_ctx *ctx, double x2cross, double jd_et, int flag, char *serr)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_mooncross_r_body(ctx, x2cross, jd_et, flag, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -9795,7 +9991,7 @@ double CALL_CONV swe_mooncross(double x2cross, double jd_et, int flag, char *ser
  * If sidereal is chosen, default mode is Fagan/Bradley. For different aynamshas,
  * swe_set_sid_mode() must be called first.
  *************************************************/
-double CALL_CONV swe_mooncross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr)
+static double swe_mooncross_ut_r_body(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr)
 {
   double x[6], xlp, dist;
   double jd;
@@ -9819,6 +10015,15 @@ double CALL_CONV swe_mooncross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, 
   return jd;
 }
 
+double CALL_CONV swe_mooncross_ut_r(swe_ctx *ctx, double x2cross, double jd_ut, int flag, char *serr)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_mooncross_ut_r_body(ctx, x2cross, jd_ut, flag, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_mooncross_ut(double x2cross, double jd_ut, int flag, char *serr)
@@ -9833,7 +10038,7 @@ double CALL_CONV swe_mooncross_ut(double x2cross, double jd_ut, int flag, char *
  * jd_ut = jd - deltat(jd);
  * Errors are indicated by returning a jd < jd_et!
  *************************************************/
-double CALL_CONV swe_mooncross_node_r(swe_ctx *ctx, double jd_et, int flag, double *xlon, double *xla, char *serr)
+static double swe_mooncross_node_r_body(swe_ctx *ctx, double jd_et, int flag, double *xlon, double *xla, char *serr)
 {
   double x[6], xlat, dist;
   double jd;
@@ -9865,6 +10070,15 @@ double CALL_CONV swe_mooncross_node_r(swe_ctx *ctx, double jd_et, int flag, doub
   return jd;
 }
 
+double CALL_CONV swe_mooncross_node_r(swe_ctx *ctx, double jd_et, int flag, double *xlon, double *xla, char *serr)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_mooncross_node_r_body(ctx, jd_et, flag, xlon, xla, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_mooncross_node(double jd_et, int flag, double *xlon, double *xla, char *serr)
@@ -9877,7 +10091,7 @@ double CALL_CONV swe_mooncross_node(double jd_et, int flag, double *xlon, double
  * The returned time is universal time;
  * Errors are indicated by returning a jd < jd_ut!
  *************************************************/
-double CALL_CONV swe_mooncross_node_ut_r(swe_ctx *ctx, double jd_ut, int flag, double *xlon, double *xla, char *serr)
+static double swe_mooncross_node_ut_r_body(swe_ctx *ctx, double jd_ut, int flag, double *xlon, double *xla, char *serr)
 {
   double x[6], xlat, dist;
   double jd;
@@ -9909,6 +10123,15 @@ double CALL_CONV swe_mooncross_node_ut_r(swe_ctx *ctx, double jd_ut, int flag, d
   return jd;
 }
 
+double CALL_CONV swe_mooncross_node_ut_r(swe_ctx *ctx, double jd_ut, int flag, double *xlon, double *xla, char *serr)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_mooncross_node_ut_r_body(ctx, jd_ut, flag, xlon, xla, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_mooncross_node_ut(double jd_ut, int flag, double *xlon, double *xla, char *serr)
@@ -9924,7 +10147,7 @@ double CALL_CONV swe_mooncross_node_ut(double jd_ut, int flag, double *xlon, dou
  * Errors are indicated by returning ERR;
  * This should only be used for rought house entry or exit times.
  *************************************************/
-int32 CALL_CONV swe_helio_cross_r(swe_ctx *ctx, int ipl, double x2cross, double jd_et, int iflag, int dir, double *jd_cross, char *serr)
+static int32 swe_helio_cross_r_body(swe_ctx *ctx, int ipl, double x2cross, double jd_et, int iflag, int dir, double *jd_cross, char *serr)
 {
   double x[6], xlp, dist;
   double jd;
@@ -9962,6 +10185,15 @@ int32 CALL_CONV swe_helio_cross_r(swe_ctx *ctx, int ipl, double x2cross, double 
   return OK;
 }
 
+int32 CALL_CONV swe_helio_cross_r(swe_ctx *ctx, int ipl, double x2cross, double jd_et, int iflag, int dir, double *jd_cross, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_helio_cross_r_body(ctx, ipl, x2cross, jd_et, iflag, dir, jd_cross, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_helio_cross(int ipl, double x2cross, double jd_et, int iflag, int dir, double *jd_cross, char *serr)
@@ -9977,7 +10209,7 @@ int32 CALL_CONV swe_helio_cross(int ipl, double x2cross, double jd_et, int iflag
  * Errors are indicated by returning ERR;
  * This should only be used for rought house entry or exit times.
  *************************************************/
-int32 CALL_CONV swe_helio_cross_ut_r(swe_ctx *ctx, int ipl, double x2cross, double jd_ut, int iflag, int dir, double *jd_cross, char *serr)
+static int32 swe_helio_cross_ut_r_body(swe_ctx *ctx, int ipl, double x2cross, double jd_ut, int iflag, int dir, double *jd_cross, char *serr)
 {
   double x[6], xlp, dist;
   double jd;
@@ -10013,6 +10245,15 @@ int32 CALL_CONV swe_helio_cross_ut_r(swe_ctx *ctx, int ipl, double x2cross, doub
   } 
   *jd_cross = jd;
   return OK;
+}
+
+int32 CALL_CONV swe_helio_cross_ut_r(swe_ctx *ctx, int ipl, double x2cross, double jd_ut, int iflag, int dir, double *jd_cross, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_helio_cross_ut_r_body(ctx, ipl, x2cross, jd_ut, iflag, dir, jd_cross, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.

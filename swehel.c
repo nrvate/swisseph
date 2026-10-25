@@ -1361,7 +1361,7 @@ static char *tolower_string_star(char *str)
  *  |1  OK, scotopic vision
  *  |2  OK, near limit photopic/scotopic
 */
-int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr)
+static int32 swe_vis_limit_mag_r_body(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr)
 {
   int32 retval = OK, i, scotopic_flag = 0;
   double AltO, AziO, AltM, AziM, AltS, AziS;
@@ -1440,6 +1440,15 @@ int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, do
   return retval;
 }
 
+int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_vis_limit_mag_r_body(ctx, tjdut, dgeo, datm, dobs, ObjectName, helflag, dret, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /*###################################################################
 ' Magn [-]
 ' age [Year]
@@ -1498,7 +1507,7 @@ static int32 TopoArcVisionis(swe_ctx *ctx, double Magn, double *dobs, double Alt
   return OK;
 }
 
-int32 CALL_CONV swe_topo_arcus_visionis_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
+static int32 swe_topo_arcus_visionis_r_body(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
 {
   double sunra;
   swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
@@ -1507,6 +1516,15 @@ int32 CALL_CONV swe_topo_arcus_visionis_r(swe_ctx *ctx, double tjdut, double *dg
     return ERR;
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
   return TopoArcVisionis(ctx, mag, dobs, alt_obj, azi_obj, alt_moon, azi_moon, tjdut, azi_sun, sunra, dgeo[1], dgeo[2], datm, helflag, dret, serr);
+}
+
+int32 CALL_CONV swe_topo_arcus_visionis_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_topo_arcus_visionis_r_body(ctx, tjdut, dgeo, datm, dobs, helflag, mag, azi_obj, alt_obj, azi_sun, azi_moon, alt_moon, dret, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -1599,7 +1617,7 @@ static int32 HeliacalAngle(swe_ctx *ctx, double Magn, double *dobs, double AziO,
   return OK;
 }
 
-int32 CALL_CONV swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
+static int32 swe_heliacal_angle_r_body(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
 {
   if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
     if (serr != NULL)
@@ -1609,6 +1627,15 @@ int32 CALL_CONV swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, d
   swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
   return HeliacalAngle(ctx, mag, dobs, azi_obj, alt_moon, azi_moon, tjdut, azi_sun, dgeo, datm, helflag, dret, serr);
+}
+
+int32 CALL_CONV swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_heliacal_angle_r_body(ctx, tjdut, dgeo, datm, dobs, helflag, mag, azi_obj, azi_sun, azi_moon, alt_moon, dret, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -1773,7 +1800,7 @@ static void strcpy_VBsafe(char *sout, char *sin)
 '28=CVAact [deg] 'new
 '29=MSk [-]
 */
-int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
+static int32 swe_heliacal_pheno_ut_r_body(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
 {
   /* darr is caller-allocated and this function writes darr[0..30], so the
    * only thing that can be checked here is that the documented minimum in
@@ -1984,6 +2011,15 @@ output_heliacal_pheno:
   darr[26] = elong;
   darr[27] = illum;
   return OK;
+}
+
+int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_heliacal_pheno_ut_r_body(ctx, JDNDaysUT, dgeo, datm, dobs, ObjectNameIn, TypeEvent, helflag, darr, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -3086,7 +3122,7 @@ static int32 heliacal_ut(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, doub
 '                   dret[2]: end of visibility (Julian day number; 0 if SE_HELFLAG_AV)
 ' see http://www.iol.ie/~geniet/eng/atmoastroextinction.htm
 */
-int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
+static int32 swe_heliacal_ut_r_body(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
 {
   int32 retval, Planet;
   /* serr starts empty because it is read as well as written: the Moon
@@ -3218,6 +3254,15 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
   if (serr_ret != NULL && *serr != '\0')
     strcpy(serr_ret, serr);
   return retval;
+}
+
+int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_heliacal_ut_r_body(ctx, JDNDaysUTStart, dgeo, datm, dobs, ObjectNameIn, TypeEvent, helflag, dret, serr_ret);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.

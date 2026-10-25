@@ -58,6 +58,7 @@ worst were in code that had never executed even once.
 | 24 | Seven house defects: Placidus and Gauquelin cusps not converged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files, Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the speed of a cusp on an equinox point | Correctness | `swehouse.c` |
 | 25 | A setting made before the first calculation is lost; the first heliacal call after a setter fails | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c` |
 | 26 | `swe_set_ephe_fallback()` is never seen by another thread or a new context | Correctness | `sweconfig.c`, `sweph.c` |
+| 27 | A call on the default context adopts another thread's setter half-way through: its files closed under it, two configurations in one answer | Crash / Correctness | `sweconfig.c`, every public calculation |
 
 ---
 
@@ -1527,6 +1528,57 @@ syncs first. `swe_close()` keeps the context's ownership of the group, as
 it keeps the value. G35 `tests/fbshare.c`: 28 forked scenarios with a
 second thread and explicit contexts, the variable unset and set; 9 failed
 before.
+
+## 27. A call on the default context adopts another thread's setter half-way through
+
+**Severity: Crash (SIGSEGV in `swejpl.c`'s `state()`) and Correctness (wrong answers, no error)**
+**Where:** `sweconfig.c`, `swi_config_sync()`, new `swi_config_hold()`; the public functions that calculate, in `sweph.c`, `swecl.c`, `swehel.c`, `swehouse.c`, `swephlib.c` and `swedate.c`; `swephlib.c`, `swe_get_astro_models()`
+
+The fork's own. The default context adopts the shared configuration at
+`swi_init_swed_if_start()`, and one call passes it many times:
+`swe_calc_ut()` at its delta t and again at `swe_calc()`, a topocentric
+`swe_calc()` at the observer's delta t and sidereal time, a star at the
+Earth's `swe_calc()`, a search at every calculation it makes. A setter
+another thread called in between was adopted there: the files the call
+was reading were closed and its caches emptied, and the rest of the call
+ran on the new configuration. A topocentric JPL Jupiter by `swe_calc_ut()`
+while another thread switched `swe_set_jpl_file()` crashed on the closed
+file. Elsewhere one answer mixed two configurations: a sidereal
+`swe_mooncross_ut()` 5600 s off after `swe_set_sid_mode()`, sidereal houses
+0.883 deg, `swe_sol_eclipse_when_loc()` searched at the master's site from
+half-way (contacts up to 4990 s off, a contact reported visible that is
+not), a fictitious body 0.42 deg/day in its speed after
+`swe_set_astro_models()`. Some calls synced only after reading part of the
+configuration, or never: `swe_deltat_ex()` read the user delta t before
+its sync and the UTC conversions had none, so another thread's
+`swe_set_delta_t_userdef()` stayed out of them (22.6 s); and a thread's
+first call read what came before its first sync from a context nothing
+had started: zeros for the user delta t (22.6 s, and 3.1e-3 deg in
+`swe_calc_ut()`'s Moon), the models in `swe_sidtime0()` (3.1e-7 h) and
+`swe_get_astro_models()`.
+
+**Fix, as done here:** every public function that calculates holds the
+configuration: its old body is a static `<name>_body()`, and the public
+function calls `swi_config_hold()` first and `swi_config_release()` last.
+The outermost hold syncs once, at the entry, and every sync nested in it
+does nothing until it returns; a context not yet initialised it starts,
+which syncs it, and the first `swi_init_swed_if_start()` after that still
+answers 1, so the first-call warnings are unchanged.
+`swe_get_astro_models()` starts and syncs first. 60 functions are held;
+not held are those whose body is one call to a held function
+(`swe_houses_ex()`, `swe_lmt_to_lat()`), the arithmetic on the caller's
+ARMC (`swe_houses_armc()`, `swe_house_pos()`), the setters and the getters.
+G36 `tests/cfghold.c`: 18 cases, each in its own process, every answer
+bit for bit a fresh context's or a fresh process's: four calculations and
+five searches whose file (seorbel.txt, sefstars.txt, swe_deltat.txt) is a
+FIFO the main thread fills only after its setter, so no timing; the UTC
+conversions and delta t after a setter made before them; seven first calls
+on a new thread, and the first-call warning kept. 17 failed before.
+
+`swe_split_deg()` with `SE_SPLIT_DEG_NAKSHATRA` reads the sidereal mode and
+is held too: on a new thread after the main thread's True Sheoran, 10 deg
+came back nakshatra 0, 10 deg 0' where the main thread gives nakshatra 1,
+0 deg 0'. G36's split case.
 
 ## How these were found
 

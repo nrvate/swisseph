@@ -1117,6 +1117,10 @@ struct swe_ctx {
   swi_gen_t cfg_seen;      /* master generation this context last adopted  */
   int32     cfg_local;     /* groups this context set itself and now owns  */
   AS_BOOL   cfg_applying;  /* re-entrancy guard while a setter is applying */
+  int32     cfg_hold;      /* depth of the calls holding the configuration */
+  /* swi_config_hold() started this context, and no swi_init_swed_if_start()
+   * has answered 1 for that start yet */
+  AS_BOOL   start_unreported;
   AS_BOOL ephe_path_is_set;
   /* May a calculation quietly finish on a weaker ephemeris than the caller
    * asked for? FALSE by default in this fork -- see swe_set_ephe_fallback().

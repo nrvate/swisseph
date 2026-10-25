@@ -140,7 +140,7 @@ static int sunshine_sun(swe_ctx *ctx, double tjd_ut, int32 iflag, double *xp)
  * ascmc[6] = coasc2		* "co-ascendant" (M. Munkasey) *
  * ascmc[7] = polasc		* "polar ascendant" (M. Munkasey) *
  */
-int CALL_CONV swe_houses_r(swe_ctx *ctx, double tjd_ut,
+static int swe_houses_r_body(swe_ctx *ctx, double tjd_ut,
 				double geolat,
 				double geolon,
 				int hsys,
@@ -186,6 +186,20 @@ int CALL_CONV swe_houses_r(swe_ctx *ctx, double tjd_ut,
 #endif
   retc = swe_houses_armc_ex2_r(ctx, armc, geolat, eps + nutlo[1], hsys, cusp, ascmc, NULL, NULL, NULL);
   return retc;
+}
+
+int CALL_CONV swe_houses_r(swe_ctx *ctx, double tjd_ut,
+				double geolat,
+				double geolon,
+				int hsys,
+				double *cusp,
+				double *ascmc)
+{
+  int ret;
+  swi_config_hold(ctx);
+  ret = swe_houses_r_body(ctx, tjd_ut, geolat, geolon, hsys, cusp, ascmc);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -243,7 +257,7 @@ int CALL_CONV swe_houses_ex(double tjd_ut,
  * ascmc_speed[0...10] speeds (daily motions) of the additional points.
  * serr           error message or warning
  */
-int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
+static int swe_houses_ex2_r_body(swe_ctx *ctx, double tjd_ut,
                                 int32 iflag, 
 				double geolat,
 				double geolon,
@@ -335,6 +349,24 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
   if (retc_makr < 0)
     return retc_makr;
   return retc;
+}
+
+int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
+                                int32 iflag,
+				double geolat,
+				double geolon,
+				int hsys,
+				double *cusp,
+				double *ascmc,
+			        double *cusp_speed,
+				double *ascmc_speed,
+				char *serr)
+{
+  int ret;
+  swi_config_hold(ctx);
+  ret = swe_houses_ex2_r_body(ctx, tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.

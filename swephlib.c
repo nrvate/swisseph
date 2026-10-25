@@ -2765,7 +2765,7 @@ done:
   return iflag;
 }
 
-double CALL_CONV swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *serr)
+static double swe_deltat_ex_r_body(swe_ctx *ctx, double tjd, int32 iflag, char *serr)
 {
   double deltat;
   if (ctx->delta_t_userdef_is_set)
@@ -2776,6 +2776,15 @@ double CALL_CONV swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *se
   return deltat;
 }
 
+double CALL_CONV swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *serr)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_deltat_ex_r_body(ctx, tjd, iflag, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
@@ -2783,10 +2792,19 @@ double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
   return swe_deltat_ex_r(swi_default_ctx(), tjd, iflag, serr);
 }
 
-double CALL_CONV swe_deltat_r(swe_ctx *ctx, double tjd)
+static double swe_deltat_r_body(swe_ctx *ctx, double tjd)
 {
   int32 iflag = swi_guess_ephe_flag(ctx);
   return swe_deltat_ex_r(ctx, tjd, iflag, NULL); /* with default tidal acceleration/default ephemeris */
+}
+
+double CALL_CONV swe_deltat_r(swe_ctx *ctx, double tjd)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_deltat_r_body(ctx, tjd);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -3670,7 +3688,7 @@ static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
 #define SIDT_LTERM_T1  2469807.5  /* 1 Jan 2050  */
 #define SIDT_LTERM_OFS0   (0.000378172 / 15.0)
 #define SIDT_LTERM_OFS1   (0.001385646 / 15.0)
-double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut)
+static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double nut)
 {
   double jd0;    	/* Julian day at midnight Universal Time */
   double secs;   	/* Time of day, UT seconds since UT midnight */
@@ -3766,6 +3784,15 @@ sidtime_done:
   return gmst;
 }
 
+double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_sidtime0_r_body(ctx, tjd, eps, nut);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
@@ -3806,7 +3833,7 @@ void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
  * tjd must be UT !!!
  * for more informsation, see comment with swe_sidtime0()
  */
-double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
+static double swe_sidtime_r_body(swe_ctx *ctx, double tjd_ut)
 {
   int i;
   double eps, nutlo[2], tsid;
@@ -3820,6 +3847,15 @@ double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
     nutlo[i] *= RADTODEG;
   tsid = swe_sidtime0_r(ctx, tjd_ut, eps + nutlo[1], nutlo[0]);
   return tsid;
+}
+
+double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
+{
+  double ret;
+  swi_config_hold(ctx);
+  ret = swe_sidtime_r_body(ctx, tjd_ut);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -4282,7 +4318,7 @@ static void split_deg_nakshatra(swe_ctx *ctx, double ddeg, int32 roundflag, int3
  *              or +/- sign
  *  
  *********************************************************/
-void CALL_CONV swe_split_deg_r(swe_ctx *ctx, double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn)
+static void swe_split_deg_r_body(swe_ctx *ctx, double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn)
 {
   double dadd = 0;
   *isgn = 1;
@@ -4365,6 +4401,15 @@ double swi_kepler(double E, double M, double ecce)
 
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
+/* The nakshatra split reads the sidereal mode: held like every other
+ * public function, so a thread's first call sees the mode set elsewhere. */
+void CALL_CONV swe_split_deg_r(swe_ctx *ctx, double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn)
+{
+  swi_config_hold(ctx);
+  swe_split_deg_r_body(ctx, ddeg, roundflag, ideg, imin, isec, dsecfr, isgn);
+  swi_config_release(ctx);
+}
+
 void CALL_CONV swe_split_deg(double ddeg, int32 roundflag, int32 *ideg, int32 *imin, int32 *isec, double *dsecfr, int32 *isgn)
 {
   swe_split_deg_r(swi_default_ctx(), ddeg, roundflag, ideg, imin, isec, dsecfr, isgn);
@@ -4697,6 +4742,11 @@ void CALL_CONV swe_get_astro_models_r(swe_ctx *ctx, char *samod, char *sdet, int
   int *pmodel = &(ctx->astro_models[0]);
   char s[AS_MAXCH], samod0[AS_MAXCH];
   AS_BOOL list_all_models = FALSE;
+  /* Started and synced first: as a thread's first call this listed the
+   * models of a context nothing had started, zeros for another thread's
+   * swe_set_astro_models() ("-amod0,0,0,0,0,0,0,0" for
+   * "-amod1,3,1,1,1,0,0,1"). */
+  swi_init_swed_if_start(ctx);
   if (samod != NULL) {
     if (strchr(samod, '+') != NULL)
       list_all_models = TRUE;

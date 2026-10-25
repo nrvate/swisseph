@@ -434,6 +434,8 @@ void swi_config_sync(swe_ctx *ctx)
 
   if (ctx->cfg_applying)             /* re-entered from inside a setter */
     return;
+  if (ctx->cfg_hold > 0)             /* inside a call: synced at its entry */
+    return;
   /* Same reasoning as swi_config_publish(): only the default context
    * tracks the master. An explicit context inherits the configuration once,
    * at swe_ctx_new(), and is its own from then on -- otherwise a later
@@ -462,6 +464,58 @@ void swi_config_sync(swe_ctx *ctx)
   swi_config_apply(ctx, &tmp, SWI_CFG_ALL & ~ctx->cfg_local);
   ctx->cfg_applying = FALSE;
   ctx->cfg_seen = g;
+}
+
+/*======================================================================
+ * A call's one configuration.
+ *
+ * The default context adopts the master at swi_init_swed_if_start(), and
+ * one call passes that hook many times: swe_calc_ut() at its delta t and
+ * again at swe_calc(), a topocentric swe_calc() inside itself at the
+ * observer's delta t and sidereal time, a star at the Earth's swe_calc(),
+ * a search at every calculation it makes. A setter another thread called
+ * in between was adopted there, half-way through: swi_config_apply()
+ * closed the JPL file, the Swiss files and the star catalogue the call was
+ * reading and emptied its caches, and the rest of the call ran on the new
+ * configuration. A topocentric JPL Jupiter by swe_calc_ut() while another
+ * thread switched swe_set_jpl_file() crashed in swejpl.c's state() on the
+ * closed file; elsewhere one answer mixed two configurations (a sidereal
+ * swe_mooncross_ut() 5600 s off after swe_set_sid_mode(), a local eclipse
+ * searched at the master's site from half-way). Some calls synced only
+ * after reading part of the configuration, or never: swe_deltat_ex() read
+ * the user delta t before its sync, and the UTC conversions had none.
+ *
+ * So every public function that calculates holds the configuration: its
+ * outermost hold syncs once, at its entry, and the syncs nested in it do
+ * nothing until it returns. A function whose body is one call to a held
+ * function, and arithmetic on the caller's numbers that reads no setting,
+ * need no hold of their own.
+ *
+ * A context not yet initialised -- a thread's default context before its
+ * first call -- is started here, which syncs it, so the call reads nothing
+ * from the unstarted context: before, a new thread's first swe_deltat_ex()
+ * read the user delta t as zeros, 22.6 s off another thread's
+ * swe_set_delta_t_userdef(). It is started before the hold is counted, so
+ * the start's memset never meets a hold in progress. The start is marked
+ * unreported: the first swi_init_swed_if_start() the call reaches answers
+ * 1 for it, as when that one started the context, since the "Please call
+ * swe_set_ephe_path()" warnings of a context's first call key on that.
+ *====================================================================*/
+void swi_config_hold(swe_ctx *ctx)
+{
+  if (ctx->cfg_hold == 0) {
+    if (!ctx->swed_is_initialised) {
+      swi_init_swed_if_start(ctx);
+      ctx->start_unreported = TRUE;
+    } else
+      swi_config_sync(ctx);
+  }
+  ctx->cfg_hold++;
+}
+
+void swi_config_release(swe_ctx *ctx)
+{
+  ctx->cfg_hold--;
 }
 
 /*======================================================================

@@ -390,7 +390,7 @@ static int init_leapsec(swe_ctx *ctx)
  *   the leap seconds table (or the Swiss Ephemeris version) is not updated
  *   for a long time.
 */
-int32 CALL_CONV swe_utc_to_jd_r(swe_ctx *ctx, int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr)
+static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr)
 {
   double tjd_ut1, tjd_et, tjd_et_1972, dhour, d;
   int iyear2, imonth2, iday2;
@@ -493,6 +493,15 @@ int32 CALL_CONV swe_utc_to_jd_r(swe_ctx *ctx, int32 iyear, int32 imonth, int32 i
   return OK;
 }
 
+int32 CALL_CONV swe_utc_to_jd_r(swe_ctx *ctx, int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_utc_to_jd_r_body(ctx, iyear, imonth, iday, ihour, imin, dsec, gregflag, dret, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour, int32 imin, double dsec, int32 gregflag, double *dret, char *serr)
@@ -514,7 +523,7 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
  *   the leap seconds table (or the Swiss Ephemeris version) has not been
  *   updated for a long time.
  */
-void CALL_CONV swe_jdet_to_utc_r(swe_ctx *ctx, double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
+static void swe_jdet_to_utc_r_body(swe_ctx *ctx, double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
 {
   int i;
   int second_60 = 0;
@@ -597,6 +606,13 @@ void CALL_CONV swe_jdet_to_utc_r(swe_ctx *ctx, double tjd_et, int32 gregflag, in
   }
 }
 
+void CALL_CONV swe_jdet_to_utc_r(swe_ctx *ctx, double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
+{
+  swi_config_hold(ctx);
+  swe_jdet_to_utc_r_body(ctx, tjd_et, gregflag, iyear, imonth, iday, ihour, imin, dsec);
+  swi_config_release(ctx);
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
@@ -618,10 +634,17 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
  *   the leap seconds table (or the Swiss Ephemeris version) has not been
  *   updated for a long time.
  */
-void CALL_CONV swe_jdut1_to_utc_r(swe_ctx *ctx, double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
+static void swe_jdut1_to_utc_r_body(swe_ctx *ctx, double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
 {
   double tjd_et = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
   swe_jdet_to_utc_r(ctx, tjd_et, gregflag, iyear, imonth, iday, ihour, imin, dsec);
+}
+
+void CALL_CONV swe_jdut1_to_utc_r(swe_ctx *ctx, double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
+{
+  swi_config_hold(ctx);
+  swe_jdut1_to_utc_r_body(ctx, tjd_ut, gregflag, iyear, imonth, iday, ihour, imin, dsec);
+  swi_config_release(ctx);
 }
 
 /* Legacy entry point: the process-wide default context.

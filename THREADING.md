@@ -89,6 +89,11 @@ is fine with external synchronisation; using it from two at once is not.
 The process-wide API follows the same rule with a per-thread default context,
 which is why it works without you doing anything.
 
+A setter called on one thread reaches another at that thread's next call,
+never half-way through one: a call adopts the shared configuration once, at
+its entry, and finishes with it. A thread's first calculation sees what the
+other threads set before it.
+
 ---
 
 ## Releasing resources: `swe_close()` vs `swe_close_r()`
