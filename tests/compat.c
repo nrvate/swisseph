@@ -599,6 +599,47 @@ static double topo_moon_ancient_off(void)
                        2451545.0 - 2999 * 365.25 + 0.137);
 }
 
+/* UPSTREAM-BUGS 50: Mercury's Moshier geometric longitude at -3000 over
+ * 64 consecutive JDs, its worst residual from a straight line, mas. The
+ * arguments freq * T rounded at 2e-6" and more time than a JD resolves:
+ * 1.6e-3 mas. */
+static double mosh_rough(void)
+{
+  double jd = 2451545.0 - 5000 * 365.25 + 0.1234567, v[64], x[6], x0 = 0;
+  double sx = 0, sy = 0, sxx = 0, sxy = 0, a, b, m = 0;
+  char serr[256];
+  int i;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (i = 0; i < 64; i++, jd = nextafter(jd, 1e10)) {
+    swe_calc(jd, SE_MERCURY, SEFLG_MOSEPH | SEFLG_TRUEPOS, x, serr);
+    if (i == 0)
+      x0 = x[0];
+    v[i] = remainder(x[0] - x0, 360.0) * 3.6e6;
+    sx += i; sy += v[i]; sxx += (double) i * i; sxy += i * v[i];
+  }
+  b = (64 * sxy - sx * sy) / (64 * sxx - sx * sx);
+  a = (sy - b * sx) / 64;
+  for (i = 0; i < 64; i++)
+    if (fabs(v[i] - a - b * i) > m)
+      m = fabs(v[i] - a - b * i);
+  return m;
+}
+
+/* UPSTREAM-BUGS 51: the Moshier Moon's and Mercury's J2000 geometric
+ * longitude speeds at -2500 against a five-point difference, deg/day: a
+ * difference over +-4.32 s at rounded instants (the Moon) and a backward
+ * one over 8.64 s (Mercury), 1e-5 and more; now <= 1e-9 */
+static double mosh_speed_off(void)
+{
+  double jd = 2451545.0 - 4500 * 365.25 + 0.137, a, b;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  a = lon_speed_off(SE_MOON, SEFLG_MOSEPH | SEFLG_J2000 | SEFLG_NONUT | SEFLG_TRUEPOS, jd);
+  b = lon_speed_off(SE_MERCURY, SEFLG_MOSEPH | SEFLG_J2000 | SEFLG_NONUT | SEFLG_TRUEPOS, jd);
+  return fmax(a, b);
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -662,7 +703,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, hspd, hsid;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, hspd, hsid, moshr, moshs;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -697,6 +738,8 @@ int main(int argc, char **argv)
   orbel = orbel_speed_off();
   hspd = house_speed_off(0);
   hsid = house_speed_off(1);
+  moshr = mosh_rough();
+  moshs = mosh_speed_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -938,6 +981,22 @@ int main(int argc, char **argv)
   else {
     printf("  sidereal house speeds  %.2e deg/day FAIL: expected %s\n",
            hsid, WANT_DEFECT ? "> 2e-5" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshr > 3e-4) : (moshr < 1e-5))
+    printf("  Moshier series rough   %.2e mas OK\n", moshr);
+  else {
+    printf("  Moshier series rough   %.2e mas FAIL: expected %s\n",
+           moshr, WANT_DEFECT ? "> 3e-4" : "< 1e-5");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshs > 1e-6) : (moshs < 1e-8))
+    printf("  Moshier speed          %.2e deg/day OK\n", moshs);
+  else {
+    printf("  Moshier speed          %.2e deg/day FAIL: expected %s\n",
+           moshs, WANT_DEFECT ? "> 1e-6" : "< 1e-8");
     bad++;
   }
 

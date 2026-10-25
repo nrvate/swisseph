@@ -758,6 +758,15 @@ struct epsilon {
  *     ARMC at a constant rate, the obliquity held still (6e-5 deg/day on
  *     the ARMC); sidereal speeds without the ayanamsa's rate
  *     (UPSTREAM-BUGS 40-43, G45)
+ *   - the Moshier series formed their arguments as freq * T and reduced
+ *     them after, rounding at more time than the JD resolves (Mercury
+ *     3.9e-3 mas, the Moon 0.011 mas between consecutive JDs at -3000);
+ *     and took every Moshier velocity as a difference over 8.64 s (the
+ *     planets, backward) or +-4.32 s (the Moon) at rounded instants, the
+ *     Moon's samples turned with one date's obliquity and the true node's
+ *     and apogee's speeds over 0.1 day: ~3e-6 of the speed, 0.13 mas on
+ *     Mercury's apparent place, 45" jumps on the osculating apogee
+ *     (UPSTREAM-BUGS 50, 51, G50)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

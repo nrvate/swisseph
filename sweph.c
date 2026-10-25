@@ -7178,7 +7178,16 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     case SEFLG_MOSEPH:
       /* with moshier moon, we need a greater speed_intv, because here the
        * node and apogee oscillate wildly within small intervals */
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 51: the oscillation was the Moshier Moon's speed,
+       * noisy at 2.4e-6 of itself; the 0.1-day step that averaged it
+       * out cost 1.5e-3 deg/day of truncation on the apogee's speed at
+       * -3000 (5.8 deg/day, curving with the half-month). With that
+       * speed smooth, +-2^-8 day, exact instants: 3.4e-6 deg/day. */
+      speed_intv = 1.0 / 256;
+#else
       speed_intv = NODE_CALC_INTV_MOSH;
+#endif
       for (i = istart; i <= 2; i++) {
 	if (i == 0) {
 	  t = tjd - speed_intv;

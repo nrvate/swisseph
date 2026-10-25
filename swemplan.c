@@ -76,6 +76,9 @@
 /* #define KGAUSS_GEO 0.00002999502129737  Earth + Moon */
 
 static void embofs_mosh(swe_ctx *ctx, double J, double *xemb);
+#ifndef SWE_UPSTREAM_COMPAT
+static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb);
+#endif
 static int check_t_terms(double t, char *sinp, double *doutp, double *drate);
 
 static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd, 
@@ -136,6 +139,213 @@ static const struct plantbl *planets[] =
 
 static void sscc (swe_ctx *ctx, int k, double arg, int n);
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 50: the series' arguments were formed as freq * T and
+ * then reduced, T = (J - J2000) / 10000 years: three roundings of a
+ * number of up to 2.7e10" (Mercury's mean longitude at -3000), each worth
+ * ~2e-6" and ~1.3e-10 day of the planet's motion, against the 1.2e-10
+ * day a JD resolves there; the geometric places were rough at S ~ 3-8.
+ * Each argument is now rate * (J - J2000) / TIMESCALE to the last bit of
+ * its reduced value: the day count exactly as dh + dl, the product with
+ * its rounding error (fma), the quotient with its remainder, the whole
+ * reduced modulo 360 degrees before the small parts are added. */
+static double mosh_arg(double rate, double dh, double dl)
+{
+  double p = rate * dh;
+  double pe = fma(rate, dh, -p);
+  double q = p / TIMESCALE;
+  double r = fma(-q, TIMESCALE, p);
+  return swi_mods3600(q) + (r + pe + rate * dl) / TIMESCALE;
+}
+
+/* The series and, in dobj, its rates in rad/day and AU/day: each term
+ * C(T) cos A + S(T) sin A has the rate C' cos A + S' sin A
+ * + A' (S cos A - C sin A), A' the sum of its harmonics' frequencies. */
+static void moshplan2(swe_ctx *ctx, double J, int iplm, double *pobj, double *dobj)
+{
+  int i, j, k, m, k1, ip, np, nt;
+  const signed char *p;
+  const double *pl, *pb, *pr;
+  double su, cu, sv, cv, T, dh, dl, bb, w, a1, a0;
+  double t, sl, sb, sr, dsl, dsb, dsr, dcu, dsu;
+  const struct plantbl *plan = planets[iplm];
+
+  /* J - J2000 = dh + dl exactly (two-sum) */
+  dh = J - J2000;
+  bb = dh - J;
+  dl = (J - (dh - bb)) + (-J2000 - bb);
+  T = dh / TIMESCALE;
+  /* Calculate sin( i*MM ), etc. for needed multiple angles.  */
+  for (i = 0; i < 9; i++)
+    {
+      if ((j = plan->max_harmonic[i]) > 0)
+	{
+	  sr = (mosh_arg(freqs[i], dh, dl) + phases[i]) * STR;
+	  sscc (ctx, i, sr, j);
+	}
+    }
+
+  /* Point to start of table of arguments. */
+  p = plan->arg_tbl;
+  /* Point to tabulated cosine and sine amplitudes.  */
+  pl = plan->lon_tbl;
+  pb = plan->lat_tbl;
+  pr = plan->rad_tbl;
+  sl = sb = sr = 0.0;
+  dsl = dsb = dsr = 0.0;
+
+  for (;;)
+    {
+      /* argument of sine and cosine */
+      /* Number of periodic arguments. */
+      np = *p++;
+      if (np < 0)
+	break;
+      if (np == 0)
+	{			/* It is a polynomial term.  */
+	  nt = *p++;
+	  /* Longitude polynomial: the mean longitude, its T term the
+	   * one large number, taken exactly like the arguments. */
+	  cu = *pl++;
+	  dcu = 0.0;
+	  if (nt >= 2)
+	    {
+	      for (ip = 0; ip < nt - 2; ip++)
+		{
+		  dcu = dcu * T + cu;
+		  cu = cu * T + *pl++;
+		}
+	      a1 = *pl++;
+	      a0 = *pl++;
+	      sl += swi_mods3600(mosh_arg(a1, dh, dl) + (cu * T * T + a0));
+	      dsl += (dcu * T + 2.0 * cu) * T + a1;
+	    }
+	  else
+	    {
+	      for (ip = 0; ip < nt; ip++)
+		{
+		  dcu = dcu * T + cu;
+		  cu = cu * T + *pl++;
+		}
+	      sl += swi_mods3600(cu);
+	      dsl += dcu;
+	    }
+	  /* Latitude polynomial. */
+	  cu = *pb++;
+	  dcu = 0.0;
+	  for (ip = 0; ip < nt; ip++)
+	    {
+	      dcu = dcu * T + cu;
+	      cu = cu * T + *pb++;
+	    }
+	  sb += cu;
+	  dsb += dcu;
+	  /* Radius polynomial. */
+	  cu = *pr++;
+	  dcu = 0.0;
+	  for (ip = 0; ip < nt; ip++)
+	    {
+	      dcu = dcu * T + cu;
+	      cu = cu * T + *pr++;
+	    }
+	  sr += cu;
+	  dsr += dcu;
+	  continue;
+	}
+      k1 = 0;
+      cv = 0.0;
+      sv = 0.0;
+      w = 0.0;
+      for (ip = 0; ip < np; ip++)
+	{
+	  /* What harmonic.  */
+	  j = *p++;
+	  /* Which planet.  */
+	  m = *p++ - 1;
+	  if (j)
+	    {
+	      w += j * freqs[m];
+	      k = j;
+	      if (j < 0)
+		k = -k;
+	      k -= 1;
+	      su = ctx->plan_ss[m][k];	/* sin(k*angle) */
+	      if (j < 0)
+		su = -su;
+	      cu = ctx->plan_cc[m][k];
+	      if (k1 == 0)
+		{		/* set first angle */
+		  sv = su;
+		  cv = cu;
+		  k1 = 1;
+		}
+	      else
+		{		/* combine angles */
+		  t = su * cv + cu * sv;
+		  cv = cu * cv - su * sv;
+		  sv = t;
+		}
+	    }
+	}
+      w *= STR;
+      /* Highest power of T.  */
+      nt = *p++;
+      /* Longitude. */
+      cu = *pl++;
+      su = *pl++;
+      dcu = dsu = 0.0;
+      for (ip = 0; ip < nt; ip++)
+	{
+	  dcu = dcu * T + cu;
+	  dsu = dsu * T + su;
+	  cu = cu * T + *pl++;
+	  su = su * T + *pl++;
+	}
+      sl += cu * cv + su * sv;
+      dsl += dcu * cv + dsu * sv + w * (su * cv - cu * sv);
+      /* Latitiude. */
+      cu = *pb++;
+      su = *pb++;
+      dcu = dsu = 0.0;
+      for (ip = 0; ip < nt; ip++)
+	{
+	  dcu = dcu * T + cu;
+	  dsu = dsu * T + su;
+	  cu = cu * T + *pb++;
+	  su = su * T + *pb++;
+	}
+      sb += cu * cv + su * sv;
+      dsb += dcu * cv + dsu * sv + w * (su * cv - cu * sv);
+      /* Radius. */
+      cu = *pr++;
+      su = *pr++;
+      dcu = dsu = 0.0;
+      for (ip = 0; ip < nt; ip++)
+	{
+	  dcu = dcu * T + cu;
+	  dsu = dsu * T + su;
+	  cu = cu * T + *pr++;
+	  su = su * T + *pr++;
+	}
+      sr += cu * cv + su * sv;
+      dsr += dcu * cv + dsu * sv + w * (su * cv - cu * sv);
+    }
+  pobj[0] = STR * sl;
+  pobj[1] = STR * sb;
+  pobj[2] = STR * plan->distance * sr + plan->distance;
+  if (dobj != NULL) {
+    dobj[0] = STR * dsl / TIMESCALE;
+    dobj[1] = STR * dsb / TIMESCALE;
+    dobj[2] = STR * plan->distance * dsr / TIMESCALE;
+  }
+}
+
+int swi_moshplan2 (swe_ctx *ctx, double J, int iplm, double *pobj)
+{
+  moshplan2(ctx, J, iplm, pobj, NULL);
+  return OK;
+}
+#else
 int swi_moshplan2 (swe_ctx *ctx, double J, int iplm, double *pobj)
 {
   int i, j, k, m, k1, ip, np, nt;
@@ -267,6 +477,7 @@ int swi_moshplan2 (swe_ctx *ctx, double J, int iplm, double *pobj)
   pobj[2] = STR * plan->distance * sr + plan->distance;
   return OK;
 }
+#endif /* SWE_UPSTREAM_COMPAT */
 
 /* Moshier ephemeris.
  * computes heliocentric cartesian equatorial coordinates of
@@ -282,9 +493,12 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
 {
   int i;
   int do_earth = FALSE;
-  double dx[3], x2[3], xxe[6], xxp[6];
+  double xxe[6], xxp[6];
   double *xp, *xe;
+#ifdef SWE_UPSTREAM_COMPAT
+  double dx[3], x2[3];
   double dt; 
+#endif
   char s[AS_MAXCH];
   int iplm = pnoint2msh[ipli];
   struct plan_data *pdp = &ctx->pldat[ipli];
@@ -316,6 +530,27 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
 	  && pedp->iephe == SEFLG_MOSEPH) {
       xe = pedp->x;
     } else {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 51: the velocity was (x(t) - x(t - h)) / h, h =
+       * 8.64 s: the speed at t - h/2, its instants rounded at the JD's
+       * resolution and the series' own rounding divided by h -- ~3e-6 of
+       * the speed at -3000, which the light time (x - tau v) and the
+       * aberration carried into the apparent places (0.19 mas on
+       * Mercury, S ~ 250) and the osculating elements amplified. Now the
+       * series' derivative, and the Earth-Moon offset's rate from a
+       * central difference over exact instants. */
+      moshplan2(ctx, tjd, pnoint2msh[SEI_EMB], xe, xe + 3);
+      swi_polcart_sp(xe, xe);
+      swi_coortrf2(xe, xe, -seps2000, ceps2000);
+      swi_coortrf2(xe + 3, xe + 3, -seps2000, ceps2000);
+      embofs_mosh(ctx, tjd, xe);
+      embofs_mosh_rate(ctx, tjd, xe + 3);
+      if (do_save) {
+	pedp->teval = tjd;		  
+	pedp->xflgs = -1;
+	pedp->iephe = SEFLG_MOSEPH;
+      }
+#else
       /* emb */
       swi_moshplan2(ctx, tjd, pnoint2msh[SEI_EMB], xe); /* emb hel. ecl. 2000 polar */ 
       swi_polcart(xe, xe);			  /* to cartesian */
@@ -337,6 +572,7 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       for (i = 0; i <= 2; i++) {
 	xe[i+3] = dx[i];
       }
+#endif
     }
     if (xeret != NULL)
       for (i = 0; i <= 5; i++) 
@@ -351,6 +587,18 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
     if (tjd == pdp->teval && pdp->iephe == SEFLG_MOSEPH) {
       xp = pdp->x;
     } else { 
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 51: the series' derivative, see the Earth above */
+      moshplan2(ctx, tjd, iplm, xp, xp + 3);
+      swi_polcart_sp(xp, xp);
+      swi_coortrf2(xp, xp, -seps2000, ceps2000);
+      swi_coortrf2(xp + 3, xp + 3, -seps2000, ceps2000);
+      if (do_save) {
+	pdp->teval = tjd;/**/
+	pdp->xflgs = -1;
+	pdp->iephe = SEFLG_MOSEPH;
+      }
+#else
       swi_moshplan2(ctx, tjd, iplm, xp); 
       swi_polcart(xp, xp);
       swi_coortrf2(xp, xp, -seps2000, ceps2000);
@@ -372,6 +620,7 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       for (i = 0; i <= 2; i++) {
 	xp[i+3] = dx[i];
       }
+#endif
     }
     if (xpret != NULL)
       for (i = 0; i <= 5; i++)
@@ -491,6 +740,23 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
   for (i = 0; i <= 2; i++)
     xemb[i] -= xyz[i] / (EARTH_MOON_MRAT + 1.0);
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Subtracts the Earth-Moon offset's rate from vemb: a central difference
+ * over +-2^-8 day, exact instants for any JD below 2^44, divided by
+ * their actual distance. Over that step the short lunar series above is
+ * a parabola to 1.4e-12 AU/day (1e-10 of the Earth's speed). */
+static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb)
+{
+  double x1[3] = {0, 0, 0}, x2[3] = {0, 0, 0};
+  double t1 = tjd + 1.0 / 256, t2 = tjd - 1.0 / 256;
+  int i;
+  embofs_mosh(ctx, t1, x1);
+  embofs_mosh(ctx, t2, x2);
+  for (i = 0; i <= 2; i++)
+    vemb[i] += (x1[i] - x2[i]) / (t1 - t2);
+}
+#endif
 
 /* orbital elements of planets that are computed from osculating elements
  *   epoch

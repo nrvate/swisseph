@@ -85,6 +85,8 @@ worst were in code that had never executed even once.
 | 41 | Koch, Placidus and Gauquelin cusp speeds leave out the moving semi-arc; differenced systems use one second | Correctness | `swehouse.c` |
 | 42 | House speeds turn the ARMC at a constant rate and hold the obliquity still | Correctness | `swehouse.c` |
 | 43 | Sidereal house speeds are the tropical ones | Correctness | `swehouse.c` |
+| 50 | The Moshier series round their arguments at more time than a JD resolves | Correctness | `swemplan.c`, `swemmoon.c` |
+| 51 | The Moshier velocities are differences at rounded instants | Correctness | `swemplan.c`, `swemmoon.c`, `sweph.c` |
 
 ---
 
@@ -2521,6 +2523,104 @@ vernal point's distance is an acos near 1 and rough at 1e-8 deg, in the
 positions as well.
 
 G45; G24 `house_speed_off(1)`.
+
+## 50. The Moshier series round their arguments at more time than a JD resolves
+
+**Severity: Correctness (Mercury 3.9e-3 mas, the Moon 0.011 mas between consecutive JDs at -3000; S ~ 3-8)**
+**Where:** `swemplan.c`, `swi_moshplan2()`; `swemmoon.c`, `swi_moshmoon2()`, `mean_elements()`
+
+The planets' arguments were `freqs[i] * T` reduced modulo 360 degrees,
+T = (J - J2000) / 3652500, and Mercury's mean longitude its polynomial's
+`53810162857.6 * T` by Horner: at -3000 numbers of 2.7e10", each of three
+roundings (J - J2000, the division, the product) ~2e-6" and ~1.3e-10 day
+of the planet's motion, against the 1.2e-10 day a JD resolves there. The
+Moon's T, / 36525, rounds at 7e-15 century (2.6e-10 day) at -3000, which
+its mean elements, 1.7e9" a century, carried as 0.011 mas; their largest
+term, up to `1739232000.0 * fracT`, rounded at 1.2e-7" (2e-4 mas) besides.
+Over 64 consecutive JDs the geometric places scattered at S ~ 3-8
+(Mercury 3.9e-3 mas, Venus 1.7e-3, the Earth 1.1e-3 heliocentric).
+
+**Fix, as done here:** J - J2000 exactly as a two-sum dh + dl; each planet
+argument and Mercury's (every planet's) mean-longitude T term as
+rate * (dh + dl) / TIMESCALE with the product's error from `fma()` and the
+quotient's from its remainder, reduced before the small parts are added;
+the Moon's T with its rounding recovered the same way and the five mean
+elements advanced by their rates times it, and their `fracT` products
+reduced before their error is added. The values move by the roundings
+they carried, <= 1.2e-3 mas (planets, heliocentric). Over 64 JDs at -3000:
+Mercury 7e-7 mas, the Moon 7.5e-6 mas.
+
+G50 `tests/moshprec.c` check A (with entry 51). G24 `mosh_rough`: Mercury's
+geometric longitude over 64 JDs at -3000, 2.5e-7 mas shipped, 1.6e-3 compat.
+
+## 51. The Moshier velocities are differences at rounded instants
+
+**Severity: Correctness (~3e-6 of the speed at -3000; 0.13 mas between consecutive JDs on Mercury's apparent place, 45" on the osculating apogee, 9e-6 AU on Mars's osculating aphelion)**
+**Where:** `swemplan.c`, `swi_moshplan()`; `swemmoon.c`, `swi_moshmoon()`, `ecldat_equ2000()`; `sweph.c`, `lunar_osc_elem()`
+
+Every Moshier velocity was a finite difference: the planets and the Earth
+(x(t) - x(t - h)) / h with h = 8.64 s, the speed 4.32 s late (Mercury
+~1e-7 AU/day); the Moon central over +-4.32 s (bug 31). The instants
+t +- h round at the JD's resolution -- a bias of up to 2e-6 of the speed,
+the same for every JD of a binade -- and the series' own rounding (entry
+50) was divided by 1e-4 day: ~3e-6 of the speed from one JD to the next at
+-3000. The light time, x - tau v for Moshier, carried it into the apparent
+places (Mercury 0.13 mas between consecutive JDs, S ~ 250; fixed stars and
+True Citra 0.034 mas through the Earth's velocity in the aberration), and
+the osculating elements amplified it: the osculating apogee 4.5e4 mas, the
+true node's distance 1e-8 AU, `swe_nod_aps()`'s osculating Mars aphelion
+9.3e-6 AU, between consecutive JDs. Speeds against five-point differences
+of the positions: 1e-7..2.7e-5 deg/day. Two more things
+the noise had hidden: `lunar_osc_elem()` took the true node's and apogee's
+speeds over +-0.1 day "because here the node and apogee oscillate wildly"
+-- the oscillation was this noise, and the step's truncation was 1.5e-3
+deg/day on the apogee at -3000; and `ecldat_equ2000()` turned each of the
+Moon's samples at other instants (the speed's, the node's at +-speed_intv)
+with the cached obliquity of the date asked for, leaving its 6.2e-9 rad/day
+out of the Moon's speed (3.5e-7 deg/day) and, through the 5 degree
+inclination, 3.8e-6 deg/day out of the true node's.
+
+**Fix, as done here:** the planets' and the EMB's velocities are the series'
+derivative, term by term (C' cos A + S' sin A + A' (S cos A - C sin A),
+A' the sum of the term's frequencies); the Earth-Moon offset's rate is a
+central difference over +-2^-8 day (exact instants). The Moon's velocity
+is a five-point difference over +-2^-5 and +-2^-4 day, exact instants,
+truncation 9e-11 of the speed; each sample turned with its own date's
+obliquity, in the cache's model. The true node's and apogee's speeds use
++-2^-8 day on Moshier. Positions move only where they carried the speed:
+<= 0.24 mas on the planets' apparent places (the light time's x - tau v),
+<= 0.009 mas the Moon, up to 66 mas on the true node and 34" on the
+osculating apogee (their noise). Over 64 JDs at -3000: Mercury apparent
+3e-7 mas, the apogee 0.044 mas, the true node's distance 1e-14 AU, Mars's
+osculating aphelion 5e-15 AU, fixed stars and True Citra <= 4e-7 mas.
+Speeds against five-point differences, J2000 geometric: planets <= 1.3e-12
+deg/day, the Moon <= 5e-9; the true node <= 3.1e-8, the apogee <= 3.4e-6.
+Left: the apparent speeds still lack tau times the acceleration, as Moshier
+places a body at x - tau v rather than at t - tau (the Moon 4e-7 deg/day
+with aberration and 8e-5 without, Mercury heliocentric 5e-6 AU/day in its
+distance rate; entry 32 left the Moon's); and `SEFLG_SPEED3` still takes
+the node and apogee over 0.1 day, for every ephemeris.
+
+Against the Swiss files, 241 epochs -3000..3000, Sun..Pluto, Moon, true
+node, osculating apogee, geocentric apparent and topocentric equatorial:
+the rms position differences are unchanged to 1e-5" for every planet and
+the Moon, the apogee's 123.55" becomes 123.25", the true node's 72.7746"
+72.7752". Heliocentric J2000 speeds agree as well or better (Venus
+3.2e-6 to 1.9e-6 deg/day rms); Mercury's geocentric speed 2.37e-5 to
+2.56e-5: the theory runs ~19 s behind the files in position and velocity
+alike (a fit of x_S - x_M against v_M: -19 s Mercury, -20 s Venus, -25 s
+the Earth), and the old 4.32 s lag leaned the same way by chance.
+
+G50 `tests/moshprec.c`: A, at -3000 and 1300, 64 consecutive JDs, Mercury
+geometric and apparent, the Moon, the osculating apogee, the true node's
+distance and Mars's osculating aphelion; B, at -2500, 1 and 2000, the
+planets', Moon's and Earth's speeds against five-point differences (<= 1e-7
+deg/day), the true node's (< 1e-7) and apogee's (< 1e-5). The upstream
+build fails all 21. G24 `mosh_speed_off`: the Moon's and Mercury's J2000
+geometric speeds at -2500, 8.3e-10 deg/day shipped, 7.2e-6 compat.
+Baselines: G1's Moshier rows move (speeds by up to ~5e-5 deg/day, apparent
+positions by up to 0.24 mas, the true node and osculating apogee by their
+noise); not yet classified here.
 
 ## How these were found
 

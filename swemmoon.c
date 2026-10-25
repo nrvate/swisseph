@@ -680,9 +680,31 @@ static const double mean_apsis_corr[] = {
 int swi_moshmoon2(swe_ctx *ctx, double J, double *pol)
 {
 int i;
+#ifndef SWE_UPSTREAM_COMPAT
+double dh, dl, bb, Tlo;
+/* Upstream bug 50: T = (J - J2000) / 36525 rounds at 7e-15 century at
+ * -3000, 2.6e-10 day, more than twice what the JD resolves; the Moon's
+ * mean elements, 1.7e9" a century, carried it as 0.011 mas of noise
+ * between consecutive JDs (S ~ 2). The day count is taken exactly
+ * (two-sum), T's rounding recovered from its remainder, and the
+ * elements advanced by their rates times it. */
+dh = J - J2000;
+bb = dh - J;
+dl = (J - (dh - bb)) + (-J2000 - bb);
+ctx->moon.T = dh / 36525.0;
+Tlo = (fma(-ctx->moon.T, 36525.0, dh) + dl) / 36525.0;
+ctx->moon.T2 = ctx->moon.T*ctx->moon.T;
+mean_elements(ctx);
+ctx->moon.M += 129596581.038354 * Tlo;
+ctx->moon.NF += 1739527262.8904 * Tlo;
+ctx->moon.MP += 1717915923.2692 * Tlo;
+ctx->moon.D += 1602961601.8566 * Tlo;
+ctx->moon.SWELP += 1732564372.1541 * Tlo;
+#else
 ctx->moon.T = (J-J2000)/36525.0;
 ctx->moon.T2 = ctx->moon.T*ctx->moon.T;
 mean_elements(ctx);
+#endif
 mean_elements_pl(ctx);
 moon1(ctx);
 moon2(ctx);
@@ -701,7 +723,10 @@ return(0);
 int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char *serr) 
 {
   int i;
-  double b, x1[6], x2[6], t;
+  double x1[6], x2[6];
+#ifdef SWE_UPSTREAM_COMPAT
+  double b, t;
+#endif
   double xx[6], *xpm;
   struct plan_data *pdp = &ctx->pldat[SEI_MOON];
   char s[AS_MAXCH];
@@ -740,6 +765,31 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
    * Besides, this helps to keep the program structure simpler 
    */
   ecldat_equ2000(ctx, tjd, xpm);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 51: the speed was a central difference over +-4.32 s.
+   * Its instants round at the JD's resolution, a bias of a few 1e-6 of
+   * the speed (tjd + 0.00005 rounds alike for every tjd in a binade),
+   * and it divided the series' rounding by 1e-4 day: 2.4e-6 of the speed
+   * from one JD to the next at -3000, which the osculating apogee
+   * amplified into 45" jumps and the true node into 1e-8 AU. Now a
+   * five-point difference over +-2^-5 and +-2^-4 day, instants exact for
+   * any JD below 2^37: its truncation, (w h)^4 / 30 with w the Moon's
+   * 0.23 rad/day, is 9e-11 of the speed, and the series' last bits
+   * (2e-13 day at -3000, bug 50) are divided by 0.03 day, not 5e-5. */
+  {
+    double xa[6], xb[6], h = 1.0 / 32;
+    swi_moshmoon2(ctx, tjd + h, x1);
+    ecldat_equ2000(ctx, tjd + h, x1);
+    swi_moshmoon2(ctx, tjd - h, x2);
+    ecldat_equ2000(ctx, tjd - h, x2);
+    swi_moshmoon2(ctx, tjd + 2 * h, xa);
+    ecldat_equ2000(ctx, tjd + 2 * h, xa);
+    swi_moshmoon2(ctx, tjd - 2 * h, xb);
+    ecldat_equ2000(ctx, tjd - 2 * h, xb);
+    for (i = 0; i <= 2; i++)
+      xpm[i+3] = (8 * (x1[i] - x2[i]) - (xa[i] - xb[i])) / (12 * h);
+  }
+#else
   /* speed */
   /* from 2 other positions. */
   /* one would be good enough for computation of osculating node, 
@@ -755,19 +805,13 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
     xpm[i+3] = (x1[i] - x2[i]) / MOON_SPEED_INTV / 2;
 #else
     b = (x1[i] - x2[i]) / 2;
-#ifndef SWE_UPSTREAM_COMPAT
-    /* Upstream bug 31: x2, xpm, x1 are at t - dt, t, t + dt; b is the
-     * parabola's slope at t, 2 a + b its slope at t + dt, the Moon's
-     * velocity 4.32 s late. */
-    xpm[i+3] = b / MOON_SPEED_INTV;
-#else
     {
       double a = (x1[i] + x2[i]) / 2 - xpm[i];
       xpm[i+3] = (2 * a + b) / MOON_SPEED_INTV;
     }
 #endif
-#endif
   }
+#endif
   if (xpmret != NULL)
     for (i = 0; i <= 5; i++)
       xpmret[i] = xpm[i];
@@ -1336,7 +1380,22 @@ static void ecldat_equ2000(swe_ctx *ctx, double tjd, double *xpm) {
   /* cartesian */
   swi_polcart(xpm, xpm);
   /* equatorial */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 51: the cache holds the obliquity of the date asked
+   * for, and every other instant -- the speed's samples, the true node's
+   * and apogee's at +-speed_intv -- was turned with it, though precessed
+   * from its own date: the obliquity's 6.2e-9 rad/day went missing from
+   * the Moon's speed (3.5e-7 deg/day) and, through the 5 deg
+   * inclination, 3.8e-6 deg/day from the true node's. Each instant now
+   * has its own, in the cache's model. */
+  if (ctx->oec.teps != tjd) {
+    double eps = swi_epsiln(ctx, tjd, ctx->oec.epsflag);
+    swi_coortrf2(xpm, xpm, -sin(eps), cos(eps));
+  } else
+    swi_coortrf2(xpm, xpm, -ctx->oec.seps, ctx->oec.ceps);
+#else
   swi_coortrf2(xpm, xpm, -ctx->oec.seps, ctx->oec.ceps);
+#endif
   /* j2000 */
   swi_precess(ctx, xpm, tjd, 0, J_TO_J2000);/**/
 }
@@ -1366,12 +1425,28 @@ void swi_mean_lunar_elements(swe_ctx *ctx, double tjd,
   *peri = swe_degnorm(*peri - dcor);
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 50: the elements' largest term, up to 1.7e9" * fracT,
+ * rounded at 1.2e-7" (2e-4 mas, 5e-12 day of the Moon's motion); with
+ * the Moon's speed a difference over 0.03 day that was 1.5e-10 of it,
+ * and 1 mas on the osculating apogee. The product is now reduced first
+ * and its rounding error added after. */
+static double mosh_prod(double a, double b)
+{
+  double p = a * b;
+  return swi_mods3600(p) + fma(a, b, -p);
+}
+#define MOSH_PROD(a, b)	mosh_prod(a, b)
+#else
+#define MOSH_PROD(a, b)	((a) * (b))
+#endif
+
 static void mean_elements(swe_ctx *ctx)
 {
 double fracT = fmod(ctx->moon.T, 1);
 /* Mean anomaly of sun = l' (J. Laskar) */
 /*M =  swi_mods3600(129596581.038354 * T +  1287104.76154);*/
-ctx->moon.M =  swi_mods3600(129600000.0 * fracT - 3418.961646 * ctx->moon.T +  1287104.76154);
+ctx->moon.M =  swi_mods3600(MOSH_PROD(129600000.0, fracT) - 3418.961646 * ctx->moon.T +  1287104.76154);
 ctx->moon.M += ((((((((
   1.62e-20 * ctx->moon.T
 - 1.0390e-17 ) * ctx->moon.T
@@ -1384,16 +1459,16 @@ ctx->moon.M += ((((((((
 - 0.552891801772 ) * ctx->moon.T2;
 /* Mean distance of moon from its ascending node = F */
 /*NF = swi_mods3600((1739527263.0983 - 2.079419901760e-01) * T + 335779.55755);*/
-ctx->moon.NF = swi_mods3600(1739232000.0 * fracT + 295263.0983 * ctx->moon.T - 2.079419901760e-01 * ctx->moon.T + 335779.55755);
+ctx->moon.NF = swi_mods3600(MOSH_PROD(1739232000.0, fracT) + 295263.0983 * ctx->moon.T - 2.079419901760e-01 * ctx->moon.T + 335779.55755);
 /* Mean anomaly of moon = l */
 /*MP = swi_mods3600((1717915923.4728 - 2.035946368532e-01) * T +  485868.28096);*/
-ctx->moon.MP = swi_mods3600(1717200000.0 * fracT + 715923.4728 * ctx->moon.T - 2.035946368532e-01 * ctx->moon.T +  485868.28096);
+ctx->moon.MP = swi_mods3600(MOSH_PROD(1717200000.0, fracT) + 715923.4728 * ctx->moon.T - 2.035946368532e-01 * ctx->moon.T +  485868.28096);
 /* Mean elongation of moon = D */
 /*D = swi_mods3600((1602961601.4603 + 3.962893294503e-01) * T + 1072260.73512);*/
-ctx->moon.D = swi_mods3600(1601856000.0 * fracT + 1105601.4603 * ctx->moon.T + 3.962893294503e-01 * ctx->moon.T + 1072260.73512);
+ctx->moon.D = swi_mods3600(MOSH_PROD(1601856000.0, fracT) + 1105601.4603 * ctx->moon.T + 3.962893294503e-01 * ctx->moon.T + 1072260.73512);
 /* Mean longitude of moon, referred to the mean ecliptic and equinox of date */
 /*SWELP = swi_mods3600((1732564372.83264 - 6.784914260953e-01) * T +  785939.95571);*/
-ctx->moon.SWELP = swi_mods3600(1731456000.0 * fracT + 1108372.83264 * ctx->moon.T - 6.784914260953e-01 * ctx->moon.T +  785939.95571);
+ctx->moon.SWELP = swi_mods3600(MOSH_PROD(1731456000.0, fracT) + 1108372.83264 * ctx->moon.T - 6.784914260953e-01 * ctx->moon.T +  785939.95571);
 /* Higher degree secular terms found by least squares fit */
 ctx->moon.NF += ((z[2]*ctx->moon.T + z[1])*ctx->moon.T + z[0])*ctx->moon.T2;
 ctx->moon.MP += ((z[5]*ctx->moon.T + z[4])*ctx->moon.T + z[3])*ctx->moon.T2;
