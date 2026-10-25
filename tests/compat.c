@@ -4665,6 +4665,44 @@ static double star_topo_fallen_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 197: the Moon files missing (a directory of links to
+ * EPHE's others), Mars at 1500 Jan 5 with the fallback allowed, then
+ * swe_set_ephe_fallback_r(0) and the same call in the same context, its
+ * return: the save area answered it past bug 120's strict test, 258, where
+ * a fresh strict context refuses it; -1 now. The compat build has no bug
+ * 120 and answers both. */
+static double moshmoon_setting_ret(void)
+{
+  char dir[] = "/tmp/compatmsXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double x[6];
+  char serr[AS_MAXCH];
+  struct dirent *e;
+  DIR *d;
+  swe_ctx *c;
+  int32 r = -2;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return 1e9;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strncmp(e->d_name, "semo", 4) != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, dir);
+    swe_set_ephe_fallback_r(c, 1);
+    if (swe_calc_r(c, 2268936.5, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr) >= 0) {
+      swe_set_ephe_fallback_r(c, 0);
+      r = swe_calc_r(c, 2268936.5, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+    }
+    swe_ctx_free(c);
+  }
+  rm_dir(dir);
+  return r;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 with no JPL file set, the first call
  * against the second, deg, the larger of: a path whose de431.eph (the
  * default name) is de200.eph, and, after swe_close(), a path without
@@ -5095,7 +5133,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5231,6 +5269,7 @@ int main(int argc, char **argv)
   mmtopohel = moshmoon_topohel_ret();
   startopofb = star_topo_fallen_off();
   nodutfb = nodaps_ut_fallback_off();
+  mmsetting = moshmoon_setting_ret();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -6014,6 +6053,14 @@ int main(int argc, char **argv)
   else {
     printf("  TOPOCTR|HELCTR, semo missing, strict %.0f FAIL: expected %s\n",
            mmtopohel, WANT_DEFECT ? "32770" : "-1");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (mmsetting == (SEFLG_SWIEPH | SEFLG_SPEED)) : (mmsetting == -1))
+    printf("  semo missing, then strict, saved %.0f OK\n", mmsetting);
+  else {
+    printf("  semo missing, then strict, saved %.0f FAIL: expected %s\n",
+           mmsetting, WANT_DEFECT ? "258" : "-1");
     bad++;
   }
 

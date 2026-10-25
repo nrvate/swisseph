@@ -46,7 +46,22 @@
  *      the fallback allowed (answered). Before, the strict test read the
  *      centre off the caller's bits and answered from the Earth of
  *      Moshier's Moon (Mars at 1900 32770, 9e-10 deg off the files'), and
- *      the save area answered the SEFLG_TOPOCTR request after it.
+ *      the save area answered the SEFLG_TOPOCTR request after it;
+ *  (f) UPSTREAM-BUGS 197: in one context each call of (a) and (b), and
+ *      of rgSet (more that the save area can answer: Mars by
+ *      swe_calc_ut(), equatorial, with SEFLG_SPEED3 and in J2000, Ceres,
+ *      Cupido, the heliocentric Earth with its resolved flags), with the
+ *      fallback allowed, then swe_set_ephe_fallback_r(0) and the call
+ *      again, and the other way round: the second answer's return and place
+ *      bit for bit a fresh context's with the final setting (and (a)'s and
+ *      rgSet's refused when strict). Before, a save-area hit skipped bug
+ *      120's test: after the setting went strict, Mars at 1500 answered 258
+ *      where a fresh strict context refuses (-1);
+ *  (g) the same through the shared configuration: a second thread's
+ *      default context computes Mars, the Sun and swe_calc_ut()'s Jupiter
+ *      with the fallback allowed, the main thread calls
+ *      swe_set_ephe_fallback(0), the thread asks again (refused, as a fresh
+ *      strict context), then (1) and again (a fresh allowing context's).
  * A refusal is ret < 0 with "Moshier" in serr (this entry's message, or
  * the true node's own downgrade). Measured: 472 checks, none fail; (c)'s
  * Moon 1.5e-11 deg off SEFLG_MOSEPH's, its planets 3.4e-8 deg off the
@@ -57,12 +72,19 @@
  * fail: (a)'s three combined rows, 12 fresh and 24 warm, and (e)'s 8
  * strict; the SWE_UPSTREAM_COMPAT build 212 (160 of the 372 before, with
  * the topocentric rows' lost note of (c)).
+ * (f) and (g) are 260 of the 732 rows. The build before bug 197's fix
+ * fails 52: per instant the strict rows of (f) the save area answered
+ * (the Sun, Mars geocentric and topocentric, and the seven of rgSet:
+ * 258 for Mars where a fresh strict context gives -1), and (g)'s three
+ * strict rows. The SWE_UPSTREAM_COMPAT build fails 308, 96 of them new
+ * ((f)'s and (g)'s strict rows but the true node's: it has no bug 120).
  * Run as
  *   moonfile EPHEDIR
  */
 #include <dirent.h>
 #include <limits.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -104,6 +126,18 @@ static const struct { const char *sz; int kind, ipl; int32 fl; } rgInd[] = {
   {"Aldebaran, heliocentric", STAR2, 0, SEFLG_SWIEPH | SEFLG_HELCTR},
   {"orbit about the Sun, helioc.", ORBEL_S, 0, SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_SPEED},
 };
+/* (f): more calls the save area answers, all seen from the Earth */
+static const struct { const char *sz; int kind, ipl; int32 fl; } rgSet[] = {
+  {"Mars, swe_calc_ut()", CALC_UT, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED},
+  {"Mars, equatorial, no speed", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_EQUATORIAL},
+  {"Mars, SEFLG_SPEED3", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED3},
+  {"Mars, J2000", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_J2000 | SEFLG_NONUT | SEFLG_SPEED},
+  {"Ceres", CALC, SE_CERES, SEFLG_SWIEPH | SEFLG_SPEED},
+  {"Cupido", CALC, SE_CUPIDO, SEFLG_SWIEPH | SEFLG_SPEED},
+  {"Earth, heliocentric, resolved", CALC, SE_EARTH,
+   SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_NOABERR | SEFLG_NOGDEFL | SEFLG_SPEED},
+};
+#define NSET ((int) (sizeof rgSet / sizeof rgSet[0]))
 /* (e): SEFLG_TOPOCTR with another centre, then SEFLG_TOPOCTR (bug 194) */
 static const struct { const char *sz; int ipl; int32 ctr; } rgComb[] = {
   {"Mars, TOPOCTR | HELCTR, then TOPOCTR", SE_MARS, SEFLG_HELCTR},
@@ -134,6 +168,10 @@ static struct ans ask(swe_ctx *c, int kind, int ipl, int32 fl, double jd)
   struct ans a;
   char star[64] = "Aldebaran";
   memset(&a, 0, sizeof a);
+  if (c == NULL) {	/* the default context, (g) */
+    a.r = kind == CALC_UT ? swe_calc_ut(jd, ipl, fl, a.x, a.serr) : swe_calc(jd, ipl, fl, a.x, a.serr);
+    return a;
+  }
   switch (kind) {
     case CALC: a.r = swe_calc_r(c, jd, ipl, fl, a.x, a.serr); break;
     case CALC_UT: a.r = swe_calc_ut_r(c, jd, ipl, fl, a.x, a.serr); break;
@@ -209,6 +247,61 @@ static void unbuild(const char *dir)
     }
   closedir(d);
   rmdir(dir);
+}
+
+/* (g): a second thread's default context, the main thread's setting */
+static const struct { const char *sz; int kind, ipl; } rgThr[] = {
+  {"Mars, thread", CALC, SE_MARS},
+  {"Sun, thread", CALC, SE_SUN},
+  {"Jupiter, swe_calc_ut(), thread", CALC_UT, SE_JUPITER},
+};
+#define NTHR ((int) (sizeof rgThr / sizeof rgThr[0]))
+struct job { double jd; struct ans a[3][NTHR]; pthread_barrier_t b; };
+
+static void *worker(void *arg)
+{
+  struct job *j = arg;
+  int ph, k;
+  for (ph = 0; ph < 3; ph++) {
+    if (ph > 0) {
+      pthread_barrier_wait(&j->b);	/* asked: the main thread sets */
+      pthread_barrier_wait(&j->b);	/* set */
+    }
+    for (k = 0; k < NTHR; k++)
+      j->a[ph][k] = ask(NULL, rgThr[k].kind, rgThr[k].ipl, SEFLG_SWIEPH | SEFLG_SPEED, j->jd);
+  }
+  return NULL;
+}
+
+static void shared(const char *dir, double jd)
+{
+  static const int fb[3] = {1, 0, 1};
+  pthread_t th;
+  struct job j;
+  int ph, k;
+  j.jd = jd;
+  pthread_barrier_init(&j.b, NULL, 2);
+  swe_set_ephe_path((char *) dir);
+  swe_set_topo(8.55, 47.37, 400);
+  swe_set_ephe_fallback(1);
+  if (pthread_create(&th, NULL, worker, &j) != 0) {
+    check(0, "g", "pthread_create", jd, &j.a[0][0], "no thread");
+    return;
+  }
+  for (ph = 1; ph < 3; ph++) {
+    pthread_barrier_wait(&j.b);
+    swe_set_ephe_fallback(fb[ph]);
+    pthread_barrier_wait(&j.b);
+  }
+  pthread_join(th, NULL);
+  pthread_barrier_destroy(&j.b);
+  for (ph = 0; ph < 3; ph++)
+    for (k = 0; k < NTHR; k++) {
+      struct ans ref = ask_fresh(dir, fb[ph], rgThr[k].kind, rgThr[k].ipl, SEFLG_SWIEPH | SEFLG_SPEED, jd);
+      check(same(&j.a[ph][k], &ref) && (fb[ph] ? j.a[ph][k].r >= 0 : refused(&j.a[ph][k])),
+            fb[ph] ? "g allowed" : "g strict", rgThr[k].sz, jd, &j.a[ph][k],
+            "not a fresh context's with the setting");
+    }
 }
 
 int main(int argc, char **argv)
@@ -297,6 +390,26 @@ int main(int argc, char **argv)
             fb ? "e fallback" : "e", rgComb[k % NCOMB].sz, jd, &t,
             "SEFLG_TOPOCTR after it not as in a fresh context");
     }
+    /* (f) bug 197: the setting changed in the context that answered */
+    for (k = 0; k < 2 * (NDEP + NIND + NSET); k++) {
+      int fb0 = k / (NDEP + NIND + NSET), r = k % (NDEP + NIND + NSET);
+      int dep = r < NDEP || r >= NDEP + NIND, q = r - NDEP - NIND;
+      int kind = r < NDEP ? rgDep[r].kind : dep ? rgSet[q].kind : rgInd[r - NDEP].kind;
+      int ipl = r < NDEP ? rgDep[r].ipl : dep ? rgSet[q].ipl : rgInd[r - NDEP].ipl;
+      int32 fl = r < NDEP ? rgDep[r].fl : dep ? rgSet[q].fl : rgInd[r - NDEP].fl;
+      const char *sz = r < NDEP ? rgDep[r].sz : dep ? rgSet[q].sz : rgInd[r - NDEP].sz;
+      struct ans a, ref;
+      w = open_ctx(dir, !fb0);
+      (void) ask(w, kind, ipl, fl, jd);
+      swe_set_ephe_fallback_r(w, fb0);
+      a = ask(w, kind, ipl, fl, jd);
+      swe_ctx_free(w);
+      ref = ask_fresh(dir, fb0, kind, ipl, fl, jd);
+      check(same(&a, &ref) && (fb0 || !dep || refused(&a)), fb0 ? "f, then allowed" : "f, then strict",
+            sz, jd, &a, "not a fresh context's with the setting");
+    }
+    /* (g) bug 197: the setting adopted from another thread */
+    shared(dir, jd);
   }
   unbuild(dir);
   printf("  rows %d, failed %d; fallback: the Moon %.2e deg off SEFLG_MOSEPH's, the others %.2e deg off the files'\n",

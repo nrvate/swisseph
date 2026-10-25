@@ -561,14 +561,34 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 #else
   if (sd->tsave == tjd && tjd != 0 && ipl == sd->ipl && iplmoon == 0) {
 #endif
-    if ((sd->iflgsave & ~SEFLG_COORDSYS) == (iflag & ~SEFLG_COORDSYS)) 
+    if ((sd->iflgsave & ~SEFLG_COORDSYS) == (iflag & ~SEFLG_COORDSYS)) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 197: a hit skipped bug 120's strict test below, which
+       * had read the setting of the call that filled the area. The semo
+       * files missing, Mars at 1500 with the fallback allowed answered 258,
+       * and after swe_set_ephe_fallback(0) (or another thread's setting,
+       * adopted) the same request answered 258 from here, where a fresh
+       * strict context refuses it (-1): the geocentric and topocentric
+       * planets, the Sun, an asteroid, a fictitious body, swe_calc_ut()
+       * too. The area keeps whether its answer depends on Moshier's Moon,
+       * and a hit takes the test with this call's setting. */
+      if (sd->moshmoon) {
+        ctx->moshmoon_used = TRUE;
+        if (swi_refuse_moshmoon(ctx, tjd, serr)) {
+          sd->tsave = SWI_TJD_NEVER;	/* as the refusal below leaves it */
+          goto return_error;
+        }
+      }
+#endif
       goto end_swe_calc;
+    }
   }
-  /* 
-   * otherwise, new position must be computed 
+  /*
+   * otherwise, new position must be computed
    */
 #ifndef SWE_UPSTREAM_COMPAT
   ctx->moshmoon_used = FALSE;	/* bug 120 */
+  sd->moshmoon = FALSE;		/* bug 197 */
 #endif
   if (!use_speed3) {
     /* 
@@ -700,6 +720,7 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     }
     if (ipl == SE_MOON)
       sd->iflgsave = (sd->iflgsave & ~SEFLG_EPHMASK) | SEFLG_MOSEPH;
+    sd->moshmoon = TRUE;	/* bug 197: a hit takes the test again */
   }
 #endif
   end_swe_calc:

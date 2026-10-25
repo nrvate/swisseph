@@ -1483,6 +1483,10 @@ struct epsilon {
  *     across it: 2.1e-3 to 8.1e-3 deg/day with IAU 1976 under Vondrak, the
  *     sidereal ones 5.1e-3 (the compat build's speeds are upstream's, at
  *     ARMCS: 2.9e-5 on equal houses there) (UPSTREAM-BUGS 187, G139, G24)
+ *   - a save-area answer whose Moon is Moshier's, the Moon files missing,
+ *     answered after the setting went strict (bug 120 is not in this build
+ *     either): Mars at 1500 with the fallback allowed, then
+ *     swe_set_ephe_fallback(0), 258 (UPSTREAM-BUGS 197, G117, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1700,7 +1704,13 @@ struct save_positions {
    *    and equatorial cartesian coordinates (offset 18).
    * 6 doubles each for position and speed coordinates.
    */
-  double xsaves[24];    
+  double xsaves[24];
+#ifndef SWE_UPSTREAM_COMPAT
+  /* the answer depends on a Moon from Moshier, the semo file missing, and
+   * passed bug 120's strict test because the fallback was allowed: a hit
+   * takes the test again (UPSTREAM-BUGS 197) */
+  AS_BOOL moshmoon;
+#endif
 };
 
 struct node_data {

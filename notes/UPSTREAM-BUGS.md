@@ -225,6 +225,7 @@ worst were in code that had never executed even once.
 | 181 | The long-term sidereal time (this fork's, entry 29) integrates the precession of each instant through a short-term model's window edges, where the table's nodes take the step over 100 days: with IAU 1976 and Vondrak ("0,9,1") +24.0" at every date before 1700, +50.8" at 1776 and -22.2" at 2215 against "0,9,9", whose model holds there; with IAU 2006 ("0,9,8") 1143" at -5550; the topocentric Moon's speed 1.9e-8 deg/day off | Correctness | `swephlib.c`, `sweph.h` |
 | 186 | `lunar_osc_elem()` puts the Moon at each epoch of the true node's and osculating apogee's five-point speed into the frame of date at that epoch, so within 1/32 day of a short-term precession window's edge the difference took the frame's step: with IAU 1976 under Vondrak ("0,9,1") on JPL and the Swiss files the node's speed 2.90e-3 deg/day off at J2000 - 2 centuries and 4.29e-3 at + 2, the apogee's 5.96e-3 and 6.49e-3; with IAU 2006 ("0,9,8") at -+ 75 centuries 7.90 and 0.68 | Correctness | `sweph.c`, `swephlib.c` |
 | 187 | `swe_houses_ex2()`'s cusp and ascmc speeds take the ARMC's, the obliquity's and the sidereal houses' ayanamsa's and auxiliary frames' rates as differences 1/64 day either side, across a short-term precession window's edge within 1/64 day of it: every speed 2.1e-3 to 8.1e-3 deg/day off with IAU 1976 under Vondrak (4.65e-5 with the IERS 2010 sidereal time, the obliquity's step alone), sidereal 3.9e-3 to 5.1e-3, 0.58 with IAU 2006 at 75 centuries | Correctness | `swehouse.c` |
+| 197 | A save-area answer skips entry 120's strict test, which read the setting of the call that filled the area: the semo files missing, Mars at 1500 answered 258 with the fallback allowed and again 258 from the area after `swe_set_ephe_fallback(0)` (or another thread's setting adopted), where a fresh strict context refuses it (-1); every Earth-seen body the area answers, `swe_calc_ut()` too | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -13424,6 +13425,84 @@ Noticed, not fixed:
   7.4e-6, 3.0e-5, 1.2e-4 and 4.8e-4 deg/day off the speed at h = 2^-10,
   2^-12, 2^-14 and 2^-16, growing as 1/h. Not this item's (likely the
   Sun's file segment joining there, as entry 75's Moon); left out of G139.
+
+## 197. A save-area answer skips entry 120's strict test: after `swe_set_ephe_fallback(0)` the same request in the same context answers from the Moon of Moshier, where a fresh strict context refuses it
+
+**Severity: Correctness (behaviour: an answer where the strict setting refuses, and one that depends on call order; the place the fallback's, 3.4e-8 deg off the files')**
+**Where:** `sweph.c`: `swe_calc_r_body()`, its save area and entry 120's test; `sweph.h`: `struct save_positions`
+
+Found by entry 194's work. Entry 120 refuses, under the strict setting,
+an answer that depends on a Moon taken from Moshier for want of the semo
+file. `swe_calc()` makes the test after it computes, and keeps the
+answer in the body's save area; a later request with the same instant and
+flags is answered from there and jumps past the test, which had read the
+setting of the call that filled the area. So in a directory without the
+semo files, Mars at 1500 (JD 2268923.5) with the fallback allowed
+answered 258, and after `swe_set_ephe_fallback_r(0)` the same request in
+the same context answered 258 again from the area, where a fresh strict
+context refuses it (-1, "Swiss (.se1) Moon file is not available ...").
+At 1500 and at 1338 (JD 2210000.25), every call the area can answer that
+is seen from the Earth did so: Mars geocentric (258; 2 without SEFLG_SPEED;
+2306 equatorial; 354 in J2000), topocentric (33026), with SEFLG_SPEED3
+(130), the Sun (258), Ceres (258), Cupido (258), the heliocentric Earth
+asked with its resolved flags (1802), and Mars by `swe_calc_ut()` (258),
+whose `swe_calc()` hits the area. The same through the shared
+configuration: a second thread's default context computed Mars with the
+fallback allowed, the main thread called `swe_set_ephe_fallback(0)`, and
+the thread's next Mars answered 258. A planet whose file is missing was
+refused already: its area holds SEFLG_MOSEPH, which no Swiss request
+matches, and `swi_refuse_downgrade()` runs on a hit too. The compat build
+has no entry 120 and answers all of them.
+
+Every other cache was looked at for an answer the setting should test
+again, and none holds one:
+- `sweplan()`'s saved Earth made from Moshier's Moon marks the call again
+  when reused (entry 120's `ctx->moshmoon_earth_t`): the star functions,
+  `swe_calc_orbel()` and a recomputed `swe_calc()` re-test, fresh or warm.
+- The Moon's own area holds SEFLG_MOSEPH with the fallback allowed, and
+  the true node's and osculating apogee's answers are flagged Moshier:
+  no Swiss request hits them, or the downgrade test refuses the hit.
+- The star caches keep the catalogue record, not a place.
+- The nutation, its interpolation and grid, the sidereal-time,
+  precession, delta-t and TDB memos, the observer and the heliacal memos
+  are functions of the instant, the models and their own inputs: nothing
+  of the ephemeris that answered or of the setting.
+- Adopting the setting (`swi_config_apply()`) invalidates nothing, as
+  entry 122 has it: the policy is read at each calculation, and now at
+  each hit too.
+
+**Fix, as done here:** the save area keeps whether its answer depends on
+Moshier's Moon (`sd->moshmoon`, set where entry 120's test let it
+through, cleared at each new computation), and a hit on such an answer
+takes entry 120's test with this call's setting: refused under the strict
+setting, with its message, and nothing left in the area (as the refusal
+of a computed answer leaves it); answered as before with the fallback
+allowed. Behind `#ifndef SWE_UPSTREAM_COMPAT`. The hot path's cost: one
+`perf stat -e instructions` count of `bench --rep 1`, calc-swieph
+12,390,697,055 before and 12,388,628,982 after, calc-moseph 23,354,782,857
+and 23,354,096,248.
+
+G117 `tests/moonfile.c` (f): in one context each call of (a) and (b) and
+seven more the area answers (Mars by `swe_calc_ut()`, equatorial without
+speed, with SEFLG_SPEED3 and in J2000; Ceres; Cupido; the heliocentric
+Earth with its resolved flags), with the fallback allowed, then
+`swe_set_ephe_fallback_r(0)` and the call again, and the other way round:
+the second answer's return and place bit for bit a fresh context's with
+the final setting, refused when strict. (g): a second thread's default
+context asks Mars, the Sun and Jupiter by `swe_calc_ut()` with the
+fallback allowed, then after the main thread's
+`swe_set_ephe_fallback(0)` (refused, as a fresh strict context) and
+`(1)` (a fresh allowing context's). 732 rows pass, 260 of them new;
+before the fix 52 fail (per instant (f)'s Sun, Mars geocentric and
+topocentric and the seven, and (g)'s three strict rows); the compat build
+308 (212 before, 96 new: (f)'s and (g)'s strict rows but the true node's).
+G24 `moshmoon_setting_ret`: Mars at 1500 Jan 5, the semo files missing,
+with the fallback allowed and then strict in the same context, the
+second return: -1 shipped, 258 compat (and shipped before the fix).
+
+Noticed, not fixed: with the fallback allowed a hit returns an empty serr
+where the computed answer had noted "using Moshier eph. for moon" (Mars
+at 1500, warm: '', fresh: the file-not-found message and the note).
 
 ## How these were found
 
