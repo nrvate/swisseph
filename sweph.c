@@ -421,7 +421,12 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
   } else  {
     epheflag = SEFLG_SWIEPH;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH) && serr != NULL
+      && swi_ephe_path_none(ctx)) {	/* bug 110 */
+#else
   if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH) && serr != NULL) {
+#endif
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_calc() or swe_calc_ut()");
   }
   if (ctx->last_epheflag != epheflag) {
@@ -803,7 +808,12 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
   }
   /* The ephemeris setup, as swe_calc() does it: warn without a path, then
    * resolve the ephemeris bits' precedence (JPL over Swiss over Moshier). */
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_init_swed_if_start(ctx) == 1 && !(iflag & SEFLG_MOSEPH) && serr != NULL
+      && swi_ephe_path_none(ctx)) {	/* bug 110 */
+#else
   if (swi_init_swed_if_start(ctx) == 1 && !(iflag & SEFLG_MOSEPH) && serr != NULL) {
+#endif
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_calc() or swe_calc_orbel()");
     goto return_error;
   }
@@ -2148,6 +2158,41 @@ void swi_ephe_path_name_first_use(swe_ctx *ctx)
   ctx->ephe_path_live = TRUE;
   ephe_path_read_moon(ctx);
   ctx->tid_acc = tid_acc;
+}
+#endif
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 110: a first call's "Please call swe_set_ephe_path() or
+ * swe_set_jplfile() before calling ..." was written whenever that call
+ * initialised the context, so with the files named by SE_EPHE_PATH, found
+ * along the default path, or set by another thread and adopted, the first
+ * swe_deltat_ex() and swe_get_ayanamsa_ex_ut() answered correctly with the
+ * warning in serr, and the first swe_calc_orbel() refused (-1) on it. It
+ * is due now only when no path is in effect: none set or adopted, no
+ * SE_EPHE_PATH, and none of the files -- the moon and planet files at
+ * J2000, the JPL file -- along the default path. Run on a first call
+ * only; naming the path (bug 107) is what the call would do next. */
+AS_BOOL swi_ephe_path_none(swe_ctx *ctx)
+{
+  char *sp = getenv("SE_EPHE_PATH");
+  char fname[AS_MAXCH];
+  FILE *fp;
+  if (ctx->jpl_file_is_open)
+    return FALSE;
+  if (ctx->ephe_path_is_set && !ctx->ephe_path_implicit)
+    return FALSE;			/* set, or adopted from the master */
+  if (sp != NULL && *sp != '\0' && strlen(sp) <= AS_MAXCH-1-13)
+    return FALSE;			/* as ephe_path_resolve() takes it */
+  swi_ephe_path_name_first_use(ctx);	/* the default path, the moon file */
+  if (ctx->fidat[SEI_FILE_MOON].fptr != NULL)
+    return FALSE;
+  swi_gen_filename(J2000, SEI_EARTH, fname);
+  if ((fp = swi_fopen(ctx, -1, fname, ctx->ephepath, NULL)) != NULL
+      || (fp = swi_fopen(ctx, -1, ctx->jplfnam, ctx->ephepath, NULL)) != NULL) {
+    fclose(fp);
+    return FALSE;
+  }
+  return TRUE;
 }
 #endif
 
@@ -4629,7 +4674,11 @@ static int32 get_ayanamsa(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
       || sid_mode == SE_SIDM_GALEQU_IAU1958 
       || sid_mode == SE_SIDM_GALEQU_TRUE
       || sid_mode == SE_SIDM_GALEQU_MULA) 
+#ifndef SWE_UPSTREAM_COMPAT
+      && serr != NULL && swi_ephe_path_none(ctx)) {	/* bug 110 */
+#else
       && serr != NULL) {
+#endif
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_get_ayanamsa_ex()");
   }
   if (!ctx->ayana_is_set)
@@ -10286,7 +10335,12 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     *serr = '\0';
   iflag = plaus_iflag(ctx, iflag, -1, tjd, serr);
   epheflag = iflag & SEFLG_EPHMASK;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH) && serr != NULL
+      && swi_ephe_path_none(ctx)) {	/* bug 110 */
+#else
   if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH) && serr != NULL) {
+#endif
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_fixstar() or swe_fixstar_ut()");
   }
   if (ctx->last_epheflag != epheflag) {
@@ -11568,7 +11622,12 @@ int32 CALL_CONV swe_time_equ_r(swe_ctx *ctx, double tjd_ut, double *E, char *ser
   double sidt = swe_sidtime_r(ctx, tjd_ut);
   int32 iflag = SEFLG_EQUATORIAL;
   iflag = plaus_iflag(ctx, iflag, -1, tjd_ut, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_init_swed_if_start(ctx) == 1 && !(iflag & SEFLG_MOSEPH) && serr != NULL
+      && swi_ephe_path_none(ctx)) {	/* bug 110 */
+#else
   if (swi_init_swed_if_start(ctx) == 1 && !(iflag & SEFLG_MOSEPH) && serr != NULL) {
+#endif
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_time_equ(), swe_lmt_to_lat() or swe_lat_to_lmt()");
   }
   if (ctx->jpl_file_is_open)
@@ -11847,7 +11906,12 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     *serr = '\0';
   iflag = plaus_iflag(ctx, iflag, -1, tjd, serr);
   epheflag = iflag & SEFLG_EPHMASK;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH) && serr != NULL
+      && swi_ephe_path_none(ctx)) {	/* bug 110 */
+#else
   if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH) && serr != NULL) {
+#endif
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_fixstar() or swe_fixstar_ut()");
   }
   if (ctx->last_epheflag != epheflag) {

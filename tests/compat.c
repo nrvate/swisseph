@@ -875,6 +875,45 @@ static double calc_ut_first_path_off(void)
   return v;
 }
 
+/* With the files named by SE_EPHE_PATH, how many of two first calls --
+ * swe_deltat_ex() and swe_calc_orbel(), each in a pristine forked child --
+ * write the "Please call swe_set_ephe_path()" warning into serr. Upstream
+ * writes it whenever the call initialises the context: 2, and
+ * swe_calc_orbel() refuses on it (UPSTREAM-BUGS 110). */
+static double path_warn_first_count(void)
+{
+  int k, n = 0;
+  for (k = 0; k < 2; k++) {
+    int fd[2];
+    char w = -1;
+    pid_t pid;
+    if (pipe(fd) != 0)
+      return -1;
+    fflush(stdout);
+    if ((pid = fork()) < 0)
+      return -1;
+    if (pid == 0) {
+      double x[6], el[6] = { 200, 0.387, 0.2056, 29, 48, 7.0 };
+      char serr[256] = "";
+      close(fd[0]);
+      setenv("SE_EPHE_PATH", EPHE, 1);
+      if (k == 0)
+        swe_deltat_ex(2451545.0, SEFLG_SWIEPH, serr);
+      else
+        swe_calc_orbel(2451545.0, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, SEFLG_SWIEPH, x, serr);
+      w = strstr(serr, "swe_set_ephe_path()") != NULL;
+      _exit(write(fd[1], &w, 1) == 1 ? 0 : 3);
+    }
+    close(fd[1]);
+    if (read(fd[0], &w, 1) != 1 || w < 0)
+      n = -100;
+    close(fd[0]);
+    waitpid(pid, NULL, 0);
+    n += w;
+  }
+  return n < 0 ? -1 : n;
+}
+
 /* Venus's limiting magnitude at humidity 80 % right after one at 40 %,
  * same instant and place, against the same request with the memos elsewhere
  * first, mag. Upstream's ka() and Deltam() memos are keyed on the Sun's
@@ -2233,7 +2272,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2241,6 +2280,7 @@ int main(int argc, char **argv)
 
   dtfirst = dt_userdef_first_off();   /* first: it needs a pristine library */
   dtpath = calc_ut_first_path_off();  /* so does this */
+  pathwarn = path_warn_first_count(); /* and this */
   nodmosh = nodaps_mosh_lat_off();
 
   contam = jplhor_contaminates();
@@ -2646,6 +2686,14 @@ int main(int argc, char **argv)
   else {
     printf("  first calc_ut, path    %.2e deg FAIL: expected %s\n",
            dtpath, WANT_DEFECT ? "> 1e-4" : "< 1e-12");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (pathwarn == 2) : (pathwarn == 0))
+    printf("  first-call path warning %.0f of 2 OK\n", pathwarn);
+  else {
+    printf("  first-call path warning %.0f of 2 FAIL: expected %s\n",
+           pathwarn, WANT_DEFECT ? "2" : "0");
     bad++;
   }
 

@@ -3149,7 +3149,10 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
      * which files are open. */
     if (epheflag & SEFLG_SWIEPH) denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
 #ifndef SWE_UPSTREAM_COMPAT
-    if ((swi_init_swed_if_start(ctx) == 1 || started) && !(epheflag & SEFLG_MOSEPH)) {
+    /* Upstream bug 110: the warning only when no path is in effect (see
+     * swi_ephe_path_none()), not on every first call */
+    if ((swi_init_swed_if_start(ctx) == 1 || started) && !(epheflag & SEFLG_MOSEPH)
+        && swi_ephe_path_none(ctx)) {
 #else
     if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH)) {
 #endif

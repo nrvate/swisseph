@@ -932,6 +932,11 @@ struct epsilon {
  *     eclipses, swe_utc_to_jd()'s leap seconds, swe_set_jpl_file() --
  *     read it along the compiled default path, and some read it again
  *     (8.6e-4 deg on the first Moon; UPSTREAM-BUGS 107, G106)
+ *   - a first call wrote "Please call swe_set_ephe_path() or
+ *     swe_set_jplfile() before ..." into serr whenever it initialised the
+ *     context, with SE_EPHE_PATH, files along the default path or another
+ *     thread's path in effect (swe_deltat_ex(), swe_get_ayanamsa_ex_ut();
+ *     swe_calc_orbel() refused on it; UPSTREAM-BUGS 110, G109)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -1810,6 +1815,10 @@ extern void swi_set_ephe_path_implicit(swe_ctx *ctx);
 /* Name that path, without closing anything, at the first file or moon
  * tidal term a context takes from it (UPSTREAM-BUGS 107). */
 extern void swi_ephe_path_name_first_use(swe_ctx *ctx);
+/* No path in effect: none set or adopted, no SE_EPHE_PATH, no file along
+ * the default path -- when a first call's "Please call
+ * swe_set_ephe_path()" warning is due (UPSTREAM-BUGS 110). */
+extern AS_BOOL swi_ephe_path_none(swe_ctx *ctx);
 #endif
 
 /* Shared configuration layer. Included here, after struct sid_data and

@@ -140,6 +140,7 @@ worst were in code that had never executed even once.
 | 102 | Moshier's light time holds the Sun still: v_S tau left out of every place without aberration and every heliocentric one | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 | 107 | With the files named by `SE_EPHE_PATH`, a first call that reads a file before `swe_calc()` names the path reads it along the compiled default path, and some read it twice: delta t, sidereal time, houses, stars, ayanamsa, eclipses, leap seconds, a JPL file | Correctness, performance | `sweph.c`, `swephlib.c`, `swedate.c` |
 | 108 | `swe_nod_aps()`'s osculating points turned by the frame bias twice and its EMB built with the AA's Earth-Moon ratio; `swe_get_orbital_elements()` takes the AA's GMs and gives Pluto Mercury's mass | Correctness | `swecl.c`, `sweph.c`, `sweph.h` |
+| 110 | A first call warns "Please call swe_set_ephe_path()" whenever it initialises the context, with a path in effect too: `swe_deltat_ex()` and `swe_get_ayanamsa_ex_ut()` answer correctly with the warning in serr, and `swe_calc_orbel()` refuses on it (that refusal this fork's) | Correctness (error reporting) | `sweph.c`, `swephlib.c`, `sweph.h` |
 
 ---
 
@@ -6541,6 +6542,53 @@ fail all 60 (80). G24 `nodaps_bias_off`: the Moon's apogee on Moshier,
 SEFLG_TRUEPOS, against SE_OSCU_APOG, 1.99e-12 deg shipped, 1.65e-6 compat;
 `orbel_pluto_off`: Pluto's a on Moshier against DE403's GMS + GM9, 0
 shipped, 2.03e-7 compat. G94, G74, G79, G86, G69, G38 pass.
+
+## 110. A first call warns "Please call swe_set_ephe_path()" whenever it initialises the context, with a path in effect too
+
+**Severity: Correctness (error reporting: a warning on a correct answer; `swe_calc_orbel()`, this fork's, refused)**
+**Where:** `sweph.c`: `swi_ephe_path_none()` (new), `swe_calc_r()`, `swe_calc_orbel_r()`, `get_ayanamsa()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `swe_time_equ_r()`; `swephlib.c`: `calc_deltat()`; `sweph.h`
+
+Seven sites write "Please call swe_set_ephe_path() or swe_set_jplfile()
+before calling ..." into serr, each when `swi_init_swed_if_start()`
+reports that this call initialised the context and the ephemeris is not
+Moshier -- whether or not a path is in effect. G109 makes 21 first calls,
+each in a fresh process, in three settings with a path: `SE_EPHE_PATH`
+naming the files; no `SE_EPHE_PATH` with the files in the current
+directory, where the default path starts (`.:/users/ephe2/:/users/ephe/`);
+and the path set by another thread, which the context adopts as it
+initialises. In all three:
+
+- `swe_deltat_ex(J2000, SEFLG_SWIEPH)` answered the built-in 63.83 s, correctly, with
+  the warning in serr;
+- `swe_get_ayanamsa_ex_ut()` answered correctly with that delta-t warning
+  in serr (return 2);
+- `swe_calc_orbel()` returned -1 on it: its warning is a `goto
+  return_error` (this fork's function).
+
+The other sites did not fire in this fork, the context being initialised
+before them: `swe_calc()`'s by the warning being overwritten on success,
+the star functions' by entry 98's first-use step, `swe_time_equ()`'s by
+its sidereal time's delta t (entry 107), and the star-mode ayanamsa's by
+`swe_set_sid_mode()`, a setter. Upstream (legacy-master) fails 24 of the
+84 G109 cases, `swe_calc()` too carrying the warning on its answer (return
+2), with `SE_EPHE_PATH` and with the files along the default path.
+
+**Fix, as done here** (behind `#ifndef SWE_UPSTREAM_COMPAT`): each of the
+seven sites also asks `swi_ephe_path_none()`, which says a path is in
+effect when the JPL file is open, a path was set or adopted (not implicit),
+`SE_EPHE_PATH` names one (as `ephe_path_resolve()` takes it), or the
+default path holds the moon file (read as the path is named, entry 107),
+the J2000 planet file or the JPL file. It runs on a context's first call
+only, after the initialisation test, so it costs nothing later. With no
+path at all the warning is as before: `swe_deltat_ex()`,
+`swe_get_ayanamsa_ex_ut()` and `swe_calc_orbel()` still carry it, and the
+rest answer with the missing file's own message, as before.
+
+G109 `tests/pathwarn.c`: with a path, every call answers with serr empty;
+with none, the three still warn: 84 pass. Before the fix 9 fail, the compat
+build 15 (entries 98 and 107 restored), the upstream build 24. G24
+`path_warn_first_count`: 0 of 2 shipped, 2 of 2 compat. G106, G102, G82,
+G90 and G24 pass.
 
 ## How these were found
 
