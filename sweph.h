@@ -1358,6 +1358,8 @@ struct epsilon {
  *   - SEFLG_JPLHOR_APPROX's yearly offset table interpolated backwards:
  *     the offset jumping up to 0.99 mas at every year from 1963 to 2011
  *     (UPSTREAM-BUGS 173, G141)
+ *   - the same for its obliquity table: the mean obliquity jumping up to
+ *     0.44 mas at every year from 1963 to 2011 (UPSTREAM-BUGS 182, G141)
  *   - the path setter and swe_close() reading the kept JPL file again only
  *     when its DE number had been read, not when swe_set_jpl_file() had
  *     named it and failed along the path then set: after a path without

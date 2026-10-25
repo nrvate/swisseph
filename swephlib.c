@@ -1263,7 +1263,15 @@ double swi_epsiln(swe_ctx *ctx, double J, int32 iflag)
 	t0 = (int) tofs;
 	t1 = t0 + 1;
 	dofs = dcor_eps_jpl[(int)t0];
+#ifndef SWE_UPSTREAM_COMPAT
+	/* Upstream bug 182: the difference the wrong way round, as bug 173's
+	 * in right ascension: each year ended at 2 v[t0] - v[t1] and the
+	 * obliquity's offset jumped by 2 (v[t1] - v[t0]) into the next, up to
+	 * 0.44 mas (1972, G141). Linear between the years' values now. */
+	dofs = (tofs - t0) * (dcor_eps_jpl[(int)t1] - dcor_eps_jpl[(int)t0]) + dcor_eps_jpl[(int)t0];
+#else
 	dofs = (tofs - t0) * (dcor_eps_jpl[(int)t0] - dcor_eps_jpl[(int)t1]) + dcor_eps_jpl[(int)t0];
+#endif
       }
       dofs /= (1000.0 * 3600.0);
       eps += dofs * DEGTORAD;

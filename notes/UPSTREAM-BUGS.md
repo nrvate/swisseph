@@ -194,6 +194,7 @@ worst were in code that had never executed even once.
 | 171 | An eop_finals.txt that breaks off (a day missing after those it adds) makes `load_dpsi_deps()` set -3, which `plaus_iflag()` takes as no IERS corrections at all: a complete eop_1962_today.txt is thrown away with it, against upstream's own comment ("no error, as we do have data"), and SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX, dpsi 4.20e-2" off on G134's fixtures | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 172 | A failed allocation of the IERS corrections' tables sets ERR, eop_1962_today.txt's "not found", so SEFLG_JPLHOR's warning names a missing file that had just been opened | Robustness (message) | `sweph.c`, `sweph.h` |
 | 173 | `swi_approx_jplhor()` interpolates the Horizons offset's yearly table backwards, (t - t0) (v[t0] - v[t1]) + v[t0]: the offset in right ascension jumps by 2 (v[t1] - v[t0]) at every year from 1963 to 2011, up to 0.99 mas (Polaris 2.87e-7 deg at 2006 Jul 1), its slope reversed between | Correctness | `swephlib.c` |
+| 182 | `swi_epsiln()` interpolates the Horizons approximation's yearly obliquity offset table backwards, as entry 173's in right ascension: the mean obliquity jumps by 2 (v[t1] - v[t0]) at every year from 1963 to 2011, up to 0.44 mas (1972 Jul 1), and the obliquity's rate is 1.2e-7 deg/day off the day after each | Correctness | `swephlib.c` |
 | 161 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, on a JPL file of DE 403 or later, `swi_bias()` puts the frame bias (23 mas) and the Horizons offset in right ascension (-51.26 mas) in from tjd >= 1962 Jan 20, where the precession and nutation change after it, and is given the instant the body was read at, the true Sun 0: over the light time after the step every body 1.1e-5 deg off (the true Sun at every date after it), at the step Polaris 4.95e-5 deg in right ascension, SEFLG_SPEED3 0.162 deg/day | Correctness | `sweph.c`, `swephlib.c` |
 | 162 | Under SEFLG_JPLHOR_APPROX (`SEMOD_JPLHORA_1`, and `_3` after 1962 Jan 20), on a JPL file of DE 403 or later, `swi_approx_jplhor()` turns the position about the pole by the Horizons offset in right ascension (-51 to -53 mas) and not the velocity: speeds off their places' rate, the Moon's latitude 1.46e-6 deg/day, its right ascension 5.6e-7, Mars's 1.25e-7, the Sun's latitude 1.02e-7; distance rates 7.2e-9 AU/day on Mars | Correctness | `swephlib.c` |
 | 164 | A JPL file whose `swe_set_jpl_file()` failed along the path then set, and a path where it is (or the file installed there and `swe_close()`): no DE number was read, so the path setter and the close read none, and the first UT JPL Moon in AD 1700 is 40.0057507520 deg and the second 40.0039614086, `swe_deltat()` 15.091463 s, where a fresh process given that path and the file answers 40.0039614086 twice and 3.012003 s -- on every thread and context | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
@@ -11884,6 +11885,34 @@ Noticed, not fixed:
   the quadratic still divides by 2 `NUT_SPEED_INTV` rather than the
   instants' own separation, rounded at the JD's resolution: 1.0e-10
   deg/day against the quadratic's derivative, near J2000 and far from it.
+
+## 182. The Horizons approximation's obliquity offset table is interpolated backwards too: the mean obliquity jumps up to 0.44 mas at every year from 1963 to 2011
+
+**Severity: Correctness (the obliquity under SEFLG_JPLHOR_APPROX, SEMOD_JPLHORA_1 at every date and SEMOD_JPLHORA_3 after 1962, up to 0.44 mas off and discontinuous at each year of the table; its rate 1.2e-7 deg/day off for a day after each)**
+**Where:** `swephlib.c`: `swi_epsiln()`
+
+Found by entry 163's agent. Under SEFLG_JPLHOR_APPROX, `swi_epsiln()` adds
+an offset to the mean obliquity from a yearly table, `dcor_eps_jpl[]`,
+from 1962 Jul 1 (`DCOR_EPS_JPL_TJD0`), interpolated as entry 173's offset
+in right ascension was: (t - t0) (v[t0] - v[t1]) + v[t0], so each year
+ended at 2 v[t0] - v[t1] and the offset jumped by 2 (v[t1] - v[t0]) into
+the next. SE_ECL_NUT's mean obliquity on de200 under SEMOD_JPLHORA_1, its
+second difference over 2^-10 day at 1972 Jul 1: 1.22e-7 deg (0.44 mas).
+`swi_obliquity_rate()`, a one-day difference, took the jump for a day:
+1.2e-7 deg/day. Both builds.
+
+**Fix, as done here:** linear between the years' values, behind
+`#ifndef SWE_UPSTREAM_COMPAT`. The second difference at the table's 49
+inner years is 2.0e-13 deg at most. The rate's one-day difference now
+straddles only the table's change of slope at a year, at most 6.8e-10
+deg/day (0.9 mas a year over a day), under the floor; left.
+
+G141 `tests/jplhorbias.c`, extended with 1 check: SE_ECL_NUT's mean
+obliquity (it has no speeds), its second difference over 2^-10 day at
+each of the 49 inner years' starts, within 1e-9 deg. 76 checks. Before
+the fix it fails (1.22e-7), and so in the compat build. G24
+`jplhora_eps_table_jump`: at 1972 Jul 1, 1.6e-13 deg shipped, 1.22e-7
+compat.
 
 ## How these were found
 

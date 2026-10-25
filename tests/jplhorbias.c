@@ -74,7 +74,15 @@
  * less 2^-9 day of their mean speed, the worst within 1e-9 deg: 2 checks,
  * 75 in all. Measured after the fix 2.9e-10 deg on Polaris (its own speed
  * over the 2^-9 day), 2.0e-12 on Mars; before it 2.87e-7 and 2.76e-7 at
- * 2006 Jul 1 (0.99 mas of offset), and so in the upstream build. Run as
+ * 2006 Jul 1 (0.99 mas of offset), and so in the upstream build.
+ *
+ * And the obliquity's (UPSTREAM-BUGS 182): swi_epsiln()'s yearly offset
+ * table under SEFLG_JPLHOR_APPROX, interpolated the same way round. The
+ * check: SE_ECL_NUT's mean obliquity (it has no speeds), its second
+ * difference over 2^-10 day at each of the 49 inner years' starts, within
+ * 1e-9 deg: 1 check, 76 in all. Measured after the fix 2.0e-13 deg;
+ * before it 1.22e-7 at 1972 Jul 1 (0.44 mas), and so in the upstream
+ * build. Run as
  *   jplhorbias EPHEDIR
  */
 #include <math.h>
@@ -282,6 +290,40 @@ static int speeds(swe_ctx *c3, swe_ctx *c1)
   return 0;
 }
 
+/* the obliquity's offset table across its years: no jump in the mean
+ * obliquity of SE_ECL_NUT, which has no speeds: its second difference over
+ * 2^-10 day at each year's start, where the offset's interpolation changes
+ * its interval (UPSTREAM-BUGS 182) */
+static int table_eps(swe_ctx *c1)
+{
+  const double e = ldexp(1, -10);
+  double w = 0, wt = 0, x[6], y[6], z[6];
+  char serr[256];
+  int k;
+  for (k = 1; k <= 49; k++) {
+    double b = 2437846.5 + k * 365.25, d;	/* DCOR_EPS_JPL_TJD0 + k years */
+    if (swe_calc_r(c1, b - e, SE_ECL_NUT, FL, x, serr) < 0
+        || swe_calc_r(c1, b, SE_ECL_NUT, FL, z, serr) < 0
+        || swe_calc_r(c1, b + e, SE_ECL_NUT, FL, y, serr) < 0) {
+      printf("  ERROR SE_ECL_NUT at %.2f: %s\n", b, serr);
+      return -1;
+    }
+    d = fabs(y[1] - 2 * z[1] + x[1]);
+    if (d > w) {
+      w = d;
+      wt = b;
+    }
+  }
+  printf("  182: the obliquity's offset across its table's years, SEMOD_JPLHORA_1\n");
+  printf("    mean obliquity    worst jump %.2e deg at JD %.2f\n", w, wt);
+  n++;
+  if (!(w <= 1e-9)) {
+    bad++;
+    printf("    FAIL mean obliquity: the offset jumps %.2e deg > 1e-9\n", w);
+  }
+  return 0;
+}
+
 /* the offset's table across its years: no jump in the place */
 static int table(swe_ctx *c1)
 {
@@ -328,6 +370,8 @@ int main(int argc, char **argv)
     r = speeds(c3, c1);
   if (r == 0)
     r = table(c1);
+  if (r == 0)
+    r = table_eps(c1);
   if (c3 != NULL)
     swe_ctx_free(c3);
   if (c1 != NULL)

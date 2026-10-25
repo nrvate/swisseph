@@ -3707,6 +3707,31 @@ static double jplhora_table_jump(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 182: SE_ECL_NUT's mean obliquity on de200 with
+ * SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_1, its second difference over
+ * 2^-10 day at 1972 Jul 1, a year of the obliquity's offset table,
+ * degrees: interpolated backwards, the offset jumped 0.44 mas there
+ * (1.22e-7 deg); 1.6e-13 now. */
+static double jplhora_eps_table_jump(void)
+{
+  const double b = 2437846.5 + 10 * 365.25, e = ldexp(1, -10);
+  const int32 ja = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX;
+  double x[6], y[6], z[6], r = -1;
+  char serr[256], m1[] = "0,0,0,0,0,0,1,0";
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return r;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_jpl_file_r(c, "de200.eph");
+  swe_set_astro_models_r(c, m1, 0);
+  if (swe_calc_r(c, b - e, SE_ECL_NUT, ja, x, serr) >= 0
+      && swe_calc_r(c, b, SE_ECL_NUT, ja, z, serr) >= 0
+      && swe_calc_r(c, b + e, SE_ECL_NUT, ja, y, serr) >= 0)
+    r = fabs(y[1] - 2 * z[1] + x[1]);
+  swe_ctx_free(c);
+  return r;
+}
+
 static double jplhora_bias_side_off(int star)
 {
   const double ts = 2437684.5, e = ldexp(1, -20);
@@ -4356,7 +4381,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4489,6 +4514,7 @@ int main(int argc, char **argv)
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
+  epstab = jplhora_eps_table_jump();
   eopcut = eop_finals_cut_off();
   starkept = star_load_kept();
   eoppath = eop_path_kept_off();
@@ -5368,6 +5394,14 @@ int main(int argc, char **argv)
   else {
     printf("  IERS kept past a broken eop_finals.txt %.2e arcsec FAIL: expected %s\n",
            eopcut, WANT_DEFECT ? "> 1e-2" : "0");
+    bad++;
+  }
+
+  if (epstab >= 0 && (WANT_DEFECT ? (epstab > 1e-7) : (epstab < 1e-11)))
+    printf("  Horizons obliquity across a table year %.2e deg OK\n", epstab);
+  else {
+    printf("  Horizons obliquity across a table year %.2e deg FAIL: expected %s\n",
+           epstab, WANT_DEFECT ? "> 1e-7" : "< 1e-11");
     bad++;
   }
 
