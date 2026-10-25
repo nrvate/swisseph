@@ -10478,7 +10478,9 @@ Noticed, not fixed (not this entry's):
   bit, warm it is an earlier call's Swiss Sun. The files of 1800-2400
   alone, Mars's geocentric osculating node at 1500 Jan 1 after a call at
   2000: 4.3907 deg, latitude 0.0101, for Moshier's 4.4536 and 1.4e-4
-  (0.063 deg); heliocentric 3e-6 deg. The same raw-bit test makes
+  (0.063 deg); heliocentric 3e-6 deg. (The stale Sun is whichever the
+  call before left: entry 168 measured 4.3236 deg after Mars's points at
+  2000 Jul 1.5.) Fixed as entry 168. The same raw-bit test makes
   SEFLG_SWIEPH | SEFLG_MOSEPH, answered from the files, take Moshier's
   centre: Mars's geocentric node 69.7303 deg for 69.8382, its barycentric
   one the heliocentric.
