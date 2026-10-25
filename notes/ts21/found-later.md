@@ -37,3 +37,4 @@ rest of ts.21 (`notes/TS21-PLAN.md`).
 | coordinator (fix 18) | The houses, `swe_azalt()` and the Gauquelin sectors take any date: past \|J\| 1e12 and at inf/NaN the sidereal time is NaN and `Asc1()` casts it to int (UBSan, swehouse.c). The range refusal of ts20 bugs 209 (houses part), 213 and 214. |
 | P9a (fix 18) | Within 400-2000 centuries of TT every sidereal-time call integrates up to 160 panels from the table's end: bounded, but slow for scans. |
 | P9a (fix 18) | G1b's margin on FMA platforms is about 2x (4.7e-6 against 1e-5). |
+| upstream sync (bug 46) | swevents' node passages (`-donode`, the latitude's sign change) are the root of one parabola through the step's three latitudes, unrefined: at a 1-day step the Moon's in March 2000 come out 147, 74 and 2 s late (2000 Mar 2 19:42:46 UT for 19:40:19.2 by bisection). The same Newton step bug 46 gives the zero declination would fix it. Upstream's, older than `3fd0f95`. |

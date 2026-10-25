@@ -3,7 +3,8 @@
 Bugs found and fixed in a thread-safety fork of Swiss Ephemeris, **each one
 verified still present in upstream** at `3fd0f95` ("with -astorb"), the
 `legacy-master` this fork branched from. Line numbers below are upstream's.
-Entry 45 is in work upstream added after `3fd0f95`, and was verified at `94621ab`, the upstream master merged on 2026-10-25.
+Entries 45 and 46 are in work upstream added after `3fd0f95`, and were
+verified at `94621ab`, the upstream master merged on 2026-10-25.
 
 This is not a diff of the fork. Most of what the fork changed — explicit
 contexts, a C17 build, a strict ephemeris policy — is a deliberate
@@ -82,6 +83,7 @@ worst were in code that had never executed even once.
 | 43 | `swe_sidtime()` reads a nutation `calc_nutation()` left unwritten; SE_ECL_NUT is taken for a body by the rise and set, the Gauquelin sectors, the occultations, `swe_calc_pctr()` and `swe_helio_cross()`, and reads `pla_diam[-1]` | Memory / Correctness | `swephlib.c`, `swecl.c`, `sweph.c` |
 | 44 | The default sidereal time steps 1.908" at 2050 and 0.097" at 1850, and outside 1850-2050 it follows delta t: +328" at year 0, +2379" at -3000 | Correctness | `swephlib.c` |
 | 45 | `swe_get_denum()` (new, 9a8b759) answers the Swiss planet file's DE number whatever the ephemeris, and 431 where it holds none: DE441 for a DE200 or Moshier calculation, DE431 for DE441 files before a planet is asked | Correctness | `sweph.c` |
+| 46 | swevents (8a36c49): the header's "based on JPL DE%d" asks before the run's ephemeris is set, and is appended past `cmdline[1024]` by a long command line; a zero declination is a parabola's root, the Moon's 83 s out | Memory / Correctness | `swevents.c` |
 
 ---
 
@@ -2517,6 +2519,58 @@ the DE441 planet file, since the shipped files are all DE441): the path
 setter, the Moon and the true node 406, Mars and a fixed star 441, Ceres and
 Ceres as 10001 431, a mean node leaving the answer. 26 checks. Upstream's
 function fails 20 of the 25 it can run (431 or 441 throughout).
+
+## 46. swevents' header asks the DE number before the run's ephemeris is set and writes it past `cmdline`, and its zero declination is a parabola's root
+
+**Severity: Memory / Correctness (with a command line of about 1000 characters, an 18-byte write past the global `cmdline[1024]`; the header names DE441 for a Moshier or DE200 run; the Moon's zero declination 83 s out at a 1-day step)**
+**Where:** `swevents.c`: `main()` (upstream 8a36c49, 2026-10-19; not in `3fd0f95`, verified at `94621ab`)
+
+Three faults in one commit:
+- The header line, `sprintf(cmdline + strlen(cmdline), " based on JPL
+  DE%d ", swe_get_denum())`, follows `swe_calc(tjd, SE_SUN, 0, x, serr)`,
+  both before `swe_set_ephe_path(ephepath)`, `swe_set_jpl_file(fname)` and
+  `iflag |= whicheph`. So it asks about the Swiss files on whatever path
+  the library had, under no flag, whatever the run uses: swevents' own
+  default is the JPL file, and `-emos` and `-ejplde200.eph` runs both
+  said DE441 here.
+- The loop before it appends the command line to `cmdline[4 * AS_MAXCH]`
+  while `strlen(cmdline) + strlen(argv[i]) < sizeof(cmdline) - 2`, which
+  can leave three bytes free; the header's 20 characters and its NUL then
+  run up to 18 bytes past the array (ASan: global-buffer-overflow, a write
+  of 21 bytes at its last three).
+- The new zero declination is the root of `find_zero()`'s parabola through
+  the step's three declinations, unrefined, where the declination extrema
+  beside it are refined five times. At swevents' 1-day step the Moon's on
+  2000 Mar 8 came out at 02:48:17 UT for 02:46:54.2 (bisection on
+  `swe_calc()`), 83 s late; the Sun's equinox 0.9 s.
+
+**Fix, as done here:** the path, JPL file and ephemeris flag are set
+before the header, which is asked after the begin date is read, at that
+date, with the run's ephemeris (with `SE_EPHE_FALLBACK=1` a file may serve
+1959 and not 1500). It says "based on the Moshier ephemeris" for Moshier
+and "(no ephemeris: ...)" when the calculation fails, and is appended with
+`snprintf()` into what is left of `cmdline`. Without `-b` the date prompt
+now comes before the header. The zero declination is refined from the
+parabola's root by Newton steps on the declination and its speed, kept
+inside the step whose sign change brackets the crossing: a step that would
+leave it is replaced by the bracket's middle. A first form of this fix,
+four Newton steps unbounded, left the bracket at coarse steps: the Moon at
+a 12-day step printed a 2001 crossing in a run over 2000 and lost one near
+May 1, and Mercury at a 15-day step printed one crossing twice and lost
+another.
+
+G55 `tests/eventsdecl.c`, on swevents built with ASan: (a) the header for
+`-eswe` (DE441), `-emos` (Moshier) and `-ejplde200.eph` (DE200), and at
+1.3.1500, outside DE200, Moshier with the fallback and "(no ephemeris"
+without; (b) a command line filling `cmdline` to three bytes short, run
+clean; (c) the Moon's and the Sun's zero declinations over March 2000 at a
+1-day step, and (d) at coarse steps, the Moon at 12 and 14 days and
+Mercury at 12 and 15: every crossing bisection finds where swevents can
+see, printed once, in order, within 0.6 s (whole seconds are printed, so
+0.5 s is the least possible; 0.50 s measured). 12 checks; upstream's
+swevents fails 11 of the 12: every header but `-eswe`'s, the overflow, and
+every zero declination (the Moon 82.9 s out at a 1-day step, the Sun 0.9
+s; at the coarse steps up to 6.6 days).
 
 ## How these were found
 

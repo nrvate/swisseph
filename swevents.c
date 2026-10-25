@@ -597,23 +597,6 @@ int main(int argc, char *argv[])
     if (strlen(cmdline) + strlen(argv[i]) < sizeof(cmdline) - 2)
       sprintf(cmdline + strlen(cmdline), "%s ", argv[i]);
   }
-  swe_calc(tjd, SE_SUN, 0, x, serr);
-  sprintf(cmdline + strlen(cmdline), " based on JPL DE%d ", swe_get_denum());
-  swe_version(sout);
-#if PRINTMOD
-  if (pmodel != PMODEL_SCREEN) {
-    printmod_set_printer(pmodel, 0);
-  } else {
-    printf("%s\n\n", cmdline);
-    printf("Date: %s\tSwissEph version %s\n%s\n\n", sdate, sout, cmdline);
-  }
-#else
-  printf("%s\n", "Please note: swevents is not a supported part of Swiss Ephemeris. In case of errors,\nplease debug and submit code fixes to the Swiss Ephemeris mailing list.");
-  printf("Date: %s\tSwissEph version %s\n%s\nplanet %s\n\n", sdate, sout, cmdline, planet_name);
-#endif
-  swe_set_ephe_path(ephepath);
-  swe_set_jpl_file(fname);
-  iflag |= whicheph;
   if (begindate == NULL) {
     printf ("datum ?");
     sp = fgets(s, AS_MAXCH, stdin);
@@ -664,6 +647,34 @@ int main(int argc, char *argv[])
 							get jd for the
 							date you want */
   }
+  /* The header names the ephemeris this run reads, so the run's path, JPL
+   * file and ephemeris are set before it is asked, and it is asked with
+   * them, at the run's begin date, which is why it comes after the date is
+   * read: with SE_EPHE_FALLBACK=1 a file may serve 1959 and not 1500. The
+   * command line may fill cmdline to two bytes short. */
+  swe_set_ephe_path(ephepath);
+  swe_set_jpl_file(fname);
+  iflag |= whicheph;
+  iflgret = swe_calc(tjd, SE_SUN, whicheph, x, serr);
+  n = (int) strlen(cmdline);
+  if (iflgret == ERR)
+    snprintf(cmdline + n, sizeof(cmdline) - n, "(no ephemeris: %s)", serr);
+  else if (iflgret & SEFLG_MOSEPH)
+    snprintf(cmdline + n, sizeof(cmdline) - n, "based on the Moshier ephemeris");
+  else
+    snprintf(cmdline + n, sizeof(cmdline) - n, "based on JPL DE%d", swe_get_denum());
+  swe_version(sout);
+#if PRINTMOD
+  if (pmodel != PMODEL_SCREEN) {
+    printmod_set_printer(pmodel, 0);
+  } else {
+    printf("%s\n\n", cmdline);
+    printf("Date: %s\tSwissEph version %s\n%s\n\n", sdate, sout, cmdline);
+  }
+#else
+  printf("%s\n", "Please note: swevents is not a supported part of Swiss Ephemeris. In case of errors,\nplease debug and submit code fixes to the Swiss Ephemeris mailing list.");
+  printf("Date: %s\tSwissEph version %s\n%s\nplanet %s\n\n", sdate, sout, cmdline, planet_name);
+#endif
   if ((iflag & SEFLG_SIDEREAL)) {
     swe_set_sid_mode(sid_mode, 0, 0);
   }
@@ -1130,7 +1141,30 @@ int main(int argc, char *argv[])
       }
       if (sign_change(xd1[1] ,xd2[1])) {	// declination sign change?
 	if ((nzer = find_zero(xd0[1], xd1[1], xd2[1], tstep, &dt, &dt2)) > 0) {
+	  double tlo = te - tstep, thi = te;
 	  t2 = te + dt;
+	  /* The parabola through the step's three points leaves the Moon's
+	   * crossing a minute or more out, and a coarse step much further.
+	   * Newton on the declination and its speed takes it to the instant.
+	   * The sign change puts the crossing between te - tstep and te: tlo
+	   * and thi close in on it from the two sides, and a Newton step that
+	   * leaves them is replaced by their middle. */
+	  for (j = 0; j < 50; j++) {
+	    iflgret = swe_calc(t2, (int) ipl, iflag|SEFLG_EQUATORIAL, xp, serr);
+	    if (iflgret == ERR)
+	      break;
+	    if ((xp[1] < 0) == (xd1[1] < 0))
+	      tlo = t2;
+	    else
+	      thi = t2;
+	    t3 = t2 - xp[1] / xp[4];
+	    if (!((t3 - tlo) * (t3 - thi) < 0))	// outside, or xp[4] is 0
+	      t3 = (tlo + thi) / 2;
+	    dt = t3 - t2;
+	    t2 = t3;
+	    if (fabs(dt) < 1e-8)
+	      break;
+	  }
 	  iflgret = swe_calc(t2, (int) ipl, iflag, x, serr);
 	  strcpy(sout, "zero declination");
 	  print_item(sout, t2, x[0] * RADTODEG, HUGE, HUGE);
