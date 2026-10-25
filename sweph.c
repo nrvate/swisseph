@@ -445,6 +445,17 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     iflag = iflag & ~SEFLG_SPEED3;
   if (iflag & SEFLG_SPEED3) 
     use_speed3 = TRUE;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 90: SEFLG_SPEED3 ran calc_speed() over SE_ECL_NUT's four
+   * angles, which are not a position: x[3], the nutation in obliquity
+   * (-1.6026e-3 deg), came back as the true obliquity's rate (-6.06e-6),
+   * x[4] and x[5] as rates of the mean obliquity and the nutation in
+   * longitude, and denormalize_positions() read x0[12] and x2[12],
+   * never written (valgrind: 576 errors). The nutation has no speed; it is
+   * answered as without a speed flag (x[3] the nutation, x[4] = x[5] = 0). */
+  if (ipl == SE_ECL_NUT)
+    use_speed3 = FALSE;
+#endif
   /* topocentric with SEFLG_SPEED is not good if aberration is included. 
    * in such cases we calculate speed from three positions */
 #ifdef SWE_UPSTREAM_COMPAT
@@ -600,7 +611,14 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     x[j] = *(xs + j);
   for (j = i; j < 6; j++)
     x[j] = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 90: SEFLG_SPEED copied xs[3..5] over x[3] (the same
+   * nutation) and x[4], x[5], which for SE_ECL_NUT are no one's: the
+   * asteroid save area it shares, stale. */
+  if ((iflag & (SEFLG_SPEED3 | SEFLG_SPEED)) && ipl != SE_ECL_NUT) {
+#else
   if (iflag & (SEFLG_SPEED3 | SEFLG_SPEED)) {
+#endif
     for (j = 3; j < 6; j++)
       x[j] = *(xs + j);
   }
@@ -2858,7 +2876,15 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
     for (i = 0; i <= 5; i++)
       xp[i] = xpe[i];
   /* sunbary is wanted */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 90: no else before this if, so the Earth, copied above,
+   * went through the "other planet" branch as well: with the Earth's slot
+   * filled, the same Earth again (xp = pdp->x); without (do_save off), one
+   * more swi_pleph() call for the same state, 0 difference in the answer. */
+  } else if (ipli == SEI_SUNBARY) {
+#else
   } if (ipli == SEI_SUNBARY) {
+#endif
     for (i = 0; i <= 5; i++)
       xp[i] = xps[i];
   /* other planet */
@@ -3332,6 +3358,10 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
   struct epsilon *oe = &ctx->oec2000;
   int32 epheflag = iflag & SEFLG_EPHMASK;
   dtsave_for_defl = 0;	
+  /* Upstream bug 90 (-Og): dt is set by the light-time loop below, which
+   * runs at least once (niter is 1 or 0, from j = 0), but -Og cannot see it
+   * and warned at the bug 63 and 78 lines. Initialised; no result changes. */
+  dt = 0;
   /* ephemeris file */
   if (ipli > SE_PLMOON_OFFSET || ipli > SE_AST_OFFSET) { // 2nd condition obsolete
     ifno = SEI_FILE_ANY_AST;	

@@ -542,6 +542,25 @@ static double intp_lighttime_off(void)
   return sqrt(d2 / r2) * 206264806.24709636;
 }
 
+/* SE_ECL_NUT with SEFLG_SPEED3 against without a speed flag at a binary
+ * instant: the largest slot difference, deg. Upstream runs the position
+ * speed over the four angles: x[3], the nutation in obliquity, comes back
+ * as the true obliquity's rate, 1.6e-3 off (UPSTREAM-BUGS 90). */
+static double ecl_nut_speed3_off(void)
+{
+  double t = floor(2460000.3 * 256) / 256, a[6], b[6], r = 0;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_ECL_NUT, SEFLG_SWIEPH, a, serr);
+  swe_calc(t, SE_ECL_NUT, SEFLG_SWIEPH | SEFLG_SPEED3, b, serr);
+  for (k = 0; k < 6; k++)
+    if (fabs(a[k] - b[k]) > r)
+      r = fabs(a[k] - b[k]);
+  return r;
+}
+
 /* A fixed star's distance rate: Spica's, geocentric apparent, against a
  * five-point difference of its distance over 2^-8 day, AU/day. Upstream
  * takes the deflection's and the aberration's rates as differences of two
@@ -1710,7 +1729,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1790,6 +1809,7 @@ int main(int argc, char **argv)
   defldisc = defl_disc_rate_off();
   toposite = topo_accel_off();
   oscaps = oscu_apsis_speed_off();
+  eclnut = ecl_nut_speed3_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2375,6 +2395,14 @@ int main(int argc, char **argv)
   else {
     printf("  osculating apsis speed   %.2e deg/day FAIL: expected %s\n",
            oscaps, WANT_DEFECT ? "> 1e-7" : "< 2e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (eclnut > 1e-4) : (eclnut == 0))
+    printf("  ecl_nut with SPEED3    %.2e deg OK\n", eclnut);
+  else {
+    printf("  ecl_nut with SPEED3    %.2e deg FAIL: expected %s\n",
+           eclnut, WANT_DEFECT ? "> 1e-4" : "0");
     bad++;
   }
 

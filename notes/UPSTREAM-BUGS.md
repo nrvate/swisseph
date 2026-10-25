@@ -122,6 +122,7 @@ worst were in code that had never executed even once.
 | 80 | `swe_nod_aps()`'s osculating speeds difference rounded points over a few minutes | Correctness | `swecl.c` |
 | 82 | The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold | Correctness | `swehel.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 83 | A setting made before the first calculation is lost, and the first heliacal call after a setter fails (partly this fork's) | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c`, `sweph.c` |
+| 90 | `swe_calc(SE_ECL_NUT, SEFLG_SPEED3)` differences the four angles as a position; `jplplan()`'s Earth also takes the other-planet branch; `-Og` false positive on `dt` | Correctness / Memory | `sweph.c` |
 
 ---
 
@@ -4898,6 +4899,52 @@ observation by more than 1e-7, and every observation agree within 1e-9:
 after it: upstream's), the upstream build 4 of 49. G24
 `dt_userdef_first_off`: a user delta t set as the first call, 0 s
 shipped, 22.6 s compat. G24, G81, G70 and G20 pass.
+
+## 90. `swe_calc(SE_ECL_NUT, SEFLG_SPEED3)` differences the four angles as a position; `jplplan()`'s Earth also takes the other-planet branch; `-Og` false positive on `dt`
+
+**Severity: Correctness / Memory (x[3] the true obliquity's rate in place of the nutation in obliquity, x[4], x[5] nonzero; 576 valgrind errors)**
+**Where:** `sweph.c`: `swe_calc_r()`, `jplplan()`, `app_pos_etc_plan()`
+
+Three small defects, found while fixing 84.
+
+- `SE_ECL_NUT` with `SEFLG_SPEED3` ran `calc_speed()` over its answer,
+  (true obliquity, mean obliquity, nutation in longitude, nutation in
+  obliquity), as if they were a longitude, latitude and distance. x[3],
+  the nutation in obliquity (-1.6026e-3 deg), came back as the true
+  obliquity's rate (-6.06e-6), x[4] and x[5] as the rates of the mean
+  obliquity and the nutation in longitude (-3.6e-7, 4.6e-5), and
+  `denormalize_positions()` read `x0[12]` and `x2[12]`, which that layout
+  never writes (valgrind: 576 errors). `swe_calc_pctr()`'s internal
+  `SE_ECL_NUT` call reaches it with SPEED3 set. With `SEFLG_SPEED` the
+  save area it shares with the asteroids (slot `SE_NPLANETS`) was copied
+  into x[3..5], so x[4] and x[5] were whatever the last asteroid left
+  there. The other special bodies, the nodes, apsides, interpolated apsides
+  and fictitious bodies, have a position's layout, and give the same speed
+  with SPEED and SPEED3 (checked on Swiss and Moshier; valgrind clean).
+- `jplplan()` had `} if (ipli == SEI_SUNBARY)` where an `else if` belongs:
+  the Earth, copied into the result, went through the "other planet"
+  branch too, which re-read the same Earth (xp = pdp->x, or one more
+  `swi_pleph()` for the same state without `do_save`). Bit for bit the
+  same answers, JPL Sun, Moon, Mars, Pluto, Earth, four centres, and
+  `swe_calc_pctr()`.
+- `-Og` could not see that the light-time loop in `app_pos_etc_plan()` runs
+  at least once (niter is 1, or 0 from j = 0) and warned that `dt` may be
+  used uninitialised at the bug 63 and 78 lines.
+
+**Fix, as done here:** `SE_ECL_NUT` takes no SPEED3 pass and copies no speed
+slots: with any speed flag it answers as with none, x[0..3] the true and
+mean obliquity, the nutation in longitude and in obliquity, x[4] = x[5] = 0
+(upstream documents nothing for the speed slots). The `else`, and `dt = 0`
+at the top of the function; the second changes no result.
+
+G89 `tests/eclnutspeed.c`: `SE_ECL_NUT` with no flag, SPEED and SPEED3, six
+epochs -2000..2800, Swiss and Moshier, degrees and radians, every slot bit
+for bit equal, x[4] = x[5] = 0, x[3] = x[0] - x[1]: 360 slots, none differ;
+valgrind 0 errors. The upstream build and ts20 before this fix fail 118 of
+360 (96 valgrind errors in the gate). G24 `ecl_nut_speed3_off`: the largest
+slot difference with SPEED3, 0 shipped, 2.16e-3 deg compat. G53, G76, G83
+and G24 pass; `-Og -Wall -Wextra -Werror` builds every file, default and
+compat.
 
 ## How these were found
 

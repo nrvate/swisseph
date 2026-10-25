@@ -956,6 +956,10 @@ struct epsilon {
  *     of itself, and their speeds as differences over 1e-3 day per AU at
  *     rounded instants (5.6e-7 deg/day on Venus's perihelion, 6.0e-8 on
  *     the Sun's perigee, 2.0e-6 on the Moon's; UPSTREAM-BUGS 80, G79)
+ *   - SEFLG_SPEED3 differenced SE_ECL_NUT's four angles as a position: the
+ *     nutation in obliquity came back as the true obliquity's rate (-6.06e-6
+ *     for -1.6026e-3 deg), x[4], x[5] nonzero, uninitialised reads
+ *     (UPSTREAM-BUGS 90, G89)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
