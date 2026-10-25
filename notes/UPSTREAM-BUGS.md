@@ -212,6 +212,7 @@ worst were in code that had never executed even once.
 | 175 | With neither file for J2000 (semo_18.se1, sepl_18.se1) and other spans' along the path, no DE number was read, so the first delta t took the default tidal term until a Swiss Moon opened another span's moon file: in AD 1500 291.693033 s, then 294.255183, the first UT Moon 158.4001317882 deg and the second 158.4005084277 (3.8e-4); with the planet files alone and no sepl_18.se1 the default throughout, the heliocentric Mars there 1.56e-5 deg off -- on every thread and context | Correctness (behaviour) | `sweph.c` |
 | 177 | On Moshier the barycentric Sun's slot keeps what the files or JPL last left in it, and five Moshier paths read it as their Sun -- the light deflection, the heliocentric Moon, an asteroid's frame, the fictitious bodies' and `swe_calc_orbel()`'s Sun: a Swiss request fallen to Moshier after a Swiss call at another instant, at 1500, the heliocentric Moon 0.41 deg off the same call in a fresh process, Ceres heliocentric 0.14, `swe_calc_orbel()`'s orbit about the Sun 0.071 and Cupido 9.1e-3 under SEFLG_TRUEPOS, the deflection 1.66e-7 on Mercury and 1.7e-9 on Mars, `swe_nod_aps()`'s Venus 1.5e-7 | Correctness (behaviour) | `swemplan.c` |
 | 183 | Owen 1990's precession and obliquity are pieces 80 centuries long that do not meet at their joins (0.095 mas in the mean obliquity at -10000, 0.086 and 0.091 mas in the precession at +6000 and +14000), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across, with Owen 1990 chosen and under SEFLG_JPLHOR's models outside 1799-2202: the rates 2.6e-8, 9.8e-9 and 1.1e-8 deg/day off within a day of them, Mars's speeds 1.1e-8, SEFLG_SPEED3 1.1e-4 | Correctness | `swephlib.c` |
+| 184 | The Moshier Moon's frame turning, (R(t + 1) x - R(t - 1) x) / 2 of the ecliptic of date to the J2000 equator (entry 95), reaches across a short-term precession model's window edges: with IAU 1976 short and Vondrak long its speed 8.0e-5 to 9.0e-5 deg/day off within a day of J2000 -+ 2 centuries, the topocentric Moon's alike, its apparent place 1.36e-9 deg through the light time | Correctness | `swemmoon.c` |
 
 ---
 
@@ -12421,6 +12422,73 @@ Noticed, not fixed:
   difference over 2^-20 day; nothing at -2000). The model as published;
   joining the pieces smoothly (a blend over the overlap each fit covers)
   would change Owen 1990's values, a choice of model, not a rate's fix.
+
+## 184. The Moshier Moon's frame turning differences the frame across a short-term precession window's edges: its speed 8.7e-5 deg/day off within a day either side, its position 1.4e-9 deg through the light time
+
+**Severity: Correctness (on Moshier with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976 or 2000 and another long-term model, within a day of J2000 -+ 2 centuries: the Moon's speeds 8.0e-5 to 9.0e-5 deg/day off, the topocentric Moon's alike, its apparent place 1.36e-9 deg)**
+**Where:** `swemmoon.c`: `swi_moshmoon()`
+
+Entry 160's noticed item. Entry 95 made the Moshier Moon's velocity the
+series' own derivative turned into the J2000 equator, plus the frame's
+turning R'(t) x, taken as (R(t + 1) x - R(t - 1) x) / 2, R the
+ecliptic-of-date-to-J2000 rotation of `ecl_equ2000_cart()` (the obliquity
+with the cache's flags, the precession with none). R steps where the
+precession or the obliquity changes model (entry 160: with IAU 1976 short
+and Vondrak long, "0,9,1", 0.53" and 0.57" in the precession at J2000 -+
+2 centuries, 3.4 and 81.6 mas in the obliquity), and the difference
+reached across: for t within a day of the edge either side, R(t -+ 1)
+was the other model's. Against five-point differences of the positions
+over 2^-6 day on the instant's side (G139's), Moshier, "0,9,1" with the
+IERS 2010 sidereal time: at + 2 centuries the Moon's ecliptic speeds
+8.68e-5 deg/day off the day before (inside) and 8.69e-5 the day after,
+equatorial 9.02e-5; at - 2 centuries 8.04e-5 and 8.32e-5; the topocentric
+Moon (a nine-point difference over 2^-7 day, delta t 2^-11) 8.80e-5 and
+9.04e-5. The apparent Moon is read at t - tau and carried there by its
+velocity (entry 53), so its place took tau times the error, 1.36e-9 deg
+in longitude within a day of the edge (tau 1.5e-5 day), and at the + 2
+centuries edge - 1 day, whose reference reaches those places, the speed
+5.1e-8 off them. The Owen 1990 joins (entry 183) lie outside Moshier's
+range but at -2000, where the pieces meet; IAU 2006's window edges at -+
+75 centuries outside it too.
+
+**Fix, as done here:** where `swi_frame_step_side()` says the frame's
+models change within a day of t -- the precession's with no flags, else
+the obliquity's with the cache's, as `ecl_equ2000_cart()` takes them --
+the frame's turning is the three-point derivative on t's side, s (4 R(t +
+s) x - 3 R(t) x - R(t + 2s) x) / 2, s = -+1 day, as entry 153's
+precession rate. Elsewhere the central difference, unchanged; the test
+returns at once under the default models. Behind `#ifndef
+SWE_UPSTREAM_COMPAT` (entry 95's derivative is this fork's; the compat
+build keeps upstream's difference of the places).
+- After: the Moon within 2.1e-9 deg/day at + 2 centuries and 2.9e-9 at -
+  2, the topocentric Moon 1.9e-9 and 2.9e-9 -- the reference's own on
+  the Moshier Moon there (the default models: 2.2e-9) -- and the place
+  the default branch's again a day from the edge.
+- Cost, `perf stat -e instructions:u`, bench's calc-moseph (one
+  repetition): 23338293637 before, 23339446067 after (+0.005%).
+
+G139 `tests/framestep.c`, extended: check (c), Moshier with "0,9,1" and
+the IERS 2010 sidereal time at J2000 -+ 2 centuries, the Moon and the
+topocentric Moon, ecliptic and equatorial, over the day before, the day
+after and the rest, against the references of check (a): 24 checks
+within 1e-8 deg/day, measured within 2.97e-9. Before the fix all 24 fail
+(8.0e-5 to 9.0e-5 deg/day within the day either side, 4.4e-8 to 1.1e-7
+in the rest, from the place's light time). The upstream build fails all
+24 too (its Moon's speed, a difference of places over -+5e-5 day each
+turned with the instant's obliquity, 5.2 deg/day off within 5e-5 day of
+the edge and 3.5e-5 to 1.1e-4 elsewhere), 184 of (a) and (c)'s 192. G24
+`mosh_moon_window_off`: the Moon's ecliptic speeds on Moshier with
+"0,9,1" at J2000 + 2 centuries -+ 0.5 day and -+ 2^-14 day against the
+five-point difference on its side, the largest: 1.69e-9 deg/day shipped
+(8.69e-5 before the fix), 1.58e-5 compat.
+
+Noticed, not fixed:
+- RESIDUAL(9.9e-10 deg/day). Moshier's aberration rate takes the Earth's
+  acceleration as a second difference of the EMB series less
+  `moon_short()`'s offset over -+2^-8 day (`swi_mosh_earth_accel()`,
+  entry 66), whose places precess at their own instants: within 2^-8
+  day after the window's edges the Sun's speed is 9.0e-10 to 9.9e-10
+  deg/day off (none with SEFLG_NOABERR), Mars's 9.6e-10. Below the floor.
 
 ## How these were found
 

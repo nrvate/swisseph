@@ -53,6 +53,14 @@
  * deg/day the day before -10000, the precession's 9.8e-9 and 1.1e-8 on
  * both days at +6000 and +14000.
  *
+ * The defect (UPSTREAM-BUGS 184): the Moshier Moon's velocity turns the
+ * series' own derivative into the J2000 equator and adds the frame's
+ * turning as (R(t + 1) x - R(t - 1) x) / 2, which reached across the
+ * windows' edges: with "0,9,1" its speed 8.0e-5 to 9.0e-5 deg/day off
+ * within a day of J2000 -+ 2 centuries, the topocentric Moon's alike, and
+ * its place 1.4e-9 deg through the light time (5e-8 deg/day in the speed
+ * of the five points a day further out).
+ *
  * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
  * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
  * difference after the step too), at 1799 Jan 1 the default models; and
@@ -77,6 +85,12 @@
  * checks, within 1e-8 deg/day, SEFLG_SPEED3 within 1e-5 (its own three
  * places over 1e-4 day are 1.3e-6 off everywhere).
  *
+ * Check (c): bodies whose frame turning is their own difference of the
+ * frame: the Moshier Moon and topocentric Moon with "0,9,1" and the IERS
+ * 2010 sidereal time at J2000 -+ 2 centuries, ecliptic and equatorial,
+ * over the same three spans, against the references of check (a): 24
+ * checks within 1e-8 deg/day.
+ *
  * Check (b): the rates themselves under SEFLG_JPLHOR, which swe_calc()
  * takes only with a DE 403 file and the IERS corrections: the precession's
  * (swi_precess_speed() of a unit vector of date) and the mean obliquity's
@@ -99,8 +113,12 @@
  * 7e-11), SPEED3 1.41e-6; (b) within 8.5e-12, at Owen's joins 1.9e-11.
  * Before the fix of bug 183, 10 of the 42 at Owen's joins fail: the
  * obliquity's rate 2.63e-8 the day before -10000, the precession's 9.80e-9
- * and 1.09e-8 on both days at +6000 and +14000, under both settings. Before the fix of bug 153,
- * 38 of the first 84 checks fail: every body but sidereal Mars on the day
+ * and 1.09e-8 on both days at +6000 and +14000, under both settings.
+ * (c) within 2.97e-9 (the reference's own on the Moshier Moon); before the
+ * fix of bug 184 all 24 fail (8.0e-5 to 9.0e-5 the day either side,
+ * 4.4e-8 to 1.1e-7 a day further out); the upstream build fails them too
+ * (its Moon's speed 5.2 deg/day off within 5e-5 day of the edge).
+ * Before the fix of bug 153, 38 of the first 84 checks fail: every body but sidereal Mars on the day
  * before the step under both settings and on the day after under the
  * second, and SPEED3 on both days under both, by 1.57e-5 to 1.09 deg/day.
  * Before the fix of bug 159, 24 of
@@ -152,6 +170,8 @@ static const struct {
 };
 #define NSET ((int) (sizeof SET / sizeof SET[0]))
 
+#define EPHMASK (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)
+
 enum { B_SUN, B_MOON, B_MARS, B_POLARIS, B_SIDMARS, B_TOPOMOON, B_SPEED3, NB };
 static const char *BN[NB] = { "Sun", "Moon", "Mars", "Polaris", "sidereal Mars",
   "topocentric Moon", "Mars SPEED3" };
@@ -163,8 +183,8 @@ static int LEFT;
 static int32 FL;
 
 /* the place at t, in degrees, and its speeds; the flags returned checked to
- * be de200's, with the Horizons approximation where asked (but for
- * sidereal Mars) */
+ * be the ephemeris asked for (de200's in check (a)), with the Horizons
+ * approximation where asked (but for sidereal Mars) */
 static int place(swe_ctx *c, int b, double t, int32 xf, double *x)
 {
   char serr[256] = "", s[SE_MAX_STNAME * 2 + 1];
@@ -183,7 +203,7 @@ static int place(swe_ctx *c, int b, double t, int32 xf, double *x)
     rf = swe_calc_r(c, t, SE_MARS, (fl & ~SEFLG_SPEED) | SEFLG_SPEED3, x, serr);
     break;
   }
-  if (rf < 0 || !(rf & SEFLG_JPLEPH)
+  if (rf < 0 || (rf & EPHMASK) != (FL & EPHMASK)
       || (b != B_SIDMARS && (rf & SEFLG_JPLHOR_APPROX) != (FL & SEFLG_JPLHOR_APPROX))) {
     printf("  ERROR %s at %.8f: flags 0x%x %s\n", BN[b], t, (unsigned) rf, serr);
     return -1;
@@ -394,6 +414,66 @@ int main(int argc, char **argv)
         }
       }
     swe_ctx_free(c);
+  }
+  {
+    /* check (c): the bodies whose own frame turning is differenced */
+    static const struct {
+      double ts;
+      int left;
+      int32 fl;
+      const char *mod;
+      int nb, b[3];
+    } SC[] = {
+      /* the Moshier Moon (UPSTREAM-BUGS 184) at IAU 1976's window edges,
+       * the IERS 2010 sidereal time */
+      { 2524595.0, 1, SEFLG_MOSEPH, "0,9,1,0,0,0,0,3", 2, { B_MOON, B_TOPOMOON } },
+      { 2378495.0, 0, SEFLG_MOSEPH, "0,9,1,0,0,0,0,3", 2, { B_MOON, B_TOPOMOON } },
+    };
+    for (m = 0; m < (int) (sizeof SC / sizeof SC[0]); m++) {
+      char mod[40];
+      swe_ctx *c = swe_ctx_new();
+      TS = SC[m].ts;
+      LEFT = SC[m].left;
+      FL = SC[m].fl;
+      nq = instants(tq);
+      strcpy(mod, SC[m].mod);
+      swe_set_ephe_path_r(c, argv[1]);
+      swe_set_topo_r(c, 8.55, 47.37, 400);
+      swe_set_delta_t_userdef_r(c, ldexp(1, -11));
+      swe_set_astro_models_r(c, mod, 0);
+      printf("  (c) step JD %.1f, flags 0x%x, models %s: worst |speed - reference|, deg/day,"
+             " %s / %s / %s\n", TS, (unsigned) FL, SC[m].mod, RN[0], RN[1], RN[2]);
+      for (i = 0; i < SC[m].nb; i++)
+        for (f = 0; f < 2; f++) {
+          int32 xf = f ? SEFLG_EQUATORIAL : 0;
+          double w[3] = { 0, 0, 0 };
+          int q;
+          b = SC[m].b[i];
+          for (q = 0; q < nq; q++) {
+            int skip;
+            double d = off(c, b, tq[q], xf, &skip, &err);
+            if (err) {
+              swe_ctx_free(c);
+              printf("G139 FAIL: ERROR\n");
+              return 1;
+            }
+            if (skip)
+              continue;
+            if (d > w[span(tq[q])])
+              w[span(tq[q])] = d;
+          }
+          printf("    %-16s %s  %.2e  %.2e  %.2e\n", BN[b], f ? "equ" : "ecl", w[0], w[1], w[2]);
+          for (k = 0; k < 3; k++) {
+            n++;
+            if (!(w[k] <= 1e-8)) {
+              bad++;
+              printf("    FAIL %s %s, %s: %.2e > 1e-8\n", BN[b], f ? "equatorial" : "ecliptic",
+                     RN[k], w[k]);
+            }
+          }
+        }
+      swe_ctx_free(c);
+    }
   }
 #ifndef SWE_UPSTREAM_COMPAT
   {

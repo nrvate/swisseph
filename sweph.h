@@ -1366,6 +1366,12 @@ struct epsilon {
  *     two pieces across them: the obliquity's 2.6e-8 deg/day the day
  *     before -10000, the precession's 9.8e-9 and 1.1e-8 either side of
  *     +6000 and +14000, SEFLG_SPEED3 1.1e-4 (UPSTREAM-BUGS 183, G139)
+ *   - the Moshier Moon's frame turning, this fork's central difference of
+ *     the ecliptic-of-date frame over -+1 day (UPSTREAM-BUGS 95), taken
+ *     across a short-term precession model's window edges: the Moon's
+ *     speed 8.7e-5 deg/day off within a day of J2000 + 2 centuries with
+ *     IAU 1976 and Vondrak, its place 1.4e-9 deg through the light time
+ *     (UPSTREAM-BUGS 184, G139)
  *   - the path setter and swe_close() reading the kept JPL file again only
  *     when its DE number had been read, not when swe_set_jpl_file() had
  *     named it and failed along the path then set: after a path without

@@ -1354,7 +1354,8 @@ check-woolard: woolard
 # short-term precession model's window edges, on de200 at J2000 - 2
 # centuries and in the rates themselves at -+ 2 and -+ 75 (UPSTREAM-BUGS
 # 160); the joins of Owen 1990's pieces in the rates themselves, chosen and
-# under SEFLG_JPLHOR (UPSTREAM-BUGS 183).
+# under SEFLG_JPLHOR (UPSTREAM-BUGS 183); the Moshier Moon at the IAU 1976
+# window's edges (UPSTREAM-BUGS 184).
 check-framestep: framestep
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./framestep $(EPHE)
 

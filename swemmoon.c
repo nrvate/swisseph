@@ -833,6 +833,7 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
    * where the difference took five and five. */
   {
     double xe[6], xa[3], xb[3], hf = 1.0;
+    int side;
     for (i = 0; i <= 2; i++) {
       xe[i] = xx0[i];
       xe[i+3] = dpol[i];
@@ -841,10 +842,33 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
     for (i = 0; i <= 2; i++)
       xa[i] = xb[i] = xe[i];
     ecl_equ2000_cart(ctx, tjd, xe + 3);
-    ecl_equ2000_cart(ctx, tjd + hf, xa);
-    ecl_equ2000_cart(ctx, tjd - hf, xb);
-    for (i = 0; i <= 2; i++)
-      xpm[i+3] = xe[i+3] + (xa[i] - xb[i]) / (2 * hf);
+    /* Upstream bug 184: the frame's models step where the precession or
+     * the obliquity changes model (a short-term model's window edges,
+     * Owen 1990's joins; swi_frame_step_side()), and R(t -+ 1) reached
+     * across: with IAU 1976 short-term under Vondrak ("0,9,1") the Moon's
+     * speed 8.7e-5 deg/day off within a day either side of J2000 + 2
+     * centuries, 8.0e-5 at - 2. There now the three-point derivative on
+     * tjd's side, R(t), R(t + s), R(t + 2s), s = -+1 day, as bug 153's
+     * precession rate; the precession is taken with no flags, the
+     * obliquity with the cache's, as ecl_equ2000_cart() takes them. */
+    side = swi_frame_step_side(ctx, tjd, hf, 0, SWI_FRAME_PREC);
+    if (side == 0)
+      side = swi_frame_step_side(ctx, tjd, hf, ctx->oec.epsflag, SWI_FRAME_EPS);
+    if (side != 0) {
+      double xc[3];
+      for (i = 0; i <= 2; i++)
+        xc[i] = xe[i];
+      ecl_equ2000_cart(ctx, tjd, xc);
+      ecl_equ2000_cart(ctx, tjd + side * hf, xa);
+      ecl_equ2000_cart(ctx, tjd + 2 * side * hf, xb);
+      for (i = 0; i <= 2; i++)
+        xpm[i+3] = xe[i+3] + side * (4 * xa[i] - 3 * xc[i] - xb[i]) / (2 * hf);
+    } else {
+      ecl_equ2000_cart(ctx, tjd + hf, xa);
+      ecl_equ2000_cart(ctx, tjd - hf, xb);
+      for (i = 0; i <= 2; i++)
+        xpm[i+3] = xe[i+3] + (xa[i] - xb[i]) / (2 * hf);
+    }
   }
 #else
   /* speed */
