@@ -112,7 +112,6 @@ worst were in code that had never executed even once.
 | 75 | The true node's and osculating apogee's speeds divide by the step asked for, not the step taken | Correctness | `sweph.c` |
 | 71 | Every other cache emptied by an instant of 0 answers for JD 0, and sweph()'s forced EMB is the Earth there | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 78 | The planets' light time is solved along a straight line, and the Earth's and the Sun's light times have no rate | Correctness | `sweph.c` |
-| 81 | A fictitious body's light-time position is read at the rounded instant | Correctness | `sweph.c` |
 | 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, its aberration rate is the centre's whole velocity change over the light time, it deflects as seen from the Earth, and its light time stops short of its fixed point | Correctness | `sweph.c` |
 | 85 | The Moshier Earth-Moon offset's rate is a difference of rounded arguments | Correctness | `swemplan.c` |
 | 81 | A fictitious body's light-time position is read at the rounded instant, and its elements' large terms are rounded unreduced | Correctness | `sweph.c`, `swemplan.c` |
@@ -4119,7 +4118,6 @@ barycentric velocity, which Moshier does not have. The heliocentric
 Moshier speeds 2e-9 to 7e-9 deg/day off their positions, seen before
 entry 53, are gone with it: <= 2.2e-10 now, Mercury to Vesta.
 
-## 81. A fictitious body's light-time position is read at the rounded instant
 ## 81. A fictitious body's light-time position is read at the rounded instant, and its elements' large terms are rounded unreduced
 
 **Severity: Correctness (3.9e-8 deg on Waldemath's apparent position, a jitter that a five-point difference over 2^-7 day turns into 1e-6 to 5.5e-6 deg/day; 3.4e-7 deg/day on Vulcan heliocentric, 6.7e-8 on Selena under Moshier; part 2: 3.0e-8 deg on Vulcan's true position at -3000, 2.4e-6 deg/day in its differences)**
@@ -4172,6 +4170,112 @@ upstream build fails all eight rows by bug 48's speeds. G24
 `waldemath_lt_round_off`: Waldemath's geocentric longitude speed over 2^-8
 day at nine dates, 1.65e-8 deg/day shipped (5.3e-6 before the fix), 1.2e-2
 compat. G48, G59, G62, G64 pass.
+
+**Part 2 (the elements' own rounding).** `check_t_terms()` formed a term
+n T as n times T = (tjd - epoch) / 36525 and the element's sum was reduced
+to 0..360 afterwards, so an angle with a large rate carried the rounding of
+its unreduced value: Vulcan's mean anomaly 707550.7341 T is 1.6e7 deg at
+-200 and 3.5e7 at -3000 (an ulp of 1.9e-9 and 3.7e-9 deg, with the
+roundings of T, of the product and of tjd - epoch as much again), and its
+node and perihelion turn at 1670 deg/cy; Waldemath's mean anomaly is
+109023 T. The true positions, against which part 1 was judged, jittered.
+Fourth differences at eight instants 2^-9 day apart (deg) and the speed
+against five-point differences over 2^-9 day (deg/day), Moshier, five
+dates at each epoch, SEFLG_TRUEPOS:
+
+| body | -3000 | -200 | 2000 | +3000 |
+|---|---|---|---|---|
+| Vulcan, heliocentric, before | 3.0e-8, 2.4e-6 | 7.7e-9, 4.3e-7 | 3.6e-10, 2.7e-8 | 5.5e-9, 3.0e-7 |
+| after | 1.8e-12, 4.3e-11 | 1.3e-12, 2.5e-11 | 1.8e-12, 4.4e-11 | 1.4e-12, 1.8e-11 |
+| Waldemath, geocentric, before | 3.5e-9, 3.5e-7 | 3.3e-9, 2.0e-8 | 6.3e-11, 3.1e-9 | 1.1e-9, 1.0e-7 |
+| after | 4.5e-12, 2.4e-10 | 3.4e-12, 1.6e-10 | 3.2e-12, 1.8e-10 | 3.9e-12, 8.8e-11 |
+| Selena, geocentric, before | 8.8e-11, 8.6e-9 | 4.4e-11, 5.2e-10 | 8.0e-13, 2.9e-11 | 4.4e-11, 2.6e-9 |
+| after | 4.8e-13, 3.6e-11 | 4.5e-13, 2.5e-11 | 8.0e-13, 2.9e-11 | 5.4e-13, 3.7e-11 |
+
+The other sets (40..54, 57) were at 1e-12 and are bit-identical.
+
+**Fix, as done here (part 2):** for an angle (mean anomaly, perihelion,
+node, inclination; not the semi-axis or eccentricity) a term in T alone is
+(n / 36525)(tt + ttlo): the rate as two doubles (n / 36525 and its
+remainder by fma), the product by fma with its error kept, tt = tjd - epoch
+with its rounding ttlo from a TwoSum, and the product's whole revolutions
+taken out before it is added (exact: 360 k is a multiple of the product's
+ulp). The angle is then good to a few ulps of 360 deg. Other terms (T^2..)
+are as before. The rates (bug 48's drate) are the analytic ones, unchanged
+in form. Positions move by the old rounding only: <= 7.4e-9 deg on Vulcan,
+5.9e-12 on Waldemath, 2.0e-12 on Selena, 0 elsewhere (300 dates
+-3000..+3000); speeds by <= 1.1e-10 deg/day through the corrected angle.
+After it, the apparent rows of part 1 are at their ephemeris's floor:
+Vulcan heliocentric 9.1e-11 deg/day (1.4e-7 with part 1 alone), Waldemath
+1.6e-9 on the Swiss files and 1.8e-8 on Moshier, whose Earth is itself 5e-14
+AU off a smooth curve (3.4e-10 deg at 0.0065 AU). G48's Vulcan
+heliocentric 8.4e-9 -> 8.6e-11, Waldemath geocentric 3.3e-9 -> 2.4e-11.
+
+G80 gains the true positions of the same four rows at -3000 and -200, three
+dates each, speeds within 1e-9 deg/day (measured <= 3.4e-10) and jitter
+within 2e-11 deg (<= 4.0e-12), and its part-1 limits are now 1e-9 / 2e-11
+(Vulcan heliocentric; measured 9.1e-11 / 2.4e-12), 5e-9 / 5e-11 (Vulcan
+geocentric; 1.2e-9 / 1.1e-11), 5e-9 / 2e-9 (Selena) and 5e-8 / 1e-9
+(Waldemath, for Moshier's Earth). With part 1 alone 20 of the 24 rows fail
+(the four Vulcan rows of part 1 and all sixteen true rows); before part 1
+and on the upstream build all 24. G24 `vulcan_true_jitter_off`: Vulcan's
+heliocentric true longitude at -3000, Moshier, largest fourth difference,
+9.8e-13 deg shipped (3.05e-8 with part 1 alone), 3.05e-8 compat; G24
+`waldemath_lt_round_off` is now 2.0e-9 (1.65e-8 with part 1 alone). G48,
+G59, G64 pass.
+
+**Part 3 (the light time's fixed point).** `app_pos_etc_plan_osc()`
+iterates the light time on the orbit and stops when a pass changes it by
+less than 1e-12 day, the body as read at that pass's dt, not the converged
+one: Waldemath 2.3e-11 deg and Selena 1.5e-11 deg off the fixed point (their
+barycentric motion, 0.017 AU/day, over ~1e-12 day at 0.0065 and 0.053 AU),
+Vulcan and the heliocentric sets <= 1e-12. This fork's `swe_calc_orbel()`
+(`app_pos_etc_orbel()`) had kept upstream's fictitious-body light time from
+before entry 26: a straight line, x(t) - dt v(t), and the orbit read at
+t - dt only with SEFLG_SPEED, so the position depended on the flag. Against
+the fixed point, astrometric (SEFLG_NOABERR | SEFLG_NOGDEFL), thirteen dates
+1700..2300: an orbit with a = 0.137 AU 1.6e-5 deg without the flag and
+4.4e-9 with it, a = 0.387 AU 3.0e-6 and 7.2e-10, an Earth-centred one at
+0.0068 AU 1.7e-9 and 3.0e-8 (its centre read at the rounded instant).
+
+**Fix, as done here (part 3):** both finish the loop with one Newton step on
+f(tau) = tau - |X(teval - tau) - O| / c, f' = 1 + (rho^ . v) / c, v the
+body's barycentric velocity at teval (there with or without SEFLG_SPEED;
+the Earth read at t - dt has none without it, which made a first try
+move fictitious positions by 2.3e-13 deg with the flag), as entry 78 does for the planets, and
+part 1's move takes the step with the rounding. `app_pos_etc_orbel()` now
+solves the light time on the orbit for every flag set, as the fictitious
+bodies do; its orbit is taken at M - n dt exactly and only its centre at the
+rounded instant, so the orbit is moved by the Newton step and the centre by
+the step and the rounding. After: the fictitious bodies <= 1.5e-12 deg
+(Waldemath; Selena 2.7e-13), the orbel orbits 5.4e-15, 1.0e-14 and 3.6e-12,
+the same with and without SEFLG_SPEED (positions bit-identical either way,
+fictitious and orbel). Speeds unchanged in form; swe_calc_orbel()'s default
+geocentric longitude speed against five-point differences over 2^-7 day goes
+from 4.9e-6 to 1.2e-7 deg/day (the rest is below).
+
+G80 gains (3): the four bodies, Swiss and Moshier, and the three orbel
+orbits with and without SEFLG_SPEED, Swiss, against the fixed point
+iterated in the gate (the body's true barycentric place read at t - tau and
+moved by that instant's rounding, the observer at t) within 5e-12 and 2e-11
+deg. The build before part 3 fails 10 of its 14 rows (the four Earth-centred
+ones, all six orbel ones); upstream fails all 14 (Vulcan heliocentric by
+1.0e-3, entry 26). G24 `orbel_lt_flag_off`: swe_calc_orbel()'s position for
+a = 0.137 AU with against without SEFLG_SPEED, 0 shipped (1.55e-5 deg
+before), 1.55e-5 compat.
+
+Not fixed (found measuring part 3, `swe_calc_orbel()` only): as the first
+call of a context it returns zeros (ecliptic) or (0.17, -0, 0) (XYZ) with its
+flags as the return value and no error, until some `swe_calc()` has run; its
+speeds are off five-point differences of its positions by 8e-8 deg/day in
+the ecliptic of date with SEFLG_TRUEPOS (1.8e-12 in J2000), by 1.07e-6
+heliocentric apparent in J2000 (the heliocentric light-time rate), and by
+2.45e-3 deg/day on Moshier heliocentric (SEFLG_TRUEPOS, J2000).
+
+Not fixed here: at exactly tjd = 2451545.0 every body's latitude of date
+(planets too; Mars 1.5e-10, the Sun 2.7e-10 deg in a fourth difference) is
+off its neighbours'; one instant only, so a J2000 special case somewhere in
+the frame of date.
 
 ## 85. The Moshier Earth-Moon offset's rate is a difference of rounded arguments
 
@@ -4282,112 +4386,6 @@ backward difference, entry 51). G24 `mosh_earth_rough_off`: the
 acceleration in 2000, 5.0e-9 shipped, 2.6e-3 compat;
 `mosh_earth_vbias_off`: the velocity's bias in 1900, 2.7e-14 AU/day
 shipped (1.87e-13 after the first part), 3.4e-8 compat.
-
-**Part 2 (the elements' own rounding).** `check_t_terms()` formed a term
-n T as n times T = (tjd - epoch) / 36525 and the element's sum was reduced
-to 0..360 afterwards, so an angle with a large rate carried the rounding of
-its unreduced value: Vulcan's mean anomaly 707550.7341 T is 1.6e7 deg at
--200 and 3.5e7 at -3000 (an ulp of 1.9e-9 and 3.7e-9 deg, with the
-roundings of T, of the product and of tjd - epoch as much again), and its
-node and perihelion turn at 1670 deg/cy; Waldemath's mean anomaly is
-109023 T. The true positions, against which part 1 was judged, jittered.
-Fourth differences at eight instants 2^-9 day apart (deg) and the speed
-against five-point differences over 2^-9 day (deg/day), Moshier, five
-dates at each epoch, SEFLG_TRUEPOS:
-
-| body | -3000 | -200 | 2000 | +3000 |
-|---|---|---|---|---|
-| Vulcan, heliocentric, before | 3.0e-8, 2.4e-6 | 7.7e-9, 4.3e-7 | 3.6e-10, 2.7e-8 | 5.5e-9, 3.0e-7 |
-| after | 1.8e-12, 4.3e-11 | 1.3e-12, 2.5e-11 | 1.8e-12, 4.4e-11 | 1.4e-12, 1.8e-11 |
-| Waldemath, geocentric, before | 3.5e-9, 3.5e-7 | 3.3e-9, 2.0e-8 | 6.3e-11, 3.1e-9 | 1.1e-9, 1.0e-7 |
-| after | 4.5e-12, 2.4e-10 | 3.4e-12, 1.6e-10 | 3.2e-12, 1.8e-10 | 3.9e-12, 8.8e-11 |
-| Selena, geocentric, before | 8.8e-11, 8.6e-9 | 4.4e-11, 5.2e-10 | 8.0e-13, 2.9e-11 | 4.4e-11, 2.6e-9 |
-| after | 4.8e-13, 3.6e-11 | 4.5e-13, 2.5e-11 | 8.0e-13, 2.9e-11 | 5.4e-13, 3.7e-11 |
-
-The other sets (40..54, 57) were at 1e-12 and are bit-identical.
-
-**Fix, as done here (part 2):** for an angle (mean anomaly, perihelion,
-node, inclination; not the semi-axis or eccentricity) a term in T alone is
-(n / 36525)(tt + ttlo): the rate as two doubles (n / 36525 and its
-remainder by fma), the product by fma with its error kept, tt = tjd - epoch
-with its rounding ttlo from a TwoSum, and the product's whole revolutions
-taken out before it is added (exact: 360 k is a multiple of the product's
-ulp). The angle is then good to a few ulps of 360 deg. Other terms (T^2..)
-are as before. The rates (bug 48's drate) are the analytic ones, unchanged
-in form. Positions move by the old rounding only: <= 7.4e-9 deg on Vulcan,
-5.9e-12 on Waldemath, 2.0e-12 on Selena, 0 elsewhere (300 dates
--3000..+3000); speeds by <= 1.1e-10 deg/day through the corrected angle.
-After it, the apparent rows of part 1 are at their ephemeris's floor:
-Vulcan heliocentric 9.1e-11 deg/day (1.4e-7 with part 1 alone), Waldemath
-1.6e-9 on the Swiss files and 1.8e-8 on Moshier, whose Earth is itself 5e-14
-AU off a smooth curve (3.4e-10 deg at 0.0065 AU). G48's Vulcan
-heliocentric 8.4e-9 -> 8.6e-11, Waldemath geocentric 3.3e-9 -> 2.4e-11.
-
-G80 gains the true positions of the same four rows at -3000 and -200, three
-dates each, speeds within 1e-9 deg/day (measured <= 3.4e-10) and jitter
-within 2e-11 deg (<= 4.0e-12), and its part-1 limits are now 1e-9 / 2e-11
-(Vulcan heliocentric; measured 9.1e-11 / 2.4e-12), 5e-9 / 5e-11 (Vulcan
-geocentric; 1.2e-9 / 1.1e-11), 5e-9 / 2e-9 (Selena) and 5e-8 / 1e-9
-(Waldemath, for Moshier's Earth). With part 1 alone 20 of the 24 rows fail
-(the four Vulcan rows of part 1 and all sixteen true rows); before part 1
-and on the upstream build all 24. G24 `vulcan_true_jitter_off`: Vulcan's
-heliocentric true longitude at -3000, Moshier, largest fourth difference,
-9.8e-13 deg shipped (3.05e-8 with part 1 alone), 3.05e-8 compat; G24
-`waldemath_lt_round_off` is now 2.0e-9 (1.65e-8 with part 1 alone). G48,
-G59, G64 pass.
-
-**Part 3 (the light time's fixed point).** `app_pos_etc_plan_osc()`
-iterates the light time on the orbit and stops when a pass changes it by
-less than 1e-12 day, the body as read at that pass's dt, not the converged
-one: Waldemath 2.3e-11 deg and Selena 1.5e-11 deg off the fixed point (their
-barycentric motion, 0.017 AU/day, over ~1e-12 day at 0.0065 and 0.053 AU),
-Vulcan and the heliocentric sets <= 1e-12. This fork's `swe_calc_orbel()`
-(`app_pos_etc_orbel()`) had kept upstream's fictitious-body light time from
-before entry 26: a straight line, x(t) - dt v(t), and the orbit read at
-t - dt only with SEFLG_SPEED, so the position depended on the flag. Against
-the fixed point, astrometric (SEFLG_NOABERR | SEFLG_NOGDEFL), thirteen dates
-1700..2300: an orbit with a = 0.137 AU 1.6e-5 deg without the flag and
-4.4e-9 with it, a = 0.387 AU 3.0e-6 and 7.2e-10, an Earth-centred one at
-0.0068 AU 1.7e-9 and 3.0e-8 (its centre read at the rounded instant).
-
-**Fix, as done here (part 3):** both finish the loop with one Newton step on
-f(tau) = tau - |X(teval - tau) - O| / c, f' = 1 + (rho^ . v) / c, v the
-body's barycentric velocity at teval (there with or without SEFLG_SPEED;
-the Earth read at t - dt has none without it, which made a first try
-move fictitious positions by 2.3e-13 deg with the flag), as entry 78 does for the planets, and
-part 1's move takes the step with the rounding. `app_pos_etc_orbel()` now
-solves the light time on the orbit for every flag set, as the fictitious
-bodies do; its orbit is taken at M - n dt exactly and only its centre at the
-rounded instant, so the orbit is moved by the Newton step and the centre by
-the step and the rounding. After: the fictitious bodies <= 1.5e-12 deg
-(Waldemath; Selena 2.7e-13), the orbel orbits 5.4e-15, 1.0e-14 and 3.6e-12,
-the same with and without SEFLG_SPEED (positions bit-identical either way,
-fictitious and orbel). Speeds unchanged in form; swe_calc_orbel()'s default
-geocentric longitude speed against five-point differences over 2^-7 day goes
-from 4.9e-6 to 1.2e-7 deg/day (the rest is below).
-
-G80 gains (3): the four bodies, Swiss and Moshier, and the three orbel
-orbits with and without SEFLG_SPEED, Swiss, against the fixed point
-iterated in the gate (the body's true barycentric place read at t - tau and
-moved by that instant's rounding, the observer at t) within 5e-12 and 2e-11
-deg. The build before part 3 fails 10 of its 14 rows (the four Earth-centred
-ones, all six orbel ones); upstream fails all 14 (Vulcan heliocentric by
-1.0e-3, entry 26). G24 `orbel_lt_flag_off`: swe_calc_orbel()'s position for
-a = 0.137 AU with against without SEFLG_SPEED, 0 shipped (1.55e-5 deg
-before), 1.55e-5 compat.
-
-Not fixed (found measuring part 3, `swe_calc_orbel()` only): as the first
-call of a context it returns zeros (ecliptic) or (0.17, -0, 0) (XYZ) with its
-flags as the return value and no error, until some `swe_calc()` has run; its
-speeds are off five-point differences of its positions by 8e-8 deg/day in
-the ecliptic of date with SEFLG_TRUEPOS (1.8e-12 in J2000), by 1.07e-6
-heliocentric apparent in J2000 (the heliocentric light-time rate), and by
-2.45e-3 deg/day on Moshier heliocentric (SEFLG_TRUEPOS, J2000).
-
-Not fixed here: at exactly tjd = 2451545.0 every body's latitude of date
-(planets too; Mars 1.5e-10, the Sun 2.7e-10 deg in a fourth difference) is
-off its neighbours'; one instant only, so a J2000 special case somewhere in
-the frame of date.
 
 ## How these were found
 
