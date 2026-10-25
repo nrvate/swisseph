@@ -1254,6 +1254,10 @@ struct epsilon {
  *     revolutions a century, 10^4 times its 1325.552359: its terms in it
  *     cycling every 3.97 minutes, dpsi up to 0.236" and deps 0.0226" off
  *     the series (UPSTREAM-BUGS 151, G138)
+ *   - (nothing for UPSTREAM-BUGS 152: the default nutation's grid, which
+ *     left the IAU 2000A series past 5e8 days and now gives way to it at
+ *     4e8, is this fork's; the compat build's default, 2000B, is computed
+ *     directly and has no grid; G29)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

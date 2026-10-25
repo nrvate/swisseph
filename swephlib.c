@@ -2546,7 +2546,18 @@ static void calc_nutation_2000a_derivs(double J, double *out)
  * no node with the last one (a search stepping by days, unrelated charts)
  * evaluated the series six times, 25-40 times the cost of 2000B (G32). The
  * value depends on J alone, never on what the cache held. Measured against
- * the direct series: G29. */
+ * the direct series: G29.
+ * Upstream bug 152 (this fork's grid): far from J2000 the arguments' T^3
+ * and T^4 terms turn them ever faster -- at |J| = 1e9 days the Moon's mean
+ * anomaly at 2.4 rad/day, ten times its rate now, the node at 0.64 for
+ * 9.2e-4 -- and the polynomial on day-apart nodes left the series between
+ * them: 2.3e-9 deg at |J| 6e8, 1.3e-4 at 1e9, 7 deg at 3e9 and 6.5e28 deg
+ * near the 1e12 it was taken to, which swe_calc(SE_ECL_NUT) answered.
+ * Within SWI_NUT_GRID_JMAX, 4e8 days (1.1 million years), it is within
+ * 2.1e-10 deg of the series, the series' own rounding there; beyond, the
+ * direct series is taken, and its own derivative at the instant for the
+ * rate. */
+#define SWI_NUT_GRID_JMAX 4e8
 static void calc_nutation_grid(swe_ctx *ctx, double J, double *nutlo, double *dnut)
 {
   /* septic Hermite basis on [0, 1], for f0, h f0', h^2 f0'', h^3 f0''' and
@@ -2668,8 +2679,10 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
   } else if (nut_model == SEMOD_NUT_IAU_2000A || nut_model == SEMOD_NUT_IAU_2000B) {
 #ifndef SWE_UPSTREAM_COMPAT
     /* The grid indexes nodes as integers, so a non-finite or absurd J
-     * (G25's hostile walk) takes the direct series, which copes. */
-    if (use_grid && nut_model == SEMOD_NUT_IAU_2000A && fabs(J) < 1e12)
+     * (G25's hostile walk) takes the direct series, which copes; and so
+     * does any J past SWI_NUT_GRID_JMAX, where the grid leaves the series
+     * (UPSTREAM-BUGS 152). */
+    if (use_grid && nut_model == SEMOD_NUT_IAU_2000A && fabs(J) < SWI_NUT_GRID_JMAX)
       calc_nutation_grid(ctx, J, nutlo, NULL);
     else
 #endif
@@ -2816,8 +2829,19 @@ void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
       && !ctx->do_interpolate_nut && !(iflag & SEFLG_JPLHOR)
       && !((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3
            && tjd <= HORIZONS_TJD0_DPSI_DEPS_IAU1980)) {
-    double nl[2];
-    calc_nutation_grid(ctx, tjd, nl, rate);
+    double nl[2], d[8];
+    /* Upstream bug 152: past SWI_NUT_GRID_JMAX the nutation is the direct
+     * series, and its rate the series' own derivative at the instant, not
+     * the grid's (5.2e-4 deg/day off at |J| = 1e9); the central difference
+     * of the series there is its rounding over 2e-4 day, 1.2e-6 deg/day
+     * at 4e8. */
+    if (fabs(tjd) < SWI_NUT_GRID_JMAX) {
+      calc_nutation_grid(ctx, tjd, nl, rate);
+    } else {
+      calc_nutation_2000a_derivs(tjd, d);
+      rate[0] = d[1];
+      rate[1] = d[5];
+    }
   } else {
     double a[2], b[2];
     swi_nutation(ctx, tjd - NUT_SPEED_INTV, iflag, a);

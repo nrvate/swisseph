@@ -180,6 +180,7 @@ worst were in code that had never executed even once.
 | 143 | A thread or context that adopts another thread's `swe_set_jpl_file()` (this fork's) -- a thread running across it, one started after it, a context made after it -- never loads the IERS corrections, so its SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX where the setter's does not: dpsi, the ayanamsa and the sidereal houses 4.2e-2" off the setter's on G134's fixtures | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h` |
 | 144 | `swe_set_ephe_path()` keeps the IERS corrections read from the old directory (`load_dpsi_deps()` loads once), and so does a thread adopting the path: after path A, the JPL file, path B and the JPL file again, SEFLG_JPLHOR answers A's dpsi, 0.131" off B's on G134's fixtures, and after path B alone A's for SEFLG_JPLHOR_APPROX's, 4.2e-2" | Correctness (behaviour) | `sweph.c` |
 | 151 | Woolard's nutation (`SEMOD_NUT_WOOLARD`) turns the Moon's mean anomaly at 13255523.59 revolutions a century, 10^4 times its 1325.552359, so its terms in it cycle every 3.97 minutes: dpsi up to 0.236" and deps 0.0226" off the series, the interpolation on it 0.196"; `SE_SIDBIT_PREC_ORIG`'s Newcomb ayanamsas take it | Correctness | `swephlib.c` |
+| 152 | The default nutation's grid (this fork's) leaves the IAU 2000A series it interpolates far inside its guard of |J| < 1e12 days, as the arguments' T^3 and T^4 terms speed them up: 2.3e-9 deg at |J| 6e8 (1.6 million years), 1.3e-4 at 1e9, 7 deg at 3e9, answered by `swe_calc(SE_ECL_NUT)` with no error; its rate 5.2e-4 deg/day at 1e9 | Correctness | `swephlib.c` |
 
 ---
 
@@ -9512,7 +9513,8 @@ Noticed, not fixed:
   its nodes 4.5e-10 deg at |J| 5.6e8 (1.5 million years), 8.0e-7 deg at
   1e9, 2.8e-3 deg at 1.8e9, 8.7 deg at 3.2e9 and 5.4e25 deg near 1e12,
   where `swe_calc(SE_ECL_NUT)` on Moshier answers without an error. No
-  model holds there; the direct series stays bounded.
+  model holds there; the direct series stays bounded. Fixed as entry
+  152.
 - The speeds across the same switch, with the interpolation off: for t in
   (switch - 1, switch] Mars's longitude speed of date under
   `SEFLG_JPLHOR_APPROX` is 1.571e-5 deg/day off a five-point difference of
@@ -9920,6 +9922,91 @@ Noticed, not fixed:
   fix. 23.25 - 0.00466447 would make it 23 deg 15' again, and move mode
   46's mean ayanamsa by -0.0806" at every date, with the bit or without.
   A table value, left for a decision.
+
+## 152. The default nutation's grid leaves the IAU 2000A series far inside its guard of 1e12 days: 2.3e-9 deg at |J| 6e8, 1.3e-4 deg at 1e9, 7 deg at 3e9, answered by `swe_calc(SE_ECL_NUT)`
+
+**Severity: Correctness (this fork's grid; the default nutation off the series it interpolates beyond |J| 5e8 days, 1.4 million years: 2.3e-9 deg at 6e8, 1.3e-4 at 1e9, 7 deg at 3e9 and up to 6.5e28 deg near 1e12, from `swe_calc(SE_ECL_NUT)` on Moshier with no error; its rate 2.1e-7 deg/day off at 6.3e8, 5.2e-4 at 1e9)**
+**Where:** `swephlib.c`: `calc_nutation()`, `calc_nutation_grid()`, `swi_nutation_rate()` (this fork's; upstream's default is 2000B, computed directly)
+
+Entry 146's noticed item. The default nutation since ts.17 (G29) is full
+IAU 2000A interpolated: the series and its first three derivatives at
+nodes a day apart, and the septic Hermite polynomial on the two nodes
+around J. `calc_nutation()` and `swi_nutation_rate()` took it for any |J|
+< 1e12, the guard G25's hostile walk needed (the nodes are indexed as
+integers), and the direct series beyond.
+
+Why it leaves the series: the fundamental arguments (Simon et al. 1994)
+carry T^3 and T^4 terms, whose rates grow as T^3. At |J| = 1e9 days (T =
+27300 centuries) the Moon's mean anomaly turns at 2.4 rad/day, ten times
+its 0.228 now, and the node at 0.64 rad/day for 9.2e-4: the 18.6-year
+term has a 9.8-day period there, and with its -0.0174"/cty some 490" of
+amplitude. The polynomial's error goes as (omega h)^8, h one day, so as
+T^24: it reaches the floor at about 6e8 days and is degrees by 2e9.
+Below that, what the grid and the series differ by is not the
+polynomial: at the nodes they agree to 1e-17 deg, and between them both
+are as far from the series evaluated in long double, which is the
+arguments' rounding at that size (the luni-solar arguments are some
+1.5e13" at 3.2e8 days, their last bit 2e-3"): the grid and the series
+9.4e-12 and 9.3e-12 deg off it at 1e8, 9.3e-11 and 9.7e-11 at 3.2e8,
+1.1e-9 and 1.75e-9 at 5e8; then 5.0e-8 and 3.8e-9 at 6.3e8, 1.3e-4 and
+3.0e-8 at 1e9.
+
+Measured, Moshier, the default against `SEMOD_NUT_IAU_2000A` set
+explicitly (the direct series), worst over instants in each band of |J|,
+either sign (4000 a band of 0.05 decade, 400 of 0.25), dpsi and deps:
+- 1e8 to 1.1e8: 1.1e-11 and 1.1e-11 deg; 3.2e8 to 3.5e8: 1.2e-10 and
+  7.3e-11; 4.0e8 to 4.5e8: 3.1e-10 and 1.1e-10;
+- 5.0e8 to 5.6e8: 6.7e-10 and 2.4e-10; 5.6e8 to 6.3e8: 2.3e-9 and 1.1e-9;
+  7.1e8 to 7.9e8: 1.4e-8 and 5.5e-8; 8.9e8 to 1e9: 1.3e-6 and 5.2e-6;
+  1e9 to 1.1e9: 1.4e-5 and 3.5e-5;
+- 1.8e9 to 3.2e9: 7.1 and 1.2 deg; 1e10 to 1.8e10: 2.4e8 deg; 5.6e11 to
+  1e12: 5.5e25 deg (G29's instants below: 6.5e28).
+The rate, `swi_nutation_rate()`'s derivative of the polynomial against
+the series' own derivative at the instant: 6.1e-10 deg/day at 4e8 to
+5e8, 4.0e-9 at 5e8 to 6.3e8, 2.1e-7 at 6.3e8 to 7.9e8, 5.2e-4 at 1e9.
+Nothing but the nutation reaches such dates: Moshier's planets and Moon
+and the mean node and apogee refuse them; `SE_ECL_NUT`, `swe_sidtime()`
+and the houses (whose speeds difference their positions) take the
+nutation, and the rate reaches only speeds of date.
+
+**Fix, as done here:** the grid within |J| < `SWI_NUT_GRID_JMAX`, 4e8 days
+(1.1 million years), and the direct series beyond, in `calc_nutation()`;
+in `swi_nutation_rate()`, where the polynomial's derivative was taken,
+beyond the same bound the series' own derivative at the instant
+(`calc_nutation_2000a_derivs()`, the grid's node function, at tjd), not
+the central difference other models take, which is the series' rounding
+over 2e-4 day there (1.2e-6 deg/day at 4e8). Within 4e8 days the grid is
+within the series' rounding, 2.1e-10 deg in dpsi and 1.2e-10 in deps
+(8000 instants a band of 0.05 decade), and that is the step where the
+two meet; the rate's is 3.5e-10 deg/day. The grid is this fork's, so the
+fix is in place: the compat build has no grid and nothing to restore.
+- After: the default is the direct series bit for bit beyond 4e8 days.
+  The rate is within 2.2e-10 deg/day of a five-point difference over
+  2^-6 day of the series evaluated in long double up to 4e8, 1.1e-10 at
+  4e8 to 6.3e8 and 2.6e-9 at 6.3e8 to 1e9 (beyond, the reference's own
+  truncation), for 2.3e-9 and 1.6e-5 before.
+- In -13000..+17000 nothing changes: G29's 1800-2100 and -13000..15000
+  numbers are the tip's (0.0011 and 0.0006 uas, 0.0014 and 0.0005), G1's
+  transcript is too, and `perf stat` instructions for `SE_ECL_NUT` at
+  20000 instants over -13000..+17000 with the ten Moshier bodies with
+  speed at 20000 instants 1800-2100: 52629580884 before, 52621865158
+  after (-0.015%).
+
+G29 `tests/nutgrid.c`, extended: 4000 instants with |J| log-uniform over
+1e7..1e13, either sign, the default against the direct series within 1e-9
+deg (3.6 uas), the residual floor: 0.57 uas in dpsi and 0.21 in deps;
+before the fix 2.4e35 uas, near 1e12. The compat build, whose default is
+2000B, fails it as it does G29's other spans (1.4e10 uas). No G24 case:
+the compat build has nothing to restore. G32, G57, G50 and G122 pass.
+
+Noticed, not fixed:
+- RESIDUAL. `swi_nutation_rate()`'s central difference over
+  `NUT_SPEED_INTV` (1e-4 day), the rate of every model but the default's
+  grid, is the series' rounding over 2e-4 day far from J2000: the
+  2000A series set explicitly, against its own derivative, 1.0e-9 deg/day
+  at |J| 1e6, 3.4e-9 at 7.9e6 (the end of -13000..+17000), 1.1e-8 at
+  2.5e7 (68000 years), 5.4e-8 at 1e8, 1.2e-6 at 4e8. Above the 1e-8
+  deg/day floor only beyond 68000 years, where no body has a speed.
 
 ## How these were found
 

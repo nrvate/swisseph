@@ -18,6 +18,19 @@
  * explicitly, which computes the series directly, within 0.05 uas. The
  * compat build keeps 2000B as its default and fails: 2.15 mas worst over
  * 1800-2100, 8.1 mas over the long span.
+ *
+ * And far from J2000 (UPSTREAM-BUGS 152): the arguments' T^3 and T^4
+ * terms turn them ever faster (at |J| = 1e9 days the Moon's anomaly 2.4
+ * rad/day, ten times its rate now), and the polynomial on day-apart nodes
+ * left the series between them long before the |J| < 1e12 it was taken
+ * to: 2.3e-9 deg at |J| 6e8, 1.3e-4 deg at 1e9, 7 deg at 3e9, 6.5e28 deg
+ * near 1e12. The grid holds within SWI_NUT_GRID_JMAX, 4e8 days (1.1
+ * million years), and the direct series is taken beyond. The check: 4000
+ * instants with |J| log-uniform over 1e7..1e13, either sign, within 1e-9
+ * deg (3.6 uas), the residual floor. Measured 0.57 uas (1.6e-10 deg; the
+ * series' own rounding there, as far from a long double evaluation of
+ * it), and 0 beyond 4e8; before the fix 2.4e35 uas, near 1e12. The compat
+ * build, whose default is 2000B, fails it too (1.4e10 uas).
  * Moshier, no files. Run as
  *   nutgrid
  */
@@ -54,6 +67,22 @@ int main(void)
     }
     printf("  %-14s worst dpsi %.4f uas, deps %.4f uas\n", rgszSpan[s], wl, wo);
     if (wl > 0.05 || wo > 0.05) bad++;
+  }
+  {
+    /* far from J2000: within the 1e-9 deg floor, |J| out past the guard */
+    double wl = 0, wo = 0;
+    for (i = 0; i < 4000; i++) {
+      double t = (i & 1 ? -1 : 1) * pow(10.0, 7.0 + 6.0 * (rand() / (double) RAND_MAX));
+      if (swe_calc_r(cg, t, SE_ECL_NUT, SEFLG_MOSEPH, g, serr) < 0 ||
+          swe_calc_r(cd, t, SE_ECL_NUT, SEFLG_MOSEPH, d, serr) < 0) {
+        printf("  ERROR %s\n", serr);
+        return 1;
+      }
+      if (fabs(g[2] - d[2]) * 3.6e9 > wl) wl = fabs(g[2] - d[2]) * 3.6e9;
+      if (fabs(g[3] - d[3]) * 3.6e9 > wo) wo = fabs(g[3] - d[3]) * 3.6e9;
+    }
+    printf("  %-14s worst dpsi %.4g uas, deps %.4g uas (limit 3.6)\n", "|J| 1e7..1e13", wl, wo);
+    if (!(wl <= 3.6 && wo <= 3.6)) bad++;
   }
   swe_ctx_free(cg);
   swe_ctx_free(cd);
