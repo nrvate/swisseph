@@ -1827,6 +1827,9 @@ static char *dms(double x, int iflag)
     sgn = 1;
   }
   if (iflag & BIT_ZODIAC) {
+    /* 29 Pisces 59'59.5" rounds up below and comes back here as 360:
+     * 0 Aries, not znam[12] (UPSTREAM-BUGS 47) */
+    x = fmod(x, 360);
     izod = (int) floor(x / 30);
     x = fmod(x, 30);
     kdeg = (long) x;

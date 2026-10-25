@@ -24,6 +24,10 @@
  *  - the first form also asked the header of a fixed day in 1959, not of
  *    the run's begin date: with SE_EPHE_FALLBACK=1, -ejplde200.eph
  *    -b1.3.1500 said "based on JPL DE200" over Moshier positions.
+ * And one older than 8a36c49 that its zero declination makes common
+ * (UPSTREAM-BUGS 47): dms() rounds 29 Pisces 59'59.5" up to 360 and
+ * prints it as znam[12], past the twelve signs, as the Sun's March equinox
+ * of 2002 is (ASan: global-buffer-overflow, a read).
  *
  * The checks, on swevents built with ASan (swevents_asan), each run
  * exiting 0 with no sanitizer report:
@@ -38,7 +42,9 @@
  *  (d) -dodecl at coarse steps, which (c) cannot see: the Moon at 12 and
  *      at 14 days over 2000, Mercury at 12 days over 2005 and at 15 days
  *      over 2002. Each of the four fails on the first form, as described
- *      above.
+ *      above;
+ *  (e) -dodecl for the Sun over March 2002: the equinox prints as 0 Aries
+ *      0'0", with no overflow.
  * For (c) and (d): as many zero declinations as bisection on swe_calc()
  * finds, each printed once and in time order, inside the run (from the
  * begin date to the last step), and each within TOL seconds of the
@@ -234,6 +240,11 @@ int main(int argc, char **argv)
   zeros(argv[1], argv[2], "d", SE_MOON, "the Moon", 2000, 1, 1, 26, 14);
   zeros(argv[1], argv[2], "d", SE_MERCURY, "Mercury", 2005, 1, 1, 31, 12);
   zeros(argv[1], argv[2], "d", SE_MERCURY, "Mercury", 2002, 1, 1, 25, 15);
+
+  status = run(argv[1], argv[2], 0, "-eswe -p0 -b1.3.2002 -n30 -s1 -dodecl");
+  check("(e) the Sun's 2002 March equinox: 0 Aries, no overflow",
+        clean(status) && strstr(out, " 0 AR  0' 0\"") != NULL,
+        strstr(out, "Sanitizer") != NULL ? strstr(out, "ERROR") : NULL);
   swe_close();
   if (bad) {
     printf("G55 FAIL: %d of %d\n", bad, n);

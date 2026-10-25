@@ -4,7 +4,8 @@ Bugs found and fixed in a thread-safety fork of Swiss Ephemeris, **each one
 verified still present in upstream** at `3fd0f95` ("with -astorb"), the
 `legacy-master` this fork branched from. Line numbers below are upstream's.
 Entries 45 and 46 are in work upstream added after `3fd0f95`, and were
-verified at `94621ab`, the upstream master merged on 2026-10-25.
+verified at `94621ab`, the upstream master merged on 2026-10-25; entry 47
+is in both.
 
 This is not a diff of the fork. Most of what the fork changed — explicit
 contexts, a C17 build, a strict ephemeris policy — is a deliberate
@@ -84,6 +85,7 @@ worst were in code that had never executed even once.
 | 44 | The default sidereal time steps 1.908" at 2050 and 0.097" at 1850, and outside 1850-2050 it follows delta t: +328" at year 0, +2379" at -3000 | Correctness | `swephlib.c` |
 | 45 | `swe_get_denum()` (new, 9a8b759) answers the Swiss planet file's DE number whatever the ephemeris, and 431 where it holds none: DE441 for a DE200 or Moshier calculation, DE431 for DE441 files before a planet is asked | Correctness | `sweph.c` |
 | 46 | swevents (8a36c49): the header's "based on JPL DE%d" asks before the run's ephemeris is set, and is appended past `cmdline[1024]` by a long command line; a zero declination is a parabola's root, the Moon's 83 s out | Memory / Correctness | `swevents.c` |
+| 47 | swevents' `dms()` prints a longitude that rounds up to 360 degrees as `znam[12]`, past the twelve signs: the Sun's March equinox under `-dodecl` | Memory | `swevents.c` |
 
 ---
 
@@ -2567,10 +2569,29 @@ clean; (c) the Moon's and the Sun's zero declinations over March 2000 at a
 1-day step, and (d) at coarse steps, the Moon at 12 and 14 days and
 Mercury at 12 and 15: every crossing bisection finds where swevents can
 see, printed once, in order, within 0.6 s (whole seconds are printed, so
-0.5 s is the least possible; 0.50 s measured). 12 checks; upstream's
-swevents fails 11 of the 12: every header but `-eswe`'s, the overflow, and
-every zero declination (the Moon 82.9 s out at a 1-day step, the Sun 0.9
-s; at the coarse steps up to 6.6 days).
+0.5 s is the least possible; 0.50 s measured). 13 checks with bug 47's;
+upstream's swevents fails 11 of the 12 that are this entry's: every header
+but `-eswe`'s, the overflow, and every zero declination (the Moon 82.9 s
+out at a 1-day step, the Sun 0.9 s; at the coarse steps up to 6.6 days).
+
+## 47. swevents prints a longitude that rounds up to 360 degrees as a thirteenth sign
+
+**Severity: Memory (a global-buffer-overflow read in `dms()`; under ASan swevents aborts, without it prints whatever follows `znam[]`, as at the Sun's March equinox of 2002 with `-dodecl`)**
+**Where:** `swevents.c`: `dms()` (in `3fd0f95`; still in `94621ab`)
+
+`dms()` takes the sign as `floor(x / 30)` and, when the seconds round up to
+60, goes round again with the degrees raised by one: 29 Pisces 59'59.5"
+comes back as 360, sign 12, and `znam[12]` is read past the twelve signs.
+Any event printed within half a second of arc below 0 Aries does it. Bug
+46's zero declination makes it common, since the Sun's at the March
+equinox is printed there: `-eswe -p0 -b1.1.2002 -n365 -s1 -dodecl` aborts
+under ASan. swetest's own formatter already folds sign 12 to 0.
+
+**Fix, as done here:** the longitude is reduced modulo 360 before the sign
+is taken, so it prints as 0 Aries 0'0".
+
+G55 (e): the Sun over March 2002 with `-dodecl`, run clean, its equinox
+printed as 0 Aries. It fails without the fix.
 
 ## How these were found
 
