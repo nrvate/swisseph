@@ -57,11 +57,13 @@ int main(int argc, char **argv)
         char serr[256];
         if (swe_calc_r(c, t, rgObj[o].ipl, rgEph[e].fl | SEFLG_SPEED3, x, serr) < 0) {
           printf("  ERROR %s jd %.4f: %s\n", rgObj[o].sz, t, serr);
+          swe_ctx_free(c);
           return 1;
         }
         for (k = 0; k < 5; k++)
           if (swe_calc_r(c, t + (k - 2) * h, rgObj[o].ipl, rgEph[e].fl, p[k], serr) < 0) {
             printf("  ERROR %s jd %.4f: %s\n", rgObj[o].sz, t, serr);
+            swe_ctx_free(c);
             return 1;
           }
         for (j = 0; j < 3; j++) {
@@ -79,6 +81,7 @@ int main(int argc, char **argv)
         bad++;
     }
   }
+  swe_ctx_free(c);
   if (bad) {
     printf("G53 FAIL: %d\n", bad);
     return 1;

@@ -1349,7 +1349,8 @@ clean:
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
         check-ctxfiles check-compat check-jplhor check-hostile \
         check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-oscspeed check-callorder check-filejoin check-missfile check-hdrbound check-fictstar check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary \
-        ci-image check-ci clean
+        ci-image check-ci clean \
+        check-dtobs check-fictlt check-moonlt check-jpltdb check-sidsplice check-sidera check-obliq check-nutgrid check-nutspeed check-sidnod check-spicarv
 
 # Benchmark for notes/C17_PERFORMANCE.md.
 #
@@ -1533,7 +1534,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg fictbuiltin lunarpull lunarpulleph intpaps node3speed starspeed defldisc moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh nutrate nutobliq staraberr moshvel startopodefl starflags tjdzero housespeed housefix houseresid ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile hdrbound hdrbound_ubsan fictstar helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg fictbuiltin lunarpull lunarpulleph intpaps node3speed starspeed defldisc moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh nutrate nutobliq staraberr moshvel startopodefl starflags tjdzero housespeed housefix houseresid ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile hdrbound hdrbound_ubsan fictstar helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
