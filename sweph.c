@@ -2249,6 +2249,7 @@ static void ctx_release(swe_ctx *ctx)
     ctx->denum_unread |= SWI_DENUM_JPL;
 #endif
   ctx->sweph_denum_moon = 0;
+  ctx->sweph_denum_planet = 0;	/* bug 166: owed with the moon file's */
   ctx->jpldenum_cfg = 0;
   swi_close_ephe_files(ctx, FORGET_DENUM);
   free_planets(ctx);
@@ -2446,6 +2447,25 @@ void CALL_CONV swe_close(void)
  * the DE number and set the tidal acceleration of the Moon. Upstream ran
  * a full swe_calc() of the Moon for this, which also opened the planet
  * file and filled the save area; the header is all that is used. */
+#ifndef SWE_UPSTREAM_COMPAT
+/* bug 166: the planet file for J2000 opened and its header read, as the
+ * moon file's is above; its DE number, or 0 */
+static int32 ephe_path_read_planet(swe_ctx *ctx)
+{
+  struct file_data *fdp = &ctx->fidat[SEI_FILE_PLANET];
+  char fname[AS_MAXCH];
+  swi_gen_filename(J2000, SEI_EARTH, fname);
+  if ((fdp->fptr = swi_fopen(ctx, SEI_FILE_PLANET, fname, ctx->ephepath, NULL)) == NULL)
+    return 0;
+  if (read_const(ctx, SEI_FILE_PLANET, NULL) != OK) {
+    memset((void *) fdp, 0, sizeof(struct file_data));	/* closed by it (bug 104) */
+    return 0;
+  }
+  file_nominal_span(J2000, SEI_EARTH, fname, &fdp->tnom0, &fdp->tnom1);	/* bug 89 */
+  return fdp->sweph_denum;
+}
+#endif
+
 static void ephe_path_read_moon(swe_ctx *ctx)
 {
   struct file_data *fdp = &ctx->fidat[SEI_FILE_MOON];
@@ -2477,6 +2497,26 @@ static void ephe_path_read_moon(swe_ctx *ctx)
    * its first delta-t too, not only after a failed open. Published with
    * SWI_CFG_PATH. */
   ctx->sweph_denum_moon = (fdp->fptr != NULL) ? fdp->sweph_denum : 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 166: without the moon files the Swiss files' term was the
+   * default, -25.80 (DE431's), though the planet files there are DE441's
+   * (-25.936): delta t in AD 1000 1463.430567 s for the complete
+   * directory's 1474.717432, in 1900 -1.990764 for -1.953326, and every
+   * answer that keeps SEFLG_SWIEPH moved with it -- the heliocentric Mars
+   * at 1900 2.6e-7 deg, in AD 1000 5.8e-5, the Sun with the fallback 4.4e-7
+   * and 1.3e-4, the mean apogee 4.9e-8. The term is the lunar theory's in
+   * delta t, and the Moon itself, Moshier's then, answers SEFLG_MOSEPH and
+   * takes Moshier's own DE404 term (bug 120); what keeps SEFLG_SWIEPH is
+   * the planet files', the Earth but for its 1/82 lunar offset. So the
+   * planet file's DE number at J2000, its header read as the moon file's
+   * is and the file kept open for the calculations, when the moon file's
+   * was not found; a planet file left open by the same path again keeps
+   * the number read with it. */
+  if (fdp->fptr != NULL)
+    ctx->sweph_denum_planet = 0;
+  else if (ctx->fidat[SEI_FILE_PLANET].fptr == NULL)
+    ctx->sweph_denum_planet = ephe_path_read_planet(ctx);
+#endif
 }
 
 /* The directory list swe_set_ephe_path() adopts for `path`: SE_EPHE_PATH

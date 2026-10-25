@@ -1347,6 +1347,10 @@ struct epsilon {
  *     de431.eph that is de200.eph, the first UT JPL Moon in AD 1700
  *     1.79e-3 deg off the second, in a fresh process (UPSTREAM-BUGS 165,
  *     G132, G24)
+ *   - the Swiss files' tidal term without the moon files the default,
+ *     -25.80 (DE431's), not the planet files' DE number's (DE441, -25.936):
+ *     delta t in AD 1000 11.29 s off, the heliocentric Mars 5.8e-5 deg
+ *     there (UPSTREAM-BUGS 166, G142, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1961,6 +1965,11 @@ struct swe_ctx {
    * succeeded in this configuration, and the default term is then the
    * honest answer for every call, first or fiftieth. */
   int32 sweph_denum_moon;
+  /* bug 166: the planet file's DE number, read at J2000 when the moon
+   * file's header was not found, for the Swiss files' tidal term; 0 when
+   * the moon file's was, or neither. Published with SWI_CFG_PATH, owed with
+   * the moon file's after swe_close(); never set under SWE_UPSTREAM_COMPAT. */
+  int32 sweph_denum_planet;
   int32 jpldenum_cfg;
   /* bug 131: the DE numbers swe_close() forgot that the kept path and JPL
    * file give (SWI_DENUM_MOON, SWI_DENUM_JPL), read again at the next

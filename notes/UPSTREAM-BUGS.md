@@ -198,6 +198,7 @@ worst were in code that had never executed even once.
 | 162 | Under SEFLG_JPLHOR_APPROX (`SEMOD_JPLHORA_1`, and `_3` after 1962 Jan 20), on a JPL file of DE 403 or later, `swi_approx_jplhor()` turns the position about the pole by the Horizons offset in right ascension (-51 to -53 mas) and not the velocity: speeds off their places' rate, the Moon's latitude 1.46e-6 deg/day, its right ascension 5.6e-7, Mars's 1.25e-7, the Sun's latitude 1.02e-7; distance rates 7.2e-9 AU/day on Mars | Correctness | `swephlib.c` |
 | 164 | A JPL file whose `swe_set_jpl_file()` failed along the path then set, and a path where it is (or the file installed there and `swe_close()`): no DE number was read, so the path setter and the close read none, and the first UT JPL Moon in AD 1700 is 40.0057507520 deg and the second 40.0039614086, `swe_deltat()` 15.091463 s, where a fresh process given that path and the file answers 40.0039614086 twice and 3.012003 s -- on every thread and context | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 | 165 | With no JPL file set, a JPLEPH delta t knows no DE number and takes the default tidal term, and the calculation after it opens the default file, de431.eph, by its name (or its fallback de406.eph): with a de431.eph that is de200.eph the first UT JPL Moon in AD 1700 40.0057507520 deg and the second 40.0039614086 in a fresh process, the JPLEPH delta t 14.286718 s before a JPL calculation and 3.012003 after one | Correctness (behaviour) | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h` |
+| 166 | Without the moon files the Swiss files' tidal term is the default, -25.80 (DE431's), not the planet files' DE number's (DE441, -25.936): delta t in AD 1000 1463.430567 s for 1474.717432, 0.037 s at 1900, the heliocentric Mars 2.6e-7 deg off at 1900 and 5.8e-5 in AD 1000, the mean apogee 4.9e-8 at 1900 -- on every thread and context | Correctness | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 
 ---
 
@@ -11254,6 +11255,111 @@ path without de431.eph whose de406.eph is, the larger, 1 if the first
 call's serr lacks the fallback's warning: 0 shipped, 1.79e-3 deg compat
 (and shipped before the fix); with the warning not carried to the
 calculation, 1.
+
+## 166. Without the moon files the Swiss files' tidal term is the default, not the planet files' DE number's: delta t 11.29 s off in AD 1000, and every answer that keeps SEFLG_SWIEPH with it
+
+**Severity: Correctness (residual above the floor: delta t 0.037 s off at 1900 and 11.29 s in AD 1000; the heliocentric Mars 2.6e-7 deg off at 1900 and 5.8e-5 in AD 1000, the mean apogee 4.9e-8 at 1900, with the fallback the Sun 4.4e-7 and 1.3e-4 -- on every thread and context)**
+**Where:** upstream `swephlib.c` `swi_get_tid_acc()` (SEFLG_SWIEPH's DE number from the moon file alone); here `sweph.c`: `ephe_path_read_moon()`, new `ephe_path_read_planet()`, `ctx_release()`; `swephlib.c`: `swi_get_tid_acc()`; `sweconfig.c`: `swi_config_capture()`, `swi_config_apply()`, `cfg_merge()`, `swi_config_reset()`; `sweph.h`, `sweconfig.h`
+
+From PR #33's list of defects found and not fixed. The Swiss files' term
+is the moon file's DE number: the open moon file's, else the one the path
+setter read from semo_18.se1's header and published (bug 101's
+`sweph_denum_moon`). With no moon file along the path there is neither,
+and the term was the default, `SE_TIDAL_DEFAULT`, -25.80, DE431's. The
+planet files there are DE441's: sepl_18.se1's header, like semo_18.se1's,
+names DE441, `SE_TIDAL_DE441` -25.936 (the finder's figure; -25.80 is
+DE431's, the default's). Measured with a /tmp directory of links to
+EPHEDIR's files but semo*.se1, against EPHEDIR: `swe_get_tid_acc()`
+-25.80 for -25.936; `swe_deltat_ex()` with SEFLG_SWIEPH in AD 1000
+1463.430567 s for 1474.717432, at 1900 -1.990764 for -1.953326 (0.037 s);
+under the strict setting, which refuses what depends on Moshier's Moon
+(bug 120), `swe_calc_ut()`'s heliocentric Mars at 1900 286.446337609530
+deg for 286.446337869546 (2.6e-7) and in AD 1000 110.447311102471 for
+110.447369542638 (5.8e-5); with the fallback allowed `swe_nod_aps_ut()`'s
+mean node and apogee at 1900 259.161307172549 and 154.332767121104 for
+259.161307149613 and 154.332767169674 (2.3e-8, 4.9e-8: the finder's 5.0e-8
+is the apogee's), the Sun 280.153361019726 for 280.153361460308 (4.4e-7)
+and in AD 1000 1.3e-4 deg off. The same on a thread, a context and a first
+use by `SE_EPHE_PATH`, and in the compat build, upstream's.
+
+The term, on its science. The tidal term in delta t is the Moon's secular
+acceleration, n-dot, of the lunar ephemeris: delta t before the
+telescopic era is reconstructed from eclipse and occultation timings
+reduced with a lunar theory of one n-dot, and `adjust_for_tidacc()`
+rescales it to the n-dot of the ephemeris in use (by -0.000091 (n-dot -
+n-dot0) (Y - 1955)^2 s), so that this ephemeris reproduces the observed
+events. The n-dot belongs to the whole DE integration the files were made
+from -- the Moon's orbit was integrated with it, and the planets' with
+that Moon -- and the planet files carry its DE number in their header as
+the moon files do. Without the moon files:
+- the Moon is Moshier's, a theory fitted to DE404 (swemmoon.c), whose term
+  is `SE_TIDAL_DE404`, -25.58 (`SE_TIDAL_MOSEPH`). Since bug 120 it answers
+  SEFLG_MOSEPH, and `swe_calc_ut()` takes Moshier's delta t for it: its
+  term is its own theory's already;
+- what keeps SEFLG_SWIEPH comes from the planet files -- the planets, the
+  Sun, the Earth but for its 1/82 lunar offset (bug 120's 3.4e-8 deg) --
+  or from no file at all (the mean elements): the delta t the complete
+  directory gives them is the planet files' DE441 term, and nothing in
+  them is fitted to any other;
+- -25.80 is the term of no file present, the default for want of one.
+So the term is the planet files' DE number's. It is a defect, above the
+residual floor (5.0e-8 deg at 1900, 5.8e-5 in AD 1000).
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`; the compat
+build keeps upstream's default term):
+- `ephe_path_read_moon()`, when the moon file's header is not found at
+  J2000, reads the planet file's there (`ephe_path_read_planet()`:
+  sepl_18.se1 opened and its header read as the moon file's is, kept open
+  for the calculations with the span it answers for, bug 89's). Its DE
+  number is published with the path (`sweph_denum_planet`), captured,
+  merged, compared and adopted with the moon file's and owed with it after
+  `swe_close()`, so the setters, bug 107's first use, bug 131's reading
+  again and a thread or context taking the path all carry it; 0 when the
+  moon file's was read. The same path again with its planet file open
+  keeps the number read with it.
+- `swi_get_tid_acc()` takes it for SEFLG_SWIEPH after the open moon file
+  and the moon file's published number.
+- After the fix the directory without the moon files answers delta t, the
+  getter, the heliocentric Mars and the mean points bit for bit as
+  EPHEDIR; the Sun with the fallback 1.55e-9 deg off it at 1900 and
+  8.7e-9 in AD 1000 (the Earth's Moshier lunar offset, bug 120's).
+- The opens, `fopen()` interposed, 100 rounds after a warm-up, before and
+  after: a path change and the heliocentric Mars at 1900 each round, 400
+  calls and 100 opens of sepl_18.se1 both (the setter's open replaces the
+  calculation's); a path change and a Moshier Mars, 100 calls and no open
+  before, 200 and 100 after, as EPHEDIR's setter opens semo_18.se1 for its
+  header (100 and 100); the same path again and the heliocentric Mars, 100
+  calls (bug 118's look for a moon file installed since) and no open both.
+  EPHEDIR's counts unchanged. Instructions: calc-swieph 12266746129 before
+  and 12266751448 after, calc-moseph 23333308874 and 23333313678.
+
+G142 `tests/moonlesstid.c`, each case in a forked process: the directory
+without the moon files read by the setting thread, a thread started after
+the path, a thread running across it, a context made after it, an
+explicit context, a first use by `SE_EPHE_PATH` and the setting thread
+after `swe_close()`; under the strict setting the getter, delta t in AD
+1000 and 1900, `swe_deltat()`, the heliocentric Mars at 1900 and in AD 1000
+and the getter again, and with the fallback allowed the mean node and
+apogee at 1900 and in AD 1000 and the Moon's return flag (SEFLG_MOSEPH),
+each bit for bit as the same reader given EPHEDIR: 14 pass. Before the fix
+the 14 fail; the compat build fails the 14 with the fix and without, the
+strict 7 by upstream's default term and the fallback's 7 by bug 120's
+SEFLG_SWIEPH on Moshier's Moon, which it restores. G24 `moonless_tid_off`,
+delta t in AD 1000 along that directory against EPHEDIR, each on a context
+made and given its path: 0 shipped, 11.29 s compat (and shipped before the
+fix).
+
+Noticed, not fixed: `swe_nod_aps_ut()` of the Moon with SE_NODBIT_MEAN and
+SEFLG_SWIEPH, geocentric, along a directory without the moon files is
+refused under the strict setting ("Swiss (.se1) Moon file is not
+available"), though with the fallback allowed its four points and their
+speeds at 1900, AD 1000 and J2000 equal EPHEDIR's bit for bit -- an answer
+that does not depend on Moshier's Moon refused (bug 120's rule). And with
+both J2000 files missing, semo_18.se1 and sepl_18.se1, and another
+epoch's there, the path setter reads no DE number and the first delta t
+takes the default term: in AD 1500 291.693033 s, then 294.255183 after a
+Swiss Moon there opened semo_12.se1, the first Moon 158.4001317882 deg for
+EPHEDIR's 158.4005084277 (3.8e-4 deg); before this entry too.
 
 ## How these were found
 

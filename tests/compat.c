@@ -3984,6 +3984,42 @@ static double jpl_dft_moon_off(void)
   return v;
 }
 
+/* swe_deltat_ex() in AD 1000 with SEFLG_SWIEPH along a directory without
+ * the moon files (links to EPHE's other files) against EPHE, s, each on a
+ * context made and given its path. Upstream's term without the moon file
+ * is the default, -25.80, though the planet files are DE441's (-25.936):
+ * 1463.430567 s for 1474.717432, 11.29 (UPSTREAM-BUGS 166). */
+static double moonless_tid_off(void)
+{
+  char dir[] = "/tmp/compatnomXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double a = 0, b = 1e9;
+  struct dirent *e;
+  swe_ctx *c;
+  DIR *d;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strncmp(e->d_name, "semo", 4) != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, dir);
+    a = swe_deltat_ex_r(c, 2086308.0, SEFLG_SWIEPH, NULL);
+    swe_ctx_free(c);
+  }
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, EPHE);
+    b = swe_deltat_ex_r(c, 2086308.0, SEFLG_SWIEPH, NULL);
+    swe_ctx_free(c);
+  }
+  rm_dir(dir);
+  return fabs(a - b) * 86400;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 after the path,
  * swe_set_jpl_file("de200.eph") and the path again by another string, the
  * first call against the second, deg. Upstream's path setter forgets the
@@ -4113,7 +4149,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4254,6 +4290,7 @@ int main(int argc, char **argv)
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
   jplnamed = jpl_named_moon_off();
+  moonless = moonless_tid_off();
   dtflag0 = dt_flag0_off();
   closekeep = close_keeps_off();	/* last: see the function */
 
@@ -5230,6 +5267,14 @@ int main(int argc, char **argv)
   else {
     printf("  JPL Moon, default file %.2e deg FAIL: expected %s\n",
            jpldft, WANT_DEFECT ? "> 1e-3, < 0.5" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moonless > 10) : (moonless == 0))
+    printf("  delta t, no moon file  %.2e s OK\n", moonless);
+  else {
+    printf("  delta t, no moon file  %.2e s FAIL: expected %s\n",
+           moonless, WANT_DEFECT ? "> 10" : "0");
     bad++;
   }
 

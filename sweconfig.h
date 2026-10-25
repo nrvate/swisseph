@@ -94,6 +94,7 @@ struct swe_config {
    * depend on which files a context happens to have open -- see the
    * comment on the fields in struct swe_ctx. Zero = unknown. */
   int32 sweph_denum_moon;
+  int32 sweph_denum_planet;	/* bug 166: when the moon file's was not found */
   int32 jpldenum_cfg;
   /* Upstream bug 131: the two swe_close() forgot, which the path and the
    * JPL file kept give, and the generation of that close. A context

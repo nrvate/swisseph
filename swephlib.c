@@ -4262,6 +4262,12 @@ int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int
 	 * section 14). */
 	denum = ctx->sweph_denum_moon;
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 166: no moon file along the path -- the planet files'
+       * DE number, not the default (see ephe_path_read_moon()) */
+      else if (denum == 0 && ctx->sweph_denum_planet != 0)
+	denum = ctx->sweph_denum_planet;
+#endif
     }
   }
   switch(denum) {

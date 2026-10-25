@@ -93,6 +93,7 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
   memcpy(c->ephepath, ctx->ephepath, sizeof(c->ephepath));
   memcpy(c->jplfnam,  ctx->jplfnam,  sizeof(c->jplfnam));
   c->sweph_denum_moon       = ctx->sweph_denum_moon;
+  c->sweph_denum_planet     = ctx->sweph_denum_planet;	/* bug 166 */
   c->jpldenum_cfg           = ctx->jpldenum_cfg;
   c->denum_unread           = ctx->denum_unread;	/* bug 131 */
   c->path_closed            = ctx->path_closed;
@@ -298,7 +299,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
                     * and a worker kept the old tidal term (2026-09-16
                     * review, F3). */
                    || (!(keep & SWI_DENUM_MOON)
-                       && ctx->sweph_denum_moon != c->sweph_denum_moon)
+                       && (ctx->sweph_denum_moon != c->sweph_denum_moon
+                        || ctx->sweph_denum_planet != c->sweph_denum_planet))
                    || (!(keep & SWI_DENUM_JPL)
                        && ctx->jpldenum_cfg != c->jpldenum_cfg)
                    || ctx->jpl_named != c->jpl_named);	/* bug 164 */
@@ -354,7 +356,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
              && strcmp(ctx->ephepath, c->ephepath) == 0
              && ctx->ephe_path_is_set == c->ephe_path_is_set
              && ((keep & SWI_DENUM_MOON)
-                 || ctx->sweph_denum_moon == c->sweph_denum_moon);
+                 || (ctx->sweph_denum_moon == c->sweph_denum_moon
+                     && ctx->sweph_denum_planet == c->sweph_denum_planet));
 #endif
   /* --- copy the values in, group by group ---------------------------- */
   if (groups & SWI_CFG_PATH) {
@@ -367,8 +370,10 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     memcpy(ctx->ephepath, c->ephepath, sizeof(ctx->ephepath));
     memcpy(ctx->jplfnam,  c->jplfnam,  sizeof(ctx->jplfnam));
     ctx->ephe_path_is_set = c->ephe_path_is_set;
-    if (!(keep & SWI_DENUM_MOON))
+    if (!(keep & SWI_DENUM_MOON)) {
       ctx->sweph_denum_moon = c->sweph_denum_moon;
+      ctx->sweph_denum_planet = c->sweph_denum_planet;	/* bug 166 */
+    }
     if (!(keep & SWI_DENUM_JPL))
       ctx->jpldenum_cfg   = c->jpldenum_cfg;
     ctx->jpl_named = c->jpl_named;	/* bug 164 */
@@ -552,6 +557,7 @@ static void cfg_merge(struct swe_config *dst, const struct swe_config *src,
     memcpy(dst->jplfnam,  src->jplfnam,  sizeof(dst->jplfnam));
     dst->ephe_path_is_set = src->ephe_path_is_set;
     dst->sweph_denum_moon = src->sweph_denum_moon;
+    dst->sweph_denum_planet = src->sweph_denum_planet;	/* bug 166 */
     dst->jpldenum_cfg     = src->jpldenum_cfg;
     dst->denum_unread     = src->denum_unread;	/* bug 131 */
     dst->path_closed      = src->path_closed;
@@ -853,6 +859,7 @@ void swi_config_reset(swe_ctx *ctx)
       cfg_master.denum_unread |= SWI_DENUM_JPL;
 #endif
     cfg_master.sweph_denum_moon = 0;	/* as ctx_release() */
+    cfg_master.sweph_denum_planet = 0;
     cfg_master.jpldenum_cfg = 0;
 #ifndef SWE_UPSTREAM_COMPAT
     cfg_master.path_closed = swi_gen_bump(&cfg_master.generation);
