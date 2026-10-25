@@ -1389,6 +1389,10 @@ struct epsilon {
  *     the barycentric one), SEFLG_TOPOCTR with SEFLG_HELCTR heliocentric,
  *     with SEFLG_BARYCTR the barycentric points less the site's offset
  *     (UPSTREAM-BUGS 169, G143, G133)
+ *   - swe_nod_aps() turning a fallen request's osculating ellipse by the
+ *     frame bias of the DE number asked: SEFLG_JPLEPH on de200 fallen to
+ *     Moshier at 1500, Mars's node 1.58e-4 deg off the Moshier request's
+ *     (UPSTREAM-BUGS 176, G143, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

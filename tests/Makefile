@@ -1387,8 +1387,9 @@ check-moonlesstid: moonlesstid
 # heliocentric points seen from the Sun on Moshier as on the files, every
 # method, Moshier's mean points the files' and their speeds the rates of
 # their positions (UPSTREAM-BUGS 167); mixed ephemeris bits answered as the
-# ephemeris they resolve to (168) and combined centre bits as the centre
-# swe_calc() takes (169), bit for bit.
+# ephemeris they resolve to (168), combined centre bits as the centre
+# swe_calc() takes (169) and de200 fallen to Moshier with Moshier's frame
+# bias on its ellipses (176), bit for bit.
 check-nodcentre: nodcentre
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodcentre $(EPHE)
 

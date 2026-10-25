@@ -2092,6 +2092,33 @@ static double nodaps_helbary_off(void)
   return fabs(swe_difdeg2n(a[0], b[0]));
 }
 
+/* UPSTREAM-BUGS 176: swe_nod_aps() of Mars at 1500 Jan 1, heliocentric,
+ * osculating, SEFLG_JPLEPH on de200 with the fallback allowed (Moshier
+ * answers outside de200's years) against SEFLG_MOSEPH: the ascending
+ * node's longitude difference, deg. The ellipse took the frame bias of the
+ * DE number asked, DE200's none, for Moshier's state: 1.58e-4 deg; now
+ * the bias of the ephemeris that answered, Moshier's request's. */
+static double nodaps_jplfb_bias_off(void)
+{
+  double a[24], b[24];
+  char serr[256];
+  int fb;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  fb = swe_get_ephe_fallback();
+  swe_set_ephe_fallback(1);
+  if (swe_nod_aps(2268923.5, SE_MARS, SEFLG_JPLEPH | SEFLG_SPEED | SEFLG_HELCTR, SE_NODBIT_OSCU,
+                  a, a + 6, a + 12, a + 18, serr) < 0
+      || swe_nod_aps(2268923.5, SE_MARS, SEFLG_MOSEPH | SEFLG_SPEED | SEFLG_HELCTR, SE_NODBIT_OSCU,
+                     b, b + 6, b + 12, b + 18, serr) < 0) {
+    swe_set_ephe_fallback(fb);
+    return 1e9;
+  }
+  swe_set_ephe_fallback(fb);
+  return fabs(swe_difdeg2n(a[0], b[0]));
+}
+
 /* UPSTREAM-BUGS 140: the site's move for a user delta t a quarter ulp of
  * UT1 longer, at TT 2000 Jan 1.5, Zurich, Swiss files: the site as the
  * Sun's geocentric less topocentric true J2000 equatorial ICRS XYZ place,
@@ -4381,7 +4408,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4511,6 +4538,7 @@ int main(int argc, char **argv)
   nodmsun = nodaps_mosh_sun_off();
   nodmix = nodaps_mixed_eph_off();
   nodhb = nodaps_helbary_off();
+  nodfbb = nodaps_jplfb_bias_off();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -5450,6 +5478,14 @@ int main(int argc, char **argv)
   else {
     printf("  nod_aps HELCTR|BARYCTR %.2e deg FAIL: expected %s\n",
            nodhb, WANT_DEFECT ? "> 0.05" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodfbb > 1e-4 && nodfbb < 1e9) : (nodfbb == 0))
+    printf("  nod_aps de200 fallen   %.2e deg OK\n", nodfbb);
+  else {
+    printf("  nod_aps de200 fallen   %.2e deg FAIL: expected %s\n",
+           nodfbb, WANT_DEFECT ? "> 1e-4" : "0");
     bad++;
   }
 

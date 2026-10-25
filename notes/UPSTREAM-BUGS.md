@@ -206,6 +206,7 @@ worst were in code that had never executed even once.
 | 159 | SEFLG_JPLHOR's precession and obliquity step at 1799 Jan 1 and 2202 Jan 1 (IAU 1976 within, Owen 1990 outside; 17.6 and 19.8 mas in the mean obliquity), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across, under SEFLG_JPLHOR and (at 1799) SEFLG_JPLHOR_APPROX: every speed of date 2.8e-7 to 1.0e-6 deg/day off for a day either side, the Sun's latitude 5.0e-6 the day before, Polaris's right ascension 5.6e-6, SEFLG_SPEED3 8.9e-3 | Correctness | `swephlib.c`, `sweph.c` |
 | 160 | A short-term precession model the caller chooses (IAU 1976 or 2000 within 2 centuries of J2000, IAU 2006 within 75) steps to the long-term one at its window's edges (0.53" with IAU 1976 under Vondrak, 107" with IAU 2006 at 75 centuries), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across: every speed of date 8.0e-5 deg/day off within a day inside the window, latitudes 9.3e-7 the day before, SEFLG_SPEED3 0.80; with IAU 2006 1.5e-2 | Correctness | `swephlib.c` |
 | 163 | `swi_nutation_rate()` (this fork's, entry 58's) takes every nutation model but the default's grid as a central difference over -+1e-4 day, which divides the series' rounding by 2e-4 day: under IAU 1980 to 2000B set explicitly the nutation's part of every speed of date 5.2e-10 deg/day off at 2.5e6 to 5.4e6 days from J2000, 1e-10 near it; the rate itself 1.2e-9 at 1e6 to 5.5e6 days, 3.2e-8 at 2.5e7 to 1e8, 5.1e-7 at 1e8 to 4e8 | Correctness | `swephlib.c` |
+| 176 | `swe_nod_aps()` turns the osculating ellipse of a request fallen to Moshier by the frame bias of the DE number asked: SEFLG_JPLEPH on de200 outside its years leaves Moshier's state in DE200's frame, unbiased, where `swe_calc()` takes the ephemeris that answered: Mars's node at 1500 1.58e-4 deg off the Moshier request's, the Moon's 6.5e-5 | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -11913,6 +11914,71 @@ each of the 49 inner years' starts, within 1e-9 deg. 76 checks. Before
 the fix it fails (1.22e-7), and so in the compat build. G24
 `jplhora_eps_table_jump`: at 1972 Jul 1, 1.6e-13 deg shipped, 1.22e-7
 compat.
+
+## 176. `swe_nod_aps()` turns a fallen request's osculating ellipse by the frame bias of the DE number asked, not of the ephemeris that answered
+
+**Severity: Correctness (behaviour: a wrong answer for a request fallen to Moshier, returned OK; Mars's osculating node at 1500 Jan 1 1.58e-4 deg off the Moshier request's), both builds**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Found by entries 167-169's work. The osculating points are fitted to
+the ICRS state `swe_calc()` returns at each instant (entry 108), which
+`swi_plan_for_osc_elem()` turns into the J2000 frame by the frame bias when
+`swi_get_denum()` gives 403 or more for the flag it is passed: `iflg0`,
+whose ephemeris bit is the one asked for. SEFLG_JPLEPH on de200 with the
+fallback allowed falls to Moshier inside `swe_calc()` outside de200's
+1600-2169, which returns Moshier's state and SEFLG_MOSEPH; the DE number
+of SEFLG_JPLEPH was still 200, so Moshier's state was left in DE200's
+frame, unbiased, where `swe_calc()` biases a fallen request by the
+ephemeris that answered (Moshier, 403). Every osculating point was off the
+Moshier request's; at 1500 Jan 1 and 2200 Jan 1 (the larger, longitude
+plus latitude):
+
+| osculating | geocentric | heliocentric |
+|---|---|---|
+| Mars, ascending node | 1.75e-4 deg (1.56e-4 in longitude at 1500) | 1.66e-4 (1.58e-4) |
+| the Moon, ascending node | 6.45e-5 | 8.6e-8 |
+| Mercury, ascending node | 1.17e-5 | 4.52e-5 |
+| Neptune, ascending node | 8.37e-5 | 8.13e-5 |
+| Pluto, perihelion | 8.0e-6 | 8.1e-6 |
+| the Sun's perigee, the Earth's perihelion | 2.58e-6 | 2.58e-6 |
+
+The bias, 23 mas, over the sine of the inclination on the nodes. The
+mean points (no ellipse) were right, and so were the requests whose two
+numbers are on the same side of 403: the Swiss files fallen to Moshier, a
+DE 4xx file fallen to Moshier, a JPL file missing (its number unread,
+SE_DE_NUMBER's 431, and the Swiss files'). Both builds.
+
+**Fix, as done here:**
+- `swi_plan_for_osc_elem()` takes the ephemeris bit of the `swe_calc()`
+  call that gave the instant's state (its return), as the ellipse's GM and
+  the EMB's mass ratio take the first call's (entries 105, 108).
+- Now the fallen request answers as the Moshier request, return and points
+  bit for bit, every body and method, geocentric, topocentric and
+  heliocentric (barycentric both refused, entry 149); de200 inside its
+  years, the Swiss files and Moshier as before.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+Noticed, not fixed (not this entry's): after a de200 call the first
+deflection on Moshier takes the save area's barycentric Sun
+(`deflect_light_from()`'s Moshier branch; entry 168's note): after the
+Earth's barycentric osculating points on de200 at 1900 Jan 0.75, the
+Sun's mean perigee at 1500 Jan 1, SEFLG_JPLEPH fallen to Moshier, 5.79e-8
+deg off the Moshier request's that follows it; the call after, and
+SEFLG_NOGDEFL, 0. Both builds.
+
+G143 `tests/nodcentre.c` (d): SEFLG_JPLEPH on de200, the fallback
+allowed, against SEFLG_MOSEPH at 1500 Jan 1 and 2200 Jan 1, the Sun, the
+Moon, Mars, Saturn and the Earth, mean, osculating, SE_NODBIT_OSCU_BAR and
+osculating with SE_NODBIT_FOPOINT, the four centres, each pair from a
+closed context (the warm deflection above), the return and the points bit
+for bit: 160 rows pass; before the fix 84 fail, every osculating row that
+answers (1.75e-4 deg), the upstream build 130. G143 1453 rows pass; the
+upstream build fails 1155. G133 (1120 rows), G79, G47, G69, G104, G92,
+G78, G42, G53, G46 and G38 pass.
+
+G24 `nodaps_jplfb_bias_off`: Mars's heliocentric osculating node at 1500
+Jan 1, SEFLG_JPLEPH on de200 fallen to Moshier against SEFLG_MOSEPH: 0
+shipped, 1.58e-4 deg compat.
 
 ## How these were found
 

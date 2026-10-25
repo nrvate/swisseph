@@ -5525,7 +5525,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   const double *ep;
   double Gmsm, dzmin;
 #ifndef SWE_UPSTREAM_COMPAT
-  int32 retc0 = 0, retcs = 0, eph_asked, iflag_ctr = iflag;
+  int32 retc0 = 0, retcs = 0, retx = 0, eph_asked, iflag_ctr = iflag;
   AS_BOOL out_bary, mosh_ctr = FALSE;
 #endif
   double rxy, rxyz, fac, sgn;
@@ -5933,9 +5933,12 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
       if (istart != iend)
         t = tjd_et + (i - 1) * dtosc;
       tosc[i] = t;
-#endif
+      if ((retx = swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr)) == ERR)
+        return ERR;
+#else
       if (swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr) == ERR)
         return ERR;
+#endif
       /* the EMB is used instead of the earth */
       if (ipli == SE_EARTH) {
         if (swe_calc_r(ctx, t, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR), xposm, serr) == ERR)
@@ -5951,7 +5954,16 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
 #endif
       }
 #ifndef SWE_UPSTREAM_COMPAT
-      swi_plan_for_osc_elem(ctx, iflg0 | (iflag & SEFLG_ICRS), t, xpos[i]);	/* bug 108 */
+      /* Upstream bug 176: the frame bias here is the ephemeris's, by
+       * swi_get_denum() of iflg0's bit, the one asked for: SEFLG_JPLEPH on
+       * de200, fallen to Moshier outside its years, gave the Moshier state
+       * DE200's frame, no bias, where swe_calc() biases a fallen request by
+       * the ephemeris that answered: every osculating point off the
+       * Moshier request's, Mars's node at 1500 Jan 1 1.58e-4 deg
+       * heliocentric, 1.56e-4 geocentric, the Moon's 2.9e-5. Now the bit
+       * of the call that gave this state. */
+      swi_plan_for_osc_elem(ctx, (iflg0 & ~SEFLG_EPHMASK) | (retx & SEFLG_EPHMASK)
+                            | (iflag & SEFLG_ICRS), t, xpos[i]);	/* bug 108 */
 #else
       swi_plan_for_osc_elem(ctx, iflg0, t, xpos[i]);
 #endif
