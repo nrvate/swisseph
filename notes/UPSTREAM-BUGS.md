@@ -288,6 +288,11 @@ worst were in code that had never executed even once.
 | 257 | With the library's own delta t the sidereal times take delta t's far parabola evaluated in double, 2 ulps off its formula (1.3e-4 day at 1e12): the default over 64 consecutive JDs off its line by 4.1e-9 .. 5.1e-9 deg at -+1e12, 1.3e-9 .. 2.0e-9 at -+5e11 | Correctness | `swephlib.c` |
 | 258 | With the Moon files missing and the fallback allowed, the Swiss request's Moon, fallen to Moshier's, is read again at its light-time instant, of date and put into J2000 by the frame there: within its light time after a short-term window's edge, with IAU 1976 under Vondrak, its longitude 1.715e-4 deg off the side's model alone's after J2000 + 2 centuries (1.588e-4 after - 2), its speed 2.29e-2 deg/day off its places' rate; heliocentric within 500 s 4.6e-7 deg | Correctness (behaviour) | `sweph.c` |
 | 259 | A topocentric star's aberration rate reads its site at tjd -+ 1e-5 day, of date and put into J2000 by the frame at its instant, across a step of the frame's models, on every ephemeris: with IAU 1976 under Vondrak within 1e-5 day of J2000 + 2 centuries Polaris's topocentric right ascension speed 8.33e-5 deg/day off its places' rate (3.41e-4 with the IERS 2010 sidereal time, 2.52e-4 at - 2), across SEFLG_JPLHOR_APPROX's 1962 step 9.49e-5 | Correctness | `sweph.c` |
+| 268 | The houses of the ecliptic of t0 and the solar system plane (`sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`; J2000, J1900, B1950 always) return in ascmc[2] the auxiliary ARMC they are computed in, armc - dvpx, where the manual gives the ARMC: at Zurich, 1800-2100, 0.0043 deg off on the ecliptic of 1900, 0.0085 J2000's, 3.90 the solar system plane, its speed 1.3e-7 to 2.7e-6 deg/day; given it, `swe_house_pos()` puts the sidereal cusps' places 1.4e-4 to 0.34 house off their numbers in P R C H X | Correctness | `swehouse.c` |
+| 269 | Sidereal whole signs on those planes are the auxiliary frame's signs moved by the frames' offset, not sidereal sign starts: 8.94 deg off on the ecliptic of 1900, 2.1-2.8 J1900, B1950 and J2000, 20.3 the solar system plane (cusp 1 against the sidereal Ascendant's sign), their speeds 6.7e-5 deg/day where they stand still; 'n' not taken as 'N', 0 Aries moved 2.80 to 25.3 deg | Correctness | `swehouse.c` |
+| 270 | `swe_house_pos()` in Sripati ('S') is Porphyry's position plus 0.5 cut by "if (hpos > 12) hpos = 1": all of house 12 and the first half of house 1 answer 1.0, tropically too (cusp 12 + 1e-4 of the house 1.000000 for 12.000003, house 12's middle 1 for 12.5) | Correctness | `swehouse.c` |
+| 271 | `swe_house_pos()` in Polich/Page ('T') stops its binary search for the place's position line at 1e-6 deg of altitude: 7.2e-8 house (2.1e-6 deg) off the line at Zurich, 1.8e-7 (5.4e-6 deg) at 60N; no closed form, Newton's steps after it take it to 1.2e-14 | Correctness | `swehouse.c` |
+| 272 | On the ecliptic of t0 and the solar system plane the sidereal places take `get_aya_correction()` (a mode's own precession model) and the houses do not: a place and a cusp at one point 3.62e-5 deg apart under Lahiri, 1.15e-4 Fagan/Bradley, 2.30e-4 Krishnamurti, Raman and Lahiri 1940 | Correctness | `swehouse.c`, `sweph.c` |
 
 ---
 
@@ -17802,31 +17807,252 @@ Noticed, not fixed:
   the traditional method's is the ARMC. With the sidereal call's ascmc[2]
   the systems the manual names put the sidereal cusps' places off their
   numbers on the solar system plane by 0.13 (X) to 0.34 house (C), on the
-  ecliptic of 1900 by 1.4e-4 to 3.1e-4.
+  ecliptic of 1900 by 1.4e-4 to 3.1e-4. Fixed: entry 268.
 - BEHAVIOUR. Sidereal whole signs on the ecliptic of t0 and the solar
   system plane are the auxiliary frame's signs moved by dvpxe + ayan_t0,
   not sidereal sign starts (the traditional method floors after taking
   the ayanamsa off): at Zurich, 1800-2100, the cusps up to 8.94 deg off a
   sign start on the ecliptic of 1900 and 12.5 deg on the solar system
   plane, cusp 1 up to 20.3 deg off the start of the sidereal Ascendant's
-  sign.
+  sign. Fixed: entry 269.
 - BEHAVIOUR. `swe_house_pos()` in 'S' (Sripati) is Porphyry's position
   plus 0.5, then "if (hpos > 12) hpos = 1": every place in house 12 and in
   the first half of house 1 answers 1.0, tropically too (Zurich, UT
   2433282.5: cusp 12 + 1e-4 deg 1.000000 for 12.000003, the middle of
   house 12 1.0 for 12.5), up to a house off; the exact-cusp test hides it
-  at the cusps themselves. It wants hpos - 12.
+  at the cusps themselves. It wants hpos - 12. Fixed: entry 270.
 - RESIDUAL(1.8e-6 deg). `swe_house_pos()` in 'T' (Polich/Page) ends its
   binary search for the place's position line at 1e-6 deg: the sidereal
   cusps' places off the ecliptic of date 5.96e-8 house (1.8e-6 deg) off
   their numbers; on the ecliptic at a cusp the exact-cusp test answers.
+  Fixed: entry 271.
 - RESIDUAL(3.6e-5 deg). In a predefined mode whose ayanamsa has its own
   precession model (Lahiri's IAU 1976), on the ecliptic of t0 or the solar
   system plane, the sidereal places take `get_aya_correction()` and the
   sidereal houses do not: sidereal Mars carried back with Lahiri's
   ayan_t0 3.62e-5 deg off its tropical place at 1800-2100,
   where the cusps are at their numbers within 9.3e-9 house; a place and a
-  cusp at one point of the sky so 3.62e-5 deg apart.
+  cusp at one point of the sky so 3.62e-5 deg apart. Fixed: entry 272.
+
+## 268. The houses of the ecliptic of t0 and the solar system plane return in ascmc[2] the auxiliary ARMC they are computed in, not the ARMC: 0.0043 deg off on the ecliptic of 1900 (J1900 too), 0.0085 J2000's, 3.90 the solar system plane; given it, `swe_house_pos()` puts the sidereal cusps' places 1.4e-4 to 0.34 house off their numbers
+
+**Severity: Correctness (behaviour: ascmc[2], documented as the ARMC, another angle; SE_SIDBIT_ECL_T0 and SE_SIDBIT_SSY_PLANE, and the modes that always take the first, J2000, J1900, B1950 and Galactic alignment Mardyks)**
+**Where:** `swehouse.c`: `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`, new `sidereal_plane_fix()`
+
+Entry 254's noticed item. The manual: "ascmc[2] = ARMC" (swephprg 15.4),
+"The sidereal time is computed inside the houses() function and returned
+via the variable armc which measures sidereal time in degrees" (17),
+and among 2.06's changes "swe_houses_ex() with sidereal flag and rarely
+used flags SE_SIDBIT_ECL_T0 or SE_SIDBIT_SSY_PLANE returned a wrong ARMC".
+That fix skipped index 2 when the frames' offset is taken off the cusps
+and ascmc; but these houses are computed by `swe_houses_armc_ex2_r()` at
+the auxiliary ARMC, armc - dvpx (measured from where the true equator of
+date crosses the sidereal plane), and it had put that there. The
+traditional method's houses are computed at the ARMC itself.
+
+Measured at Zurich (47.37N, 8.55E), UT 2378496.5, 2433282.5, 2451545.0
+and 2488069.5, against the tropical call's ascmc[2]: the user's ecliptic
+of 1900 (t0 2415020.0, 22.46 deg) and J1900 4.27e-3 deg, B1950 6.28e-3,
+Lahiri's ecliptic of t0 6.55e-3, J2000 8.51e-3, the solar system plane
+(the user's J2000, 23.86, and Lahiri's) 3.904; ascmc_speed[2] the
+auxiliary ARMC's, 1.25e-7 to 1.41e-7 deg/day off on the ecliptic of t0,
+2.73e-6 on the solar system plane. Given it, `swe_house_pos()` put the
+sidereal cusps' places (carried to the ecliptic of date through the
+planets' frame, as G168 does) off their numbers in the systems the manual
+names: on the ecliptic of 1900 X 1.42e-4 house, P 1.53e-4, R 1.68e-4, C
+2.48e-4, H 3.10e-4; on the solar system plane X 0.130, P 0.184, R 0.231,
+H 0.284, C 0.339.
+
+**Fix, as done here:** ascmc[2] the ARMC the function was given and
+ascmc_speed[2] its rate (the frame's, hr->armc), as the tropical and the
+traditional houses give: both the tropical call's bit for bit in every
+setting above. Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+
+G172 `tests/sidhplane.c` (a): those six settings, the four dates: ascmc[2]
+and its speed the tropical call's bit for bit (6 checks); with the two
+user settings the carried sidereal cusps given the sidereal call's
+ascmc[2] at their numbers within 1e-7 house in P R C H X (10 checks;
+9.26e-9, the 0.001" `swe_house_pos()` adds; X 3.6e-14). Before the fix
+all 16 fail. G24 `sid_plane_armc_off`: the user's solar system plane, UT
+2433282.5, |ascmc[2] - the tropical call's|: 0 shipped, 3.87 deg compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. `ecl_t0_aux()` signs dvpxe, the auxiliary vernal point's
+  distance from the vernal point of t0 along the ecliptic of t0, by the
+  date (`if (tjde < sip->t0) *dvpxe = -*dvpxe`), not by the side the
+  point lies on; it is the precession since t0 plus about dpsi, so within
+  dpsi / 50.3"/yr of t0, on one side, its sign is wrong and every cusp
+  and ascmc is off by twice it, at t0 2 dpsi: the cusps jump at t0 by
+  -9.64e-3 deg on the ecliptic of 1900 and J1900, -7.74e-3 J2000, -9.32e-3
+  Lahiri's (1956), at Zurich; on the ecliptic of 1900 the P cusps' carried
+  places 4.94e-4 house off their numbers a day before t0, 2.14e-5 at 125
+  days, within 9.3e-9 at 150 days and after t0; every speed within 1/64
+  day of t0 (the stencil across it) 0.248 deg/day off (J2000), 0.308
+  (J1900), 0.298 (Lahiri). The solar system plane's dvpxe is unsigned
+  (acos) less SSY_PLANE_NODE: no step (1.5e-7 deg at J2000, the jump
+  test's own).
+- BEHAVIOUR. The loops that move ascmc run `i <= SE_NASCMC` (8), the
+  traditional method's `i < SE_NASCMC`: ascmc[8], which the manual gives
+  as 0, is -(dvpxe + ayan_t0) (less x00 on the solar system plane)
+  normalised: at Zurich, UT 2433282.5, 0.70 deg J2000, 359.30 J1900,
+  336.84 the ecliptic of 1900 and Lahiri's, 340.40 the solar system plane.
+
+## 269. Sidereal whole signs on the ecliptic of t0 and the solar system plane are the auxiliary frame's signs moved, not sidereal sign starts: 8.94 deg off on the ecliptic of 1900, 20.3 on the solar system plane; and 'n' is moved off 0 Aries, up to 25.3 deg
+
+**Severity: Correctness (behaviour: whole-sign and lower-case 0-Aries cusps off their signs, their speeds not 0; SE_SIDBIT_ECL_T0, SE_SIDBIT_SSY_PLANE, J2000, J1900, B1950)**
+**Where:** `swehouse.c`: `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`, `sidereal_plane_fix()`
+
+Entry 254's noticed item. These houses are computed in the auxiliary
+frame (its ARMC and obliquity) and moved to the sidereal plane by the
+auxiliary vernal point's sidereal longitude (dvpxe + ayan_t0, less the
+plane's zero point x00). For 'W' the auxiliary frame's whole signs, the
+auxiliary Ascendant's sign, were moved: 30 deg apart, but the frames'
+offset (mod 30) off a sidereal sign. The traditional method computes 'W'
+as 'E', takes the ayanamsa off and floors each cusp
+(`sidereal_houses_trad()`). 0 Aries was set after, (i - 1) 30, for
+`hsys == 'N'` only; the traditional method takes `toupper()`, and
+`CalcH()` the deprecated 'w' and 'n' as 'W' and 'N'.
+
+Measured at Zurich, the four dates of entry 268, against sign starts and
+the start of the sign of ascmc[0] (the sidereal Ascendant): 'W' and 'w'
+on the ecliptic of 1900 8.94 deg (Lahiri's 8.94), J1900 2.80, B1950
+2.10, J2000 2.80, on the solar system plane 12.5 off a sign start, cusp 1
+20.3 off the Ascendant's sign's (the user's and Lahiri's); their speeds
+dvpxe's rate taken off, 6.7e-5 deg/day (J2000 at UT 2451545.0 0.248,
+entry 268's noticed step), where they stand still; 'n' 25.3 deg on the
+ecliptic of 1900, 21.7 on the solar system plane, 2.80 J1900 and J2000.
+'N', 'E', 'A', 'D' and 'V' as defined (cusp 1 at 0, the Ascendant, the
+MC + 90, the Ascendant - 15, 30 deg apart) within 1.1e-13 deg.
+
+**Fix, as done here:** 'W' and 'w' computed as 'E' in the auxiliary frame
+and moved, then cusp 1 floored to its sign and cusp k cusp 1 + 30 (k - 1),
+their speeds 0; 0 Aries for `toupper(hsys) == 'N'`. Behind
+`#ifndef SWE_UPSTREAM_COMPAT`.
+
+G172 (b): the six settings of entry 268, 'W' 'w' 'N' 'n' 'E' 'A' 'D' 'V':
+the sign cusps at sign starts, cusp 1 ascmc[0]'s sign's or 0, within 1e-9
+deg (0), their speeds 0; the equal ones at their definitions, 30 deg
+apart (1.1e-13): 48 checks; before the fix 18 fail ('W', 'w', 'n' in each
+setting), the upstream build 24 (its 'N' and 'W' speeds the Ascendant's
+too, 622 to 650 deg/day, entry 40). G24 `sid_plane_wsign_off`: 'W' on the
+ecliptic of 1900, UT 2433282.5, the largest distance of a cusp from a
+sign start: 0 shipped, 6.84 deg compat.
+
+## 270. `swe_house_pos()` in Sripati ('S') answers 1.0 for all of house 12 and the first half of house 1: Porphyry's position plus 0.5, cut by "if (hpos > 12) hpos = 1", up to 11.5 houses off
+
+**Severity: Correctness (behaviour: a house position in the wrong house; tropical and sidereal, every date and place)**
+**Where:** `swehouse.c`: `swe_house_pos_r()`, case 'S'
+
+Entry 254's noticed item. Sripati's cusps are the middles of Porphyry's
+houses (`CalcH()`: cusp 1 the Ascendant less half Porphyry's house 12),
+so a place at Porphyry's position p, 1 .. 13, is at Sripati's p + 0.5,
+1.5 .. 13.5, of which 13 .. 13.5 is house 1. Upstream took `hpos += 0.5;
+if (hpos > 12) hpos = 1;`: 12 .. 13 (house 12) and 13 .. 13.5 (the first
+half of house 1) answer 1.0. Measured at Zurich, UT 2433282.5: cusp 12 +
+1e-4 of the house 1.000000 for 12.000003, Porphyry's cusp 12 (house 12's
+middle) 1.0 for 12.5; the same at every date and latitude. The exact-cusp
+test hides it at the cusps. No other system so: of the 25 (P K O R C E A
+B M U T H X F Y S L Q D V W N G I i) the places 1e-4, 0.5 and 0.999 of
+the way through each house answer within it at Zurich at entry 268's four
+dates in all but 'S'; Alcabitius's wrap is `if (hpos >= 13.0) hpos -= 12`.
+
+**Fix, as done here:** `if (hpos >= 13) hpos -= 12`. Behind
+`#ifndef SWE_UPSTREAM_COMPAT`.
+
+G172 (c), tropical: in the 25 systems the places 1e-4, 0.5 and 0.999 of
+the way through each house answered within it (25 checks), and in 'S'
+Porphyry's cusps at Sripati's middles, k + 0.5, within 1e-7 (1.18e-8, the
+0.001"): 26 checks; before the fix 'S' fails both (0.9999 house outside,
+0.5 off). G24 `sripati_wrap_off`: Porphyry's cusp 12, Zurich, UT
+2433282.5, |hpos - 12.5|: 9.6e-9 house shipped, 11.5 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_house_pos()` in 'H' (horizon) south of the equator and
+  on it counts the houses the other way from `swe_houses()`'s cusps
+  (`CalcH()` takes the co-latitude -90 - lat there and the ARMC + 180;
+  `swe_house_pos()` 90 - lat): at 33.87S, UT 2433282.5, the middles of
+  houses 1 .. 12 answer 12.50, 11.52, 10.52, 9.50, 8.48, 7.48, 6.50 .. 1.48;
+  at the equator 12.56 .. 1.37; at 33.87N in their houses.
+- BEHAVIOUR. `swe_house_pos()` takes `toupper(hsys)` first, so 'i'
+  (Makransky's Sunshine solution) answers Treindl's 'I' and its `case
+  'i'` is never reached: where the two solutions' cusps differ, 'i'
+  positions are not its houses: at 60N, UT 2433282.5, the middles of
+  Makransky's houses 1, 5 and 6 answer 6.96, 6.30 and 1.29 (the middles
+  of Treindl's 1.49, 5.46 and 6.53).
+
+## 271. `swe_house_pos()` in Polich/Page ('T') stops its search for the place's position line at 1e-6 deg of altitude: 7.2e-8 house (2.1e-6 deg) off the line at Zurich, 1.8e-7 (5.4e-6 deg) at 60N
+
+**Severity: Correctness (residual: 1.3e-6 to 5.4e-6 deg, above the floor)**
+**Where:** `swehouse.c`: `swe_house_pos_r()`, case 'T'
+
+Entry 254's noticed item. A Polich/Page house position f of the quadrant
+is the circle of pole tan fh = f tan(lat) through the equator at right
+ascension ARMC + 90 f (the cusps 11 and 12 at f = 1/3 and 2/3). The
+function mirrors the place into the eastern quadrant above the horizon
+and bisects f, `while (fabs(xp[1]) > 0.000001 && nloop < 1000)`, xp[1]
+the place's altitude over the circle in degrees: the position off its line
+by up to that over the altitude's slope. Measured on places built on the
+lines of f = 0, 0.1 .. 1 at declinations -20 .. 20 deg in the four
+quadrants (G172 (d)): 7.15e-8 house at 47.37N, 4.47e-8 at 33.87S, 1.79e-7
+at 60N; G168's carried sidereal cusps 5.96e-8.
+
+No closed form: with x = 90 f and m the place's right ascension less the
+ARMC, the line is the root of g(x) = x tan(lat) tan(de) / 90 - sin(m - x)
+(the altitude's sine over cos fh cos de), linear in x against a sine of
+it, a Kepler equation's kind.
+
+**Fix, as done here:** after the search, Newton's steps on g from its x
+(at most four, each kept within twice the search's last step of it: a
+place on the horizon or the meridian has its root at the search's end,
+or past it by its rounding, and within the last step alone G168's cusps
+1, 4, 7 and 10 stayed 2.2e-8 to 4.5e-8 house off): 1.2e-14 house off the
+line at the three latitudes (the double's resolution of x, some 2e-14
+deg), G168's carried cusps 3.9e-14. 1e5 'T' positions take 3.573e9 instructions for 3.524e9
+(+1.4%; the exact-cusp test's `swe_houses_armc_ex2_r()` is most of it).
+Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+
+G172 (d): those places, 1584 per latitude, within 1e-12 house: 3 checks;
+before the fix all fail. G24 `topo_line_off`: ARMC 100, 47.37N, f = 0.1 ..
+0.9, declinations -+10: 0 shipped, 3.6e-8 house compat.
+
+## 272. On the ecliptic of t0 and the solar system plane the sidereal places take `get_aya_correction()` and the houses do not: a place and a cusp at one point of the sky 3.62e-5 deg apart under Lahiri, 1.15e-4 Fagan/Bradley, 2.30e-4 Krishnamurti, Raman and Lahiri 1940
+
+**Severity: Correctness (residual: 3.6e-5 to 2.3e-4 deg, above the floor; the modes with their own precession model)**
+**Where:** `swehouse.c`: `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`; `sweph.c`: new `swi_get_aya_correction()`
+
+Entry 254's noticed item. `get_aya_correction()`: for a mode whose
+ayanamsa was defined with its own precession model (`prec_offset`:
+Newcomb's for Fagan/Bradley and Krishnamurti, IAU 1976 for Lahiri), the
+longitude on the ecliptic of t0 of the default model's vernal point of t0
+as the mode's model places it. `swe_get_ayanamsa_ex()` takes it off the
+ayanamsa, so that "sidereal planetary positions remain the same" whatever
+the precession model (its comment), and `swi_trop_ra2sid_lon()` and
+`_sosy()` add it to the places on these planes. The traditional houses
+take the ayanamsa, so the correction with it; these planes' houses
+(dvpxe + ayan_t0) did not.
+
+Measured with the default models: each mode on these planes against
+itself with SE_SIDBIT_NO_PREC_OFFSET (the correction 0), at entry 268's
+dates and place: the Sun, the Moon, Mars and Jupiter move by it, within
+6.4e-14 of one another (Fagan/Bradley 1.146e-4 deg, Lahiri -3.621e-5,
+Raman, Krishnamurti and Lahiri 1940 2.300e-4, Lahiri ICRC 1.003e-4), the
+cusps and ascmc by 0. The places follow the ayanamsa's definition (the
+correction is what keeps them the mode's own); the houses are to follow
+the places, as the traditional method's do.
+
+**Fix, as done here:** `swi_get_aya_correction()` (`get_aya_correction()`
+without serr, for the houses) added to the cusps and ascmc but the ARMC;
+the houses' iflag passed down for the delta t of a UT t0, as the places
+take theirs. Now the cusps and ascmc move with the bodies within 8.5e-14
+deg. The correction does not change with the date: no speed changes.
+Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+
+G172 (e): Fagan/Bradley, Lahiri and Krishnamurti on both planes, each
+against itself with SE_SIDBIT_NO_PREC_OFFSET: the bodies moved more than
+1e-5 deg, and the Placidus cusps and ascmc by the bodies' move within
+1e-11 deg: 6 checks; before the fix all fail (the houses 3.62e-5 to
+2.30e-4 off). G24 `sid_plane_corr_off`: Lahiri's ecliptic of t0, UT
+2433282.5, cusp 1's move less Mars's: 0 shipped, 3.62e-5 deg compat.
 
 ## 252. `swe_gauquelin_sector()` methods 0 and 1 set the body's place with every flag in the frame of the true ecliptic of date: SEFLG_NONUT, ICRS, J2000, EQUATORIAL, RADIANS, XYZ, HELCTR and BARYCTR moved the sector, Mars at 1950, Zurich, up to 18.4 sectors
 

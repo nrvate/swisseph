@@ -1787,6 +1787,22 @@ struct epsilon {
  *     right ascension 8.3e-5 deg/day off with IAU 1976 under Vondrak (the
  *     compat build reads its site at tjd - 1e-5 day only, across after
  *     the step: 6.0e-5) (UPSTREAM-BUGS 259, G170, G24)
+ *   - the houses of the ecliptic of t0 and the solar system plane
+ *     returning in ascmc[2], and its speed, the auxiliary ARMC they are
+ *     computed in: 3.90 deg off the ARMC on the solar system plane, 0.0043
+ *     on the ecliptic of 1900 (UPSTREAM-BUGS 268, G172, G24)
+ *   - whole signs on those planes the auxiliary frame's signs moved, 8.94
+ *     deg off a sidereal sign start on the ecliptic of 1900, 20.3 on the
+ *     solar system plane, their speeds not 0; 'n' moved off 0 Aries
+ *     (UPSTREAM-BUGS 269, G172, G24)
+ *   - swe_house_pos() in Sripati answering 1.0 for all of house 12 and the
+ *     first half of house 1 (UPSTREAM-BUGS 270, G172, G24)
+ *   - swe_house_pos() in Polich/Page stopping its search for the position
+ *     line at 1e-6 deg of altitude, 7.2e-8 house off it (UPSTREAM-BUGS
+ *     271, G172, G24)
+ *   - the houses of those planes without get_aya_correction(), which their
+ *     sidereal places take: 3.62e-5 deg off the places under Lahiri,
+ *     2.30e-4 under Krishnamurti (UPSTREAM-BUGS 272, G172, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1922,6 +1938,10 @@ extern int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 ifla
 /* OK, or ERR with serr: the ayanamsa's instant and the sidereal mode's t0
  * outside the frame's ranges (UPSTREAM-BUGS 212) */
 extern int swi_ayanamsa_range(swe_ctx *ctx, double tjd_et, int32 iflag, char *serr);
+/* the degrees the sidereal places of the ecliptic of t0 and the solar
+ * system plane add for an ayanamsa of its own precession model
+ * (get_aya_correction(); UPSTREAM-BUGS 272) */
+extern void swi_get_aya_correction(swe_ctx *ctx, int32 iflag, double *corr);
 #endif
 
 extern double swi_armc_to_mc(double armc, double eps);

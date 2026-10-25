@@ -5983,6 +5983,16 @@ static int get_aya_correction(swe_ctx *ctx, int iflag, double *corr, char *serr)
   return OK;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* the correction the sidereal places of the ecliptic of t0 and the solar
+ * system plane add (swi_trop_ra2sid_lon(), _sosy()), for their houses
+ * (UPSTREAM-BUGS 272) */
+void swi_get_aya_correction(swe_ctx *ctx, int32 iflag, double *corr)
+{
+  get_aya_correction(ctx, iflag, corr, NULL);
+}
+#endif
+
 /* swi_get_ayanamsa_ex()'s body. dspeed, when not NULL, receives the
  * ayanamsa's rate in deg/day, the derivative of the same computation; it
  * is non-NULL only from swi_get_ayanamsa_with_speed() (UPSTREAM-BUGS 91),

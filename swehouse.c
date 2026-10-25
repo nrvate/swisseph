@@ -101,6 +101,7 @@ struct house_rates {
   double decl;			/* the Sun's declination's, for Sunshine houses */
 };
 static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
+			   int32 iflag,
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -126,6 +127,7 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
 			   char *serr,
 			   const struct house_rates *hr);
 static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
+			   int32 iflag,
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -694,9 +696,9 @@ static int swe_houses_ex2_r_body(swe_ctx *ctx, double tjd_ut,
   }
   if (iflag & SEFLG_SIDEREAL) { 
     if (sip->sid_mode & SE_SIDBIT_ECL_T0)
-      retc = sidereal_houses_ecl_t0(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr, phr);
+      retc = sidereal_houses_ecl_t0(ctx, tjde, iflag, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr, phr);
     else if (sip->sid_mode & SE_SIDBIT_SSY_PLANE)
-      retc = sidereal_houses_ssypl(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr, phr);
+      retc = sidereal_houses_ssypl(ctx, tjde, iflag, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr, phr);
     else
       retc = sidereal_houses_trad(ctx, tjde, iflag, armc, eps_mean + nutlo[1], nutlo[0], geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr, phr);
   } else {
@@ -868,7 +870,42 @@ static void ecl_t0_aux(swe_ctx *ctx, double tjde, double eps, const double *nutl
     *dvpxe = -*dvpxe;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* the houses of the ecliptic of t0 and of the solar system plane, moved
+ * from their auxiliary frame to the sidereal plane: their ARMC, and whole
+ * signs (computed as 'E') */
+static void sidereal_plane_fix(int hsys, double armc, const struct house_rates *hr,
+                               double *cusp, double *ascmc, double *cusp_speed,
+                               double *ascmc_speed)
+{
+  int i;
+  /* Upstream bug 268: ascmc[2] was the auxiliary ARMC the houses are
+   * computed in, armc - dvpx (swe_houses_armc_ex2_r()'s), not the ARMC,
+   * the sidereal time in degrees (swephprg 15.4, 17; the traditional
+   * method's): at Zurich, 1800-2100, 0.0043 deg off on the ecliptic of
+   * 1900 (J1900 too; J2000 0.0085, Lahiri's 0.0066), 3.90 on the solar
+   * system plane, its speed the auxiliary one's, 1.3e-7 and 2.7e-6
+   * deg/day off; given it, swe_house_pos() put the sidereal cusps'
+   * places 1.4e-4 to 0.34 house off their numbers in the systems the
+   * manual names. The ARMC of the date and its rate. */
+  ascmc[2] = armc;
+  if (ascmc_speed != NULL && hr != NULL)
+    ascmc_speed[2] = hr->armc;
+  /* bug 269 */
+  if (toupper(hsys) == 'W') {
+    cusp[1] -= fmod(cusp[1], 30);
+    for (i = 2; i <= 12; i++)
+      cusp[i] = swe_degnorm(cusp[1] + (i - 1) * 30);
+    if (cusp_speed != NULL) {
+      for (i = 1; i <= 12; i++)
+        cusp_speed[i] = 0;
+    }
+  }
+}
+#endif
+
 static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
+			   int32 iflag,
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -886,6 +923,27 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
   double armcx;
   struct sid_data *sip = &ctx->sidd;
   int ito;
+  int ihs = hsys;	/* the system of the auxiliary houses */
+#ifndef SWE_UPSTREAM_COMPAT
+  double corr;
+  /* Upstream bug 269: whole signs were the auxiliary frame's signs moved
+   * by dvpxe + ayan_t0, up to 8.94 deg off a sidereal sign start at
+   * Zurich (the ecliptic of 1900; J1900, B1950 and J2000 2.1-2.8), cusp
+   * 1 off the sidereal Ascendant's sign; their speeds less dvpxe's rate,
+   * 6.7e-5 deg/day (J2000 0.25), where they stand still. Equal houses
+   * moved, then each cusp floored to its sign, as sidereal_houses_trad()
+   * does; 'w' and 'n' as 'W' and 'N', as it does. */
+  if (toupper(hsys) == 'W')
+    ihs = 'E';
+  /* Upstream bug 272: a mode whose ayanamsa has its own precession model
+   * (Lahiri's IAU 1976) moves the sidereal places by get_aya_correction()
+   * (swi_trop_ra2sid_lon(): to the default model's zero point of t0),
+   * and the houses did not: a cusp and a body at one point of the sky
+   * 3.62e-5 deg apart in sidereal longitude. The houses add it too. */
+  swi_get_aya_correction(ctx, iflag, &corr);
+#else
+  (void) iflag;
+#endif
   if (toupper(hsys) == 'G')
     ito = 36;
   else
@@ -902,7 +960,7 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
     double ep, dp, dep, em, dm, dem;
     ecl_t0_aux(ctx, hr->p.tjde, hr->p.eps, hr->p.nutlo, &ep, &dp, &dep);
     ecl_t0_aux(ctx, hr->m.tjde, hr->m.eps, hr->m.nutlo, &em, &dm, &dem);
-    retc = houses_armc_dt(ctx, armcx, lat, epsx, hsys, hr,
+    retc = houses_armc_dt(ctx, armcx, lat, epsx, ihs, hr,
                           hr->armc - house_rate(hr, dm, dvpx, dp, TRUE),
                           house_rate(hr, em, epsx, ep, FALSE),
                           cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
@@ -912,15 +970,28 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
 #else
   (void) hr;
 #endif
-  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, ihs, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
   for (i = 1; i <= ito; i++)                     /* 6, 7 */
+#ifndef SWE_UPSTREAM_COMPAT
+    cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0 + corr);
+#else
     cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0);
+#endif
   for (i = 0; i <= SE_NASCMC; i++) {
     if (i == 2)	/* armc */
       continue;
+#ifndef SWE_UPSTREAM_COMPAT
+    ascmc[i] = swe_degnorm(ascmc[i] - dvpxe - sip->ayan_t0 + corr);
+#else
     ascmc[i] = swe_degnorm(ascmc[i] - dvpxe - sip->ayan_t0);
+#endif
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  sidereal_plane_fix(hsys, armc, hr, cusp, ascmc, cusp_speed, ascmc_speed);	/* bugs 268, 269 */
+  if (toupper(hsys) == 'N') { /* 1 = 0° Aries */
+#else
   if (hsys == 'N') { /* 1 = 0° Aries */
+#endif
     for (i = 1; i <= ito; i++) {
       cusp[i] = (i - 1) * 30;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -1013,6 +1084,7 @@ static void ssypl_aux(swe_ctx *ctx, double tjde, double eps, const double *nutlo
 }
 
 static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
+			   int32 iflag,
                            double armc, 
                            double eps, 
                            double *nutlo, 
@@ -1030,6 +1102,19 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   double armcx;
   struct sid_data *sip = &ctx->sidd;
   int ito;
+  int ihs = hsys;	/* the system of the auxiliary houses */
+#ifndef SWE_UPSTREAM_COMPAT
+  double corr;
+  /* Upstream bugs 269 and 272, as in sidereal_houses_ecl_t0(): whole
+   * signs 12.5 deg off a sidereal sign start at Zurich, cusp 1 20.3 deg
+   * off the sidereal Ascendant's sign; get_aya_correction() as
+   * swi_trop_ra2sid_lon_sosy() takes it */
+  if (toupper(hsys) == 'W')
+    ihs = 'E';
+  swi_get_aya_correction(ctx, iflag, &corr);
+#else
+  (void) iflag;
+#endif
   if (toupper(hsys) == 'G')
     ito = 36;
   else
@@ -1045,7 +1130,7 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
     double ep, dp, dep, em, dm, dem;
     ssypl_aux(ctx, hr->p.tjde, hr->p.eps, hr->p.nutlo, &ep, &dp, &dep);
     ssypl_aux(ctx, hr->m.tjde, hr->m.eps, hr->m.nutlo, &em, &dm, &dem);
-    retc = houses_armc_dt(ctx, armcx, lat, epsx, hsys, hr,
+    retc = houses_armc_dt(ctx, armcx, lat, epsx, ihs, hr,
                           hr->armc - house_rate(hr, dm, dvpx, dp, TRUE),
                           house_rate(hr, em, epsx, ep, FALSE),
                           cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
@@ -1055,7 +1140,7 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
 #else
   (void) hr;
 #endif
-  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, ihs, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
   /* ayanamsa between t0 and J2000, measured on solar system plane: */
   /* position of zero point of t0 */
   x0[0] = 1; 
@@ -1074,13 +1159,26 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   x0[0] += SSY_PLANE_NODE;
   x00 = x0[0] * RADTODEG;                       /* 7 */
   for (i = 1; i <= ito; i++)                     /* 6, 8, 9 */
+#ifndef SWE_UPSTREAM_COMPAT
+    cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0 - x00 + corr);
+#else
     cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0 - x00);
+#endif
   for (i = 0; i <= SE_NASCMC; i++) {
     if (i == 2)	/* armc */
       continue;
+#ifndef SWE_UPSTREAM_COMPAT
+    ascmc[i] = swe_degnorm(ascmc[i] - dvpxe - sip->ayan_t0 - x00 + corr);
+#else
     ascmc[i] = swe_degnorm(ascmc[i] - dvpxe - sip->ayan_t0 - x00);
+#endif
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  sidereal_plane_fix(hsys, armc, hr, cusp, ascmc, cusp_speed, ascmc_speed);	/* bugs 268, 269 */
+  if (toupper(hsys) == 'N') { /* 1 = 0° Aries */
+#else
   if (hsys == 'N') { /* 1 = 0° Aries */
+#endif
     for (i = 1; i <= ito; i++) {
       cusp[i] = (i - 1) * 30;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -3141,11 +3239,11 @@ static double fix_asc_polar(double asc, double armc, double eps, double geolat)
  * the sidereal cusps' tropical places at their numbers (G168, within 1e-7
  * house). With the ecliptic of t0 or the solar system plane, given the
  * ARMC of the date (15 swe_sidtime() plus the geographic longitude, or
- * ascmc[2] of the tropical houses), the systems whose house circles do
- * not depend on the ecliptic work: P R C H X G T I (the manual names
- * C R P H X). "All others" above do not: K O E A D V W N B M U F Y S L Q,
- * by 1.1e-4 house (D, the ecliptic of 1900) to 4 (Koch) at Zurich,
- * 1800-2100.
+ * ascmc[2] of the houses, since entry 268 the sidereal ones' too), the
+ * systems whose house circles do not depend on the ecliptic work: P R C H
+ * X G T I (the manual names C R P H X). "All others" above do not: K O E
+ * A D V W N B M U F Y S L Q, by 1.1e-4 house (D, the ecliptic of 1900) to
+ * 4 (Koch) at Zurich, 1800-2100.
  */
 double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, double eps, int hsys, double *xpin, char *serr)
 {
@@ -3268,7 +3366,18 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
 	  hpos += 3 + (xp[0] - 180 + acmc) * 3 / acmc;
         if (hsys == 'S') {
 	  hpos += 0.5;
+#ifndef SWE_UPSTREAM_COMPAT
+	  /* Upstream bug 270: Sripati's cusps are the middles of Porphyry's
+	   * houses, so its position is Porphyry's (1 .. 13) plus 0.5, and
+	   * "if (hpos > 12) hpos = 1" answered 1.0 for all of house 12 and
+	   * the first half of house 1, tropically too (Zurich, UT
+	   * 2433282.5: cusp 12 + 1e-4 deg 1.000000 for 12.000003, house 12's
+	   * middle 1.0 for 12.5); the exact-cusp test above hid it at the
+	   * cusps. 13 .. 13.5 is house 1: less 12. */
+	  if (hpos >= 13) hpos -= 12;
+#else
 	  if (hpos > 12) hpos = 1;
+#endif
 	}
       } else { /* Alcabitius */
 	double dek, r, sna, sda;
@@ -3723,7 +3832,36 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
 	fac *= 2;
 	nloop++;
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 271: the search stopped where the place's altitude
+       * over the circle was within 1e-6 deg, the position 2.1e-6 deg
+       * (7.2e-8 house) off its line at Zurich; the line is the root of
+       * a transcendental equation, no closed form. The circle of pole
+       * tan fh = f tanfi through the equator at ra0 = armc + x, x = 90 f,
+       * holds the place where g(x) = x tanfi tan(de) / 90 - sin(ra - ra0)
+       * is 0 (its altitude's sine over cos fh cos de); Newton's steps on
+       * g from the search's x take it to the double's resolution, 2e-14
+       * deg, kept within twice the search's last step of it (the place on
+       * the horizon or the meridian has its root at the search's end, or
+       * past it by its rounding). */
+      {
+	double x = swe_degnorm(ra0 - armc), xb = x, x1, hb = 360 / fac;
+	double m = swe_degnorm(ra - armc), dd = tand(de) * tanfi / 90, g, gp;
+	for (i = 0; i < 4; i++) {
+	  g = x * dd - sind(m - x);
+	  gp = dd + cosd(m - x) * DEGTORAD;
+	  if (gp == 0)
+	    break;
+	  x1 = x - g / gp;
+	  if (!(fabs(x1 - xb) <= hb) || x1 == x)
+	    break;
+	  x = x1;
+	}
+	hpos = x;
+      }
+#else
       hpos = swe_degnorm(ra0 - armc);
+#endif
       /* mirror back to west */
       if (mdd > 180)
 	    hpos = swe_degnorm(-hpos);

@@ -53,9 +53,10 @@
  * sectors' formula adds; cusps 13 to 36 miss the exact-cusp test);
  * (b) cusps exact, the tropical house within 9.3e-9, the ayanamsa / 30
  * within 9.3e-9; (c) the carried places within 1.2e-13 deg, P R C H I
- * 9.26e-9 (the 0.001"), X 3.6e-14, G 2.78e-8, T 5.96e-8 (its position
- * line's binary search stops at 1e-6 deg). 134 checks. The upstream build
- * (SWE_UPSTREAM_COMPAT) passes too: nothing changed. Run as
+ * 9.26e-9 (the 0.001"), X 3.6e-14, G 2.78e-8, T 3.9e-14 (5.96e-8, its
+ * position line's search stopping at 1e-6 deg, before UPSTREAM-BUGS 271).
+ * 134 checks. The upstream build (SWE_UPSTREAM_COMPAT) passes too: nothing
+ * changed for entry 254. Run as
  *   sidhpos EPHEDIR
  */
 #include <math.h>
@@ -335,8 +336,8 @@ static int check_c(void)
       for (it = 0; it < NTU; it++) {
         double cusp[37], ascmc[10], ct[37], at[10], x[6];
         double tjde = TU[it] + swe_deltat_ex_r(c, TU[it], SEFLG_SWIEPH, serr);
-        /* the ARMC of the date: the tropical call's (in these settings the
-         * sidereal call's ascmc[2] is its auxiliary ARMC) */
+        /* the ARMC of the date: the tropical call's (upstream's sidereal
+         * call's ascmc[2] is its auxiliary ARMC here, UPSTREAM-BUGS 268) */
         if (swe_houses_ex2_r(c, TU[it], SEFLG_SWIEPH | SEFLG_SIDEREAL, LAT, LON, hs, cusp, ascmc,
                              NULL, NULL, serr) == ERR
             || swe_houses_ex2_r(c, TU[it], SEFLG_SWIEPH, LAT, LON, hs, ct, at, NULL, NULL,
