@@ -1078,6 +1078,28 @@ static double pctr_dist_rate_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 77: swe_calc_pctr()'s deflection of the Sun seen from
+ * Jupiter, arcsec, the worst of nine dates 1800-2335: the deflection was
+ * the Earth's geometry from the save area, and deflected the Sun by
+ * itself. Shipped none. */
+static double pctr_sun_defl_off(void)
+{
+  double w = 0, a[6], b[6], d;
+  char serr[256];
+  int j;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (j = 0; j < 9; j++) {
+    double t = 2378496.5 + j * 24413.7 + 0.137;
+    swe_calc_pctr(t, SE_SUN, SE_JUPITER, SEFLG_SWIEPH | SEFLG_NOABERR, a, serr);
+    swe_calc_pctr(t, SE_SUN, SE_JUPITER, SEFLG_SWIEPH | SEFLG_NOABERR | SEFLG_NOGDEFL, b, serr);
+    d = fabs(swe_difdeg2n(a[0], b[0])) * 3600 + fabs(a[1] - b[1]) * 3600;
+    if (d > w)
+      w = d;
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 36: the topocentric Moon at -999, true positions, the
  * site turning per UT day instead of per TT day */
 static double topo_moon_ancient_off(void)
@@ -1321,7 +1343,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1386,6 +1408,7 @@ int main(int argc, char **argv)
   pctrdd = pctr_dist_rate_off();
   waldlr = waldemath_lt_round_off();
   moshlt = mosh_lt_off();
+  pctrsd = pctr_sun_defl_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1859,6 +1882,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier light time     %.2e AU/day FAIL: expected %s\n",
            moshlt, WANT_DEFECT ? "> 1e-7" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (pctrsd > 0.01) : (pctrsd == 0))
+    printf("  pctr Sun deflected     %.2e arcsec  OK\n", pctrsd);
+  else {
+    printf("  pctr Sun deflected     %.2e arcsec  FAIL: expected %s\n",
+           pctrsd, WANT_DEFECT ? "> 0.01" : "0");
     bad++;
   }
 

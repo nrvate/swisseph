@@ -866,6 +866,12 @@ struct epsilon {
  *     SunRA()'s empty memo answered RA 0 for UT 0 (0.3 mag), and `tjd == 0`
  *     guards kept the save areas from answering at tjd 0 (UPSTREAM-BUGS 71,
  *     G70)
+ *   - swe_calc_pctr() deflected as seen from the save area's Earth, not the
+ *     centre (0.435" on Saturn from Mercury, 0.33" on the Sun from Jupiter,
+ *     deflected by itself), stopped its light time short of the fixed
+ *     point (5e-9 deg on Mercury from Pluto), and gave swi_bias() the date
+ *     0 under SEFLG_TRUEPOS (0.042" under SEFLG_JPLHOR_APPROX after 1962);
+ *     UPSTREAM-BUGS 77, G76)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

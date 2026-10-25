@@ -5769,11 +5769,13 @@ void swi_aberr_light(double *xx, double *xe, int32 iflag) {
  * xx		planet's position accounted for light-time
  * dt		dt of light-time
  */
-/* The observer's site (J2000, relative to the geocenter, AU and AU/day) is
- * a parameter, read when iflag has SEFLG_TOPOCTR: swi_deflect_light() takes
- * it from the planets' save area, the fixed stars' paths from the site they
- * computed for the call (Upstream bug 61). */
-static void deflect_light_site(swe_ctx *ctx, double *xx, double dt, int32 iflag, const double *xsite)
+/* The deflection seen from xobs, barycentric with its velocity, the Sun
+ * at the instant of observation xsb (barycentric, or unused under
+ * Moshier, whose xobs is heliocentric already): deflect_light_site()'s
+ * for the Earth or a site on it, swe_calc_pctr()'s for its centre body
+ * (Upstream bug 77). */
+static void deflect_light_from(double *xx, double dt, int32 iflag, const double *xobs,
+                               const double *xsb, int32 iephe)
 {
   int i;
   double xx2[6];
@@ -5787,21 +5789,15 @@ static void deflect_light_site(swe_ctx *ctx, double *xx, double dt, int32 iflag,
   double dtsp;
   double xsun[6], xearth[6];
   double sina, sin_sunr, meff_fact;
-  struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
-  struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
-  int32 iephe = pedp->iephe;
   for (i = 0; i <= 5; i++)
-    xearth[i] = pedp->x[i];
-  if (iflag & SEFLG_TOPOCTR)
-    for (i = 0; i <= 5; i++)
-      xearth[i] += xsite[i];
+    xearth[i] = xobs[i];
   /* U = planetbary(t-tau) - earthbary(t) = planetgeo */
   for (i = 0; i <= 2; i++) 
     u[i] = xx[i]; 
   /* Eh = earthbary(t) - sunbary(t) = earthhel */
   if (iephe == SEFLG_JPLEPH || iephe == SEFLG_SWIEPH) {
     for (i = 0; i <= 2; i++) 
-      e[i] = xearth[i] - psdp->x[i]; 
+      e[i] = xearth[i] - xsb[i]; 
   } else {
     for (i = 0; i <= 2; i++) 
       e[i] = xearth[i];
@@ -5811,12 +5807,12 @@ static void deflect_light_site(swe_ctx *ctx, double *xx, double dt, int32 iflag,
   if (iephe == SEFLG_JPLEPH || iephe == SEFLG_SWIEPH) {
     for (i = 0; i <= 2; i++)
       /* this is sufficient precision */
-      xsun[i] = psdp->x[i] - dt * psdp->x[i+3];
+      xsun[i] = xsb[i] - dt * xsb[i+3];
     for (i = 3; i <= 5; i++)
-      xsun[i] = psdp->x[i];
+      xsun[i] = xsb[i];
   } else {
     for (i = 0; i <= 5; i++)
-      xsun[i] = psdp->x[i];
+      xsun[i] = xsb[i];
   }
   for (i = 0; i <= 2; i++)
     q[i] = xx[i] + xearth[i] - xsun[i];
@@ -5920,8 +5916,8 @@ static void deflect_light_site(swe_ctx *ctx, double *xx, double dt, int32 iflag,
     /* Eh = earthbary(t) - sunbary(t) = earthhel */
     if (iephe == SEFLG_JPLEPH || iephe == SEFLG_SWIEPH) {
       for (i = 0; i <= 2; i++) 
-	e[i] = xearth[i] - psdp->x[i] -
-	       dtsp * (xearth[i+3] - psdp->x[i+3]); 
+	e[i] = xearth[i] - xsb[i] -
+	       dtsp * (xearth[i+3] - xsb[i+3]); 
     } else
       for (i = 0; i <= 2; i++) 
 	e[i] = xearth[i] - dtsp * xearth[i+3];
@@ -5985,6 +5981,23 @@ static void deflect_light_site(swe_ctx *ctx, double *xx, double dt, int32 iflag,
   /* deflected position */
   for (i = 0; i <= 2; i++) 
     xx[i] = xx2[i];
+}
+
+/* The observer's site (J2000, relative to the geocenter, AU and AU/day) is
+ * a parameter, read when iflag has SEFLG_TOPOCTR: swi_deflect_light() takes
+ * it from the planets' save area, the fixed stars' paths from the site they
+ * computed for the call (Upstream bug 61). */
+static void deflect_light_site(swe_ctx *ctx, double *xx, double dt, int32 iflag, const double *xsite)
+{
+  struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
+  double xearth[6];
+  int i;
+  for (i = 0; i <= 5; i++)
+    xearth[i] = pedp->x[i];
+  if (iflag & SEFLG_TOPOCTR)
+    for (i = 0; i <= 5; i++)
+      xearth[i] += xsite[i];
+  deflect_light_from(xx, dt, iflag, xearth, ctx->pldat[SEI_SUNBARY].x, pedp->iephe);
 }
 
 void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag) 
@@ -10983,7 +10996,8 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   double t = 0, dt = 0, daya[2], dtsave_for_defl = 0;
   double xx[6], xxctr[6], xxctr2[6], xx0[6], xxsv[24], xxsp[6], dx[6], xreturn[24];
 #ifndef SWE_UPSTREAM_COMPAT
-  double xctra[3] = {0, 0, 0};
+  double xctra[3] = {0, 0, 0}, xsunb[6] = {0, 0, 0, 0, 0, 0};
+  AS_BOOL do_defl;
 #endif
   double *xs;
   int i, j, niter;
@@ -10998,21 +11012,6 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   epheflag = iflag & SEFLG_EPHMASK;
   // this fills in obliquity and nutation values in swed
   swe_calc_r(ctx, tjd + swe_deltat_ex_r(ctx, tjd, epheflag, serr), SE_ECL_NUT, iflag, xx, serr);
-#ifndef SWE_UPSTREAM_COMPAT
-  /* The light deflection below adds the SAVED observer when TOPOCTR is
-   * set, and nothing on this path computes one: a fresh context used a
-   * zero observer, a used one whatever an earlier topocentric call left
-   * -- up to 5e-7" apart, but not the same bits (2026-09-16 review, F7).
-   * Computed here, at this instant, and saved as the other entry points
-   * save it -- after the SE_ECL_NUT call above, which is what initialises
-   * a fresh context: computed before it, a fresh context's observer
-   * differed from a used one's, the dependence this was meant to remove. */
-  if (iflag & SEFLG_TOPOCTR) {
-    double xobs_pctr[6];
-    if (swi_get_observer(ctx, tjd, iflag, TRUE, xobs_pctr, serr) != OK)
-      return ERR;
-  }
-#endif
   iflag &= ~(SEFLG_HELCTR|SEFLG_BARYCTR);
   iflag2 = epheflag;
   iflag2 |= (SEFLG_BARYCTR|SEFLG_J2000|SEFLG_ICRS|SEFLG_TRUEPOS|SEFLG_EQUATORIAL|SEFLG_XYZ|SEFLG_SPEED);
@@ -11027,6 +11026,18 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
     xx0[i] = xx[i];
     //xx[i] -= xxctr[i];
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 77: SEFLG_TRUEPOS left t at 0, the date swi_bias() is
+   * given below, which skips the bias before 1962 under
+   * SEFLG_JPLHOR_APPROX and SEMOD_JPLHORA_3 */
+  t = tjd;
+  /* the Sun at tjd, barycentric, for the deflection seen from the centre
+   * (below); no deflection of the Sun itself, nor seen from it */
+  do_defl = !(iflag & SEFLG_TRUEPOS) && !(iflag & SEFLG_NOGDEFL)
+            && ipl != SE_SUN && iplctr != SE_SUN;
+  if (do_defl && swe_calc_r(ctx, tjd, SE_SUN, iflag2, xsunb, serr) == ERR)
+    return ERR;
+#endif
   /*******************************
    * light-time geocentric       * 
    *******************************/
@@ -11077,22 +11088,24 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
       for (i = 0; i <= 2; i++) 
         xxsp[i] = xx0[i] - xx[i] - xxsp[i];
     }
-#ifndef SWE_UPSTREAM_COMPAT
-    /* the centre's acceleration at tjd for the aberration rate below, a
-     * central difference of its velocity over 2^-10 day either side; read
-     * before the reads at t, so the save area the deflection reads is
-     * still theirs */
-    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_NOABERR)) {
-      double xm[6], xp[6], tm = tjd - 1.0 / 1024, tp = tjd + 1.0 / 1024;
-      if (swe_calc_r(ctx, tm, iplctr, iflag2, xm, serr) == ERR
-          || swe_calc_r(ctx, tp, iplctr, iflag2, xp, serr) == ERR)
-        return ERR;
-      for (i = 0; i <= 2; i++)
-        xctra[i] = (xp[i+3] - xm[i+3]) / (tp - tm);
-    }
-#endif
     retc = swe_calc_r(ctx, t, iplctr, iflag2, xxctr2, serr);
     retc = swe_calc_r(ctx, t, ipl, iflag2, xx, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* the centre's acceleration at tjd for the aberration rate below:
+     * from its velocities at t = tjd - d, read above, at tjd and at
+     * tjd + h, h = 2^-10 day, the derivative at tjd of the parabola
+     * through them, ((v(+h) - v0) d/h + (v0 - v(-d)) h/d) / (d + h),
+     * off by d h a'''/6 */
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_NOABERR)) {
+      double xp[6], tp = tjd + 1.0 / 1024, d = tjd - t, h;
+      if (swe_calc_r(ctx, tp, iplctr, iflag2, xp, serr) == ERR)
+        return ERR;
+      h = tp - tjd;
+      for (i = 0; i <= 2; i++)
+        xctra[i] = ((xp[i+3] - xxctr[i+3]) * (d / h)
+                    + (xxctr[i+3] - xxctr2[i+3]) * (h / d)) / (d + h);
+    }
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
     /* Upstream bug 77: both bodies were read at t = tjd - dt rounded to a
      * double, up to half an ulp of the date (2.3e-10 day) from the
@@ -11107,6 +11120,27 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
       double eps = (tjd - t) - dt;
       for (i = 0; i <= 2; i++)
         xx[i] += eps * xx0[i+3];
+    }
+    /* The light time above is solved along a straight line, xx0 - dt v,
+     * and is off the fixed point tau = |X(tjd - tau) - O(tjd)| / c by
+     * that line's departure from the orbit: 5e-9 deg on Mercury from
+     * Pluto, 3.3e-10 from Mars. One Newton step on it from the body read
+     * at tjd - dt, d tau = (|rho| / c - dt) / (1 + rho^.V / c), the body
+     * moved along its velocity by -d tau (as bug 78's in
+     * app_pos_etc_plan()): 6e-14 deg off after (G76). */
+    {
+      const double c = CLIGHT * 86400.0 / AUNIT;   /* AU per day */
+      double rho[3], r, rv = 0, dtau;
+      for (i = 0; i <= 2; i++)
+        rho[i] = xx[i] - xxctr[i];
+      r = sqrt(square_sum(rho));
+      for (i = 0; i <= 2; i++)
+        rv += rho[i] * xx[i+3];
+      dtau = (r / c - dt) / (1 + rv / r / c);
+      for (i = 0; i <= 2; i++)
+        xx[i] -= dtau * xx[i+3];
+      dt += dtau;
+      dtsave_for_defl = dt;
     }
 #endif
   }
@@ -11138,9 +11172,23 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   /************************************
    * relativistic deflection of light *
    ************************************/
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 77: this was swi_deflect_light(), which takes the
+   * observer and the Sun from the save area: the Earth and the Sun at t
+   * that the reads above left there, not the centre. The deflection was
+   * the Earth's geometry applied to the centre's vector: 0.28" on Saturn
+   * seen from Mercury, 0.135" on the Sun seen from Jupiter, which is not
+   * deflected by itself at all. Now seen from the centre at tjd, with
+   * the Sun at tjd; none for the Sun, nor seen from it. It reads no
+   * saved observer, so the topocentric one the fork computed and saved
+   * at the top for it (2026-09-16 review, F7) is gone. */
+  if (do_defl)
+    deflect_light_from(xx, dtsave_for_defl, iflag & SEFLG_SPEED, xxctr, xsunb, epheflag);
+#else
   if (!(iflag & SEFLG_TRUEPOS) && !(iflag & SEFLG_NOGDEFL))
     	/* SEFLG_NOGDEFL is on, if SEFLG_HELCTR or SEFLG_BARYCTR */
     swi_deflect_light(ctx, xx, dtsave_for_defl, iflag);
+#endif
   /**********************************
    * 'annual' aberration of light   *
    **********************************/
