@@ -129,6 +129,7 @@ worst were in code that had never executed even once.
 | 92 | The fixed-star memos and catalogue outlive a new path, a path change resets a manual tidal acceleration, and the topocentric observer outlives an ephemeris switch (partly this fork's) | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 96 | An Earth-centred fictitious body's light-time place on Moshier jitters with the second read of the Earth | Correctness | `sweph.c` |
 | 89 | At the Swiss files' 600-year joins an open file answers past its nominal end, so the answer depends on the file an earlier call left open | Correctness | `sweph.c`, `sweph.h` |
+| 98 | A star function as the first call ignores `SE_EPHE_PATH`, and a path change throws away the astronomical models | Correctness | `sweph.c` |
 
 ---
 
@@ -5454,10 +5455,9 @@ keyed on its instant and `SWI_TOPD_KEY()` of the flags it was built for
 can bring files of another DE number. Under `SWE_UPSTREAM_COMPAT` all
 three are upstream's.
 
-Not fixed here: the star functions as the very first library call fail
-with the files named by `SE_EPHE_PATH` ("sefstars.txt not found in PATH
-''" on upstream and before this fix; the sync now gives the compiled
-default path, not the variable's), upstream's too.
+The star functions as the very first library call, with the files named
+by `SE_EPHE_PATH`, still failed after this fix (the sync gave the compiled
+default path, not the variable's); entry 98 fixes that.
 
 G91 `tests/ephswitch.c`: the four star functions on Sirius, Aldebaran and
 Sirius again through path A, `swe_close()` and B, A, B, `swe_close()` and
@@ -5612,6 +5612,66 @@ coordinate finite. 42684 rows, none differ. ts20 before the fix fails
 `file_join_off`: the barycentric Sun at JD 2378496.6 after a call 1.5 days
 before against alone, 0 shipped, 47.4 mas compat. G24, G62, G70 and G83
 pass; G88 also under ASan and UBSan.
+
+## 98. A star function as the first call ignores `SE_EPHE_PATH`, and a path change throws away the astronomical models
+
+**Severity: Correctness (a failed call; 18.27 s of delta t in AD 1000, 2.39e-6 deg of nutation, 0.00056 deg of ayanamsa)**
+**Where:** `sweph.c`: `fixstar_first_use()` (`swe_fixstar_r()`, `swe_fixstar2_r()`, `swe_fixstar_mag_r()`, `swe_fixstar2_mag_r()`), `swi_close_keep_topo_etc()`
+
+- **The star functions as the first call.** `swe_fixstar()`,
+  `swe_fixstar2()`, `swe_fixstar_mag()` and `swe_fixstar2_mag()` read
+  `sefstars.txt` along the ephemeris path but never name one, where
+  `swe_calc()` on its first use calls `swe_set_ephe_path(NULL)`, which
+  reads `SE_EPHE_PATH`. So as the very first library call, with the files
+  named by the variable alone, each failed for Sirius: "SwissEph file
+  'sefstars.txt' not found in PATH ''" (upstream; after entry 92's sync,
+  the compiled default `.:/users/ephe2/:/users/ephe/`), and
+  `swe_fixstar2()` "could not find star name sirius". The same request
+  after `swe_set_ephe_path()` works. Upstream's too.
+- **A path change zeroed the models.** `swi_close_keep_topo_etc()` --
+  run by every `swe_set_ephe_path()` and `swe_set_jpl_file()`, and by the
+  implicit path of a first calculation with the files named by
+  `SE_EPHE_PATH` -- carried `swe_close()`'s
+  `memset(astro_models, 0)`, so a path change put the defaults back over
+  what `swe_set_astro_models()` had set, and over the precession models
+  `swe_set_sid_mode(..., SE_SIDBIT_PREC_ORIG)` sets. With
+  `swe_set_astro_models("1,0,0,1")` (delta t Stephenson & Morrison 1984,
+  nutation IAU 1980), a second path, `swe_set_jpl_file()`, or the setting
+  made first and the files by `SE_EPHE_PATH`, left the nutation in
+  longitude at J2000 at -0.0038700008 for -0.0038676070 deg (2.39e-6) and
+  delta t in AD 1000 at 1474.79 s for 1456.52 (18.27); Lahiri with
+  `SE_SIDBIT_PREC_ORIG` after a second path gave 9.91733 for 9.91677 deg
+  in AD 1000 (0.00056). Upstream's too, the same numbers (its
+  `swe_set_jpl_file()` case 6.98 s, entry 92's tidal reset mixed in). The
+  models are the caller's settings, not anything read from the files, and
+  the angle caches they key are emptied by the path change anyway; nothing
+  in the manual ties them to the path. Entry 83 recorded upstream losing
+  `swe_set_astro_models()` set as the first call, and this fork keeping
+  it: it kept it after `swe_set_ephe_path()`, not through the implicit
+  path a first calculation sets from `SE_EPHE_PATH`.
+  On the shared configuration the master kept the models while the
+  context that changed its path lost them, so threads disagreed.
+
+**Fix, as done here:** the four star functions call `fixstar_first_use()`:
+initialise and sync (entry 92), then `swe_set_ephe_path(NULL)` on
+`swe_calc()`'s condition (no path set, no JPL file open), under
+`SWI_CFG_LOCAL`. `swi_close_keep_topo_etc()` no longer zeroes the models;
+`swe_close()`, which releases everything, still does. Under
+`SWE_UPSTREAM_COMPAT` both are upstream's.
+
+G97 `tests/pathkeep.c`: each star function on Sirius as the first call
+with the files by `SE_EPHE_PATH` against the same after a path (return
+code, values, serr); `swe_set_astro_models("1,0,0,1")` then a second path,
+`swe_set_jpl_file()`, or set first with the files by `SE_EPHE_PATH`,
+against the setting after one path; then `swe_close()` and a path against
+no setting; Lahiri with `SE_SIDBIT_PREC_ORIG` and a second path against
+one path; within 1e-12, each setting seen against none: 9 pass. Before the
+fix 8 fail, the compat build the same 8, the upstream build (legacy-master)
+the same 8. G24 `models_path_off`: delta t in AD 1000 after the models and
+a second path, 0 s shipped, 18.27 s compat. G81 (`tests/helmemo.c`) now
+holds every answer to 1e-9, bit-identical after entry 92; at 1e-9 the
+library before entry 92 fails its "Swiss again" (3.86e-8 deg). G24, G81,
+G91, G2 and the context gate pass.
 
 ## How these were found
 

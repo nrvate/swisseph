@@ -1764,6 +1764,22 @@ void swi_fixstar_forget(swe_ctx *ctx)
 }
 #endif
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 98: the star functions read sefstars.txt along the path
+ * but never named one, so as the first library call, with the files named
+ * by SE_EPHE_PATH alone, they looked in PATH '' (upstream) or the compiled
+ * default (after bug 92's sync) and failed: "SwissEph file 'sefstars.txt'
+ * not found", for Sirius in all four. swe_calc() names the path on its
+ * first use (swe_set_ephe_path(NULL), which reads SE_EPHE_PATH); so do
+ * they now, on the same condition. */
+static void fixstar_first_use(swe_ctx *ctx)
+{
+  swi_init_swed_if_start(ctx);
+  if (!ctx->ephe_path_is_set && !ctx->jpl_file_is_open)
+    SWI_CFG_LOCAL(ctx, swe_set_ephe_path_r(ctx, NULL));
+}
+#endif
+
 /* closes all open files, frees space of planetary data, 
  * deletes memory of all computed positions 
  */
@@ -1781,8 +1797,19 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
   swi_hel_forget(ctx);		/* Upstream bug 82 */
   swi_fixstar_forget(ctx);	/* Upstream bug 92 */
   ctx->topd.teval = SWI_TJD_NEVER;	/* bug 92: other files, another site */
-#endif
+  /* Upstream bug 98: the astronomical models were zeroed here, swe_close()'s
+   * line, so every swe_set_ephe_path() and swe_set_jpl_file(), and the
+   * implicit path of a first calculation with the files named by
+   * SE_EPHE_PATH, put back the defaults over what swe_set_astro_models()
+   * or swe_set_sid_mode(..., SE_SIDBIT_PREC_ORIG) had set: with delta t
+   * Stephenson & Morrison 1984 and nutation IAU 1980, the nutation at J2000
+   * moved by 2.39e-6 deg and delta t in AD 1000 by 18.27 s (1474.79 for
+   * 1456.52); Lahiri with its original precession 0.00056 deg in AD 1000.
+   * Nothing the models feed is read from the files, and the caches they
+   * key were emptied above. They stay now; swe_close() still resets them. */
+#else
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
+#endif
   /* close JPL file */
   swi_close_jpl_file(ctx);
   ctx->jpl_file_is_open = FALSE;
@@ -10275,8 +10302,9 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 92: the lookup came before the first sync, so a thread
    * that had adopted one path looked its star up in that path's
-   * catalogue after another thread had set a new one. Adopt it first. */
-  swi_init_swed_if_start(ctx);
+   * catalogue after another thread had set a new one. Adopt it first;
+   * and, bug 98, name the path as a first swe_calc() does. */
+  fixstar_first_use(ctx);
 #endif
   if (serr != NULL)
     *serr = '\0';
@@ -10389,7 +10417,7 @@ int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *
   int retc;
   struct fixed_star stardata;
 #ifndef SWE_UPSTREAM_COMPAT
-  swi_init_swed_if_start(ctx);	/* bug 92, see swe_fixstar2_r() */
+  fixstar_first_use(ctx);	/* bugs 92, 98, see swe_fixstar2_r() */
 #endif
   if (serr != NULL)
     *serr = '\0';
@@ -11670,7 +11698,7 @@ int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   char srecord[AS_MAXCH + 20], *sp;	/* 20 byte for SE_STARFILE */
   int retc;
 #ifndef SWE_UPSTREAM_COMPAT
-  swi_init_swed_if_start(ctx);	/* bug 92, see swe_fixstar2_r() */
+  fixstar_first_use(ctx);	/* bugs 92, 98, see swe_fixstar2_r() */
 #endif
   if (serr != NULL)
     *serr = '\0';
@@ -11788,7 +11816,7 @@ int32 CALL_CONV swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *s
   int retc;
   double dparams[20];
 #ifndef SWE_UPSTREAM_COMPAT
-  swi_init_swed_if_start(ctx);	/* bug 92, see swe_fixstar2_r() */
+  fixstar_first_use(ctx);	/* bugs 92, 98, see swe_fixstar2_r() */
 #endif
   if (serr != NULL)
     *serr = '\0';

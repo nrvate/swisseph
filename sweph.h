@@ -910,6 +910,10 @@ struct epsilon {
  *     delta t in AD 1000), and the topocentric observer was kept for the
  *     instant alone across ephemerides (4.4" on the Moon at 1600 TT;
  *     UPSTREAM-BUGS 92, G91)
+ *   - the star functions as the first call did not name the path from
+ *     SE_EPHE_PATH as swe_calc() does (sefstars.txt not found), and a
+ *     path change zeroed the astronomical models (18.27 s of delta t in
+ *     AD 1000; UPSTREAM-BUGS 98, G97)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
