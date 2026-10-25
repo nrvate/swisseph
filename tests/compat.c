@@ -963,6 +963,40 @@ static double path_warn_first_count(void)
   return n < 0 ? -1 : n;
 }
 
+/* swe_get_tid_acc() after swe_set_astro_models("SE1.80") and a Moon on
+ * the default context, against SE_TIDAL_DE406, which the version sets.
+ * Upstream's configuration publish (this fork's) takes only the SID group,
+ * and the calculation's sync puts the automatic -25.936 back: 0.110
+ * (UPSTREAM-BUGS 116). Forked, swe_close() first, so the master is fresh. */
+static double models_tid_off(void)
+{
+  int fd[2];
+  double v = -1;
+  pid_t pid;
+  if (pipe(fd) != 0)
+    return -1;
+  fflush(stdout);
+  if ((pid = fork()) < 0)
+    return -1;
+  if (pid == 0) {
+    double x[6], d;
+    char serr[256], m[AS_MAXCH] = "SE1.80";
+    close(fd[0]);
+    swe_close();
+    swe_set_ephe_path(EPHE);
+    swe_set_astro_models(m, 0);
+    swe_calc_ut(2451545.0, SE_MOON, SEFLG_SWIEPH, x, serr);
+    d = fabs(swe_get_tid_acc() - SE_TIDAL_DE406);
+    _exit(write(fd[1], &d, sizeof d) == (ssize_t) sizeof d ? 0 : 3);
+  }
+  close(fd[1]);
+  if (read(fd[0], &v, sizeof v) != (ssize_t) sizeof v)
+    v = -1;
+  close(fd[0]);
+  waitpid(pid, NULL, 0);
+  return v;
+}
+
 /* Venus's limiting magnitude at humidity 80 % right after one at 40 %,
  * same instant and place, against the same request with the memos elsewhere
  * first, mag. Upstream's ka() and Deltam() memos are keyed on the Sun's
@@ -2467,7 +2501,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2476,6 +2510,7 @@ int main(int argc, char **argv)
   dtfirst = dt_userdef_first_off();   /* first: it needs a pristine library */
   dtpath = calc_ut_first_path_off();  /* so does this */
   pathwarn = path_warn_first_count(); /* and this */
+  modtid = models_tid_off();
   nodmosh = nodaps_mosh_lat_off();
 
   contam = jplhor_contaminates();
@@ -2893,6 +2928,14 @@ int main(int argc, char **argv)
   else {
     printf("  first-call path warning %.0f of 2 FAIL: expected %s\n",
            pathwarn, WANT_DEFECT ? "2" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (modtid > 0.1) : (modtid >= 0 && modtid < 1e-12))
+    printf("  SE1.80 tidal term      %.2e OK\n", modtid);
+  else {
+    printf("  SE1.80 tidal term      %.2e FAIL: expected %s\n",
+           modtid, WANT_DEFECT ? "> 0.1" : "< 1e-12");
     bad++;
   }
 

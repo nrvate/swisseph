@@ -146,6 +146,7 @@ worst were in code that had never executed even once.
 | 111 | `swe_get_orbital_elements()`: the true anomaly cancels near aphelion, e loses digits, and the periods leave out the body's mass (the tropical one 3.9e-5 long, the synodic against k) | Correctness | `swecl.c` |
 | 113 | A seorbel.txt element field with a character no term has hangs `swe_calc()` for that body; a non-numeric epoch or equinox, an empty field, a short line are read as 0 or refuse every later body; a broken sefstars.txt is reported as "star not found", and `swe_fixstar()` with serr NULL answers an unknown star with the catalogue's last | Correctness (a hang; error reporting) | `swemplan.c`, `sweph.c` |
 | 114 | A seorbel.txt element term reads a power "T5" to "T9" as nothing, "T0" as T, "T 2" as T2 times 2, a number ".0" as 1 and "1.2.3" as 1.2, all without an error | Correctness | `swemplan.c` |
+| 116 | `swe_set_astro_models()` of a version before 2.01 sets the tidal acceleration but publishes only the SID group, so the default context's next sync puts the automatic term back (this fork's) | Correctness | `swephlib.c` |
 | 109 | Moshier's fictitious bodies, fixed stars and apparent light time stay heliocentric, and its heliocentric Moon's speed is off its positions | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 
 ---
@@ -7168,6 +7169,57 @@ compat.
 G108, G101, G95, G80, G87, G75, G60, G52, G84, G77, G33 and G24 (both
 ways) pass. The compat build's output is bit-identical to before
 (planets, stars, fictitious and orbel bodies, every flag set dumped).
+
+## 116. `swe_set_astro_models()` of a version before 2.01 sets the tidal acceleration but publishes only the SID group (this fork's)
+
+**Severity: Correctness (returned values: -25.936 for -25.826, 9.13 s of delta t in AD 1000)**
+**Where:** `swephlib.c`: `swe_set_astro_models_r()` (and `swe_get_astro_models_r()`, which calls it)
+
+For a version string before 2.01 the setter also sets the tidal
+acceleration: SE_TIDAL_DE406 for "SE1.77" to "SE1.80" (and "SE2.00" when
+the files' Sun is DE431), -25.7376 before 1.77. It does so with
+`swe_set_tid_acc_r()` inside its own configuration guard, where the inner
+publish is skipped, and then published only SWI_CFG_SID. The tidal group
+stayed unclaimed, so on the default context the next sync -- which the
+SID publish itself makes due, and which `swe_get_tid_acc()`, the next
+calculation or another thread runs -- copied the master's automatic term
+over it. G113, the default context against an explicit one (which does
+not sync) given the same calls:
+
+| Version | Explicit context | Default, before |
+|---|---|---|
+| SE1.80, 1.78, 1.77, 2.00 | -25.826, 1559.759 s | -25.936, 1568.888 s |
+| SE1.72 | -25.7376, 1548.309 s | -25.936, 1564.775 s |
+| SE1.70, 1.64 | -25.7376, 1578.121 s | -25.936, 1594.586 s |
+| SE1.00 | -25.7376, 1456.524 s | -25.936, 1456.524 s |
+
+(tidal acceleration, then delta t in AD 1000), right after the setting,
+after a calculation, whether the path came before or after the models,
+through `swe_get_astro_models()`, and on another thread.
+
+**Audit of the other setters.** Every other publishing setter changes the
+fields of its own group only: `swe_set_ephe_path()` and
+`swe_set_jpl_file()` (PATH; an automatic tidal term they re-derive is not
+copied by a sync, and a manual one is kept, entry 92),
+`swe_set_sid_mode()` (SID, the astronomical models of
+SE_SIDBIT_PREC_ORIG included), `swe_set_topo()` (TOPO),
+`swe_set_tid_acc()` (TIDACC), `swe_set_delta_t_userdef()` (DELTAT),
+`swe_set_lapse_rate()` (LAPSE), `swe_set_interpolate_nut()` (NUT). The
+compat build's path change zeroes the models without publishing SID; that
+is entry 98's restored defect.
+
+**Fix, as done here** (behind `#ifndef SWE_UPSTREAM_COMPAT`): the setter
+notes the tidal term and whether it was manual before the version branch,
+and publishes SWI_CFG_TIDACC with SID when the branch changed either.
+
+G113 `tests/modelstid.c`: nine versions in four orders: 36 pass. Before the
+fix 32 fail (all but SE2.06's), the compat build 32. G24 `models_tid_off`:
+0 shipped, 0.110 compat. G100, G97, G82, G2 and G24 pass.
+
+Noticed, not fixed: `swe_set_ephe_fallback()` belongs to no configuration
+group, so a second thread sharing the default context does not see it
+(main thread 1, second thread 0, `SE_EPHE_FALLBACK` unset), unlike every
+other setter.
 
 ## How these were found
 

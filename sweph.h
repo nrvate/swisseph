@@ -1083,6 +1083,10 @@ struct epsilon {
  *     ignored, "T0" as T, "T 2" as T2 times 2) and a number taken only
  *     when atof() was not 0 or began with '0' (".0" read as a factor 1,
  *     "1.2.3" as 1.2) (UPSTREAM-BUGS 114, G111)
+ *   - swe_set_astro_models() of a version before 2.01 published only the
+ *     SID group, so the tidal acceleration it sets was lost at the default
+ *     context's next sync (-25.936 for -25.826 after "SE1.80", 9.13 s of
+ *     delta t in AD 1000; UPSTREAM-BUGS 116, G113)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

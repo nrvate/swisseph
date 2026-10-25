@@ -5293,7 +5293,16 @@ void CALL_CONV swe_set_astro_models_r(swe_ctx *ctx, char *samod, int32 iflag)
   AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
   double dversion;
   char s[30], *sp;
+#ifndef SWE_UPSTREAM_COMPAT
+  double tid_was;
+  AS_BOOL manual_was;
+  int32 groups = SWI_CFG_SID;
+#endif
   swi_init_swed_if_start(ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+  tid_was = ctx->tid_acc;
+  manual_was = ctx->is_tid_acc_manual;
+#endif
   if (*samod != '\0' && isdigit((int) *samod)) {
     set_astro_models(ctx, samod);
   } else if (*samod == '\0' || strncmp(samod, "SE", 2) == 0) {
@@ -5339,7 +5348,21 @@ void CALL_CONV swe_set_astro_models_r(swe_ctx *ctx, char *samod, int32 iflag)
   }
   swi_invalidate_models(ctx);
   swi_config_end_apply(ctx, swi_cfg_was);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 116 (this fork's configuration layer): a version before
+   * 2.01 also sets the tidal acceleration (SE_TIDAL_DE406 for "SE1.80"),
+   * but swe_set_tid_acc() inside the guard above publishes nothing, and
+   * only the SID group was published here: the next sync on the default
+   * context took the master's automatic term back, swe_get_tid_acc()
+   * -25.936 for -25.826 and delta t in AD 1000 1568.888 s for 1559.759
+   * (an explicit context, which does not sync, kept it). The tidal group
+   * is published too now when the version set it. */
+  if (ctx->is_tid_acc_manual != manual_was || ctx->tid_acc != tid_was)
+    groups |= SWI_CFG_TIDACC;
+  swi_config_publish(ctx, groups);
+#else
   swi_config_publish(ctx, SWI_CFG_SID);
+#endif
 }
 
 /* Legacy entry point: the process-wide default context.
