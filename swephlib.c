@@ -2687,13 +2687,29 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
   // maximum error is about 3 mas
   } else {
     // precalculated data points available
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 129: the nodes were kept for their instants alone, and
+     * outlived a change of nutation model: on, the nutation at J2000,
+     * swe_set_astro_models("0,0,0,1") (IAU 1980), and dpsi at J2000 + 0.37
+     * was the default model's -13.926980" for IAU 1980's -13.918339"
+     * (8.6e-3"); after IAU 1980 and swe_close(), which resets the models
+     * and keeps the interpolation, IAU 1980's for the default's (8.7e-3").
+     * They are of the model they were built under now, and another model
+     * builds its own, whatever route set it. */
+    if (tjd < ctx->interpol.tjd_nut2 && tjd > ctx->interpol.tjd_nut0
+        && ctx->interpol.nut_model == ctx->astro_models[SE_MODEL_NUT]) {
+#else
     if (tjd < ctx->interpol.tjd_nut2 && tjd > ctx->interpol.tjd_nut0) {
+#endif
       dx = (tjd - ctx->interpol.tjd_nut0) - 1.0;
       nutlo[0] = quadratic_intp(ctx->interpol.nut_dpsi0, ctx->interpol.nut_dpsi1, ctx->interpol.nut_dpsi2, dx);
       nutlo[1] = quadratic_intp(ctx->interpol.nut_deps0, ctx->interpol.nut_deps1, ctx->interpol.nut_deps2, dx);
     } else {
       ctx->interpol.tjd_nut0 = tjd - 1.0; // one day earlier
       ctx->interpol.tjd_nut2 = tjd + 1.0; // one day later
+#ifndef SWE_UPSTREAM_COMPAT
+      ctx->interpol.nut_model = ctx->astro_models[SE_MODEL_NUT];
+#endif
       retc = calc_nutation(ctx, ctx->interpol.tjd_nut0, iflag, dnut);
       if (retc == ERR) return ERR;
       ctx->interpol.nut_dpsi0 = dnut[0];

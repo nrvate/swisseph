@@ -2828,6 +2828,48 @@ static double hold_start_off(void)
   return fabs(hstart_got - 0.001) * 86400;
 }
 
+/* The nutation after a change of nutation model, the interpolation on:
+ * the nutation at J2000, IAU 1980 set, dpsi at J2000 + 0.37; then the
+ * nutation at J2000 + 10 and swe_close(), which puts the default model
+ * back and keeps the interpolation, and dpsi at J2000 + 10.37. Each
+ * against a fresh context's with the final model, arcsec, the larger.
+ * Upstream keeps the interpolation's nodes of the old model, 8.6e-3" off
+ * (UPSTREAM-BUGS 129). */
+static double nut_model_intp_off(void)
+{
+  double x[6], y[6], d;
+  char serr[256], m1980[] = "0,0,0,1", mdef[] = "0,0,0,0";
+  swe_ctx *c;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_interpolate_nut(TRUE);
+  swe_calc(2451545.0, SE_ECL_NUT, SEFLG_SWIEPH, x, serr);
+  swe_set_astro_models(m1980, 0);
+  swe_calc(2451545.37, SE_ECL_NUT, SEFLG_SWIEPH, x, serr);
+  if ((c = swe_ctx_new()) == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_interpolate_nut_r(c, TRUE);
+  swe_set_astro_models_r(c, m1980, 0);
+  swe_calc_r(c, 2451545.37, SE_ECL_NUT, SEFLG_SWIEPH, y, serr);
+  d = fabs(x[2] - y[2]);
+  swe_calc(2451555.0, SE_ECL_NUT, SEFLG_SWIEPH, x, serr);
+  swe_close();
+  swe_calc(2451555.37, SE_ECL_NUT, SEFLG_SWIEPH, x, serr);
+  swe_ctx_free(c);
+  if ((c = swe_ctx_new()) == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_interpolate_nut_r(c, TRUE);
+  swe_set_astro_models_r(c, mdef, 0);
+  swe_calc_r(c, 2451555.37, SE_ECL_NUT, SEFLG_SWIEPH, y, serr);
+  swe_ctx_free(c);
+  if (fabs(x[2] - y[2]) > d)
+    d = fabs(x[2] - y[2]);
+  swe_set_interpolate_nut(FALSE);	/* swe_close() keeps it: back to the default */
+  return d * 3600;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3098,7 +3140,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep, holdstart;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep, holdstart, nutmodel;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3209,6 +3251,7 @@ int main(int argc, char **argv)
   searchhold = search_hold_off();
   nutintp = nut_intp_off();
   holdstart = hold_start_off();
+  nutmodel = nut_model_intp_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
@@ -4093,6 +4136,14 @@ int main(int argc, char **argv)
   else {
     printf("  thread's first setting %.2e s FAIL: expected %s\n",
            holdstart, WANT_DEFECT ? "> 1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nutmodel > 1e-3) : (nutmodel == 0))
+    printf("  nutation model kept    %.2e arcsec OK\n", nutmodel);
+  else {
+    printf("  nutation model kept    %.2e arcsec FAIL: expected %s\n",
+           nutmodel, WANT_DEFECT ? "> 1e-3" : "0");
     bad++;
   }
 

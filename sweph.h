@@ -1157,6 +1157,12 @@ struct epsilon {
  *     every function of UT through it, the sidereal-time model in
  *     swe_sidtime0() 3.1e-7 h, swe_get_astro_models() listing zeros
  *     (UPSTREAM-BUGS 128, G124)
+ *   - the interpolation's nodes kept for their instants alone across a
+ *     change of nutation model (swe_set_astro_models(),
+ *     SE_SIDBIT_PREC_ORIG, swe_close()), so the old model answered there
+ *     (8.45e-3" in dpsi), and the topocentric observer across any change
+ *     of model (UPSTREAM-BUGS 129, G122). A thread adopting the change
+ *     empties both in both builds: that adoption is this fork's code
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1420,6 +1426,9 @@ struct interpol {
   double tjd_nut0, tjd_nut2;
   double nut_dpsi0, nut_dpsi1, nut_dpsi2;
   double nut_deps0, nut_deps1, nut_deps2;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 nut_model;	/* astro_models[SE_MODEL_NUT] the nodes are of (bug 129) */
+#endif
 };
 
 /* The 33-term periodic series in sidtime_non_polynomial_part() (swephlib.c).

@@ -121,7 +121,8 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  *
  *   ephepath/jplfnam -> close ephemeris files, then force_app_pos_etc
  *                       (matches swe_set_ephe_path -> swi_close_keep_topo_etc)
- *   sidd/astro_models -> force_app_pos_etc   (matches sweph.c:2930)
+ *   sidd/astro_models -> swi_invalidate_models, topd.teval (bug 129);
+ *                        a changed nutation model swi_invalidate_nut_interp
  *   geo*              -> topd.teval = SWI_TJD_NEVER (0 under compat),
  *                        force_app_pos_etc
  *                                        (matches sweph.c:7266-7269)
@@ -212,6 +213,17 @@ void swi_invalidate_models(swe_ctx *ctx)
   ctx->oec.teps = 0;
   ctx->oec2000.teps = 0;
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 129: and the topocentric observer, kept for its instant,
+   * is placed by the models too -- its apparent sidereal time carries the
+   * nutation and the sidereal-time model, its UT delta t's -- so the old
+   * models answered for it: the topocentric Moon at J2000 + 0.37 asked
+   * again after IAU 1980 nutation 5.4e-5" off, after IAU 1976 sidereal
+   * time 1.7e-4", in AD 1000 after Stephenson 1997 delta t 0.17". The
+   * interpolation's nodes are keyed on the model they are of
+   * (swi_nutation()). */
+  ctx->topd.teval = SWI_TJD_NEVER;
+#endif
   swi_force_app_pos_etc(ctx);
 }
 
@@ -221,7 +233,8 @@ void swi_invalidate_models(swe_ctx *ctx)
  * keeps (ctx->nut with its rate, and nutv), which every place of date and
  * the ayanamsa read again, the observer, whose sidereal time carries it,
  * and the positions. Called by the setter, and in both builds by
- * swi_config_apply() (the adoption is this fork's). The mean obliquity
+ * swi_config_apply() (the adoption is this fork's), which calls it too
+ * when it adopts another nutation model (bug 129). The mean obliquity
  * and calc_nutation()'s memo and grid, exact values either way, are kept. */
 void swi_invalidate_nut_interp(swe_ctx *ctx)
 {
@@ -248,7 +261,7 @@ void swi_invalidate_nut_interp(swe_ctx *ctx)
 AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 {
   AS_BOOL path_changed, geo_changed, model_changed, dt_changed, nut_changed;
-  AS_BOOL fb_changed;
+  AS_BOOL fb_changed, nutmod_changed;
 #ifndef SWE_UPSTREAM_COMPAT
   AS_BOOL jpl_only;
 #endif
@@ -285,6 +298,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
                    || memcmp(ctx->astro_models, c->astro_models,
                              sizeof(ctx->astro_models)) != 0
                    || ctx->ayana_is_set != c->ayana_is_set);
+  nutmod_changed = (groups & SWI_CFG_SID)
+                   && ctx->astro_models[SE_MODEL_NUT] != c->astro_models[SE_MODEL_NUT];
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 101 (this fork's): an automatic tidal acceleration is
    * the context's own, derived from its files (sweconfig.h), but it was
@@ -435,8 +450,10 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
    * adopting thread needs the same invalidation the setting thread gets
    * from swi_invalidate_deltat() -- without it a worker that picked up
    * another thread's delta t kept the observer it had already built, which
-   * is the same defect arriving by the other door. */
-  if (geo_changed || dt_changed)
+   * is the same defect arriving by the other door. Upstream bug 129, in
+   * both builds (the adoption is this fork's): model_changed too, as the
+   * models place the observer (swi_invalidate_models()). */
+  if (geo_changed || dt_changed || model_changed)
 #ifndef SWE_UPSTREAM_COMPAT
     ctx->topd.teval = SWI_TJD_NEVER;  /* force swi_get_observer(ctx) to recompute (bug 71) */
 #else
@@ -444,8 +461,10 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 #endif
   /* Upstream bug 126, in both builds (the adoption is this fork's): the
    * nodes alone were reset, and the nutation, observer and positions kept
-   * at the instant answered for the old setting */
-  if (nut_changed)
+   * at the instant answered for the old setting. Bug 129: the nodes of
+   * another nutation model, likewise (in this fork's build their key
+   * refuses them anyway, swi_nutation()). */
+  if (nut_changed || nutmod_changed)
     swi_invalidate_nut_interp(ctx);
   if (model_changed)
     swi_invalidate_models(ctx);

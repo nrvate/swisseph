@@ -1207,7 +1207,10 @@ check-closekeep: closekeep
 # positions cached under the old setting, on the setter's thread, on a
 # second thread that adopts it and on an explicit context: each answer bit
 # for bit a fresh process's that set the final value first (UPSTREAM-BUGS
-# 126).
+# 126). And a change of nutation model -- swe_set_astro_models(), its
+# adoption, an explicit context, SE_SIDBIT_PREC_ORIG, swe_close() -- is not
+# answered from the old model's interpolation nodes, nor a change of model
+# from its observer (UPSTREAM-BUGS 129).
 check-nutintp: nutintp
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nutintp $(EPHE)
 

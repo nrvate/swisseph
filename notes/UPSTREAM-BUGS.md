@@ -161,6 +161,7 @@ worst were in code that had never executed even once.
 | 125 | Moshier's light time past a day carries the Sun about the barycentre by bug 109's Taylor step: VEA 2e-7 deg off its light time's fixed point, its speed 5.4e-9 deg/day off its positions, a `swe_calc_orbel()` orbit at 80000 AU the same (this fork's) | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 | 127 | `swe_close()` resets the observer and the sidereal mode, which the manual has survive it: after it a topocentric calculation is refused ("geographic position has not been set") and a sidereal one is in Fagan/Bradley's mode, 0.88 deg off Lahiri's -- on the closing thread, every thread on the default context and an explicit context closed by `swe_close_r()` | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 | 128 | A thread's first call reads the configuration before its context has started (this fork's): the main thread's user delta t answered 63.83 s for 86.40 s by `swe_deltat_ex()` and every function of UT through it (the Moon 3.1e-3 deg), its sidereal-time model missed by `swe_sidtime0()`, its models listed as zeros | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h`, `swephlib.c`, `swedate.c` |
+| 129 | A change of nutation model -- `swe_set_astro_models()`, its adoption by another thread, an explicit context, `SE_SIDBIT_PREC_ORIG`, `swe_close()` -- keeps the interpolation's nodes of the old model, and any change of model the topocentric observer: the old model answers at an instant already computed, 8.7e-3" in dpsi, the topocentric Moon 0.17" in AD 1000 after a delta t model | Correctness (behaviour) | `swephlib.c`, `sweconfig.c`, `sweph.h` |
 
 ---
 
@@ -7764,7 +7765,8 @@ interpolation on, the nutation at J2000, `swe_set_astro_models("0,0,0,1")`
 where a process that set IAU 1980 first answers -13.918307" (8.7e-3");
 after IAU 1980, J2000 and `swe_close()`, the default model's nutation at
 J2000 + 0.1 and J2000 + 0.37 answers IAU 1980's -13.918277" for
--13.927012". Both builds.
+-13.927012". Both builds. Fixed by entry 129, with the topocentric
+observer, which a change of model left too.
 
 ## 120. With the Swiss Moon file missing, the Moon and the Earth come from Moshier under a SEFLG_SWIEPH flag, and the strict setting answers
 
@@ -8328,6 +8330,121 @@ deg, 2.8e-9 deg, 3.1e-7 h, a tidal acceleration of 0 in the models'
 text, bug 101) and passes `warn`. G24 `hold_start_off`: the deltat case,
 0 shipped, 22.6 s compat. G2, G20, G82, G106, G112, G115, G119, G120,
 G121, cfgleak and the context test pass.
+
+## 129. A change of nutation model keeps the interpolation's nodes of the old one, and any change of model the topocentric observer: the old model answers at an instant already computed
+
+**Severity: Correctness (behaviour: a setting without effect at an instant already computed; dpsi 8.6e-3", every place of date there 8.7e-3", the houses 2.0e-2"; the topocentric Moon 5.4e-5" after a nutation model, 1.7e-4" after a sidereal-time model, 0.17" in AD 1000 after a delta t model)**
+**Where:** `swephlib.c`: `swi_nutation()`; `sweph.h`: `struct interpol`; `sweconfig.c`: `swi_invalidate_models()`, `swi_config_apply()`
+
+Entry 126's noticed item. With the interpolation on, `swi_nutation()`
+answers from a quadratic through three nodes a day apart, built at the
+first instant outside them, and kept for their instants alone. Every
+route that changes the nutation model left them:
+- `swe_set_astro_models()`, on the setter's thread and through
+  `swe_set_astro_models_r()` on an explicit context:
+  `swi_invalidate_models()` empties `ctx->nut`, the obliquity and the
+  positions, not the nodes;
+- a thread on the default context adopting it (`swi_config_apply()`,
+  the SID group), which calls the same;
+- `swe_set_sid_mode()` with `SE_SIDBIT_PREC_ORIG`, which sets the
+  nutation that goes with the ayanamsa's precession (IAU 1980 for
+  Lahiri's IAU 1976, Woolard for Newcomb), and the same function;
+- `swe_close()`: `ctx_release()` zeroes the models and keeps the
+  interpolation (entry 123) and its nodes, and the closing thread's next
+  sync adopts a master whose models are zeroed the same way, so no
+  invalidation runs at all; and a second thread adopting the close.
+
+Interpolation on, the nutation at J2000, `swe_set_astro_models("0,0,0,1")`
+(IAU 1980), and dpsi at J2000 + 0.37 was the default model's interpolated
+-13.926980" where a process that set IAU 1980 first answers -13.918339"
+(8.6e-3"); IAU 1980, the nutation at J2000, `swe_close()`, then J2000 +
+0.1 and J2000 + 0.37 answered IAU 1980's -13.918277" for the default's
+-13.927012" (8.7e-3"). The second thread, the explicit context and
+`SE_SIDBIT_PREC_ORIG` the same, and with them every place of date there,
+the ayanamsa, Spica, `swe_sidtime()` (5.3e-4 s) and the houses (2.0e-2").
+Both builds.
+
+What else a change of model reaches, measured:
+- **The topocentric observer** (`topd`), kept for its instant, is placed
+  by the models: its apparent sidereal time carries the nutation and the
+  sidereal-time model, its UT delta t's. `swi_invalidate_models()` left
+  it, and the adoption reset it for a new site or user delta t only.
+  Interpolation off, the topocentric Moon at J2000 + 0.37 asked again
+  after IAU 1980 nutation was 5.4e-5" off a fresh process's, after the
+  IAU 1976 sidereal time 1.7e-4", at JD 2086308 (AD 1000) after Stephenson
+  1997 delta t 0.17", after the IAU 1976 precession 1.9e-8". The compat
+  build builds that Moon's observer afresh and is right there.
+- `calc_nutation()`'s memo is keyed on the model and its grid holds the
+  series' own values; both are exact after any change. The memo's key is
+  the defaulted model, though, so the default (the grid) and an explicit
+  IAU 2000A (the direct series) share it, and at one instant either
+  answers for the other: 2.4e-12" (below the residual floor, not fixed).
+- The obliquity (`oec`, `oec2000`) and `ctx->nut` are emptied by
+  `swi_invalidate_models()` and zeroed by `swe_close()`; delta t's memo
+  is keyed on its model, the sidereal-time memos by value.
+
+**Fix, as done here:**
+- `struct interpol` keeps the nutation model its nodes are of
+  (`nut_model`, `astro_models[SE_MODEL_NUT]` as set, so the default's grid
+  and an explicit IAU 2000A's series are told apart), and `swi_nutation()`
+  uses them only under that model; another builds its own, whatever route
+  set it. That covers `swe_close()` without touching `ctx_release()`.
+  Behind `#ifndef SWE_UPSTREAM_COMPAT`, upstream's test under `#else`.
+- `swi_invalidate_models()` empties the observer too, behind `#ifndef`
+  (upstream's setter invalidates nothing).
+- `swi_config_apply()`, in both builds, as the adoption is this fork's
+  (entries 83, 122, 123, 126): a changed SID group resets the observer, as
+  a new site or delta t does, and an adopted change of nutation model
+  calls `swi_invalidate_nut_interp()` (the nodes, with `ctx->nut`, the
+  observer and the positions). This fork's build would refuse those nodes
+  by their key anyway.
+- Kept: a model changed and changed back with no nutation between keeps
+  the nodes, which are that model's own (they answer as in a process that
+  never changed it), and a sidereal mode alone keeps them.
+- No hot path is touched: the key is read only with the interpolation
+  on, the rest at a setter or an adoption. The golden transcript is bit
+  for bit the tip's (13000 rows).
+
+G122 `tests/nutintp.c`, extended with 108 checks, each in a forked
+process, each answer bit for bit with its return flag a fresh process's
+that set the final state first: the interpolation on throughout, the path,
+an observer and True Citra set, the probe at J2000 and J2000 + 0.37 and a
+topocentric Moon at J2000 + 0.37, the change, `swe_sidtime()` at J2000
+and the probe at J2000 + 0.37, for the nutation model from the default to
+IAU 1980 and back by `swe_set_astro_models()` on the setter's thread, by
+a second thread adopting it and by `swe_set_astro_models_r()` on an
+explicit context; to IAU 1980 by `swe_set_sid_mode(SE_SIDM_LAHIRI |
+SE_SIDBIT_PREC_ORIG)` from True Citra; from IAU 1980 by `swe_close()`, on
+the setter's thread and adopted by a second thread, against a process
+that set what the close keeps (the path, the interpolation); and the
+interpolation off, the sidereal-time model to IAU 1976 by the first three
+routes. The nine probes of entry 126 each: 162 checks in all, none fail.
+Before the fix 73 of the 108 fail: every probe but the sidereal Mars in
+every nutation change (and the topocentric Moon after `swe_close()`,
+which has dropped the site, so both answer an error), dpsi, Mars, the
+true node, the ayanamsa and Spica 8.70e-3", the topocentric Moon
+8.65e-3", `swe_sidtime()` 5.32e-4 s, the houses 1.95e-2"; the
+topocentric Moon after the sidereal-time model 3.12e-4". The compat build
+fails 74 (92 before the fix): entry 126's 22 and 52 of these, every
+nutation change but the two a second thread adopts, and after
+`swe_close()` the topocentric Moon, the ayanamsa and the sidereal Mars
+on the second thread too, where upstream's close drops the observer and
+the sidereal mode that entry 127 keeps (69 before 127 was merged); its
+sidereal-time cases pass, as above. G24 `nut_model_intp_off`: dpsi at J2000 + 0.37
+after on, J2000 and IAU 1980, and at J2000 + 10.37 after J2000 + 10 and
+`swe_close()`, against a fresh context's with the final model, the
+larger: 0 shipped (8.68e-3" before the fix), 8.45e-3" compat. G113,
+G120, G29, G32, G57, G2 and G4 pass; G1's transcript is identical to the
+tip's.
+
+Noticed, not fixed: the nodes are keyed on neither the JPLHOR flags nor
+the Horizons approximation's model (`SE_MODEL_JPLHORA_MODE`), which
+`calc_nutation()` reads with `SEFLG_JPLHOR_APPROX`. On de200, the
+interpolation on, `SE_ECL_NUT` with `SEFLG_JPLHOR_APPROX` at JD 2433282.5
+(1950) and then without it at + 0.37 answered dpsi -3.199992" for
+-3.261906" (6.2e-2"); with it at both, `swe_set_astro_models()` of
+`SEMOD_JPLHORA_2` between, -3.199992" for -3.303286" (0.103"). Both
+builds.
 
 ## How these were found
 
