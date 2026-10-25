@@ -18,6 +18,13 @@
  * the heliocentric ellipse (Uranus's node 0.025 deg off); both refuse a
  * Moshier request.
  *
+ * One more of the same family, UPSTREAM-BUGS 149: swe_nod_aps() with
+ * barycentric output on Moshier, asked for or fallen to, answered Moshier's
+ * heliocentric points, its change of centre adding no barycentric Sun
+ * there: Mars's osculating node at 2000 Jul 1.5 49.5626 deg for the files'
+ * barycentric 49.6398, the Moon's mean node 0.37 deg off; only the
+ * SE_NODBIT_OSCU_BAR ellipse beyond 6 AU, read barycentric, was refused.
+ *
  * The check, each case in a forked, pristine process, a directory in /tmp
  * holding links to sefstars.txt and seorbel.txt alone, two instants (2000
  * Jul 1.5, 1900 Jan 0.75), Swiss and JPL (de200.eph named, missing too):
@@ -46,20 +53,50 @@
  *      Moon, Moshier's geocentric Moon on the files' Earth, a barycentric
  *      place, still answered (SEFLG_MOSEPH, bug 120's flag) within 1e-6
  *      deg of the complete directory's, and barycentric Mars bit for bit;
+ *      swe_nod_aps() of (g)'s bodies barycentric there answered, the
+ *      Moon's points within 1e-7 deg (mean) and 1e-4 deg (osculating, the
+ *      ellipse of Moshier's Moon), the others' within 1e-12 deg;
  *  (f) one process, the save areas warm: Mars barycentric strict (refused
  *      for the files), then the fallback allowed at the same instant
  *      (refused as Moshier's, twice), Moshier asked with the flags of the
  *      substituted answer (18180: refused, nothing kept answers it), Mars
  *      heliocentric before and after a barycentric request answering
- *      alike, then strict again (the downgrade's message).
- * Measured: 368 checks, none fail; (e)'s Moon 5.2e-7 deg off the files'.
- * The build before the fix fails 72: the 60 fallback calls of (a)
- * (answered, 18180 for swe_calc(), or swe_calc_pctr() without
+ *      alike, swe_nod_aps() of Mars barycentric refused twice with
+ *      heliocentric calls around them answering alike, then strict again
+ *      (the downgrade's message); and a process with the planet and Moon
+ *      files of 1800-2400 alone, the fallback allowed: swe_nod_aps() of
+ *      Mars barycentric answered at the instant, refused at 1500, where it
+ *      falls to Moshier (it answered Moshier's heliocentric points plus the
+ *      files' Sun of the call before), and at the instant again bit for bit;
+ *  (g) swe_nod_aps() and swe_nod_aps_ut() barycentric, every method and
+ *      body class: the Sun, the Moon, Mercury, Mars, Saturn, Pluto and the
+ *      Earth, mean, osculating, SE_NODBIT_OSCU_BAR, SE_NODBIT_FOPOINT and
+ *      method 0, SEFLG_TOPOCTR | SEFLG_BARYCTR (barycentric here), and
+ *      Chiron in a directory with the asteroid files alone (Moshier asked
+ *      in the complete directory too): the Moshier request refused,
+ *      "barycentric Moshier positions are not supported.", the fallback
+ *      alike, strict the downgrade's refusal; the complete directory
+ *      answers;
+ *  (h) unchanged: those calls heliocentric, geocentric and with
+ *      SEFLG_HELCTR | SEFLG_BARYCTR (heliocentric here): the fallback
+ *      answers as the Moshier request does, bit for bit, and SEFLG_HELCTR
+ *      | SEFLG_BARYCTR as SEFLG_HELCTR. Not the UT calls, whose fallback
+ *      takes the files' delta t, nor the Sun's geocentric points, which the
+ *      Moshier request answers seen from the Earth: neither is bug 149's.
+ * Measured: 1002 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
+ * (osculating).
+ * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
+ * of (a) (answered, 18180 for swe_calc(), or swe_calc_pctr() without
  * SEFLG_BARYCTR refused for the barycentric Sun's file where Moshier's own
- * refusal is due) and 12 of (f). The upstream build (SWE_UPSTREAM_COMPAT)
- * fails 82: those 72, the 8 Moshier requests of swe_calc_orbel() in (a)
- * (answered, entry 135 restored) and (e)'s Moon twice (SEFLG_SWIEPH,
- * entry 120 restored).
+ * refusal is due) and 12 of (f). Before bug 149's, 162: 152 of (g) (each
+ * Moshier and fallback call answered but the Saturn ellipse's) and 10 of
+ * (f). The upstream build (SWE_UPSTREAM_COMPAT) fails 262: those 234, the
+ * 8 Moshier requests of swe_calc_orbel() in (a) (entry 135 restored),
+ * entry 139's 4 fallen barycentric ellipses of Saturn in (g) and their 12
+ * heliocentric and geocentric neighbours in (h), entry 120's Moon twice in
+ * (e), and the Sun's and the Earth's osculating apsides in (e) 3.9e-10 deg
+ * off with the Moon files missing (entry 108's mass ratio restored).
  * Run as
  *   fbbary EPHEDIR
  */
@@ -76,7 +113,7 @@
 #define EPHMASK (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)
 #define BARYMSG "barycentric Moshier positions are not supported."
 
-enum { CALC, CALC_UT, PCTR, NODAPS, ORBEL, ORBEL_UT, STAR2, STAR };
+enum { CALC, CALC_UT, PCTR, NODAPS, NODAPS_UT, ORBEL, ORBEL_UT, STAR2, STAR };
 struct cs { const char *sz; int kind, ipl, ctr; int32 fl; };
 #define BS (SEFLG_BARYCTR | SEFLG_SPEED)
 /* (a)-(c): fall to Moshier, which refuses them */
@@ -120,6 +157,38 @@ static const struct cs M[] = {
   {"Mars, heliocentric", CALC, SE_MARS, 0, SEFLG_HELCTR | SEFLG_SPEED},
   {"Mars, geocentric", CALC, SE_MARS, 0, SEFLG_SPEED},
 };
+/* (g): swe_nod_aps() with barycentric output, every method and body class
+ * (UPSTREAM-BUGS 149); ctr is the method. SEFLG_TOPOCTR with
+ * SEFLG_BARYCTR is the barycentric output here (the function reads the
+ * flags so). Saturn's SE_NODBIT_OSCU_BAR ellipse is barycentric itself. */
+static const struct cs G[] = {
+  {"nod_aps Sun mean", NODAPS, SE_SUN, SE_NODBIT_MEAN, BS},
+  {"nod_aps Sun osculating", NODAPS, SE_SUN, SE_NODBIT_OSCU, BS},
+  {"nod_aps Moon mean", NODAPS, SE_MOON, SE_NODBIT_MEAN, BS},
+  {"nod_aps Moon osculating", NODAPS, SE_MOON, SE_NODBIT_OSCU, BS},
+  {"nod_aps Moon OSCU_BAR", NODAPS, SE_MOON, SE_NODBIT_OSCU_BAR, BS},
+  {"nod_aps Mercury mean, FOPOINT", NODAPS, SE_MERCURY, SE_NODBIT_MEAN | SE_NODBIT_FOPOINT, BS},
+  {"nod_aps Mars, method 0", NODAPS, SE_MARS, 0, BS},
+  {"nod_aps Mars mean", NODAPS, SE_MARS, SE_NODBIT_MEAN, BS},
+  {"nod_aps Mars osculating", NODAPS, SE_MARS, SE_NODBIT_OSCU, BS},
+  {"nod_aps Mars OSCU_BAR", NODAPS, SE_MARS, SE_NODBIT_OSCU_BAR, BS},
+  {"nod_aps Mars osc, FOPOINT", NODAPS, SE_MARS, SE_NODBIT_OSCU | SE_NODBIT_FOPOINT, BS},
+  {"nod_aps Mars osc, topo+bary", NODAPS, SE_MARS, SE_NODBIT_OSCU, BS | SEFLG_TOPOCTR},
+  {"nod_aps_ut Mars osculating", NODAPS_UT, SE_MARS, SE_NODBIT_OSCU, BS},
+  {"nod_aps_ut Moon mean", NODAPS_UT, SE_MOON, SE_NODBIT_MEAN, BS},
+  {"nod_aps Saturn mean", NODAPS, SE_SATURN, SE_NODBIT_MEAN, BS},
+  {"nod_aps Saturn osculating", NODAPS, SE_SATURN, SE_NODBIT_OSCU, BS},
+  {"nod_aps Saturn OSCU_BAR, FOPOINT", NODAPS, SE_SATURN, SE_NODBIT_OSCU_BAR | SE_NODBIT_FOPOINT, BS},
+  {"nod_aps Pluto, method 0", NODAPS, SE_PLUTO, 0, BS},
+  {"nod_aps Earth osculating", NODAPS, SE_EARTH, SE_NODBIT_OSCU, BS},
+};
+/* (g): the asteroid class, in a directory with the asteroid files alone */
+static const struct cs GA = {"nod_aps Chiron osculating", NODAPS, SE_CHIRON, SE_NODBIT_OSCU, BS};
+/* (h): the centres Moshier serves, unchanged: G's calls heliocentric,
+ * geocentric, and SEFLG_HELCTR | SEFLG_BARYCTR, which this function reads
+ * as heliocentric */
+static const int32 HCTR[3] = {SEFLG_HELCTR, 0, SEFLG_HELCTR | SEFLG_BARYCTR};
+#define NG ((int) (sizeof G / sizeof G[0]))
 #define NA ((int) (sizeof A / sizeof A[0]))
 #define NF ((int) (sizeof F / sizeof F[0]))
 #define NN ((int) (sizeof N / sizeof N[0]))
@@ -129,15 +198,16 @@ static const double JD[2] = {2451727.0, 2415020.25};
 static const int32 EPH[2] = {SEFLG_SWIEPH, SEFLG_JPLEPH};
 static char DIR_[] = "/tmp/fbbary-XXXXXX";	/* sefstars.txt, seorbel.txt */
 static char DIRM[] = "/tmp/fbbarym-XXXXXX";	/* all but the Moon files */
+static char DIRA[] = "/tmp/fbbarya-XXXXXX";	/* DIR_'s and the asteroid files */
+static char DIR18[] = "/tmp/fbbary18-XXXXXX";	/* the planet and Moon files of 1800-2400 */
 static char EPHE[PATH_MAX];
 static int nbad, nrow;
 
-struct ans { int32 r; double x[6]; char serr[AS_MAXCH]; int ran; };
+struct ans { int32 r; double x[24]; char serr[AS_MAXCH]; int ran; };
 
 static void ask(const struct cs *c, int32 fl, double jd, struct ans *a)
 {
   static const double el[6] = {100, 1.2, 0.1, 30, 40, 5};
-  double xd[6], xp[6], xa[6];
   char star[64] = "Aldebaran";
   memset(a->x, 0, sizeof a->x);
   *a->serr = '\0';
@@ -145,7 +215,8 @@ static void ask(const struct cs *c, int32 fl, double jd, struct ans *a)
     case CALC: a->r = swe_calc(jd, c->ipl, fl, a->x, a->serr); break;
     case CALC_UT: a->r = swe_calc_ut(jd, c->ipl, fl, a->x, a->serr); break;
     case PCTR: a->r = swe_calc_pctr(jd, c->ipl, c->ctr, fl, a->x, a->serr); break;
-    case NODAPS: a->r = swe_nod_aps(jd, c->ipl, fl, c->ctr, a->x, xd, xp, xa, a->serr); break;
+    case NODAPS: a->r = swe_nod_aps(jd, c->ipl, fl, c->ctr, a->x, a->x + 6, a->x + 12, a->x + 18, a->serr); break;
+    case NODAPS_UT: a->r = swe_nod_aps_ut(jd, c->ipl, fl, c->ctr, a->x, a->x + 6, a->x + 12, a->x + 18, a->serr); break;
     case ORBEL: a->r = swe_calc_orbel(jd, el, c->ctr, SE_ORBEL_EQ_J2000, 0, fl, a->x, a->serr); break;
     case ORBEL_UT: a->r = swe_calc_orbel_ut(jd, el, c->ctr, SE_ORBEL_EQ_J2000, 0, fl, a->x, a->serr); break;
     case STAR2: a->r = swe_fixstar2(star, jd, fl, a->x, a->serr); break;
@@ -178,6 +249,8 @@ static void child(const char *dir, int fb, int32 eph, const struct cs *c, double
     close(fd[0]);
     memset(&a, 0, sizeof a);
     setup(dir, fb, eph);
+    if (c->fl & SEFLG_TOPOCTR)
+      swe_set_topo(8.55, 47.37, 400);
     ask(c, (c->fl & ~EPHMASK) | eph, jd, &a);
     a.ran = 1;
     _exit(write(fd[1], &a, sizeof a) == (ssize_t) sizeof a ? 0 : 3);
@@ -222,6 +295,24 @@ static int strict_msg(const struct ans *a)
          && strstr(a->serr, "falling back to Moshier") != NULL;
 }
 
+static int refused_bary(const struct ans *a)
+{
+  return a->ran && a->r < 0 && strcmp(a->serr, BARYMSG) == 0;
+}
+
+/* the four points' longitudes and latitudes, the larger difference, deg */
+static double nodaps_off(const struct ans *a, const struct ans *b)
+{
+  double d = 0, e;
+  int k;
+  for (k = 0; k < 4; k++) {
+    e = fabs(swe_difdeg2n(a->x[6 * k], b->x[6 * k])) + fabs(a->x[6 * k + 1] - b->x[6 * k + 1]);
+    if (e > d)
+      d = e;
+  }
+  return d;
+}
+
 /* (f): one process, warm; returns the failures */
 static int warm(int32 eph, double jd)
 {
@@ -247,14 +338,51 @@ static int warm(int32 eph, double jd)
   ask(&hel, fh, jd, &h2);
   bad += !(h1.r == h2.r && (h1.r & EPHMASK) == SEFLG_MOSEPH
            && memcmp(h1.x, h2.x, sizeof h1.x) == 0);
+  /* swe_nod_aps() alike (bug 149): barycentric refused twice, heliocentric
+   * answered before and after alike */
+  {
+    static const struct cs nb = {"nod_aps Mars", NODAPS, SE_MARS, SE_NODBIT_OSCU, BS};
+    static const struct cs nh = {"nod_aps Mars, hel.", NODAPS, SE_MARS, SE_NODBIT_OSCU,
+                                 SEFLG_HELCTR | SEFLG_SPEED};
+    ask(&nh, (nh.fl & ~EPHMASK) | eph, jd, &h1);
+    for (k = 0; k < 2; k++) {
+      ask(&nb, (nb.fl & ~EPHMASK) | eph, jd, &a);
+      bad += !(a.r < 0 && strcmp(a.serr, BARYMSG) == 0);
+    }
+    ask(&nh, (nh.fl & ~EPHMASK) | eph, jd, &h2);
+    bad += !(h1.r == 0 && h1.r == h2.r && memcmp(h1.x, h2.x, sizeof h1.x) == 0);
+  }
   swe_set_ephe_fallback(0);
   ask(&bary, fb, jd, &a);
   bad += !strict_msg(&a);
   swe_close();
   return bad;
 }
+#define NWARM 10
 
-static int warm_child(int32 eph, double jd)
+/* (f): one process, the files of 1800-2400 alone, the fallback allowed:
+ * swe_nod_aps() of Mars barycentric answered at jd, refused at 1500 (it
+ * falls to Moshier there; it was answered with Moshier's heliocentric
+ * points plus the files' Sun of the call before), and at jd again the
+ * first answer bit for bit (bug 149); returns the failures */
+static int warm18(double jd)
+{
+  static const struct cs nb = {"nod_aps Mars", NODAPS, SE_MARS, SE_NODBIT_OSCU, BS};
+  struct ans a, b, c;
+  int bad = 0;
+  setup(DIR18, 1, SEFLG_SWIEPH);
+  ask(&nb, nb.fl | SEFLG_SWIEPH, jd, &a);
+  bad += !(a.r == 0);
+  ask(&nb, nb.fl | SEFLG_SWIEPH, 2268923.5, &b);
+  bad += !(b.r < 0 && strcmp(b.serr, BARYMSG) == 0);
+  ask(&nb, nb.fl | SEFLG_SWIEPH, jd, &c);
+  bad += !(c.r == 0 && memcmp(a.x, c.x, sizeof a.x) == 0);
+  swe_close();
+  return bad;
+}
+#define NWARM18 3
+
+static int warm_child(int32 eph, double jd, int at18)
 {
   int st;
   pid_t pid;
@@ -262,24 +390,34 @@ static int warm_child(int32 eph, double jd)
   if ((pid = fork()) < 0)
     return 99;
   if (pid == 0)
-    _exit(warm(eph, jd));
+    _exit(at18 ? warm18(jd) : warm(eph, jd));
   if (waitpid(pid, &st, 0) != pid || !WIFEXITED(st))
     return 99;
   return WEXITSTATUS(st);
 }
 
-static int build(char *dir, int moon_only)
+/* which files a directory links: */
+enum { STARS_ONLY, NO_MOON, ASTEROIDS, FILES_18 };
+static int build(char *dir, int which)
 {
   DIR *d;
   struct dirent *e;
   char src[PATH_MAX + 300], dst[PATH_MAX + 300];
+  int stars, take;
   if (mkdtemp(dir) == NULL || (d = opendir(EPHE)) == NULL)
     return -1;
   while ((e = readdir(d)) != NULL) {
     if (e->d_name[0] == '.')
       continue;
-    if (moon_only ? strncmp(e->d_name, "semo", 4) == 0
-                  : strcmp(e->d_name, "sefstars.txt") != 0 && strcmp(e->d_name, "seorbel.txt") != 0)
+    stars = strcmp(e->d_name, "sefstars.txt") == 0 || strcmp(e->d_name, "seorbel.txt") == 0;
+    switch (which) {
+      case NO_MOON: take = strncmp(e->d_name, "semo", 4) != 0; break;
+      case ASTEROIDS: take = stars || strncmp(e->d_name, "seas_", 5) == 0; break;
+      case FILES_18: take = stars || strcmp(e->d_name, "sepl_18.se1") == 0
+                            || strcmp(e->d_name, "semo_18.se1") == 0; break;
+      default: take = stars; break;
+    }
+    if (!take)
       continue;
     snprintf(src, sizeof src, "%s/%s", EPHE, e->d_name);
     snprintf(dst, sizeof dst, "%s/%s", dir, e->d_name);
@@ -310,13 +448,14 @@ static void unbuild(const char *dir)
 
 int main(int argc, char **argv)
 {
-  int id, ie, k, fb, nwarm = 0;
-  double wmoon = 0;
+  int id, ie, k, j, fb, nwarm = 0;
+  double wmoon = 0, wnodm = 0, wnodo = 0;
   if (argc != 2 || realpath(argv[1], EPHE) == NULL) {
     fprintf(stderr, "usage: fbbary EPHEDIR\n");
     return 2;
   }
-  if (build(DIR_, 0) != 0 || build(DIRM, 1) != 0) {
+  if (build(DIR_, STARS_ONLY) != 0 || build(DIRM, NO_MOON) != 0 || build(DIRA, ASTEROIDS) != 0
+      || build(DIR18, FILES_18) != 0) {
     printf("G133 FAIL: cannot build the directories in /tmp\n");
     return 1;
   }
@@ -380,20 +519,109 @@ int main(int argc, char **argv)
         child(DIRM, 1, eph, &mars, jd, &a);
         child(EPHE, 0, eph, &mars, jd, &full);
         check(same(&a, &full), "e", mars.sz, eph, jd, &a, "not the complete directory's");
+        /* swe_nod_aps() there (bug 149): the Moon's points from Moshier's
+         * Moon on the files' Earth, a barycentric place, answered; the
+         * others' Sun and Earth are the files' */
+        for (k = 0; k < NG; k++) {
+          const struct cs *c = &G[k];
+          double tol = c->ipl != SE_MOON ? 1e-12 : (c->ctr & SE_NODBIT_MEAN) ? 1e-7 : 1e-4;
+          /* (the UT calls' delta t takes the Moon file's tidal term, which
+           * is missing here: not this check's) */
+          if ((c->fl & SEFLG_TOPOCTR) || c->kind == NODAPS_UT)
+            continue;
+          child(DIRM, 1, eph, c, jd, &a);
+          child(EPHE, 0, eph, c, jd, &full);
+          d = nodaps_off(&a, &full);
+          if (a.ran && a.r == 0 && c->ipl == SE_MOON && d > ((c->ctr & SE_NODBIT_MEAN) ? wnodm : wnodo)) {
+            if (c->ctr & SE_NODBIT_MEAN)
+              wnodm = d;
+            else
+              wnodo = d;
+          }
+          check(a.ran && a.r == full.r && (full.r < 0 ? strcmp(a.serr, full.serr) == 0 : d <= tol),
+                "e", c->sz, eph, jd, &a, "not the complete directory's answer within its tolerance");
+        }
       }
-      k = warm_child(eph, jd);
-      nwarm += 7;
-      nrow += 7;
+      /* (g) swe_nod_aps() barycentric, bug 149 */
+      for (k = 0; k < NG; k++) {
+        struct ans m, f, s, full;
+        const struct cs *c = &G[k];
+        child(DIR_, 0, SEFLG_MOSEPH, c, jd, &m);
+        child(DIR_, 1, eph, c, jd, &f);
+        child(DIR_, 0, eph, c, jd, &s);
+        child(EPHE, 0, eph, c, jd, &full);
+        check(refused_bary(&m), "g", c->sz, eph, jd, &m, "the Moshier request not refused as barycentric");
+        check(refused_bary(&f), "g", c->sz, eph, jd, &f, "not refused as the Moshier request is");
+        check(strict_msg(&s), "g", c->sz, eph, jd, &s, "strict: not the downgrade's refusal");
+        check(full.ran && full.r == 0, "g", c->sz, eph, jd, &full, "the complete directory does not answer");
+      }
+      {
+        struct ans m, me, f, s, full;
+        child(DIRA, 0, SEFLG_MOSEPH, &GA, jd, &m);
+        child(EPHE, 0, SEFLG_MOSEPH, &GA, jd, &me);
+        child(DIRA, 1, eph, &GA, jd, &f);
+        child(DIRA, 0, eph, &GA, jd, &s);
+        child(EPHE, 0, eph, &GA, jd, &full);
+        check(refused_bary(&m) && refused_bary(&me), "g", GA.sz, eph, jd, refused_bary(&m) ? &me : &m,
+              "the Moshier request not refused as barycentric");
+        check(refused_bary(&f), "g", GA.sz, eph, jd, &f, "not refused as the Moshier request is");
+        check(strict_msg(&s), "g", GA.sz, eph, jd, &s, "strict: not the downgrade's refusal");
+        check(full.ran && full.r == 0, "g", GA.sz, eph, jd, &full, "the complete directory does not answer");
+      }
+      /* (h) the centres Moshier serves, as before: the fallback answers as
+       * the Moshier request does, and SEFLG_HELCTR | SEFLG_BARYCTR as
+       * SEFLG_HELCTR. Not the UT calls, whose fallback takes the files'
+       * delta t, nor the Sun's geocentric points, which the Moshier
+       * request answers seen from the Earth and the fallback, its flag
+       * Swiss, from the Sun: neither of these is bug 149's. */
+      for (k = 0; k < NG; k++) {
+        struct ans m[3], f;
+        if (G[k].kind == NODAPS_UT)
+          continue;
+        for (j = 0; j < 3; j++) {
+          struct cs c = G[k];
+          if (j == 1 && c.ipl == SE_SUN) {
+            m[j] = m[0];
+            continue;
+          }
+          c.fl = (c.fl & ~(SEFLG_BARYCTR | SEFLG_TOPOCTR)) | HCTR[j];
+          child(DIR_, 0, SEFLG_MOSEPH, &c, jd, &m[j]);
+          child(DIR_, 1, eph, &c, jd, &f);
+          check(m[j].ran && f.ran && f.r == m[j].r
+                && (f.r < 0 ? strcmp(f.serr, m[j].serr) == 0 : memcmp(f.x, m[j].x, sizeof f.x) == 0),
+                "h", c.sz, eph, jd, &f, j == 0 ? "heliocentric: not the Moshier request's answer"
+                : j == 1 ? "geocentric: not the Moshier request's answer"
+                : "HELCTR | BARYCTR: not the Moshier request's answer");
+        }
+        check(same(&m[2], &m[0]), "h", G[k].sz, eph, jd, &m[2],
+              "Moshier, HELCTR | BARYCTR: not its heliocentric answer");
+      }
+      k = warm_child(eph, jd, 0);
+      nwarm += NWARM;
+      nrow += NWARM;
       if (k != 0) {
         nbad += k;
-        printf("    FAIL (f) warm Mars %s jd %.2f: %d of 7\n",
-               eph == SEFLG_JPLEPH ? "JPL" : "Swiss", jd, k);
+        printf("    FAIL (f) warm Mars %s jd %.2f: %d of %d\n",
+               eph == SEFLG_JPLEPH ? "JPL" : "Swiss", jd, k, NWARM);
+      }
+      if (eph == SEFLG_SWIEPH) {
+        k = warm_child(eph, jd, 1);
+        nwarm += NWARM18;
+        nrow += NWARM18;
+        if (k != 0) {
+          nbad += k;
+          printf("    FAIL (f) warm nod_aps Mars, files of 1800-2400, jd %.2f: %d of %d\n", jd, k, NWARM18);
+        }
       }
     }
   unbuild(DIR_);
   unbuild(DIRM);
+  unbuild(DIRA);
+  unbuild(DIR18);
   printf("  rows %d (%d warm), failed %d; the Moon from Moshier on the files' Earth %.2e deg off the files'\n",
          nrow, nwarm, nbad, wmoon);
+  printf("  there, swe_nod_aps()'s barycentric Moon points %.2e deg (mean), %.2e (osculating)\n",
+         wnodm, wnodo);
   printf(nbad ? "G133 FAIL: %d\n" : "G133 PASS\n", nbad);
   return nbad ? 1 : 0;
 }

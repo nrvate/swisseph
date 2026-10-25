@@ -5467,6 +5467,25 @@ static void nodaps_ecl_to_j2000(swe_ctx *ctx, double *x, double tjd, int32 iflag
   }
   nodaps_ecl_rot_j2000(ctx, x, tjd, iflag);
 }
+
+/* swe_nod_aps()'s refusal of a barycentric Moshier answer (UPSTREAM-BUGS
+ * 149): its points zeroed, as swe_calc() zeroes a refused position and
+ * this function an unimplemented body's */
+static int32 nodaps_refuse(double *xnasc, double *xndsc, double *xperi, double *xaphe)
+{
+  int i;
+  for (i = 0; i <= 5; i++) {
+    if (xnasc != NULL)
+      xnasc[i] = 0;
+    if (xndsc != NULL)
+      xndsc[i] = 0;
+    if (xperi != NULL)
+      xperi[i] = 0;
+    if (xaphe != NULL)
+      xaphe[i] = 0;
+  }
+  return ERR;
+}
 #endif
 
 static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag,
@@ -5506,7 +5525,8 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   const double *ep;
   double Gmsm, dzmin;
 #ifndef SWE_UPSTREAM_COMPAT
-  int32 retc0 = 0;
+  int32 retc0 = 0, retcs = 0, eph_asked;
+  AS_BOOL out_bary;
 #endif
   double rxy, rxyz, fac, sgn;
   double sinnode, cosnode, sinincl, cosincl, sinu, cosu, cosE, cosE2;
@@ -5578,6 +5598,36 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
 	xperi[i] = 0;
     return ERR;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 149: barycentric points on Moshier, asked for or fallen
+   * to, were its heliocentric ones. The change of centre below adds the
+   * barycentric Sun (to the Moon's points the barycentric Earth) except on
+   * Moshier, whose origin is the Sun and which serves no barycentric place,
+   * and the barycentric output (SEFLG_BARYCTR without SEFLG_HELCTR, which
+   * wins here) subtracts nothing: Mars's osculating ascending node at 2000
+   * Jul 1.5 49.5626 deg, Moshier's heliocentric node to the last digit,
+   * where the files' barycentric one is 49.6398 (0.077 deg, the latitude
+   * 7.2e-3 deg); its mean node 0.077 deg off, the Moon's 0.37, the Sun's
+   * mean perigee 0.40. Only SE_NODBIT_OSCU_BAR's ellipse beyond 6 AU, read
+   * barycentric, went through swe_calc()'s refusal. The mean points read no
+   * file, but their barycentric place does: the heliocentric one plus the
+   * Sun's (the geocentric one plus the Earth's), which Moshier does not
+   * serve; swe_calc() refuses SE_MEAN_NODE | SEFLG_MOSEPH | SEFLG_BARYCTR
+   * too. Refused now as swecalc() refuses a barycentric Moshier request, on
+   * the ephemeris bits' precedence (SEFLG_SWIEPH | SEFLG_MOSEPH is a Swiss
+   * request): asked for, here, before anything is computed; a Swiss or JPL
+   * request that falls to Moshier, after the call below that sets the Sun
+   * and the Earth, by swe_calc_r()'s test (bug 139), with its message
+   * (strict, the calls refuse the substitution with the downgrade's). */
+  eph_asked = (iflag & SEFLG_JPLEPH) ? SEFLG_JPLEPH : (iflag & SEFLG_SWIEPH) ? SEFLG_SWIEPH
+              : (iflag & SEFLG_MOSEPH) ? SEFLG_MOSEPH : SEFLG_DEFAULTEPH;
+  out_bary = (iflag & SEFLG_BARYCTR) && !(iflag & SEFLG_HELCTR);
+  if (out_bary && eph_asked == SEFLG_MOSEPH) {
+    if (serr != NULL)
+      strcpy(serr, "barycentric Moshier positions are not supported.");
+    return nodaps_refuse(xnasc, xndsc, xperi, xaphe);
+  }
+#endif
   for (i = 0; i < 24; i++)
     xx[i] = 0;
   /***************************************
@@ -6020,7 +6070,11 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
    * we compute the planet */
   if (ipli == SE_MOON && (iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))) {
     swi_force_app_pos_etc(ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+    if ((retcs = swe_calc_r(ctx, tjd_et, SE_SUN, iflg0, x, serr)) == ERR)
+#else
     if (swe_calc_r(ctx, tjd_et, SE_SUN, iflg0, x, serr) == ERR)
+#endif
       return ERR;
   } else {
 #ifndef SWE_UPSTREAM_COMPAT
@@ -6032,14 +6086,23 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * The observer is computed separately below; this call is only for
      * the save area. Upstream hides it: its swe_set_ephe_path() computes
      * the Moon at J2000, leaving an Earth there. */
-    if (swe_calc_r(ctx, tjd_et, ipli, iflg0 | (ipli == SE_EARTH ? 0 :
-        (iflag & SEFLG_TOPOCTR)), x, serr) == ERR)
+    if ((retcs = swe_calc_r(ctx, tjd_et, ipli, iflg0 | (ipli == SE_EARTH ? 0 :
+        (iflag & SEFLG_TOPOCTR)), x, serr)) == ERR)
       return ERR;
 #else
     if (swe_calc_r(ctx, tjd_et, ipli, iflg0 | (iflag & SEFLG_TOPOCTR), x, serr) == ERR)
       return ERR;
 #endif
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 149: and a request fallen to Moshier, whose Sun and Earth
+   * this call has just set (a Moon from Moshier on the files' Earth, the
+   * Moon file alone missing, is a barycentric place and answers, as
+   * swe_calc()'s barycentric Moon does) */
+  if (out_bary && swi_refuse_mosh_bary(ctx, eph_asked,
+                                       (retcs & SEFLG_EPHMASK) | SEFLG_BARYCTR, tjd_et, serr))
+    return nodaps_refuse(xnasc, xndsc, xperi, xaphe);
+#endif
   /***********************
    * position of observer
    ***********************/

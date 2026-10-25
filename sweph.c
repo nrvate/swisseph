@@ -217,7 +217,6 @@ extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *
 static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, double tjd, char *serr);
 #ifndef SWE_UPSTREAM_COMPAT
 static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr);
-static AS_BOOL swi_refuse_mosh_bary(swe_ctx *ctx, int32 wanted, int32 got_iflag, double tjd, char *serr);
 #endif
 static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum);
 static int app_pos_etc_mean(swe_ctx *ctx, int ipl, int32 iflag, char *serr);
@@ -2991,7 +2990,7 @@ static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr)
  * ephemeris that answered left it. Under the strict setting the
  * substitution is refused as any other is, with swi_refuse_downgrade()'s
  * message; with the fallback allowed, with swecalc()'s. */
-static AS_BOOL swi_refuse_mosh_bary(swe_ctx *ctx, int32 wanted, int32 got_iflag, double tjd, char *serr)
+AS_BOOL swi_refuse_mosh_bary(swe_ctx *ctx, int32 wanted, int32 got_iflag, double tjd, char *serr)
 {
   if (!(got_iflag & SEFLG_BARYCTR) || !(got_iflag & SEFLG_MOSEPH))
     return FALSE;

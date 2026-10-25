@@ -1956,6 +1956,21 @@ static double fallback_mosh_bary_ret(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 149: swe_nod_aps() of Mars on Moshier, barycentric,
+ * osculating, at 2000 Jul 1.5: the return. It answered 0 (OK) with
+ * Moshier's heliocentric points, the ascending node 49.5626 deg where the
+ * files' barycentric one is 49.6398; refused now as swe_calc() refuses a
+ * barycentric Moshier request, -1. */
+static double nodaps_mosh_bary_ret(void)
+{
+  double xn[6], xd[6], xp[6], xa[6];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  return swe_nod_aps(2451727.0, SE_MARS, SEFLG_MOSEPH | SEFLG_SPEED | SEFLG_BARYCTR,
+                     SE_NODBIT_OSCU, xn, xd, xp, xa, serr);
+}
+
 /* UPSTREAM-BUGS 140: the site's move for a user delta t a quarter ulp of
  * UT1 longer, at TT 2000 Jan 1.5, Zurich, Swiss files: the site as the
  * Sun's geocentric less topocentric true J2000 equatorial ICRS XYZ place,
@@ -3657,7 +3672,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3781,6 +3796,7 @@ int main(int argc, char **argv)
   orbelbias = orbel_bias_off();
   fbmb = fallback_mosh_bary_ret();
   toputr = topo_ut_round_off();
+  nodmb = nodaps_mosh_bary_ret();
   starkept = star_load_kept();
   eoppath = eop_path_kept_off();
   adoptjpl = adopt_jpl_off();
@@ -4634,6 +4650,14 @@ int main(int argc, char **argv)
   else {
     printf("  fallback to Moshier, barycentric %.0f FAIL: expected %s\n",
            fbmb, WANT_DEFECT ? "18180" : "< 0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodmb == 0) : (nodmb < 0))
+    printf("  nod_aps Moshier barycentre %.0f OK\n", nodmb);
+  else {
+    printf("  nod_aps Moshier barycentre %.0f FAIL: expected %s\n",
+           nodmb, WANT_DEFECT ? "0" : "< 0");
     bad++;
   }
 

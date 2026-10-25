@@ -1276,6 +1276,11 @@ struct epsilon {
  *     side (this fork's precession, obliquity and site rates 1.57e-5 for a
  *     day before it, its central nutation rate 9.96e-2 within 1e-4 day)
  *     (UPSTREAM-BUGS 153, G139)
+ *   - swe_nod_aps() with barycentric output on Moshier, asked for or fallen
+ *     to, answering Moshier's heliocentric points, returned OK: Mars's
+ *     osculating node 0.077 deg off the files' barycentric one, the Moon's
+ *     mean node 0.37 deg, every method and body class (UPSTREAM-BUGS 149,
+ *     G133)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1376,6 +1381,13 @@ extern int32 swi_init_swed_if_start(swe_ctx *ctx);
 extern const char *swi_ephe_name(int32 epheflag);
 /* SE_EPHE_FALLBACK, read fresh -- see swe_set_ephe_fallback(). */
 extern AS_BOOL swi_env_ephe_fallback(void);
+#ifndef SWE_UPSTREAM_COMPAT
+/* An answer whose flag got_iflag has SEFLG_BARYCTR and SEFLG_MOSEPH,
+ * refused: Moshier serves no barycentric place (UPSTREAM-BUGS 139; and
+ * swe_nod_aps(), 149). Strict: the downgrade's message; fallback allowed or
+ * Moshier asked: swecalc()'s. */
+extern AS_BOOL swi_refuse_mosh_bary(swe_ctx *ctx, int32 wanted, int32 got_iflag, double tjd, char *serr);
+#endif
 /* Close the .se1 files. FORGET_DENUM when the next open may find different
  * files, KEEP_DENUM when the same ones are coming back -- delta-t reads that
  * number before anything reopens them. */
