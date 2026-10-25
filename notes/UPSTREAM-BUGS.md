@@ -216,6 +216,7 @@ worst were in code that had never executed even once.
 | 185 | The equinox-of-date frame turning of the seorbel.txt JDATE bodies (entry 48) and of `swe_calc_orbel()`'s SE_ORBEL_EQ_DATE (entry 136), (R(t + 1) x - R(t - 1) x) / 2 at the elements' instant, reaches across a short-term precession model's window edges and Owen 1990's joins: with IAU 1976 short and Vondrak long, within a day of J2000 -+ 2 centuries Selena's speed 8.0e-5 to 9.5e-5 deg/day off, an Earth orbit of 0.053 AU 8.7e-5, Vulcan 1.6e-5 | Correctness | `swemplan.c`, `sweph.c` |
 | 188 | The IAU 2000A and 2000B series' Delaunay arguments, polynomials to T^4 in arcseconds, are evaluated in double, and past the default grid's 4e8 days (where the default is the direct 2000A) they are some 1e14": their rounding, T's own and the products', puts up to 1e-2" into every term's angle, dpsi 9.5e-9 deg off the series evaluated in long double at 8e8 to 1e9 days, 3.0e-9 at 6e8 to 8e8, a jitter of 4e-9 deg between instants 2^-12 day apart | Correctness | `swephlib.c` |
 | 194 | `swe_calc()`'s strict test of a Moon from Moshier (entry 120) reads the centre off the caller's bits, where `swecalc()` takes `plaus_iflag()`'s: SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR, topocentric, answered from the Earth of Moshier's Moon (Mars at 1900 32770, 283.6744143987 deg, 9e-10 deg off the files'), where SEFLG_TOPOCTR is refused, and the save area then answered a SEFLG_TOPOCTR request | Correctness (behaviour) | `sweph.c` |
+| 195 | A topocentric star fallen to another ephemeris (the fallback allowed, the files for the date missing) places its site by the delta t of the caller's ephemeris bits, not of the ephemeris that answered: Aldebaran at 1500, Swiss fallen to Moshier, 2.0e-8 deg in longitude and 1.35e-7 deg/day in its speed off the Moshier request, by `swe_fixstar2()`, `swe_fixstar()` and their `_ut` forms; JPL fallen to Swiss 7.5e-9 deg | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -12349,7 +12350,7 @@ below the residual floor). And `swe_fixstar2()` topocentric, a Swiss
 request fallen to Moshier, places the site by the files' delta t, not
 Moshier's (as bug 168 found for `swe_nod_aps()`): Aldebaran at 1500 2.0e-8
 deg in longitude and 1.35e-7 deg/day in its speed off the Moshier request,
-0 with a user delta t.
+0 with a user delta t. Fixed by entry 195.
 
 ## 183. Owen 1990's pieces step at their joins, and the frame's rates difference them across: the obliquity's 2.6e-8 deg/day off the day before -10000, the precession's 9.8e-9 and 1.1e-8 deg/day either side of +6000 and +14000, SEFLG_SPEED3 1.1e-4
 
@@ -12701,6 +12702,73 @@ osculating node at 1900 4.19e-9 deg off the files', Venus's 1.20e-8),
 where `swe_calc()`'s geocentric planets are refused. G117's header said
 156 for the compat build's failures; the tree before this entry gives 160
 (the topocentric row's note, lost there).
+
+## 195. A topocentric star fallen to another ephemeris places its site by the delta t of the ephemeris asked: Aldebaran at 1500, Swiss fallen to Moshier, 2.0e-8 deg in longitude and 1.35e-7 deg/day in its speed off the Moshier request
+
+**Severity: Correctness (behaviour: an answer that depends on the ephemeris asked, not the one that answered; 2.0e-8 deg in place, 1.35e-7 deg/day in speed)**
+**Where:** `sweph.c`: `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `fixstar_obs_rate()`
+
+Found by entry 177's work (its notes). The star functions read the Earth
+by `main_planet_bary()`, which falls from JPL to the Swiss files and from
+the files to Moshier on its own; the return flag says the ephemeris that
+answered (entry 67), and the parallax, deflection and aberration take that
+Earth. The topocentric site did not: `swi_get_observer()` takes its delta t
+by `swe_deltat_ex()` of the flags passed, and the star functions passed
+the caller's, so a request fallen to Moshier placed Moshier's Earth's site
+by the files' delta t (the files' tidal term, DE441's -25.936, against
+Moshier's -25.58: 6.7 s more at 1500 with the planet files of 1800-2400,
+4.1 s with no files, whose default is DE431's). `swe_calc()` places a
+planet's site by the ephemeris that answered (its flags are `main_planet()`'s
+after the fallback), and `swe_nod_aps()` since entry 168.
+
+Measured, the site at 8.55 E, 47.37 N, 400 m, the fallback allowed, a
+directory of links to sepl_18.se1, semo_18.se1, seas_12.se1, sefstars.txt
+and seorbel.txt, Aldebaran with SEFLG_TOPOCTR | SEFLG_SPEED against the
+same call asking SEFLG_MOSEPH:
+
+| call | at 1500 (JD 2268923.5) | at 1338 (JD 2210000.25) |
+|---|---|---|
+| `swe_fixstar2()`, `swe_fixstar()` | 1.97e-8 deg in longitude, 9.4e-9 in latitude; 1.35e-7 deg/day in the longitude speed | 1.48e-8 deg, 3.23e-7 deg/day |
+| `swe_fixstar2_ut()`, `swe_fixstar_ut()` | 2.02e-8 deg, 1.32e-7 deg/day | 1.69e-8 deg, 3.19e-7 deg/day |
+
+The UT forms redo the call with Moshier's delta t for the instant, and
+the site inside took the files' again. With a user delta t
+(`swe_set_delta_t_userdef()`) the two agree to the last bit. With
+sefstars.txt and seorbel.txt alone, 1.22e-8 deg and 8.3e-8 deg/day at
+1500, 2.1e-10 deg at 1900, 0 at 2000. A JPL request fallen to the Swiss
+files (de200.eph named and missing) took the JPL bits' delta t: 7.5e-9 deg
+and 5.2e-8 deg/day off the Swiss request at 1500. A geocentric star has no
+site and was bit for bit. Both builds.
+
+**Fix, as done here:** the site's flags are the caller's with the
+ephemeris bits of the Earth that answered: the observer at the instant and
+`fixstar_obs_rate()`'s two observers for the aberration's rate (a new
+argument). A Moon from Moshier on the files' Earth, the Moon files alone
+missing (entry 120), keeps the files' delta t, as `swe_calc()`'s planets
+do there. Now the fallen requests answer bit for bit as the Moshier (or
+Swiss) request, return and place, all four functions, with and without
+SEFLG_SPEED, fresh and warm. Behind `#ifndef SWE_UPSTREAM_COMPAT`; no hot
+path (the star functions, one flag computed per topocentric call).
+
+G133 `tests/fbbary.c` (j): Aldebaran topocentric by the four functions
+with SEFLG_SPEED in (d)'s directory (sefstars.txt and seorbel.txt) at 2000
+Jul 1.5 and 1900 Jan 0.75, Swiss and JPL asked, and in the directory of
+the files of 1800-2400 at 1500, fresh (and `swe_fixstar2()` without
+SEFLG_SPEED) and in (f)'s warm process after the call at each instant: bit
+for bit the Moshier request in a fresh process, flag SEFLG_MOSEPH. 1165
+rows pass; before the fix 21 of the 29 added fail (the 8 of (d) at 1900,
+the 5 fresh, the 8 warm; at 2000 the two delta t's agree); the upstream
+build all 29 (435 in all; (d)'s for its return flag too, entry 67). G24
+`star_topo_fallen_off`: topocentric Aldebaran by `swe_fixstar2()` at 1500
+along sepl_18.se1, semo_18.se1 and sefstars.txt, the fallback allowed,
+against the Moshier request, the longitude: 0 shipped, 1.97e-8 deg compat
+(and shipped before the fix).
+
+Noticed, not fixed: `swe_fixstar2()` and `swe_fixstar()` with SEFLG_JPLEPH
+on de200.eph at 1500, outside its span, the fallback allowed, refuse ("jd
+2268923.500000 outside JPL eph. range 2305424.50 .. 2513392.50;"), where
+`swe_calc()` of Mars falls to Moshier and answers (260), both before and
+after this fix.
 
 ## How these were found
 

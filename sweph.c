@@ -7797,8 +7797,8 @@ static void aberr_light_central(double *xx, const double *xe, const double *xe_m
  * (UPSTREAM-BUGS 85; before, its roughness took 2 B - A over 2^-3 day, B
  * the positions' second difference, A the velocities' central one). */
 static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int32 epheflag,
-                            int32 iflag, const double *xe, double *xo_m, double *xo_p,
-                            char *serr)
+                            int32 iflag, int32 siteflag, const double *xe, double *xo_m,
+                            double *xo_p, char *serr)
 {
   int i, k;
   int32 iephe_used;
@@ -7826,7 +7826,8 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
   if (iflag & SEFLG_TOPOCTR) {
     for (k = 0; k < 2; k++) {
       double *xo = k ? xo_p : xo_m;
-      if (swi_get_observer(ctx, k ? tjd + dp : tjd - dm, iflag | SEFLG_NONUT, NO_SAVE, xs, serr) != OK)
+      /* bug 195: the site by the delta t of the ephemeris that answered */
+      if (swi_get_observer(ctx, k ? tjd + dp : tjd - dm, siteflag | SEFLG_NONUT, NO_SAVE, xs, serr) != OK)
         return ERR;
       for (i = 0; i <= 5; i++)
         xo[i] += xs[i];
@@ -11716,6 +11717,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   int32 epheflag, iflgsave;
 #ifndef SWE_UPSTREAM_COMPAT
   int32 ephe_used = 0;	/* the ephemeris that answered, 0: none consulted */
+  int32 siteflag = 0;	/* bug 195: the site's flags, that ephemeris's */
   AS_BOOL mosh_star = FALSE;	/* bug 109 */
   double xsb_star[6] = {0, 0, 0, 0, 0, 0}, asb_star[3] = {0, 0, 0};
 #endif
@@ -11849,7 +11851,22 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     if (swi_get_observer(ctx, tjd - dt, iflag | SEFLG_NONUT, NO_SAVE, xobs_dt, serr) != OK)
       return ERR;
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 195: the site was placed by the delta t of the caller's
+     * ephemeris bits, not of the ephemeris that answered: a Swiss request
+     * fallen to Moshier (the fallback allowed, the files for the date
+     * missing) took the files' delta t for Moshier's Earth, 6.7 s apart at
+     * 1500, so topocentric Aldebaran there was 2.0e-8 deg in longitude and
+     * 1.35e-7 deg/day in its speed off the Moshier request (0 with a user
+     * delta t). swe_calc() places a planet's site so (its flags are the
+     * ephemeris that answered) and swe_nod_aps() since bug 168. Now the
+     * Earth's ephemeris here and in fixstar_obs_rate()'s site; a Moon from
+     * Moshier on the files' Earth (bug 120) keeps the files'. */
+    siteflag = ephe_used != 0 ? (iflag & ~SEFLG_EPHMASK) | ephe_used : iflag;
+    if (swi_get_observer(ctx, tjd, siteflag | SEFLG_NONUT, NO_SAVE, xobs, serr) != OK)
+#else
     if (swi_get_observer(ctx, tjd, iflag | SEFLG_NONUT, NO_SAVE, xobs, serr) != OK)
+#endif
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
     memcpy(xsite, xobs, sizeof(xsite));
@@ -11949,7 +11966,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     int32 spf = iflgsave & SEFLG_SPEED;
     if (spf && mosh_star)	/* bug 109: the Sun's motion over -dm, dp */
       swi_mosh_sun_accel(ctx, tjd, asb_star);	/* before the Earth's reads */
-    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag,
+    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag, siteflag,
                               ctx->sp.fx_struct.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
     if (spf && mosh_star)
@@ -13502,6 +13519,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   int32 epheflag, iflgsave;
 #ifndef SWE_UPSTREAM_COMPAT
   int32 ephe_used = 0;	/* the ephemeris that answered, 0: none consulted */
+  int32 siteflag = 0;	/* bug 195: the site's flags, that ephemeris's */
   AS_BOOL mosh_star = FALSE;	/* bug 109 */
   double xsb_star[6] = {0, 0, 0, 0, 0, 0}, asb_star[3] = {0, 0, 0};
 #endif
@@ -13633,7 +13651,14 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     if (swi_get_observer(ctx, tjd - dt, iflag | SEFLG_NONUT, NO_SAVE, xobs_dt, serr) != OK)
       return ERR;
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 195: the delta t of the ephemeris that answered, as in
+     * fixstar_calc_from_struct() */
+    siteflag = ephe_used != 0 ? (iflag & ~SEFLG_EPHMASK) | ephe_used : iflag;
+    if (swi_get_observer(ctx, tjd, siteflag | SEFLG_NONUT, NO_SAVE, xobs, serr) != OK)
+#else
     if (swi_get_observer(ctx, tjd, iflag | SEFLG_NONUT, NO_SAVE, xobs, serr) != OK)
+#endif
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
     memcpy(xsite, xobs, sizeof(xsite));
@@ -13737,7 +13762,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     int32 spf = iflgsave & SEFLG_SPEED;
     if (spf && mosh_star)	/* bug 109: the Sun's motion over -dm, dp */
       swi_mosh_sun_accel(ctx, tjd, asb_star);	/* before the Earth's reads */
-    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag,
+    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag, siteflag,
                               ctx->sp.fx_record.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
     if (spf && mosh_star)

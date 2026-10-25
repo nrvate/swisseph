@@ -117,8 +117,16 @@
  *      Swiss, the fallback allowed: the Moon from Mars and Mars from the
  *      Moon SEFLG_MOSEPH within 1e-6 deg of the complete directory's, Mars
  *      from Jupiter its answer bit for bit, strict bug 120's refusal of
- *      the two and the complete directory's answer for the rest.
- * Measured: 1136 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ *      the two and the complete directory's answer for the rest;
+ *  (j) a topocentric star fallen to Moshier, its site placed by the delta
+ *      t of the ephemeris that answered (UPSTREAM-BUGS 195): Aldebaran by
+ *      swe_fixstar2(), swe_fixstar() and their _ut forms with SEFLG_SPEED
+ *      in (d)'s directory at (d)'s instants, Swiss and JPL, and with the
+ *      files of 1800-2400 at 1500, fresh (and swe_fixstar2() without
+ *      SEFLG_SPEED) and in (f)'s warm process: bit for bit the Moshier
+ *      request's (they took the files' delta t, 6.7 s more at 1500:
+ *      2.0e-8 deg in longitude, 1.35e-7 deg/day in its speed).
+ * Measured: 1165 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
  * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
  * (osculating), swe_calc_pctr()'s Moon 2.1e-7 deg.
  * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
@@ -147,7 +155,10 @@
  * fix those 60 rows of (h) fail. UPSTREAM-BUGS 177 adds 8 to each (f) of
  * the files of 1800-2400 and holds its Mars geocentric bit for bit:
  * before its fix those 18 fail, and in the upstream build the 16 added
- * (406 in all, 390 without them).
+ * (406 in all, 390 without them). UPSTREAM-BUGS 195 adds (j)'s 29 rows,
+ * 16 of (d), 5 fresh and 8 warm of the files of 1800-2400: before its fix
+ * 21 fail (the 8 of (d) at 1900, the 5 fresh, the 8 warm), the upstream
+ * build all 29 (435 in all; (d)'s also for its return flag, bug 67).
  * Run as
  *   fbbary EPHEDIR
  */
@@ -164,7 +175,7 @@
 #define EPHMASK (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)
 #define BARYMSG "barycentric Moshier positions are not supported."
 
-enum { CALC, CALC_UT, PCTR, NODAPS, NODAPS_UT, ORBEL, ORBEL_UT, STAR2, STAR };
+enum { CALC, CALC_UT, PCTR, NODAPS, NODAPS_UT, ORBEL, ORBEL_UT, STAR2, STAR, STAR2_UT, STAR_UT };
 struct cs { const char *sz; int kind, ipl, ctr; int32 fl; };
 #define BS (SEFLG_BARYCTR | SEFLG_SPEED)
 /* (a)-(c): fall to Moshier, which refuses them */
@@ -203,11 +214,27 @@ static const struct cs N[] = {
   {"Aldebaran, swe_fixstar2()", STAR2, 0, 0, BS},
   {"Aldebaran, swe_fixstar()", STAR, 0, 0, BS},
 };
-/* (d): what Moshier serves, with the fallback */
+/* (d): what Moshier serves, with the fallback; and (j) the topocentric
+ * stars, whose site takes the delta t of the ephemeris that answered
+ * (UPSTREAM-BUGS 195) */
+#define TS (SEFLG_TOPOCTR | SEFLG_SPEED)
 static const struct cs M[] = {
   {"Mars, heliocentric", CALC, SE_MARS, 0, SEFLG_HELCTR | SEFLG_SPEED},
   {"Mars, geocentric", CALC, SE_MARS, 0, SEFLG_SPEED},
+  {"Aldebaran topo., swe_fixstar2()", STAR2, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar()", STAR, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar2_ut()", STAR2_UT, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar_ut()", STAR_UT, 0, 0, TS},
 };
+/* (j): the same at 1500 with the files of 1800-2400, and without SEFLG_SPEED */
+static const struct cs T18[] = {
+  {"Aldebaran topo., swe_fixstar2()", STAR2, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar()", STAR, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar2_ut()", STAR2_UT, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar_ut()", STAR_UT, 0, 0, TS},
+  {"Aldebaran topo., no speed", STAR2, 0, 0, SEFLG_TOPOCTR},
+};
+#define NT18 ((int) (sizeof T18 / sizeof T18[0]))
 /* (g): swe_nod_aps() with barycentric output, every method and body class
  * (UPSTREAM-BUGS 149); ctr is the method. SEFLG_TOPOCTR with
  * SEFLG_BARYCTR is the barycentric output here (the function reads the
@@ -282,6 +309,8 @@ static void ask(const struct cs *c, int32 fl, double jd, struct ans *a)
     case ORBEL: a->r = swe_calc_orbel(jd, el, c->ctr, SE_ORBEL_EQ_J2000, 0, fl, a->x, a->serr); break;
     case ORBEL_UT: a->r = swe_calc_orbel_ut(jd, el, c->ctr, SE_ORBEL_EQ_J2000, 0, fl, a->x, a->serr); break;
     case STAR2: a->r = swe_fixstar2(star, jd, fl, a->x, a->serr); break;
+    case STAR2_UT: a->r = swe_fixstar2_ut(star, jd, fl, a->x, a->serr); break;
+    case STAR_UT: a->r = swe_fixstar_ut(star, jd, fl, a->x, a->serr); break;
     default: a->r = swe_fixstar(star, jd, fl, a->x, a->serr); break;
   }
   /* answered: warm()'s and warm18()'s own calls are judged on it too (the
@@ -437,7 +466,7 @@ static int warm(int32 eph, double jd)
  * fictitious bodies' and swe_calc_orbel()'s Sun read that Sun from its
  * slot, the nod_aps Mars within 1e-7 deg before it); returns the
  * failures */
-#define NW18 12
+#define NW18 16
 static const struct cs W18[NW18] = {
   {"nod_aps Mars, NOGDEFL", NODAPS, SE_MARS, SE_NODBIT_OSCU, SEFLG_SPEED | SEFLG_NOGDEFL},
   {"nod_aps Mars, topo., NOGDEFL", NODAPS, SE_MARS, SE_NODBIT_OSCU,
@@ -453,6 +482,11 @@ static const struct cs W18[NW18] = {
   {"swe_calc_orbel(), TRUEPOS", ORBEL, 0, SE_SUN, SEFLG_SPEED | SEFLG_TRUEPOS},
   {"nod_aps Venus", NODAPS, SE_VENUS, SE_NODBIT_OSCU, SEFLG_SPEED},
   {"Aldebaran, swe_fixstar2()", STAR2, 0, 0, SEFLG_SPEED},
+  /* bug 195 */
+  {"Aldebaran topo., swe_fixstar2()", STAR2, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar()", STAR, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar2_ut()", STAR2_UT, 0, 0, TS},
+  {"Aldebaran topo., swe_fixstar_ut()", STAR_UT, 0, 0, TS},
 };
 static struct ans W18REF[NW18];
 static int warm18(double jd)
@@ -735,6 +769,16 @@ int main(int argc, char **argv)
         nbad += k;
         printf("    FAIL (f) warm Mars %s jd %.2f: %d of %d\n",
                eph == SEFLG_JPLEPH ? "JPL" : "Swiss", jd, k, NWARM);
+      }
+      if (eph == SEFLG_SWIEPH && id == 0) {
+        /* (j) bug 195, fresh: fallen to Moshier at 1500, the Moshier request */
+        for (k = 0; k < NT18; k++) {
+          struct ans a, m;
+          child(DIR18, 1, eph, &T18[k], 2268923.5, &a);
+          child(DIR18, 0, SEFLG_MOSEPH, &T18[k], 2268923.5, &m);
+          check(same(&a, &m) && (a.r & EPHMASK) == SEFLG_MOSEPH, "j", T18[k].sz, eph, 2268923.5, &a,
+                "not the Moshier request's answer");
+        }
       }
       if (eph == SEFLG_SWIEPH) {
         for (k = 0; k < NW18; k++)

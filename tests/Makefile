@@ -1315,7 +1315,9 @@ check-closetid: closetid
 # swe_calc_pctr()'s return flag the ephemeris that answered (150). And a
 # request fallen to Moshier in a warm process answers as the Moshier request
 # in a fresh one, its Sun Moshier's, not the Swiss Sun an earlier call left
-# in the barycentric Sun's slot (UPSTREAM-BUGS 168, 177).
+# in the barycentric Sun's slot (UPSTREAM-BUGS 168, 177); a topocentric
+# star fallen to Moshier answers as the Moshier request, its site placed
+# by Moshier's delta t (UPSTREAM-BUGS 195).
 # Its directories are links in /tmp; each case in a forked process.
 check-fbbary: fbbary
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./fbbary $(EPHE)
