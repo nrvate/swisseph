@@ -2467,8 +2467,10 @@ static int main_planet_bary(swe_ctx *ctx, double tjd, int ipli, int32 epheflag, 
       retc = swi_moshplan(ctx, tjd, ipli, do_save, xp, xe, serr);/**/
       if (retc == ERR)
 	return ERR;
-      for (i = 0; i <= 5; i++)
-	xs[i] = 0;
+      /* xs NULL: the caller wants no Sun, as sweplan() and jplplan() allow */
+      if (xs != NULL)
+	for (i = 0; i <= 5; i++)
+	  xs[i] = 0;
       break;
     default:
       break;
@@ -5644,28 +5646,62 @@ static void aberr_light_central(double *xx, const double *xe, const double *xe_m
   }
 }
 
-/* The observer's velocity at t + dp for aberr_light_central(): the Earth's
- * and the site's, both read at t + dp. Upstream bug 76: the Earth's was
- * carried on linearly from t - dm and t, so the central difference took the
- * Earth's acceleration at t - dm/2, short by dm/2 of its rate of change: 8.6e-8
- * of the aberration's rate, 8e-12 deg/day on the sky, 1.03e-9 in Polaris's
- * right ascension speed at any step. Now read from the ephemeris. */
-static int fixstar_obs_ahead(swe_ctx *ctx, double tjd, double dp, int32 epheflag, int32 iflag,
-                             double *xo_p, char *serr)
+/* The observer's velocity at t - dm and t + dp for aberr_light_central():
+ * the Earth's at t, xe, carried there with its acceleration at t, and the
+ * site's, which turns, read at both instants. Upstream bug 76: the Earth's
+ * velocity at t + dp was carried on linearly from its velocities at t - dm
+ * and t, the acceleration at t - dm/2, short by dm/2 of its rate of change:
+ * 8.6e-8 of the aberration's rate, 8e-12 deg/day on the sky, 1.03e-9 in
+ * Polaris's right ascension speed at any step. And on Moshier the Earth's
+ * velocity is rough at 2e-14 AU/day from instant to instant (the
+ * Earth-Moon offset's rate, a difference of the short lunar series over
+ * +-2^-8 day), which a difference over 1e-5 day made 2e-6 of the
+ * acceleration, 1.56e-8 deg/day in Polaris's right ascension. Now the
+ * acceleration at t from reads at t +- h, exact instants: on the files a
+ * central difference of the velocities, h = 2^-9 (truncation h^2/6 a'',
+ * <= 5e-10 of a, the Moon's month); on Moshier 2 B - A, B the positions'
+ * second difference and A the velocities' central one, h = 2^-3, which
+ * cancels the h^2 terms (h^4/360 of the fourth derivative is 1e-11) and
+ * divides the velocities' roughness by 2h. */
+static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int32 epheflag,
+                            int32 ephe_used, int32 iflag, const double *xe, double *xo_m,
+                            double *xo_p, char *serr)
 {
-  int i;
-  int32 iephe_used = epheflag;
-  double xs[6];
-  if (main_planet_bary(ctx, tjd + dp, SEI_EARTH, epheflag, iflag, NO_SAVE, &iephe_used,
-                       xo_p, xo_p, xs, NULL, serr) != OK)
-    return ERR;
-  if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
-    return ERR;
-  if (iflag & SEFLG_TOPOCTR) {
-    if (swi_get_observer(ctx, tjd + dp, iflag | SEFLG_NONUT, NO_SAVE, xs, serr) != OK)
+  int i, k;
+  int32 iephe_used;
+  /* the ephemeris the read at t used: Moshier also when substituted */
+  AS_BOOL mosh = (ephe_used & SEFLG_MOSEPH) != 0;
+  double h = mosh ? 1.0 / 8 : 1.0 / 512, xa[2][6], xs[6], ae[3];
+  for (k = 0; k < 2; k++) {
+    iephe_used = epheflag;
+    /* no Sun: these reads are for the Earth's velocity only */
+    if (main_planet_bary(ctx, k ? tjd - h : tjd + h, SEI_EARTH, epheflag, iflag, NO_SAVE,
+                         &iephe_used, xa[k], xa[k], NULL, NULL, serr) != OK)
       return ERR;
-    for (i = 0; i <= 5; i++)
-      xo_p[i] += xs[i];
+    if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
+      return ERR;
+  }
+  for (i = 0; i <= 2; i++) {
+    double va = (xa[0][i+3] - xa[1][i+3]) / (2 * h);
+    if (mosh)
+      ae[i] = 2 * ((xa[0][i] - xe[i]) + (xa[1][i] - xe[i])) / (h * h) - va;
+    else
+      ae[i] = va;
+  }
+  for (i = 0; i <= 2; i++) {
+    xo_m[i] = xe[i] - dm * xe[i+3];
+    xo_p[i] = xe[i] + dp * xe[i+3];
+    xo_m[i+3] = xe[i+3] - dm * ae[i];
+    xo_p[i+3] = xe[i+3] + dp * ae[i];
+  }
+  if (iflag & SEFLG_TOPOCTR) {
+    for (k = 0; k < 2; k++) {
+      double *xo = k ? xo_p : xo_m;
+      if (swi_get_observer(ctx, k ? tjd + dp : tjd - dm, iflag | SEFLG_NONUT, NO_SAVE, xs, serr) != OK)
+        return ERR;
+      for (i = 0; i <= 5; i++)
+        xo[i] += xs[i];
+    }
   }
   return OK;
 }
@@ -9046,11 +9082,13 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
      * caller's iflag, unchanged, so without this check a missing JPL file
      * gave a Swiss-based position labelled SEFLG_JPLEPH. */
     int32 iephe_used = epheflag;
+#ifdef SWE_UPSTREAM_COMPAT
     if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, &iephe_used, ctx->sp.fx_struct.xearth_dt, ctx->sp.fx_struct.xearth_dt, ctx->sp.fx_struct.xsun_dt, NULL, serr)) != OK) {
       return ERR;
     }
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
+#endif
     if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, &iephe_used, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xsun, NULL, serr)) != OK) {
       return ERR;
     }
@@ -9065,8 +9103,10 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
    ************************************/
   /* if topocentric position is wanted  */
   if (iflag & SEFLG_TOPOCTR) { 
+#ifdef SWE_UPSTREAM_COMPAT
     if (swi_get_observer(ctx, tjd - dt, iflag | SEFLG_NONUT, NO_SAVE, xobs_dt, serr) != OK)
       return ERR;
+#endif
     if (swi_get_observer(ctx, tjd, iflag | SEFLG_NONUT, NO_SAVE, xobs, serr) != OK)
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -9075,13 +9115,17 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     /* barycentric position of observer */
     for (i = 0; i <= 5; i++) {
       xobs[i] = xobs[i] + ctx->sp.fx_struct.xearth[i];	
+#ifdef SWE_UPSTREAM_COMPAT
       xobs_dt[i] = xobs_dt[i] + ctx->sp.fx_struct.xearth_dt[i];	
+#endif
     }
   } else if (!(iflag & SEFLG_BARYCTR) && (!(iflag & SEFLG_HELCTR) || !(iflag & SEFLG_MOSEPH))) {
     /* barycentric position of geocenter */
     for (i = 0; i <= 5; i++) {
       xobs[i] = ctx->sp.fx_struct.xearth[i];
+#ifdef SWE_UPSTREAM_COMPAT
       xobs_dt[i] = ctx->sp.fx_struct.xearth_dt[i];
+#endif
     }
   }
   /************************************
@@ -9135,9 +9179,13 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
 #ifndef SWE_UPSTREAM_COMPAT
   /* never heliocentric or barycentric: plaus_iflag() sets SEFLG_NOABERR */
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0) {
-    if (fixstar_obs_ahead(ctx, tjd, dp, epheflag, iflag, xpo_p, serr) != OK)
+    /* the observer at t - dm and t + dp (xpo is xobs here, xpo_dt xobs_dt),
+     * read only for a speed the caller asked for */
+    int32 spf = iflgsave & SEFLG_SPEED;
+    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, ephe_used, iflag,
+                              ctx->sp.fx_struct.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
-    aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, iflag & SEFLG_SPEED);
+    aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, spf);
   }
 #else
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0)
@@ -10499,11 +10547,13 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     /* Same check as in fixstar_calc_from_struct(), for the same reason: the
      * strict guard lives at swe_calc()'s exit and this path never reaches it. */
     int32 iephe_used = epheflag;
+#ifdef SWE_UPSTREAM_COMPAT
     if ((retc =  main_planet_bary(ctx, tjd - dt, SEI_EARTH, epheflag, iflag, NO_SAVE, &iephe_used, ctx->sp.fx_record.xearth_dt, ctx->sp.fx_record.xearth_dt, ctx->sp.fx_record.xsun_dt, NULL, serr)) != OK) {
       return ERR;
     }
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
+#endif
     if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, &iephe_used, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xsun, NULL, serr)) != OK) {
       return ERR;
     }
@@ -10518,8 +10568,10 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
    ************************************/
   /* if topocentric position is wanted  */
   if (iflag & SEFLG_TOPOCTR) { 
+#ifdef SWE_UPSTREAM_COMPAT
     if (swi_get_observer(ctx, tjd - dt, iflag | SEFLG_NONUT, NO_SAVE, xobs_dt, serr) != OK)
       return ERR;
+#endif
     if (swi_get_observer(ctx, tjd, iflag | SEFLG_NONUT, NO_SAVE, xobs, serr) != OK)
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -10528,13 +10580,17 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     /* barycentric position of observer */
     for (i = 0; i <= 5; i++) {
       xobs[i] = xobs[i] + ctx->sp.fx_record.xearth[i];	
+#ifdef SWE_UPSTREAM_COMPAT
       xobs_dt[i] = xobs_dt[i] + ctx->sp.fx_record.xearth_dt[i];	
+#endif
     }
   } else if (!(iflag & SEFLG_BARYCTR) && (!(iflag & SEFLG_HELCTR) || !(iflag & SEFLG_MOSEPH))) {
     /* barycentric position of geocenter */
     for (i = 0; i <= 5; i++) {
       xobs[i] = ctx->sp.fx_record.xearth[i];
+#ifdef SWE_UPSTREAM_COMPAT
       xobs_dt[i] = ctx->sp.fx_record.xearth_dt[i];
+#endif
     }
   }
   /************************************
@@ -10592,9 +10648,13 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
 #ifndef SWE_UPSTREAM_COMPAT
   /* never heliocentric or barycentric: plaus_iflag() sets SEFLG_NOABERR */
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0) {
-    if (fixstar_obs_ahead(ctx, tjd, dp, epheflag, iflag, xpo_p, serr) != OK)
+    /* the observer at t - dm and t + dp (xpo is xobs here, xpo_dt xobs_dt),
+     * read only for a speed the caller asked for */
+    int32 spf = iflgsave & SEFLG_SPEED;
+    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, ephe_used, iflag,
+                              ctx->sp.fx_record.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
-    aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, iflag & SEFLG_SPEED);
+    aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, spf);
   }
 #else
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0)

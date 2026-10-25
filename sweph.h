@@ -841,7 +841,8 @@ struct epsilon {
  *     heliocentric distance rate; UPSTREAM-BUGS 70, G69)
  *   - a fixed star's aberration rate took the Earth's velocity at t + dt
  *     carried on linearly from t - dt and t, its acceleration half a step
- *     back: 8e-12 deg/day on the sky, 1.03e-9 in Polaris's right ascension
+ *     back: 8e-12 deg/day on the sky, 1.03e-9 in Polaris's right ascension;
+ *     on Moshier the velocities 1e-5 day apart are rough, 1.56e-8
  *     (UPSTREAM-BUGS 76, G75)
  *   - swe_calc_pctr() read both bodies at tjd - dt rounded to a double,
  *     and added the centre's velocity change over the light time as its

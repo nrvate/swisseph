@@ -3452,8 +3452,8 @@ VEA's longitude speed on JPL and Moshier, 2.9e-11 shipped, 3.4e-5 compat.
 
 ## 76. A fixed star's aberration rate takes the Earth's acceleration half a step back
 
-**Severity: Correctness (8e-12 deg/day on the sky in every apparent star speed; 1.03e-9 in Polaris's right ascension speed, 7.4e-10 in Polaris Australis's, 2.2e-10 in delta Dor's ecliptic longitude speed)**
-**Where:** `sweph.c`: `fixstar_obs_ahead()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`
+**Severity: Correctness (8e-12 deg/day on the sky in every apparent star speed; 1.03e-9 in Polaris's right ascension speed, 7.4e-10 in Polaris Australis's, 2.2e-10 in delta Dor's ecliptic longitude speed; on Moshier 2e-10 on the sky, 1.56e-8 in Polaris's right ascension)**
+**Where:** `sweph.c`: `fixstar_obs_rate()` (was `fixstar_obs_ahead()`), `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `main_planet_bary()`
 
 After entry 69, Polaris's right ascension speed was still off a
 five-point difference of its right ascension by 1.03e-9 deg/day, and
@@ -3478,34 +3478,78 @@ acceleration, and so of the aberration's rate (20.5" x 2 pi/year =
 ascension near the pole. The function's own comment had it: "linear to
 1e-7 of itself".
 
-**Fix, as done here:** the Earth at t + dp read from the ephemeris
-(`main_planet_bary()`, NO_SAVE, the same downgrade refusal as the other
-two reads); the site, as before, read there. Positions unchanged.
-Measured after, over 2^-5 day: Polaris's right ascension 1.8e-11,
-Polaris Australis's 9.5e-12, delta Dor's ecliptic longitude 9.7e-12, 42
-Dra's 5.2e-12, the five-point reference's own rounding (it scales as
-1/step, and SEFLG_TRUEPOS, no aberration, gives the same). One more
-Earth read per apparent star call with speed: `swe_fixstar2()` with
-SEFLG_SPEED 24.5 -> 26.8 us/call (+9%); `swe_calc()` untouched. G49's
-angles 4.0e-11 -> 3.5e-11, the apparent ones 1.9e-11 -> 9.4e-12, its
-angle limit 2e-10 -> 1e-10; G68 within its rounding either way (it takes
-the nutation's share, in which the aberration cancels), limits kept.
-
-Also seen and left alone: on Moshier (SEFLG_MOSEPH) Polaris's right
-ascension speed is off by up to 1.56e-8 deg/day (2.0e-10 on the sky),
+A first fix read the Earth at t + dp from the ephemeris: Polaris's right
+ascension 1.8e-11 over 2^-5 day (the files' velocities 1e-5 day apart
+are good to 4.3e-9 of the acceleration), but a third Earth read on every star
+call, `swe_fixstar2()` with SEFLG_SPEED +5.7% in instructions (+9% in
+time), and Moshier still off. On Moshier (SEFLG_MOSEPH) Polaris's right
+ascension speed was off by up to 1.56e-8 deg/day (2.0e-10 on the sky),
 the same at 2^-5 and 2^-7 day, 7e-12 in 1900 and 2.1e-9 to 1.56e-8 at
-1970-2100, gone under SEFLG_NOABERR (8.6e-12): the Moshier Earth's
-velocity is not smooth at the 1e-5 day the aberration rate spans
-(7e-13 of itself would do it). Before this fix it was up to 5.1e-8.
+1970-2100, 8.6e-12 under SEFLG_NOABERR. The Moshier Earth's velocity is
+rough: its acceleration as a central difference of its velocities over
++-1e-5 day is off a five-point one over 2^-4 day by up to 2.1e-6 of
+itself (1.1e-9 in 1900; 3.5e-10 to 4.3e-9 on the Swiss files), over +-2^-9 still
+1.7e-8 -- velocity noise of ~2e-14 AU/day from one instant to the next.
+It is the Earth-Moon offset's rate (entry 51), a central difference of
+the short lunar series over +-2^-8 day whose arguments, in degrees of
+481267.88 T, round at 1e-12 rad once T is near 1: with that rate taken
+over +-2^-2 day (an experiment, not kept) the noise goes, and what is
+left, 1e-5 day apart, is the EMB series' own (up to 9e-8 of the
+acceleration).
+
+**Fix, as done here:** `fixstar_obs_rate()` gives aberr_light_central()
+the observer's velocity at t - dm and t + dp as the Earth's at t carried
+with its acceleration at t, v(t) -+ d a(t) (and the site read at both
+instants), a(t) from two NO_SAVE reads at t +- h, exact instants, which
+replace the read at t - dt: on the Swiss and JPL files the velocities'
+central difference over h = 2^-9 (truncation h^2/6 a'', <= 5e-10 of a,
+the Moon's month); on Moshier (the ephemeris the read at t used, so a
+substituted one too) 2B - A over h = 2^-3, B the positions'
+second difference and A the velocities' central one, whose h^2 terms
+cancel (h^4/360 of the fourth derivative is 1e-11) and which divides the
+velocities' roughness by 2h, so the offset's rate needs no change (the
+light-time code's Moshier Earth, `earth_at_lt_sun()`, is another
+entry's). The results are flat in h: on Moshier 2B - A over 2^-4..2^-2
+and a central difference over 2^-7 all within 3.5e-11 in Polaris's right
+ascension except 2^-4 at 2470000.7 (8.5e-11); on the files h =
+2^-10..2^-8 and 3e-5 within 1.4e-11. Measured after, over 2^-5 day: Swiss
+Polaris 5.2e-12, Polaris Australis 1.2e-11, delta Dor 1.05e-11, 42 Dra
+4.8e-12; Moshier 1.58e-11, 1.82e-11, 1.07e-11, 7.5e-12; JPL (DE200)
+Polaris 7.0e-12. Topocentric on Moshier is now Swiss's (over 2^-8 day,
+4.8e-10 against 1.59e-8, the rest being the diurnal term's truncation
+there). Positions bit for bit unchanged, both functions, seven stars,
+nine flag sets.
+
+Cost: the two reads at t +- h skip the barycentric Sun (they want only
+the Earth's velocity; `main_planet_bary()` now takes a NULL Sun on
+Moshier as `sweplan()` and `jplplan()` already do), and are made only
+when the caller asked for SEFLG_SPEED and the star is aberrated. Three
+reads cannot become two: an acceleration at t to 1e-9 needs the Earth at
+two instants besides t (one-sided, from t and t - h, it is the
+acceleration at t - h/2, or with positions a Hermite fit whose rounding
+is 6 ulp/h^2, 7e-8 at h = 2^-7), and there is no other Earth read in a
+star call to borrow -- no light time, and the read at t is the saved one
+the deflection uses. The read at t - dt is the one moved. Instructions
+per `swe_fixstar2()` call, Swiss: with SEFLG_SPEED 170.8k before this
+entry, 180.6k with the first fix, 172.0k now (+0.7%); without it 160.6k
+(-6%). Moshier with SEFLG_SPEED 246k -> 293k (+19%: the EMB series read
+is most of the call), without it 200k (-19%). `swe_calc()` untouched.
+G49's angles 4.0e-11 -> 3.5e-11, the apparent ones 1.9e-11 -> 9.5e-12,
+its angle limit 2e-10 -> 1e-10; G68 within its rounding either way (it
+takes the nutation's share, in which the aberration cancels), limits
+kept.
 
 G75 `tests/staraberr.c`: Polaris and Polaris Australis in right
 ascension, delta Dor and 42 Dra in ecliptic longitude, apparent
-geocentric, `swe_fixstar2()` and `swe_fixstar()`, seven dates 1900-2100,
-against five-point differences over 2^-5 day: 8 checks within 6e-11
-deg/day. The build before the fix fails all 8 (1.9e-10 to 1.03e-9); the
-upstream build fails all 8 (2.6e-6 to 4.3e-4, bugs 49 and 58 besides).
-G24 `star_aberr_accel_off`: Polaris's right ascension speed in 2100,
-1.78e-11 deg/day shipped, 2.99e-6 compat.
+geocentric, `swe_fixstar2()` and `swe_fixstar()`, Swiss and Moshier,
+seven dates 1900-2100, against five-point differences over 2^-5 day: 16
+checks within 6e-11 deg/day (measured <= 1.82e-11). The build before the
+fix fails all 16 (Swiss 1.9e-10 to 1.03e-9, Moshier 1.1e-8 to 5.1e-8);
+the first fix fails the 8 Moshier ones (2.4e-9 to 1.57e-8); the upstream
+build fails all 16 (2.6e-6 to 5.7e-3, bugs 49 and 58 besides). G24
+`star_aberr_accel_off`: Polaris's right ascension speed, Swiss in 2100
+4.3e-12 deg/day shipped, 2.99e-6 compat; Moshier in 2000 1.5e-12
+shipped (1.56e-8 with the first fix), 4.2e-5 compat.
 
 ## 72. The interpolated perigee's light-time estimate takes one pass, not two
 

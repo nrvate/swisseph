@@ -713,14 +713,15 @@ static double nut_obliq_rate_off(void)
 
 /* The Earth's acceleration in a star's aberration rate: Polaris's right
  * ascension speed against a five-point difference of its right ascension
- * over 2^-5 day in 2100, deg/day. The Earth's velocity at t + dp was carried
- * on linearly from t - dm and t, the acceleration at t - dm/2: 1.03e-9 in a
- * right ascension near the pole (UPSTREAM-BUGS 76); upstream's star speeds
- * have bugs 49 and 58 besides. */
-static double star_aberr_accel_off(void)
+ * over 2^-5 day, deg/day, on the Swiss files in 2100 and on Moshier in
+ * 2000. The Earth's velocity at t + dp was carried on linearly from t - dm
+ * and t, the acceleration at t - dm/2: 1.03e-9 in a right ascension near
+ * the pole; on Moshier its velocities 1e-5 day apart are rough, 1.56e-8
+ * (UPSTREAM-BUGS 76); upstream's star speeds have bugs 49 and 58 besides. */
+static double star_aberr_accel_off(int32 eph, double jd)
 {
-  double t = floor(2488070.1 * 256) / 256, h = 1.0 / 32, x[6], q[5];
-  int32 fl = SEFLG_SWIEPH | SEFLG_EQUATORIAL;
+  double t = floor(jd * 256) / 256, h = 1.0 / 32, x[6], q[5];
+  int32 fl = eph | SEFLG_EQUATORIAL;
   char serr[256], s[64];
   int k;
   swe_close();
@@ -1302,7 +1303,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, oscspd, oscj2k, moshlt, nodjd0;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, oscspd, oscj2k, moshlt, nodjd0, staraccm;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1345,7 +1346,8 @@ int main(int argc, char **argv)
   aberrate = planet_aberr_rate_off();
   nutr = nut_rate_off();
   nutob = nut_obliq_rate_off();
-  staracc = star_aberr_accel_off();
+  staracc = star_aberr_accel_off(SEFLG_SWIEPH, 2488070.1);
+  staraccm = star_aberr_accel_off(SEFLG_MOSEPH, 2451545.0);
   startd = star_topo_defl_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
@@ -1670,6 +1672,14 @@ int main(int argc, char **argv)
   else {
     printf("  star aberration accel. %.2e deg/day FAIL: expected %s\n",
            staracc, WANT_DEFECT ? "> 5e-10" : "< 1e-10");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (staraccm > 5e-10) : (staraccm < 1e-10))
+    printf("  star aberr. Moshier    %.2e deg/day OK\n", staraccm);
+  else {
+    printf("  star aberr. Moshier    %.2e deg/day FAIL: expected %s\n",
+           staraccm, WANT_DEFECT ? "> 5e-10" : "< 1e-10");
     bad++;
   }
 
