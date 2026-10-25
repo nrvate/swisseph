@@ -3582,6 +3582,27 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
       for (i = 0; i <= 2; i++)
         xx[i] += eps * xx0[i+3];
     }
+    /* Upstream bug 78: the light time was solved along a straight line,
+     * xx0 - dt * v, in two passes, and never checked against the body read
+     * at t, which is off that line by its curvature over the light time:
+     * 7.8e-10 deg on Mercury, 1.1e-10 on Venus, against the fixed point of
+     * tau = |X(t - tau) - O(t)| / c (G77). One Newton step on that equation
+     * from the body read, f = tau - r / c, f' = 1 + rho^.v / c, moves it
+     * along its velocity by the change: 7e-13 deg after. */
+    {
+      double rho[3], r, rv = 0, del;
+      const double c = CLIGHT * 86400.0 / AUNIT;   /* AU per day */
+      for (i = 0; i <= 2; i++)
+        rho[i] = xx[i] - xobs[i];
+      r = sqrt(square_sum(rho));
+      for (i = 0; i <= 2; i++)
+        rv += rho[i] * xx0[i+3];
+      del = (r / c - dt) / (1 + rv / (r * c));
+      for (i = 0; i <= 2; i++)
+        xx[i] -= del * xx0[i+3];
+      dt += del;
+      dtsave_for_defl = dt;
+    }
 #endif
     calc_center_body(ipli, iflag, xx, xcom, serr);
     if (iflag & SEFLG_HELCTR) {
@@ -6129,6 +6150,34 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
 	if (retc != OK)
 	  return(retc);
       } 
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 78: the body read at t (the Earth for a heliocentric
+       * or barycentric Earth, the Sun for a geocentric Sun) had no
+       * light-time rate, which bug 35 gave the planets: 1.7e-6 deg/day on
+       * the heliocentric and barycentric Earth's longitude speed against
+       * five-point differences, the same at every step, and 6.8e-10 (9.1e-10
+       * on de200) on the geocentric Sun's without aberration (G77). v dtau/dt
+       * from the read body's own vectors and the centre's at teval
+       * (lt_rate_exact()). And it was read at t
+       * rounded to a double, which jumps the Earth's place by up to 2.3e-10
+       * deg from one date to the next: moved along its velocity at teval
+       * by (teval - t) - dt, as the planets (bug 63). */
+      {
+        AS_BOOL earth = (iflag & SEFLG_HELCTR) || (iflag & SEFLG_BARYCTR);
+        double *xb = earth ? xearth : xsun;
+        const double *vb = earth ? pedp->x : psdp->x;
+        double xc[6], xxsp[3], eps = (pedp->teval - t) - dt;
+        for (i = 0; i <= 2; i++)
+          xb[i] += eps * vb[i+3];
+        if (iflag & SEFLG_SPEED) {
+          for (i = 0; i <= 5; i++)
+            xc[i] = !earth ? xobs[i] : (iflag & SEFLG_BARYCTR) ? 0 : xsun[i];
+          lt_rate_exact(xb, xc, xxsp);
+          for (i = 0; i <= 2; i++)
+            xb[i+3] -= xxsp[i];
+        }
+      }
+#endif
       /* apparent heliocentric earth */
       for (i = 0; i <= 5; i++) {
         xx[i] = xearth[i];
@@ -6535,6 +6584,20 @@ static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr)
     dt = sqrt(square_sum(xx)) * AUNIT / CLIGHT / 86400.0;     
     for (i = 0; i <= 2; i++) 
       xx[i] -= dt * xx[i+3];	/* apparent position */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 78: the light time from the barycentre had no rate:
+     * 5.8e-9 deg/day on the barycentric Sun's longitude speed against
+     * five-point differences, 5.8e-10 without light time. v dtau/dt with
+     * the observer at the barycentre (lt_rate_exact()): 3.1e-9 after, the
+     * rest the velocity taken at teval rather than t - dt. */
+    if (iflag & SEFLG_SPEED) {
+      static const double xo[6] = {0, 0, 0, 0, 0, 0};
+      double xxsp[3];
+      lt_rate_exact(xx, xo, xxsp);
+      for (i = 0; i <= 2; i++)
+        xx[i+3] -= xxsp[i];
+    }
+#endif
   }
   if (!(iflag & SEFLG_SPEED))
     for (i = 3; i <= 5; i++)

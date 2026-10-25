@@ -110,6 +110,7 @@ worst were in code that had never executed even once.
 | 72 | The interpolated perigee's light-time estimate takes one pass, not two (this fork's) | Correctness | `sweph.c` |
 | 75 | The true node's and osculating apogee's speeds divide by the step asked for, not the step taken | Correctness | `sweph.c` |
 | 71 | Every other cache emptied by an instant of 0 answers for JD 0, and sweph()'s forced EMB is the Earth there | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
+| 78 | The planets' light time is solved along a straight line, and the Earth's and the Sun's light times have no rate | Correctness | `sweph.c` |
 | 81 | A fictitious body's light-time position is read at the rounded instant | Correctness | `sweph.c` |
 | 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, its aberration rate is the centre's whole velocity change over the light time, it deflects as seen from the Earth, and its light time stops short of its fixed point | Correctness | `sweph.c` |
 | 85 | The Moshier Earth-Moon offset's rate is a difference of rounded arguments | Correctness | `swemplan.c` |
@@ -3899,6 +3900,79 @@ plus 2e-8 deg (largest residual 7.6e-11), speeds within 2e-7 deg/day
 The upstream build fails 3342 rows; ts20 before this fix failed 4176. G24
 `nodaps_jd0_off`: Mars's heliocentric osculating node at 0 against 1e-9,
 0 deg shipped, 2.5e-2 compat. G24, G42, G47, G57 and G66 pass.
+
+## 78. The planets' light time is solved along a straight line, and the Earth's and the Sun's light times have no rate
+
+**Severity: Correctness (7.8e-10 deg on Mercury's position; 1.7e-6 deg/day on the heliocentric and barycentric Earth's longitude speed)**
+**Where:** `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_sun()`, `app_pos_etc_sbar()`
+
+Two residues found by entry 63's scan. The light time of a planet is the
+fixed point of tau = |X(t - tau) - O(t)| / c. `app_pos_etc_plan()` solves
+it along the straight line X(t) - tau v in two passes and reads the body
+at the last estimate's t - tau, but never measures the distance of the
+body it read: that body is off the line by its curvature over the light
+time, a tau^2 / 2, and the tau it was read at is short by that over c.
+Against the fixed point iterated from the library's own true positions (X
+from `SEFLG_BARYCTR | SEFLG_TRUEPOS` at t - tau, the rounding of t - tau
+carried along the velocity, O the body less its true place from the
+observer; Moshier's from `SEFLG_HELCTR`, its frame), astrometric, 601
+dates -3000..+3000 (de200 1601..2168): Mercury 7.8e-10 deg geocentric
+(topocentric the same), 1.8e-10 heliocentric, Venus 1.1e-10 and 4.6e-11,
+Mars 3.1e-11 and 1.8e-11, Jupiter 3e-12, Saturn 1.2e-12, on the Swiss
+files, de200 and Moshier alike (Moshier reads the body at t - tau since
+entry 53).
+
+`app_pos_etc_sun()` reads the heliocentric or barycentric Earth (and the
+geocentric Sun) at t - tau converged, but has no light-time rate, the
+term entry 35 gave the planets: the Earth's longitude speed is 1.7e-6
+deg/day off a five-point difference of its positions at every step from
+2^-6 to 2^-9 day (Swiss files 1.8e-6 heliocentric and 1.6e-6
+barycentric, de200 1.7e-6 and 1.8e-6, Moshier 1.8e-6), v_E tau', tau' =
+r'/c up to 1.7e-6. The geocentric Sun without aberration is 6.8e-10
+(9.1e-10 on de200), v_S tau'. The Earth was also read at t rounded to a
+double (entry 63), up to 2.3e-10 deg from one date to the next.
+`app_pos_etc_sbar()`, the barycentric Sun, had no rate either: 5.8e-9
+deg/day, its true positions 5.8e-10.
+
+**Fix, as done here:** after the read (and entry 63's rounding), one Newton
+step on the light-time equation from the body read, f = tau - r/c, f' =
+1 + rho^.v/c, the body moved along its velocity by the change; the
+correction is ~1e-9 day and the step leaves nothing of it. In
+`app_pos_etc_sun()` the read body takes v dtau/dt from `lt_rate_exact()`
+against the centre at teval (the Sun, the barycentre, or for the
+geocentric Sun the observer), and is moved along its velocity at teval by
+the rounding (teval - t) - dt. In `app_pos_etc_sbar()` the same rate with
+the observer at the barycentre.
+
+After, same measures: every planet within 7.6e-13 deg of the fixed point
+on all three ephemerides (Mercury; Venus 2.6e-13). The Earth's speed
+within 3.6e-10 deg/day of its positions on de200 and Moshier and
+barycentric on the files, 6.8e-10 heliocentric on the files (that path
+subtracts the Sun read at t - tau); the geocentric Sun's without
+aberration 3.4e-10 and 3.5e-10, its true positions' floor; the
+barycentric Sun's 3.1e-9, the rest its velocity taken at teval. Positions
+move by up to 7.2e-10 deg (Mercury geocentric), 1.1e-10 Venus, 3.1e-11
+Mars, 1.8e-10 Mercury heliocentric, the heliocentric Earth 2.3e-10, on
+all three ephemerides; speeds by <= 1.6e-10 deg/day for the planets,
+1.7e-6 for the heliocentric and barycentric Earth, 8.7e-10 (1.4e-9
+topocentric) for the geocentric Sun. Positions with and without
+SEFLG_SPEED still agree exactly. Cost: one sqrt and ~15 flops a call,
+instructions +0.06% on bench calc-swieph and +0.04% on calc-moseph
+(perf stat, measured before the rebase onto entry 53); wall-clock within
+the machine's noise.
+
+G77 `tests/ltconv.c`: the heliocentric and barycentric Earth (Swiss files,
+de200, Moshier heliocentric) and the geocentric Sun without aberration,
+thirteen dates, steps 2^-6..2^-9 day, longitude and latitude speeds
+within 2e-9 deg/day (the Sun's within 5e-10) of five-point differences;
+Mercury, Venus and Mars geocentric, topocentric and heliocentric on all
+three ephemerides against the fixed point iterated in the gate, 61
+dates, within 1e-11 deg: 34 rows, measured <= 6.8e-10 deg/day and
+<= 5.2e-13 deg. The build before this fix fails all 34 (Mars heliocentric
+by the least, 1.8e-11 deg); the upstream build fails all 34. G24
+`earth_helio_lt_rate_off`, the heliocentric Earth's longitude speed over
+2^-8 day at nine dates: 6.0e-10 shipped (1.7e-6 before the fix), 1.7e-6
+compat.
 
 ## 81. A fictitious body's light-time position is read at the rounded instant
 

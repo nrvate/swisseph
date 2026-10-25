@@ -1129,6 +1129,23 @@ static double pctr_sun_defl_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 78: the heliocentric Earth's longitude speed against a
+ * five-point difference over 2^-8 day, nine dates 1800-2335, deg/day. It
+ * had no light-time rate, the planets' bug 35: 1.7e-6 upstream and
+ * before the fix, 6.0e-10 after. */
+static double earth_helio_lt_rate_off(void)
+{
+  double w = 0, d;
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 9; k++)
+    if ((d = lon_speed_off(SE_EARTH, SEFLG_SWIEPH | SEFLG_HELCTR,
+                           2378496.5 + k * 24413.7 + 0.137)) > w)
+      w = d;
+  return w;
+}
+
 /* UPSTREAM-BUGS 36: the topocentric Moon at -999, true positions, the
  * site turning per UT day instead of per TT day */
 static double topo_moon_ancient_off(void)
@@ -1372,7 +1389,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1439,6 +1456,7 @@ int main(int argc, char **argv)
   waldlr = waldemath_lt_round_off();
   moshlt = mosh_lt_off();
   pctrsd = pctr_sun_defl_off();
+  earthlr = earth_helio_lt_rate_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1928,6 +1946,14 @@ int main(int argc, char **argv)
   else {
     printf("  pctr Sun deflected     %.2e arcsec  FAIL: expected %s\n",
            pctrsd, WANT_DEFECT ? "> 0.01" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (earthlr > 1e-6) : (earthlr < 5e-9))
+    printf("  Earth helio, lt rate   %.2e deg/day OK\n", earthlr);
+  else {
+    printf("  Earth helio, lt rate   %.2e deg/day FAIL: expected %s\n",
+           earthlr, WANT_DEFECT ? "> 1e-6" : "< 5e-9");
     bad++;
   }
 

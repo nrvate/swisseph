@@ -895,6 +895,11 @@ struct epsilon {
  *     the Earth's motion over an ulp of the date (3.9e-8 deg on Waldemath,
  *     5.5e-6 deg/day on a five-point difference of its places, 3.4e-7 on
  *     Vulcan heliocentric; UPSTREAM-BUGS 81, G80)
+ *   - app_pos_etc_plan() solved the light time along a straight line and
+ *     never against the body read (7.8e-10 deg on Mercury on the files),
+ *     and app_pos_etc_sun() and app_pos_etc_sbar() gave the heliocentric
+ *     and barycentric Earth, the geocentric Sun and the barycentric Sun no
+ *     light-time rate (1.7e-6 deg/day on the Earth; UPSTREAM-BUGS 78, G77)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
