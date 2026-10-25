@@ -1065,6 +1065,13 @@ struct epsilon {
  *     periods a^1.5 sidereal years without the body's mass (Jupiter's 2.1
  *     days long), the tropical period times ysid / ytrop, the synodic
  *     against k (UPSTREAM-BUGS 111, G107)
+ *   - a seorbel.txt epoch or equinox read by atof() (any text, or none, a
+ *     JD), an empty element field read as 0, and a short line refusing
+ *     every body after it; swe_fixstar2() and swe_fixstar2_mag() dropping
+ *     the catalogue's load error ("could not find star name" only), and
+ *     swe_fixstar() with serr NULL answering an unknown star with the
+ *     file's last (UPSTREAM-BUGS 113, G111; the element-term hang and the
+ *     partial table's leak are fixed in both builds)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

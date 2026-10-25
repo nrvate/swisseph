@@ -144,6 +144,7 @@ worst were in code that had never executed even once.
 | 106 | Values read from an ephemeris file's header, and from the delta-psi and fixed-star tables, index and size arrays unchecked: a crafted file writes past `pldat[]`, `rot_back()`'s stack array, `sastnam[]` and `dpsi[]`, or reads past the JPL record | Memory | `sweph.c`, `swejpl.c` |
 | 112 | `swe_calc_orbel()` (this fork's) refuses on the "Please call swe_set_ephe_path()" warning with no path at all, ignores the strict fallback setting, and never names the path from `SE_EPHE_PATH` itself | Correctness (behaviour) | `sweph.c` |
 | 111 | `swe_get_orbital_elements()`: the true anomaly cancels near aphelion, e loses digits, and the periods leave out the body's mass (the tropical one 3.9e-5 long, the synodic against k) | Correctness | `swecl.c` |
+| 113 | A seorbel.txt element field with a character no term has hangs `swe_calc()` for that body; a non-numeric epoch or equinox, an empty field, a short line are read as 0 or refuse every later body; a broken sefstars.txt is reported as "star not found", and `swe_fixstar()` with serr NULL answers an unknown star with the catalogue's last | Correctness (a hang; error reporting) | `swemplan.c`, `sweph.c` |
 
 ---
 
@@ -6836,6 +6837,81 @@ sqrt(a^3 / (GMS + GM5)), 0 shipped, 4.76e-4 compat;
 `orbel_anom_off`: Venus's true anomaly on Moshier at 1700 against the
 eccentricity vector's, 0 shipped, 5.6e-8 deg compat (4.8e-9 with the
 ephemeris's GMs). G104, G38 pass.
+
+## 113. A seorbel.txt element field with a character no term has hangs `swe_calc()` for that body; a non-numeric epoch or equinox, an empty field, a short line are read as 0 or refuse every later body; a broken sefstars.txt is reported as "star not found", and `swe_fixstar()` with serr NULL answers an unknown star with the catalogue's last
+
+**Severity: Correctness (a hang: `swe_calc()` never returns; wrong elements read without an error; the error that explains a failure lost; a wrong star answered OK)**
+**Where:** `swemplan.c`: `check_t_terms()`, `read_elements_file()`; `sweph.c`: `swe_fixstar2_r()`, `swe_fixstar2_mag_r()`, `load_all_fixed_stars()`, `swi_fixstar_load_record()`
+
+Entry 106's noticed items. Measured with crafted copies in /tmp:
+
+- `check_t_terms()` reads an element field as terms separated by signs,
+  each a product of numbers and powers of T. A character that is none of
+  those -- "12x", "40.99837e0" (an exponent), "0.0046q", "171.4333 * x",
+  "nan", "1.0833k" -- was consumed by no branch, and the loop came back to
+  it for ever: `swe_calc()` for Cupido did not return (killed after 5 s;
+  each of the six T-term fields). The same in upstream.
+- The epoch and equinox, when not J2000/B1950/J1900/JDATE, were `atof()`:
+  "2451545.0abc" read as 2451545 and an empty field as JD 0, both
+  answered without an error. An empty element field was the value 0
+  (Cupido answered with mean anomaly 0).
+- A line with fewer than nine fields stopped the scan: with Cupido's line
+  cut to five, Hades, Zeus and every later body were refused "nine
+  elements required" too, and `swe_get_planet_name()` gave "name not
+  found" for Hades.
+- `swe_fixstar2_r()` and `swe_fixstar2_mag_r()` ignored
+  `load_all_fixed_stars()`'s return: with a sefstars.txt line without a
+  comma, or no sefstars.txt, Aldebaran failed "error, swe_fixstar():
+  could not find star name aldebaran", the load's error ("invalid line in
+  fixed stars file", "SwissEph file 'sefstars.txt' not found") overwritten.
+  The built-in stars (Spica, the nakshatra stars) do not need the
+  catalogue and answered, as they still do. A load that failed part way
+  kept its partial table, and the next call's load dropped the pointer:
+  31200 bytes leaked over three calls (LSan).
+- `swe_fixstar()` and `swe_fixstar_mag()` read the file record by record
+  and report a missing or damaged file themselves; but with serr NULL a
+  star not found fell through to `found:` and answered OK with the file's
+  last line (Gliese 710,HD168442, magnitude 9.66).
+
+The rest of the seorbel.txt reader was audited for the same patterns: the
+fields are cut with a bound (20), a line is a fixed buffer, the name is
+copied into a buffer of the line's size, the geocentric flag is a
+substring test; the five-character lower-casing of the epoch and equinox
+ran into the next field when one was shorter (harmless: only the
+equinox's and mean anomaly's first letters, which are read without case)
+and now stops at the field's end.
+
+**Fix, as done here:** `check_t_terms()` refuses a field when a pass
+consumes nothing, which is exactly when the loop would not end: every
+field that ended is read as before, the bad one is refused with the
+caller's message naming the file, the line and the field ("error in file
+seorbel.txt, line      28: mean anomaly value invalid"). Fixed in both builds:
+a hang is nothing to reproduce, and no input that returned changes. Under
+`SWE_UPSTREAM_COMPAT`'s `#ifndef`: the epoch and equinox must be a whole
+finite number (strtod, blanks allowed) or one of the names, "invalid
+epoch" / "invalid equinox"; an empty element field is refused; a short
+line is one body's line, numbered as the others, and only that body is
+refused; a star not found after a failed load is reported with the
+load's error first, then the search's ("invalid line in fixed stars file:
+'a line without a comma'; error, swe_fixstar(): could not find star name
+aldebaran"); `swi_fixstar_load_record()` returns the error with serr NULL
+too. The leak is fixed in both builds (the reload frees the partial
+table). Every body of the distributed seorbel.txt at six instants
+(-190..+3460), its names, and the catalogue's stars 1-1199 through
+`swe_fixstar2()` and `swe_fixstar2_mag()` are bit for bit as before.
+
+G111 `tests/fictstar.c`: 13 cases in forked children with a 5 s alarm --
+the six T-term fields, the epoch, the equinox empty, the mean anomaly
+empty, the short line; a star line without a comma, no catalogue (the
+message must carry the load's error; Spica as with the complete
+catalogue), and an unknown star with serr NULL through `swe_fixstar()`
+and `swe_fixstar_mag()`. Cupido must fail naming file, line and field;
+Hades, Zeus and Kronos answer bit for bit as from the complete file. 13
+pass; before the fix 13 fail, six of them by the alarm; the compat build
+passes the six and fails the other seven. G24 `fict_star_parse`: the
+short line, the epoch, the empty field, the load error and the serr-NULL
+answer as five bits, 0 shipped, 31 compat and before the fix. G24, G59,
+G64, G91, G99 and G103 pass.
 
 ## How these were found
 

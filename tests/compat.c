@@ -2089,6 +2089,98 @@ static double refused_file_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 113: a malformed seorbel.txt or sefstars.txt line. Each
+ * bit is one of upstream's behaviours, shown: (1) Cupido's line cut to
+ * five fields refuses Hades too; (2) Cupido's epoch "2451545.0abc" is
+ * read as 2451545 and answers; (3) its mean anomaly empty is 0 and
+ * answers; (4) with no sefstars.txt, swe_fixstar2() says only that the
+ * star was not found; (5) swe_fixstar() with serr NULL answers an unknown
+ * star with the catalogue's last. Upstream all five (31), shipped none. */
+static int fict_star_line(const char *dir, const char *ephe, const char *cupido)
+{
+  char src[PATH_MAX + 40], dst[PATH_MAX + 40], s[1024];
+  FILE *f, *g;
+  int done = 0;
+  snprintf(src, sizeof src, "%s/seorbel.txt", ephe);
+  snprintf(dst, sizeof dst, "%s/seorbel.txt", dir);
+  unlink(dst);
+  if ((f = fopen(src, "r")) == NULL || (g = fopen(dst, "w")) == NULL)
+    return -1;
+  while (fgets(s, sizeof s, f) != NULL) {
+    char *sp = s;
+    while (*sp == ' ' || *sp == '\t')
+      sp++;
+    if (!done && *sp != '#' && *sp != '\r' && *sp != '\n' && *sp != '\0') {
+      fputs(cupido, g);
+      done = 1;
+    } else
+      fputs(s, g);
+  }
+  fclose(f);
+  return fclose(g);
+}
+
+static double fict_star_parse(void)
+{
+  char dir[] = "/tmp/compatfsXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  char serr[256], star[64];
+  double x[6];
+  int mask = 0;
+  struct dirent *e;
+  DIR *d;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strcmp(e->d_name, "seorbel.txt") != 0
+        && strcmp(e->d_name, "sefstars.txt") != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  if (fict_star_line(dir, ephe, "J1900, J1900, 163.7409, 40.99837, 0.00460\n") == 0) {
+    swe_close();
+    swe_set_ephe_path(dir);
+    if (swe_calc(2451545.0, SE_FICT_OFFSET + 1, 0, x, serr) < 0)
+      mask |= 1;
+  }
+  if (fict_star_line(dir, ephe, "2451545.0abc, J1900, 163.7409, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, Cupido\n") == 0) {
+    swe_close();
+    swe_set_ephe_path(dir);
+    if (swe_calc(2451545.0, SE_FICT_OFFSET, 0, x, serr) >= 0)
+      mask |= 2;
+  }
+  if (fict_star_line(dir, ephe, "J1900, J1900, , 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, Cupido\n") == 0) {
+    swe_close();
+    swe_set_ephe_path(dir);
+    if (swe_calc(2451545.0, SE_FICT_OFFSET, 0, x, serr) >= 0)
+      mask |= 4;
+  }
+  swe_close();
+  swe_set_ephe_path(dir);
+  snprintf(star, sizeof star, "Aldebaran");
+  if (swe_fixstar2(star, 2451545.0, 0, x, serr) < 0 && strstr(serr, "sefstars.txt") == NULL)
+    mask |= 8;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  snprintf(star, sizeof star, "Nonexistentstar");
+  if (swe_fixstar(star, 2451545.0, 0, x, NULL) >= 0)
+    mask |= 16;
+  swe_close();
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+  swe_set_ephe_path(EPHE);
+  return mask;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -2321,7 +2413,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2423,6 +2515,7 @@ int main(int argc, char **argv)
   usernak = user_nakshatra_off();
   moonnbr = moon_neighbour_off();
   refused = refused_file_off();
+  fictstar = fict_star_parse();
   moshsunlt = mosh_sun_lt_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
@@ -3135,6 +3228,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier oscu perigee speed noise %.2e deg/day FAIL: expected %s\n",
            operinoise, WANT_DEFECT ? "> 1e-6" : "< 5e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (fictstar == 31) : (fictstar == 0))
+    printf("  malformed orbel/star lines %2.0f of 31 OK\n", fictstar);
+  else {
+    printf("  malformed orbel/star lines %2.0f of 31 FAIL: expected %s\n",
+           fictstar, WANT_DEFECT ? "31" : "0");
     bad++;
   }
 

@@ -1378,6 +1378,23 @@ static int load_fict_lines(swe_ctx *ctx, char *serr)
   return OK;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 113: a field that must be a number is one, whole and
+ * finite, blanks around it allowed */
+static int field_number(const char *sp, double *d)
+{
+  char *end;
+  while (*sp == ' ' || *sp == '\t')
+    sp++;
+  *d = strtod(sp, &end);
+  if (end == sp)
+    return 0;
+  while (*end != '\0' && strchr(" \t\r\n", *end) != NULL)
+    end++;
+  return *end == '\0' && isfinite(*d);
+}
+#endif
+
 /* note: input parameter tjd is required for T terms in elements */
 static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
   double *tjd0, double *tequ,
@@ -1429,6 +1446,13 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     ncpos = swi_cutstr(s, ",", cpos, 20);
     snprintf(serri, AS_MAXCH, "error in file %.40s, line %7.0f:", SE_FICTFILE, (double) ctx->fict_lines[k].iline);
     if (ncpos < 9) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 113: the scan stopped at a short line, so every body
+       * after it was refused too. It is one body's line, numbered as the
+       * others; only that body is refused. */
+      if (++iplan != ipl)
+        continue;
+#endif
       if (serr != NULL) {
         snprintf(serr, AS_MAXCH, "%.200s nine elements required", serri);
       }
@@ -1441,7 +1465,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     /* epoch of elements */
     if (tjd0 != NULL) {
       sp = cpos[0];
-	  for (i = 0; i < 5; i++)
+	  for (i = 0; i < 5 && sp[i] != '\0'; i++)	/* not into the next field */
        sp[i] = tolower(sp[i]);
       if (strncmp(sp, "j2000", 5) == OK)
         *tjd0 = J2000;
@@ -1454,8 +1478,17 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
           snprintf(serr, AS_MAXCH, "%.200s invalid epoch", serri);
 	}
         goto return_err;
+#ifndef SWE_UPSTREAM_COMPAT
+      } else if (!field_number(sp, tjd0)) {
+        /* Upstream bug 113: atof() made any text, or nothing, JD 0 */
+        if (serr != NULL)
+          snprintf(serr, AS_MAXCH, "%.200s invalid epoch", serri);
+        goto return_err;
+      }
+#else
       } else
         *tjd0 = atof(sp);
+#endif
       tt = tjd - *tjd0;
 #ifndef SWE_UPSTREAM_COMPAT
       {	/* the rounding of tt, exact (TwoSum), for check_t_terms() */
@@ -1469,7 +1502,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
       sp = cpos[1];
       while(*sp == ' ' || *sp == '\t')
         sp++;
-	  for (i = 0; i < 5; i++)
+	  for (i = 0; i < 5 && sp[i] != '\0'; i++)
        sp[i] = tolower(sp[i]);
       if (strncmp(sp, "j2000", 5) == OK)
         *tequ = J2000;
@@ -1489,8 +1522,16 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
           snprintf(serr, AS_MAXCH, "%.200s invalid equinox", serri);
 	}
         goto return_err;
+#ifndef SWE_UPSTREAM_COMPAT
+      } else if (!field_number(sp, tequ)) {
+        if (serr != NULL)
+          snprintf(serr, AS_MAXCH, "%.200s invalid equinox", serri);
+        goto return_err;
+      }
+#else
       } else
         *tequ = atof(sp);
+#endif
     }
     /* mean anomaly t0 */
     if (mano != NULL) {
@@ -1695,10 +1736,17 @@ static int check_t_terms(double t, double tlo, double mod, char *sinp, double *d
 	  cnum = isgn;
 	  pw = 0;
 #endif
-	  if (*sp == '\0')
+	  if (*sp == '\0') {
+#ifndef SWE_UPSTREAM_COMPAT
+		/* Upstream bug 113: an empty field was the value 0 */
+		if (z == 0)
+		  return ERR;
+#endif
 		return retc;
+	  }
 	  sp++;
 	} else {
+      char *sp0 = sp;
       while(*sp != '\0' && strchr("* \t", *sp) != NULL)
         sp++;
       if (*sp != '\0' && strchr("tT", *sp) != NULL) {
@@ -1729,6 +1777,12 @@ static int check_t_terms(double t, double tlo, double mod, char *sinp, double *d
 	  }
       while (*sp != '\0' && strchr("0123456789.", *sp))
 	    sp++;
+      /* Upstream bug 113: a character that is no sign, blank, '*', T or
+       * digit -- "12x", "1e5", "nan" -- was consumed by nothing, and the
+       * loop came back to it for ever (swe_calc() hung). Every field that
+       * ends is read as before; this one is refused. */
+      if (sp == sp0)
+        return ERR;
 	}
 	z++;
   }

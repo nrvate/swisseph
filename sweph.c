@@ -10354,6 +10354,9 @@ static int32 load_all_fixed_stars(swe_ctx *ctx, char *serr)
     }
   }
   rewind(ctx->fixfp);
+  /* Upstream bug 113: a load that failed part way left its records, and
+   * the next call's load dropped the pointer to them */
+  free(ctx->fixed_stars);
   ctx->fixed_stars = NULL;
   while (fgets(s, AS_MAXCH, ctx->fixfp) != NULL) {
     // skip comment lines
@@ -10758,6 +10761,21 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   return iflag;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 113: a star not found after the catalogue failed to load is
+ * reported with the load's error first, then the search's */
+static void fixstar_load_error(char *serr, int32 retc_load, const char *serr_load)
+{
+  char s[AS_MAXCH];
+  if (serr == NULL || retc_load != ERR)
+    return;
+  snprintf(s, AS_MAXCH, "%s", serr);
+  if (*serr_load == '\0')
+    serr_load = "fixed stars file " SE_STARFILE " could not be read";
+  snprintf(serr, AS_MAXCH, "%.170s; %.80s", serr_load, s);
+}
+#endif
+
 /* function searches a star in fixed stars list, i.e. the data loaded from file 
  * sefstars.txt
  */
@@ -10938,6 +10956,10 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   int retc;
   struct fixed_star stardata;
 #ifndef SWE_UPSTREAM_COMPAT
+  char serr_load[AS_MAXCH];
+  int32 retc_load;
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 92: the lookup came before the first sync, so a thread
    * that had adopted one path looked its star up in that path's
    * catalogue after another thread had set a new one. Adopt it first;
@@ -10950,7 +10972,15 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   swi_open_trace(serr);
   trace_swe_fixstar(1, star, tjd, iflag, xx, serr);
 #endif /* TRACE */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 113: the load's error was dropped, and a star then not
+   * found in the table it did not fill was reported only as not found.
+   * Kept for that report; a built-in star needs no catalogue. */
+  *serr_load = '\0';
+  retc_load = load_all_fixed_stars(ctx, serr_load);
+#else
   load_all_fixed_stars(ctx, serr); // loads stars unless loaded with an earlier call of function
+#endif
   retc = fixstar_format_search_name(star, sstar, serr);
   if (retc == ERR)
     goto return_err;
@@ -10970,8 +11000,12 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   /* sequential fixed star number: get it from array directly */
   } 
   retc = search_star_in_list(ctx, sstar, &stardata, serr);
-  if (retc == ERR)
+  if (retc == ERR) {
+#ifndef SWE_UPSTREAM_COMPAT
+    fixstar_load_error(serr, retc_load, serr_load);
+#endif
     goto return_err;
+  }
   /******************************************************/
   found:
   //strcpy(slast_stardata, srecord);
@@ -11055,11 +11089,23 @@ int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *
   int retc;
   struct fixed_star stardata;
 #ifndef SWE_UPSTREAM_COMPAT
+  char serr_load[AS_MAXCH];
+  int32 retc_load;
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
   fixstar_first_use(ctx);	/* bugs 92, 98, see swe_fixstar2_r() */
 #endif
   if (serr != NULL)
     *serr = '\0';
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 113: the load's error was dropped, and a star then not
+   * found in the table it did not fill was reported only as not found.
+   * Kept for that report; a built-in star needs no catalogue. */
+  *serr_load = '\0';
+  retc_load = load_all_fixed_stars(ctx, serr_load);
+#else
   load_all_fixed_stars(ctx, serr); // loads stars unless loaded with an earlier call of function
+#endif
   retc = fixstar_format_search_name(star, sstar, serr);
   if (retc == ERR)
     goto return_err;
@@ -11070,8 +11116,12 @@ int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *
     goto found;
   }
   retc = search_star_in_list(ctx, sstar, &stardata, serr);
-  if (retc == ERR)
+  if (retc == ERR) {
+#ifndef SWE_UPSTREAM_COMPAT
+    fixstar_load_error(serr, retc_load, serr_load);
+#endif
     goto return_err;
+  }
   /******************************************************/
   found:
   ctx->sp.fs2mag.last_stardata = stardata;
@@ -11947,6 +11997,11 @@ static int32 swi_fixstar_load_record(swe_ctx *ctx, char *star, char *srecord, ch
     }
     return ERR;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 113: with serr NULL a star not found fell through to
+   * found: and answered as the file's last line */
+  return ERR;
+#endif
   found:
   strcpy(srecord, s);
   retc = fixstar_cut_string(ctx, srecord, star, &stardata, serr);
