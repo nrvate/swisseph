@@ -12495,8 +12495,21 @@ static int32 swe_time_equ_r_body(swe_ctx *ctx, double tjd_ut, double *E, char *s
 #endif
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_time_equ(), swe_lmt_to_lat() or swe_lat_to_lmt()");
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 132: the Sun was JPL's when THIS context had the JPL file
+   * open, bug 103's old guess: after swe_set_jpl_file("de200.eph") a
+   * second thread, a context made after it and a thread that had computed
+   * before it answered from the Swiss files, E at J2000 1.19e-8 day (1.03
+   * ms) off the setting thread's, 1.17e-7 day in 1800; after swe_close()
+   * a JPLEPH calculation, which reopens the file by its kept name, moved
+   * it the other way. It follows the configuration now, as swe_deltat()
+   * and swe_get_ayanamsa_ut() do: swi_guess_ephe_flag(). */
+  if (swi_guess_ephe_flag(ctx) & SEFLG_JPLEPH)
+    iflag |= SEFLG_JPLEPH;
+#else
   if (ctx->jpl_file_is_open)
     iflag |= SEFLG_JPLEPH;
+#endif
   t = tjd_ut + 0.5;
   dt = t - floor(t);
   sidt -= dt * 24;

@@ -1168,6 +1168,12 @@ struct epsilon {
  *     from the ICRS Earth, 3.2e-8 to 1.1e-7 AU on every geocentric place,
  *     and with SEFLG_ICRS the body unturned, 23 mas (UPSTREAM-BUGS 130,
  *     G126)
+ *   - swe_time_equ(), swe_lmt_to_lat() and swe_lat_to_lmt() reading the
+ *     Sun from the JPL file only when this context has it open, not when
+ *     the configuration sets it (bug 103's old guess): another thread's,
+ *     a later context's swe_set_jpl_file() missed, E 1.19e-8 day (1.03
+ *     ms) off at J2000, and after swe_close() a JPLEPH calculation moving
+ *     them to the file (UPSTREAM-BUGS 132, G128)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

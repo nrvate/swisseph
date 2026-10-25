@@ -1130,6 +1130,36 @@ static double dt_guess_thread_off(void)
   return fabs(dt_thread_val - d0) * 86400;
 }
 
+/* swe_time_equ() at J2000 + 6h on a second thread after swe_set_jpl_file(
+ * "de200.eph") on the first, against the first's, s. Upstream's Sun is
+ * JPL's when the thread has the file open, so the second answered from
+ * the Swiss files: 1.03e-3 s (UPSTREAM-BUGS 132). */
+static double teq_thread_val;
+static void *teq_thread(void *arg)
+{
+  char serr[256];
+  (void) arg;
+  swe_time_equ(2451545.25, &teq_thread_val, serr);
+  return NULL;
+}
+static double time_equ_thread_off(void)
+{
+  pthread_t th;
+  double e0 = 0;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  swe_time_equ(2451545.25, &e0, serr);
+  teq_thread_val = 0;
+  if (pthread_create(&th, NULL, teq_thread, NULL) != 0)
+    return -1;
+  pthread_join(th, NULL);
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  return fabs(teq_thread_val - e0) * 86400;
+}
+
 /* Mars's heliocentric osculating ascending node at tjd = 0 against tjd =
  * 1e-9, deg, each after swe_close(). Upstream forces sweph()'s EMB to be
  * recomputed with the Earth's teval = 0, which at tjd 0 is the Earth slot
@@ -3168,7 +3198,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep, holdstart, nutmodel, orbelbias;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep, holdstart, nutmodel, orbelbias, teqthr;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3222,6 +3252,7 @@ int main(int argc, char **argv)
   modpath = models_path_off();
   tidget = tid_auto_get_off();
   dtthr = dt_guess_thread_off();
+  teqthr = time_equ_thread_off();
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
   apsrate = planet_apsis_rate_off();
@@ -3592,6 +3623,14 @@ int main(int argc, char **argv)
   else {
     printf("  delta t, other thread  %.2e s FAIL: expected %s\n",
            dtthr, WANT_DEFECT ? "> 1" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (teqthr > 1e-4) : (teqthr == 0))
+    printf("  time equ, other thread %.2e s OK\n", teqthr);
+  else {
+    printf("  time equ, other thread %.2e s FAIL: expected %s\n",
+           teqthr, WANT_DEFECT ? "> 1e-4" : "0");
     bad++;
   }
 

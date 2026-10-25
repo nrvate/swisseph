@@ -163,6 +163,7 @@ worst were in code that had never executed even once.
 | 128 | A thread's first call reads the configuration before its context has started (this fork's): the main thread's user delta t answered 63.83 s for 86.40 s by `swe_deltat_ex()` and every function of UT through it (the Moon 3.1e-3 deg), its sidereal-time model missed by `swe_sidtime0()`, its models listed as zeros | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h`, `swephlib.c`, `swedate.c` |
 | 129 | A change of nutation model -- `swe_set_astro_models()`, its adoption by another thread, an explicit context, `SE_SIDBIT_PREC_ORIG`, `swe_close()` -- keeps the interpolation's nodes of the old model, and any change of model the topocentric observer: the old model answers at an instant already computed, 8.7e-3" in dpsi, the topocentric Moon 0.17" in AD 1000 after a delta t model | Correctness (behaviour) | `swephlib.c`, `sweconfig.c`, `sweph.h` |
 | 130 | `swe_calc_orbel()` (this fork's) never pairs the frame bias, entry 20's defect on its copy of the fictitious path: its geocentric places are seen from the ICRS Earth, 3.2e-8 to 1.1e-7 AU off its heliocentric ones less the Earth (1.4e-5 deg at a = 1.2 AU), and with SEFLG_ICRS the body stays unturned, 23 mas off the same elements in seorbel.txt | Correctness | `sweph.c` |
+| 132 | `swe_time_equ()`, `swe_lmt_to_lat()` and `swe_lat_to_lmt()` take the JPL Sun only when this context has the JPL file open: after `swe_set_jpl_file()` a new thread, a thread that computed before it and a context made after it answer from the Swiss files, E 1.19e-8 day (1.03 ms) off at J2000, 1.17e-7 day in 1800, and after `swe_close()` a JPLEPH calculation moves them to the JPL file while `swe_deltat()` stays Swiss | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -8528,6 +8529,92 @@ four dates in 2025: 2.22e-16 AU shipped, 8.52e-8 AU compat.
 
 G126, G27, G65, G87, G107, G48, G108 and G24 (both ways) pass. G1's
 output is bit-identical to the build before's.
+
+## 132. `swe_time_equ()`, `swe_lmt_to_lat()` and `swe_lat_to_lmt()` take the JPL Sun only when this context has the JPL file open: another thread's `swe_set_jpl_file()` missed, 1.19e-8 day
+
+**Severity: Correctness (behaviour: the answer follows whether this context opened the JPL file, not the setting; E 1.19e-8 day (1.03 ms) off at J2000, 1.17e-7 day in 1800, no error)**
+**Where:** `sweph.c`: `swe_time_equ_r_body()` (`swe_time_equ()`, `swe_lmt_to_lat()`, `swe_lat_to_lmt()` and their `_r()`)
+
+Found by entry 128's probe. The three take no ephemeris flag:
+`swe_time_equ()` reads its Sun with SEFLG_JPLEPH added when the context
+has the JPL file open -- upstream's way of saying the caller chose JPL,
+the same test upstream's `swi_guess_ephe_flag()` makes for
+`swe_deltat()`, `swe_get_ayanamsa()` and `swe_get_ayanamsa_ut()`, and
+the two others call it. Entry 103 moved the guess onto the configuration
+(JPL when a JPL file has been set and read, `jpldenum_cfg`) and left this
+copy of the test, so the three answered for whether this context had
+happened to open the file. Measured by a scratch program, each scenario
+in its own process, against a fresh process that set the path and
+`swe_set_jpl_file("de200.eph")` and called on its main thread, with each
+scenario's own `swe_deltat()` and `swe_get_ayanamsa_ut()` beside them:
+- A new thread after the main thread's setter, a thread that had computed
+  on the path alone before it, a context made by `swe_ctx_new()` after it,
+  and a new thread after `swe_close()` and the two setters again answered
+  from the Swiss files: E at J2000 + 6h -2.363773431805e-3 day for
+  -2.363761535354e-3, 1.19e-8 day (1.03 ms), 1.17e-7 day at 1800 Jan 1,
+  LAT and LMT with it, while their own `swe_deltat()` and
+  `swe_get_ayanamsa_ut()` answered for de200 (in 1800 4.46 s of delta t
+  from the Swiss files').
+- After `swe_close()` the guess is Swiss -- the close forgets the DE
+  numbers with the files (the 2026-09-16 review's F2), and the manual has
+  the caller set the JPL file again "if required" -- and so were the
+  three, until a JPLEPH calculation, which reopens the file by the name
+  the close keeps, made them de200's, 1.19e-8 day the other way, with
+  `swe_deltat()` still Swiss.
+- The setting thread, a context given its own `swe_set_jpl_file_r()` and
+  the closing thread after the setters again opened the file and were
+  right.
+The compat build answers the three the same. Upstream, which shares no
+configuration, is
+consistent within itself: its guess and the three both follow the open
+file, and a JPLEPH calculation moves all of them alike (entry 103's
+call-order part).
+
+The reference. The three have no flag argument to read, and the last
+ephemeris used is what entry 103 took out of the guess; the JPL file the
+configuration sets is what `swi_guess_ephe_flag()` already reads for the
+other functions without a flag. (`swe_sidtime()` and `swe_deltat_ex()`
+with -1 take the default tidal term and no ephemeris at all; the eclipse
+and heliacal functions take the caller's flag.) So the three follow the
+guess, after `swe_close()` too, where it is Swiss: answering JPL there
+from the kept name while `swe_deltat()` answers Swiss would split them
+again, and the close's treatment of the DE numbers is F2's, not this
+entry's.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`, upstream's
+test under `#else`): `swe_time_equ_r_body()` adds SEFLG_JPLEPH when
+`swi_guess_ephe_flag()` names JPL. The context is started and synced by
+then (the hold, bug 128, and the call's own `swi_init_swed_if_start()`).
+A context that has not opened the file opens it by the configuration's
+name in the calculation (bug 119). No hot path: the three functions
+alone. With the fix the scratch program finds every scenario's E, LAT
+and LMT bit for bit the fresh process's -- de200's where the guess is
+JPL, the Swiss files' after `swe_close()` with or without the JPLEPH
+calculation -- and on the ephemeris of its own `swe_deltat()` and
+`swe_get_ayanamsa_ut()`.
+
+G128 `tests/timeequ.c`, each case in a forked process, the three
+functions at J2000 + 6h and 1800 Jan 1 with their return codes, bit for
+bit against a fresh process given the same settings that opened the file
+itself and called on its main thread: a new thread after the setter
+(`thread`), a thread that computed before it (`early`), a context made
+after it (`ctx`), a new thread after `swe_close()` and the setters again
+(`reset`), and after `swe_close()` a JPLEPH Sun against the same calls
+without it (`closecalc`). 0 in all five; before the fix the five fail,
+E 1.19e-8 day at J2000 and 1.17e-7 day in 1800 (`closecalc` the other
+way); the compat build fails the same five by the same amounts. G24
+`time_equ_thread_off`, `swe_time_equ()` on a second thread after
+`swe_set_jpl_file("de200.eph")` against the first's: 0 shipped, 1.03e-3
+s compat. G2, G116, G121, G123, G124, the context test and G24 pass.
+
+Noticed, not fixed: after `swe_set_jpl_file("de200.eph")`, `swe_close()`
+and a JPLEPH Sun, `swe_get_tid_acc()` answers de200's -23.8946 while the
+next `swe_deltat()` (the guess Swiss, the moon file not open) uses
+-25.80, 18.604686 s in 1800, and the getter then answers -25.80; bug 101
+has the getter answer with the term the next delta t uses. The compat
+build's getter and delta t agree (-23.8946, 14.438958 s), both following
+the open file. The first delta t's -25.80 itself is entry 127's noticed
+item.
 
 ## How these were found
 
