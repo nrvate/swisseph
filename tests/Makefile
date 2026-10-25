@@ -493,14 +493,14 @@ check-jplhor: jplhor
 	 env -u SE_EPHE_PATH ./jplhor $(JPLHOR_DIR) $(JPLHOR_BARE) "$$jf"
 	@rm -rf $(JPLHOR_DIR) $(JPLHOR_BARE)
 
-# G24: the SWE_UPSTREAM_COMPAT switch that lets G8 stay strict.
+# G24: the SWE_UPSTREAM_COMPAT switch that keeps G8's record short.
 #
-# G8 compares against pristine upstream byte for byte, which only works while
-# the fork's deliberate numerical fixes can be switched off for that one
-# build. This asserts the switch in both directions -- the shipped default
-# must NOT carry the defects, and the compat build MUST -- because a switch
-# that has quietly stopped restoring them leaves G8 passing while a fix
-# silently stops shipping.
+# G8 builds the fork with the switch, so the fixes through ts.19 answer as
+# pristine upstream there and G8 records only the later ones. This asserts
+# the switch in both directions -- the shipped default must NOT carry the
+# defects, and the compat build MUST -- because a switch that has quietly
+# stopped restoring them leaves G8 passing while a fix silently stops
+# shipping.
 #
 # Its own object set: the flag changes behaviour, so it cannot share
 # $(SWEOBJ_STD) with everything else.
@@ -875,7 +875,7 @@ clean:
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN) $(OBJ_UBSAN) hostile
 
-.PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
+.PHONY: setest-ref setest-record check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
@@ -1148,10 +1148,13 @@ check-build:
 # library's sixth default landed on the canary. Fixed in our copy of the
 # harness, which setest-ref copies over the reference tree too.
 #
-# It IS a strong DIFFERENTIAL gate: whatever it prints must be byte-identical
-# before and after our changes. Usage:
+# It IS a strong DIFFERENTIAL gate: the testcases whose output differs
+# between upstream's library and ours must be exactly those recorded in
+# setest-upstream.baseline, each with the UPSTREAM-BUGS entries that move it
+# (setestcases.py says why testcases and not values). Usage:
 #     make setest-ref REF=origin/legacy-master   # capture reference once
 #     make check-setest               # compare current tree against it
+#     make setest-record              # after a fix that moves testcases
 SETEST_REF ?= /tmp/setest_ref.txt
 REF        ?= origin/legacy-master
 
@@ -1180,13 +1183,11 @@ SCRUB = sed -f $(CURDIR)/scrub-ephe.sed
 #
 # Pinned to -O0 for the same reason tests/baseline.txt is: a differential is
 # only meaningful when the only variable is the code.
-# -DSWE_UPSTREAM_COMPAT: build the library the way upstream behaves, so this
-# gate can stay a STRICT byte-for-byte differential even though the fork has
-# deliberately fixed numerical defects. Without it the choice was to filter
-# the affected testcases -- 15 of them across four suites, which hollows the
-# gate out -- or to re-baseline against ourselves and lose the upstream
-# comparison. See sweph.h for what the switch restores, and check-compat,
-# which fails if it ever stops restoring it.
+# -DSWE_UPSTREAM_COMPAT: the fixes through ts.19 sit behind the switch, and
+# the build answers as upstream for them, so they need no record. From ts.20
+# a fix has no switch; the testcases it moves are recorded instead. See
+# sweph.h for what the switch restores, and check-compat, which fails if it
+# ever stops restoring it.
 SETEST_CFLAGS = -O0 -g -fPIC -D_GNU_SOURCE -DSWE_UPSTREAM_COMPAT
 
 setest-ref:
@@ -1226,6 +1227,15 @@ check-setest: $(SETEST_REF)
 	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
 	   echo "G8 FAIL: setest produced only $$lines lines -- it did not run"; \
 	   head -3 .setest_now.txt; exit 1; fi
-	@diff -q $(SETEST_REF) .setest_now.txt >/dev/null \
-	  && echo "G8 PASS: setest output identical to $(REF) ($$(wc -l < .setest_now.txt) lines)" \
-	  || { echo "G8 FAIL: setest output changed"; diff $(SETEST_REF) .setest_now.txt | head -20; exit 1; }
+	@python3 setestcases.py check setest-upstream.baseline $(SETEST_REF) .setest_now.txt \
+	  && echo "G8 PASS: setest differs from $(REF) where setest-upstream.baseline says" \
+	  || { echo "G8 FAIL: see above; after a deliberate change, make setest-record"; exit 1; }
+
+# Rewrite setest-upstream.baseline from the last check-setest run: its lines
+# kept, a new testcase marked '?' until the change that moved it names its
+# UPSTREAM-BUGS entry (check-setest fails while one is unnamed).
+setest-record: $(SETEST_REF)
+	@test -s .setest_now.txt || { echo "run make check-setest first"; exit 1; }
+	@python3 setestcases.py record setest-upstream.baseline $(SETEST_REF) .setest_now.txt > .setest_record.txt
+	@mv .setest_record.txt setest-upstream.baseline
+	@echo "setest-upstream.baseline: $$(grep -vc '^#' setest-upstream.baseline) testcases, $$(grep -c ' ?$$' setest-upstream.baseline) unexplained"
