@@ -7790,11 +7790,59 @@ static double join_node_rate_off(void)
   return fabs(x[0][3] - (-25 * d[0] + 48 * d[1] - 36 * d[2] + 16 * d[3] - 3 * d[4]) / (12 * h));
 }
 
+/* UPSTREAM-BUGS 276: Mars's heliocentric osculating ascending node
+ * 2^-12 day after the last boundary of the EMB's segments in sepl_12.se1
+ * (JD 2378495.5759349549, where the barycentric Sun's polynomial changes),
+ * its longitude speed against the forward five-point difference of its
+ * places over 2^-5 day, which stays on that side; deg/day. The shipped
+ * build takes the rate of the places after the boundary; upstream's
+ * stencil, tjd -+ 1.5e-3 day, straddles it. */
+static double seg_node_rate_off(void)
+{
+  double t = 2378495.576171875, h = 1.0 / 32, x[4][6], p[4][6], d[5];
+  char serr[AS_MAXCH];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  if (swe_nod_aps(t, SE_MARS, SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_SPEED, SE_NODBIT_OSCU, x[0], x[1],
+                  x[2], x[3], serr) < 0)
+    return -1;
+  for (k = 0; k < 5; k++) {
+    if (swe_nod_aps(t + k * h, SE_MARS, SEFLG_SWIEPH | SEFLG_HELCTR, SE_NODBIT_OSCU, p[0], p[1], p[2],
+                    p[3], serr) < 0)
+      return -1;
+    d[k] = k == 0 ? p[0][0] : d[0] + swe_difdeg2n(p[0][0], d[0]);
+  }
+  return fabs(x[0][3] - (-25 * d[0] + 48 * d[1] - 36 * d[2] + 16 * d[3] - 3 * d[4]) / (12 * h));
+}
+
+/* UPSTREAM-BUGS 266: the Sun with SEFLG_SPEED3 at J2000.0, whose reads
+ * at tjd -+ 1e-4 day are rounded to 0.0000999998 day of it, its
+ * longitude speed against the central five-point difference of its places
+ * over 2^-8 day; deg/day. The shipped build divides by the instants'
+ * spacing, upstream by the nominal 2e-4 day (1.7e-6 of the speed). */
+static double speed3_spacing_off(void)
+{
+  double t = 2451545.0, h = 1.0 / 256, x[6], p[5], y[6];
+  char serr[AS_MAXCH];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  if (swe_calc(t, SE_SUN, SEFLG_SWIEPH | SEFLG_SPEED3, x, serr) < 0)
+    return -1;
+  for (k = 0; k < 5; k++) {
+    if (swe_calc(t + (k - 2) * h, SE_SUN, SEFLG_SWIEPH, y, serr) < 0)
+      return -1;
+    p[k] = k == 0 ? y[0] : p[0] + swe_difdeg2n(y[0], p[0]);
+  }
+  return fabs(x[3] - (p[0] - 8 * p[1] + 8 * p[3] - p[4]) / (12 * h));
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3, tzfar, utmsg, boundmsg, eclutmsg, stencilmsg, helnote, sidtfeps, nutrng, toposidt;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3, tzfar, utmsg, boundmsg, eclutmsg, stencilmsg, helnote, sidtfeps, nutrng, toposidt, segnode, spd3sp;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -8006,6 +8054,8 @@ int main(int argc, char **argv)
   nodosc5 = nodaps_osc_rate_off();
   nodoscwin = nodaps_window_speed_off();
   joinnode = join_node_rate_off();
+  segnode = seg_node_rate_off();
+  spd3sp = speed3_spacing_off();
   nodj2kwin = nodaps_j2000_window_off();
   nodmmwin = nodaps_mosh_moon_window_off();
   nodsidr = nodaps_sid_rate_off();
@@ -9987,6 +10037,22 @@ int main(int argc, char **argv)
   else {
     printf("  topocentric site at a window %.2e deg FAIL: expected %s\n",
            toposidt, WANT_DEFECT ? "> 1e-7" : "< 1e-10");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (segnode > 1e-5) : (segnode >= 0 && segnode < 1e-9))
+    printf("  osc. node across a segment %.2e deg/day OK\n", segnode);
+  else {
+    printf("  osc. node across a segment %.2e deg/day FAIL: expected %s\n",
+           segnode, WANT_DEFECT ? "> 1e-5" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (spd3sp > 1e-6) : (spd3sp >= 0 && spd3sp < 1e-8))
+    printf("  SPEED3's spacing       %.2e deg/day OK\n", spd3sp);
+  else {
+    printf("  SPEED3's spacing       %.2e deg/day FAIL: expected %s\n",
+           spd3sp, WANT_DEFECT ? "> 1e-6" : "< 1e-8");
     bad++;
   }
 

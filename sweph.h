@@ -1873,6 +1873,16 @@ struct epsilon {
  *     model's within 0.3 s after a short-term window's edge: the
  *     topocentric Moon 2.9e-7 deg off (the compat build's long-term
  *     sidereal time is upstream's: 1.3e-6) (UPSTREAM-BUGS 285, G178, G24)
+ *   - SEFLG_SPEED3's slope over the nominal 2 dt, though tjd -+ dt round
+ *     to the date's grid: from 1030 to 6770 every speed 1.68e-6 of itself
+ *     too large, the Sun's 1.7e-6 deg/day (UPSTREAM-BUGS 266, G176, G24)
+ *   - speeds whose reads straddle a boundary of the Swiss files' segments
+ *     inside a file taking the polynomials' step for motion, and
+ *     SEFLG_SPEED3's across a join or a boundary: at J2000 + 17.23 days
+ *     the osculating apogee 9.7e-3 deg/day off its places' rate, 2^-10
+ *     day after sepl_12's last EMB boundary Mars's heliocentric
+ *     osculating node 2.2e-3 (the compat build's stencil), the Moon's
+ *     SEFLG_SPEED3 at its own 0.25 (UPSTREAM-BUGS 276, G176, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

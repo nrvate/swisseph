@@ -5977,6 +5977,11 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   double koff[NODAPS_NOSC] = {-2, -1, 0, 1, 2};
   int sl[7] = {0, 1, 2, 3, 4}, nsl = 1, kk, oscout = 0, oscin = 0, slo[5] = {2, 2, 2, 2, 2}, o;
   AS_BOOL holdx = FALSE;
+  /* bug 276: the sides across a boundary of the segments (as oscout), the
+   * bodies whose segments count, and the step's floor */
+  int segout = 0;
+  int32 segm = 0;
+  double dtmin = 0;
 #endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *psbdp = &ctx->pldat[SEI_SUNBARY];
@@ -6434,6 +6439,22 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * deg/day heliocentric; 2.8e-9 at 2^-6, the points' noise) and 2^-6 for
      * the Moon (3.1e-9 geocentric; 1.8e-8 at 2^-5, its truncation). */
     dtosc = ipli == SE_MOON ? 1.0 / 64 : 1.0 / 32;
+    /* Upstream bug 276: the boundaries of the files' segments are model
+     * steps (below), and not 600 years apart as joins are: one may lie on
+     * both sides within the stencil (the Moon's first in semo_114 0.088
+     * day after the join of AD 11400, a Moon's within 0.19 day of an
+     * EMB's), or within the one-sided difference's reach on the side
+     * within, which then crossed it (or the join, or left the span: an
+     * error). The side within must be clear of the steps to its reach
+     * (swi_model_clear(), before its epochs are read); where it is not the
+     * step is halved and the epochs read again, down to 2^-4 of it, below
+     * which the boundaries are not asked, as before: at the 11400 join +
+     * 61/1024 day the Moon's osculating node's speed was 1.1e-5 deg/day off
+     * its places' rate, its perigee's 6.8e-4 (as before the boundaries
+     * were asked); 1.6e-9 and 3.7e-9 now, central over 2^-7 day. */
+    dtmin = dtosc / 16;
+    if ((iflag & SEFLG_SPEED) && !(retc0 & (SEFLG_JPLEPH | SEFLG_MOSEPH)))
+      segm = swi_seg_bodies(ipli, iflJ2000);
     /* Upstream bug 199: and each epoch's place is put into the frame of
      * date at that epoch (swi_plan_for_osc_elem()), so where the stencil
      * spans a short-term precession model's window edge (entry 160: 0.53"
@@ -6450,6 +6471,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * are that side's own rate (within 4.6e-9 deg/day); tjd's own place is
      * in the frame it had, and everything farther from an edge as it was.
      * Whether to hold: */
+  nodaps_again:	/* bug 276 */
     hold = (iflag & SEFLG_SPEED)
            && swi_frame_step_side(ctx, tjd_et, 2 * dtosc, iflag, SWI_FRAME_PREC | SWI_FRAME_EPS) != 0;
 # ifdef SID_TNODE_FROM_ECL_T0
@@ -6503,6 +6525,18 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
           oscout |= koff[i] < 0 ? 1 : 2;
           goto osc_next;
         }
+        /* Upstream bug 276: and so across a boundary of the segments of
+         * the bodies the place is made of (the planet's own, the
+         * barycentric Sun's, the Earth's; the Moon's, every 27.55 days),
+         * where the polynomials change and the places step as at a join:
+         * 2^-7 day from sepl_12's last EMB boundary (JD 2378495.5759)
+         * Mars's heliocentric node 1.3e-4 deg/day off its places' rate,
+         * its perihelion 3.0e-3, the Earth's 2.3e-3; at the far files'
+         * boundaries up to 8e-2. Asked once the epoch is read, its file
+         * open; the epoch is kept, and the side decided after the five
+         * (osc_next). */
+        if (kk < 5 && segm != 0 && dtosc > dtmin && swi_seg_boundary_between(ctx, segm, ipli, t, tjd_et))
+          segout |= koff[i] < 0 ? 1 : 2;
       } else if ((retx = swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr)) == ERR)
         return ERR;
 #else
@@ -6621,6 +6655,21 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
         ctx->nut.tnut = tnut;
       }
       osc_next:
+      /* bug 276: the side within clear of the steps to its reach, or the
+       * step halved (above) */
+      if (kk == 4 && segm != 0 && dtosc > dtmin && oscout != 3 && (oscout | segout) != 0) {
+        int in = (oscout ? oscout : segout) == 1 ? 1 : (oscout ? oscout : segout) == 2 ? -1 : 0;
+        if (in == 0 || (segout & (in > 0 ? 2 : 1))
+            || !swi_model_clear(ctx, segm, ipli, tjd_et, tjd_et + 4 * in * dtosc)) {
+          dtosc /= 2;
+          oscout = segout = 0;
+          for (o = 0; o < NODAPS_NOSC; o++)
+            koff[o] = o - 2;
+          goto nodaps_again;
+        }
+        if (oscout == 0)
+          oscout = segout;
+      }
       /* bug 226: one side skipped, its slots take the epochs 3 and 4 steps
        * the other side, and the speed is the one-sided difference */
       if (kk == 4 && oscout != 0) {
@@ -7184,8 +7233,12 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
          * by dt into the acceleration: the Sun's mean perigee 2^-10 day
          * after that join 1.4e-7 deg/day off its places' rate, Mars's mean
          * node 1.3e-8. A join is a model step: the rate is then the one
-         * after tjd, as at a span's start (1.0e-11 and 1.7e-11 now). */
-        if (!lt_out && e0 == SEFLG_SWIEPH && swi_file_join_between(ctx, tjd_et - dt, tjd_et))
+         * after tjd, as at a span's start (1.0e-11 and 1.7e-11 now).
+         * Upstream bug 276: and so across a boundary of the EMB's segments
+         * (or the Moon's), where they step as at a join: the Sun's mean
+         * perigee within the light time after one 7.6e-7 deg/day off. */
+        if (!lt_out && e0 == SEFLG_SWIEPH
+            && swi_model_step_between(ctx, SWI_SEG_EARTH | SWI_SEG(SEI_SUNBARY), 0, tjd_et - dt, tjd_et))
           lt_out = TRUE;
 #else
         if (swe_calc_r(ctx, tjd_et - dt, ipli, iflg0 | (iflag & SEFLG_TOPOCTR), x2, serr) == ERR)

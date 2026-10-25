@@ -249,12 +249,16 @@ static double meff(double r);
 static double meff_slope(double r);
 #endif
 static void denormalize_positions(double *x0, double *x1, double *x2);
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 266: the instants' own spacing, calc_speed_side() */
 static void calc_speed(double *x0, double *x1, double *x2, double dt);
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
 static void calc_speed_side(const double *xa, double *x1, const double *xb, double da, double db);
 static int32 speed3_read(swe_ctx *ctx, double t, int ipl, int32 iplmoon, int32 iflag,
                          double *x, char *serr, int *moon);
 static AS_BOOL speed3_same(int32 ra, int ma, int32 rb, int mb);
+static int speed3_model_side(swe_ctx *ctx, int ipl, int32 iflag, double tjd, double dt,
+                             const double *x0);
 #endif
 static int32 plaus_iflag(swe_ctx *ctx, int32 iflag, int32 ipl, double tjd, char *serr);
 static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, double tdate, int32 iflag, 
@@ -738,6 +742,8 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
       if (!edge) {
         sd->iflgsave = r2;
         side = swi_frame_step_side(ctx, tjd, dt, sd->iflgsave, SWI_FRAME_ALL);
+        if (side == 0 && !(r2 & (SEFLG_JPLEPH | SEFLG_MOSEPH)))
+          side = speed3_model_side(ctx, ipl, iflag, tjd, dt, x0);	/* bug 276 */
       } else {
         if (serr != NULL) {
           strcpy(serr, sb);
@@ -777,8 +783,14 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
         denormalize_positions(xa, sd->xsaves, x3);
         calc_speed_side(xa, sd->xsaves, x3, (tjd + side * dt) - tjd, (tjd + 2 * side * dt) - tjd);
       } else {
+        /* Upstream bug 266: tjd -+ dt are rounded to the date's ulp (dt,
+         * 1e-4 day, is no binary fraction), and the slope over the nominal
+         * 2 dt was off by their spacing's error over it, up to 2.3e-6 of
+         * the speed: the Moon's 1.7e-5 deg/day, Mars's 8.6e-7. Now over
+         * the instants' own spacing, the parabola through the three places
+         * (central where they are symmetric; bug 31's slope at tjd). */
         denormalize_positions(x0, sd->xsaves, x2);
-        calc_speed(x0, sd->xsaves, x2, dt);
+        calc_speed_side(x0, sd->xsaves, x2, (tjd - dt) - tjd, (tjd + dt) - tjd);
       }
     }
 #else
@@ -4631,6 +4643,107 @@ AS_BOOL swi_file_join_between(swe_ctx *ctx, double t0, double t1)
   swi_gen_filename(t1, SEI_SUNBARY, s1);
   return strcmp(s0, s1) != 0;
 }
+
+/* Upstream bug 276: the segment of a body's polynomials that sweph() reads
+ * at t, by its arithmetic (the file's last instant in its last segment) */
+static int32 seg_index(const struct plan_data *p, double t)
+{
+  int32 i = (int32) ((t - p->tfstart) / p->dseg);
+  return i < p->nndx ? i : p->nndx - 1;
+}
+
+/* Upstream bug 276: TRUE if a boundary of the segments of a body in
+ * 'bodies' (bits SWI_SEG(SEI_x); for SEI_ANYBODY the body ipli) lies
+ * between t0 and t1 in the Swiss file that answers both: there the
+ * polynomial changes and the places step, as at a join (bug 250). From
+ * the file's data, its start and segment length, of the open file or its
+ * spare (bug 89), without a read; FALSE where neither answers both (a join
+ * lies between, or nothing is read from the files there). The caller has
+ * read the instants, so that their file is open whatever came before. */
+AS_BOOL swi_seg_boundary_between(swe_ctx *ctx, int32 bodies, int ipli, double t0, double t1)
+{
+  int b, k, ifno;
+  for (b = 0; b < SEI_NPLANETS && (bodies >> b) != 0; b++) {
+    if (!(bodies & SWI_SEG(b)))
+      continue;
+    ifno = file_of_body(b);
+    if (b == SEI_ANYBODY)
+      ifno = (ipli > SE_PLMOON_OFFSET && ipli < SE_AST_OFFSET) ? SEI_FILE_PLMOON : SEI_FILE_ANY_AST;
+    for (k = 0; k < (ifno <= SEI_FILE_MAIN_AST ? 2 : 1); k++) {
+      const struct file_data *f = k ? &ctx->fidat_spare[ifno] : &ctx->fidat[ifno];
+      const struct plan_data *p = k ? &ctx->pldat_spare[b] : &ctx->pldat[b];
+      if (!file_answers(f, t0) || !file_answers(f, t1))
+        continue;
+      if (p->dseg > 0 && (b != SEI_ANYBODY || p->ibdy == ipli)
+          && t0 >= p->tfstart && t0 <= p->tfend && t1 >= p->tfstart && t1 <= p->tfend
+          && seg_index(p, t0) != seg_index(p, t1))
+        return TRUE;
+      break;
+    }
+  }
+  return FALSE;
+}
+
+/* Upstream bug 276: a step of the Swiss files' model between t0 and t1 for
+ * those bodies: a join (bug 250) or a boundary of their segments */
+AS_BOOL swi_model_step_between(swe_ctx *ctx, int32 bodies, int ipli, double t0, double t1)
+{
+  return swi_file_join_between(ctx, t0, t1) || swi_seg_boundary_between(ctx, bodies, ipli, t0, t1);
+}
+
+/* Upstream bug 276: TRUE if the reads of those bodies at t1 are on t0's
+ * model: no join between, and each body's file that answers t0 (open, or
+ * its spare) answers t1 in the same segment; a body read from no file at
+ * t0 has nothing to step. For the reach of a one-sided difference taken
+ * for a boundary, before its epochs are read. */
+AS_BOOL swi_model_clear(swe_ctx *ctx, int32 bodies, int ipli, double t0, double t1)
+{
+  int b, k, ifno;
+  if (swi_file_join_between(ctx, t0, t1))
+    return FALSE;
+  for (b = 0; b < SEI_NPLANETS && (bodies >> b) != 0; b++) {
+    if (!(bodies & SWI_SEG(b)))
+      continue;
+    ifno = file_of_body(b);
+    if (b == SEI_ANYBODY)
+      ifno = (ipli > SE_PLMOON_OFFSET && ipli < SE_AST_OFFSET) ? SEI_FILE_PLMOON : SEI_FILE_ANY_AST;
+    for (k = 0; k < (ifno <= SEI_FILE_MAIN_AST ? 2 : 1); k++) {
+      const struct file_data *f = k ? &ctx->fidat_spare[ifno] : &ctx->fidat[ifno];
+      const struct plan_data *p = k ? &ctx->pldat_spare[b] : &ctx->pldat[b];
+      if (!file_answers(f, t0) || p->dseg <= 0 || (b == SEI_ANYBODY && p->ibdy != ipli)
+          || t0 < p->tfstart || t0 > p->tfend)
+        continue;
+      if (!file_answers(f, t1) || t1 < p->tfstart || t1 > p->tfend || seg_index(p, t0) != seg_index(p, t1))
+        return FALSE;
+      break;
+    }
+  }
+  return TRUE;
+}
+
+/* Upstream bug 276: the bodies of the Swiss files whose segments make the
+ * place of body ipl (SE_ numbers) under iflag: the barycentric Sun's (the
+ * EMB's, heliocentric and barycentric), the Earth's seen from it (the EMB
+ * and the Moon, whose share it carries), the body's own; the true node's
+ * and the osculating apogee's the Moon's alone; none for an analytic one */
+int32 swi_seg_bodies(int ipl, int32 iflag)
+{
+  int32 m = SWI_SEG(SEI_EMB) | SWI_SEG(SEI_SUNBARY);
+  if (ipl == SE_TRUE_NODE || ipl == SE_OSCU_APOG)
+    return SWI_SEG(SEI_MOON);
+  if (ipl == SE_MEAN_NODE || ipl == SE_MEAN_APOG || ipl == SE_INTP_APOG || ipl == SE_INTP_PERG
+      || ipl == SE_ECL_NUT)
+    return 0;
+  if (ipl == SE_MOON || ipl == SE_EARTH || ipl == SE_SUN || !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)))
+    m |= SWI_SEG(SEI_MOON);
+  if (ipl >= SE_MERCURY && ipl <= SE_PLUTO)
+    m |= SWI_SEG(ipl - SE_MERCURY + SEI_MERCURY);
+  else if (ipl >= SE_CHIRON && ipl <= SE_VESTA)
+    m |= SWI_SEG(ipl - SE_CHIRON + SEI_CHIRON);
+  else if (ipl > SE_PLMOON_OFFSET)
+    m |= SWI_SEG(SEI_ANYBODY);
+  return m;
+}
 #endif
 
 /* 
@@ -7912,9 +8025,13 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
    * 226's one-sided difference over 2^-9 day; the Sun's 5.7e-10 now, the
    * Moon's 1.7e-9, where the gravitational sum below left the Moon's
    * 9.9e-9 at the join of AD 13200). A read refused there leaves the
-   * chord. */
+   * chord.
+   * Upstream bug 276: and so across a boundary of the EMB's segments
+   * (yearly) or the Moon's (27.55 days), where the Earth steps as at a
+   * join: within the light time after one the Sun's speed 6.0e-7 deg/day
+   * off, the Moon's aberration share 2.1e-4. */
   if (tau > 0 && ctx->pldat[SEI_EARTH].iephe == SEFLG_SWIEPH
-      && swi_file_join_between(ctx, t, teval)) {
+      && swi_model_step_between(ctx, SWI_SEG_EARTH, 0, t, teval)) {
     double acc[3];
     if (swi_observer_accel_fwd(ctx, teval, SEFLG_SWIEPH, SEFLG_SWIEPH, -1, FALSE, xeteval, acc,
                                NULL) == OK)
@@ -8657,6 +8774,15 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
       if (serr != NULL)
         strcpy(serr, s);
       return ERR;
+    }
+    /* Upstream bug 276: and so across a boundary of the Earth's segments
+     * (the EMB's, the Moon's), its velocity stepping as at a join:
+     * Aldebaran within 2^-10 day of one 8.6e-7 deg/day off. Asked once
+     * the read is made, its file open. */
+    if (out < 0 && epheflag == SEFLG_SWIEPH
+        && swi_seg_boundary_between(ctx, SWI_SEG_EARTH, 0, k ? tjd - h : tjd + h, tjd)) {
+      out = k;
+      continue;
     }
   }
   if (out < 0) {
@@ -11142,6 +11268,7 @@ struct osc_span {
   double off[5];	/* the slots' epochs, tjd + off[i] x step */
   int ord[7], nl, nmain;	/* the slots in reading order; the extra ones from nmain */
   int out;		/* 1 an epoch before tjd past the span, 2 after */
+  int sout;		/* bug 276: so across a boundary of the Moon's segments */
   int in;		/* 0 the central difference, else the side within, +-1 */
   int sl[5];		/* one-sided: the slots of k = 0, 1, 2, 3, 4 times in */
   AS_BOOL holdx;	/* bug 186's hold for the extra epochs' reach */
@@ -11157,7 +11284,7 @@ static void osc_span_init(struct osc_span *o, const double *off, const int *ord,
   for (i = 0; i < npt; i++)
     o->ord[i] = ord[i];
   o->nl = o->nmain = npt;
-  o->out = o->in = 0;
+  o->out = o->sout = o->in = 0;
   o->holdx = FALSE;
 }
 
@@ -11234,7 +11361,13 @@ static int osc_span_extend(swe_ctx *ctx, struct osc_span *o, double tjd, int32 i
  * (the last of the main ones), the main slots whose Moon, at its own
  * instant tr[] (less the light time), was read across a join from tjd's
  * are skipped as those past a span, so the speed is the one-sided rate of
- * the places on the side of tjd's read. */
+ * the places on the side of tjd's read.
+ * Upstream bug 276: and so across a boundary of the Moon's segments,
+ * every 27.55 days, where its polynomial changes and its place steps as at
+ * a join (3e-12 to 1.5e-11 AU near 2000, 1e-7 to 3.6e-7 deg): at JD
+ * 2451562.2258 the node's speed 8.1e-4 deg/day off, the apogee's 9.2e-3.
+ * The slots' Moons were read, so their file is open. Those sides are
+ * o->sout, and osc_span_segs() decides. */
 static void osc_span_joins(swe_ctx *ctx, struct osc_span *o, const double *tr)
 {
   int k, i;
@@ -11242,7 +11375,36 @@ static void osc_span_joins(swe_ctx *ctx, struct osc_span *o, const double *tr)
     i = o->ord[k];
     if (i != 2 && swi_file_join_between(ctx, tr[i], tr[2]))
       o->out |= o->off[i] < 0 ? 1 : 2;
+    else if (i != 2 && swi_seg_boundary_between(ctx, SWI_SEG(SEI_MOON), SE_MOON, tr[i], tr[2]))
+      o->sout |= o->off[i] < 0 ? 1 : 2;
   }
+}
+
+/* Upstream bug 276: and boundaries are not 600 years apart as joins are:
+ * one may lie on both sides within the stencil (the Moon's first in
+ * semo_114 is 0.088 day after the join of AD 11400), or within the
+ * one-sided difference's reach on the side within (where the extra epochs
+ * crossed it, or crossed the join, or left a span and were refused). The
+ * side within must be clear of the Moon's steps to its reach (its epochs
+ * not yet read: swi_model_clear()); where it is not, 1: the step is
+ * halved and the epochs read again, down to intvmin, below which the
+ * boundaries are not asked, as before. 0: o->out the sides skipped.
+ * At that join + 61/1024 day the true node's speed was 1.1e-5 deg/day off
+ * its places' rate, the apogee's 6.8e-4; 3.3e-10 and 8.4e-8 now, central
+ * over 2^-7 day. */
+static int osc_span_segs(swe_ctx *ctx, struct osc_span *o, const double *tr, int npt, double intv,
+                         double intvmin)
+{
+  int in;
+  if ((o->out | o->sout) == 0 || o->out == 3 || intv <= intvmin)
+    return 0;
+  in = (o->out ? o->out : o->sout) == 1 ? 1 : (o->out ? o->out : o->sout) == 2 ? -1 : 0;
+  if (in == 0 || (o->sout & (in > 0 ? 2 : 1))
+      || !swi_model_clear(ctx, SWI_SEG(SEI_MOON), SE_MOON, tr[2], tr[2] + (npt == 5 ? 4 : 2) * in * intv))
+    return 1;
+  if (o->out == 0)
+    o->out = o->sout;
+  return 0;
 }
 #endif
 
@@ -11509,6 +11671,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 #ifndef SWE_UPSTREAM_COMPAT
       speed_intv = OSC_INTV_SWI;
       npt = OSC_NPT_SWI;
+    osc_swi_again:	/* bug 276: osc_span_segs() */
       hold = osc_frame_hold(ctx, tjd, iflag, speed_intv, npt);	/* bug 186 */
 #else
       speed_intv = NODE_CALC_INTV;
@@ -11570,8 +11733,13 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 #ifndef SWE_UPSTREAM_COMPAT
 	if (osc_span_hold(&osp, k, hold))
 	  swi_frame_model_release(ctx, held);
-	if (i == 2 && (iflag & SEFLG_SPEED))
+	if (i == 2 && (iflag & SEFLG_SPEED)) {
 	  osc_span_joins(ctx, &osp, tr);	/* bug 250 */
+	  if (osc_span_segs(ctx, &osp, tr, npt, speed_intv, OSC_INTV_SWI / 16)) {
+	    speed_intv /= 2;	/* bug 276 */
+	    goto osc_swi_again;
+	  }
+	}
 	if (i == 2 && osc_span_extend(ctx, &osp, tjd, iflag, speed_intv, npt, serr) != OK)
 	  return ERR;
 #endif
@@ -12541,6 +12709,9 @@ static void denormalize_positions(double *x0, double *x1, double *x2)
   }
 }
 
+#ifdef SWE_UPSTREAM_COMPAT
+/* the upstream build's slope over t -+ dt, 2 a + b at s = 1 (bug 31) and
+ * the nominal 2 dt (bug 266); calc_speed_side() in this one */
 static void calc_speed(double *x0, double *x1, double *x2, double dt)
 {
   int i, j, k;
@@ -12549,36 +12720,35 @@ static void calc_speed(double *x0, double *x1, double *x2, double dt)
     for (i = 0; i < 3; i++) {
       k = j + i;
       b = (x2[k] - x0[k]) / 2;
-#ifndef SWE_UPSTREAM_COMPAT
-      /* Upstream bug 31: x0, x1, x2 are at t - dt, t, t + dt, and the
-       * parabola through them, x1 + b s + a s^2 in steps of dt, has the slope
-       * b at t. 2 a + b is its slope at s = 1: the speed 4.32 s (the Moon)
-       * or 8.64 s (a planet) late, off by the acceleration times dt --
-       * 1.3e-3 deg/day on the topocentric Moon, whose diurnal parallax
-       * curves its path at ~30 deg/day^2. */
-      x1[k+3] = b / dt;
-#else
       {
         double a = (x2[k] + x0[k]) / 2 - x1[k];
         x1[k+3] = (2 * a + b) / dt;
       }
-#endif
     }
   }
 }
+#endif
 
 #ifndef SWE_UPSTREAM_COMPAT
-/* Upstream bug 153: the slope at t of the parabola through x1 at t and xa,
- * xb at t + da, t + db, both on one side of t (SEFLG_SPEED3 at
- * SEMOD_JPLHORA_3's step, which calc_speed()'s t - dt .. t + dt would
- * straddle) */
+/* The slope at t of the parabola through x1 at t and xa, xb at t + da,
+ * t + db (da != db, neither 0).
+ * Upstream bug 31: calc_speed()'s x0, x1, x2 are at t - dt, t, t + dt,
+ * and the parabola through them, x1 + b s + a s^2 in steps of dt, has the
+ * slope b at t. 2 a + b is its slope at s = 1: the speed 4.32 s (the Moon)
+ * or 8.64 s (a planet) late, off by the acceleration times dt -- 1.3e-3
+ * deg/day on the topocentric Moon, whose diurnal parallax curves its path
+ * at ~30 deg/day^2. The slope at t it is (da = -db: b / dt).
+ * Upstream bug 153: and both on one side of t (SEFLG_SPEED3 at
+ * SEMOD_JPLHORA_3's step, which t - dt .. t + dt would straddle).
+ * Upstream bug 266: and the instants as read, t -+ dt rounded. The
+ * weights of x1, -(wa + wb), taken on the differences from it. */
 static void calc_speed_side(const double *xa, double *x1, const double *xb, double da, double db)
 {
   int j, k;
-  double w0 = -(1 / da + 1 / db), wa = db / (da * (db - da)), wb = -da / (db * (db - da));
+  double wa = db / (da * (db - da)), wb = -da / (db * (db - da));
   for (j = 0; j <= 18; j += 6)
     for (k = j; k < j + 3; k++)
-      x1[k+3] = w0 * x1[k] + wa * xa[k] + wb * xb[k];
+      x1[k+3] = wa * (xa[k] - x1[k]) + wb * (xb[k] - x1[k]);
 }
 
 /* Upstream bug 249: one of SEFLG_SPEED3's reads, swecalc()'s flag, and in
@@ -12606,6 +12776,32 @@ static int32 speed3_read(swe_ctx *ctx, double t, int ipl, int32 iplmoon, int32 i
 static AS_BOOL speed3_same(int32 ra, int ma, int32 rb, int mb)
 {
   return ra != ERR && rb != ERR && (ra & SEFLG_EPHMASK) == (rb & SEFLG_EPHMASK) && ma == mb;
+}
+
+/* Upstream bug 276: SEFLG_SPEED3's places at tjd -+ dt, read from the
+ * Swiss files, were differenced across a model step between them, a join
+ * (bug 250, which bug 249's test of the ephemerides does not see) or a
+ * boundary of the segments of the bodies they are made of: the Earth's at
+ * the instants, the body's own at the instants less its light time.
+ * Within dt of the 1800 join Mars's speed 2.2e-3 deg/day off its places'
+ * rate, of an EMB boundary the Sun's 3.8e-3, of one of Mars's within its
+ * light time after it 7.0e-3, of the Moon's the Moon's 2.5e-1. The side of
+ * tjd whose places are taken: -+1 where a step lies between tjd and tjd
+ * -+ dt or their light-time instants (the reads made, their files open),
+ * else 0. */
+static int speed3_model_side(swe_ctx *ctx, int ipl, int32 iflag, double tjd, double dt,
+                             const double *x0)
+{
+  int32 m = swi_seg_bodies(ipl, iflag);
+  double lt = (iflag & SEFLG_TRUEPOS) ? 0 : x0[2] * AUNIT / CLIGHT / 86400.0;
+  AS_BOOL lo, hi;
+  if (m == 0)
+    return 0;
+  lo = swi_model_step_between(ctx, m, ipl, tjd - dt, tjd)
+       || (lt > 0 && swi_model_step_between(ctx, m, ipl, tjd - dt - lt, tjd - lt));
+  hi = swi_model_step_between(ctx, m, ipl, tjd, tjd + dt)
+       || (lt > 0 && swi_model_step_between(ctx, m, ipl, tjd - lt, tjd + dt - lt));
+  return lo == hi ? 0 : lo ? 1 : -1;
 }
 #endif
 
@@ -15827,10 +16023,17 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
        * off its places' rate. A join is a model step: there the
        * acceleration is the one-sided second-order difference on tjd's
        * side, sg (4 v(tjd + sg h) - 3 v0 - v(tjd + 2 sg h)) / 2h, h =
-       * 2^-10 day (truncation h^2/3 a''). */
+       * 2^-10 day (truncation h^2/3 a'').
+       * Upstream bug 276: and so across a boundary of the centre's
+       * segments, its own or the barycentric Sun's and the Earth's for the
+       * bodies made with them: Mars from Jupiter within 2^-11 day of one
+       * of Jupiter's 1.7e-6 deg/day off, the Moon from Mars of Mars's
+       * 2.7e-6. (Its file is open: the centre was read at t and tjd.) */
       int sg = 0, k;
+      int32 cb = swi_seg_bodies(iplctr, iflag2);
       if (!(ephe_used & (SEFLG_JPLEPH | SEFLG_MOSEPH)))
-        sg = swi_file_join_between(ctx, t, tjd) ? 1 : swi_file_join_between(ctx, tjd, tp) ? -1 : 0;
+        sg = swi_model_step_between(ctx, cb, iplctr, t, tjd) ? 1
+             : swi_model_step_between(ctx, cb, iplctr, tjd, tp) ? -1 : 0;
       if (sg != 0) {
         double xq[2][6], hh = 1.0 / 1024;
         for (k = 0; k < 2; k++)

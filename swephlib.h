@@ -213,6 +213,16 @@ extern int swi_observer_accel_fwd(swe_ctx *ctx, double teval, int32 epheflag, in
                                   char *serr);
 /* a join of the Swiss files between t0 and t1 (UPSTREAM-BUGS 250) */
 extern AS_BOOL swi_file_join_between(swe_ctx *ctx, double t0, double t1);
+/* a boundary of the files' segments of the bodies (bits SWI_SEG(SEI_x)),
+ * or that or a join, between t0 and t1; the bodies of a body's place
+ * (UPSTREAM-BUGS 276) */
+#define SWI_SEG(b) ((int32) 1 << (b))
+#define SWI_SEG_EARTH (SWI_SEG(SEI_EMB) | SWI_SEG(SEI_MOON))
+extern AS_BOOL swi_seg_boundary_between(swe_ctx *ctx, int32 bodies, int ipli, double t0, double t1);
+extern AS_BOOL swi_model_step_between(swe_ctx *ctx, int32 bodies, int ipli, double t0, double t1);
+/* no such step, and t1 in t0's files: a one-sided reach clear of them */
+extern AS_BOOL swi_model_clear(swe_ctx *ctx, int32 bodies, int ipli, double t0, double t1);
+extern int32 swi_seg_bodies(int ipl, int32 iflag);
 #endif
 
 extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 

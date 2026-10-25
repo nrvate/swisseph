@@ -314,6 +314,8 @@ worst were in code that had never executed even once.
 | 283 | Under the three formula sidereal times (IAU 1976, IAU 2006, IERS 2010) `swe_sidtime()` takes the mean obliquity of a polynomial precession model past its range, where entry 217 refuses it, into its equation of the equinoxes: 1.81e-3 deg off Vondrak 2011's obliquity's at J2000 + 400 centuries under "0,8,0,0,0,0,0,3", 6.15e-3 at + 1000 under "0,2,0,0,0,0,0,2"; and answers past entry 196's bound at UT 1e12 (TT 1.28e12) | Correctness (behaviour) | `swephlib.c` |
 | 284 | The nutation is taken at any date within entry 196's bound, 1e12 days, far past where its series mean anything: its main term 13% off its value at the obliquity of date at -13200 and +17191, 100% at -+1000 centuries, the nutation in longitude 510" at 1e9 days and 13 deg at 1e11; `SE_ECL_NUT`, `swe_sidtime()`, the houses, the true ayanamsa and a star with no Earth answer from it under every nutation model | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `swehouse.c` |
 | 285 | A topocentric site's long-term sidereal time chooses its precession model at the site's UT + the default delta t, not at its call's TT: within 0.297 s after a short-term window's edge on the Swiss files (0.481 s before it on Moshier) the site's frame the other model's, the topocentric Moon 2.91e-7 deg off under "0,9,1" at J2000 - 2 centuries, Polaris's topocentric right ascension speed 1.83e-4 deg/day | Correctness | `swephlib.c`, `sweph.c` |
+| 266 | `swe_calc()` with SEFLG_SPEED3 divides the difference of its places at tjd -+ dt by the nominal 2 dt, though neither dt (1e-4 day, the Moon's 5e-5) is a binary fraction and the instants round to the date's grid: at JD 2^21 .. 2^22 (1030 .. 6770) the spacing 0.72 ulp short, every speed 1.68e-6 of itself too large, the Sun 1.73e-6 deg/day, Mercury 3.69e-6, the Moon up to 3.2e-5 (1.7e-5 at J2000) | Correctness (precision) | `sweph.c` |
+| 276 | Across a boundary of the Swiss files' segments inside a file (the Moon's every 27.55 days, the EMB's and the Sun's yearly, a planet's or asteroid's own), where the polynomials change and the places step as at a join (entry 250), the speeds whose reads straddle it take the step for motion: at J2000 + 17.23 days the true node 8.1e-4 deg/day off its places' rate, the osculating apogee 9.7e-3; at sepl_12's last EMB boundary Mars's heliocentric osculating perihelion 3.1e-3, the far files' up to 8.0e-2; the Sun within its light time 6.0e-7, the Moon's aberration share 2.1e-4, Aldebaran 8.6e-7, the Moon from Mars 2.7e-6; SEFLG_SPEED3 across joins and boundaries alike, Mars 2.2e-3 at the 1800 join, the Moon 0.25 at its own | Correctness | `sweph.c`, `swecl.c`, `swephlib.h` |
 
 ---
 
@@ -18610,7 +18612,7 @@ Noticed, not fixed:
   either side Mars's heliocentric osculating node 1.3e-4, its perihelion
   3.0e-3, the Earth's perihelion 2.3e-3; at semom36's first Moon boundary
   (JD 406158.4657) the true node 3.1e-4, the apogee 6.2e-4. Before and
-  after alike.
+  after alike; fixed as entry 276.
 - Below the floor: the Moon's apparent aberration share at the 1800 join
   1.7e-9 deg/day off its line now (the other joins 2e-10 to 6e-10).
 
@@ -20415,6 +20417,216 @@ Noticed, not fixed:
   centuries under "0,9,1", outside the span: its place 3.03e-9 deg off
   "0,1,1"'s, the Sun's light-time instant on the other side of the step
   (measured outside entry 285's span, unchanged by it).
+
+## 266. SEFLG_SPEED3 divides its difference by the nominal 2 dt, though tjd -+ dt are rounded to the date's grid: every speed 1.7e-6 of itself off from 1030 to 6770, the Moon's 1.7e-5 deg/day
+
+**Severity: Correctness (precision: SEFLG_SPEED3's speeds 1.7e-6 of themselves off, above the residual floor wherever the speed passes 6e-3 deg/day: the Moon 1.7e-5, Mercury 3.7e-6, the Sun 1.7e-6)**
+**Where:** `sweph.c`: `swe_calc_r_body()`'s SEFLG_SPEED3 branch, `calc_speed()` (now the compat build's alone), `calc_speed_side()`
+
+SEFLG_SPEED3 reads the body at tjd - dt, tjd and tjd + dt (dt =
+PLAN_SPEED_INTV, 1e-4 day; the Moon's MOON_SPEED_INTV, 5e-5) and
+`calc_speed()` took (x(tjd + dt) - x(tjd - dt)) / 2 dt (entry 31's slope
+b / dt at tjd). Neither dt is a binary fraction, so tjd -+ dt round to the
+date's grid: at JD 2^21 .. 2^22 (AD 1030 .. 6770) dt is 214748.36 ulps of
+the date (the Moon's 107374.18), each instant rounds 0.36 ulp (0.18)
+inward, and the spacing is 0.72 ulp short of 2 dt, 1.68e-6 of it, so
+every speed was 1.68e-6 of itself too large; in other binades the
+fraction and the sign differ, up to an ulp over 2 dt. Against the central
+five-point difference of the places over 2^-8 day at 64 dates 1800-2400
+(G176 part i), deg/day: the Sun 1.73e-6, Mercury 3.69e-6, Venus 2.14e-6,
+Mars 1.34e-6, the Moon (2^-10 day) up to 3.2e-5, 1.7e-5 at J2000. Entry
+153's one-sided form, `calc_speed_side()`, already took the instants'
+offsets; the central one did not.
+
+**Fix, as done here:** the central case is `calc_speed_side()` too, with
+da = (tjd - dt) - tjd and db = (tjd + dt) - tjd, the offsets of the
+instants as read (exact: Sterbenz), the slope at tjd of the parabola
+through the three places at their own instants (b / dt where they are
+symmetric, entry 31's slope at t). Its weights are now applied to the
+differences from x1, wa (xa - x1) + wb (xb - x1), so the symmetric case is
+the difference over the true spacing with no x1 term to cancel.
+`calc_speed()`, upstream's (2 a + b) / dt over the nominal 2 dt, is
+compiled into the compat build alone.
+- Now, the same 64 dates: the Sun 5.8e-10, Mercury 1.27e-9, Venus
+  6.8e-10, Mars 4.4e-10 deg/day (rms 1.6e-10 to 4.8e-10: the places'
+  noise over 2 dt), the Moon 2.5e-7 (its places' noise over 1e-4 day).
+- The other stencils that step by a decimal dt, surveyed: compat-only
+  (the shipped build steps by a binary fraction, or divides by the
+  instants' own spacing) `swemmoon.c`'s and `swemplan.c`'s speed
+  differences, `swe_nod_aps()`'s ellipse (entries 80, 201, with the
+  rounding taken back), its mean points (entry 117, tp - tm), the
+  deflection's and nutation's and aberration's (analytic), the stars'
+  (entry 49, dm and dp), the house cusps' time rates (HOUSE_SPEED_DT 2^-6,
+  hr.dt = tp - tm), the observer's accelerations (2^-11, 2^-9), the
+  interpolated apsides (2^-8), the frame's (-+1 day, exact). Below the
+  floor, recorded: `swecl.c`'s Sun-observer acceleration over a rounded
+  light time, about 2e-12 deg/day; `swehouse.c`'s ARMC stencil, armc + k
+  2^-8 rounded, bounded by 8e-9 deg/day and not resolvable under the
+  cusps' own noise; the eclipse searches' secant slopes are iteration
+  steps, not answers.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; the compat build divides by
+  2 dt as upstream does.
+
+G176 `tests/segspeed.c` part (i): SEFLG_SPEED3 of the Sun, the Moon
+(geocentric and topocentric), Mars, Jupiter heliocentric and Chiron at 64
+binary-fraction dates 1800-2400 against the central five-point difference
+of the places (2^-8 day, the Moon 2^-10), 384 rows within 2.5e-7 deg/day
+(the Moon; the others 3.6e-10); ts20 before the fix fails all 384, up to
+3.2e-5, the upstream build 383. G24 `speed3_spacing_off`: the Sun's
+SEFLG_SPEED3 speed at J2000.0 against the central five-point difference
+over 2^-8 day: 1.49e-11 deg/day shipped, 1.72e-6 compat (1.73e-6 shipped
+before the fix).
+
+Noticed, not fixed:
+- Mercury's one-sided SEFLG_SPEED3 (within dt of a step, entry 276) is
+  noisy to 1.1e-8 deg/day near JD 4241320 (AD 6900): its places' noise
+  over 1e-4 day (the central one 4.2e-9 there, 1.3e-9 in 1800-2400).
+  SEFLG_SPEED3's step is upstream's design; at the floor.
+- The Moon's SEFLG_SPEED3 is noisy to 2.5e-7 deg/day central, 1.6e-6
+  one-sided, for the same reason (its 5e-5-day step).
+
+## 276. Across a boundary of the Swiss files' segments a speed takes the polynomials' step for motion, as across a join: the osculating apogee 9.7e-3 deg/day off at J2000 + 17.23 days, `swe_nod_aps()`'s points up to 8.0e-2, SEFLG_SPEED3's Moon 0.25
+
+**Severity: Correctness (a speed off its places' rate within its stencil's reach of a segment boundary inside a file, the Moon's every 27.55 days, the Earth's every year; the places are right)**
+**Where:** `sweph.c`: new `swi_seg_boundary_between()`, `swi_model_step_between()`, `swi_model_clear()`, `swi_seg_bodies()`, `osc_span_segs()`, `speed3_model_side()`; `osc_span_joins()`, `lunar_osc_elem()`, `earth_at_lt_sun()`, `fixstar_obs_rate()`, `swe_calc_pctr_r_body()`, `swe_calc_r_body()`'s SEFLG_SPEED3 branch; `swecl.c`: `swe_nod_aps_r_body()`; `swephlib.h`
+
+Entry 250's first noticed item. A Swiss file holds each body as
+Chebyshev segments of a fixed length (the Moon 27.55 days, the EMB and
+the barycentric Sun 365.26, Mercury 87.97, Venus 224.70, Mars 687.00,
+Jupiter to Pluto 4000, the asteroids 1000, Pallas 500), and `sweph()`
+reads the one tfstart + int((t - tfstart) / dseg) dseg names. Adjacent
+segments' fits do not meet: at each boundary the places step (the Earth
+1-7e-9 AU and the barycentric Sun 2-11e-9 at the EMB's, the Moon 3e-12 to
+1.5e-11 AU, 1e-7 to 3.6e-7 deg, at its own), a model step as a join is.
+Entry 250 kept its stencils on the instant's side of a join; they crossed
+the boundaries freely. Against one-sided five-point differences of
+the places on the instant's side, not crossing the step, deg/day:
+- The true node and the osculating apogee (`lunar_osc_elem()`): at the
+  Moon's boundary JD 2451562.2258 (J2000 + 17.23) 8.07e-4 and 9.65e-3,
+  at semom36's first (JD 406158.4657) 3.07e-4 and 8.46e-4; at the 51
+  Moon boundaries of G176 up to 3.9e-2.
+- `swe_nod_aps()`'s osculating ellipse: 2^-7 day either side of
+  sepl_12's last EMB boundary (JD 2378495.5759) Mars's heliocentric node
+  1.17e-4 and 1.33e-4, its perihelion 3.06e-3 and 2.80e-3, the Earth's
+  1.75e-3 and 2.36e-3; at the far files' boundaries up to 8.0e-2.
+- Its aberration rate: the Sun's mean perigee within the light time
+  after an EMB boundary 7.6e-7.
+- `swe_calc()` within the light time after an Earth step (an EMB or a
+  Moon boundary, `earth_at_lt_sun()`): the Sun 6.0e-7; the Moon's
+  aberration share 2.1e-4 off its line.
+- A star (`fixstar_obs_rate()`): Aldebaran within 2^-10 day 8.6e-7.
+- `swe_calc_pctr()`: Mars from Jupiter within 2^-11 day of one of
+  Jupiter's 1.7e-6, the Moon from Mars of one of Mars's 2.7e-6.
+- SEFLG_SPEED3 differenced its three reads across joins and boundaries
+  alike (entry 249 compares the ephemerides that answered, not the
+  model): within dt of the 1800 join Mars 2.2e-3, of an EMB boundary the
+  Sun 3.8e-3, of one of Mars's within its light time after it 7.0e-3, of
+  the Moon's the Moon 0.25.
+The upstream build crosses them the same way through its own stencils.
+
+**Fix, as done here:** a segment boundary is a model step, and a speed
+is the rate of the places on its instant's own side of it, as at a join.
+- `swi_seg_boundary_between(bodies, ipli, t0, t1)`: TRUE if a boundary
+  of a body's segments (bits SWI_SEG(SEI_x); SEI_ANYBODY the asteroid or
+  planetary moon ipli) lies between the instants in the file that
+  answers both, the open one or its spare (entry 89), from the file's own
+  tfstart, dseg and nndx, the segment index computed as `sweph()` does
+  (the last instant in the last segment), without a read; FALSE where
+  no file answers both (a join lies between) or none was read.
+  `swi_model_step_between()` is that or a join. `swi_seg_bodies(ipl,
+  iflag)` names the bodies a place is made of: the EMB and the
+  barycentric Sun always, the Moon for the Earth, the Sun, the Moon and
+  every geocentric place, the planet's or asteroid's own; the true node
+  and the osculating apogee the Moon alone, the mean points none.
+- Each of entry 250's stencils asks for a step where it asked for a
+  join, after its reads, so their files are open: the true node's and
+  apogee's main slots (the Moon alone), `swe_nod_aps()`'s ellipse epochs
+  and its aberration rate's observer read, `earth_at_lt_sun()`, the
+  star's Earth reads, `swe_calc_pctr()`'s centre (its own bodies).
+- SEFLG_SPEED3 (`speed3_model_side()`): a step between tjd and tjd -+ dt
+  (the Earth's reads) or between their light-time instants (the body's
+  own) makes the slope one-sided from the other side (entry 153's
+  parabola, entry 266's offsets); steps on both sides, central as before.
+- Boundaries are not 600 years apart as joins are: the Moon's first in
+  semo_114 is 0.088 day after the join of AD 11400, a Moon boundary may
+  lie within 0.19 day of an EMB one. There a step can lie on both sides of
+  the true node's or `swe_nod_aps()`'s stencil, or the one-sided
+  difference's extra epochs cross the other step (or leave the span,
+  which refused the call: skipped as joins are, the Sun's perigee at J +
+  5/128 day answered "the osculating speed's epochs leave the
+  ephemeris's span both sides"). So the side within must be clear of the
+  steps to its reach (`swi_model_clear()`: no join, and each body's file
+  that answers tjd answers the reach in the same segment, before those
+  epochs are read); where it is not, the step is halved and the epochs
+  read again (`osc_span_segs()`, `swe_nod_aps()`'s nodaps_again), down
+  to 2^-4 of it, below which the boundaries are not asked, as before. At
+  the 11400 join + 61/1024 day the true node's speed was 1.06e-5 off, the
+  apogee's 6.84e-4, the Moon's osculating node and perigee 1.06e-5 and
+  6.84e-4; now 3.3e-10, 8.4e-8, 1.6e-9, 3.7e-9 (central over 2^-7 day).
+- Now at the named boundaries: J2000 + 17.23 the node 8.0e-10, the
+  apogee 1.6e-7; semom36's first 4.8e-11 and 1.4e-8; sepl_12's last EMB
+  Mars's heliocentric node 1.5e-12 and 3.5e-12, its perihelion 1.7e-12
+  and 6e-13, the Earth's 5e-13 and 2e-12; SEFLG_SPEED3 Mars 2^-15 day
+  either side of the 1800 join 4e-11 and 6.3e-10 (1.95e-4 before).
+- Elsewhere: of 32656 answers without SEFLG_SPEED3 (22 bodies by
+  `swe_calc()` under nine flag sets, nine by `swe_nod_aps()` under its
+  three methods and four flag sets, three stars, five `swe_calc_pctr()`
+  pairs, 104 dates 1200-2290 and about the 1800 join) 62 differ, all
+  within a light time after a Moon or EMB boundary (Pluto, Cupido, Isis,
+  Pluto's points), their speeds by up to 4.4e-9 deg/day, the places bit
+  for bit. With SEFLG_SPEED3 (20592 answers) the places are bit for bit
+  and the speeds move by entry 266's spacing, by up to 5.1e-3 deg/day at
+  the 1800 join's steps. `bench --rep 1` (one perf stat count each, taken
+  before the halving, which runs only where a step is within a stencil):
+  calc-swieph 1.24384e10 instructions for 1.24077e10 (+0.25%),
+  calc-moseph 2.342622e10 for 2.342641e10 (-0.001%).
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; the compat build reads across
+  the boundaries as upstream does.
+
+G176 `tests/segspeed.c`: every boundary of the EMB's and the Moon's
+segments in the middle of each file -12300..16500 (50 and 51, with
+sepl_12's last, J2000 + 17.23 and semom36's first), Mars's in every other
+file, Jupiter's, Saturn's and Ceres's in some, Chiron's in its files (25,
+10, 10, 24, 5), from the files' own data, and the 50 joins; at each, on
+both sides, (a) the true node and the osculating apogee, (b) `swe_nod_aps()`'s
+osculating points (Mars helio- and geocentric, the Sun, the Earth, Ceres,
+the Moon, Saturn's barycentric ellipse, Chiron), (c) its mean points, (d)
+`swe_calc()` within the light time after the step, (e) the Moon's
+aberration share on its line, (f) two stars, (g) `swe_calc_pctr()`, (h)
+SEFLG_SPEED3 with its reads astride the step at the instants and at the
+instants less the light time, (i) entry 266's 64 dates, and the 11400
+join's six rows between it and the Moon's boundary; each against the
+places' one-sided five-point difference on the instant's side, the call
+bit for bit a fresh context's and its place the call's without the speed
+flag: 7938 rows pass, (a) within 4.3e-7 deg/day (the apogee), (b) 1.4e-7
+(the Moon; the planets 4.2e-11), (c) 1.1e-9, (d) 4.2e-9, (e) 1.8e-8 (at
+EMB steps, below), (f) 6.7e-11, (g) 2.2e-9, (h) 1.9e-6 (the apogee; the
+Moon 1.6e-6, the planets 1.9e-8), the distances 2.7e-12 AU/day; the same
+0.5 and -3 days off the steps. ts20 before the fix fails 7109 rows ((a)
+818, (b) 2220, (c) 300, (d) 318, (e) 588, (f) 300, (g) 105, (h) 2076,
+(i) 384), the upstream build 7918. G24 `seg_node_rate_off`: Mars's
+heliocentric osculating ascending node 2^-10 day after sepl_12's last
+EMB boundary, its longitude speed against the forward five-point
+difference of its places over 2^-5 day: 2.07e-12 deg/day shipped,
+2.15e-3 compat (1.36e-4 shipped before the fix).
+
+Noticed, not fixed:
+- The Moon's apparent place itself steps for its 1.3 s light time after
+  every Earth step (an EMB boundary or a join): the Earth read at t and
+  at teval differenced across it, 3.4e-5 deg at the 1800 join, 4.9e-5
+  near 2000's EMB boundary, 1.1e-5 at JD -2332986.75; it leaves (e) its
+  1.8e-8 deg/day at the EMB boundaries. A place, not a speed stencil.
+- `swe_nod_aps()`'s geocentric Mars with light deflection jitters near
+  the Sun (JD 7090348.28: the node's latitude dips 6.7e-5 deg over 0.01
+  day, its references scatter by 1e-3 deg/day; SEFLG_NOGDEFL smooth),
+  before and after alike.
+- SEFLG_SPEED3, `swe_calc_pctr()` and the stars keep their one rule
+  where steps lie on both sides of their short stencils (2e-4, 2^-9 and
+  2^-8 day): none found (the joins' nearest boundary is 0.088 day off),
+  possible where a Moon boundary falls within that of an EMB one; not
+  measured.
+- Below the floor: the house cusps' speeds ('Y' near 58 N) are noisy to
+  5.9e-8 deg/day from the cusps' own rounding (entry 266's survey).
 
 ## How these were found
 
