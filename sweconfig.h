@@ -234,4 +234,10 @@ extern void swi_invalidate_deltat(swe_ctx *ctx);
  * the definition for why swi_force_app_pos_etc() alone is not enough. */
 extern void swi_invalidate_models(swe_ctx *ctx);
 
+/* Invalidate what a change to the nutation interpolation makes stale on
+ * this thread: its nodes, the cached nutation, the observer and the
+ * positions. swe_set_interpolate_nut_r() and swi_config_apply() call it
+ * (bug 126). */
+extern void swi_invalidate_nut_interp(swe_ctx *ctx);
+
 #endif /* _SWECONFIG_INCLUDED */

@@ -126,8 +126,8 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  *                        force_app_pos_etc
  *                                        (matches sweph.c:7266-7269)
  *   tid_acc/delta_t   -> force_app_pos_etc
- *   do_interpolate_nut-> reset interpol
- *                        (matches swe_set_interpolate_nut)
+ *   do_interpolate_nut-> swi_invalidate_nut_interp: interpol, nut, topd,
+ *                        force_app_pos_etc (matches swe_set_interpolate_nut)
  *   const_lapse_rate  -> nothing; read directly at its use sites
  *   ephe_fallback     -> nothing; read at each calculation's end, as
  *                        swe_set_ephe_fallback() itself invalidates nothing
@@ -211,6 +211,36 @@ void swi_invalidate_models(swe_ctx *ctx)
 #else
   ctx->oec.teps = 0;
   ctx->oec2000.teps = 0;
+#endif
+  swi_force_app_pos_etc(ctx);
+}
+
+/* Upstream bug 126: what a change to the nutation interpolation makes
+ * stale. swe_set_interpolate_nut() reset the interpolation's nodes and
+ * nothing cached on the instant alone: the nutation swi_check_nutation()
+ * keeps (ctx->nut with its rate, and nutv), which every place of date and
+ * the ayanamsa read again, the observer, whose sidereal time carries it,
+ * and the positions. Called by the setter, and in both builds by
+ * swi_config_apply() (the adoption is this fork's). The mean obliquity
+ * and calc_nutation()'s memo and grid, exact values either way, are kept. */
+void swi_invalidate_nut_interp(swe_ctx *ctx)
+{
+  ctx->interpol.tjd_nut0 = 0;
+  ctx->interpol.tjd_nut2 = 0;
+  ctx->interpol.nut_dpsi0 = 0;
+  ctx->interpol.nut_dpsi1 = 0;
+  ctx->interpol.nut_dpsi2 = 0;
+  ctx->interpol.nut_deps0 = 0;
+  ctx->interpol.nut_deps1 = 0;
+  ctx->interpol.nut_deps2 = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->nut.tnut = SWI_NUT_NEVER;
+  ctx->nutv.tnut = SWI_TJD_NEVER;
+  ctx->topd.teval = SWI_TJD_NEVER;
+#else
+  ctx->nut.tnut = 0;
+  ctx->nutv.tnut = 0;
+  ctx->topd.teval = 0;
 #endif
   swi_force_app_pos_etc(ctx);
 }
@@ -412,16 +442,11 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 #else
     ctx->topd.teval = 0;        /* force swi_get_observer(ctx) to recompute */
 #endif
-  if (nut_changed) {
-    ctx->interpol.tjd_nut0 = 0;
-    ctx->interpol.tjd_nut2 = 0;
-    ctx->interpol.nut_dpsi0 = 0;
-    ctx->interpol.nut_dpsi1 = 0;
-    ctx->interpol.nut_dpsi2 = 0;
-    ctx->interpol.nut_deps0 = 0;
-    ctx->interpol.nut_deps1 = 0;
-    ctx->interpol.nut_deps2 = 0;
-  }
+  /* Upstream bug 126, in both builds (the adoption is this fork's): the
+   * nodes alone were reset, and the nutation, observer and positions kept
+   * at the instant answered for the old setting */
+  if (nut_changed)
+    swi_invalidate_nut_interp(ctx);
   if (model_changed)
     swi_invalidate_models(ctx);
   else if (path_changed || geo_changed || dt_changed)

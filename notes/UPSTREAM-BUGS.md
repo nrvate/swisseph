@@ -157,6 +157,7 @@ worst were in code that had never executed even once.
 | 115 | A calculation on the default context (this fork's) adopts another thread's setter half-way through: its files closed under it (a crash on the JPL file), one answer from two configurations | Correctness (a crash; wrong answers) | `sweconfig.c`, `sweph.c`, `swecl.c` |
 | 123 | `swe_close()` zeroes the shared configuration's generation, so a running thread misses the close and the publishes after it, and empties it, so a setting the close keeps -- the path, the JPL file, delta t, the nutation interpolation, the lapse rate, the fallback -- goes back to its default at the next setter and never reaches a thread started after it (this fork's) | Correctness (behaviour) | `sweconfig.c`, `sweconfig.h`, `sweph.c` |
 | 124 | The searches, the houses, the sidereal time, `swe_azalt()`, `swe_pheno()`, delta t and the UTC conversions on the default context (this fork's) adopt another thread's setter between two of their calculations, or never: a sidereal Moon crossing 5600 s off, a local eclipse searched at another site from half-way, 3752 s late; another thread's user delta t kept out of the UTC conversions, 22 s | Correctness (behaviour) | `swecl.c`, `swehel.c`, `swehouse.c`, `sweph.c`, `swephlib.c`, `swedate.c` |
+| 126 | `swe_set_interpolate_nut()` resets the interpolation's nodes and not the nutation, observer and positions cached at an instant, nor does a thread adopting the change (this fork's adoption): the old setting's nutation answers there, 7.42e-5" in dpsi | Correctness (behaviour) | `swephlib.c`, `sweconfig.c`, `sweconfig.h` |
 
 ---
 
@@ -7667,17 +7668,95 @@ builds (2 fail before the fix, the new thread taking the variable's value).
 No compat difference, so no G24 case. G113, G100, G97, G82, G2, check-ctx
 and G24 pass.
 
-Noticed, not fixed: `swe_set_interpolate_nut()` resets the interpolation's
-nodes and not the nutation cached on the instant alone, nor does a thread
-adopting the change: interpolation on, the nutation at J2000 + 0.37, then
-off, and the same instant again answers the interpolated -13.926980"
-(7.42e-5" from the exact value; 8.38e-5" in the compat build, where the
-setter is upstream's). G120's second thread therefore syncs at another
-instant. And the manual says the parameters of `swe_set_topo()` and
-`swe_set_sid_mode()` survive `swe_close()`, where upstream's code and this
-fork's reset both: after the close a topocentric Moon is refused
-"geographic position has not been set" and the ayanamsa is the default's
-24.740 deg for Lahiri's 23.857.
+Noticed: `swe_set_interpolate_nut()` resets the interpolation's nodes and
+not the nutation cached on the instant alone, nor does a thread adopting
+the change: interpolation on, the nutation at J2000 + 0.37, then off, and
+the same instant again answers the interpolated -13.926980" (7.42e-5" from
+the exact value; 8.38e-5" in the compat build, where the setter is
+upstream's). G120's second thread therefore syncs at another instant.
+Fixed as entry 126. Not fixed: the manual says the parameters of
+`swe_set_topo()` and `swe_set_sid_mode()` survive `swe_close()`, where
+upstream's code and this fork's reset both: after the close a topocentric
+Moon is refused "geographic position has not been set" and the ayanamsa is
+the default's 24.740 deg for Lahiri's 23.857.
+
+## 126. `swe_set_interpolate_nut()` resets the interpolation's nodes and not the nutation, observer and positions cached at an instant, nor does a thread adopting the change: the old setting answers there
+
+**Severity: Correctness (behaviour: a setting without effect at an instant already computed; dpsi 7.42e-5", deps 3.13e-4", every place of date there 7.4e-5", the topocentric Moon 7.5e-5")**
+**Where:** `swephlib.c`: `swe_set_interpolate_nut_r()`; `sweconfig.c`: `swi_config_apply()`, new `swi_invalidate_nut_interp()`; `sweconfig.h`
+
+Entry 123's noticed item. With the interpolation on, `swi_nutation()`
+answers from a quadratic through three nodes a day apart, built at the
+first instant outside them (and exact there). `swe_set_interpolate_nut()`
+reset those nodes and nothing else, but three caches hold the nutation of
+an instant under whichever setting computed it:
+- `swi_check_nutation()` keeps it in `ctx->nut` -- the angles, their matrix
+  and (this fork's) their rate -- keyed on the instant, the speed flag and
+  the JPLHOR bits; every place of date reads it, and
+  `swe_get_ayanamsa_ex()` takes it when it holds the instant;
+- the topocentric observer (`topd`) is kept for the instant, its apparent
+  sidereal time carrying the nutation;
+- the positions in `pldat`, `nddat` and `savedat`, kept for the instant
+  and the flags.
+
+Interpolation on, `SE_ECL_NUT` at J2000 and at J2000 + 0.37 (interpolated
+from J2000's nodes), off, and J2000 + 0.37 again answered the interpolated
+dpsi -13.926980" for the exact -13.927054" (7.42e-5") and deps -5.776802"
+for -5.777114" (3.13e-4"); the longitudes of Mars, the true node and Spica
+and the ayanamsa 7.42e-5" off, the topocentric Moon's 7.53e-5". Off and
+then on, the exact values stayed where a fresh process interpolates
+(7.39e-5", the Moon 7.51e-5"). A thread on the default context that adopts
+the change through the shared configuration (`swi_config_apply()`,
+`SWI_CFG_NUT`) reset the same nodes and no more, with the same numbers, and
+an explicit context through `swe_set_interpolate_nut_r()` the same.
+`swe_sidtime()`, the houses and a sidereal place were right: the first two
+take the nutation afresh, so the setting reaches them, and the third has
+none. The compat build, where the setter is upstream's code, is 8.38e-5"
+off in dpsi.
+
+**Fix, as done here:** `swi_invalidate_nut_interp()` empties what depends
+on the setting: the interpolation's nodes, `ctx->nut` and `nutv`, the
+observer (`topd.teval`) and the positions (`swi_force_app_pos_etc()`). The
+setter calls it in place of its node resets, behind `#ifndef
+SWE_UPSTREAM_COMPAT` with upstream's resets under `#else`.
+`swi_config_apply()` calls it when it adopts a changed setting, in both
+builds: the adoption is this fork's, so an `#else` there would restore this
+fork's defect, not upstream's behaviour (as with entries 83, 122 and 123).
+Kept: the mean obliquity (`oec`, `oec2000`), `calc_nutation()`'s memo and
+grid and the sidereal-time memos, whose values are exact either way. Each of
+the three emptied is needed: with the observer left the topocentric Moon
+stays 1.49e-5" off; with the positions left Mars, the node and the Moon
+7.4e-5"; with `ctx->nut` left the ayanamsa and Spica too. No hot path is
+touched (the setter, and the adoption only on a change); the golden
+transcript is bit for bit the tip's (13000 rows).
+
+G122 `tests/nutintp.c`, each run in a forked process: the path, an
+observer and True Citra set, the interpolation A; the probe at J2000 and
+J2000 + 0.37 and a topocentric Moon at J2000 + 0.37; the interpolation B;
+`swe_sidtime()` at J2000, the probe at J2000 + 0.37. The answer must equal,
+bit for bit with its return flag, a fresh process's that set B first and
+made the same calls after it. Nine probes (`SE_ECL_NUT`, Mars and the true
+node with speeds, the topocentric Moon, the ayanamsa, Spica,
+`swe_sidtime()`, Placidus cusps, the sidereal Mars), both directions, on
+the setter's thread, on a second thread on the default context that adopts
+the change, and on an explicit context: 54 pass in the default build.
+Before the fix 36 fail (all but sidereal time, the houses and the sidereal
+place, in every mode and direction). The compat build fails 22, the
+setter's thread and the explicit context; the second thread passes there,
+its adoption fixed in both builds. G24 `nut_intp_off`: dpsi at J2000 +
+0.37 after on, J2000, J2000 + 0.37, off, against the exact value: 0
+shipped, 8.38e-5" compat. G120, G29, G32, G57, G2 and check-ctx pass; G1's
+transcript is identical to the tip's.
+
+Noticed, not fixed: the nodes are kept across a change of nutation model.
+`swi_invalidate_models()` empties `ctx->nut` and not the nodes, and
+`swe_close()` resets the models and keeps the interpolation and its nodes:
+interpolation on, the nutation at J2000, `swe_set_astro_models("0,0,0,1")`
+(IAU 1980), and dpsi at J2000 + 0.37 is the default model's -13.926980"
+where a process that set IAU 1980 first answers -13.918307" (8.7e-3");
+after IAU 1980, J2000 and `swe_close()`, the default model's nutation at
+J2000 + 0.1 and J2000 + 0.37 answers IAU 1980's -13.918277" for
+-13.927012". Both builds.
 
 ## 120. With the Swiss Moon file missing, the Moon and the Earth come from Moshier under a SEFLG_SWIEPH flag, and the strict setting answers
 

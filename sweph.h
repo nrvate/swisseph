@@ -1134,6 +1134,12 @@ struct epsilon {
  *     5600 s off, a local eclipse searched at the master's site from
  *     half-way, a user delta t kept out of the UTC conversions, 22 s
  *     (UPSTREAM-BUGS 124, G121)
+ *   - swe_set_interpolate_nut() resetting the interpolation's nodes alone,
+ *     so the nutation, observer and positions cached at an instant
+ *     answered for the old setting (8.38e-5" in dpsi; UPSTREAM-BUGS 126,
+ *     G122). A thread adopting the change through the shared
+ *     configuration empties the same in both builds: that adoption is
+ *     this fork's code
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

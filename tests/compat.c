@@ -2749,6 +2749,28 @@ static double search_hold_off(void)
   return fabs(search_got - want) * 86400;
 }
 
+/* The nutation after swe_set_interpolate_nut() changes: on, SE_ECL_NUT at
+ * J2000 and at J2000 + 0.37 (interpolated from J2000's nodes), off, and
+ * J2000 + 0.37 again, against the exact value there after another
+ * instant; dpsi, arcsec. Upstream's setter resets the nodes alone, and the
+ * nutation cached at the instant answers interpolated, 8.38e-5" off
+ * (UPSTREAM-BUGS 126). */
+static double nut_intp_off(void)
+{
+  double x[6], y[6];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_interpolate_nut(TRUE);
+  swe_calc(2451545.0, SE_ECL_NUT, SEFLG_SWIEPH, x, serr);
+  swe_calc(2451545.37, SE_ECL_NUT, SEFLG_SWIEPH, x, serr);
+  swe_set_interpolate_nut(FALSE);	/* swe_close() keeps it: back to the default */
+  swe_calc(2451545.37, SE_ECL_NUT, SEFLG_SWIEPH, x, serr);
+  swe_calc(2451545.0, SE_ECL_NUT, SEFLG_SWIEPH, y, serr);
+  swe_calc(2451545.37, SE_ECL_NUT, SEFLG_SWIEPH, y, serr);
+  return fabs(x[2] - y[2]) * 3600;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -2981,7 +3003,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3090,6 +3112,7 @@ int main(int argc, char **argv)
   pathset = path_setter_118();
   cfghold = cfg_hold_off();
   searchhold = search_hold_off();
+  nutintp = nut_intp_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   starkept = star_load_kept();
@@ -3940,6 +3963,14 @@ int main(int argc, char **argv)
   else {
     printf("  setter mid-search      %.2e s FAIL: expected %s\n",
            searchhold, WANT_DEFECT ? "> 100" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nutintp > 5e-5) : (nutintp == 0))
+    printf("  interpolation unset    %.2e arcsec OK\n", nutintp);
+  else {
+    printf("  interpolation unset    %.2e arcsec FAIL: expected %s\n",
+           nutintp, WANT_DEFECT ? "> 5e-5" : "0");
     bad++;
   }
 

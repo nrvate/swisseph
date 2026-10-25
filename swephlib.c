@@ -4628,6 +4628,16 @@ void CALL_CONV swe_set_interpolate_nut_r(swe_ctx *ctx, AS_BOOL do_interpolate)
     ctx->do_interpolate_nut = TRUE;
   else
     ctx->do_interpolate_nut = FALSE;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 126: only the interpolation's nodes were reset, and the
+   * nutation, observer and positions cached at an instant answered for the
+   * old setting: on, the nutation at J2000 + 0.37 after J2000, off, and the
+   * same instant gave the interpolated -13.926980" for the exact
+   * -13.927054" (7.42e-5"; Mars, the true node, Spica, the ayanamsa
+   * 7.4e-5", the topocentric Moon 7.5e-5"), off then on the exact for the
+   * interpolated. All of them are emptied now, swi_invalidate_nut_interp(). */
+  swi_invalidate_nut_interp(ctx);
+#else
   ctx->interpol.tjd_nut0 = 0;
   ctx->interpol.tjd_nut2 = 0;
   ctx->interpol.nut_dpsi0 = 0;
@@ -4636,6 +4646,7 @@ void CALL_CONV swe_set_interpolate_nut_r(swe_ctx *ctx, AS_BOOL do_interpolate)
   ctx->interpol.nut_deps0 = 0;
   ctx->interpol.nut_deps1 = 0;
   ctx->interpol.nut_deps2 = 0;
+#endif
   swi_config_publish(ctx, SWI_CFG_NUT);
 }
 
