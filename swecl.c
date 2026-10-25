@@ -603,6 +603,17 @@ int32 CALL_CONV swe_sol_eclipse_where_r(swe_ctx *ctx, double tjd_ut,
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_sol_eclipse_where_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 239: a refusal (a date's, the strict setting's) left the
+   * place and the attributes as the caller had them, or as far as they
+   * were filled, where swe_calc() zeroes a refused position. Zeroed now:
+   * the place's two doubles, attr's 20 (its declared size); so the other
+   * eclipse and occultation functions, tret's 10. */
+  if (ret == ERR) {
+    geopos[0] = geopos[1] = 0;
+    memset(attr, 0, 20 * sizeof(double));
+  }
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -677,6 +688,12 @@ int32 CALL_CONV swe_lun_occult_where_r(swe_ctx *ctx, double tjd_ut,
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_lun_occult_where_r_body(ctx, tjd_ut, ipl, starname, ifl, geopos, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR) {	/* bug 239, as swe_sol_eclipse_where() */
+    geopos[0] = geopos[1] = 0;
+    memset(attr, 0, 20 * sizeof(double));
+  }
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -1067,6 +1084,10 @@ int32 CALL_CONV swe_sol_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_sol_eclipse_how_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
+    memset(attr, 0, 20 * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -1337,6 +1358,19 @@ static int32 swe_sol_eclipse_when_glob_r_body(swe_ctx *ctx, double tjd_start, in
     memset(tret, 0, 10 * sizeof(double));
     return ERR;
   }
+  /* Upstream bug 240: a start no ephemeris answers went on into the
+   * search, whose first place is the first possible eclipse's, from the
+   * lunation number's polynomial: refused with the range message of a
+   * date no caller gave, "jd 10000160.328309" for a start at 1e7 (Moshier),
+   * "jd 5314742918287432" at 6e10, "jd 6634702579155901"
+   * from 1e11 to DBL_MAX (K at -2^31). Refused now at the caller's
+   * number, with delta t's range message past -+1e12 and nearer with
+   * swe_calc()'s message of the Sun or the Moon there, where neither there
+   * nor 400 days on in the search's direction (its first place lies within
+   * an eclipse season) do they answer; tret zeroed (bug 239). The other
+   * eclipse searches alike. */
+  if (swi_search_start_refused(ctx, tjd_start, ifl, TRUE, backward ? -400 : 400, serr))
+    return ERR;
 #endif
   ifl &= SEFLG_EPHMASK; 
   swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
@@ -1655,6 +1689,10 @@ int32 CALL_CONV swe_sol_eclipse_when_glob_r(swe_ctx *ctx, double tjd_start, int3
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_sol_eclipse_when_glob_r_body(ctx, tjd_start, ifl, ifltype, tret, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
+    memset(tret, 0, 10 * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -1743,6 +1781,13 @@ static int32 swe_lun_occult_when_glob_r_body(swe_ctx *ctx, double tjd_start, int
   int32 iflag, iflagcart;
   AS_BOOL dont_times = FALSE;
   int32 one_try = backward & SE_ECL_ONE_TRY;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bugs 211, 240, as the eclipse searches: NaN was "jd nan outside
+   * Moshier planet range", past delta t's range Moshier's range named */
+  if (swi_date_invalid(tjd_start, serr)
+      || swi_search_start_refused(ctx, tjd_start, ifl, TRUE, (backward & 1) ? -400 : 400, serr))
+    return ERR;
+#endif
   if (ipl < 0) ipl = 0;
 /*if (backward & SEI_OCC_FAST)
     dont_times = TRUE; */
@@ -2141,6 +2186,10 @@ int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_lun_occult_when_glob_r_body(ctx, tjd_start, ipl, starname, ifl, ifltype, tret, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
+    memset(tret, 0, 10 * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -2198,6 +2247,9 @@ static int32 swe_sol_eclipse_when_loc_r_body(swe_ctx *ctx, double tjd_start, int
     memset(attr, 0, 20 * sizeof(double));
     return ERR;
   }
+  /* bug 240, as when_glob */
+  if (swi_search_start_refused(ctx, tjd_start, ifl, TRUE, backward ? -400 : 400, serr))
+    return ERR;
 #endif
   if (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX) {
     if (serr != NULL)
@@ -2224,6 +2276,12 @@ int32 CALL_CONV swe_sol_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_sol_eclipse_when_loc_r_body(ctx, tjd_start, ifl, geopos, tret, attr, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR) {	/* bug 239, as swe_sol_eclipse_where() */
+    memset(tret, 0, 10 * sizeof(double));
+    memset(attr, 0, 20 * sizeof(double));
+  }
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -2269,6 +2327,12 @@ static int32 swe_lun_occult_when_loc_r_body(swe_ctx *ctx, double tjd_start, int3
 {
   int32 retflag = 0, retflag2 = 0;
   double geopos2[20], dcore[10];
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bugs 211, 240, as swe_lun_occult_when_glob() */
+  if (swi_date_invalid(tjd_start, serr)
+      || swi_search_start_refused(ctx, tjd_start, ifl, TRUE, (backward & 1) ? -400 : 400, serr))
+    return ERR;
+#endif
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */
   if (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX) {
@@ -2299,6 +2363,12 @@ int32 CALL_CONV swe_lun_occult_when_loc_r(swe_ctx *ctx, double tjd_start, int32 
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_lun_occult_when_loc_r_body(ctx, tjd_start, ipl, starname, ifl, geopos, tret, attr, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR) {	/* bug 239, as swe_sol_eclipse_where() */
+    memset(tret, 0, 10 * sizeof(double));
+    memset(attr, 0, 20 * sizeof(double));
+  }
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -3551,6 +3621,10 @@ int32 CALL_CONV swe_lun_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_lun_eclipse_how_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
+    memset(attr, 0, 20 * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -3745,6 +3819,9 @@ static int32 swe_lun_eclipse_when_r_body(swe_ctx *ctx, double tjd_start, int32 i
     memset(tret, 0, 10 * sizeof(double));
     return ERR;
   }
+  /* bug 240, as the solar search */
+  if (swi_search_start_refused(ctx, tjd_start, ifl, TRUE, backward ? -400 : 400, serr))
+    return ERR;
 #endif
   ifl &= SEFLG_EPHMASK; 
   swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
@@ -3960,6 +4037,10 @@ int32 CALL_CONV swe_lun_eclipse_when_r(swe_ctx *ctx, double tjd_start, int32 ifl
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_lun_eclipse_when_r_body(ctx, tjd_start, ifl, ifltype, tret, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
+    memset(tret, 0, 10 * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -4010,6 +4091,9 @@ static int32 swe_lun_eclipse_when_loc_r_body(swe_ctx *ctx, double tjd_start, int
     memset(attr, 0, 20 * sizeof(double));
     return ERR;
   }
+  /* bug 240, as the solar search */
+  if (swi_search_start_refused(ctx, tjd_start, ifl, TRUE, backward ? -400 : 400, serr))
+    return ERR;
 #endif
   if (geopos != NULL && (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX)) {
     if (serr != NULL)
@@ -4108,6 +4192,12 @@ int32 CALL_CONV swe_lun_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_lun_eclipse_when_loc_r_body(ctx, tjd_start, ifl, geopos, tret, attr, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR) {	/* bug 239, as swe_sol_eclipse_where() */
+    memset(tret, 0, 10 * sizeof(double));
+    memset(attr, 0, 20 * sizeof(double));
+  }
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -4190,6 +4280,10 @@ static int32 swe_pheno_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, 
   double ph1, ph2, me[2];
   int32 iflagp, epheflag, retflag, epheflag2;
   char serr2[AS_MAXCH];
+#ifndef SWE_UPSTREAM_COMPAT
+  char snote[AS_MAXCH];	/* bug 244: the fall's note */
+  *snote = '\0';
+#endif
   *serr2 = '\0';
   iflag &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
   /* function calls for Pluto with asteroid number 134340
@@ -4239,6 +4333,14 @@ static int32 swe_pheno_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, 
     iflag |= epheflag2;
     iflagp |= epheflag2;
     epheflag = epheflag2;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 244: the calls after this one ask the ephemeris that
+     * answered, and each empties serr: a fallen request (the JPL file
+     * missing) returned SEFLG_SWIEPH with serr "", where swe_calc() of the
+     * body says why. The fall's note is kept for the end. */
+    if (serr != NULL)
+      strcpy(snote, serr);
+#endif
   }
   if (swe_calc_r(ctx, tjd, (int) ipl, iflag, lbr, serr) == ERR)
     /* int cast can be removed when swe_calc() gets int32 ipl definition */
@@ -4489,6 +4591,10 @@ static int32 swe_pheno_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, 
   }
   if (*serr2 != '\0' && serr != NULL)
     strcpy(serr, serr2);
+#ifndef SWE_UPSTREAM_COMPAT
+  else if (*snote != '\0' && serr != NULL)
+    strcpy(serr, snote);	/* bug 244 */
+#endif
   return iflag;
 }
 
@@ -5148,6 +5254,10 @@ int32 CALL_CONV swe_rise_trans_true_hor_r(swe_ctx *ctx, double tjd_ut, int32 ipl
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_rise_trans_true_hor_r_body(ctx, tjd_ut, ipl, starname, epheflag, rsmi, geopos, atpress, attemp, horhgt, tret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239: the site's refusal left the time as the caller had it */
+    *tret = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -7789,6 +7899,13 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   int32 ret;
   swi_config_hold(ctx);	/* bug 115 */
   ret = swe_get_orbital_elements_r_body(ctx, tjd_et, ipl, iflag, dret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 239: every refusal (the body's, a date's, the strict
+   * setting's) left the caller's elements as they were, where swe_calc()
+   * zeroes a refused position; the 17 this function answers, zeroed now */
+  if (ret == ERR)
+    memset(dret, 0, 17 * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -8125,6 +8242,10 @@ int32 CALL_CONV swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, i
   int32 ret;
   swi_config_hold(ctx);	/* bug 115 */
   ret = swe_orbit_max_min_true_distance_r_body(ctx, tjd_et, ipl, iflag, dmax, dmin, dtrue, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_get_orbital_elements() */
+    *dmax = *dmin = *dtrue = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -8390,6 +8511,10 @@ int32 CALL_CONV swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut,  /* input time
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_gauquelin_sector_r_body(ctx, t_ut, ipl, starname, iflag, imeth, geopos, atpress, attemp, dgsect, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239: the sector as the caller had it, a date's, a method's refusal */
+    *dgsect = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }

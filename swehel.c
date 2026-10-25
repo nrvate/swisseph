@@ -1600,6 +1600,10 @@ int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, do
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_vis_limit_mag_r_body(ctx, tjdut, dgeo, datm, dobs, ObjectName, helflag, dret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_heliacal_ut() */
+    memset(dret, 0, 7 * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -1623,6 +1627,26 @@ int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, do
 ' VR [km]
 ' TopoArcVisionis [deg]
 */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 241: swe_heliacal_angle() and swe_topo_arcus_visionis()
+ * take the date only for its calendar date (SunRA()'s month and day, the
+ * solar cycle's year in Bn()), and answered OK at any finite date: the
+ * arcus visionis 6.2214 deg and the angle 3.2813 at 1e300 (5.7311 and
+ * 2.6563 at J2000), past |J| 7.84e11 from swe_revjul()'s year held at
+ * INT_MIN (bug 216). Refused now outside the range that year holds, as
+ * the Swiss files' names are (SWI_FILENAME_JMAX). */
+static AS_BOOL hel_date_undefined(double tjdut, char *serr)
+{
+  char sjd[SWI_JDSTR_LEN];
+  if (tjdut >= -SWI_FILENAME_JMAX && tjdut <= SWI_FILENAME_JMAX)
+    return FALSE;
+  if (serr != NULL)	/* the date by swi_jd_str(), bug 243 */
+    snprintf(serr, AS_MAXCH, "jd %s outside the range the calendar date is defined for, %g .. %g",
+             swi_jd_str(tjdut, -1, sjd), -SWI_FILENAME_JMAX, SWI_FILENAME_JMAX);
+  return TRUE;
+}
+#endif
+
 static int32 TopoArcVisionis(swe_ctx *ctx, double Magn, double *dobs, double AltO, double AziO, double AltM, double AziM, double JDNDaysUT, double AziS, double sunra, double Lat, double HeightEye, double *datm, int32 helflag, double *dret, char *serr)
 {
   double Xm, Ym, AltSi, AziSi;
@@ -1670,6 +1694,8 @@ static int32 swe_topo_arcus_visionis_r_body(swe_ctx *ctx, double tjdut, double *
     dret[0] = 0;
     return ERR;
   }
+  if (hel_date_undefined(tjdut, serr))	/* bug 241, see swe_heliacal_angle() */
+    return ERR;
 #endif
   swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   sunra = SunRA(ctx, tjdut, helflag, serr);
@@ -1684,6 +1710,10 @@ int32 CALL_CONV swe_topo_arcus_visionis_r(swe_ctx *ctx, double tjdut, double *dg
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_topo_arcus_visionis_r_body(ctx, tjdut, dgeo, datm, dobs, helflag, mag, azi_obj, alt_obj, azi_sun, azi_moon, alt_moon, dret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_heliacal_ut() */
+    dret[0] = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -1785,6 +1815,8 @@ static int32 swe_heliacal_angle_r_body(swe_ctx *ctx, double tjdut, double *dgeo,
     dret[0] = dret[1] = dret[2] = 0;
     return ERR;
   }
+  if (hel_date_undefined(tjdut, serr))	/* bug 241 */
+    return ERR;
 #endif
   if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
     if (serr != NULL)
@@ -1801,6 +1833,10 @@ int32 CALL_CONV swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, d
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_heliacal_angle_r_body(ctx, tjdut, dgeo, datm, dobs, helflag, mag, azi_obj, azi_sun, azi_moon, alt_moon, dret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_heliacal_ut() */
+    dret[0] = dret[1] = dret[2] = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -2191,6 +2227,10 @@ int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_heliacal_pheno_ut_r_body(ctx, JDNDaysUT, dgeo, datm, dobs, ObjectNameIn, TypeEvent, helflag, darr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_heliacal_ut() */
+    memset(darr, 0, SE_HELIACAL_DARR_SIZE * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -3331,6 +3371,18 @@ static int32 swe_heliacal_ut_r_body(swe_ctx *ctx, double JDNDaysUTStart, double 
     dret[0] = dret[1] = dret[2] = 0;
     return ERR;
   }
+  /* Upstream bug 241: a start no ephemeris answers went on into the
+   * search: from about -+1e100 the synodic periods added to it round away
+   * and "no heliacal date found within 5 synodic periods" was the answer,
+   * at 1e200 to DBL_MAX either sign; nearer, the range message of a date
+   * the search had reached, "jd 10000331.937800" for a start at 1e7.
+   * Refused now at the caller's number, with delta t's range message past
+   * -+1e12 and nearer with swe_calc()'s message of the Sun there, where
+   * neither there nor 2000 days on (two synodic periods of every object,
+   * within which the search's first place lies) does it answer; dret
+   * zeroed (bug 239). */
+  if (swi_search_start_refused(ctx, JDNDaysUTStart, helflag, FALSE, 2000, serr_ret))
+    return ERR;
 #endif
   if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
     if (serr_ret != NULL)
@@ -3458,6 +3510,15 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_heliacal_ut_r_body(ctx, JDNDaysUTStart, dgeo, datm, dobs, ObjectNameIn, TypeEvent, helflag, dret, serr_ret);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 239: a refusal (the site's, the object's, the event's,
+   * a date's, the strict setting's) left the caller's results as they were,
+   * or as far as the search had filled them, where swe_calc() zeroes a
+   * refused position. Zeroed now, as for an invalid date (bug 211); so the
+   * other heliacal functions. */
+  if (ret == ERR)
+    dret[0] = dret[1] = dret[2] = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }

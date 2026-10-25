@@ -278,6 +278,12 @@ worst were in code that had never executed even once.
 | 252 | `swe_gauquelin_sector()` methods 0 and 1 set the place the body's call answered with every flag in the frame of the true ecliptic of date: the flags that name the place's frame or form (SEFLG_NONUT, ICRS, J2000, EQUATORIAL, RADIANS, XYZ) and the centre (HELCTR, BARYCTR) moved the sector, Mars at 1950, Zurich, method 0, NONUT -1.14e-4 sector, J2000 -0.0875, EQUATORIAL -0.148, RADIANS +17.8, XYZ +18.3, HELCTR and BARYCTR +3.88; methods 2 to 5 take the ephemeris alone | Correctness (behaviour) | `swecl.c` |
 | 253 | swetest's house positions (-fg, -fG, -fj) are `swe_house_pos()` of the place it printed: with -sid the sidereal place in the tropical frame (Mars at 1.1.1950 0h UT, Zurich, 'G', 5.3075773 for 2.6855985), with -j2000, -nonut, -hel, -bary, -icrs and -i's forms the place of that frame or form; in the diff modes the position of the difference or midpoint set off against the second body's (Mars - Sun, 'P', -15.306 deg for -100.930); the cusps' those of the cusps printed (sidereal house 1 at 330.07 deg) | Correctness (behaviour, program) | `swetest.c` |
 | 250 | At a join of the Swiss files (every 600 years, where each instant's read comes from its own file, entry 89, and the two files' places step: Mars 6.3e-8 deg at JD 2378496.5, the Earth's velocity 2.1e-9 AU/day, Chiron 1.3e-7 AU) a speed whose reads straddle the join takes the step for motion: 2^-7 day after the 1800 join the true node 4.5e-6 deg/day off its places' rate, the osculating apogee 1.5e-5, `swe_nod_aps()`'s osculating points up to 1.3e-2 (Chiron's node; Mars's heliocentric node 7.8e-5), the Sun's mean perigee 1.4e-7; within the light time after it the Sun's apparent speed 1.2e-7, Mercury's 1.7e-7, the Moon's 1.0e-5; Aldebaran 1.7e-7, Mars from Jupiter 1.0e-7 | Correctness | `sweph.c`, `swecl.c`, `swephlib.h` |
+| 239 | A refusal leaves the caller's outputs as they were, or as far as the call had filled them, where `swe_calc()` zeroes the place: `swe_calc_pctr()`, `swe_get_orbital_elements()`, `swe_orbit_max_min_true_distance()`, `swe_gauquelin_sector()`, the eclipse and occultation functions, the node and heliocentric crossings, the heliacal functions, `swe_utc_to_jd()` and rise and set refusing the site, on every refusal: a date's, a body's, a method's, a site's, an event's, the strict setting's (52 of G174's 64 refusals) | Correctness (behaviour) | `sweph.c`, `swecl.c`, `swehel.c`, `swedate.c` |
+| 240 | An eclipse search from a start no ephemeris answers refuses with the range message of the first possible eclipse's date, from the lunation number's polynomial: "jd 10000160.328309" for a start at 1e7, "jd 6059650833862693" at 6.2e10, "jd 6062911484514103" at -6.2e10, "jd 6634702579155901" from 1e11 to DBL_MAX; the occultation searches at NaN "jd nan outside Moshier planet range", not entry 211's invalid date | Correctness (error reporting) | `swecl.c`, `swephlib.c`, `swephlib.h` |
+| 241 | `swe_heliacal_ut()` from a start no ephemeris answers: "no heliacal date found within 5 synodic periods" from -+1e100 to DBL_MAX, nearer the range message of a date the search reached ("jd 10000331.937800" from 1e7); `swe_heliacal_angle()` and `swe_topo_arcus_visionis()` OK at every finite date from its calendar date, past 7.84e11 one with no year (the arcus visionis 6.2214 deg at 1e300) | Correctness (behaviour) | `swehel.c`, `swephlib.c` |
+| 242 | The Swiss files' range refusal words the file by the body's index, and every body first reads the barycentric Sun, index 10, past Pluto's: "asteroid eph. file (sepl_168.se1)" for the Sun, the Moon, the planets, Ceres and Cupido at 8e6 days, "(seplm132.se1)" at -3.1e6 | Correctness (error reporting) | `sweph.c` |
+| 244 | A JPL request falling to the Swiss files (the JPL file missing) returns an empty serr where `sweph()` opens a file, `main_planet()`'s "SwissEph file 'de999.eph' not found ... \ntrying Swiss Eph; " wiped with the file search's messages: 16 of 19 kinds of call fresh, kept where a file is open; `swe_pheno()` and `_ut()` always | Correctness (error reporting) | `sweph.c`, `swecl.c` |
+| 248 | The barycentric Sun's fall from a missing JPL file keeps SEFLG_JPLEPH: with SEFLG_SPEED this fork's light-time rate (entry 78) reads the JPL file through a NULL handle, SIGSEGV, fresh, warm and strict; without it 17921 for the Swiss request's 17922, SEFLG_SPEED3 18049 for 18050, and the strict setting answers; upstream 18177 for 18178 | Correctness (a crash; behaviour) | `sweph.c` |
 
 ---
 
@@ -18131,6 +18137,329 @@ Noticed, not fixed:
   after alike.
 - Below the floor: the Moon's apparent aberration share at the 1800 join
   1.7e-9 deg/day off its line now (the other joins 2e-10 to 6e-10).
+
+## 239. A refusal leaves the caller's outputs as they were, or as far as the call had filled them, where `swe_calc()` zeroes the place: `swe_calc_pctr()`, `swe_get_orbital_elements()`, `swe_orbit_max_min_true_distance()`, `swe_gauquelin_sector()`, the eclipse and occultation functions, the crossings, the heliacal functions, `swe_utc_to_jd()`, rise and set
+
+**Severity: Correctness (behaviour: a refused call's outputs readable as an answer; every refusal of those functions -- a date's, a body's, a method's, a site's, an event's, the strict setting's)**
+**Where:** `sweph.c`: `swe_calc_pctr_r()`, `swe_mooncross_node_r()`, `swe_mooncross_node_ut_r()`, `swe_helio_cross_r()`, `swe_helio_cross_ut_r()`; `swecl.c`: `swe_get_orbital_elements_r()`, `swe_orbit_max_min_true_distance_r()`, `swe_gauquelin_sector_r()`, `swe_sol_eclipse_where_r()`, `swe_lun_occult_where_r()`, `swe_sol_eclipse_how_r()`, `swe_lun_eclipse_how_r()`, the six `when` searches' `_r()` forms, `swe_rise_trans_true_hor_r()`; `swehel.c`: `swe_heliacal_ut_r()`, `swe_heliacal_pheno_ut_r()`, `swe_vis_limit_mag_r()`, `swe_heliacal_angle_r()`, `swe_topo_arcus_visionis_r()`; `swedate.c`: `swe_utc_to_jd_r()`
+
+`swe_calc()` zeroes a refused place (the manual: "the position and speed
+variables are set to zero"), entry 179 did it for `swe_nod_aps()`, entry
+211 for every function at NaN and -+inf. Elsewhere a refusal returned ERR
+with the outputs as the caller had them (set to 7 below: "kept") or as far
+as the call had written them ("set"). Measured on ts20's tip, Moshier
+unless said, J2000 unless a date is refused (1e7):
+- `swe_calc_pctr()`: kept on every refusal: the date ("SwissEph file
+  'sepl_222.se1' not found"), NaN, the centre the body itself, an illegal
+  body, the strict setting's;
+- `swe_get_orbital_elements()` (its 17), `swe_orbit_max_min_true_distance()`:
+  kept, the date's, the strict setting's, the Sun's ("object 0 not
+  valid");
+- `swe_gauquelin_sector()`: kept, the date's (methods 0 and 3), method 9,
+  the strict setting's;
+- `swe_sol_eclipse_where()`, `swe_lun_occult_where()`: kept, the date's,
+  an unknown star, the strict setting's; `swe_sol_eclipse_how()` set, the
+  date's and a site at 50000 m; `swe_lun_eclipse_how()` kept, the site;
+- the searches: `swe_sol_eclipse_when_glob()` and `swe_lun_eclipse_when()`
+  kept for an eclipse type that does not exist; `swe_sol_eclipse_when_loc()`
+  kept, the date's, the site's, the strict setting's;
+  `swe_lun_eclipse_when_loc()` set (the date) and kept (the site);
+  `swe_lun_occult_when_loc()` set at the date and NaN, kept for the site;
+- `swe_mooncross_node()` and `_ut()` (the error a date before the start)
+  kept the place, the date's and the strict setting's;
+  `swe_helio_cross()` and `_ut()` kept the date, the start's, the Sun's and
+  the Moon's ("not possible for object 0 = Sun"), the strict setting's;
+- `swe_heliacal_ut()`: set (the search's dates) from 1e7, kept for the
+  site, the Sun, the Moon's morning first, Mars's evening first;
+  `swe_heliacal_pheno_ut()` kept, the date's, the site's, the strict
+  setting's; `swe_heliacal_angle()` kept, the site;
+- `swe_utc_to_jd()`: both dates kept for "invalid date", "invalid time"
+  and "invalid time (no leap second!)";
+- `swe_rise_trans_true_hor()`, and `swe_rise_trans()` where it takes it
+  (a star, a transit, twilight, past 60 deg of latitude), kept the time
+  for the site's refusal,
+  before the `*tret = 0` that every later path passes.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, in each
+function's `_r()` form, on ERR: `swe_calc_pctr()`'s six doubles, the
+orbital elements' 17, the three distances, the sector, the eclipse and
+occultation place's geopos[0..1] (the two it writes; geopos[2..9] are "not
+implemented so far") and attr's 20, tret's 10 of the searches, the
+crossing's place where the return is the start less a day and its date,
+`swe_heliacal_ut()`'s three dates, `swe_heliacal_pheno_ut()`'s
+SE_HELIACAL_DARR_SIZE (31), `swe_vis_limit_mag()`'s 7,
+`swe_heliacal_angle()`'s 3, the arcus visionis, both dates of
+`swe_utc_to_jd()` and the rise or set time are 0.
+- After: inside the ranges bit for bit against the tip: 1288 lines (the
+  six searches forward and back, the heliacal functions, `swe_calc_pctr()`,
+  the elements and distances, the sectors, the where and how functions,
+  the crossings and `swe_utc_to_jd()`, at Moshier and Swiss dates with
+  starts 100 to 500 days outside each range): every answer and return the
+  same; the 132 lines that differ are refusals, their outputs now 0.
+- Cost: none (a test of the return in each wrapper).
+
+G174 `tests/refusal.c` (a): 64 refusals, each function and reason, the
+outputs set to 7, in a child: ERR, a message, the outputs 0. Before the
+fix 12 of 64 (the refusals that zeroed already), after 64; the upstream
+build 12. G160 (b) no longer excepts `swe_calc_pctr()`,
+`swe_get_orbital_elements()` and `swe_orbit_max_min_true_distance()` at NaN
+and -+inf: its before-the-fix count 161 of 267, the upstream build's 155.
+G24 `refusal_outputs_kept`: 14 refusals, one of each function and reason,
+outputs left: 0 of 14 shipped, 14 of 14 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_rise_trans()`'s fast path (`rise_set_fast()`) takes no
+  site height: the Sun's rising at 50000 m answers OK, 2451545.800726,
+  where `swe_rise_trans_true_hor()` refuses "location for
+  swe_rise_trans() must be between -500 and 25000 m above sea";
+  `swe_vis_limit_mag()` (-3.56) and `swe_topo_arcus_visionis()` (99, OK)
+  answer there where the other heliacal functions refuse.
+- BEHAVIOUR. `swe_orbit_max_min_true_distance()` of the Sun answers OK
+  (1.016698827, 0.983294116, 0.983309964 AU) where
+  `swe_get_orbital_elements()` refuses it, "object 0 not valid".
+- BEHAVIOUR. `swe_heliacal_pheno_ut()` never writes darr[28..30] on an
+  answer: they are as the caller had them.
+
+## 240. An eclipse search from a start no ephemeris answers refuses with the range message of the first possible eclipse's date: "jd 10000160.328309" for a start at 1e7, "jd 6634702579155901" from 1e11 to DBL_MAX
+
+**Severity: Correctness (error reporting: a refusal naming a date no caller gave; the four eclipse searches; the occultation searches' NaN and far dates)**
+**Where:** `swecl.c`: `swe_sol_eclipse_when_glob_r_body()`, `swe_sol_eclipse_when_loc_r_body()`, `swe_lun_eclipse_when_r_body()`, `swe_lun_eclipse_when_loc_r_body()`, `swe_lun_occult_when_glob_r_body()`, `swe_lun_occult_when_loc_r_body()`; `swephlib.c`, `swephlib.h`: `swi_search_start_refused()`
+
+The searches' first place is the first possible eclipse's, from the
+lunation number K and Meeus's polynomial in K. From a start outside every
+ephemeris the first `swe_calc()` there refused, with that date: on
+Moshier the solar global search from 1e7 "jd 10000160.328309 outside
+Moshier planet range", from 6e10 "jd 5314742918287432" (the
+polynomial's T^4 term), 6.2e10 "jd 6059650833862693", -6.2e10 "jd
+6062911484514103" (a positive date), from 1e11 to DBL_MAX "jd
+6634702579155901" (K held at -2^31 by entry 211's cast); the lunar
+searches "jd 10000144.875747" and "jd 6634702564139976", the local
+ones three days on; on the Swiss files "jd 6059650833862693 outside the
+range the Swiss Ephemeris files are named for" from 6.2e10, "jd
+6634702579155901" from 1e12 on. The occultation searches tested the start
+and named it ("jd 10000000.000000"), but at NaN "jd nan outside Moshier
+planet range", not entry 211's "invalid date", and past 1e12 Moshier's
+range ("jd 1e+200 outside Moshier planet range") where every other UT
+function names delta t's. Under
+the strict setting a search inside the range was refused at its first
+place's date ("JPL ephemeris is not available for jd 2451549.7551" for a
+start at J2000). Entry 211's question: no search overflows an int any
+more (K by `lunation_trunc()`, in both builds), `swe_lun_occult_when_glob()`
+neither aborts at -+1e300 nor hangs at NaN on the tip.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, at each
+search's start (after entry 211's test, which the occultation searches
+take now too): `swi_search_start_refused()`, TRUE where delta t refuses
+the start, or the Sun or the Moon refuse there and 400 days on in the
+search's direction (the first place lies within an eclipse season of the
+start: 163 days on Moshier from 1e7, 262 backward from -1e7), with
+`swe_calc()`'s message at the caller's number; tret 0 (entry 239). So a
+start just past an ephemeris's end whose search reaches inside it answers
+as before, and the refusal names the caller's date:
+"jd 10000000.000000 outside Moshier planet range 625000.20 ..
+2818000.80", "SwissEph file 'sepl_222.se1' not found in PATH ...", "jd
+1e+200 outside the delta t range -1e+12 .. 1e+12", "JPL ephemeris is not
+available for jd 2451545.0000 ..."; NaN and -+inf "invalid date".
+- After: eight starts 50 days outside Moshier's range, the four searches
+  forward and backward, answer the eclipse the search from the range's
+  end answers, as before (2817935.8041158551 backward, 625053.0811742089
+  forward); of 536 starts 1 to 400 days past Moshier's two ends, the
+  global solar and lunar searches toward the range, the same 92 answer the
+  same eclipses as on the tip; inside, bit for bit (entry 239's 1288
+  lines).
+- Cost: two `swe_calc()` calls at a search's start.
+
+G174 (b): the six searches, Moshier and the Swiss files, forward and
+backward, at -+1e7, -+6.2e10, 1e12, 1e13, -1e100, 1e200 and -+DBL_MAX:
+ERR, tret and attr 0, serr the Sun's `swe_calc()` message at the caller's
+date (`swe_calc_ut()`'s past delta t's range), 240 calls; and the eight
+starts near the edge. Before the fix 28 of 240 (the occultation global
+search inside delta t's range, and the Swiss global eclipse searches at
+-+1e7, whose file the first eclipse's date shares) and 8 of 8; after 240
+and 8; the upstream build 48 and 8. G24 `far_search_misnamed`: the four
+eclipse searches on Moshier from 1e7, 6.2e10 and 1e13, not naming the
+caller's date or delta t's range: 0 of 12 shipped, 12 of 12 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. The Swiss eclipse searches backward from within some 100
+  days of the planet file's end (from 7929133.0, inside sepl_168.se1)
+  refuse: their first place lies past the end, "planets eph. file
+  (sepl_168.se1): jd 7929235.715052 > upper limit 7929133.500000", where
+  the eclipses before the start lie inside it; Moshier's from its end
+  answer. As on the tip.
+
+## 241. `swe_heliacal_ut()` from a start no ephemeris answers: "no heliacal date found within 5 synodic periods" from 1e100 to DBL_MAX, nearer a date the search reached; `swe_heliacal_angle()` and `swe_topo_arcus_visionis()` OK at any finite date
+
+**Severity: Correctness (behaviour: a refusal for the wrong reason, and answers from a calendar date with no year; error reporting)**
+**Where:** `swehel.c`: `swe_heliacal_ut_r_body()`, `swe_heliacal_angle_r_body()`, `swe_topo_arcus_visionis_r_body()`, `hel_date_undefined()`; `swephlib.c`: `swi_search_start_refused()` (entry 240)
+
+`swe_heliacal_ut()` searches by synodic periods added to the start. On
+Moshier and the Swiss files at -+1e100, 1e200, 1e300 and -+DBL_MAX it said
+"no heliacal date found within 5 synodic periods", the dates kept (the
+sums round to the start); nearer it refused with a date the search had
+reached: "jd 10000331.937800" from 1e7, "jd -9999559.933600" from -1e7,
+"jd 1000000000192.283936" from 1e12, "jd 10000000000492.544922" from
+1e13, past delta t's range. `swe_heliacal_pheno_ut()` and `swe_vis_limit_mag()` refuse
+at those dates already, by the range message of the TT (delta t's past
+1e12), the former with its outputs kept (entry 239).
+`swe_heliacal_angle()` and `swe_topo_arcus_visionis()` take the date only
+for its calendar date (`SunRA()`'s month and day, `Bn()`'s solar-cycle
+year) and answered OK at every finite date: the arcus visionis 6.2214 deg
+and the angle 3.2813 at 1e300 (5.7311 and 2.6563 at J2000), 6.5626 and
+3.7188 at 7.9e11, 5.7709 and 2.7188 at 1e12, past -+7.84e11 from a year
+`swe_revjul()` holds at INT_MIN (entry 216).
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`:
+- `swe_heliacal_ut()` refuses a start where delta t refuses it or the Sun
+  refuses there and 2000 days on (two synodic periods of every object;
+  the search's first place lies within them), with `swe_calc()`'s message
+  at the caller's number ("jd 10000000.000000 outside Moshier planet
+  range ...", "jd 1e+200 outside the delta t range -1e+12 .. 1e+12"),
+  the dates 0. A start 100 days before the Swiss files' start answers
+  inside them, as before (-3026356.2169860429).
+- `swe_heliacal_angle()` and `swe_topo_arcus_visionis()` refuse outside
+  -+7.8e11 (SWI_FILENAME_JMAX, the range a year holds, as the Swiss files'
+  names), "jd 1e+300 outside the range the calendar date is defined for,
+  -7.8e+11 .. 7.8e+11", the outputs 0; at 1e7 and -+7.8e11 they answer as
+  before.
+- Cost: one or two `swe_calc()` calls at the search's start; a range test.
+
+G174 (c): `swe_heliacal_ut()` of Venus, Moshier and the Swiss files, at
+-+1e7, 6.2e10, 1e12, 1e13, 1e100, -1e200, 1e300 and -+DBL_MAX, as G174
+(b); `swe_heliacal_pheno_ut()` and `swe_vis_limit_mag()` at 1e13 and
+1e300; the angle and the arcus visionis at -+7.9e11, -+1e12, -+1e300,
+-+DBL_MAX refused, at 1e7 and -+7.8e11 answered; the start before the
+Swiss files: 47 calls. Before the fix 9 of 47, after 47, the upstream
+build 7. G24 `heliacal_far_answered`: `swe_heliacal_ut()` on Moshier from
+1e7, 1e200 and DBL_MAX not refused at the caller's date, the angle and
+the arcus visionis at 7.9e11 and 1e300 answered: 0 of 7 shipped, 7 of 7
+compat.
+
+Noticed, not fixed:
+- BEHAVIOUR (message only). `swe_heliacal_pheno_ut()` and
+  `swe_vis_limit_mag()`, as `swe_calc_ut()`, name the TT of the caller's
+  UT: "jd 10000016.066403" at 1e7, "jd 1281959700055.551270" at 1e12,
+  "jd -720157714815.290161" at -1e12.
+
+## 242. The Swiss files' range refusal words the file by the body's index: "asteroid eph. file (sepl_168.se1)" for the planets, the Moon and the main asteroids at 8e6 days
+
+**Severity: Correctness (error reporting: the wrong file kind named; every body read beyond the planet file's ends)**
+**Where:** `sweph.c`: `sweph()`
+
+`sweph()` chose "asteroid eph. file", "planets eph. file" or "moon eph.
+file" by the body's index: past SEI_PLUTO asteroid, SEI_MOON moon, else
+planets. Every body's first read is the barycentric Sun's, SEI_SUNBARY,
+10, past Pluto's 9, from the planet file. So the Sun, the Moon, Mercury,
+Mars, Jupiter, Pluto, the heliocentric Earth, Ceres and Cupido at
+8000000.5 refused with "asteroid eph. file (sepl_168.se1): jd
+8000000.500000 > upper limit 7929133.500000;", at -3100000 "asteroid eph.
+file (seplm132.se1): jd -3100000.000000 < lower limit -3026605.471196;".
+The true node and the osculating apogee, whose first read is the Moon's,
+were rightly "moon eph. file (semo_168.se1)" ("(semom132.se1)").
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, the word by
+the file read, `ifno`: SEI_FILE_PLANET "planets", SEI_FILE_MOON "moon",
+SEI_FILE_MAIN_AST "asteroid", as the name it prints. With the standard
+files the asteroid file's ranges lie outside the planet file's
+(seas_168.se1 ends at 7930133.5, seasm132.se1 starts at -3027183.5), so
+its wording is reached by an asteroid file of a narrower range only; a
+renamed file is refused by its name test first ("Ephemeris file name
+'seas_18.se1' wrong").
+- Cost: none (the refusal's text).
+
+G174 (d): nine bodies at 8000000.5 and -3100000, "planets eph. file
+(sepl_168.se1): jd " ("(seplm132.se1)"), and the true node and the
+osculating apogee "moon eph. file (semo_168.se1): jd " ("(semom132.se1)"):
+22 calls. Before the fix 4 of 22 (the Moon file's), after 22, the
+upstream build 4. G24 `planet_file_as_asteroid`: Mars, the Moon and Ceres
+at 8000000.5 and Mars at -3100000 called "asteroid eph. file": 0 of 4
+shipped, 4 of 4 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR (message only). The true node's and the osculating apogee's
+  refusals with SEFLG_SPEED name their speed stencil's date, "jd
+  8000000.484375" for 8000000.5.
+
+## 244. A JPL request falling to the Swiss files returns an empty serr where `sweph()` opens a file: `main_planet()`'s " \ntrying Swiss Eph; " wiped with the file search's messages, the first call of a fresh context, and by `swe_pheno()` always
+
+**Severity: Correctness (error reporting: the fall unreported, two messages for one request by call order)**
+**Where:** `sweph.c`: `sweph()`; `swecl.c`: `swe_pheno_r_body()`
+
+With the JPL file missing (de999.eph) and the fall allowed, `main_planet()`
+and its kin write "SwissEph file 'de999.eph' not found in PATH '...'
+\ntrying Swiss Eph; " (a space before the newline) and answer from the
+files. `sweph()`, opening a Swiss file, empties serr (`*serr = '\0'`,
+meant for its own search's "not found" messages) and wiped the note too:
+fresh, 16 of 19 kinds of call answered with serr "" (`swe_calc()` of
+Mars, with SEFLG_SPEED, of the Moon, the Sun, the heliocentric Earth,
+Ceres, the true node, Cupido, Mars barycentric and heliocentric,
+`swe_calc_ut()`, `swe_calc_orbel()`, the two star functions, `swe_pheno()`
+and `_ut()`); SEFLG_SPEED3, `swe_nod_aps_ut()` and `swe_calc_pctr()` kept
+it. Warm (a file open), every call kept it but `swe_pheno()` and `_ut()`,
+whose later calls ask the ephemeris that answered and each empties serr.
+The answers (flags, places, speeds) were the Swiss request's, bit for
+bit.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, `sweph()`
+keeps what serr held before the file search and gives it back on
+opening, so only the search's own messages go; `swe_pheno()` keeps the
+fall's note for the end. Every kind, fresh and warm, carries "SwissEph
+file 'de999.eph' not found in PATH '<path>/' \ntrying Swiss Eph; " (Ceres
+"sun: " before it, as upstream's asteroid notes), with the Swiss request's
+flag and outputs; the strict setting refuses as before ("JPL ephemeris is
+not available for jd 2451545.0000; falling back to Swiss (.se1) ...").
+- Cost: a copy of serr when a file opens (no hot path). 240000
+  `swe_calc()` calls with SEFLG_SPEED, twelve bodies: instructions
+  18590557645 before, 18591998216 after (Swiss, +0.008%), 44073521586 and
+  44073521423 (Moshier), the sums the same.
+
+G174 (e): the 19 kinds of call asking de999.eph, fresh and after a fallen
+call and a Swiss call on the context: the Swiss request's flag and
+outputs, and the note: 38 calls. Before the fix 20 of 38 (16 fresh calls
+and `swe_pheno()` and `_ut()` warm without the note), after 38; the
+upstream build 4 (warm calls also without it, the stars' and
+`swe_calc_pctr()`'s flags JPL's). G24 `jpl_fall_note_lost`: Mars, the Moon
+with SEFLG_SPEED, `swe_calc_ut()` of Mars, `swe_pheno()` of Mars and
+Ceres, each the first call of its context, without the note: 0 of 5
+shipped, 5 of 5 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR (message only). `swe_heliacal_ut()` answers a fallen request
+  with serr "" (Venus at J2000), where `swe_rise_trans()`, the eclipse and
+  occultation searches, `swe_vis_limit_mag()`, `swe_nod_aps()` and
+  `swe_get_orbital_elements()` carry the note.
+
+## 248. The barycentric Sun's fall from a missing JPL file keeps SEFLG_JPLEPH: with SEFLG_SPEED a SIGSEGV, without it the flag JPL's and the strict setting answering
+
+**Severity: Correctness (a crash: a NULL file handle read; behaviour: the wrong return flag, the strict setting bypassed)**
+**Where:** `sweph.c`: `swecalc()`
+
+`swecalc()`'s barycentric Sun opened the JPL file and, failing, went to
+the Swiss files (`goto sweph_sbar`) without the flag switch and note the
+Moon's and the planets' falls make (`main_planet()`, `main_planet_bary()`):
+the Swiss Sun answered under SEFLG_JPLEPH. With SEFLG_SPEED this fork's
+light-time rate (entry 78) in `app_pos_etc_sbar()` asked `swi_pleph()`
+for the JPL file the flag said was open: `state()` with `ctx->jpl` NULL,
+SIGSEGV, `swe_calc()` and `swe_calc_ut()` alike, fresh, warm and strict.
+Without SEFLG_SPEED the return was 17921 for the Swiss request's 17922,
+serr ""; with SEFLG_SPEED3 18049 for 18050, the JPL message without the
+note; the strict setting's test, which reads the return flag, saw no fall
+and answered. Upstream's code (no light-time rate) answers 18177 for
+18178. It is the only `open_jpl_file()` call in `swecalc()`; the other
+paths that go to the files on a failed JPL read switch the flag.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, on the failed
+open the flag goes to SEFLG_SWIEPH and serr takes " \ntrying Swiss Eph; ",
+as the other falls. The barycentric Sun with SEFLG_SPEED, without, with
+SEFLG_SPEED3 and by `swe_calc_ut()` answers 18178, 17922, 18050 with the
+Swiss request's place and speeds bit for bit and entry 244's note; the
+strict setting refuses with the downgrade message, the place 0.
+- Cost: none (the failed open's branch).
+
+G174 (f): those four calls fresh and warm as G174 (e), and strict refused:
+12 calls. Before the fix 0 of 12 (6 crashed, two of them strict), after
+12; the upstream build 0 (the flag JPL's, the strict setting answering).
+G24 `bary_sun_fall_flag`: the return flag, 18178 shipped, 18177 compat.
 
 ## How these were found
 

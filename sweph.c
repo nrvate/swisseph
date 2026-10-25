@@ -1514,8 +1514,25 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	/* open ephemeris, if still closed */
 	if (!ctx->jpl_file_is_open) {
 	  retc = open_jpl_file(ctx, ss, ctx->jplfnam, ctx->ephepath, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+	  /* Upstream bug 248: the fall to the files kept SEFLG_JPLEPH, and
+	   * without the note the other bodies' falls write: with the JPL file
+	   * missing the barycentric Sun with SEFLG_SPEED SIGSEGV in
+	   * app_pos_etc_sbar(), whose light-time rate (bug 78) read the JPL
+	   * file a flag said was open (state(), ctx->jpl NULL), strict or
+	   * not; upstream's code answered the Swiss Sun flagged 18177
+	   * (SEFLG_JPLEPH). Now as the Moon's and the planets' falls: Swiss,
+	   * the note, and under the strict setting the downgrade's refusal. */
+	  if (retc != OK) {
+	    iflag = (iflag & ~SEFLG_JPLEPH) | SEFLG_SWIEPH;
+	    if (serr != NULL && strlen(serr) + 30 < AS_MAXCH)
+	      strcat(serr, " \ntrying Swiss Eph; ");
+	    goto sweph_sbar;
+	  }
+#else
 	  if (retc != OK)
 	    goto sweph_sbar;
+#endif
 	}
 #ifndef SWE_UPSTREAM_COMPAT
 	else
@@ -4595,7 +4612,11 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
 #ifndef SWE_UPSTREAM_COMPAT
     int ineighbour = 0;
     char serr_own[AS_MAXCH];	/* why the instant's own file did not open */
+    char serr_in[AS_MAXCH];	/* bug 244: the call's notes before the search */
     *serr_own = '\0';
+    *serr_in = '\0';
+    if (serr != NULL)
+      snprintf(serr_in, AS_MAXCH, "%s", serr);
 #endif
     swi_gen_filename(tjd, ipli, fname); 
     strcpy(subdirnam, fname);
@@ -4673,7 +4694,19 @@ again:
       return(NOT_AVAILABLE);
     }
     /* during the search error messages may have been built, delete them */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 244: and with them what the call had written before
+     * the search: a JPL request falling to the files ("SwissEph file
+     * 'de999.eph' not found in PATH ... \ntrying Swiss Eph; ") answered
+     * with an empty serr wherever this call opened a file, the first call
+     * of a fresh context, and kept its note where the file was open: the
+     * same request, two messages by call order. Now the search's own
+     * messages go and the call's stay. */
+    if (serr != NULL)
+      strcpy(serr, serr_in);
+#else
     if (serr != NULL) *serr = '\0';	
+#endif
     retc = read_const(ctx, ifno, serr);
     if (retc != OK)
       return(retc);
@@ -4719,6 +4752,22 @@ again:
 	  sprintf(s, "plan. COB No. %d (%s): ", ipli, sp);
 	else
 	  sprintf(s, "plan. moon No. %d (%s): ", ipli, sp);
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 242: the wording was chosen by the body's index, and
+       * the barycentric Sun's (SEI_SUNBARY, 10), read from the planet file
+       * first for every body, is past SEI_PLUTO: the planets, the Moon,
+       * the Earth and Ceres beyond the planet file refused with "asteroid
+       * eph. file (sepl_168.se1)" at 8e6 days, "(seplm132.se1)" at
+       * -3.1e6. Now the file's own: planets, moon or asteroid, as the
+       * name it gives. */
+      } else if (ifno == SEI_FILE_MAIN_AST) {
+        sprintf(s, "asteroid eph. file (%s): ", sp);
+      } else if (ifno == SEI_FILE_PLANET) {
+        sprintf(s, "planets eph. file (%s): ", sp);
+      } else {
+        sprintf(s, "moon eph. file (%s): ", sp);
+      }
+#else
       } else if (ipli > SEI_PLUTO) {
         sprintf(s, "asteroid eph. file (%s): ", sp);
       } else if (ipli != SEI_MOON) {
@@ -4726,6 +4775,7 @@ again:
       } else {
         sprintf(s, "moon eph. file (%s): ", sp);
       }
+#endif
       /* Upstream bug 210: sprintf(), whose %f of the date and of the
        * file's limits could overrun s (the date is bounded by bug 216's
        * test above now, the limits by the file's header) */
@@ -15637,6 +15687,16 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
   int32 ret;
   swi_config_hold(ctx);	/* bug 115 */
   ret = swe_calc_pctr_r_body(ctx, tjd, ipl, iplctr, iflag, xxret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 239: a refusal left the caller's place as it was (the
+   * range's, the strict setting's, the centre the body's, a barycentric
+   * Moshier request's), or as far as the light time had filled it, where
+   * swe_calc() zeroes a refused position (the manual: "the position and
+   * speed variables are set to zero"). Every refusal zeroes it now; so the
+   * other functions that answer into the caller's arrays. */
+  if (ret == ERR)
+    memset(xxret, 0, 6 * sizeof(double));
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -15954,6 +16014,11 @@ double CALL_CONV swe_mooncross_node_r(swe_ctx *ctx, double jd_et, int flag, doub
   double ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_mooncross_node_r_body(ctx, jd_et, flag, xlon, xla, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 239: the error, jd_et - 1, left the place as the caller had it */
+  if (ret == jd_et - 1)
+    *xlon = *xla = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -16013,6 +16078,10 @@ double CALL_CONV swe_mooncross_node_ut_r(swe_ctx *ctx, double jd_ut, int flag, d
   double ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_mooncross_node_ut_r_body(ctx, jd_ut, flag, xlon, xla, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == jd_ut - 1)	/* bug 239, as swe_mooncross_node() */
+    *xlon = *xla = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -16081,6 +16150,10 @@ int32 CALL_CONV swe_helio_cross_r(swe_ctx *ctx, int ipl, double x2cross, double 
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_helio_cross_r_body(ctx, ipl, x2cross, jd_et, iflag, dir, jd_cross, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239: the date as the caller had it, see swe_calc_pctr() */
+    *jd_cross = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -16149,6 +16222,10 @@ int32 CALL_CONV swe_helio_cross_ut_r(swe_ctx *ctx, int ipl, double x2cross, doub
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_helio_cross_ut_r_body(ctx, ipl, x2cross, jd_ut, iflag, dir, jd_cross, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 239, as swe_helio_cross() */
+    *jd_cross = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }

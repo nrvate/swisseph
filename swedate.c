@@ -560,6 +560,13 @@ int32 CALL_CONV swe_utc_to_jd_r(swe_ctx *ctx, int32 iyear, int32 imonth, int32 i
   int32 ret;
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_utc_to_jd_r_body(ctx, iyear, imonth, iday, ihour, imin, dsec, gregflag, dret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 239: a refused date or time ("invalid date", "invalid
+   * time", no leap second) left both dates as the caller had them, where
+   * swe_calc() zeroes a refused position; zeroed now */
+  if (ret == ERR)
+    dret[0] = dret[1] = 0;
+#endif
   swi_config_release(ctx);
   return ret;
 }

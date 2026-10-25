@@ -6435,6 +6435,37 @@ char *swi_jd_str(double jd, int fdig, char *s)
   return s;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* UPSTREAM-BUGS 240, 241: TRUE, with serr naming the caller's start, where
+ * a search from tjd_ut cannot begin: delta t refuses it, or the Sun (and
+ * the Moon, if moon) is answered neither at that number nor reach days on
+ * (the farthest the search's first place can lie; the same date where the
+ * sum rounds to it) -- serr then swe_calc()'s at the caller's number. A
+ * start just outside an ephemeris whose first places lie inside it
+ * searches as before. */
+AS_BOOL swi_search_start_refused(swe_ctx *ctx, double tjd_ut, int32 epheflag, AS_BOOL moon,
+                                 double reach, char *serr)
+{
+  double x[6];
+  char s[AS_MAXCH];
+  int i;
+  *s = '\0';
+  epheflag &= (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH);
+  if (swi_deltat_range(tjd_ut, "jd", s) == OK) {
+    for (i = 0; i < 2; i++) {
+      double t = i == 0 ? tjd_ut : tjd_ut + reach;
+      char *sp = i == 0 ? s : NULL;
+      if (swe_calc_r(ctx, t, SE_SUN, epheflag, x, sp) != ERR
+          && (!moon || swe_calc_r(ctx, t, SE_MOON, epheflag, x, sp) != ERR))
+        return FALSE;
+    }
+  }
+  if (serr != NULL)
+    strcpy(serr, s);
+  return TRUE;
+}
+#endif
+
 /**************************************************************
 cut the string s at any char in cutlist; put pointers to partial strings
 into cpos[0..n-1], return number of partial strings;

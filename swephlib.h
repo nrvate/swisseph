@@ -236,6 +236,12 @@ extern AS_BOOL swi_date_invalid(double tjd, char *serr);
 /* a refused date for its message, SWI_JDSTR_LEN bytes (UPSTREAM-BUGS 243) */
 #define SWI_JDSTR_LEN 32
 extern char *swi_jd_str(double jd, int fdig, char *s);
+#ifndef SWE_UPSTREAM_COMPAT
+/* a search whose start no ephemeris answers, nor reach days on, refused
+ * with that start's message (UPSTREAM-BUGS 240, 241) */
+extern AS_BOOL swi_search_start_refused(swe_ctx *ctx, double tjd_ut, int32 epheflag, AS_BOOL moon,
+                                        double reach, char *serr);
+#endif
 
 /* cyclic redundancy checksum (CRC), 32 bit */
 extern uint32 swi_crc32(unsigned char *buf, int len);

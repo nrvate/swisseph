@@ -5366,6 +5366,192 @@ static double star_aya_refused(void)
   return k;
 }
 
+/* UPSTREAM-BUGS 239: refusals that left the caller's outputs. Fourteen,
+ * each a different function and reason (a centre the body itself, the
+ * Sun's elements, a date past Moshier's range, an unknown method, star,
+ * site or event, an eclipse type that does not exist, the time 25:00),
+ * outputs set to 7: how many ERR with an output not 0. Shipped 0/14,
+ * upstream 14/14. */
+static double refusal_outputs_kept(void)
+{
+  double geo[3] = { 8.55, 47.37, 400 }, hgeo[3] = { 8.55, 47.37, 50000 };
+  double datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  double o[64], j = 2451545, t = 1e7;
+  char serr[AS_MAXCH], st[AS_MAXCH], ob[AS_MAXCH];
+  int32 M = SEFLG_MOSEPH, r;
+  int k, i, n, z, kept = 0;
+  for (k = 0; k < 14; k++) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, (char *) EPHE);
+    for (i = 0; i < 64; i++)
+      o[i] = 7;
+    strcpy(st, "Nosuchstarxx");
+    strcpy(ob, "Venus");
+    switch (k) {
+    case 0: r = swe_calc_pctr_r(c, j, SE_MARS, SE_MARS, M, o, serr); n = 6; break;
+    case 1: r = swe_get_orbital_elements_r(c, j, SE_SUN, M, o, serr); n = 17; break;
+    case 2: r = swe_orbit_max_min_true_distance_r(c, t, SE_MARS, M, o, o + 1, o + 2, serr); n = 3; break;
+    case 3: r = swe_gauquelin_sector_r(c, j, SE_MARS, NULL, M, 9, geo, 1013.25, 10, o, serr); n = 1; break;
+    case 4: r = swe_lun_occult_where_r(c, j, 0, st, M, o, o + 10, serr); n = 2; break;
+    case 5: r = swe_sol_eclipse_how_r(c, j, M, hgeo, o, serr); n = 20; break;
+    case 6: r = swe_sol_eclipse_when_glob_r(c, j, M, SE_ECL_PARTIAL | SE_ECL_CENTRAL, o, 0, serr); n = 10; break;
+    case 7: r = swe_lun_eclipse_when_loc_r(c, j, M, hgeo, o, o + 10, 0, serr); n = 30; break;
+    case 8: r = swe_mooncross_node_r(c, t, M, o, o + 1, serr) < t ? ERR : OK; n = 2; break;
+    case 9: r = swe_helio_cross_r(c, SE_SUN, 0, j, M, 0, o, serr); n = 1; break;
+    case 10: strcpy(ob, "Sun"); r = swe_heliacal_ut_r(c, j, geo, datm, dobs, ob, SE_HELIACAL_RISING, M, o, serr); n = 3; break;
+    case 11: r = swe_heliacal_pheno_ut_r(c, j, hgeo, datm, dobs, ob, SE_HELIACAL_RISING, M, o, serr); n = 30; break;
+    case 12: r = swe_heliacal_angle_r(c, j, hgeo, datm, dobs, M, -4, 100, 280, 0, -10, o, serr); n = 3; break;
+    default: r = swe_utc_to_jd_r(c, 2000, 2, 3, 25, 0, 0, SE_GREG_CAL, o, serr); n = 2; break;
+    }
+    for (i = 0, z = 1; i < n; i++)
+      z &= o[i] == 0;
+    kept += r == ERR && !z;
+    swe_ctx_free(c);
+  }
+  return kept;
+}
+
+/* UPSTREAM-BUGS 240: the four eclipse searches on Moshier from 1e7,
+ * 6.2e10 and 1e13: how many refused with a date the caller did not give
+ * ("jd 10000160.328309", "jd 6634702579155901" ...), not
+ * "jd 10000000.000000 ", "jd 62000000000.000000 " or delta t's range.
+ * Shipped 0/12, upstream 12/12. */
+static double far_search_misnamed(void)
+{
+  static const double tq[3] = { 1e7, 6.2e10, 1e13 };
+  static const char *own[3] = { "jd 10000000.000000 ", "jd 62000000000.000000 ", "outside the delta t range" };
+  double geo[3] = { 8.55, 47.37, 400 }, tr[10], at[20];
+  char serr[AS_MAXCH];
+  int d, i, n = 0;
+  for (d = 0; d < 3; d++)
+    for (i = 0; i < 4; i++) {
+      swe_ctx *c = swe_ctx_new();
+      int32 r;
+      if (c == NULL)
+        return -1;
+      swe_set_ephe_path_r(c, (char *) EPHE);
+      *serr = '\0';
+      switch (i) {
+      case 0: r = swe_sol_eclipse_when_glob_r(c, tq[d], SEFLG_MOSEPH, 0, tr, 0, serr); break;
+      case 1: r = swe_sol_eclipse_when_loc_r(c, tq[d], SEFLG_MOSEPH, geo, tr, at, 0, serr); break;
+      case 2: r = swe_lun_eclipse_when_r(c, tq[d], SEFLG_MOSEPH, 0, tr, 0, serr); break;
+      default: r = swe_lun_eclipse_when_loc_r(c, tq[d], SEFLG_MOSEPH, geo, tr, at, 0, serr); break;
+      }
+      n += r != ERR || strstr(serr, own[d]) == NULL;
+      swe_ctx_free(c);
+    }
+  return n;
+}
+
+/* UPSTREAM-BUGS 241: swe_heliacal_ut() of Venus on Moshier from 1e7, 1e200
+ * and DBL_MAX, how many not refused at the caller's date ("jd 10000331.9"
+ * the search reached, "no heliacal date found within 5 synodic periods");
+ * swe_heliacal_angle() and swe_topo_arcus_visionis() at 7.9e11 and 1e300,
+ * how many answered. Shipped 0/7, upstream 7/7. */
+static double heliacal_far_answered(void)
+{
+  static const double tq[3] = { 1e7, 1e200, 1.7976931348623157e308 };	/* DBL_MAX */
+  double geo[3] = { 8.55, 47.37, 400 }, datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  double dret[50];
+  char serr[AS_MAXCH], ob[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 7; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double t = i < 3 ? tq[i] : (i - 3) % 2 ? 1e300 : 7.9e11;
+    int32 r;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, (char *) EPHE);
+    *serr = '\0';
+    strcpy(ob, "Venus");
+    if (i < 3) {
+      r = swe_heliacal_ut_r(c, t, geo, datm, dobs, ob, SE_HELIACAL_RISING, SEFLG_MOSEPH, dret, serr);
+      n += r != ERR || strstr(serr, i ? "outside the delta t range" : "jd 10000000.000000 ") == NULL;
+    } else if (i < 5)
+      n += swe_heliacal_angle_r(c, t, geo, datm, dobs, SEFLG_MOSEPH, -4, 100, 280, 0, -10, dret, serr) != ERR;
+    else
+      n += swe_topo_arcus_visionis_r(c, t, geo, datm, dobs, SEFLG_MOSEPH, -4, 100, 5, 280, 0, -10, dret, serr) != ERR;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 242: Mars, the Moon and Ceres on the Swiss files at
+ * 8000000.5 and Mars at -3100000, past sepl_168.se1's and before
+ * seplm132.se1's ranges: how many refusals call the planet file "asteroid
+ * eph. file". Shipped 0/4, upstream 4/4. */
+static double planet_file_as_asteroid(void)
+{
+  static const int ipl[4] = { SE_MARS, SE_MOON, SE_CERES, SE_MARS };
+  double x[6];
+  char serr[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 4; i++) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, (char *) EPHE);
+    *serr = '\0';
+    swe_calc_r(c, i < 3 ? 8000000.5 : -3100000.0, ipl[i], SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+    n += strncmp(serr, "asteroid eph. file", 18) == 0;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 244: a JPL request falling to the Swiss files, de999.eph
+ * missing, the fall allowed, each the first call on its context: Mars, the
+ * Moon with SEFLG_SPEED, swe_calc_ut() of Mars, swe_pheno() of Mars and
+ * Ceres: how many without main_planet()'s " \ntrying Swiss Eph; ".
+ * Shipped 0/5, upstream 5/5. */
+static double jpl_fall_note_lost(void)
+{
+  double x[20];
+  char serr[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 5; i++) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, (char *) EPHE);
+    swe_set_jpl_file_r(c, "de999.eph");
+    swe_set_ephe_fallback_r(c, 1);
+    *serr = '\0';
+    switch (i) {
+    case 0: swe_calc_r(c, 2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr); break;
+    case 1: swe_calc_r(c, 2451545.0, SE_MOON, SEFLG_JPLEPH | SEFLG_SPEED, x, serr); break;
+    case 2: swe_calc_ut_r(c, 2451545.0, SE_MARS, SEFLG_JPLEPH | SEFLG_SPEED, x, serr); break;
+    case 3: swe_pheno_r(c, 2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr); break;
+    default: swe_calc_r(c, 2451545.0, SE_CERES, SEFLG_JPLEPH | SEFLG_SPEED, x, serr); break;
+    }
+    n += strstr(serr, " \ntrying Swiss Eph; ") == NULL;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 248: the barycentric Sun with SEFLG_SPEED asking
+ * de999.eph, missing, the fall allowed: the return flag. The Swiss
+ * request's is 18178; upstream keeps SEFLG_JPLEPH, 18177 (and before the
+ * fix this fork's barycentric speed crashed here). */
+static double bary_sun_fall_flag(void)
+{
+  double x[6];
+  char serr[AS_MAXCH];
+  int32 r;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, (char *) EPHE);
+  swe_set_jpl_file_r(c, "de999.eph");
+  swe_set_ephe_fallback_r(c, 1);
+  r = swe_calc_r(c, 2451545.0, SE_SUN, SEFLG_JPLEPH | SEFLG_SPEED | SEFLG_BARYCTR, x, serr);
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 154: the IERS corrections across swe_set_jpl_file() of a
  * file below DE 403. G134's directory A (its corrections, de200.eph linked
  * in): path A, the DE431 fixture, SE_ECL_NUT with SEFLG_JPLHOR at 2000 Jan
@@ -6775,7 +6961,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6980,6 +7166,12 @@ int main(int argc, char **argv)
   sidgauq = sid_gauq_off();
   staraya = star_aya_refused();
   gauqflag = gauq_frame_flag_off();
+  refkept = refusal_outputs_kept();
+  farsearch = far_search_misnamed();
+  helfar = heliacal_far_answered();
+  plast = planet_file_as_asteroid();
+  jplnote = jpl_fall_note_lost();
+  barysun = bary_sun_fall_flag();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -8680,6 +8872,54 @@ int main(int argc, char **argv)
   else {
     printf("  osc. node across a join %.2e deg/day FAIL: expected %s\n",
            joinnode, WANT_DEFECT ? "> 1e-5" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (refkept == 14) : (refkept == 0))
+    printf("  refusal outputs left   %.0f/14 OK\n", refkept);
+  else {
+    printf("  refusal outputs left   %.0f/14 FAIL: expected %s\n",
+           refkept, WANT_DEFECT ? "14" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (farsearch == 12) : (farsearch == 0))
+    printf("  far eclipse search misnamed %.0f/12 OK\n", farsearch);
+  else {
+    printf("  far eclipse search misnamed %.0f/12 FAIL: expected %s\n",
+           farsearch, WANT_DEFECT ? "12" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (helfar == 7) : (helfar == 0))
+    printf("  far heliacal answered  %.0f/7 OK\n", helfar);
+  else {
+    printf("  far heliacal answered  %.0f/7 FAIL: expected %s\n",
+           helfar, WANT_DEFECT ? "7" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (plast == 4) : (plast == 0))
+    printf("  planet file as asteroid %.0f/4 OK\n", plast);
+  else {
+    printf("  planet file as asteroid %.0f/4 FAIL: expected %s\n",
+           plast, WANT_DEFECT ? "4" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jplnote == 5) : (jplnote == 0))
+    printf("  JPL fall note lost     %.0f/5 OK\n", jplnote);
+  else {
+    printf("  JPL fall note lost     %.0f/5 FAIL: expected %s\n",
+           jplnote, WANT_DEFECT ? "5" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (barysun == 18177) : (barysun == 18178))
+    printf("  bary Sun fallen flag   %.0f OK\n", barysun);
+  else {
+    printf("  bary Sun fallen flag   %.0f FAIL: expected %s\n",
+           barysun, WANT_DEFECT ? "18177" : "18178");
     bad++;
   }
 

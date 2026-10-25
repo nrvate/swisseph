@@ -1740,6 +1740,33 @@ struct epsilon {
  *     4.5e-6 deg/day off its places' rate, Chiron's heliocentric
  *     osculating node 1.3e-2 (the compat build's stencil 1.3e-4), the Sun
  *     within its light time 1.2e-7 (UPSTREAM-BUGS 250, G166, G24)
+ *   - a refusal leaving the caller's outputs as they were, or as far as
+ *     the call had filled them: swe_calc_pctr(),
+ *     swe_get_orbital_elements(), swe_orbit_max_min_true_distance(),
+ *     swe_gauquelin_sector(), the eclipse and occultation functions, the
+ *     node and heliocentric crossings, the heliacal functions,
+ *     swe_utc_to_jd() and rise and set refusing the site, on every refusal
+ *     (UPSTREAM-BUGS 239, G174, G24)
+ *   - the eclipse searches from a start no ephemeris answers refused with
+ *     the first possible eclipse's date: "jd 10000160.328309" for a start
+ *     at 1e7, "jd 6634702579155901" from 1e11 to DBL_MAX
+ *     (UPSTREAM-BUGS 240, G174, G24)
+ *   - swe_heliacal_ut() from such a start "no heliacal date found within 5
+ *     synodic periods" from about -+1e100, nearer a date the search
+ *     reached ("jd 10000331.937800" at 1e7); swe_heliacal_angle() and
+ *     swe_topo_arcus_visionis() OK at any finite date, 6.2214 deg at 1e300
+ *     (UPSTREAM-BUGS 241, G174, G24)
+ *   - the planet file's range refusal worded "asteroid eph. file
+ *     (sepl_168.se1)" for the planets, the Moon and the main asteroids at
+ *     8e6 days (UPSTREAM-BUGS 242, G174, G24)
+ *   - a JPL request fallen to the Swiss files (the JPL file missing) with
+ *     an empty serr where sweph() opened a file, the first call of a fresh
+ *     context, and from swe_pheno() always (UPSTREAM-BUGS 244, G174, G24)
+ *   - the barycentric Sun fallen from a missing JPL file flagged
+ *     SEFLG_JPLEPH, 18177 for the Swiss request's 18178, and answered
+ *     under the strict setting; this fork's barycentric speed (bug 78) on
+ *     that path SIGSEGV, which the compat build has not (UPSTREAM-BUGS
+ *     248, G174, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

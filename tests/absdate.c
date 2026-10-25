@@ -63,9 +63,8 @@
  * searches, rise and set, the six crossings and the two heliocentric
  * ones, and the five heliacal functions -- in a child process with a 10 s
  * alarm: ERR (the crossings that return a date return ERR), a message, and
- * the outputs 0 (the three functions that leave the caller's outputs on any
- * refusal excepted: swe_calc_pctr(), swe_get_orbital_elements(),
- * swe_orbit_max_min_true_distance()). 267 calls.
+ * the outputs 0 (swe_calc_pctr(), swe_get_orbital_elements() and
+ * swe_orbit_max_min_true_distance() too since bug 239). 267 calls.
  *
  * Check (c), 216: at -+7.9e11, -+1e12, -+1e300, -+DBL_MAX, the doubles
  * next past -+7.8e11, NaN and -+inf, Mars, the Moon, Ceres, Jupiter's
@@ -117,12 +116,12 @@
  * (e) 47 of 47, (f) 75 of 75, (g) 85 of 85. Before the fix of 237, 238,
  * 243 and 255: (e) 15 of 47, (f) 30 of 75 (x86-64's casts of NaN to
  * INT_MIN pass most of the NaN cases by chance), (g) 3 of 85.
- * Before the fix (a) 2 of 100 (61 aborted, 37 overran serr), (b) 168 of
- * 267 (17 crashed, 12 hung, 70 answered or refused without a message or
+ * Before the fix (a) 2 of 100 (61 aborted, 37 overran serr), (b) 161 of
+ * 267 (17 crashed, 12 hung, 77 answered or refused without a message or
  * with outputs left), (c) 24 of 194 (the file named), (d) crashed (the NaN
  * mean node). The upstream build, which keeps the memory and UB fixes
  * (210's, the mean node's and the JPL file's NaN guards, 216's) and none of
- * the NaN refusals: (a) 80 of 100, (b) 162 of 267 (12 hung: the
+ * the NaN refusals: (a) 80 of 100, (b) 155 of 267 (12 hung: the
  * occultation searches and the crossings at NaN, three at -inf), (c) 164 of
  * 194, (d) the same; its swe_nod_aps() leaves the caller's points on a
  * refusal (entry 179), the rest of (a) and (c); (e) 8 of 47, (f) 22 of
@@ -254,10 +253,10 @@ static int probe_b(int k)
   case 14: r = swe_pheno_ut_r(c, T, SE_MOON, SEFLG_MOSEPH, x, SERR); nz = 20; break;
   case 15: r = swe_calc_orbel_r(c, T, el, SE_SUN, 0, 0, SEFLG_MOSEPH | SEFLG_SPEED, x, SERR); break;
   case 16: r = swe_calc_orbel_ut_r(c, T, el, SE_SUN, 0, 0, SEFLG_MOSEPH | SEFLG_SPEED, x, SERR); break;
-  /* these three leave the caller's outputs on any refusal */
-  case 17: r = swe_calc_pctr_r(c, T, SE_MARS, SE_JUPITER, SEFLG_SWIEPH | SEFLG_SPEED, x, SERR); nz = 0; break;
-  case 18: r = swe_get_orbital_elements_r(c, T, SE_MARS, SEFLG_MOSEPH, x, SERR); nz = 0; break;
-  case 19: r = swe_orbit_max_min_true_distance_r(c, T, SE_MARS, SEFLG_MOSEPH, &x[0], &x[1], &x[2], SERR); nz = 0; break;
+  /* these three zero their outputs on a refusal since bug 239 */
+  case 17: r = swe_calc_pctr_r(c, T, SE_MARS, SE_JUPITER, SEFLG_SWIEPH | SEFLG_SPEED, x, SERR); break;
+  case 18: r = swe_get_orbital_elements_r(c, T, SE_MARS, SEFLG_MOSEPH, x, SERR); nz = 17; break;
+  case 19: r = swe_orbit_max_min_true_distance_r(c, T, SE_MARS, SEFLG_MOSEPH, &x[0], &x[1], &x[2], SERR); nz = 3; break;
   case 20: case 21: case 22: case 23: case 24: case 25:
     r = swe_gauquelin_sector_r(c, T, SE_SUN, NULL, SEFLG_MOSEPH, k - NB_CALC - 20, geo, 1013.25, 10, x, SERR);
     nz = 1; break;
