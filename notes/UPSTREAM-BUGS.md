@@ -223,6 +223,7 @@ worst were in code that had never executed even once.
 | 192 | Under the strict setting without the moon files `swe_nod_aps()` refuses the Sun's points and the Earth's heliocentric and barycentric ones ("Swiss (.se1) Moon file is not available"), which the Moon does not reach: their reads of the Earth, and for the osculating ones of the Moon to rebuild the Earth-Moon barycentre, are refused by entry 120's test; with the fallback they answer 6.5e-15 deg off the complete directory's | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 | 193 | Under the strict setting without the moon files `swe_nod_aps()` answers a planet's geocentric and topocentric points from the Earth made from Moshier's Moon, its read being the heliocentric planet, which entry 120's test lets through, where `swe_calc()` of the planet refuses: Mars's at 1900 3.7e-9 deg off the complete directory's, Mercury's at 2000 8.7e-9 | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 | 181 | The long-term sidereal time (this fork's, entry 29) integrates the precession of each instant through a short-term model's window edges, where the table's nodes take the step over 100 days: with IAU 1976 and Vondrak ("0,9,1") +24.0" at every date before 1700, +50.8" at 1776 and -22.2" at 2215 against "0,9,9", whose model holds there; with IAU 2006 ("0,9,8") 1143" at -5550; the topocentric Moon's speed 1.9e-8 deg/day off | Correctness | `swephlib.c`, `sweph.h` |
+| 187 | `swe_houses_ex2()`'s cusp and ascmc speeds take the ARMC's, the obliquity's and the sidereal houses' ayanamsa's and auxiliary frames' rates as differences 1/64 day either side, across a short-term precession window's edge within 1/64 day of it: every speed 2.1e-3 to 8.1e-3 deg/day off with IAU 1976 under Vondrak (4.65e-5 with the IERS 2010 sidereal time, the obliquity's step alone), sidereal 3.9e-3 to 5.1e-3, 0.58 with IAU 2006 at 75 centuries | Correctness | `swehouse.c` |
 
 ---
 
@@ -13224,6 +13225,102 @@ the upstream build fails 1905.
 G24 `nodaps_mars_moonless_ret`: `swe_nod_aps()` of Mars's osculating
 points at 1900 Jan 0.75, Swiss, geocentric, without the moon files under
 the strict setting, its return: -1 shipped (0 before the fix), 0 compat.
+
+## 187. The house speeds difference the frame 1/64 day either side across a short-term precession window's edge: every cusp and ascmc speed 2.1e-3 to 8.1e-3 deg/day off within 1/64 day of it, the sidereal ones 5.1e-3
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()`: `swe_houses_ex2()`'s cusp and ascmc speeds within 1/64 day of the window's edges off their cusps' rate by the mean obliquity's step over 1/32 day, 4.65e-5 deg/day at J2000 - 2 centuries with IAU 1976 under Vondrak, and with the long-term sidereal time by its step too (entry 181), 2.1e-3 there and 7.8e-3 to 8.1e-3 at + 2; sidereal houses by the ayanamsa's and the auxiliary frames' steps, 3.9e-3 to 5.1e-3; with IAU 2006 at 75 centuries 0.58)**
+**Where:** `swehouse.c`: `swe_houses_ex2_r()`, `sidereal_houses_trad()`, `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`, new `house_rate()`
+
+Entry 160's noticed item. The house speeds (entry 42) take the rates of
+the ARMC and the true obliquity as central differences of the house
+frame (`house_frame_at()`: delta t, the mean obliquity, the nutation, the
+sidereal time) HOUSE_SPEED_DT = 1/64 day of UT either side, and the
+sidereal houses' ayanamsa and auxiliary frames (entry 43) the same over
+the frames' TT. At a window's edge the mean obliquity steps (entry 160:
+3.4 mas at J2000 - 2 centuries, 81.6 mas at + 2 with IAU 1976 under
+Vondrak), the long-term sidereal time with the precession (entry 181:
+0.128" and 0.433"), and the ayanamsa and the ecliptic of t0's and the
+solar system plane's auxiliary points with the precession; the
+differences reached across them within 1/64 day. Measured on the Swiss
+files at Zurich, delta t 2^-11 day, at the 105 instants about the edge
+(G139's, TT), against five-point central differences over 2^-12 day of
+the cusps of the side's model alone ("0,1,1" inside, "0,9,9" outside),
+which has no step and whose cusps on that side are the models' (entry
+181), the worst of the 12 cusps and 8 ascmc:
+- "0,9,1" at J2000 - 2 centuries: Placidus, equal, Regiomontanus 2.14e-3
+  deg/day, Koch 2.23e-3; at + 2 7.82e-3 and 8.14e-3 (before entry 181's
+  fix, with the sidereal time continuous across the edge, 4.66e-5: the
+  obliquity's step alone);
+- with the IERS 2010 sidereal time ("0,9,1,0,0,0,0,3"), the obliquity's
+  step alone: 4.65e-5;
+- sidereal Placidus (Lahiri): 4.28e-3 at - 2, 3.85e-3 at + 2, 5.13e-3 with
+  the IERS 2010 sidereal time; on the ecliptic of t0 and the solar system
+  plane 4.3e-3 against the composite's own one-sided references;
+- "0,9,8" at + 75 centuries: 0.583.
+Beyond 1/64 day the speeds are their own, within the reference's noise,
+4.5e-8 deg/day (the rotation angle's rounding at 2 centuries from J2000,
+1e-11 deg, over 2^-12 day).
+
+**Fix, as done here:** `swe_houses_ex2_r()` asks `swi_frame_step_side()`
+(entries 153, 159, 160) whether the precession's or the obliquity's model
+changes within the house frames' own TT, the half-width the larger of
+their distances from the instant's TT (delta t moves them); where it
+does, the frames are taken at t + s HOUSE_SPEED_DT and t + 2 s on the
+instant's side, s = -+ 1, and every rate the houses take from them -- the
+ARMC's and obliquity's, the ayanamsa's, the auxiliary obliquity's, ARMC
+offset's and vernal point's -- is the three-point slope at t from those
+and t's own value (`house_rate()`), (4 (vm - v0) - (vp - v0)) / (2 s h),
+each side's own rate as entry 153's precession rate by such a step; its
+truncation, h^2 f''' / 3, twice the central difference's, 4e-10 deg/day on
+the ARMC's fortnightly nutation. Elsewhere the central difference as
+before, bit for bit (every cusp and speed of six systems, tropical and
+sidereal (Lahiri and the ecliptic of t0), under the default models,
+"0,9,1" and "0,9,8", at 60 dates -1011..+4930, as the tip). The house
+frames take no flags, so the Horizons approximation's steps are not
+theirs (but see below). Behind `#ifndef SWE_UPSTREAM_COMPAT`, with entry
+42's speeds; the compat build keeps upstream's at ARMCS.
+- After: within 1/64 day of the edges as elsewhere, the worst 3.3e-8 to
+  4.0e-8 deg/day at every setting above (Koch's 4.0e-8), the sidereal
+  houses 3.3e-8, on the ecliptic of t0 and the solar system plane within
+  1.8e-7 of the composite's own one-sided references (their own noise),
+  "0,9,8" at + 75 centuries 6.4e-7 (the reference's noise there, 9.4e-7
+  beyond).
+- Cost: `perf stat -e instructions:u`, 20000 `swe_sidtime()` and
+  `swe_houses_ex2()` with speeds 1452..2400 on the default models,
+  16899471242 before, 16913435849 after (+0.083%: two delta t memo reads
+  and the side test a call with speeds).
+
+G139 `tests/framestep.c`, new check (e): the house speeds under "0,9,1" at
+J2000 -+ 2 centuries with the long-term sidereal time and at - 2 with the
+IERS 2010 one, Placidus, Koch, equal, Regiomontanus and sidereal (Lahiri)
+Placidus at Zurich on the Swiss files, the 12 cusps' and 8 ascmc's speeds
+against the side's model alone as above at the 105 instants, the worst
+within 1/64 day and the rest: 30 checks within 1e-7 deg/day. 414 checks;
+before the fix 15 fail, all within 1/64 day (2.1e-3 to 8.1e-3, 4.65e-5,
+sidereal 3.9e-3 to 5.1e-3); after within 4.5e-8. The upstream build fails
+all 30 of (e) (its speeds at ARMCS, entry 42: equal houses 3.0e-5 to
+8.6e-5 deg/day, Koch 199), 299 of 318 in all. G24
+`house_window_speed_off`: equal houses' Ascendant speed under "0,9,1" at
+J2000 - 2 centuries -+ 2^-8 and -+ 2^-14 day against the side's model
+alone, the largest: 3.29e-8 deg/day shipped (2.10e-3 before the fix),
+2.91e-5 compat.
+
+Noticed, not fixed:
+- RESIDUAL. The sidereal houses' ayanamsa takes the caller's flags for its
+  nutation (`swe_get_ayanamsa_ex()`, entry 142), so with
+  SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` its rate, the same
+  difference, reaches across the nutation's step at 1962 Jan 20 (entry
+  153): sidereal (Lahiri) Placidus and equal houses with SEFLG_JPLEPH |
+  SEFLG_JPLHOR_APPROX on de200, 6.38e-4 deg/day off within 1/64 day after
+  it (against the composite's own one-sided five-point references over
+  2^-12 day; 3.7e-8 without the flag). The same treatment with the
+  caller's flags and SWI_FRAME_NUT in the side test would take it.
+- RESIDUAL. Sunshine cusp 9 at Zurich jumps by some 7e-9 deg within 2^-16
+  day of JD 2378496.5 - 2^-11 (UT, 1800 Jan 2), under any precession model
+  ("0,1,1" and "0,9,9" alike): a five-point difference over h there is
+  7.4e-6, 3.0e-5, 1.2e-4 and 4.8e-4 deg/day off the speed at h = 2^-10,
+  2^-12, 2^-14 and 2^-16, growing as 1/h. Not this item's (likely the
+  Sun's file segment joining there, as entry 75's Moon); left out of G139.
 
 ## How these were found
 

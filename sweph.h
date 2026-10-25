@@ -1472,6 +1472,12 @@ struct epsilon {
  *     step over 100 days, +50.8" at 1776 under "0,9,1", is this fork's
  *     (entry 29); the compat build keeps upstream's sidtime_long_term(),
  *     which precesses at its instant and has no table; G139)
+ *   - swe_houses_ex2()'s speeds within 1/64 day of a short-term precession
+ *     window's edge taking this fork's rates of the ARMC, the obliquity and
+ *     the sidereal houses' ayanamsa and auxiliary frames as differences
+ *     across it: 2.1e-3 to 8.1e-3 deg/day with IAU 1976 under Vondrak, the
+ *     sidereal ones 5.1e-3 (the compat build's speeds are upstream's, at
+ *     ARMCS: 2.9e-5 on equal houses there) (UPSTREAM-BUGS 187, G139, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

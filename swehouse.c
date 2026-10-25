@@ -90,8 +90,11 @@ struct house_frame {
   double armc;		/* degrees */
 };
 struct house_rates {
-  struct house_frame m, p;	/* at t - HOUSE_SPEED_DT and t + HOUSE_SPEED_DT */
+  struct house_frame m, p;	/* at t - HOUSE_SPEED_DT and t + HOUSE_SPEED_DT;
+				 * by a step of the frame's models, at t + s
+				 * HOUSE_SPEED_DT and t + 2 s (side, bug 187) */
   double dt;			/* p - m in UT, days */
+  int side;			/* 0, or s: the stencil on t's side of a step */
   double armc, eps;		/* rates, degrees per day of UT */
   double decl;			/* the Sun's declination's, for Sunshine houses */
 };
@@ -300,6 +303,34 @@ static void house_frame_at(swe_ctx *ctx, double tjd_ut, int32 iflag, double geol
   f->armc = swe_degnorm(swe_sidtime0_r(ctx, tjd_ut, f->eps, f->nutlo[0]) * 15 + geolon);
 }
 
+/* Upstream bug 187: within HOUSE_SPEED_DT of a step of the frame's models
+ * -- a short-term precession model's window edge (UPSTREAM-BUGS 160),
+ * where the mean obliquity steps (3.4 mas at J2000 - 2 centuries with IAU
+ * 1976 under Vondrak) and the long-term sidereal time with the precession
+ * (0.128", bug 181), and so do the sidereal houses' ayanamsa and auxiliary
+ * frames -- the central differences of the frames either side reached
+ * across it: on de200 with "0,9,1" every cusp and ascmc speed 2.2e-3
+ * deg/day off its cusps' rate within 1/64 day of that edge, the sidereal
+ * ones 4.3e-3 (Lahiri; 5.1e-3 before bug 181). There the frames are taken
+ * at t + s HOUSE_SPEED_DT and t + 2 s on t's side, s = hr->side, and the
+ * rate is the three-point slope at t from them and t's own value v0,
+ * (4 (vm - v0) - (vp - v0)) / (2 s HOUSE_SPEED_DT), each side's own rate as
+ * swi_precess_speed()'s by such a step (UPSTREAM-BUGS 153); its
+ * truncation, h^2 f''' / 3, twice the central difference's, 4e-10
+ * deg/day on the ARMC's fortnightly nutation. A rate, degrees per day of
+ * UT, of a value vm at hr->m, v0 at t and vp at hr->p; as an angle,
+ * through swe_difdeg2n(). */
+static double house_rate(const struct house_rates *hr, double vm, double v0, double vp,
+                         AS_BOOL angle)
+{
+  double dp, dm;
+  if (hr->side == 0)
+    return (angle ? swe_difdeg2n(vp, vm) : vp - vm) / hr->dt;
+  dp = angle ? swe_difdeg2n(vp, v0) : vp - v0;
+  dm = angle ? swe_difdeg2n(vm, v0) : vm - v0;
+  return (4 * dm - dp) / (2 * hr->dt);
+}
+
 /* a value's partial from its neighbours step either side of the
  * argument; a side that jumps (the Asc changing hemisphere, a sign
  * boundary) or answered differently (Porphyry instead) is dropped */
@@ -488,11 +519,20 @@ static int swe_houses_ex2_r_body(swe_ctx *ctx, double tjd_ut,
 #ifndef SWE_UPSTREAM_COMPAT
   if (cusp_speed != NULL || ascmc_speed != NULL) {
     double tp = tjd_ut + HOUSE_SPEED_DT, tm = tjd_ut - HOUSE_SPEED_DT;
+    /* bug 187: the stencil on t's side of a step of the frame's models,
+     * found at the frames' own TT, which delta t moves */
+    double hd = fmax(tp + swe_deltat_ex_r(ctx, tp, iflag, NULL) - tjde,
+                     tjde - (tm + swe_deltat_ex_r(ctx, tm, iflag, NULL)));
+    hr.side = swi_frame_step_side(ctx, tjde, hd, 0, SWI_FRAME_PREC | SWI_FRAME_EPS);
+    if (hr.side != 0) {
+      tm = tjd_ut + hr.side * HOUSE_SPEED_DT;
+      tp = tjd_ut + 2 * hr.side * HOUSE_SPEED_DT;
+    }
     house_frame_at(ctx, tp, iflag, geolon, &hr.p);
     house_frame_at(ctx, tm, iflag, geolon, &hr.m);
     hr.dt = tp - tm;
-    hr.armc = swe_difdeg2n(hr.p.armc, hr.m.armc) / hr.dt;
-    hr.eps = (hr.p.eps - hr.m.eps) / hr.dt;
+    hr.armc = house_rate(&hr, hr.m.armc, armc, hr.p.armc, TRUE);
+    hr.eps = house_rate(&hr, hr.m.eps, eps_mean + nutlo[1], hr.p.eps, FALSE);
     hr.decl = 0;
     phr = &hr;
   }
@@ -730,9 +770,11 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
     ecl_t0_aux(ctx, hr->p.tjde, hr->p.eps, hr->p.nutlo, &ep, &dp, &dep);
     ecl_t0_aux(ctx, hr->m.tjde, hr->m.eps, hr->m.nutlo, &em, &dm, &dem);
     retc = houses_armc_dt(ctx, armcx, lat, epsx, hsys, hr,
-                          hr->armc - swe_difdeg2n(dp, dm) / hr->dt, (ep - em) / hr->dt,
+                          hr->armc - house_rate(hr, dm, dvpx, dp, TRUE),
+                          house_rate(hr, em, epsx, ep, FALSE),
                           cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
-    houses_less_rate(hsys, retc, (dep - dem) / hr->dt, cusp_speed, ascmc_speed);
+    houses_less_rate(hsys, retc, house_rate(hr, dem, dvpxe, dep, FALSE), cusp_speed,
+                     ascmc_speed);
   } else
 #else
   (void) hr;
@@ -871,9 +913,11 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
     ssypl_aux(ctx, hr->p.tjde, hr->p.eps, hr->p.nutlo, &ep, &dp, &dep);
     ssypl_aux(ctx, hr->m.tjde, hr->m.eps, hr->m.nutlo, &em, &dm, &dem);
     retc = houses_armc_dt(ctx, armcx, lat, epsx, hsys, hr,
-                          hr->armc - swe_difdeg2n(dp, dm) / hr->dt, (ep - em) / hr->dt,
+                          hr->armc - house_rate(hr, dm, dvpx, dp, TRUE),
+                          house_rate(hr, em, epsx, ep, FALSE),
                           cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
-    houses_less_rate(hsys, retc, (dep - dem) / hr->dt, cusp_speed, ascmc_speed);
+    houses_less_rate(hsys, retc, house_rate(hr, dem, dvpxe, dep, FALSE), cusp_speed,
+                     ascmc_speed);
   } else
 #else
   (void) hr;
@@ -990,7 +1034,7 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
     double ayp, aym;
     swe_get_ayanamsa_ex_r(ctx, hr->p.tjde, iflag, &ayp, NULL);
     swe_get_ayanamsa_ex_r(ctx, hr->m.tjde, iflag, &aym, NULL);
-    houses_less_rate(ihs2, retc, swe_difdeg2n(ayp, aym) / hr->dt, cusp_speed, ascmc_speed);
+    houses_less_rate(ihs2, retc, house_rate(hr, aym, ay, ayp, TRUE), cusp_speed, ascmc_speed);
   }
   if ((ihs == 'W' || ihs == 'N') && cusp_speed != NULL) {
     for (i = 1; i <= ito; i++)

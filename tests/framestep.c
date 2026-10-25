@@ -3,7 +3,7 @@
  * 20, SEFLG_JPLHOR's at 1799 Jan 1 and 2202 Jan 1, the edges of a
  * short-term precession model's window, and the joins of Owen 1990's
  * pieces; and across a window's edges the long-term sidereal time is its
- * own side's model's.
+ * own side's model's, and the house speeds each side's own rate.
  *
  * The defect (UPSTREAM-BUGS 153): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), the precession, the mean obliquity
@@ -81,6 +81,14 @@
  * Moon's site turned by it, its speed 1.6e-8 to 1.9e-8 deg/day off the
  * places' rate within two days of J2000 - 2 centuries.
  *
+ * The defect (UPSTREAM-BUGS 187): swe_houses_ex2()'s speeds take the rates
+ * of the ARMC and the true obliquity (and of the sidereal houses' ayanamsa
+ * and auxiliary frames) as central differences of the frames 1/64 day of
+ * UT either side, which within 1/64 day of an edge reached across the
+ * obliquity's step and, with bug 181 fixed, the sidereal time's: every
+ * cusp and ascmc speed 2.1e-3 to 8.1e-3 deg/day off under "0,9,1", 4.65e-5
+ * with the IERS 2010 sidereal time, the sidereal ones 3.9e-3 to 5.1e-3.
+ *
  * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
  * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
  * difference after the step too), at 1799 Jan 1 the default models; and
@@ -145,6 +153,18 @@
  * outside (through the 1850 splice at - 2 centuries): delta t 2^-11 day,
  * the worst inside and outside, 12 checks within 1e-9 deg.
  *
+ * Check (e): the house speeds across the windows' edges, "0,9,1" at J2000
+ * -+ 2 centuries with the long-term sidereal time and at - 2 with the IERS
+ * 2010 one; Placidus, Koch, equal, Regiomontanus and sidereal (Lahiri)
+ * Placidus at Zurich on the Swiss files: the 12 cusps' and 8 ascmc's
+ * speeds against five-point central differences over 2^-12 day of the
+ * cusps of the instant's side's model alone, which has no step and whose
+ * cusps there are the models' (check (d)), at the 105 instants (TT, the UT
+ * 2^-11 day before), the worst within 1/64 day of the edge and the rest:
+ * 30 checks within 1e-7 deg/day, the reference's own noise being 4.5e-8
+ * (the rotation angle's rounding, 1e-11 deg at 2 centuries from J2000,
+ * over 2^-12 day).
+ *
  * Measured after the fix: (a) within 2.4e-9 (the Moon's one-sided
  * reference at J2000 - 2 centuries, 2.0e-9 at 1799; Polaris's right
  * ascension 1.45e-9 at 1962, the topocentric Moon 9.6e-10, the others
@@ -178,11 +198,15 @@
  * the topocentric Moon's both frames over the three spans (1.5e-8 to
  * 1.9e-8 deg/day; 6.0e-10 to 8.6e-10 after), and all 12 of (d), by
  * 3.1e-4 deg ("0,9,6") to 0.38 ("0,9,8"); after, (d) is 0 bit for bit
- * everywhere. The upstream build fails 200 of (a)'s 210, the 66 of (c)
- * and 3 of (d)'s 12, 269 of its 288
- * (outside the IAU 1976 window by 4.6e-9 to 6.6e-9 deg: its long-term
- * formula takes the obliquity of J2000, inside the window, at every
- * date). Of (a)'s first 168 it fails 160: its nutation rate, a backward
+ * everywhere. Before the fix of bug 187, 15 of (e)'s 30 fail, every one
+ * within 1/64 day of the edge (2.1e-3 to 8.1e-3 deg/day, 4.65e-5 with the
+ * IERS 2010 sidereal time, sidereal 3.9e-3 to 5.1e-3); after, (e) within
+ * 4.5e-8 everywhere. The upstream build fails 200 of (a)'s 210, the 66 of
+ * (c), 3 of (d)'s 12 (outside the IAU 1976 window by 4.6e-9 to 6.6e-9 deg:
+ * its long-term formula takes the obliquity of J2000, inside the window,
+ * at every date) and all 30 of (e) (its house speeds at ARMCS, entry 42:
+ * equal houses 3.0e-5 to 8.6e-5 deg/day, Koch 199), 299 of its 318. Of
+ * (a)'s first 168 it fails 160: its nutation rate, a backward
  * difference, reaches across the 1962 step just after it (0.200 deg/day,
  * Polaris's right ascension 2.14), its ayanamsa rate, a backward
  * difference too, across the window's edge (sidereal Mars 0.160), its
@@ -551,6 +575,102 @@ static int check_d(int *n)
   return bad;
 }
 
+/* check (e): the house speeds of swe_houses_ex2() across a window's edge,
+ * the 12 cusps' and 8 ascmc's, against five-point central differences over
+ * 2^-12 day of the cusps of the instant's side's model alone, which has no
+ * step and whose cusps on that side are the models' (check (d)); Zurich,
+ * the Swiss files, the instants in TT, their UT 2^-11 day before; the
+ * worst within 1/64 day of the edge and the rest, deg/day; returns the
+ * failures, *n the checks. */
+static int check_e(const char *ephe, int *n)
+{
+  static const struct {
+    double ts;
+    int left;
+    const char *mod, *in, *out;
+  } SD[] = {
+    { 2378495.0, 0, "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { 2524595.0, 1, "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    /* the IERS 2010 sidereal time: the obliquity alone steps */
+    { 2378495.0, 0, "0,9,1,0,0,0,0,3", "0,1,1,0,0,0,0,3", "0,9,9,0,0,0,0,3" },
+  };
+  static const struct {
+    int hs;
+    int32 fl;
+    const char *name;
+  } SH[] = {
+    { 'P', 0, "Placidus" }, { 'K', 0, "Koch" }, { 'E', 0, "equal" },
+    { 'R', 0, "Regiomontanus" }, { 'P', SEFLG_SIDEREAL, "sidereal Placidus" },
+  };
+  static const char *sn[2] = { "within 1/64 day", "the rest" };
+  const double h = ldexp(1, -12), dts = ldexp(1, -11);
+  double tq[105];
+  int m, s, i, j, k, q, bad = 0, nq;
+  for (m = 0; m < (int) (sizeof SD / sizeof SD[0]); m++) {
+    swe_ctx *cc[3];
+    const char *ms[3] = { SD[m].mod, SD[m].in, SD[m].out };
+    for (k = 0; k < 3; k++) {
+      char mod[40];
+      cc[k] = swe_ctx_new();
+      strcpy(mod, ms[k]);
+      swe_set_ephe_path_r(cc[k], ephe);
+      swe_set_astro_models_r(cc[k], mod, 0);
+      swe_set_delta_t_userdef_r(cc[k], dts);
+      swe_set_sid_mode_r(cc[k], SE_SIDM_LAHIRI, 0, 0);
+    }
+    TS = SD[m].ts;
+    LEFT = SD[m].left;
+    nq = instants(tq);
+    printf("  (e) models %s, edge JD %.1f: worst |house speed - reference|, deg/day, %s / %s\n",
+           SD[m].mod, TS, sn[0], sn[1]);
+    for (s = 0; s < (int) (sizeof SH / sizeof SH[0]); s++) {
+      double w[2] = { 0, 0 };
+      for (i = 0; i < nq; i++) {
+        double t = tq[i] - dts, cusp[13], ascmc[10], cs[13], as[10], f[5][20];
+        int inside = (TS < 2451545.0) ? !left_of(tq[i]) : left_of(tq[i]);
+        int sp = fabs(tq[i] - TS) <= 1.0 / 64 ? 0 : 1;
+        swe_ctx *cr = cc[inside ? 1 : 2];
+        swe_houses_ex2_r(cc[0], t, SH[s].fl, 47.37, 8.55, SH[s].hs, cusp, ascmc, cs, as, NULL);
+        for (k = 0; k < 5; k++) {
+          double cu[13], am[10];
+          swe_houses_ex2_r(cr, t + (k - 2) * h, SH[s].fl, 47.37, 8.55, SH[s].hs, cu, am,
+                           NULL, NULL, NULL);
+          for (j = 0; j < 12; j++)
+            f[k][j] = cu[j + 1];
+          for (j = 0; j < 8; j++)
+            f[k][12 + j] = am[j];
+        }
+        for (j = 0; j < 20; j++) {
+          double v[5], d, e;
+          int jump = 0;
+          for (k = 0; k < 5; k++) {
+            v[k] = swe_difdeg2n(f[k][j], f[2][j]);
+            if (fabs(v[k]) > 5)
+              jump = 1;
+          }
+          if (jump)	/* a cusp across a sign: whole signs, none here */
+            continue;
+          d = (8 * (v[3] - v[1]) - (v[4] - v[0])) / (12 * h);
+          e = fabs((j < 12 ? cs[j + 1] : as[j - 12]) - d);
+          if (!(e <= w[sp]))
+            w[sp] = e;
+        }
+      }
+      printf("    %-18s    %.2e  %.2e\n", SH[s].name, w[0], w[1]);
+      for (q = 0; q < 2; q++) {
+        (*n)++;
+        if (!(w[q] <= 1e-7)) {
+          bad++;
+          printf("    FAIL models %s, %s, %s: %.2e > 1e-7\n", SD[m].mod, SH[s].name, sn[q], w[q]);
+        }
+      }
+    }
+    for (k = 0; k < 3; k++)
+      swe_ctx_free(cc[k]);
+  }
+  return bad;
+}
+
 int main(int argc, char **argv)
 {
   double tq[105];
@@ -741,6 +861,7 @@ int main(int argc, char **argv)
   }
 #endif
   bad += check_d(&n);
+  bad += check_e(argv[1], &n);
   if (bad) {
     printf("G139 FAIL: %d of %d\n", bad, n);
     return 1;
