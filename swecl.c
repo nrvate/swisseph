@@ -3105,8 +3105,13 @@ double CALL_CONV swe_refrac(double inalt, double atpress, double attemp, int32 c
   }
 }
 
+/* Initialised first, as the other setters are: the lapse rate is a context
+ * field here, and set before any calculation it was wiped by the first-use
+ * memset (0.05 K/m read as 0.0065, 0.90 deg in the refraction of a Sun near
+ * the dip from 2000 m). */
 void CALL_CONV swe_set_lapse_rate_r(swe_ctx *ctx, double lapse_rate)
 {
+  swi_init_swed_if_start(ctx);
   ctx->const_lapse_rate = lapse_rate;
   swi_config_publish(ctx, SWI_CFG_LAPSE);
 }

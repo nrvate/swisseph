@@ -3282,10 +3282,18 @@ double CALL_CONV swe_get_tid_acc(void)
 /* The tidal term feeds swe_deltat_ex_r(), so changing it moves delta t and
  * makes the topocentric observer stale -- swi_invalidate_deltat(), G26.
  * Only on a real change: the early-out mirrors swe_set_topo_r()'s, so a
- * caller re-asserting the value it already holds pays nothing. */
+ * caller re-asserting the value it already holds pays nothing.
+ *
+ * It initialises the context first, as the other setters do: set before
+ * any calculation, the setting was otherwise wiped by the first-use memset
+ * in swi_init_swed_if_start(). swe_set_tid_acc(SE_TIDAL_DE200) as the
+ * first call left -25.80, and swe_deltat() in AD 1000 1463.43 s for
+ * 1305.30. The same holds for swe_set_delta_t_userdef() (86.4 s read back
+ * as 63.83 after the first swe_calc_ut()) and swe_set_interpolate_nut(). */
 void CALL_CONV swe_set_tid_acc_r(swe_ctx *ctx, double t_acc)
 {
   AS_BOOL changed;
+  swi_init_swed_if_start(ctx);
   if (t_acc == SE_TIDAL_AUTOMATIC) {
     changed = ctx->is_tid_acc_manual || ctx->tid_acc != SE_TIDAL_DEFAULT;
     ctx->tid_acc = SE_TIDAL_DEFAULT;
@@ -3318,6 +3326,7 @@ void CALL_CONV swe_set_tid_acc(double t_acc)
 void CALL_CONV swe_set_delta_t_userdef_r(swe_ctx *ctx, double dt)
 {
   AS_BOOL changed;
+  swi_init_swed_if_start(ctx);	/* see swe_set_tid_acc_r() */
   if (dt == SE_DELTAT_AUTOMATIC) {
     changed = ctx->delta_t_userdef_is_set;
     ctx->delta_t_userdef_is_set = FALSE;
@@ -3766,6 +3775,7 @@ double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
 
 void CALL_CONV swe_set_interpolate_nut_r(swe_ctx *ctx, AS_BOOL do_interpolate)
 {
+  swi_init_swed_if_start(ctx);	/* see swe_set_tid_acc_r() */
   if (ctx->do_interpolate_nut == do_interpolate) {
     swi_config_claim(ctx, SWI_CFG_NUT);
     return;

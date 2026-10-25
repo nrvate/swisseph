@@ -56,6 +56,7 @@ worst were in code that had never executed even once.
 | 18 | Changing delta t does not invalidate the cached topocentric observer | Correctness | `swephlib.c`, `sweph.c` |
 | 23 | A bad `seorbel.txt` field hangs `swe_calc()`, terms such as "T5" or ".0" are misread, a broken `sefstars.txt` is reported as "star not found" | Correctness / Robustness | `swemplan.c`, `sweph.c` |
 | 24 | Seven house defects: Placidus and Gauquelin cusps not converged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files, Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the speed of a cusp on an equinox point | Correctness | `swehouse.c` |
+| 25 | A setting made before the first calculation is lost; the first heliacal call after a setter fails | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c` |
 
 ---
 
@@ -1457,6 +1458,47 @@ Swiss-file call to 3.8e-6 deg (ERR, 16.7 deg off before); the MOSEPH call's
 `ascmc[9]` is Moshier's Sun to 1e-12 (the Swiss one before); 0 of 96
 entries 13..36 stale in each of four kinds of call and 0 of 72 from
 `swe_houses_r()` and `swe_houses_armc_ex2_r()` (all stale before).
+
+## 25. A setting made before the first calculation is lost, and the first heliacal call after a setter fails
+
+**Severity: Correctness (a failed call; a lost setting: 22.6 s of delta t, 158 s of delta t in AD 1000, 0.9 deg of refraction)**
+**Where:** `sweconfig.c`, `swi_config_publish()` and `swi_config_reset()`; `swehel.c`, the observer set by `swe_vis_limit_mag()`, `swe_heliacal_pheno_ut()`, `swe_heliacal_ut()` and `Magnitude()`; `swephlib.c`, `swe_set_tid_acc()`, `swe_set_delta_t_userdef()`, `swe_set_interpolate_nut()`; `swecl.c`, `swe_set_lapse_rate()`
+
+On the process-wide default context, `swe_set_ephe_path()` and then
+`swe_vis_limit_mag()` returned ERR, "geographic position has not been
+set", at any instant; the same call again worked, and after any other
+setter, or `swe_close()` and re-open, the next one failed again. So did
+`swe_heliacal_pheno_ut()`. Three causes:
+
+- The fork's shared configuration master started, and `swe_close()`
+  re-armed it, as zeros. A setter merges in its own group only, so the
+  first sync after it adopted every group the context had not claimed as
+  zeros: an observer not set, a lapse rate of 0 for 0.0065, a tidal
+  acceleration of 0. After `swe_set_ephe_path()` alone the Sun from
+  2000 m, 15.75 min before its true rise, was refracted to -1.243 deg
+  where it is -2.215, 0.97 deg; `swe_ctx_new()` inherited the zeros too.
+- `swehel.c` set its observer for the call without syncing first, so the
+  first `swe_calc()` inside the call put the master's "not set" back.
+- `swe_set_tid_acc()`, `swe_set_delta_t_userdef()` and
+  `swe_set_interpolate_nut()` (upstream's too) and the lapse rate (a
+  context field in the fork) did not initialise the context, so set before
+  any calculation they were wiped by its first-use memset:
+  `swe_set_tid_acc(SE_TIDAL_DE200)` as the first call left -25.80, and
+  `swe_deltat()` in AD 1000 was 1463.43 s for 1305.30; a user delta t of
+  86.4 s read back 63.83; the interpolation was lost (8.6e-8 deg of
+  nutation); 0.05 K/m read as 0.0065 (0.90 deg).
+
+**Fix, as done here:** the first publish after a start or a reset fills
+the master with the defaults a fresh context has; `swehel.c` syncs before
+it sets its observer, as `swecl.c` does; the four setters initialise the
+context first. G34 `tests/firstset.c`: every setter and heliacal entry
+point, each in a forked pristine process, after `swe_set_ephe_path()`, as
+the very first call, and after `swe_close()` and re-open, against a warm
+context: 54 scenarios pass, 9 failed before.
+
+Not fixed here, upstream's too: a manual tidal acceleration is reset to
+automatic by every path change, including the implicit one at the first
+calculation when the files are named by `SE_EPHE_PATH`.
 
 ## How these were found
 

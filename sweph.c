@@ -1535,8 +1535,10 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
      * this is what makes SE_EPHE_FALLBACK reach the default context, which
      * never passes through ctx_init_defaults(). */
     ctx->ephe_fallback = swi_env_ephe_fallback();
-    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+    /* initialised before the tidal setter, which initialises a context
+     * itself and would otherwise come back here */
     ctx->swed_is_initialised = TRUE;
+    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
     swi_config_end_apply(ctx, swi_cfg_was);
     started = 1;
   }
