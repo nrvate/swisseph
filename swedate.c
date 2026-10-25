@@ -83,6 +83,7 @@
 
 # include "swephexp.h"
 # include "sweph.h"
+# include "swephlib.h"
 
 /* moved to ctx->leapsec_done / ctx->leap_seconds (Phase 3c) */
 
@@ -409,8 +410,10 @@ static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32
    || imin < 0 || imin > 59 
    || dsec < 0 || dsec >= 61
    || (dsec >= 60 && (imin < 59 || ihour < 23 || tjd_ut1 < J1972))) {
-    if (serr != NULL)
-      sprintf(serr, "invalid time: %d:%d:%.2f", ihour, imin, dsec);
+    if (serr != NULL) {
+      char ssec[SWI_JDSTR_LEN];
+      snprintf(serr, AS_MAXCH, "invalid time: %d:%d:%s", ihour, imin, swi_jd_str(dsec, 2, ssec));
+    }
     return ERR;
   }
   dhour = (double) ihour + ((double) imin) / 60.0 + dsec / 3600.0;
@@ -470,8 +473,10 @@ static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32
       }
     }
     if (j != 1) {
-      if (serr != NULL)
-	sprintf(serr, "invalid time (no leap second!): %d:%d:%.2f", ihour, imin, dsec);
+      if (serr != NULL) {
+	char ssec[SWI_JDSTR_LEN];
+	snprintf(serr, AS_MAXCH, "invalid time (no leap second!): %d:%d:%s", ihour, imin, swi_jd_str(dsec, 2, ssec));
+      }
       return ERR;
     }
   }

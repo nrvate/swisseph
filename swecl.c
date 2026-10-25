@@ -853,7 +853,7 @@ iter_where:
     retc |= (SE_ECL_PARTIAL | SE_ECL_NONCENTRAL);
   } else {
     if (serr != NULL)
-      sprintf(serr, "no solar eclipse at tjd = %f", tjd);
+      snprintf(serr, AS_MAXCH, "no solar eclipse at tjd = %f", tjd);
     for (i = 0; i < 2; i++)
       geopos[i] = 0;
     *dcore = 0;
@@ -1156,7 +1156,7 @@ static int32 eclipse_how( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname
   else {
     retc = 0;
     if (serr != NULL)
-      sprintf(serr, "no solar eclipse at tjd = %f", tjd_ut);
+      snprintf(serr, AS_MAXCH, "no solar eclipse at tjd = %f", tjd_ut);
   }
   /*
    * ratio of diameter of moon to that of sun
@@ -3601,7 +3601,7 @@ static int32 lun_eclipse_how(swe_ctx *ctx,
     attr[0] = 0;
   } else {
     if (serr != NULL)
-      sprintf(serr, "no lunar eclipse at tjd = %f", tjd);
+      snprintf(serr, AS_MAXCH, "no lunar eclipse at tjd = %f", tjd);
   }
   attr[8] = attr[0];
   /**************************

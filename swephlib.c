@@ -4191,6 +4191,21 @@ void swi_gen_filename(double tjd, int ipli, char *fname)
   sprintf(fname + strlen(fname), "%02d.%s", icty, SE_FILE_SUFFIX);
 }
 
+/* A date for an error message that names the range it was refused for. The
+ * refusals print a date by "%f", which writes every digit of the integer
+ * part: from |jd| about 1e188 the message outgrew the 256 bytes of its
+ * buffer or of the caller's serr. With fdig decimals ("%.*f", as the
+ * messages have always had them) below 1e15 days, where the digits are few;
+ * else, and for NaN and infinity, in "%.10g". */
+char *swi_jd_str(double jd, int fdig, char *s)
+{
+  if (fabs(jd) < 1e15)
+    snprintf(s, SWI_JDSTR_LEN, "%.*f", fdig, jd);
+  else
+    snprintf(s, SWI_JDSTR_LEN, "%.10g", jd);
+  return s;
+}
+
 /**************************************************************
 cut the string s at any char in cutlist; put pointers to partial strings
 into cpos[0..n-1], return number of partial strings;

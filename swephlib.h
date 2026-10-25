@@ -191,6 +191,10 @@ extern void swi_seed_leap_table(swe_ctx *ctx);
 extern void swi_seed_dt_table(swe_ctx *ctx);
 
 extern int swi_cutstr(char *s, char *cutlist, char *cpos[], int nmax);
+/* A date (or the seconds swe_utc_to_jd() refuses) for an error message, in
+ * s of SWI_JDSTR_LEN bytes */
+#define SWI_JDSTR_LEN	32
+extern char *swi_jd_str(double jd, int fdig, char *s);
 extern char *swi_right_trim(char *s);
 
 extern double swi_kepler(double E, double M, double ecce);

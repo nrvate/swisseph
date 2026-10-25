@@ -277,7 +277,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse check-gauqflags check-sidplanehouses check-fictnakshatra check-helmemo check-nutspeed check-belowsea check-topopole check-hellt check-eopfollow \
+       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse check-gauqflags check-sidplanehouses check-fictnakshatra check-helmemo check-nutspeed check-belowsea check-topopole check-hellt check-eopfollow check-datemsg \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -429,6 +429,9 @@ topopole: topopole.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 eopfollow: eopfollow.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+datemsg: datemsg.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 # G22: reorder(), swejpl.c's byte-swapping path, which measured 0.00% --
@@ -724,6 +727,13 @@ check-topopole: topopole
 check-eopfollow: eopfollow
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./eopfollow $(EPHE)
 
+# G51: a date far outside a range (from 1e188 days, and seconds from 1e232)
+# is named in a message that fits the 256 bytes of serr and keeps the range
+# with it; the Moshier and JPL refusals and swe_utc_to_jd()'s "invalid time"
+# overran their buffers, and a date a little outside a range reads as ever.
+check-datemsg: datemsg
+	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./datemsg $(EPHE)
+
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
 	@printf '# fixture: 1620 moved off the built-in 124.00\n1620  200.0\n' \
@@ -827,7 +837,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse gauqflags sidplanehouses fictnakshatra helmemo nutspeed belowsea topopole hellt eopfollow
+	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse gauqflags sidplanehouses fictnakshatra helmemo nutspeed belowsea topopole hellt eopfollow datemsg
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt

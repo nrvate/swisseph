@@ -712,8 +712,9 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
   /* allow 0.2 day tolerance so that true node interval fits in */
   if (tjd < MOSHLUEPH_START - 0.2 || tjd > MOSHLUEPH_END + 0.2) {
     if (serr != NULL) {
-      sprintf(s, "jd %f outside Moshier's Moon range %.2f .. %.2f ",
-		    tjd, MOSHLUEPH_START, MOSHLUEPH_END);
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside Moshier's Moon range %.2f .. %.2f ",
+		    swi_jd_str(tjd, 6, sjd), MOSHLUEPH_START, MOSHLUEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }
@@ -1089,8 +1090,9 @@ int swi_mean_node(swe_ctx *ctx, double J, double *pol, char *serr)
   /* with elements from swi_moshmoon2(), which are fitted to jpl-ephemeris */
   if (J < MOSHNDEPH_START || J > MOSHNDEPH_END) {
     if (serr != NULL) {
-      sprintf(s, "jd %f outside mean node range %.2f .. %.2f ",
-		    J, MOSHNDEPH_START, MOSHNDEPH_END);
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside mean node range %.2f .. %.2f ",
+		    swi_jd_str(J, 6, sjd), MOSHNDEPH_START, MOSHNDEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }
@@ -1162,8 +1164,9 @@ int swi_mean_apog(swe_ctx *ctx, double J, double *pol, char *serr)
   /* with elements from swi_moshmoon2(), which are fitted to jpl-ephemeris */
   if (J < MOSHNDEPH_START || J > MOSHNDEPH_END) {
     if (serr != NULL) {
-      sprintf(s, "jd %f outside mean apogee range %.2f .. %.2f ",
-		    J, MOSHNDEPH_START, MOSHNDEPH_END);
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside mean apogee range %.2f .. %.2f ",
+		    swi_jd_str(J, 6, sjd), MOSHNDEPH_START, MOSHNDEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }

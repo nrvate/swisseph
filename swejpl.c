@@ -73,6 +73,7 @@
 #include "swephexp.h"
 #include "sweph.h"
 #include "swejpl.h"
+#include "swephlib.h"
 
 #if MSDOS
   typedef __int64 off_t64;
@@ -826,7 +827,7 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
       reorder((char *) &ts[2], sizeof(double), 2);
     if (ts[0] != js->eh_ss[0] || ts[3] != js->eh_ss[1]) {
       if (serr != NULL)
-	sprintf(serr, "JPL ephemeris file is corrupt; start/end date check failed. %.1f != %.1f || %.1f != %.1f", ts[0],js->eh_ss[0],ts[3],js->eh_ss[1]);
+	snprintf(serr, AS_MAXCH, "JPL ephemeris file is corrupt; start/end date check failed. %.1f != %.1f || %.1f != %.1f", ts[0],js->eh_ss[0],ts[3],js->eh_ss[1]);
       return NOT_AVAILABLE;
     }
   }
@@ -838,8 +839,10 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
   et_mn += .5;	/* midnight before epoch */
   /*       error return for epoch out of range */
   if (et < js->eh_ss[0] || et > js->eh_ss[1]) {
-    if (serr != NULL) 
-      sprintf(serr,"jd %f outside JPL eph. range %.2f .. %.2f;", et, js->eh_ss[0], js->eh_ss[1]);
+    if (serr != NULL) {
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(serr, AS_MAXCH, "jd %s outside JPL eph. range %.2f .. %.2f;", swi_jd_str(et, 6, sjd), js->eh_ss[0], js->eh_ss[1]);
+    }
     return BEYOND_EPH_LIMITS;
   }
   /*       calculate record # and relative time in interval */
@@ -856,12 +859,12 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
     js->nrl = 0;
     if (FSEEK(js->jplfptr, (off_t64) (nr * ((off_t64) js->irecsz)), 0) != 0) {
       if (serr != NULL)
-	sprintf(serr, "Read error in JPL eph. at %f\n", et);
+	snprintf(serr, AS_MAXCH, "Read error in JPL eph. at %f\n", et);
       return NOT_AVAILABLE;
     }
     if ((int32) fread((void *) buf, sizeof(double), (size_t) js->ncoeffs, js->jplfptr) != js->ncoeffs) {
       if (serr != NULL)
-	sprintf(serr, "Read error in JPL eph. at %f\n", et);
+	snprintf(serr, AS_MAXCH, "Read error in JPL eph. at %f\n", et);
       return NOT_AVAILABLE;
     }
     if (js->do_reorder)

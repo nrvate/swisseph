@@ -77,6 +77,7 @@ worst were in code that had never executed even once.
 | 39 | The topocentric observer is placed about the mean pole of date, not the true pole: 200-270 m on the observer, 0.10-0.15" on the topocentric Moon | Correctness | `sweph.c` |
 | 40 | A heliocentric light time is measured from the barycentre on its second pass, not from the Sun: up to 0.84" on Mercury, 2.6" on a fictitious body inside its orbit | Correctness | `sweph.c` |
 | 41 | `swe_get_ayanamsa_ex()`, the sidereal houses and `swe_gauquelin_sector()` with SEFLG_JPLHOR and no IERS corrections loaded read the corrections' table, NULL, and crash | Crash | `swephlib.c`, `swecl.c` |
+| 42 | The refusals of a date outside a range write its digits in full into 256 bytes: from \|J\| about 1e188 days the message overruns its buffer or the caller's serr | Memory | `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swedate.c`, `swecl.c`, `swephlib.c` |
 
 ---
 
@@ -2292,6 +2293,44 @@ bit for bit with its return flag as the same call with SEFLG_JPLHOR_APPROX in
 a fresh one: 48 checks. Before the fix 46 crash (the interpolated houses pass,
 their ayanamsa's nutation interpolated from nodes the houses' own nutation
 without flags had built), after it none fail.
+
+## 42. The refusals of a date outside a range write its digits in full into 256 bytes: from |J| about 1e188 days the message overruns its buffer or the caller's serr
+
+**Severity: Memory (stack buffer and serr overrun; glibc's fortify aborts at -O2, the stack protector at -O0)**
+**Where:** `swemplan.c`: `swi_moshplan()`; `swemmoon.c`: `swi_moshmoon()`, `swi_mean_node()`, `swi_mean_apog()`; `swejpl.c`: `state()`; `swedate.c`: `swe_utc_to_jd()`; `swecl.c`: the eclipse functions' "no ... eclipse at tjd"
+
+Every refusal of a date outside a body's range printed the date by `%f`
+with `sprintf()`: "jd %f outside Moshier planet range %.2f .. %.2f " into a
+local `char s[AS_MAXCH]` (256 bytes) in `swi_moshplan()`, `swi_moshmoon()`,
+`swi_mean_node()` and `swi_mean_apog()`, copied into serr after, and "jd %f
+outside JPL eph. range" straight into the caller's serr. `%f` writes every
+integer digit, so the message is 256 characters or more (with its NUL past
+256 bytes) from |J| 1e188 (the Moshier planets and Moon), 1e191 (the mean
+apogee), 1e193 (the mean node) and 1e196 (JPL; 360 characters at 1e300).
+Measured, each call in a child process, |J| 1e200, 1e250, 1e300, 1e308 and
+DBL_MAX either sign, Mars, the Moon, the mean node and apogee and Cupido on
+Moshier, `swe_nod_aps()` of the Moon's and Mars's mean points, Spica by
+`swe_fixstar2()` on Moshier and Mars on de200.eph: the 80 calls on Moshier
+died ("stack smashing detected"), the 10 on de200.eph wrote past the 256
+bytes of serr.
+`swe_utc_to_jd()`'s "invalid time: %d:%d:%.2f" took the caller's seconds the
+same way, past serr from 1e232. The eclipse functions' "no solar eclipse at
+tjd = %f" and the JPL reader's read and header errors would overrun likewise,
+behind range tests that refuse such a date first.
+
+**Fix, as done here:** `swi_jd_str()` prints the date: `%f` with the
+message's decimals below 1e15 days, byte for byte what the messages had, and
+`%.10g` from there up and for NaN and infinity ("jd 1e+300 outside Moshier
+planet range 625000.50 .. 2818000.50 "), at most 32 characters, so the range
+stays in the message. The Moshier, mean node, mean apogee and JPL range
+refusals and `swe_utc_to_jd()`'s two "invalid time" messages print the date
+(the seconds) by it, into `snprintf()` with the buffer's size; the messages
+that sit behind range tests are `snprintf()` with AS_MAXCH, the format
+unchanged. G51 `tests/datemsg.c`: the 90 calls above and `swe_utc_to_jd()` at
+those seconds, each in a child process: ERR, a message from "jd " (or
+"invalid time") of under 100 characters that names the range and the date
+as "e+", the bytes past AS_MAXCH untouched; and four dates a little outside a
+range, printed as before: 104 checks. Before the fix 100 fail, after it none.
 
 ## How these were found
 

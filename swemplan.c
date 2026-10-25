@@ -299,8 +299,9 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
   /* tjd beyond ephemeris limits, give some margin for spped at edge */
   if (tjd < MOSHPLEPH_START - 0.3 || tjd > MOSHPLEPH_END + 0.3) {
     if (serr != NULL) {
-      sprintf(s, "jd %f outside Moshier planet range %.2f .. %.2f ",
-		    tjd, MOSHPLEPH_START, MOSHPLEPH_END);
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside Moshier planet range %.2f .. %.2f ",
+		    swi_jd_str(tjd, 6, sjd), MOSHPLEPH_START, MOSHPLEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }
