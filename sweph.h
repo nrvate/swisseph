@@ -943,6 +943,10 @@ struct epsilon {
  *   - observer_accel() took the site's acceleration as a difference over
  *     +-2^-11 day, (omega h)^2 / 6 = 1.6e-6 low (6e-10 deg/day on every
  *     topocentric apparent speed; UPSTREAM-BUGS 79, G78)
+ *   - swe_nod_aps()'s osculating points took e as sqrt(1 - p / a), 1e-16 / e^2
+ *     of itself, and their speeds as differences over 1e-3 day per AU at
+ *     rounded instants (5.6e-7 deg/day on Venus's perihelion, 6.0e-8 on
+ *     the Sun's perigee, 2.0e-6 on the Moon's; UPSTREAM-BUGS 80, G79)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

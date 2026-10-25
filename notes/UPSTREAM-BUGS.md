@@ -119,6 +119,7 @@ worst were in code that had never executed even once.
 | 86 | The JPL barycentric Sun takes its instant of date from the Earth's slot | Correctness | `sweph.c` |
 | 84 | `jplplan()`'s Earth and Sun answer for any ephemeris, and the JPL barycentric Sun is finished at the Earth slot's instant | Correctness | `sweph.c` |
 | 79 | The topocentric site's acceleration is 1.6e-6 low | Correctness | `sweph.c` |
+| 80 | `swe_nod_aps()`'s osculating speeds difference rounded points over a few minutes | Correctness | `swecl.c` |
 
 ---
 
@@ -4663,6 +4664,77 @@ entry 73's) fails 27 of its 63 checks, the upstream build all 63. G24
 (3.5e-10 before), 8.0e-6 compat. G42, G43, G47, G54, G63, G69, G72 pass.
 G1: topocentric apparent speed rows move by up to 1e-9 deg/day, positions
 do not.
+
+## 80. `swe_nod_aps()`'s osculating speeds difference rounded points over a few minutes
+
+**Severity: Correctness (5.6e-7 deg/day on Venus's osculating perihelion and aphelion, 6.0e-8 on the Sun's perigee and apogee, 2.0e-6 on the Moon's osculating perigee; 3.0e-5 on Venus's with DE200; positions 3e-9 deg)**
+**Where:** `swecl.c`: `swe_nod_aps_r()`, the osculating points (SE_NODBIT_OSCU, SE_NODBIT_OSCU_BAR)
+
+The osculating points' speeds are a central difference of the points at
+tjd -+ dt, dt = 1e-3 day per AU of the body's distance (7.2e-4 day for
+Venus, 1e-3 for the Earth's orbit) and 1e-4 for the Moon. Two things made
+that difference something other than the points' rate:
+
+- The eccentricity was sqrt(1 - p / a), and 1 - p / a is e^2 less a few
+  ulps of 1, so e carried 1e-16 / e^2 of itself and the true anomaly
+  through it, cos E = (1 - r / a) / e, about 1e-11 rad on Venus's orbit
+  (e = 0.0068). Venus's perihelion jittered by 5.1e-10 deg rms from one
+  instant to the next (201 instants 2^-20 day apart; the same formula in
+  long double moves it by up to 7.6e-10), Neptune's heliocentric one by
+  5.8e-11. Over 2 dt = 1.4e-3 day that is 6e-7 deg/day of speed.
+- The outer instants were tjd - dt and tjd - dt + 2 dt, each rounded, and
+  divided by 2 dt: off their spacing by up to a JD's ulp, 2.3e-6 of the
+  Moon's points' speeds (1.9e-6 deg/day on its osculating perigee), less
+  for the planets' longer steps.
+
+Each sample is in the ecliptic of its own instant, with the same bias,
+precession, nutation and (for the Earth) EMB; that part was right.
+Measured against five-point differences of the library's own positions at
+binary-fraction instants (h = 2^-6 day, which agrees with 2^-4 and 2^-5),
+the Sun and Mercury..Neptune, osculating and barycentric-osculating,
+geocentric and heliocentric, seven instants -3000..3000: Venus 2.0e-7
+deg/day geocentric and 5.6e-7 heliocentric in longitude, 2.8e-8 in
+latitude, 6.1e-9 AU/day in distance; the Sun's perigee 6.0e-8; Mars 3.6e-9,
+Jupiter 1.9e-8; Neptune 1.1e-7 to 1.7e-7 (barycentric), its jitter in the
+reference too. JPL (DE200, 1700-2150), heliocentric: Venus 3.0e-5, the
+Sun's perigee 3.8e-8. (Measured on the tree with entries 66-78 in.)
+
+**Fix, as done here:** the eccentricity is the length of the
+eccentricity vector, ((v^2 - GM / r) r - (r.v) v) / GM, and the true
+anomaly the angle from it to r about the orbit's normal, each good to
+1e-16 / e: Venus's perihelion jitter 2.7e-12 deg rms, Neptune's 5.6e-12
+(1.8e-10 at -3000, which is the Swiss files' own state there: 2e-10 deg in
+its eccentricity vector computed directly). The outer instants are tjd -+
+a binary step, exact but for a JD within the step of a power of two, and
+divided by their own spacing: 2^-6
+day for the planets, where the frame's nutation bends a three-point
+difference by 2e-10 deg/day and the points' rounding adds about as much,
+2^-11 for the Moon, whose perigee turns too fast for a longer one (4e-8
+deg/day, against 5e-7 at 2^-9 and 1.7e-7 at 2^-13). Positions move by the
+old formula's rounding: <= 2.7e-9 deg (Neptune), 1.0e-9 on Uranus's
+points, 5.1e-10 on Venus's, 1.0e-10 on the Sun's, the rest below 5e-11 (13
+instants -3000..3000, both methods, four flag sets); with and
+without SEFLG_SPEED they are still one position (G47). After, the same
+checks: longitude <= 6.5e-10 deg/day (Neptune geocentric at -3000),
+latitude <= 2.1e-11, distance <= 2.6e-11 AU/day. JPL heliocentric <= 4.6e-10
+deg/day, geocentric <= 6.5e-10 (Neptune), as on the Swiss files. The Moon's
+osculating points: 2.0e-6 to 3.9e-8 deg/day. G42's osculating rows are now
+its mean rows' floor (Venus 2.7e-7 to 2.4e-8, Mars 1.8e-8 to 1.4e-8).
+
+At exactly tjd = 0 the points with and without SEFLG_SPEED agree (Mars's
+osculating ascending node 320.6782751218 both, entry 71's caches), before
+and after this fix.
+
+G79 `tests/nodaposcspeed.c`: the longitude, latitude and distance speeds of
+the four points (the Sun's two), osculating and barycentric-osculating, of
+the Sun and Mercury..Neptune, geocentric and heliocentric, default flags,
+seven instants -3000..3000, against five-point differences over 2^-6 day;
+within 1.5e-9, 1e-10 deg/day and 1e-10 AU/day. The tree before fails 51 of
+its 96 checks, the upstream build all 96. G24 `oscu_apsis_speed_off`:
+Venus's osculating perihelion, heliocentric, at J2000 + 100 days, 3.5e-10
+deg/day shipped (3.7e-7 before), 4.7e-7 compat. G42, G43, G47, G54, G63,
+G69, G72, G78 pass. G1: the osculating rows' speeds move (Venus by up to
+6e-7 deg/day, the Moon's perigee 2e-6), their positions by <= 3e-9 deg.
 
 ## How these were found
 

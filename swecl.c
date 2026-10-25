@@ -5298,7 +5298,9 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   double *xna, *xnd, *xpe, *xap;
   double incl, sema, ecce, parg, ea, vincl, vsema, vecce;
 #ifdef SWE_UPSTREAM_COMPAT
-  double pargx, eax;
+  double pargx, eax, pp, sinE;
+#else
+  double dtosc = 0, tosc[3] = {0, 0, 0};
 #endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *psbdp = &ctx->pldat[SEI_SUNBARY];
@@ -5308,8 +5310,8 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   const double *ep;
   double Gmsm, dzmin;
   double rxy, rxyz, fac, sgn;
-  double sinnode, cosnode, sinincl, cosincl, sinu, cosu, sinE, cosE, cosE2;
-  double uu, ny, ny2, c2, v2, pp, ro, ro2, rn, rn2;
+  double sinnode, cosnode, sinincl, cosincl, sinu, cosu, cosE, cosE2;
+  double uu, ny, ny2, c2, v2, ro, ro2, rn, rn2;
   struct epsilon *oe;
   AS_BOOL is_true_nodaps = FALSE;
   AS_BOOL do_aberr = !(iflag & (SEFLG_TRUEPOS | SEFLG_NOABERR));
@@ -5588,6 +5590,22 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       istart = iend = 0;
       dt = 0;
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 80: the speeds were differences over tjd -+ dt, dt =
+     * 1e-3 day per AU of distance (7e-4 for Venus) and 1e-4 for the Moon,
+     * at instants rounded twice, so 2 dt was off their spacing by up to a
+     * JD's ulp (2.3e-6 of the Moon's points' speeds, 2.0e-6 deg/day on its
+     * perigee); and over so short a step the points' own rounding (the
+     * eccentricity's, below) made 5.6e-7 deg/day on Venus's perihelion, 6e-8
+     * on the Sun's perigee. Now tjd -+ a binary step, exact, divided by the
+     * instants' own spacing: 2^-6 day for the planets, where the frame's
+     * nutation (the points are in the ecliptic of each instant) bends the
+     * difference by 2e-10 deg/day and the points' rounding adds about as
+     * much (Neptune's 7e-10 at -3000), and 2^-11 for the Moon, whose
+     * perigee turns too fast for more (4e-8 deg/day there, against 5e-7 at
+     * 2^-9 and 1.7e-7 at 2^-13). */
+    dtosc = ipli == SE_MOON ? 1.0 / 2048 : 1.0 / 64;
+#endif
     for (i = istart, t = tjd_et - dt; i <= iend; i++, t += dt) {
       if (istart == iend)
         t = tjd_et;
@@ -5596,6 +5614,10 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
        * twice; the points without SEFLG_SPEED are at tjd itself */
       if (i == 1)
         t = tjd_et;
+      /* bug 80: the outer instants tjd -+ a binary step, exact (above) */
+      if (istart != iend)
+        t = tjd_et + (i - 1) * dtosc;
+      tosc[i] = t;
 #endif
       if (swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr) == ERR)
         return ERR;
@@ -5640,6 +5662,24 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       rxyz = sqrt(square_sum(xpos[i]));
       v2 = square_sum((xpos[i]+3));
       sema = 1 / (2 / rxyz - v2 / Gmsm);	
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 80: the eccentricity was sqrt(1 - p / a), where 1 - p / a
+       * is e^2 less a few ulps, so e carried 1e-16 / e^2 of itself, and the
+       * true anomaly from it (cos E = (1 - r / a) / e) 1e-11 rad on Venus's
+       * orbit (e = 0.0068): its perihelion 5e-10 deg rms from instant to
+       * instant, the speed, differenced over 2 x 7.2e-4 day, 6e-7 deg/day off.
+       * Now the eccentricity vector, ((v^2 - GM / r) r - (r.v) v) / GM: e
+       * its length and the true anomaly the angle from it to r about h,
+       * each 1e-16 / e at worst. The same quantities. */
+      {
+        double ev[3], evr[3], rv = dot_prod(xpos[i], xpos[i]+3);
+        for (j = 0; j <= 2; j++)
+          ev[j] = ((v2 - Gmsm / rxyz) * xpos[i][j] - rv * xpos[i][j+3]) / Gmsm;
+        ecce = sqrt(square_sum(ev));
+        swi_cross_prod(ev, xpos[i], evr);
+        ny = atan2(dot_prod(evr, xnorm) / sqrt(c2), dot_prod(ev, xpos[i]));
+      }
+#else
       /* eccentricity */
       pp = c2 / Gmsm;
       ecce = sqrt(1 - pp / sema);	
@@ -5648,6 +5688,7 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       sinE = 1 / ecce / sqrt(sema * Gmsm) * dot_prod(xpos[i], (xpos[i]+3));
       /* true anomaly */
       ny = 2 * atan(sqrt((1+ecce)/(1-ecce)) * sinE / (1 + cosE));
+#endif
       /* distance of perihelion from ascending node */
       xq[i][0] = swi_mod2PI(uu - ny);
       xq[i][1] = 0;			/* latitude */
@@ -5688,6 +5729,17 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     }
     for (i = 0; i <= 2; i++) {
       if (iflag & SEFLG_SPEED) {
+#ifndef SWE_UPSTREAM_COMPAT
+        double dd = tosc[2] - tosc[0];
+        xpe[i] = xq[1][i];
+        xpe[i+3] = (xq[2][i] - xq[0][i]) / dd;
+        xap[i] = xa[1][i];
+        xap[i+3] = (xa[2][i] - xa[0][i]) / dd;
+        xna[i] = xn[1][i];
+        xna[i+3] = (xn[2][i] - xn[0][i]) / dd;
+        xnd[i] = xs[1][i];
+        xnd[i+3] = (xs[2][i] - xs[0][i]) / dd;
+#else
         xpe[i] = xq[1][i];
         xpe[i+3] = (xq[2][i] - xq[0][i]) / dt / 2;
         xap[i] = xa[1][i];
@@ -5696,6 +5748,7 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
         xna[i+3] = (xn[2][i] - xn[0][i]) / dt / 2;
         xnd[i] = xs[1][i];
         xnd[i+3] = (xs[2][i] - xs[0][i]) / dt / 2;
+#endif
       } else {
         xpe[i] = xq[0][i];
         xpe[i+3] = 0;

@@ -1275,6 +1275,28 @@ static double topo_moon_ancient_off(void)
                        2451545.0 - 2999 * 365.25 + 0.137);
 }
 
+/* UPSTREAM-BUGS 80: Venus's osculating perihelion, heliocentric, at J2000
+ * + 100 days: its longitude speed against a five-point difference over
+ * 2^-6 day, deg/day. Upstream differences the points over 7e-4 day, where
+ * their eccentricity's rounding (sqrt(1 - p / a), 1e-16 / e^2) is 5e-10
+ * deg of jitter: 4.7e-7. */
+static double oscu_apsis_speed_off(void)
+{
+  double jd = floor((2451545.0 + 100.37) * 256) / 256, h = 1.0 / 64;
+  double x[6], f[5][6], u[6], v[5];
+  int32 fl = SEFLG_SWIEPH | SEFLG_HELCTR;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_nod_aps(jd, SE_VENUS, fl | SEFLG_SPEED, SE_NODBIT_OSCU, u, u, x, u, serr);
+  for (k = 0; k < 5; k++)
+    swe_nod_aps(jd + (k - 2) * h, SE_VENUS, fl, SE_NODBIT_OSCU, u, u, f[k], u, serr);
+  for (k = 0; k < 5; k++)
+    v[k] = f[2][0] + swe_difdeg2n(f[k][0], f[2][0]);
+  return fabs(x[3] - (v[0] - 8 * v[1] + 8 * v[3] - v[4]) / (12 * h));
+}
+
 /* UPSTREAM-BUGS 79: Saturn's mean ascending node seen from the equator on
  * 2026-10-24, default flags, its latitude speed against the slope of a
  * least-squares polynomial (degree 8, 257 places 2^-11 day apart; a
@@ -1623,7 +1645,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1699,6 +1721,7 @@ int main(int argc, char **argv)
   jplstale = jpl_stale_earth_off();
   defldisc = defl_disc_rate_off();
   toposite = topo_accel_off();
+  oscaps = oscu_apsis_speed_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2260,6 +2283,14 @@ int main(int argc, char **argv)
   else {
     printf("  topocentric site accel.  %.2e deg/day FAIL: expected %s\n",
            toposite, WANT_DEFECT ? "> 1e-7" : "< 5e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (oscaps > 1e-7) : (oscaps < 2e-9))
+    printf("  osculating apsis speed   %.2e deg/day OK\n", oscaps);
+  else {
+    printf("  osculating apsis speed   %.2e deg/day FAIL: expected %s\n",
+           oscaps, WANT_DEFECT ? "> 1e-7" : "< 2e-9");
     bad++;
   }
 
