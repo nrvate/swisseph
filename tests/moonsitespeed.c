@@ -23,9 +23,9 @@
  *  (a) geocentric, step 2^-6 day: within 5e-9 deg/day (measured 1.4e-9;
  *      before 2.4e-8);
  *  (b) topocentric at 0, 30, 47.37 and -65 deg latitude, step 2^-8 day:
- *      within 4e-7 (measured 2.5e-7; before 8.7e-7). What is left is the
- *      site's own jitter, the 4.7e-10 day UT1 = TT - delta t rounds to,
- *      6 mm, 1e-9 deg on the Moon, over the step;
+ *      within 4e-7 (measured 7.5e-8, the step's truncation; before 8.7e-7;
+ *      2.5e-7 before UPSTREAM-BUGS 140 placed the site by UT1 without the
+ *      4.7e-10 day TT - delta t rounds to, the site's jitter);
  *  (c) the same sites with delta t set to 2^-11 day, so that UT1 is exact
  *      and the site has no jitter, step 2^-9 day: within 3e-8 (measured
  *      1.05e-8, the step's truncation; before 7.5e-7; with a 17-point
