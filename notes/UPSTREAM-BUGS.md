@@ -263,6 +263,7 @@ worst were in code that had never executed even once.
 | 226 | `swe_nod_aps()` with SEFLG_SPEED reads the osculating ellipse at tjd -+ k h and the observer at tjd less the light time, and near a span's edge took Moshier's for either silently, or was refused: Pluto's points with the files of 1800-2400 at JD 2378496.625 the node's speed 1.2e-5 deg/day off, nothing noted, strict -1 for 0; Mars's heliocentric node 2^-7 day after the start 5.1e-3 deg/day off; a barycentric ellipse refused under either setting | Correctness (behaviour) | `swecl.c`, `sweph.c` |
 | 231 | With `swe_set_interpolate_nut(TRUE)` the nutation is a quadratic through nodes placed by whichever call found none about it, so an instant's answer depends on the calls before it: SE_ECL_NUT fresh against after a call 0.6 to 1.3 day earlier up to 7.9e-7 deg (2.8 mas), Mars's speed 4.2e-6 deg/day | Correctness (behaviour) | `swephlib.c` |
 | 232 | Woolard's nutation evaluates its arguments, revolutions times t, in double: against its formula in mpmath dpsi 8.2e-10 deg off at 1e9 to 1e10 days, 2.1e-7 to 1e11, 3.2e-4 to 1e12 | Correctness | `swephlib.c` |
+| 236 | `swe_gauquelin_sector()` with SEFLG_SIDEREAL sets the body's sidereal place in the tropical house frame (the ARMC and true obliquity of the ecliptic of date): methods 0 and 1 off by the ayanamsa along the ecliptic, Mars at 1950, Zurich, Lahiri, 2.62 sectors off the call without the flag, 1.04 to 4.84 over 1800-2100; methods 2 to 5 never took the flag | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -15535,7 +15536,7 @@ Noticed, not fixed:
   set the sidereal place in the tropical house frame: Mars at 1950 on the
   Swiss files, Lahiri, 2.62 sectors off the call without it (its
   ayanamsa's 23 deg). The manual gives iflag as the ephemeris and
-  SEFLG_TOPOCTR.
+  SEFLG_TOPOCTR. Fixed as entry 236.
 
 ## 224. Makransky's Sunshine cusps lose digits as their right ascension w nears 90 or 270 deg, 1.6e-12 deg / |w - 270| (0.72 deg within 1e-11 deg of it), and their speeds take it through the ARMC difference: cusp 9 at TT 2437683.0, Zurich, 1.6e-7 deg/day off its cusps' rate
 
@@ -16695,6 +16696,141 @@ Woolard at four instants 1.2e10 to 3.1e10 days either side of J2000
 against the formula in mpmath, the larger: 8.9e-16 deg shipped (5.4e-9
 before the fix), 5.5e-5 compat. G162 passes 87 of 87 with this fix (6
 fail before it), the upstream build 0 of its 81.
+
+## 236. `swe_gauquelin_sector()` with SEFLG_SIDEREAL sets the body's sidereal place in the tropical house frame: methods 0 and 1 off by the ayanamsa, Mars at 1950, Zurich, Lahiri, 2.62 sectors
+
+**Severity: Correctness (behaviour: a flag that renames the place moved it in a frame it did not rename; methods 0 and 1 of every sidereal request 1.04 to 4.84 sectors off at Zurich, 1800-2100, in every sidereal setting and on every ephemeris)**
+**Where:** `swecl.c`: `swe_gauquelin_sector_r_body()`
+
+Entry 223's noticed item. What a sector is, by the manual and the code:
+- swisseph 6.2.12 and 6.6: the sectors divide the diurnal and nocturnal
+  arcs into 36, as Placidus does into 12, clockwise from the rising; a
+  body's sector is the share of its semi-arc it has run since its rising
+  or setting, from its place (methods 0, 1: with and without its ecliptic
+  latitude) or from the times of its rising and setting (2 to 5). That is
+  the body's place on its diurnal circle, its hour angle against its
+  semi-arc at the place, which no zodiac changes.
+- swephprg 16.1: method 0 is `swe_house_pos()` with 'G' and the body's
+  ecliptic longitude and latitude, method 1 with the latitude 0; swephprg
+  16: `swe_house_pos()` "requires TROPICAL positions in xpin". iflag is
+  documented as "flag for ephemeris and SEFLG_TOPOCTR".
+- Methods 2 to 5 pass `swe_rise_trans()` the ephemeris bits alone.
+
+So SEFLG_SIDEREAL should move no sector. But methods 0 and 1 passed iflag
+to the body's `swe_calc()` or `swe_fixstar()` and set the sidereal
+longitude it answered in the frame of the true obliquity and the ARMC,
+the tropical ecliptic of date's: the body moved back along the ecliptic
+by the ayanamsa. Measured at Zurich (8.55E, 47.37N, 400 m):
+- Mars at UT 2433282.5 (1950) on the Swiss files, Lahiri: method 0
+  5.3076 for 2.6856, method 1 5.2696 for 2.5808 (2.62 and 2.69 sectors);
+  at UT 2433282.0 21.874 for 20.391 (1.48); True Citra, Fagan/Bradley and
+  Lahiri on the ecliptic of t0 and of date alike, on the solar system
+  plane 1.67 (its latitude moved too); over G164's sample (Mars, the Moon,
+  Spica and the mean node at six dates 1800..2100) up to 3.42 sectors, on
+  de200, the Swiss files and Moshier; on the wider sample below (nine
+  bodies, 400 dates) 1.04 to 4.84;
+- methods 2 to 5: the call without the flag, bit for bit.
+
+The tropical sector is the body's: Mars's from its apparent right
+ascension and declination, the sidereal time with SE_ECL_NUT's obliquity
+and nutation and the semi-arc is method 0's to 2.78e-8 sector, the
+MILLIARCSEC `swe_house_pos()` adds. And the sidereal place is the same
+point: carried back to the true ecliptic of date (the traditional
+method's ayanamsa added; the ecliptic of t0's and the solar system
+plane's points rotated back through J2000 and precessed, a probe with the
+library's `swi_precess()`), `swe_house_pos()` puts it at the tropical
+sector to 1.8e-14 in each setting.
+
+**Fix, as done here:** methods 0 and 1 compute the body with
+SEFLG_SIDEREAL cleared, and with it SEFLG_JPLHOR and SEFLG_JPLHOR_APPROX,
+which the sidereal call drops (`plaus_iflag()`; entry 223's rule, the
+frame taking the Horizons bits of the place's own call, so none); the
+other flags as given. Every method so answers the sector of the call
+without SEFLG_SIDEREAL. Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+Two readings were open:
+- Method 1 drops the latitude on the ecliptic of date, as the manual's
+  `swe_house_pos()` with the tropical longitude and 0, in every sidereal
+  setting. Dropping it on the sidereal plane instead (the ecliptic of t0
+  or the solar system plane, where those settings' sidereal cusps lie)
+  would make the sector depend on the setting: for Mars, the Moon, Mercury
+  and Pluto at four dates 1800..2100, 2.2e-3 sector off on an ecliptic of
+  1900, 0.24 on the solar system plane (the traditional method and the
+  ecliptic of date are the same point). Taken: the ecliptic of date --
+  the sector is the body's, and the manual defines the method through
+  the tropical place.
+- With a Horizons flag the sidereal place takes none, so the sector is
+  the unflagged tropical call's; keeping the flag would move it with
+  Horizons' frame of date, 1.91e-5 sector on de200 (Mars and Spica,
+  1800..2100), as the tropical call with the flag moves. Taken: the
+  sidereal place's rule (entry 223; G164 (a) has sidereal Mars's sector
+  the same with the flag as without).
+- After: the sample of entry 223 widened -- 400 dates 1800..2100 at UT
+  .123, de200, the Swiss files and Moshier, the Sun, Moon, Mars, Jupiter,
+  both nodes, Chiron, Spica and Aldebaran, methods 0 and 1 with no further
+  flag, SEFLG_TOPOCTR, SEFLG_NONUT, SEFLG_JPLHOR_APPROX and SEFLG_TRUEPOS,
+  methods 2 to 5 at every 20th date, Lahiri, Lahiri on the ecliptic of t0
+  and on the solar system plane: 330480 sidereal sectors, each the
+  tropical call's bit for bit (with SEFLG_JPLHOR_APPROX the unflagged
+  one's); its 110160 tropical sectors bit for bit before and after.
+- Cost: none (one flag test; no hot path).
+
+`swe_house_pos()` and the sidereal houses (swephprg 16: "SIDEREAL house
+positions are identical to tropical ones" with the traditional method in
+every system, and with the ecliptic of t0 and the solar system plane in
+the systems that do not depend on the ecliptic): `swe_house_pos()` of
+the tropical place of each sidereal cusp of `swe_houses_ex2()`, Zurich,
+at 1800, 1950, 2000 and 2100, against the cusp's number:
+- traditional (Lahiri): 0 in P K O R C E B M U T H X F Y S L Q D V A,
+  'G' 2.78e-8 (the MILLIARCSEC; cusps 13..36 miss the exact-cusp test),
+  'W' 0.298 and 'N' 0.842 (noticed, below);
+- the ecliptic of t0 (user, 1900) and the solar system plane (user,
+  J2000): P R C H X within 9.3e-9, G 2.78e-8, T 6.0e-8, the systems the
+  manual names; the others off as it says (K 4 houses, O 0.11, E 0.13 on
+  the solar system plane).
+So given the tropical place `swe_house_pos()` agrees with the sidereal
+Gauquelin cusps in every setting; given a sidereal longitude it is off by
+the ayanamsa, as the sectors were, which the manual rules out (it takes
+no flag that could tell it the zodiac).
+
+G164 `tests/sidhorflag.c` (d): methods 0 and 1 in five sidereal settings
+(Lahiri, True Citra, Lahiri on the ecliptic of date, of t0 and the solar
+system plane), the sidereal call also with SEFLG_JPLHOR_APPROX and with
+SEFLG_JPLHOR, and methods 2 to 5 in Lahiri's, of Mars, the Moon, Spica
+and the mean node at the six dates on each ephemeris, against the
+tropical call without the Horizons flags, values and returns bit for bit:
+42 checks; (e): the sidereal call's method 1 sector k names the sidereal
+Gauquelin cusps k and k + 1 the body's sidereal longitude lies between
+(Lahiri, True Citra, the ecliptic of date; 24 places each): 9 checks.
+Before the fix 39 of the 51 fail: 30 of (d), methods 0 and 1, every call,
+up to 3.42 sectors (methods 2 to 5 pass), and all 9 of (e), every place
+outside its sector, by up to 23.0 deg; after, 0. The upstream build fails
+209 of G164's 339: entry 223's 170 and these 39. G24 `sid_gauq_off`: Mars
+at UT 2433282.5 on the Swiss files, Lahiri, the larger of methods 0 and
+1's change with the flag: 0 shipped, 2.69 sectors compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. The other frame flags also reach the place and not the frame
+  in methods 0 and 1 (the manual documents iflag as the ephemeris and
+  SEFLG_TOPOCTR): Mars at UT 2433282.5 on the Swiss files, method 0,
+  against the plain call: SEFLG_NONUT -1.14e-4 sector (8.6e-4 at worst on
+  the sample above: the mean place in the true frame), SEFLG_J2000
+  -8.75e-2, SEFLG_EQUATORIAL -0.148 (right ascension and declination
+  taken as longitude and latitude), SEFLG_RADIANS +17.8, SEFLG_XYZ +18.3,
+  SEFLG_HELCTR and SEFLG_BARYCTR +3.88 (no horizon is theirs). SEFLG_TRUEPOS
+  (-3.2e-4), SEFLG_NOABERR, SEFLG_ICRS and SEFLG_TOPOCTR choose the place
+  itself.
+- BEHAVIOUR. swetest's house positions of planets (-fg, -fG, -fj) with
+  -sid: it passes the sidereal place to `swe_house_pos()` with the
+  tropical ARMC and obliquity, in every system (it calls
+  `swe_gauquelin_sector()` only for methods 2 to 5): Mars at 1.1.1950 0h
+  UT, Zurich, 'G', -fj 5.3075773 with -sid1 for 2.6855985 without, this
+  entry's 2.62 sectors; its cusps are right.
+- BEHAVIOUR (manual). For whole signs ('W') and equal houses from 0 Aries
+  ('N') the tropical place is not the sidereal house position, though the
+  manual counts them among "all house systems" for the traditional
+  method: the tropical place of a sidereal cusp lands 0.298 house off in
+  'W' (the tropical signs' boundaries) and up to 0.842 in 'N' (the
+  ayanamsa / 30 deg).
 
 ## How these were found
 

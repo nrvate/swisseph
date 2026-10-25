@@ -8183,7 +8183,7 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
   if (imeth == 0 || imeth == 1) {
     int32 iflag_nut;
 #ifndef SWE_UPSTREAM_COMPAT
-    int32 retflag;
+    int32 retflag, iflag_pl = iflag;
 #endif
     t_et = t_ut + swe_deltat_ex_r(ctx, t_ut, iflag, serr);
 #ifndef SWE_UPSTREAM_COMPAT
@@ -8204,13 +8204,25 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
      * first now, and the frame takes the Horizons bits its call answered
      * with: bug 142's SEFLG_JPLHOR_APPROX for SEFLG_JPLHOR without the
      * IERS corrections, and none where the place takes none. */
+    /* Upstream bug 236: with SEFLG_SIDEREAL the body's sidereal place was
+     * set in this frame, whose ARMC and obliquity are the tropical
+     * ecliptic of date's: Mars at 1950, Zurich, Lahiri, 2.62 sectors off
+     * the call without the flag, by the ayanamsa's 23.16 deg (methods 2 to
+     * 5 pass the ephemeris bits alone and never took it). A sector is the
+     * body's place on its diurnal circle, which no zodiac moves, and
+     * swe_house_pos() takes the tropical place (swephprg 16): the place is
+     * the tropical one now, the Horizons bits dropped as the sidereal call
+     * drops them (bug 223), so every method answers the sector of the
+     * call without SEFLG_SIDEREAL. */
+    if (iflag & SEFLG_SIDEREAL)
+      iflag_pl &= ~(SEFLG_SIDEREAL | SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
     if (do_fixstar)
-      retflag = swe_fixstar_r(ctx, starname, t_et, iflag, x0, serr);
+      retflag = swe_fixstar_r(ctx, starname, t_et, iflag_pl, x0, serr);
     else
-      retflag = swe_calc_r(ctx, t_et, ipl, iflag, x0, serr);
+      retflag = swe_calc_r(ctx, t_et, ipl, iflag_pl, x0, serr);
     if (retflag == ERR)
       return ERR;
-    iflag_nut = (iflag & ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
+    iflag_nut = (iflag_pl & ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
                 | (retflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX));
 #else
     /* Upstream bug 142: the obliquity and the nutation took SEFLG_JPLHOR

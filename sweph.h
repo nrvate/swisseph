@@ -1676,6 +1676,10 @@ struct epsilon {
  *   - Woolard's nutation's arguments evaluated in double past 4e8 days:
  *     dpsi 8.2e-10 deg off its formula at 1e9 to 1e10 days, 2.1e-7 to 1e11
  *     and 3.2e-4 to 1e12 (UPSTREAM-BUGS 232, G162, G24)
+ *   - swe_gauquelin_sector()'s methods 0 and 1 with SEFLG_SIDEREAL setting
+ *     the body's sidereal place in the tropical house frame: Mars at 1950,
+ *     Zurich, Lahiri, 2.62 sectors off the call without the flag
+ *     (UPSTREAM-BUGS 236, G164, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

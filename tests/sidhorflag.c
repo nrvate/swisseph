@@ -1,5 +1,6 @@
 /* sidhorflag.c -- G164: the JPL Horizons flags reach no sidereal output,
- * and the Gauquelin sectors' frame takes them as the body's place does.
+ * and the Gauquelin sectors' frame takes them as the body's place does;
+ * SEFLG_SIDEREAL moves no Gauquelin sector.
  *
  * The defect (UPSTREAM-BUGS 223): plaus_iflag() drops SEFLG_JPLHOR and
  * SEFLG_JPLHOR_APPROX from every sidereal place, from every request off a
@@ -60,7 +61,32 @@
  * the nutation the Sun's call left at the instant, unkeyed (UPSTREAM-BUGS
  * 134); and 26 more, the returns of its sidereal Spica, which carry the
  * caller's Horizons bits, and swe_nod_aps() of Mars on the Swiss files at
- * one date (4.1e-8 deg). Run as
+ * one date (4.1e-8 deg).
+ *
+ * The defect (UPSTREAM-BUGS 236): a Gauquelin sector is the body's place
+ * on its diurnal circle, which no zodiac moves, and methods 2 to 5 pass
+ * swe_rise_trans() the ephemeris bits alone; but methods 0 and 1 set the
+ * place the body's call answered with SEFLG_SIDEREAL in the frame of the
+ * tropical ecliptic of date (the true obliquity, the ARMC): Mars at UT
+ * 2433282.5, Zurich, Lahiri, 2.62 sectors off the call without the flag.
+ * Check (d): swe_gauquelin_sector() with SEFLG_SIDEREAL is the call
+ * without it, values and returns bit for bit, at the six dates, for Mars,
+ * the Moon, Spica and the mean node on each ephemeris: methods 0 and 1 in
+ * each sidereal setting (Lahiri, True Citra, Lahiri on the ecliptic of
+ * date, of t0 and the solar system plane), the sidereal call also with
+ * SEFLG_JPLHOR_APPROX and with SEFLG_JPLHOR, which the sidereal place
+ * drops (so the tropical call without them); methods 2 to 5 in Lahiri's.
+ * One check per setting, ephemeris and method: 42. Check (e): the sidereal
+ * call's method 1 sector k names the sidereal Gauquelin cusps k and k + 1
+ * of swe_houses_ex2() that the body's sidereal longitude lies between,
+ * in the settings whose cusps are on the ecliptic of date (Lahiri, True
+ * Citra, Lahiri on the ecliptic of date), 24 places each: 9 checks.
+ *
+ * Measured: (d) all equal, (e) all inside. Before the fix 39 of the 51
+ * fail: 30 of (d), methods 0 and 1, 72 of 72 calls each, up to 3.42
+ * sectors (methods 2 to 5 pass), and all 9 of (e), every place outside
+ * its sector, by up to 23.0 deg. The upstream build fails 209 of the 339:
+ * the 170 above and these 39. Run as
  *   sidhorflag EPHEDIR
  */
 #include <math.h>
@@ -382,6 +408,158 @@ static int check_c(void)
   return 0;
 }
 
+/* the sector's difference, the shorter way round the 36 */
+static double sect_diff(double a, double b)
+{
+  double d = fabs(a - b);
+  return d > 18 ? 36 - d : d;
+}
+
+/* swe_gauquelin_sector() with SEFLG_SIDEREAL against the call without it,
+ * values and returns bit for bit: methods 0 and 1 in each sidereal
+ * setting, the sidereal call also with each Horizons flag, which the
+ * sidereal place drops (bug 223); methods 2 to 5 in Lahiri's */
+static int check_d(void)
+{
+  static const struct {
+    int32 sid;
+    const char *name;
+  } SD[] = {
+    { SE_SIDM_LAHIRI, "Lahiri" }, { SE_SIDM_TRUE_CITRA, "True Citra" },
+    { SE_SIDM_LAHIRI | SE_SIDBIT_ECL_DATE, "Lahiri, ecl. of date" },
+    { SE_SIDM_LAHIRI | SE_SIDBIT_ECL_T0, "Lahiri, ecl. of t0" },
+    { SE_SIDM_LAHIRI | SE_SIDBIT_SSY_PLANE, "Lahiri, ssy plane" },
+  };
+  static const int32 HX[3] = { 0, SEFLG_JPLHOR_APPROX, SEFLG_JPLHOR };
+  static const int PL[4] = { SE_MARS, SE_MOON, 0, SE_MEAN_NODE };
+  double geo[3] = { 8.55, 47.37, 400 }, ww = 0;
+  int s, e, m, b, i, h, n0 = n, b0 = bad;
+  char serr[256], star[64];
+  for (s = 0; s < 5; s++) {
+    swe_ctx *c = open_ctx(SD[s].sid);
+    if (c == NULL)
+      return -1;
+    for (e = 0; e < 3; e++)
+      for (m = 0; m <= 5; m++) {
+        int ndiff = 0, ncall = 0;
+        double w = 0;
+        if (m >= 2 && s > 0)
+          continue;
+        for (b = 0; b < 4; b++)
+          for (i = 0; i < NTQ; i++) {
+            double g0 = 0;
+            int32 r0;
+            strcpy(star, "Spica");
+            r0 = swe_gauquelin_sector_r(c, TQ[i], PL[b], b == 2 ? star : NULL, EPHF[e], m, geo, 0,
+                                        0, &g0, serr);
+            if (r0 < 0) {
+              printf("    ERROR sector, %s, method %d at JD %.8f: %s\n", EPHN[e], m, TQ[i], serr);
+              swe_ctx_free(c);
+              return -1;
+            }
+            for (h = 0; h < (m < 2 ? 3 : 1); h++) {
+              double g1 = 0;
+              int32 r1;
+              strcpy(star, "Spica");
+              r1 = swe_gauquelin_sector_r(c, TQ[i], PL[b], b == 2 ? star : NULL,
+                                          EPHF[e] | SEFLG_SIDEREAL | HX[h], m, geo, 0, 0, &g1,
+                                          serr);
+              ncall++;
+              if (r1 != r0 || memcmp(&g0, &g1, sizeof g0)) {
+                ndiff++;
+                if (sect_diff(g1, g0) > w)
+                  w = sect_diff(g1, g0);
+              }
+            }
+          }
+        n++;
+        if (w > ww)
+          ww = w;
+        if (ndiff) {
+          bad++;
+          printf("    FAIL sidereal Gauquelin sector, %s, %s, method %d: %d of %d differ, by %.2e"
+                 " sector at most\n", SD[s].name, EPHN[e], m, ndiff, ncall, w);
+        }
+      }
+    swe_ctx_free(c);
+  }
+  printf("  (d) Gauquelin sectors with SEFLG_SIDEREAL as without, %.1e sector apart at most:"
+         " %d checks, %d fail\n", ww, n - n0, bad - b0);
+  return 0;
+}
+
+/* the sidereal call's method 1 sector k names the sidereal Gauquelin cusps
+ * k and k + 1 (swe_houses_ex2()) that the body's sidereal longitude lies
+ * between, in the settings whose cusps are on the ecliptic of date */
+static int check_e(void)
+{
+  static const struct {
+    int32 sid;
+    const char *name;
+  } SDE[] = {
+    { SE_SIDM_LAHIRI, "Lahiri" }, { SE_SIDM_TRUE_CITRA, "True Citra" },
+    { SE_SIDM_LAHIRI | SE_SIDBIT_ECL_DATE, "Lahiri, ecl. of date" },
+  };
+  static const int PL[4] = { SE_MARS, SE_MOON, 0, SE_MEAN_NODE };
+  double geo[3] = { 8.55, 47.37, 400 };
+  int s, e, b, i, n0 = n, b0 = bad;
+  char serr[256], star[64];
+  for (s = 0; s < 3; s++) {
+    swe_ctx *c = open_ctx(SDE[s].sid);
+    if (c == NULL)
+      return -1;
+    for (e = 0; e < 3; e++) {
+      int nout = 0;
+      double w = 0;
+      for (b = 0; b < 4; b++)
+        for (i = 0; i < NTQ; i++) {
+          double tu = TQ[i], te, g, x[6], cu[37], am[10], span, d;
+          int32 fl = EPHF[e] | SEFLG_SIDEREAL, r;
+          int k, k1;
+          strcpy(star, "Spica");
+          if (swe_gauquelin_sector_r(c, tu, PL[b], b == 2 ? star : NULL, fl, 1, geo, 0, 0, &g,
+                                     serr) < 0
+              || swe_houses_ex2_r(c, tu, fl, geo[1], geo[0], 'G', cu, am, NULL, NULL, serr) < 0) {
+            swe_ctx_free(c);
+            return -1;
+          }
+          te = tu + swe_deltat_ex_r(c, tu, fl, NULL);
+          strcpy(star, "Spica");
+          r = b == 2 ? swe_fixstar_r(c, star, te, fl, x, serr) : swe_calc_r(c, te, PL[b], fl, x, serr);
+          if (r < 0) {
+            swe_ctx_free(c);
+            return -1;
+          }
+          k = (int) floor(g);
+          if (k < 1 || k > 36) {
+            nout++;
+            continue;
+          }
+          k1 = k % 36 + 1;
+          /* the sectors run clockwise: cusp k + 1 is behind cusp k */
+          span = swe_degnorm(cu[k] - cu[k1]);
+          d = swe_degnorm(cu[k] - x[0]);
+          if (d > span) {
+            nout++;
+            d = fmin(d - span, 360 - d);
+            if (d > w)
+              w = d;
+          }
+        }
+      n++;
+      if (nout) {
+        bad++;
+        printf("    FAIL sidereal method 1 sector against the sidereal cusps, %s, %s: %d of %d"
+               " outside their sector, %.2e deg at most\n", SDE[s].name, EPHN[e], nout, 4 * NTQ, w);
+      }
+    }
+    swe_ctx_free(c);
+  }
+  printf("  (e) sidereal method 1 sectors between the sidereal Gauquelin cusps they name:"
+         " %d checks, %d fail\n", n - n0, bad - b0);
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   int r;
@@ -391,12 +569,16 @@ int main(int argc, char **argv)
   }
   EPH = argv[1];
   printf("G164: the JPL Horizons flags reach no sidereal output, and Gauquelin's frame takes"
-         " them as the place does\n");
+         " them as the place does;\n      SEFLG_SIDEREAL moves no Gauquelin sector\n");
   r = check_a();
   if (r == 0)
     r = check_b();
   if (r == 0)
     r = check_c();
+  if (r == 0)
+    r = check_d();
+  if (r == 0)
+    r = check_e();
   if (r < 0) {
     printf("G164 FAIL: ERROR\n");
     return 1;
