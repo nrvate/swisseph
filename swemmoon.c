@@ -787,6 +787,23 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
 	xpmret[i] = pdp->x[i];
     return(OK);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 191: or the Moon Moshier's Earth at tjd was made with,
+   * this one (ctx->earth_moon): one series a chart */
+  if (tjd == ctx->earth_moon.t && ctx->earth_moon.iephe == SEFLG_MOSEPH) {
+    for (i = 0; i <= 5; i++)
+      xpm[i] = ctx->earth_moon.x[i];
+    if (do_save) {
+      pdp->teval = tjd;
+      pdp->xflgs = -1;
+      pdp->iephe = SEFLG_MOSEPH;
+    }
+    if (xpmret != NULL)
+      for (i = 0; i <= 5; i++)
+	xpmret[i] = xpm[i];
+    return(OK);
+  }
+#endif
   /* else compute moon */
 #ifndef SWE_UPSTREAM_COMPAT
   moshmoon2_d(ctx, tjd, xpm, dpol);	/* bug 95: and the series' rates */
@@ -899,6 +916,22 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
   return(OK);
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 191: the full series' geometric place alone, as
+ * swi_moshmoon() gives it (J2000 equatorial, AU), without its velocity,
+ * its frames' rate or either memo, for Moshier's Earth's lunar
+ * acceleration (mosh_earth_moon()): 56k instructions where swi_moshmoon()
+ * takes 92k. ERR outside the series' range. */
+int swi_moshmoon_place(swe_ctx *ctx, double tjd, double *x)
+{
+  if (tjd < MOSHLUEPH_START - 0.2 || tjd > MOSHLUEPH_END + 0.2)
+    return ERR;
+  swi_moshmoon2(ctx, tjd, x);
+  ecldat_equ2000(ctx, tjd, x);
+  return OK;
+}
+
+#endif
 static void moon1(swe_ctx *ctx)
 {
 double a;

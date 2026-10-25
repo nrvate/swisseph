@@ -7087,8 +7087,9 @@ static int32 swe_get_orbital_elements_r_body(swe_ctx *ctx, double tjd_et,
     if (swe_calc_r(ctx, tjd_et, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR), xposm, serr) == ERR)
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
-    /* Upstream bug 189: on Moshier the Earth is its series' EMB less the
-     * short lunar series' Moon (embofs_mosh()), and the EMB here was that
+    /* Upstream bug 189: on Moshier the Earth was its series' EMB less the
+     * short lunar series' Moon (embofs_mosh(); bug 191 made it the full
+     * series', the Moon's own), and the EMB here was that
      * Earth plus Moshier's own Moon, 0.24 deg away at 2000, 1.55 deg at
      * -3000, as in swe_nod_aps() (bug 180): the longitude of perihelion
      * wobbled 8.0e-3 deg about the series' EMB's at 2000, 4.1e-2 at -3000,

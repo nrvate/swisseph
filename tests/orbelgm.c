@@ -30,8 +30,8 @@
  * the Earth (EMB) and the Moon, two-body and SEFLG_ORBEL_AA. Against the
  * eccentricity vector of swe_calc()'s own heliocentric (the Moon
  * geocentric) J2000 state (the EMB's with the Moon the Earth was made with,
- * on Moshier the short series', which the context keeps), with the
- * header's GMS + GMi (the Moon GMB) or,
+ * which the context keeps; on Moshier the full series' since bug 191),
+ * with the header's GMS + GMi (the Moon GMB) or,
  * for SEFLG_ORBEL_AA, GMS and the GMs of every planet out to this one (the
  * Earth's EMB counts as one, GMB), the Swiss files' header by their DE
  * number:

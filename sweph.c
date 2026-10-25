@@ -1852,6 +1852,7 @@ static void planets_forget_instants(swe_ctx *ctx)
   for (i = 0; i <= SE_NPLANETS; i++)
     ctx->savedat[i].tsave = SWI_TJD_NEVER;
   ctx->earth_moon.t = SWI_TJD_NEVER;   /* bug 66's Moon of the saved Earth */
+  ctx->mosh_dmoon.t = SWI_TJD_NEVER;	/* bug 191's lunar difference */
   ctx->moshmoon_earth_t = SWI_TJD_NEVER;	/* bug 120's Earth */
   ctx->mosh_sun_bary.s[0].t = SWI_TJD_NEVER;	/* bug 102's Sun */
   ctx->mosh_sun_bary.s[1].t = SWI_TJD_NEVER;

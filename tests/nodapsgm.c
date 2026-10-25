@@ -37,10 +37,10 @@
  *       GMS + GMi (or GMB; the Swiss files' header by their DE number,
  *       DE441 here), the EMB built with the file's EMRAT on a JPL file and
  *       EARTH_MOON_MRAT on the Swiss files and Moshier (their Earth is made
- *       from the EMB with it) and the Moon the Earth was made with (on
- *       Moshier the short series', which the context keeps), perihelion
- *       distance within 1e-12 AU and direction within 1e-9 deg (measured
- *       5.3e-14 AU, 5.9e-12 deg).
+ *       from the EMB with it) and the Moon the Earth was made with (which
+ *       the context keeps; on Moshier the full series' since bug 191),
+ *       perihelion distance within 1e-12 AU and direction within 1e-9 deg
+ *       (measured 5.3e-14 AU, 5.9e-12 deg).
  *
  * 11 rows an ephemeris, 33 without a DE4xx file. The build before bug 108
  * fails 23 of the 33, all the Swiss and Moshier rows and de200's Earth (34

@@ -230,6 +230,7 @@ worst were in code that had never executed even once.
 | 196 | `swe_calc(SE_ECL_NUT)` takes any date and answers it with its flags, where no other body is answered past the mean node's -3100015.5 .. 8000016.5: on Moshier under the default models the true and mean obliquity NaN from 1.3e60 days, dpsi 1.2e72 deg at 1e82 and NaN with deps from 4e82, NaN at -+inf and NaN, and at -1e300 (the empty caches' SWI_TJD_NEVER) the zeros of caches never filled, under every nutation model; past 1e12 days the series as evaluated leave the residual floor (IAU 2000B 1.5e-7 deg off at 1e12 to 3e12, 2.2 deg at 3e13 to 1e14, noise beyond) | Correctness (behaviour) | `sweph.c` |
 | 189 | `swe_get_orbital_elements()` on Moshier builds the Earth-Moon barycentre as entry 180's did, Moshier's Earth plus Moshier's Moon, where that Earth is the EMB less the short lunar series' Moon: the Earth's longitude of perihelion wobbles 8.0e-3 deg about the series' EMB's at 2000 (4.1e-2 at -3000), a 9.7e-6 and q 5.3e-6 relative, and `swe_orbit_max_min_true_distance()` with them | Correctness | `swecl.c` |
 | 190 | `swe_nod_aps()` of the Sun with SEFLG_TOPOCTR answers its geocentric points: the site, set as the observer, is overwritten by the Sun, the observer of the Earth's orbit, so they carry no parallax (the perigee 2.3e-3 deg off in latitude at J2000, Zurich; the focal point 6.8e-2), where `swe_calc()`'s topocentric Sun is 2.3e-3 deg from its geocentric one | Correctness (behaviour) | `swecl.c` |
+| 191 | Moshier's Earth is the series' Earth-Moon barycentre less the short lunar series' Moon, six terms in longitude, not the full series' Moon `swe_calc()` gives: 1.3e-7 AU off its EMB less its own Moon's share at 2000 (7.9e-7 at -3000), and every geocentric place with it, the Sun's monthly error against the files 5.9e-6 deg at 2000 | Correctness | `swemplan.c`, `swemmoon.c` |
 
 ---
 
@@ -13875,6 +13876,100 @@ the fix (a)'s 168 topocentric rows of its first check fail (3.6e-5 AU,
 G24 `nodaps_sun_topo_off`: the Sun's osculating perigee on the files at
 J2000, Zurich, topocentric less geocentric latitude: 2.30e-3 deg shipped
 (1.0e-9 before the fix), 1.5e-13 compat.
+
+## 191. Moshier's Earth is made with the short lunar series' Moon, not the full series' Moon the Moon is computed with: 1.3e-7 AU off its EMB less its own Moon's share at 2000, 7.9e-7 at -3000
+
+**Severity: Correctness (every Moshier geocentric place: the Earth 1.3e-7 AU off at 2000, 7.9e-7 at -3000, in terms of 9 to 35 days; the Sun's monthly error against the files 5.9e-6 deg at 2000, 6.2e-5 at -3000), Moshier only**
+**Where:** `swemplan.c`: `swi_moshplan()` (the Earth), `embofs_mosh()`, `moon_short()`, `swi_mosh_earth_accel()`; `swemmoon.c`: `swi_moshmoon()`
+
+Noticed by entry 180's work (1.3e-7 to 7.9e-7 AU). Moshier's Earth is
+the series' EMB less the Moon's share, Moon / (1 + EMRAT), and that Moon
+was `moon_short()`'s (`embofs_mosh()`): six terms in longitude, four in
+latitude, four in the parallax, 0.24 deg off the full lunar series at 2000 and
+1.55 deg at -3000, where `swe_calc()` gives the full series' Moon. Over
+(1 + EMRAT) the difference D is 1.32e-7 AU at 2000 and 7.90e-7 at -3000,
+its rate 3.2e-8 to 2.0e-7 AU/day. Against the files' Moon, the full
+series' share is within 3.0e-10 AU at 2000 (8.5e-8 at -3000), the short
+series' 1.34e-7 (8.7e-7). Against the files, a quadratic over 60 days
+taken out (the series' own long-period error), most over the 60 days:
+
+| | Earth | geocentric Sun | Venus | Mars |
+|---|---|---|---|---|
+| 2000, before | 1.03e-7 AU | 5.88e-6 deg | 3.56e-6 deg | 2.64e-6 deg |
+| 2000, after | 9.10e-9 | 5.20e-7 | 1.65e-6 | 6.45e-7 |
+| 0, before | 1.52e-7 | 8.67e-6 | 5.92e-6 | 1.00e-5 |
+| 0, after | 1.29e-8 | 7.35e-7 | 3.76e-6 | 4.28e-6 |
+| -3000, before | 1.09e-6 | 6.17e-5 | 1.27e-4 | 1.20e-3 |
+| -3000, after | 5.89e-7 | 3.33e-5 | 5.81e-5 | 1.26e-3 |
+
+The Earth's falls at each of the 13 dates -3000..3000, by 1.9 to 12; the
+planets' rows where they do not are their own series' (Venus at 1000
+2.35e-5 to 2.57e-5, Mars at -3000). Raw, the Earth 2.90e-7 to 2.45e-7 AU
+at 2000, the Sun 1.64e-5 to 1.40e-5 deg; at -3000 the EMB series' own
+4.4e-5 AU.
+
+**Fix, as done here:**
+- The Earth is the EMB less the full series' Moon (`swi_moshmoon()`), at
+  the saved Earth's instant; `ctx->earth_moon` keeps it and
+  `swi_moshmoon()` answers the Moon's own calculation at that instant
+  from it: one lunar series a chart.
+- The Earth's other reads 2^-10 to 1 day from the saved one (the planets'
+  light-time Earth, read for its speed; the accelerations' at +-2^-8 and
+  +-2^-9 day) read no full series: they are the short series plus the
+  difference d = full - short, carried from the saved Earth to second
+  order (`mosh_earth_moon()`). d and d' come with the saved Earth; d'' from
+  one place of the full series without its rates 2^-11 day before,
+  `swi_moshmoon_place()`, made at the first read that wants it
+  (`mosh_dmoon_da()`): against the second difference of d it is 1.6e-10
+  AU/day^2 off at 2000, 1.2e-9 at -2000, 1.4e-11 in the Earth's. Over
+  (1 + EMRAT) d''' is 0.8e-8 to 2e-8 AU/day^3: a carried Earth is 3e-9 AU
+  and 1e-8 AU/day off at a day, 8e-10 AU/day at Pluto's 0.28 day of light
+  time, and differences of carried Earths are those of one smooth Earth.
+- d'' is the series' own. A gravitational model of the full Moon (the
+  pair's pull and the Sun's tide), which the fix first took, is 3e-5 to
+  9e-5 of the pull off the series' acceleration, 1.2e-10 AU/day^2 in the
+  Earth's: a fixed star's aberration rate read it as 2.4e-9 deg/day in
+  Polaris's right ascension (G75 failed 8 rows, G24's Moshier star
+  aberration 1.56e-9).
+- Nearer than 2^-10 day the reads are the full series': a fixed star's
+  aberration rate differences the Earth's velocity over 1e-5 day and takes
+  the error of d'' whole (1.1e-10 deg/day in Polaris's right ascension
+  carried, G75's limit 6e-11).
+- `moon_short()`'s velocity is its places' derivative, the obliquity held
+  over the call as its places hold it. Entry 85 part 2 had added the
+  obliquity's turning, 1.3e-11 AU/day, when this was the Earth's Moon; d''
+  read it as 1.4e-7 AU/day^2 over 2^-12 day. `embofs_mosh()` is the compat
+  build's alone.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`. Cost, `perf stat -e instructions`:
+  the calc-moseph workload (6000 instants of Sun..Pluto with SEFLG_SPEED)
+  11,689,708,969 to 11,720,043,993 (+0.26%); 6000 Moshier Moons with
+  SEFLG_SPEED (the moon bench's) 2,597,049,458 to 2,563,205,431 (-1.3%),
+  the Moon finding the Earth's; a Moshier `swe_fixstar2()` with SEFLG_SPEED
+  694k to 823k instructions a call (+18.6%), its two Earth reads 1e-5 day
+  apart now the full series'.
+
+Below the floor, recorded and not fixed: G75's Moshier rows rise from
+1.41e-11 to 2.16e-11 deg/day (Polaris's right ascension; 2.8e-13 deg/day
+on the sky), the carried acceleration's d''. Moshier golden and baseline
+rows move with the Earth.
+
+Noticed, not fixed (not this entry's): `swi_mosh_earth_accel()`'s second
+difference over +-2^-8 day divides the EMB series' rounding by h^2:
+5e-10 to 9e-10 AU/day^2 off the second difference of the saved Earths over
++-2^-6 day, before this fix and after it, taken times the light time past
+0.3 day (at most 1e-9 deg/day on the aberration rate).
+
+G150 `tests/moshemb.c`: (a) the Earth plus the Moon's share against the
+EMB series, 1.1e-16 AU (6.7e-7 before the fix and upstream); (b) the
+Earth's velocity against its places' five-point difference, 1.6e-13 AU/day
+(the same before; upstream 9.3e-8, entry 51); (c) the acceleration's Moon
+share against the Moon's, 2.1e-11 AU/day^2 (3.9e-8 before; not built
+upstream). G150 passes; before the fix (a) and (c) fail, upstream (a)
+and (b).
+
+G24 `earth_mosh_moon_off`: Moshier's heliocentric Earth less the files',
+the fourth difference over 4 days, ten instants from 2000 Jan 1.5:
+3.81e-8 AU shipped (4.40e-7 before the fix), 4.40e-7 compat.
 
 ## How these were found
 

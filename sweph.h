@@ -1505,6 +1505,10 @@ struct epsilon {
  *   - swe_nod_aps()'s topocentric Sun points as its geocentric ones, the
  *     site overwritten by the Sun as the observer: no parallax, 2.3e-3 deg
  *     in latitude at J2000 (UPSTREAM-BUGS 190, G143, G24)
+ *   - Moshier's Earth as its EMB less the short lunar series' Moon, not
+ *     the full series' Moon swe_calc() gives: 1.3e-7 AU off at 2000, 7.9e-7
+ *     at -3000, the Sun's monthly error against the files 5.9e-6 deg at 2000
+ *     (UPSTREAM-BUGS 191, G150, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1580,6 +1584,9 @@ extern int swi_mean_node(swe_ctx *ctx, double jd, double *x, char *serr);
 extern int swi_mean_apog(swe_ctx *ctx, double jd, double *x, char *serr);
 extern int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpm, char *serr) ;
 extern int swi_moshmoon2(swe_ctx *ctx, double jd, double *x);
+#ifndef SWE_UPSTREAM_COMPAT
+extern int swi_moshmoon_place(swe_ctx *ctx, double tjd, double *x);	/* bug 191 */
+#endif
 extern int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli);
 #ifndef SWE_UPSTREAM_COMPAT
 extern int swi_intp_apsides_est(swe_ctx *ctx, double J, double *pol, int ipli, int npass);
@@ -2232,6 +2239,13 @@ struct swe_ctx {
    * was made with, on JPL and Moshier; t is its instant, 0 for none
    * (UPSTREAM-BUGS 66) */
   struct { double t, x[6]; int32 iephe; } earth_moon;
+  /* Moshier's Earth is made with the full lunar series' Moon (UPSTREAM-BUGS
+   * 191); at the saved Earth's instant t the difference of that Moon from
+   * the short series' (moon_short()), its rate and its acceleration (once
+   * have_da: made at the first read that wants it), AU, AU/day, AU/day^2,
+   * J2000 equatorial, which carry the Earth's other reads 2^-10 to 1 day
+   * from t; t SWI_TJD_NEVER for none */
+  struct { double t, d[3], dv[3], da[3]; int have_da; } mosh_dmoon;
   /* a Swiss read in this call took Moshier's Moon for want of the semo
    * file (the Moon itself, or the Earth made from it); and the instant of
    * a saved Earth made so (UPSTREAM-BUGS 120) */

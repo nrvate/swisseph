@@ -75,12 +75,15 @@
 #define KGAUSS_GEO 0.0000298122353216 /* Earth only */
 /* #define KGAUSS_GEO 0.00002999502129737  Earth + Moon */
 
+#ifdef SWE_UPSTREAM_COMPAT	/* else mosh_earth_moon() (bug 191) */
 static void embofs_mosh(swe_ctx *ctx, double J, double *xemb);
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
 static void mosh_series_cart(swe_ctx *ctx, double tjd, int iplm, double *x);
 #endif
 #ifndef SWE_UPSTREAM_COMPAT
-static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb, double *moon);
+static void mosh_earth_moon(swe_ctx *ctx, double tjd, AS_BOOL anchor, double *m);
+static AS_BOOL mosh_dmoon_da(swe_ctx *ctx);
 #endif
 static int check_t_terms(double t, double tlo, double mod, char *sinp, double *doutp, double *drate);
 
@@ -545,8 +548,27 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
        * series' derivative, and the Earth-Moon offset's rate from a
        * central difference over exact instants. */
       mosh_series_cart(ctx, tjd, pnoint2msh[SEI_EMB], xe);	/* bug 109 */
-      embofs_mosh(ctx, tjd, xe);
-      embofs_mosh_rate(ctx, tjd, xe + 3, do_save ? ctx->earth_moon.x : NULL);
+      /* Upstream bug 191: the Earth was the EMB less the short lunar
+       * series' Moon (embofs_mosh(), six terms in longitude), 0.24 deg
+       * off the full series' at 2000, 1.55 deg at -3000: every Moshier
+       * Earth 1.3e-7 AU (7.9e-7 at -3000) off its EMB less its own Moon's
+       * share, in the terms of 9 to 35 days the short series leaves out
+       * (the files' Moon is within 3e-10 AU of the full one's share at
+       * 2000), and every geocentric place with it: the Sun's monthly
+       * error against the files 5.9e-6 deg at 2000, 6.2e-5 at -3000. Now
+       * the full series' Moon, the one the Moon is computed with: at the
+       * saved Earth's instant, kept with its difference from the short
+       * series to carry the Earth's other reads 2^-10 to 1 day away (the
+       * light time's, the accelerations'; mosh_earth_moon()). */
+      {
+        double m[6];
+        mosh_earth_moon(ctx, tjd, do_save, m);
+        for (i = 0; i <= 5; i++) {
+          xe[i] -= m[i] / (EARTH_MOON_MRAT + 1.0);
+          if (do_save)
+            ctx->earth_moon.x[i] = m[i];
+        }
+      }
       if (do_save) {
 	/* Upstream bug 177: the barycentric Sun's slot, which the files and
 	 * JPL fill with the Earth's, kept whatever they last left in it
@@ -878,9 +900,6 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
   double dsf = 0, dcf = 0, ds2f = 0, dsx = 0, dcx = 0, da, dsx2;
   double pm[9], pdm[9];
   int havem = 0;
-#ifndef SWE_UPSTREAM_COMPAT
-  double deps = 0;
-#endif
   const double tc = 1.0 / 36525.0;
 #ifndef SWE_UPSTREAM_COMPAT
   /* tjd - J1900 = dh + dl exactly (two-sum), and T = th + tl, for
@@ -1019,15 +1038,16 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
     x6[4] = dB;
     x6[5] = -a * cos(p) / sin(p) * dp;
     swi_polcart_sp(x6, x6);
-    /* the ecliptic of date turns about the equinox as the obliquity
-     * changes: each place is rotated with its own date's ctx->oec. The
-     * rate from the precession series' poles, computed for the
-     * precession's rate below anyway (UPSTREAM-BUGS 85 part 2) */
+    /* Upstream bug 191: v is the derivative of these places, ctx->oec
+     * held as they hold it. Bug 85 part 2 added the obliquity's turning
+     * (each place rotated with its own date's ctx->oec), 1.3e-11 AU/day,
+     * when this was the Earth's Moon; now only the carrier of the full
+     * series' Moon over the Earth's reads in one call (mosh_earth_moon()),
+     * where the turning is in d at each saved Earth, and mosh_dmoon_da()'s
+     * 2 h d' / h^2 read it as 1.4e-7 AU/day^2 of the Moon's acceleration
+     * over 2^-12 day (1.7e-9 in the Earth's). */
 #ifndef SWE_UPSTREAM_COMPAT	/* (the compat build never asks for v) */
-    havem = swi_precess_matrix_rate_eps(ctx, tjd, 0, pm, pdm, &deps);
-    if (!havem)
-      deps = swi_obliquity_rate(ctx, tjd, 0, FALSE);
-    swi_ecl_frame_speed(x6, -deps);
+    havem = swi_precess_matrix_rate(ctx, tjd, 0, pm, pdm);
 #endif
     swi_coortrf2(x6 + 3, x6 + 3, -seps, ceps);
     for (int i = 0; i <= 2; i++)
@@ -1064,6 +1084,7 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
   }
 }
 
+#ifdef SWE_UPSTREAM_COMPAT
 /* Adjust position from Earth-Moon barycenter to Earth
  *
  * J = Julian day number
@@ -1079,12 +1100,14 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
   for (i = 0; i <= 2; i++)
     xemb[i] -= xyz[i] / (EARTH_MOON_MRAT + 1.0);
 }
+#endif
 
 #ifndef SWE_UPSTREAM_COMPAT
 /* Upstream bug 66 (part 3): the acceleration of the Earth this series
  * returns, a = (x(t+h) - 2 x(t) + x(t-h)) / h^2 over exact instants, h =
- * 2^-8 day, of the EMB series plus its Moon offset, from x0 the saved Earth
- * at tjd. Truncation (w h)^2 / 12 = 7e-8 of the Moon's part, rounding
+ * 2^-8 day, of the EMB series plus its Moon offset (bug 191: the saved
+ * Earth's, carried to t), from x0 the saved Earth at tjd. Truncation
+ * (w h)^2 / 12 = 7e-8 of the Moon's part, rounding
  * 1e-16 / h^2 = 7e-12 AU/day^2 against 3e-4. The aberration rate's tau a
  * wants the Earth's own acceleration, not the gravitational sum's: the
  * series' small monthly terms move it by 1e-4 of a (4-6e-9 deg/day on the
@@ -1097,40 +1120,103 @@ void swi_mosh_earth_accel(swe_ctx *ctx, double tjd, const double *x0, double *ac
   int i, k;
   for (k = 0; k < 2; k++) {
     double *x = k ? xm : xp;
-    double t = tjd + (k ? -h : h);
+    double t = tjd + (k ? -h : h), mm[6];
     swi_moshplan2(ctx, t, pnoint2msh[SEI_EMB], xx);
     swi_polcart(xx, xx);
     swi_coortrf2(xx, xx, -seps2000, ceps2000);
-    embofs_mosh(ctx, t, xx);
+    /* bug 191: with the Moon x0 was made with, carried to t */
+    mosh_earth_moon(ctx, t, FALSE, mm);
     for (i = 0; i <= 2; i++)
-      x[i] = xx[i];
+      x[i] = xx[i] - mm[i] / (EARTH_MOON_MRAT + 1.0);
   }
   for (i = 0; i <= 2; i++)
     acc[i] = (xp[i] - 2 * x0[i] + xm[i]) / (h * h);
 }
 
-/* Subtracts the Earth-Moon offset's rate from vemb. Upstream bug 85: it was
- * a central difference of the offset over +-2^-8 day, and the series'
- * arguments, degrees of 481267.88 T, round at 1e-12 rad once T is near 1
- * (at -3000, T = -49, 5e-11): 2e-14 AU/day of roughness from one instant
- * to the next in every Moshier Earth velocity, 2e-6 of the Earth's
- * acceleration from velocities 1e-5 day apart at 2000, 4e-5 at -3000. Now
- * the series' derivative, term by term, with the precession's turning;
- * the obliquity held, as the positions hold ctx->oec. */
-static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb, double *moon)
+/* Upstream bug 191: the geocentric Moon Moshier's Earth is made with at
+ * tjd, place and velocity (J2000 equatorial, AU, AU/day; the Earth is the
+ * EMB less its share): the full lunar series' (swi_moshmoon(), whose memo
+ * the Moon's own calculation then finds), where it was the short series'
+ * (moon_short()). anchor marks the saved Earth's instant t: there the full
+ * series' Moon, and ctx->mosh_dmoon keeps its difference d from the short
+ * series' and d' (the two series' velocities). A read 2^-10 to 1 day from
+ * the saved Earth (the planets' light-time Earth, read for its speed; the
+ * accelerations' at +-2^-8 and +-2^-9 day) is the short series plus d
+ * carried to s = tjd - t to second order, d'' made at the first such read
+ * (mosh_dmoon_da()): no full Moon a read, and the differences of Earths
+ * one smooth Earth's. Over (1 + EMRAT), d''' is 0.8e-8 to 2e-8 AU/day^3:
+ * the Earth 3e-9 AU and 1e-8 AU/day off at a day, 8e-10 AU/day at Pluto's
+ * 0.28 day of light time. d'' is the series' own: a gravitational model of
+ * the full Moon (the pair's pull and the Sun's tide) is 3e-5 to 9e-5 of
+ * the pull off the series' acceleration, 1.2e-10 AU/day^2 in the Earth's,
+ * which the stars' aberration rate read as 2.4e-9 deg/day in Polaris's
+ * right ascension (G75). Nearer than 2^-10 day, the full series at tjd:
+ * what differences such reads (the stars' aberration rate, over 1e-5 day)
+ * takes the error of d'' whole, 1.1e-10 deg/day in Polaris's right
+ * ascension when carried. Elsewhere, or with no saved Moshier Earth, the
+ * full series at tjd; the short series only where the full one refuses
+ * the instant (it allows 0.2 day past its range, the planets 0.3). */
+#define MOSH_DMOON_SPAN 1.0
+#define MOSH_DMOON_NEAR (1.0 / 1024)
+static void mosh_earth_moon(swe_ctx *ctx, double tjd, AS_BOOL anchor, double *m)
 {
-  double xyz[3], v[3];
+  const struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
+  double xs[3], vs[3], s = tjd - ctx->mosh_dmoon.t;
   int i;
-  moon_short(ctx, tjd, xyz, v);
-  for (i = 0; i <= 2; i++)
-    vemb[i] -= v[i] / (EARTH_MOON_MRAT + 1.0);
-  /* UPSTREAM-BUGS 66: the geocentric Moon of this series, place and
-   * velocity. The aberration rate's Earth wants it (acceleration, 0.6%). */
-  if (moon != NULL)
+  if (!anchor && ctx->mosh_dmoon.t == pedp->teval && pedp->iephe == SEFLG_MOSEPH
+      && fabs(s) <= MOSH_DMOON_SPAN && fabs(s) >= MOSH_DMOON_NEAR && mosh_dmoon_da(ctx)) {
+    const double *d = ctx->mosh_dmoon.d, *dv = ctx->mosh_dmoon.dv, *da = ctx->mosh_dmoon.da;
+    moon_short(ctx, tjd, xs, vs);
     for (i = 0; i <= 2; i++) {
-      moon[i] = xyz[i];
-      moon[i+3] = v[i];
+      m[i] = xs[i] + (d[i] + s * (dv[i] + 0.5 * s * da[i]));
+      m[i+3] = vs[i] + (dv[i] + s * da[i]);
     }
+    return;
+  }
+  if (swi_moshmoon(ctx, tjd, FALSE, m, NULL) != OK) {
+    moon_short(ctx, tjd, m, m + 3);
+    if (anchor)
+      ctx->mosh_dmoon.t = SWI_TJD_NEVER;
+    return;
+  }
+  if (anchor) {
+    moon_short(ctx, tjd, xs, vs);
+    for (i = 0; i <= 2; i++) {
+      ctx->mosh_dmoon.d[i] = m[i] - xs[i];
+      ctx->mosh_dmoon.dv[i] = m[i+3] - vs[i];
+    }
+    ctx->mosh_dmoon.have_da = FALSE;
+    ctx->mosh_dmoon.t = tjd;
+  }
+}
+
+/* d'' at the anchor t, made at the first read that carries d: the full
+ * and the short series' places at t - h, h = 2^-11 day (t + h at the
+ * series' first instant), d'' = 2 (d(t - h) - d + h d') / h^2. Against the
+ * second difference of d over +-2^-6 day it is 1.6e-10 AU/day^2 off at
+ * 2000, 1.2e-9 at -2000 (h d''' / 3, and the places' last bits, 1e-17 AU
+ * at -2000, over h^2), 1.4e-11 in the Earth's; G75's Polaris 2.2e-11
+ * deg/day. One series read without its rates (56k instructions; with its
+ * velocity at t - h, 92k). FALSE if neither instant is in the series'
+ * range (then the reads are the full series'). */
+static AS_BOOL mosh_dmoon_da(swe_ctx *ctx)
+{
+  const double h = 1.0 / 2048;
+  double t = ctx->mosh_dmoon.t, hs = -h, x[3], xs[3];
+  int i;
+  if (ctx->mosh_dmoon.have_da)
+    return TRUE;
+  if (swi_moshmoon_place(ctx, t + hs, x) != OK) {
+    hs = h;
+    if (swi_moshmoon_place(ctx, t + hs, x) != OK)
+      return FALSE;
+  }
+  moon_short(ctx, t + hs, xs, NULL);
+  for (i = 0; i <= 2; i++)
+    ctx->mosh_dmoon.da[i] = 2 * ((x[i] - xs[i]) - ctx->mosh_dmoon.d[i]
+                                 - hs * ctx->mosh_dmoon.dv[i]) / (hs * hs);
+  ctx->mosh_dmoon.have_da = TRUE;
+  return TRUE;
 }
 #endif
 
