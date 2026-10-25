@@ -1844,6 +1844,35 @@ static double mosh_bary_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 125: VEA (seorbel.txt's set at 80000 AU) heliocentric,
+ * Moshier against the Swiss files at five dates 1900-2100, deg. Over its
+ * light time of 462 days Moshier carried the Sun about the barycentre by
+ * a Taylor step: 2.7e-7 before the fix; the Sun held still upstream; the
+ * Sun's own place past a day of light time after. */
+static double mosh_far_lt_off(void)
+{
+  double w = 0, d, a[6], b[6], ra, rb;
+  int32 fl = SEFLG_J2000 | SEFLG_EQUATORIAL | SEFLG_XYZ | SEFLG_HELCTR;
+  char serr[256];
+  int k, i;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 5; k++) {
+    double t = 2451547.5 + 182.625 + 365.25 * (-100 + 50 * k);
+    if (swe_calc(t, SE_FICT_OFFSET + 25, fl | SEFLG_MOSEPH, a, serr) < 0
+        || swe_calc(t, SE_FICT_OFFSET + 25, fl | SEFLG_SWIEPH, b, serr) < 0)
+      return 1;
+    ra = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    rb = sqrt(b[0] * b[0] + b[1] * b[1] + b[2] * b[2]);
+    for (d = 0, i = 0; i < 3; i++)
+      d += (a[i] / ra - b[i] / rb) * (a[i] / ra - b[i] / rb);
+    d = sqrt(d) * 180 / M_PI;
+    if (d > w)
+      w = d;
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 86: the JPL barycentric Sun's sidereal (Lahiri) longitude,
  * right after a request for Mars ten years on, against its tropical
  * longitude less the ayanamsa at its own date, deg. The Sun is answered in
@@ -3003,7 +3032,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3115,6 +3144,7 @@ int main(int argc, char **argv)
   nutintp = nut_intp_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
+  moshfarlt = mosh_far_lt_off();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
 
@@ -3931,6 +3961,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier star, fict     %.2e deg FAIL: expected %s\n",
            moshbary, WANT_DEFECT ? "> 1e-7" : "< 2e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshfarlt > 1e-7) : (moshfarlt < 1e-9))
+    printf("  Moshier VEA light time %.2e deg OK\n", moshfarlt);
+  else {
+    printf("  Moshier VEA light time %.2e deg FAIL: expected %s\n",
+           moshfarlt, WANT_DEFECT ? "> 1e-7" : "< 1e-9");
     bad++;
   }
 

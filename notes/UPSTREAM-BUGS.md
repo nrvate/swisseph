@@ -158,6 +158,7 @@ worst were in code that had never executed even once.
 | 123 | `swe_close()` zeroes the shared configuration's generation, so a running thread misses the close and the publishes after it, and empties it, so a setting the close keeps -- the path, the JPL file, delta t, the nutation interpolation, the lapse rate, the fallback -- goes back to its default at the next setter and never reaches a thread started after it (this fork's) | Correctness (behaviour) | `sweconfig.c`, `sweconfig.h`, `sweph.c` |
 | 124 | The searches, the houses, the sidereal time, `swe_azalt()`, `swe_pheno()`, delta t and the UTC conversions on the default context (this fork's) adopt another thread's setter between two of their calculations, or never: a sidereal Moon crossing 5600 s off, a local eclipse searched at another site from half-way, 3752 s late; another thread's user delta t kept out of the UTC conversions, 22 s | Correctness (behaviour) | `swecl.c`, `swehel.c`, `swehouse.c`, `sweph.c`, `swephlib.c`, `swedate.c` |
 | 126 | `swe_set_interpolate_nut()` resets the interpolation's nodes and not the nutation, observer and positions cached at an instant, nor does a thread adopting the change (this fork's adoption): the old setting's nutation answers there, 7.42e-5" in dpsi | Correctness (behaviour) | `swephlib.c`, `sweconfig.c`, `sweconfig.h` |
+| 125 | Moshier's light time past a day carries the Sun about the barycentre by bug 109's Taylor step: VEA 2e-7 deg off its light time's fixed point, its speed 5.4e-9 deg/day off its positions, a `swe_calc_orbel()` orbit at 80000 AU the same (this fork's) | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 
 ---
 
@@ -7231,6 +7232,10 @@ G108, G101, G95, G80, G87, G75, G60, G52, G84, G77, G33 and G24 (both
 ways) pass, and G99 with the mixed-case fix. The compat build's output is bit-identical to before
 (planets, stars, fictitious and orbel bodies, every flag set dumped).
 
+Entry 125: the Taylor step s v_Sun + s^2 a_Sun / 2 falls short past a day
+of light time, VEA's 462 days 2e-7 deg; the Sun's own place at t there
+since.
+
 ## 116. `swe_set_astro_models()` of a version before 2.01 sets the tidal acceleration but publishes only the SID group (this fork's)
 
 **Severity: Correctness (returned values: -25.936 for -25.826, 9.13 s of delta t in AD 1000)**
@@ -8019,6 +8024,100 @@ t. 0 in all six; before the fix 4990 s (and the retflag), 1.49e-3 s,
 way (4990 s, 1.53e-3 s, 5600 s, 1.03 s, 0.883 deg, 22.6 s). G24
 `search_hold_off`: the mooncross case, 0 shipped, 5600 s compat. G2, G4,
 G102, G112, G115 and G24 pass.
+
+## 125. Moshier's light time past a day carries the Sun about the barycentre by a Taylor step: VEA 2e-7 deg off its fixed point (this fork's)
+
+**Severity: Correctness (VEA, seorbel.txt's set at 80000 AU, 2.1e-7 deg off its light time's fixed point on Moshier, its speed 5.4e-9 deg/day off its positions; a `swe_calc_orbel()` orbit at 80000 AU 1.8e-7 deg and 5.3e-9 deg/day)**
+**Where:** `sweph.c`: the body read at t in `app_pos_etc_plan()`, `app_pos_etc_plan_osc()` and `app_pos_etc_orbel()`, `mosh_sun_move()` (new); `swemplan.c`: `swi_mosh_sun_bary_aside()` (new); `sweph.h`
+
+Entry 109 carries a Moshier body read at the emission instant t = teval
++ s into the frame of the Sun at teval by the Sun's displacement s v_Sun +
+s^2 a_Sun / 2 and its velocity v_Sun + s a_Sun, a Taylor step about
+teval. Over a planet's light time (under 0.3 day) the third order is
+5.4e-13 AU. VEA's light time is 462 days, 0.67 rad of the Sun's loop about
+the barycentre (Jupiter's 12 years, 0.005 AU), and the step leaves out up
+to 5.7e-4 AU of the Sun's place and 3.0e-6 AU/day of its velocity (400
+dates -3000..+3000, against the same planets' sum at t).
+
+Measured, the build before against after, 13 dates 1650..2150:
+- VEA moves 2.06e-7 deg in longitude, 1.2e-8 in latitude and 4.6e-4 AU
+  in distance, apparent, astrometric, heliocentric and topocentric alike.
+  Against the Swiss files, 9 dates 1900..2100: heliocentric 2.7e-7 ->
+  9.4e-12 deg, geocentric without aberration 2.7e-7 -> 1.4e-10, apparent
+  2.7e-7 -> 8.0e-9 (the Moshier Earth's velocity, entry 109's residual).
+- Its longitude speed against five-point differences of its positions:
+  5.4e-9 deg/day before (G65 failed on it), 1.6e-10 after.
+- `swe_calc_orbel()` takes the same step: a circular orbit at 80000 AU
+  moves 1.75e-7 deg, its speed 5.3e-9 deg/day off its positions before,
+  8e-11 after.
+
+The step's error grows as s^3: 2.0e-11 AU at one day, 1.3e-9 at four,
+7.9e-8 at sixteen. Seen at the distance c s that light covers in that
+time, at most 6.5e-12 deg at one day, 1.1e-10 at four, 1.6e-9 at sixteen
+(speeds 2e-11, 8e-11, 3e-10 deg/day). seorbel.txt's other far sets stay
+under the floor: Nibiru (to 466 AU) moves 3.2e-11 deg, the Christ Comet
+(862 AU) 6.7e-11, Planet 9 (644 AU) 3.9e-11, their speeds by at most
+4.7e-11 deg/day. Upstream holds the Sun still over every Moshier light time
+(entries 102, 109), 2.5e-6 deg on VEA: this is the residual of the fork's
+fix.
+
+**Fix, as done here:** `mosh_sun_move()` carries the body read at t. Past
+one day of light time (|s| > 1, a body beyond 173 AU) the Sun's place and
+velocity at t are Moshier's planets' own there, from
+`swi_mosh_sun_bary_aside()` (entry 102's sum, evaluated aside of the
+memos, which stay at the chart's instant): the displacement x_Sun(t) -
+x_Sun(teval) and the velocity v_Sun(t). Within a day, the Taylor step as
+before. The switch's jump is the step's error at a day, 6.5e-12 deg, up to
+5.6e-10 deg/day in a five-point difference across it.
+- The aberration rate's observer at t (xobs2) keeps the step. Its
+  velocity is V(teval) - tau a(teval) by design: only tau times the
+  observer's acceleration at teval enters the rate.
+- The Sun's and the Moon's own light times (8 minutes, 1.3 s) are not
+  touched.
+- Under `SWE_UPSTREAM_COMPAT` the Sun is held still, as upstream's.
+
+Every answer within a day of light time is bit-identical (G1's golden
+output is identical to the build before's). Cost, perf stat instructions:
+the calc-moseph loop of the ten planets +0.03% (1.16990e10 -> 1.17027e10).
+A body past a day pays the nine series once per light-time read: VEA
+1.88M -> 2.53M instructions a call with speed (+35%), Planet 9 1.66M ->
+2.24M, Cupido unchanged.
+
+G27 `tests/fictlt.c`, rebuilt and extended. Its reconstruction was out of
+date: it took B and E as Moshier's heliocentric places, the Sun held
+still, where since entries 102 and 109 the library solves the light time
+about the barycentre (Moshier still refuses SEFLG_BARYCTR at the API), so
+it failed Proserpina (0.0043") and Vulcan (0.0043") on a correct answer.
+- B(t - tau) and E(t) gain the Sun's barycentric place, built from the
+  public heliocentric places of the nine planets with DE431's masses (the
+  Earth-Moon barycentre from the Earth and the geocentric Moon), within
+  2e-13 AU of the library's own.
+- B is moved from the rounded read instant jd - tau to the emission
+  instant along its velocity (entry 81's rounding, 8.6e-7" on Vulcan).
+- c is the library's: the old 173.1446326846693 AU/day is the AA 2006
+  AU's, 6e-11 of every light time (VEA's 2.8e-8 day).
+- Five dates 1725..2125, and a fourth body: a circular `swe_calc_orbel()`
+  orbit at 80000 AU, seen from the Sun.
+- The limit is 1e-6" (it was 1e-3"). Measured: Proserpina 1.2e-9",
+  Vulcan 4.0e-9", VEA 2.9e-12", the orbel orbit 1.1e-9". The build before
+  the fix fails VEA at 1.12e-3" and the orbel orbit at 1.13e-3"; the build
+  before entry 109 fails the four at 7.3e-3" to 9.6e-3"; the upstream
+  build fails seven of the eight checks.
+
+G65 `tests/lunarpulleph.c`, extended with the same `swe_calc_orbel()`
+orbit on the three ephemerides. Moshier VEA 5.36e-9 / 5.43e-9 -> 8.5e-11 /
+8.2e-11 deg/day geocentric / topocentric, the orbel orbit 5.33e-9 / 5.41e-9
+-> 8.1e-11 / 7.4e-11 (Swiss and JPL 2.5e-11 to 1.1e-10). Nibiru's, the
+Christ Comet's and Planet 9's Moshier rows move in their second digit
+(all <= 1.4e-10 either way); the Swiss and JPL rows do not move. Every row
+<= 5.0e-10, within 2e-9. The upstream build fails all 54.
+
+G24 `mosh_far_lt_off`: VEA heliocentric, Moshier against the Swiss files,
+five dates 1900..2100: 7.95e-12 deg shipped, 2.51e-6 compat (2.71e-7 the
+build before).
+
+G27, G65, G108, G80, G52, G101, G77, G33 and G24 (both ways) pass; G108's,
+G80's, G52's, G101's, G77's and G33's outputs are unchanged.
 
 ## How these were found
 

@@ -12,20 +12,44 @@
  * Jupiter and Saturn as well as the Sun's and Moon's (4e-9 on the far
  * bodies before, under 1e-9 after, on Swiss too).
  *
+ * UPSTREAM-BUGS 125: Moshier's light time carried the Sun about the
+ * barycentre by a Taylor step, s v_S + s^2 a_S / 2, over VEA's 462 days
+ * as over a planet's hours: its speed 5.4e-9 deg/day off its positions
+ * (its place 2e-7 deg), 8.5e-11 after with the Sun's own state past a day.
+ * The same on swe_calc_orbel()'s path, held by an orbit there at 80000 AU.
+ *
  * The check: Nibiru, Harrington, the Christ Comet, Planet 9, VEA, Pluto,
- * Zeus and Kronos, apparent geocentric and topocentric (Zurich), Swiss
- * files, de200.eph and Moshier, seven dates 1650..2150: longitude and
- * latitude speeds within 2e-9 deg/day (measured <= 1.06e-9 on all three;
- * Moshier took 6.2e-9 before part 3) of a five-point difference of the positions over 2^-7 day at
- * multiples of it. The build before part 2 fails Swiss at 4.6e-9, JPL and Moshier up to
- * 1.7e-8; the
+ * Zeus, Kronos and a circular swe_calc_orbel() orbit at 80000 AU (its mean
+ * anomaly given at each instant), apparent geocentric and topocentric
+ * (Zurich), Swiss files, de200.eph and Moshier, seven dates 1650..2150:
+ * longitude and latitude speeds within 2e-9 deg/day (measured <= 5.0e-10
+ * on all three; Moshier took 6.2e-9 before part 3) of a five-point
+ * difference of the positions over 2^-7 day at multiples of it. The build
+ * before part 2 fails Swiss at 4.6e-9, JPL and Moshier up to 1.7e-8; the
  * build before part 3 fails Moshier's far bodies at 2e-9 to 6e-9; the
- * build before part 1 and the upstream build fail them all. Run as
+ * build before bug 125 fails Moshier's VEA and orbel orbit at 5.3e-9 to
+ * 5.4e-9; the build before part 1 and the upstream build fail them all.
+ * Run as
  *   lunarpulleph EPHEDIR
  */
 #include <math.h>
 #include <stdio.h>
 #include "swephexp.h"
+
+/* ipl, or -1: a circular orbit at 80000 AU through swe_calc_orbel(), its
+ * mean anomaly given at jd (UPSTREAM-BUGS 125) */
+static int32 Calc(double jd, int ipl, int32 fl, double *x, char *serr)
+{
+  const double a = 80000, n = 0.01720209895 / sqrt(a * a * a) * 180 / M_PI;
+  double el[6] = {0, 0, 0, 0, 0, 0};
+  if (ipl >= 0)
+    return swe_calc(jd, ipl, fl, x, serr);
+  el[0] = fmod(n * (jd - 2451545.0), 360);
+  if (el[0] < 0)
+    el[0] += 360;
+  el[1] = a;
+  return swe_calc_orbel(jd, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl, x, serr);
+}
 
 int main(int argc, char **argv)
 {
@@ -33,7 +57,7 @@ int main(int argc, char **argv)
     {SE_FICT_OFFSET + 9, "Nibiru"}, {SE_FICT_OFFSET + 11, "Harrington"},
     {SE_FICT_OFFSET + 19, "Christ Comet"}, {SE_FICT_OFFSET + 20, "Planet 9"},
     {SE_FICT_OFFSET + 25, "VEA"}, {SE_PLUTO, "Pluto"},
-    {SE_ZEUS, "Zeus"}, {SE_KRONOS, "Kronos"},
+    {SE_ZEUS, "Zeus"}, {SE_KRONOS, "Kronos"}, {-1, "orbel 80000 AU"},
   };
   static const char *const eph[3] = {"Swiss", "JPL", "Mosh"};
   static const double y0[3] = {1650, 1650, 1650};	/* first year, per ephemeris */
@@ -52,20 +76,20 @@ int main(int argc, char **argv)
   swe_set_topo(8.55, 47.37, 400);
   printf("G65: the aberration rate's Earth carries the Moon's and planets' pull\n");
   for (ie = 0; ie < 3; ie++) {
-    for (ib = 0; ib < 8; ib++) {
+    for (ib = 0; ib < 9; ib++) {
       for (ic = 0; ic < 2; ic++) {
         int32 fl = (ie == 2 ? SEFLG_MOSEPH : ie ? SEFLG_JPLEPH : SEFLG_SWIEPH) | (ic ? SEFLG_TOPOCTR : 0);
         double w[2] = {0, 0};
         for (y = 0; y < 7; y++) {
           double jd = floor((2451545.0 + (y0[ie] + y * dy[ie] - 2000) * 365.25 + 37.3 * y) * 256) / 256;
           double x[6], d[5][6];
-          if (swe_calc(jd, rgb[ib].ipl, fl | SEFLG_SPEED, x, serr) < 0) {
+          if (Calc(jd, rgb[ib].ipl, fl | SEFLG_SPEED, x, serr) < 0) {
             printf("  %-6s %-14s ERROR %s\n", eph[ie], rgb[ib].sz, serr);
             bad++;
             break;
           }
           for (k = 0; k < 5; k++)
-            swe_calc(jd + (k - 2) * h, rgb[ib].ipl, fl, d[k], serr);
+            Calc(jd + (k - 2) * h, rgb[ib].ipl, fl, d[k], serr);
           for (i = 0; i < 2; i++) {
             double v[5], r, e;
             for (k = 0; k < 5; k++) {

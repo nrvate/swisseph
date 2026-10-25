@@ -732,6 +732,14 @@ void swi_mosh_sun_bary(swe_ctx *ctx, double tjd, int set, double *xs, double *as
       as[i] = ms->a[i];
 }
 
+/* Upstream bug 125: the same place and velocity at a light time's
+ * emission instant more than a day from the chart's (a body past 173
+ * AU), evaluated aside: the memos stay at the chart's instant. */
+void swi_mosh_sun_bary_aside(swe_ctx *ctx, double tjd, int set, double *xs)
+{
+  mosh_sun_sum(ctx, tjd, set, 0, xs, NULL);
+}
+
 /* Upstream bug 109: the rate of swi_mosh_sun_bary()'s v_S (every planet)
  * at tjd, for a star's aberration rate: a star's speed is the rate of its
  * positions, which take the series' v_S. The point masses' pull above is

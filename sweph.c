@@ -4198,6 +4198,37 @@ static void mosh_sun_shift(double *x, const double *vs, const double *as, double
     x[i+3] += vs[i] + s * as[i];
   }
 }
+
+/* Upstream bug 125: the body read at t took the Sun's motion over every
+ * light time by that Taylor step, VEA's 462 days (seorbel.txt's set at
+ * 80000 AU) as a planet's hours. Over that the Sun turns 0.67 rad of its
+ * loop about the barycentre, and the step left out up to 5.7e-4 AU of its
+ * place and 3e-6 AU/day of its velocity (-3000..+3000): VEA 2e-7 deg off
+ * its light time's fixed point (G27 1.1e-3"), its speed 5.4e-9 deg/day
+ * off its positions (G65), the same on swe_calc_orbel()'s path. Past a
+ * day of light time (a body beyond 173 AU) the Sun's place and velocity
+ * at t are now the planets' own there, evaluated aside of the memos.
+ * Within a day the step is at most 2.0e-11 AU and 5.9e-11 AU/day short,
+ * 6.5e-12 deg and 2e-11 deg/day at that distance (the jump at the
+ * switch), and the planets, under 0.3 day, keep its cost. The aberration
+ * rate's observer (xobs2) keeps the step: its velocity is V - tau a by
+ * design, the observer's acceleration at teval. */
+#define MOSH_SUN_TAYLOR_MAX 1.0	/* day */
+static void mosh_sun_move(swe_ctx *ctx, double *x, const double *xsb,
+                          const double *as, double teval, double t)
+{
+  double s = t - teval, xs[6];
+  int i;
+  if (!(fabs(s) > MOSH_SUN_TAYLOR_MAX)) {
+    mosh_sun_shift(x, xsb + 3, as, s);
+    return;
+  }
+  swi_mosh_sun_bary_aside(ctx, t, SWI_MOSH_SUN_FULL, xs);
+  for (i = 0; i <= 2; i++) {
+    x[i] += xs[i] - xsb[i];
+    x[i+3] += xs[i+3];
+  }
+}
 #endif
 
 static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, char *serr)
@@ -4501,10 +4532,11 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	  }
 	  if (retc != OK)
 	    return(retc);
-	  /* bug 102: the Sun's displacement, see above; xearth stays
-	   * heliocentric for the aberration rate's observer (bug 109) */
+	  /* bug 102: the Sun's displacement, see above (bug 125: the
+	   * Sun's own past a day); xearth stays heliocentric for the
+	   * aberration rate's observer (bug 109) */
 	  if (mosh_bary)
-	    mosh_sun_shift(xx, vsun, asun, t - pdp->teval);
+	    mosh_sun_move(ctx, xx, xsb, asun, pdp->teval, t);
 	}
 	break;
 #else
@@ -5693,8 +5725,8 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	return ERR;
       if (retc != OK)
 	return(retc);
-      if (mosh_bary)	/* bug 109: the Sun's displacement */
-        mosh_sun_shift(xx, vsun, asun, t - pdp->teval);
+      if (mosh_bary)	/* bug 109: the Sun's displacement (bug 125) */
+        mosh_sun_move(ctx, xx, xsb, asun, pdp->teval, t);
       for (i = 0; i <= 2; i++) {
 	dx[i] = xx[i] - xobs[i];   /* xobs: the centre, see app_pos_etc_plan() */
       }
@@ -6171,8 +6203,8 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       }
       if (retc != OK)
 	return retc;
-      if (mosh_bary)	/* bug 109: the Sun's displacement */
-        mosh_sun_shift(xx, vsun, asun, t - pdp->teval);
+      if (mosh_bary)	/* bug 109: the Sun's displacement (bug 125) */
+        mosh_sun_move(ctx, xx, xsb, asun, pdp->teval, t);
       for (i = 0; i <= 2; i++)
         dx[i] = xx[i] - xobs[i];
       dtNew = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;

@@ -752,9 +752,10 @@ check-ctxfiles: ctxfiles
 check-dtobs: dtobs
 	@env -u SE_EPHE_PATH ./dtobs
 
-# G27: a fictitious body's light time is solved on its orbit, and its
-# position does not depend on SEFLG_SPEED. Moshier, and it writes its own
-# seorbel.txt, so it needs no ephemeris and no fixture.
+# G27: a fictitious body's light time is solved on its orbit, about the
+# barycentre (a swe_calc_orbel() orbit at 80000 AU too, UPSTREAM-BUGS 125),
+# and its position does not depend on SEFLG_SPEED. Moshier, and it writes
+# its own seorbel.txt, so it needs no ephemeris and no fixture.
 check-fictlt: fictlt
 	@env -u SE_EPHE_PATH ./fictlt
 
@@ -901,7 +902,8 @@ check-node3speed: node3speed
 check-lunarpull: lunarpull
 	@env -u SE_EPHE_PATH ./lunarpull $(EPHE)
 
-# G65: the same on JPL (de200.eph) and Moshier: the Moon's pull past 0.3 day
+# G65: the same on JPL (de200.eph) and Moshier: the Moon's pull past 0.3 day;
+# Moshier's Sun past a day of light time (UPSTREAM-BUGS 125)
 check-lunarpulleph: lunarpulleph
 	@env -u SE_EPHE_PATH ./lunarpulleph $(EPHE)
 

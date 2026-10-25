@@ -1140,6 +1140,12 @@ struct epsilon {
  *     G122). A thread adopting the change through the shared
  *     configuration empties the same in both builds: that adoption is
  *     this fork's code
+ *   - on Moshier a body read past a day of light time (beyond 173 AU)
+ *     took the Sun's motion about the barycentre by bug 109's Taylor step,
+ *     5.7e-4 AU short over VEA's 462 days: VEA and a swe_calc_orbel()
+ *     orbit at 80000 AU 2e-7 deg off the light time's fixed point, their
+ *     speeds 5.4e-9 deg/day off their positions; under the switch the Sun
+ *     is held still, as upstream's (UPSTREAM-BUGS 125, G27, G65)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1228,6 +1234,7 @@ extern void swi_mosh_earth_accel(swe_ctx *ctx, double tjd, const double *x0, dou
 #define SWI_MOSH_SUN_FULL 0	/* every planet (bug 102) */
 #define SWI_MOSH_SUN_MOON 1	/* Venus, EMB and the giants (bug 109) */
 extern void swi_mosh_sun_bary(swe_ctx *ctx, double tjd, int set, double *xs, double *as);
+extern void swi_mosh_sun_bary_aside(swe_ctx *ctx, double tjd, int set, double *xs);
 extern void swi_mosh_sun_accel(swe_ctx *ctx, double tjd, double *as);
 #endif
 extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
