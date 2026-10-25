@@ -215,6 +215,7 @@ worst were in code that had never executed even once.
 | 184 | The Moshier Moon's frame turning, (R(t + 1) x - R(t - 1) x) / 2 of the ecliptic of date to the J2000 equator (entry 95), reaches across a short-term precession model's window edges: with IAU 1976 short and Vondrak long its speed 8.0e-5 to 9.0e-5 deg/day off within a day of J2000 -+ 2 centuries, the topocentric Moon's alike, its apparent place 1.36e-9 deg through the light time | Correctness | `swemmoon.c` |
 | 185 | The equinox-of-date frame turning of the seorbel.txt JDATE bodies (entry 48) and of `swe_calc_orbel()`'s SE_ORBEL_EQ_DATE (entry 136), (R(t + 1) x - R(t - 1) x) / 2 at the elements' instant, reaches across a short-term precession model's window edges and Owen 1990's joins: with IAU 1976 short and Vondrak long, within a day of J2000 -+ 2 centuries Selena's speed 8.0e-5 to 9.5e-5 deg/day off, an Earth orbit of 0.053 AU 8.7e-5, Vulcan 1.6e-5 | Correctness | `swemplan.c`, `sweph.c` |
 | 188 | The IAU 2000A and 2000B series' Delaunay arguments, polynomials to T^4 in arcseconds, are evaluated in double, and past the default grid's 4e8 days (where the default is the direct 2000A) they are some 1e14": their rounding, T's own and the products', puts up to 1e-2" into every term's angle, dpsi 9.5e-9 deg off the series evaluated in long double at 8e8 to 1e9 days, 3.0e-9 at 6e8 to 8e8, a jitter of 4e-9 deg between instants 2^-12 day apart | Correctness | `swephlib.c` |
+| 194 | `swe_calc()`'s strict test of a Moon from Moshier (entry 120) reads the centre off the caller's bits, where `swecalc()` takes `plaus_iflag()`'s: SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR, topocentric, answered from the Earth of Moshier's Moon (Mars at 1900 32770, 283.6744143987 deg, 9e-10 deg off the files'), where SEFLG_TOPOCTR is refused, and the save area then answered a SEFLG_TOPOCTR request | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -12634,6 +12635,72 @@ Noticed, not fixed:
   its flags, no error: on Moshier dpsi 1.2e72 deg at J = 1e82, NaN dpsi
   and deps from about 1e84 days (the arguments' T^4 overflows), under
   every nutation model, both builds, before and after this fix.
+
+## 194. `swe_calc()`'s strict test of a Moon from Moshier reads the centre off the caller's bits: SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR answers from the Earth of Moshier's Moon, and a SEFLG_TOPOCTR request after it from the save area
+
+**Severity: Correctness (behaviour: an answer where the strict setting refuses, and an answer that depends on call order; the place 9e-10 deg off the files')**
+**Where:** `sweph.c`: `swe_calc_r_body()`, bug 120's test
+
+Found by a review of entry 120's test. Entry 120 refuses, under
+the strict setting, an answer that depends on a Moon taken from Moshier
+for want of the semo file: the Moon and the Earth themselves and any body
+seen from the Earth; a heliocentric or barycentric planet reads the Earth
+but does not use it, and answers. `swe_calc_r()` told the two apart by the
+caller's bits, `iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)`. `swecalc()` resolves
+the bits first by `plaus_iflag()`, where SEFLG_TOPOCTR turns SEFLG_HELCTR
+and SEFLG_BARYCTR off: SEFLG_TOPOCTR | SEFLG_HELCTR is a topocentric
+request, seen from the Earth made from Moshier's Moon, and the test let it
+through. In a directory without the semo files, strict, the site at 8.55
+E, 47.37 N, 400 m, Mars at 1900 Jan 0.75 (JD 2415020.25) with SEFLG_SWIEPH
+| SEFLG_TOPOCTR | SEFLG_HELCTR (or SEFLG_BARYCTR) returned 32770 and
+283.6744143987 deg, the complete directory's 283.6744143978 (9e-10 deg),
+where SEFLG_TOPOCTR alone is refused ("Swiss (.se1) Moon file is not
+available ..."). The answer stayed in the save area under the resolved
+flags, SEFLG_TOPOCTR | SEFLG_SWIEPH, so a SEFLG_TOPOCTR request after it in
+the same context was answered, 32770 with the same place, where a fresh
+process refuses it. The same for the Sun with SEFLG_TOPOCTR |
+SEFLG_BARYCTR. `swe_calc_ut()`, the star functions and `swe_calc_orbel()`
+resolve the bits before their tests and refused already. The compat build
+has no entry 120 and answers all of them.
+
+**Fix, as done here:** the test takes the resolved centre: SEFLG_TOPOCTR
+counts as seen from the Earth whatever other centre bit is set, as
+`plaus_iflag()` has it. The combined request is refused with entry 120's
+message and leaves nothing in the save area (entry 120's
+`sd->tsave = SWI_TJD_NEVER`), so the SEFLG_TOPOCTR request after it is
+refused as in a fresh process; with the fallback allowed both answer, the
+second bit for bit as in a fresh context. Inside entry 120's
+`#ifndef SWE_UPSTREAM_COMPAT` block. No hot path: one bit test on a path
+taken only when a Moon came from Moshier.
+
+`swe_nod_aps()` makes its save area by `swe_calc()` of the body with
+SEFLG_HELCTR and the caller's SEFLG_TOPOCTR, so under the strict setting,
+the semo files missing, its topocentric points are refused now too (Mars's
+osculating node at 1900 had answered, 4.19e-9 deg off the files', Venus's
+1.20e-8), as entry 120 refuses what is seen from that Earth. Its geocentric
+points still answer (below).
+
+G117 `tests/moonfile.c`: (a) and (a) warm take Mars with SEFLG_TOPOCTR |
+SEFLG_HELCTR and with SEFLG_TOPOCTR | SEFLG_BARYCTR and the Sun with the
+latter, refused fresh and warm, answered Swiss with the note and within
+1e-6 deg with the fallback allowed, answered as asked by the complete
+directory; new (e): in one context Mars with each combination, then
+SEFLG_TOPOCTR alone, the second's return and place bit for bit those of
+SEFLG_TOPOCTR in a fresh context, strict and with the fallback allowed, at
+the four instants. 472 rows pass; before the fix 44 fail (the 12 fresh
+and 24 warm combined rows of (a), (e)'s 8 strict); the upstream build 212
+(160 of the 372 before). G24 `moshmoon_topohel_ret`: Mars at 1900 Jan 0.75
+with SEFLG_TOPOCTR | SEFLG_HELCTR, the semo files missing, strict, its
+return: -1 shipped, 32770 compat (and shipped before the fix). G133 and
+G143 pass.
+
+Noticed, not fixed: `swe_nod_aps()` has no test of entry 120's own: its
+geocentric points, built from the save area's Earth made from Moshier's
+Moon, answer under the strict setting, the semo files missing (Mars's
+osculating node at 1900 4.19e-9 deg off the files', Venus's 1.20e-8),
+where `swe_calc()`'s geocentric planets are refused. G117's header said
+156 for the compat build's failures; the tree before this entry gives 160
+(the topocentric row's note, lost there).
 
 ## How these were found
 

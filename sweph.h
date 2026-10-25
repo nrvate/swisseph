@@ -1435,6 +1435,10 @@ struct epsilon {
  *     a Swiss call takes that Sun for Moshier's: the heliocentric Moon 0.41
  *     deg off, Ceres 0.14, the deflection 1.66e-7 on Mercury
  *     (UPSTREAM-BUGS 177, G133, G24)
+ *   - SEFLG_TOPOCTR | SEFLG_HELCTR (or SEFLG_BARYCTR), the Moon files
+ *     missing, answered under the strict setting from the Earth of
+ *     Moshier's Moon (bug 120 is not in this build either): Mars at 1900
+ *     32770, 9e-10 deg off the files' (UPSTREAM-BUGS 194, G117, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

@@ -681,9 +681,18 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * Earth too, but do not use it). With the fallback allowed the Moon's
    * flag says Moshier, which is what answered; a planet keeps Swiss, its
    * own place and the EMB being the files' and only the Earth's Moon
-   * offset, 1/82 of the Moon's error, Moshier's. */
+   * offset, 1/82 of the Moon's error, Moshier's.
+   * Upstream bug 194: the centre was read off the caller's bits, where
+   * swecalc() resolves them by plaus_iflag(): SEFLG_TOPOCTR turns
+   * SEFLG_HELCTR and SEFLG_BARYCTR off, and the answer is topocentric.
+   * Mars at 1900 with SEFLG_TOPOCTR | SEFLG_HELCTR (or SEFLG_BARYCTR), the
+   * Moon files missing, strict: 32770 and 283.6744143987 deg, seen from
+   * the Earth of Moshier's Moon (9e-10 deg off the files'), where
+   * SEFLG_TOPOCTR alone is refused; and the save area kept it, so a
+   * SEFLG_TOPOCTR request after it was answered. Now the resolved
+   * centre: refused as SEFLG_TOPOCTR is, nothing saved. */
   if (ctx->moshmoon_used && (sd->iflgsave & SEFLG_SWIEPH)
-      && (ipl == SE_MOON || ipl == SE_EARTH
+      && (ipl == SE_MOON || ipl == SE_EARTH || (iflag & SEFLG_TOPOCTR)
           || !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)))) {
     if (swi_refuse_moshmoon(ctx, tjd, serr)) {
       sd->tsave = SWI_TJD_NEVER;	/* no cached answer to come back with */

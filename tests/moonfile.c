@@ -15,7 +15,8 @@
  * semo_12.se1, four instants in 1200-1800 (binary fractions), against the
  * complete directory, every call in a fresh context unless said:
  *  (a) strict: the Moon (Swiss, no ephemeris flag, swe_calc_ut(),
- *      heliocentric), the Sun, Mars geocentric and topocentric, the Earth
+ *      heliocentric), the Sun, Mars geocentric and topocentric (with
+ *      SEFLG_HELCTR or SEFLG_BARYCTR too, and the Sun so), the Earth
  *      heliocentric, the true node, swe_fixstar2() and swe_fixstar() of
  *      Aldebaran and swe_calc_orbel() about the Earth are refused; and again in one warm context after a
  *      heliocentric Mars at the same instant (whose save area holds the
@@ -36,14 +37,26 @@
  *      complete directory's (the heliocentric Moon's place is G108 (5)'s
  *      to check, see rgDep);
  *  (d) the complete directory: every call of (a) answers with the flag
- *      asked.
+ *      asked;
+ *  (e) UPSTREAM-BUGS 194: SEFLG_TOPOCTR with SEFLG_HELCTR or
+ *      SEFLG_BARYCTR is topocentric (plaus_iflag()), so (a) refuses Mars
+ *      and the Sun asked so; and in one context such a Mars, then
+ *      SEFLG_TOPOCTR alone, the second's return and place bit for bit
+ *      those of SEFLG_TOPOCTR in a fresh context, strict (refused) and with
+ *      the fallback allowed (answered). Before, the strict test read the
+ *      centre off the caller's bits and answered from the Earth of
+ *      Moshier's Moon (Mars at 1900 32770, 9e-10 deg off the files'), and
+ *      the save area answered the SEFLG_TOPOCTR request after it.
  * A refusal is ret < 0 with "Moshier" in serr (this entry's message, or
- * the true node's own downgrade). Measured: 372 checks, none fail; (c)'s
- * Moon 1.1e-10 deg off SEFLG_MOSEPH's, its planets 3.4e-8 deg off the
+ * the true node's own downgrade). Measured: 472 checks, none fail; (c)'s
+ * Moon 1.5e-11 deg off SEFLG_MOSEPH's, its planets 3.4e-8 deg off the
  * files'. The build before the fix fails 152: the 44 of (a), its 88 warm,
  * and 20 of (c)'s Moon (the flag, and swe_calc_ut()'s place); the
  * SWE_UPSTREAM_COMPAT build 156, four of (b)'s warm rows too (the
- * restored defects of its caches).
+ * restored defects of its caches). Before bug 194's fix 44 of the 472
+ * fail: (a)'s three combined rows, 12 fresh and 24 warm, and (e)'s 8
+ * strict; the SWE_UPSTREAM_COMPAT build 212 (160 of the 372 before, with
+ * the topocentric rows' lost note of (c)).
  * Run as
  *   moonfile EPHEDIR
  */
@@ -73,6 +86,10 @@ static const struct { const char *sz; int kind, ipl; int32 fl; int moon; } rgDep
   {"Sun", CALC, SE_SUN, SEFLG_SWIEPH | SEFLG_SPEED, 0},
   {"Mars", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, 0},
   {"Mars, topocentric", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_SPEED, 0},
+  /* bug 194: SEFLG_TOPOCTR turns the other centres off (plaus_iflag()) */
+  {"Mars, TOPOCTR | HELCTR", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_HELCTR | SEFLG_SPEED, 0},
+  {"Mars, TOPOCTR | BARYCTR", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_BARYCTR, 0},
+  {"Sun, TOPOCTR | BARYCTR", CALC, SE_SUN, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_BARYCTR | SEFLG_SPEED, 0},
   {"Earth, heliocentric", CALC, SE_EARTH, SEFLG_SWIEPH | SEFLG_HELCTR, 0},
   {"true node", CALC, SE_TRUE_NODE, SEFLG_SWIEPH | SEFLG_SPEED, -1},
   {"Aldebaran, swe_fixstar2()", STAR2, 0, SEFLG_SWIEPH | SEFLG_SPEED, 0},
@@ -87,7 +104,13 @@ static const struct { const char *sz; int kind, ipl; int32 fl; } rgInd[] = {
   {"Aldebaran, heliocentric", STAR2, 0, SEFLG_SWIEPH | SEFLG_HELCTR},
   {"orbit about the Sun, helioc.", ORBEL_S, 0, SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_SPEED},
 };
+/* (e): SEFLG_TOPOCTR with another centre, then SEFLG_TOPOCTR (bug 194) */
+static const struct { const char *sz; int ipl; int32 ctr; } rgComb[] = {
+  {"Mars, TOPOCTR | HELCTR, then TOPOCTR", SE_MARS, SEFLG_HELCTR},
+  {"Mars, TOPOCTR | BARYCTR, then TOPOCTR", SE_MARS, SEFLG_BARYCTR},
+};
 #define NDEP ((int) (sizeof rgDep / sizeof rgDep[0]))
+#define NCOMB ((int) (sizeof rgComb / sizeof rgComb[0]))
 #define NIND ((int) (sizeof rgInd / sizeof rgInd[0]))
 
 static const double rgJd[4] = {2210000.25, 2268936.5, 2300000.75, 2370000.5};
@@ -259,6 +282,21 @@ int main(int argc, char **argv)
         check(refused(&a), "a warm", rgDep[k].sz, jd, &a, "answered, not refused");
       }
     swe_ctx_free(w);
+    /* (e) bug 194: SEFLG_TOPOCTR after SEFLG_TOPOCTR with another centre,
+     * one context, as SEFLG_TOPOCTR in a fresh one, both settings */
+    for (k = 0; k < 2 * NCOMB; k++) {
+      int fb = k / NCOMB;
+      int32 fl = SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_SPEED;
+      struct ans a, t, ref;
+      w = open_ctx(dir, fb);
+      a = ask(w, CALC, rgComb[k % NCOMB].ipl, fl | rgComb[k % NCOMB].ctr, jd);
+      t = ask(w, CALC, rgComb[k % NCOMB].ipl, fl, jd);
+      swe_ctx_free(w);
+      ref = ask_fresh(dir, fb, CALC, rgComb[k % NCOMB].ipl, fl, jd);
+      check(same(&t, &ref) && (fb ? t.r >= 0 : refused(&t)) && (fb ? a.r >= 0 : refused(&a)),
+            fb ? "e fallback" : "e", rgComb[k % NCOMB].sz, jd, &t,
+            "SEFLG_TOPOCTR after it not as in a fresh context");
+    }
   }
   unbuild(dir);
   printf("  rows %d, failed %d; fallback: the Moon %.2e deg off SEFLG_MOSEPH's, the others %.2e deg off the files'\n",

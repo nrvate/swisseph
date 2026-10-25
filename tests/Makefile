@@ -1515,7 +1515,9 @@ check-missfile: missfile
 # G117: the Swiss Moon file missing, an answer whose Moon, or whose Earth
 # through the Moon, is Moshier's is refused under the strict setting, and
 # with the fallback allowed the Moon's flag says SEFLG_MOSEPH (UPSTREAM-BUGS
-# 120). Its directory is links in /tmp.
+# 120); SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR refused as the
+# topocentric request it is, and SEFLG_TOPOCTR after it answered as in a
+# fresh context (UPSTREAM-BUGS 194). Its directory is links in /tmp.
 check-moonfile: moonfile
 	@env -u SE_EPHE_PATH ./moonfile $(EPHE)
 
