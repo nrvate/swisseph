@@ -1651,8 +1651,10 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
 #ifndef SWE_UPSTREAM_COMPAT
     ctx_forget_instants(ctx);      /* the memset leaves 0: a valid instant (bug 71) */
 #endif
-    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+    /* initialised before the tidal setter, which now initialises a context
+     * itself (bug 83) and would otherwise come back here */
     ctx->swed_is_initialised = TRUE;
+    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
     swi_config_end_apply(ctx, swi_cfg_was);
     started = 1;
   }

@@ -3803,9 +3803,21 @@ double CALL_CONV swe_get_tid_acc(void)
  * makes the topocentric observer stale -- swi_invalidate_deltat(), G26.
  * Only on a real change: the early-out mirrors swe_set_topo_r()'s, so a
  * caller re-asserting the value it already holds pays nothing. */
+/* Upstream bug 83: swe_set_tid_acc(), swe_set_delta_t_userdef() and
+ * swe_set_interpolate_nut() did not initialise the default context, so
+ * called before any calculation their setting was wiped by the first one's
+ * memset (swi_init_swed_if_start()): swe_set_tid_acc(SE_TIDAL_DE200) as
+ * the first call left -25.80 and swe_deltat() for AD 1000 1463.43 s for
+ * 1305.30; a user delta t of 86.4 s before the first swe_calc_ut() was
+ * 63.83 (the automatic one) after it; swe_set_interpolate_nut(TRUE) was
+ * lost (the nutation 8.6e-8 deg from its interpolated value). They
+ * initialise the context first now. */
 void CALL_CONV swe_set_tid_acc_r(swe_ctx *ctx, double t_acc)
 {
   AS_BOOL changed;
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);
+#endif
   if (t_acc == SE_TIDAL_AUTOMATIC) {
     changed = ctx->is_tid_acc_manual || ctx->tid_acc != SE_TIDAL_DEFAULT;
     ctx->tid_acc = SE_TIDAL_DEFAULT;
@@ -3838,6 +3850,9 @@ void CALL_CONV swe_set_tid_acc(double t_acc)
 void CALL_CONV swe_set_delta_t_userdef_r(swe_ctx *ctx, double dt)
 {
   AS_BOOL changed;
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);	/* bug 83, see swe_set_tid_acc_r() */
+#endif
   if (dt == SE_DELTAT_AUTOMATIC) {
     changed = ctx->delta_t_userdef_is_set;
     ctx->delta_t_userdef_is_set = FALSE;
@@ -4498,6 +4513,9 @@ double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
 
 void CALL_CONV swe_set_interpolate_nut_r(swe_ctx *ctx, AS_BOOL do_interpolate)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);	/* bug 83, see swe_set_tid_acc_r() */
+#endif
   if (ctx->do_interpolate_nut == do_interpolate) {
     swi_config_claim(ctx, SWI_CFG_NUT);
     return;

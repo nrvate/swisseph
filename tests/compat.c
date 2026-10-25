@@ -22,6 +22,7 @@
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include "swephexp.h"
 
 #ifdef EXPECT_COMPAT
@@ -625,6 +626,40 @@ static double ayanamsa_jd0_off(void)
   swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
   swe_get_ayanamsa_ex(1e-9, SEFLG_SWIEPH | SEFLG_SIDEREAL, &a1, serr);
   return fabs(a0 - a1);
+}
+
+/* A user delta t set as the very first library call, read back after the
+ * first swe_calc_ut(), s off 86.4. Upstream's swe_set_delta_t_userdef()
+ * does not initialise the default context, and that first calculation's
+ * memset wipes it: 63.83 s, the automatic delta t (UPSTREAM-BUGS 83). The
+ * library must be pristine, so main() calls this before anything else and
+ * it runs in a forked child, files named by SE_EPHE_PATH. */
+static double dt_userdef_first_off(void)
+{
+  int fd[2];
+  double v = -1;
+  pid_t pid;
+  if (pipe(fd) != 0)
+    return -1;
+  fflush(stdout);
+  if ((pid = fork()) < 0)
+    return -1;
+  if (pid == 0) {
+    double x[6], dt;
+    char serr[256];
+    close(fd[0]);
+    setenv("SE_EPHE_PATH", EPHE, 1);
+    swe_set_delta_t_userdef(86.4 / 86400);
+    swe_calc_ut(2451545.3, SE_MOON, SEFLG_SWIEPH, x, serr);
+    dt = fabs(swe_deltat_ex(2451545.3, SEFLG_SWIEPH, serr) * 86400 - 86.4);
+    _exit(write(fd[1], &dt, sizeof dt) == (ssize_t) sizeof dt ? 0 : 3);
+  }
+  close(fd[1]);
+  if (read(fd[0], &v, sizeof v) != (ssize_t) sizeof v)
+    v = -1;
+  close(fd[0]);
+  waitpid(pid, NULL, 0);
+  return v;
 }
 
 /* Venus's limiting magnitude at humidity 80 % right after one at 40 %,
@@ -1675,11 +1710,13 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
+
+  dtfirst = dt_userdef_first_off();   /* first: it needs a pristine library */
 
   contam = jplhor_contaminates();
   drift  = pctr_drift();
@@ -2002,6 +2039,14 @@ int main(int argc, char **argv)
   else {
     printf("  Mars osc. node at JD 0 %.2e deg FAIL: expected %s\n",
            nodjd0, WANT_DEFECT ? "> 1e-3" : "< 1e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (dtfirst > 10) : (dtfirst >= 0 && dtfirst < 1e-9))
+    printf("  delta t set first      %.2e s OK\n", dtfirst);
+  else {
+    printf("  delta t set first      %.2e s FAIL: expected %s\n",
+           dtfirst, WANT_DEFECT ? "> 10" : "< 1e-9");
     bad++;
   }
 

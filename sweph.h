@@ -899,6 +899,10 @@ struct epsilon {
  *     atmosphere (0.67 mag in a limiting magnitude), the star magnitude's
  *     outlived swe_close() and a new catalogue (0.46 mag, a day in a
  *     heliacal event), and none was emptied (UPSTREAM-BUGS 82, G81)
+ *   - swe_set_tid_acc(), swe_set_delta_t_userdef() and
+ *     swe_set_interpolate_nut() did not initialise the default context, so
+ *     called before any calculation they were wiped by its first-use memset
+ *     (22.6 s of delta t; UPSTREAM-BUGS 83, G82)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

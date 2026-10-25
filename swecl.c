@@ -3105,8 +3105,13 @@ double CALL_CONV swe_refrac(double inalt, double atpress, double attemp, int32 c
   }
 }
 
+/* Upstream bug 83 -- this fork's: the lapse rate was a static in upstream,
+ * which no memset reaches; as a context field it was wiped by the default
+ * context's first-use memset when set before any calculation (0.05 K/m
+ * read as 0.0065). Initialise first, as the other setters do. */
 void CALL_CONV swe_set_lapse_rate_r(swe_ctx *ctx, double lapse_rate)
 {
+  swi_init_swed_if_start(ctx);
   ctx->const_lapse_rate = lapse_rate;
   swi_config_publish(ctx, SWI_CFG_LAPSE);
 }

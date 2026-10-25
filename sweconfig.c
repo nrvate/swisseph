@@ -33,6 +33,31 @@ swi_mutex_t swi_gen_fallback_mutex = SWI_MUTEX_INIT;
 
 static swi_mutex_t cfg_mutex = SWI_MUTEX_INIT;
 static struct swe_config cfg_master;
+
+/* Upstream bug 83 -- this fork's, so not behind SWE_UPSTREAM_COMPAT: the
+ * master started, and swi_config_reset() re-armed it, as zeros, and a
+ * setter merges in its own group only, so every other group held zeros
+ * that are not the library's defaults (a lapse rate of 0 for 0.0065, a
+ * tidal acceleration of 0), and swi_config_sync() adopted them into every
+ * context that had not claimed the group. After swe_set_ephe_path() alone
+ * the first calculation set the lapse rate to 0: swe_azalt()'s Sun from
+ * 2000 m, 15.75 min before its true rise, refracted to -1.243 deg where it
+ * is -2.215, below the dip (-1.235); swe_ctx_new() inherited it too. The first publish
+ * after a start or a reset now fills the master with the defaults a fresh
+ * context has (ctx_init_defaults()), under the mutex. */
+static AS_BOOL cfg_master_armed;   /* guarded by cfg_mutex */
+
+static void cfg_defaults(struct swe_config *c)
+{
+  swi_gen_t g = c->generation;
+  memset((void *) c, 0, sizeof *c);
+  c->generation = g;
+  strcpy(c->ephepath, SE_EPHE_PATH);
+  strcpy(c->jplfnam, SE_FNAME_DFT);
+  c->tid_acc = SE_TIDAL_DEFAULT;
+  c->const_lapse_rate = SE_LAPSE_RATE;
+}
+
 /* Validity is "generation != 0" rather than a separate flag: the generation
  * is already read atomically on the fast path, whereas a plain AS_BOOL read
  * outside the mutex is a data race -- ThreadSanitizer caught exactly that. */
@@ -391,6 +416,10 @@ void swi_config_publish(swe_ctx *ctx, int32 groups)
   ctx->cfg_local |= groups;          /* this thread now owns these groups */
   swi_config_capture(ctx, &tmp);
   swi_mutex_lock(&cfg_mutex);
+  if (!cfg_master_armed) {        /* bug 83: the other groups' defaults */
+    cfg_defaults(&cfg_master);
+    cfg_master_armed = TRUE;
+  }
   /* merge, do not overwrite: only the groups this setter owns */
   cfg_merge(&cfg_master, &tmp, groups);
   swi_gen_bump(&cfg_master.generation);
@@ -486,6 +515,7 @@ void swi_config_reset(swe_ctx *ctx)
 {
   swi_mutex_lock(&cfg_mutex);
   memset((void *) &cfg_master, 0, sizeof(cfg_master));
+  cfg_master_armed = FALSE;       /* the next publish starts from the defaults */
   swi_mutex_unlock(&cfg_mutex);
   ctx->cfg_seen = 0;
   ctx->cfg_local = 0;

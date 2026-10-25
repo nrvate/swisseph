@@ -121,6 +121,7 @@ worst were in code that had never executed even once.
 | 79 | The topocentric site's acceleration is 1.6e-6 low | Correctness | `sweph.c` |
 | 80 | `swe_nod_aps()`'s osculating speeds difference rounded points over a few minutes | Correctness | `swecl.c` |
 | 82 | The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold | Correctness | `swehel.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
+| 83 | A setting made before the first calculation is lost, and the first heliacal call after a setter fails (partly this fork's) | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c`, `sweph.c` |
 
 ---
 
@@ -4812,10 +4813,91 @@ G81 `tests/helmemo.c`: one sequence of 37 `swe_vis_limit_mag()`,
 atmosphere, eye height, latitude in the dark sky, the high-precision flag,
 the ephemeris (Swiss, Moshier, de200), a user delta T, `swe_close()` and
 two star catalogues, each answer -- return code, every value, `serr` --
-against the same request in a fresh process; all agree within 1e-9. The
-build before the fix fails 17, the upstream build the same 17. G24
+against the same request in a fresh process; all agree within 1e-6 (an
+order dependence outside the memos moves a de200 answer after a Swiss one
+by 3.9e-8 deg; G81 does not judge it). The build before the fix fails 17, the upstream build the same 17. G24
 `hel_memo_off`: Venus at humidity 80 % right after 40 %, 0 mag shipped,
 0.67 compat. G24, G70 and G20 pass.
+
+## 83. A setting made before the first calculation is lost, and the first heliacal call after a setter fails
+
+**Severity: Correctness (a failed call; a lost setting: 22.6 s of delta t, 158 s of delta t in AD 1000, 0.9 deg of refraction)**
+**Where:** `sweconfig.c`: `swi_config_publish()`, `swi_config_reset()`, `cfg_defaults()`; `swehel.c`: `set_topo_for_this_call()` (`Magnitude()`, `swe_vis_limit_mag_r()`, `swe_heliacal_pheno_ut_r()`, `swe_heliacal_ut_r()`); `swephlib.c`: `swe_set_tid_acc_r()`, `swe_set_delta_t_userdef_r()`, `swe_set_interpolate_nut_r()`; `swecl.c`: `swe_set_lapse_rate_r()`; `sweph.c`: `swi_init_swed_if_start()`
+
+On the process-wide default context,
+
+    swe_set_ephe_path(path);
+    swe_vis_limit_mag(tjd_ut, dgeo, datm, dobs, "venus", 0, dret, serr);
+
+returned ERR, "geographic position has not been set", at any instant; the
+same call again worked, and after any other setter -- or `swe_close()` and
+`swe_set_ephe_path()` -- the next one failed again. So did
+`swe_heliacal_pheno_ut()`. Three causes, two of them this fork's:
+
+- The configuration master (`sweconfig.c`) started as zeros, and
+  `swi_config_reset()` (from `swe_close()`) re-armed it as zeros, though its
+  header says "from the compile-time defaults". A setter merges in its own
+  group only, so the others held zeros, and the first `swi_config_sync()`
+  after it adopted every group the context had not claimed: an observer
+  not set, a lapse rate of 0 for 0.0065, a tidal acceleration of 0. After
+  `swe_set_ephe_path()` alone the first calculation set the lapse rate to
+  0, so `swe_azalt()`'s Sun from 2000 m, 15.75 min before its true rise,
+  was refracted to -1.243 deg where it is -2.215, below the dip (-1.235):
+  0.97 deg; `swe_ctx_new()` after it inherited a lapse rate of 0 and a
+  tidal acceleration of 0.
+- `swehel.c` set the observer of the call under `SWI_CFG_LOCAL` (which
+  claims nothing) without syncing first, the order G20 fixed in `swecl.c`,
+  so that sync -- at the first `swe_calc()` inside the call -- replaced it
+  with the master's "not set".
+- The lapse rate, a static in upstream, is a context field here, and
+  `swe_set_lapse_rate()` did not initialise the context, so set before any
+  calculation it was wiped by the default context's first-use memset
+  (`swi_init_swed_if_start()`): 0.05 K/m read as 0.0065, 0.90 deg in the
+  same refraction. Upstream shares this one for `swe_set_tid_acc()`,
+  `swe_set_delta_t_userdef()` and `swe_set_interpolate_nut()`: as the
+  first library call, `swe_set_tid_acc(SE_TIDAL_DE200)` left -25.80 and
+  `swe_deltat()` in AD 1000 1463.43 s for 1305.30; a user delta t of
+  86.4 s was 63.83 (the automatic one) after the first `swe_calc_ut()`;
+  `swe_set_interpolate_nut(TRUE)` was lost (8.6e-8 deg of nutation). The
+  manual's own advice for `swe_deltat()` -- "it is safe if you first call
+  swe_set_tid_acc()" -- is the order that lost it.
+
+The other setters (`swe_set_topo()`, `swe_set_sid_mode()`,
+`swe_set_jpl_file()`, `swe_set_astro_models()`, `swe_set_ephe_fallback()`)
+initialise first and were right in every order; so were
+`swe_heliacal_ut()`, which calculates before it sets its observer,
+`swe_topo_arcus_visionis()` and `swe_heliacal_angle()`. Upstream loses
+`swe_set_astro_models()` set as the first call too (1.2e-5 deg in
+`SE_ECL_NUT`), which this fork already keeps.
+
+**Fix, as done here:** the first publish after a start or a
+`swi_config_reset()` fills the master with the defaults a fresh context
+has (`cfg_defaults()`, under the mutex), so an adopted group nobody set is
+the library's default; `swehel.c` syncs before it sets its observer
+(`set_topo_for_this_call()`, as `swecl.c`'s); the four setters initialise
+the context first (`swi_init_swed_if_start()` now marks it initialised
+before its own `swe_set_tid_acc_r()`, which would otherwise come back to
+it). The first two and the lapse rate are this fork's own defects and are
+fixed in both builds; under `SWE_UPSTREAM_COMPAT` the other three setters
+do not initialise, as upstream.
+
+Not fixed here, upstream's too: a manual tidal acceleration is reset to
+automatic by every path change, the implicit one at the first calculation
+when the files are named by `SE_EPHE_PATH` included --
+`swe_set_tid_acc(SE_TIDAL_DE200); swe_calc_ut(...)` leaves -25.936 -- where
+the manual says the automatic setting is blocked once it has been used.
+
+G82 `tests/firstset.c`: every public setter and every heliacal entry point
+on the default context, each in a forked, pristine process, set or called
+after `swe_set_ephe_path()`, as the very first call (files by
+`SE_EPHE_PATH`), and after `swe_close()` and re-open in both ways, against
+the same in a context warm from a calculation, and the unset library after
+`swe_set_ephe_path()` against `SE_EPHE_PATH`; each setter must move its
+observation by more than 1e-7, and every observation agree within 1e-9:
+54 scenarios pass. Before the fix 9 fail, the compat build the same 9 (3
+after it: upstream's), the upstream build 4 of 49. G24
+`dt_userdef_first_off`: a user delta t set as the first call, 0 s
+shipped, 22.6 s compat. G24, G81, G70 and G20 pass.
 
 ## How these were found
 

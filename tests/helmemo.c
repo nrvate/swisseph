@@ -28,8 +28,8 @@
  * user delta T, swe_close(), and for Sirius two star catalogues (the
  * second, written to a temporary directory, gives it -1.00 for -1.46);
  * each answer -- return code, every returned value, serr -- against the
- * same request in a fresh process (fork). Values within 1e-9, serr equal.
- * After the fix all 37 agree within that.
+ * same request in a fresh process (fork). Values within 1e-6 (see TOL),
+ * serr equal. After the fix all 37 agree within that.
  *
  * Before it, 17 fail. Venus's limiting magnitude at noon, the previous
  * request's for humidity 40 -> 80 % (-6.447 for -7.121, 0.67 mag),
@@ -55,7 +55,12 @@
 #define T_DAY   2451545.0     /* 2000 Jan 1 12h UT: Venus up, in daylight */
 #define T_NIGHT 2451545.45    /* 22:48 UT: Sirius up, the Sun well down */
 #define NV 40
-#define TOL 1e-9
+/* 1e-6, not tighter: apart from the memos, an answer after a request on
+ * another ephemeris moves by up to 4e-8 deg in the Moon's altitude and
+ * azimuth (de200 after Swiss, against de200 fresh: 3.9e-8 in dret[6]),
+ * an order dependence outside swehel.c's memos, and not this gate's. The
+ * memos' errors are 0.048 mag and more. */
+#define TOL 1e-6
 
 static const char *EPHE;
 static char PATH_B[2 * AS_MAXCH];   /* a catalogue in which Sirius is -1.00, then EPHE */
