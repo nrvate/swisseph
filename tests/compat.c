@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
 #include "swephexp.h"
 
 #ifdef EXPECT_COMPAT
@@ -406,6 +407,39 @@ static double orbel_speed_off(void)
   return fabs(x[3] - r);
 }
 
+/* UPSTREAM-BUGS 60: a fictitious body whose mean anomaly is a plain negative
+ * number, "-12.5", against the same ellipse written 347.5, heliocentric
+ * longitudes 100 days after the epoch, deg. A '-' made the field a
+ * polynomial in T, so the epoch was set to tjd, no daily motion was added,
+ * and the body stood still: 113 deg apart */
+static double fict_negative_mano_off(void)
+{
+  char dir[] = "/tmp/compatfnXXXXXX", path[4096], serr[256];
+  double x[6], p[6], r;
+  FILE *pf;
+  swe_close();
+  if (mkdtemp(dir) == NULL)
+    return -1;
+  snprintf(path, sizeof(path), "%s/seorbel.txt", dir);
+  if ((pf = fopen(path, "w")) == NULL)
+    return -1;
+  fputs("J2000, J2000, -12.5, 1.0, 0.1, 30, 40, 5, Negative\n"
+        "J2000, J2000, 347.5, 1.0, 0.1, 30, 40, 5, Positive\n", pf);
+  fclose(pf);
+  snprintf(path, sizeof(path), "%s:%s", dir, EPHE);
+  swe_set_ephe_path(path);
+  r = -1;
+  if (swe_calc(2451645.0, SE_FICT_OFFSET, SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_NONUT | SEFLG_TRUEPOS, x, serr) >= 0 &&
+      swe_calc(2451645.0, SE_FICT_OFFSET + 1, SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_NONUT | SEFLG_TRUEPOS, p, serr) >= 0)
+    r = fabs(swe_difdeg2n(x[0], p[0]));
+  swe_close();
+  snprintf(path, sizeof(path), "%s/seorbel.txt", dir);
+  unlink(path);
+  rmdir(dir);
+  swe_set_ephe_path(EPHE);
+  return r;
+}
+
 /* UPSTREAM-BUGS 44: the interpolated perigee in 2100, its longitude with
  * and without SEFLG_SPEED, mas. Its light-time step took the speed, zero
  * without the flag: 107 mas apart */
@@ -703,7 +737,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, hspd, hsid, moshr, moshs;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, hspd, hsid, moshr, moshs;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -736,6 +770,7 @@ int main(int argc, char **argv)
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
   orbel = orbel_speed_off();
+  fictneg = fict_negative_mano_off();
   hspd = house_speed_off(0);
   hsid = house_speed_off(1);
   moshr = mosh_rough();
@@ -965,6 +1000,14 @@ int main(int argc, char **argv)
   else {
     printf("  orbital elements' rate %.2e deg/day FAIL: expected %s\n",
            orbel, WANT_DEFECT ? "> 1e-3" : "< 1e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (fictneg > 1) : (fictneg >= 0 && fictneg < 1e-9))
+    printf("  negative mean anomaly  %.2e deg OK\n", fictneg);
+  else {
+    printf("  negative mean anomaly  %.2e deg FAIL: expected %s\n",
+           fictneg, WANT_DEFECT ? "> 1" : "< 1e-9");
     bad++;
   }
 

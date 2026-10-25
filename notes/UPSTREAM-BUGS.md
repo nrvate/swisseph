@@ -87,6 +87,7 @@ worst were in code that had never executed even once.
 | 49 | A fixed star's speeds are not the rates of its position | Correctness | `sweph.c` |
 | 50 | The Moshier series round their arguments at more time than a JD resolves | Correctness | `swemplan.c`, `swemmoon.c` |
 | 51 | The Moshier velocities are differences at rounded instants | Correctness | `swemplan.c`, `swemmoon.c`, `sweph.c` |
+| 60 | A negative mean anomaly with no T terms freezes a fictitious body | Correctness | `swemplan.c` |
 
 ---
 
@@ -2638,6 +2639,41 @@ by up to 6e-8 deg and speeds by up to 2.9e-5 deg/day (the Moon's old step
 bias); the osculating apogee and true node (~illcond) by up to 21", their
 old noise; the mean node and apogee by up to 1.6e-10 deg on every
 ephemeris (the lunar mean elements' T rounding, entry 50). G17 unchanged.
+
+## 60. A plain negative mean anomaly freezes a fictitious body
+
+**Severity: Correctness (a body whose mean anomaly is written "-12.5" does not move: 161 deg off its own ellipse 200 days on, its speed 1.2 deg/day against a rate of 0)**
+**Where:** `swemplan.c`: `check_t_terms()`, `read_elements_file()`
+
+`check_t_terms()` set its return value to "has T terms" when the field
+held a `+` or `-` anywhere, taking the sign as the operator of a further
+term. A mean anomaly written as a plain negative number, `-12.5`, is
+one term with a sign; `read_elements_file()` read it as a polynomial in
+T, and for a polynomial sets epoch = tjd so that no daily motion is
+added. The mean anomaly stayed at -12.5 for all time: the body stood
+still at its epoch position, while its reported speed (the two-body
+motion) was 1.2 deg/day.
+The same ellipse written 347.5 moved at its mean motion. A field with
+a space and a minus after the first term and no T (`10 - 2`) went the
+same way.
+
+**Fix, as done here:** only a T makes the field a polynomial
+(`strpbrk(sinp, "tT")`); a leading sign is a sign. Every field of
+`ephe/seorbel.txt` that carries a sign in its mean anomaly also has a
+T, so every set is unchanged: the 30 sets, at five dates over 1500
+years, geocentric, heliocentric and J2000, bit-identical (positions
+and speeds) before and after.
+
+G59 `tests/fictneg.c`: a set with mean anomaly `-12.5` and the same
+ellipse with `347.5` (a = 1 AU, e = 0.1), heliocentric J2000 at five
+dates: the two within 1e-9 deg (measured 0), the negative one advanced
+by the daily motion (161 deg at the latest date), its speed within
+1e-7 deg/day of a five-point difference over 2^-6 day (2.6e-12) and its
+distance rate within 1e-9 (1.3e-14); the upstream build fails all four
+(161 deg off the positive set, 0 deg advance, speed off by 1.2
+deg/day, distance rate by 5.1e-4). G24 `fict_negative_mano_off`: the
+two sets 100 days on, 0 deg shipped, 113 deg compat. G1 and G17
+unchanged.
 
 ## How these were found
 

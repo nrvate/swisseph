@@ -1347,8 +1347,17 @@ static int check_t_terms(double t, char *sinp, double *doutp, double *drate)
   dtt[2] = 2 * tt[1] / 36525;
   dtt[3] = 3 * tt[2] / 36525;
   dtt[4] = 4 * tt[3] / 36525;
+  /* Upstream bug 60: a '-' (or '+') anywhere made the field a polynomial, so
+   * a plain negative mean anomaly such as "-12.5" set epoch = tjd and the
+   * body stood still (daily motion 0 against 0.2 deg/day on a = 1 AU).
+   * Now only a T makes it one; a leading sign is a sign. */
+#ifndef SWE_UPSTREAM_COMPAT
+  if ((sp = strpbrk(sinp, "tT")) != NULL)
+    retc = 1; /* with T terms */
+#else
   if ((sp = strpbrk(sinp, "+-")) != NULL)
     retc = 1; /* with additional terms */
+#endif
   sp = sinp;
   *doutp = 0;
   if (drate != NULL)

@@ -735,6 +735,10 @@ struct epsilon {
  *     ellipse's two-body motion, without its elements' rates in T or an
  *     equinox of date's turning (2.9e-2 deg/day on Vulcan; UPSTREAM-BUGS
  *     48, G48)
+ *   - check_t_terms() took any '+' or '-' for a T term, so a plain negative
+ *     mean anomaly ("-12.5") set epoch = tjd and froze the fictitious body
+ *     (113 deg off the same ellipse written 347.5 after 100 days;
+ *     UPSTREAM-BUGS 60, G59)
  *   - intp_apsides() moved the interpolated apsides back along their light
  *     time by the speed, zero without SEFLG_SPEED, and not in x (111 mas
  *     on the perigee; UPSTREAM-BUGS 44, G46)
