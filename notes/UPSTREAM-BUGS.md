@@ -66,6 +66,7 @@ worst were in code that had never executed even once.
 | 32 | `swe_house_pos()` answers a place in the wrong house: Sripati 1.0 for all of house 12 and half of house 1, the horizon system counted backwards south of the equator | Correctness | `swehouse.c` |
 | 33 | `swe_gauquelin_sector()` methods 0 and 1 moved by SEFLG_SIDEREAL (2.6 sectors) and by the frame, form and centre flags (up to 18.4 sectors) | Correctness | `swecl.c` |
 | 34 | Sidereal houses on the ecliptic of t0 and the solar system plane (J2000, J1900, B1950 always): ascmc[2] the auxiliary ARMC, whole signs off the sidereal signs, a step of 2 dpsi at t0, ascmc[8] not 0 | Correctness | `swehouse.c` |
+| 35 | Kronos' built-in semi-axis has two digits swapped, the Kepler solver's starting guess is wrong, and the nakshatras of `swe_split_deg()` are shifted for `SE_SIDM_USER` | Correctness | `swemplan.c`, `swephlib.c`, `sweph.c` |
 
 ---
 
@@ -1896,6 +1897,57 @@ ascmc[9] the tropical call's, in 'P' 'I' 'G' 'W' (6). Before the fix 44 of
 the 74 fail: all 16 of (a), 18 of (b) ('W', 'w' and 'n' in each setting),
 all of (c) and (d). The golden transcript's cov:hsys_sid[eclt0] row (Lahiri,
 J2000) moves by 5.0e-13 deg, the `acos()`'s rounding.
+
+## 35. Kronos' built-in semi-axis has two digits swapped, the Kepler solver's starting guess is wrong, and the nakshatras of `swe_split_deg()` are shifted for `SE_SIDM_USER`
+
+**Severity: Correctness (Kronos 0.0086 deg at 1700, 0.0169 deg at 2300 without `seorbel.txt`; every nakshatra split under a user-defined ayanamsa 3 deg 20' early; the starting guess moves no result beyond rounding)**
+**Where:** `swemplan.c`: `plan_oscu_elem[]` (the Neely block), `swi_osc_el_plan()`; `swephlib.c`: `split_deg_nakshatra()`; `sweph.c`: the "call `swe_set_ephe_path()`" warning of `swi_get_ayanamsa_ex()`
+
+Three small defects in three functions, one entry.
+
+Without `seorbel.txt` on the path the fictitious bodies come from a
+built-in table. Its Neely row for Kronos has the semi-axis 64.81960;
+`seorbel.txt` and Witte's original 64.816896 (the non-Neely rows of the same
+table) give 64.81690, and the other fourteen built-in rows agree with the
+file to the last digit, so the value is a swap of two digits. Kronos'
+mean motion was off by 0.0043 deg per century from the 1900 epoch:
+-0.0086 deg at 1700, +0.0169 deg at 2300, 0.0257 deg and 2.8e-3 AU at 2500.
+
+The solver of `swi_osc_el_plan()` for eccentricities above 0.975 (Nibiru,
+the Christ Comet) builds a starting guess near perihelion with
+`zeta = pow(x, 1/3)`, where `1/3` is integer division, so `zeta = pow(x, 0)
+= 1`, and adds 180, not pi, to an angle in radians. `swi_kepler()` converges
+to the same root from either guess, so a result moves only by rounding:
+over 20000 dates 1700 to 2500 (Moshier, geocentric, with speed) Nibiru's
+position by 4.3e-14 deg and 3.4e-13 AU, the Christ Comet's by 1.4e-14 deg
+and 1.1e-12 AU; the speeds by 4e-8 deg/day, which is that rounding read
+through the 5e-7 day step of the deflection's differenced speed (6e-11
+deg/day with `SEFLG_NOGDEFL`).
+
+`split_deg_nakshatra()` moves the place by 3 deg 20' for the Sheoran
+"Vedic" ayanamsa (its 0 Aries is 3 deg 20' of Ashvini), and tested the mode
+as `(sid_mode & SE_SIDM_TRUE_SHEORAN) == SE_SIDM_TRUE_SHEORAN`, a bit mask
+on a mode number. 39 is binary 100111; `SE_SIDM_USER`, 255, has every one
+of those bits, with or without SIDBITs above it. Of the stored modes only
+Sheoran and USER pass. `swe_split_deg(10, SE_SPLIT_DEG_NAKSHATRA)` gave
+Ashvini 10 deg 00' under Fagan/Bradley and Lahiri and Bharani 0 deg 00'
+under 255, 1279 and 2303. The warning in `swi_get_ayanamsa_ex()` tested
+`sip->sid_mode == SE_SIDM_TRUE_SHEORAN` where the rest of its list tests the
+masked `sid_mode`; that changes nothing, since `swe_set_sid_mode()` stores a
+star mode without its SIDBITs, and is made the masked one for the list's
+sake. Every other comparison of a mode number takes `sid_mode %
+SE_SIDBITS` first.
+
+**Fix, as done here:** the semi-axis is 64.81690. The guess is
+`pow(x, 1.0 / 3)` and pi. The Sheoran shift tests the mode itself,
+`sid_mode % SE_SIDBITS == SE_SIDM_TRUE_SHEORAN`. G44 `tests/fictnakshatra.c`:
+the 15 built-in bodies at five dates 1700..2500, heliocentric Moshier, with
+the shipped `seorbel.txt` against an empty directory: 3.6e-15 deg, 5.7e-14
+AU (Kronos 0.0257 deg at 2500 before); and 5 deg and 10 deg split into
+nakshatras under the 47 predefined modes, USER alone and with four SIDBITs,
+Sheoran with a SIDBIT and Lahiri with four: 114 checks pass, the ten USER
+ones failed before. The starting guess is not gated: no public result moves
+beyond rounding.
 
 ## How these were found
 

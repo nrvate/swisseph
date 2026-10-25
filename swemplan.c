@@ -521,7 +521,7 @@ static const double plan_oscu_elem[SE_NFICT_ELEM][8] = {
   {J1900, J1900, 163.7409, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833},/* Cupido Neely */ 
   {J1900, J1900,  27.6496, 50.66744, 0.00245, 148.1796, 161.3339, 1.0500},/* Hades Neely */
   {J1900, J1900, 165.1232, 59.21436, 0.00120, 299.0440,   0.0000, 0.0000},/* Zeus Neely */
-  {J1900, J1900, 169.0193, 64.81960, 0.00305, 208.8801,   0.0000, 0.0000},/* Kronos Neely */ 
+  {J1900, J1900, 169.0193, 64.81690, 0.00305, 208.8801,   0.0000, 0.0000},/* Kronos Neely */ 
   {J1900, J1900, 138.0533, 70.29949, 0.00000,   0.0000,   0.0000, 0.0000},/* Apollon Neely */
   {J1900, J1900, 351.3350, 73.62765, 0.00000,   0.0000,   0.0000, 0.0000},/* Admetos Neely */
   {J1900, J1900,  55.8983, 77.25568, 0.00000,   0.0000,   0.0000, 0.0000},/* Vulcanus Neely */
@@ -623,7 +623,7 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
     M2 = M * RADTODEG;
     if (M2 > 150 && M2 < 210) {
       M2 -= 180;
-      M_180_or_0 = 180;
+      M_180_or_0 = PI;		/* 180 degrees, added to E in radians */
     } else
       M_180_or_0 = 0;
     if (M2 > 330) 
@@ -637,7 +637,8 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
       M2 *= DEGTORAD;
       alpha = (1 - ecce) / (4 * ecce + 0.5);
       beta = M2 / (8 * ecce + 1);
-      zeta = pow(beta + sqrt(beta * beta + alpha * alpha), 1/3);
+      /* the cube root of the starting guess's cubic; 1 / 3 would be 0 */
+      zeta = pow(beta + sqrt(beta * beta + alpha * alpha), 1.0 / 3);
       sigma = zeta - alpha / 2;
       sigma = sigma - 0.078 * sigma * sigma * sigma * sigma * sigma / (1 + ecce);
       E = Msgn * (M2 + ecce * (3 * sigma - 4 * sigma * sigma * sigma))

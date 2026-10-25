@@ -4252,8 +4252,9 @@ static void split_deg_nakshatra(swe_ctx *ctx, double ddeg, int32 roundflag, int3
     *inak = -1;
     ddeg = 0;
   }
-  // Sheoran "Vedic" ayanamsha: 0 Aries = 3°20 Ashvini
-  if ((ctx->sidd.sid_mode & SE_SIDM_TRUE_SHEORAN) == SE_SIDM_TRUE_SHEORAN)
+  // Sheoran "Vedic" ayanamsha: 0 Aries = 3°20 Ashvini. The mode itself,
+  // less the SIDBITs: as a bit mask 39 would match SE_SIDM_USER (255) too.
+  if (ctx->sidd.sid_mode % SE_SIDBITS == SE_SIDM_TRUE_SHEORAN)
     ddeg = swe_degnorm(ddeg + 3.33333333333333);
   if (roundflag & SE_SPLIT_DEG_ROUND_DEG) {
     dadd = 0.5;

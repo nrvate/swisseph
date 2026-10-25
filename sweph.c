@@ -3884,7 +3884,7 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
      && (sid_mode ==  SE_SIDM_TRUE_CITRA 
       || sid_mode == SE_SIDM_TRUE_REVATI 
       || sid_mode == SE_SIDM_TRUE_PUSHYA 
-      || sip->sid_mode == SE_SIDM_TRUE_SHEORAN 
+      || sid_mode == SE_SIDM_TRUE_SHEORAN 
       || sid_mode == SE_SIDM_TRUE_MULA 
       || sid_mode == SE_SIDM_GALCENT_0SAG
       || sid_mode == SE_SIDM_GALCENT_COCHRANE
