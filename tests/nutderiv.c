@@ -47,8 +47,8 @@
  * log-uniform over 4.1e8..1e9 days (|J| past 4e8 either side): their
  * fourth differences over 2^-12 day / sqrt(70), the terms' own curvature
  * 1e-16 deg, within 1e-13 deg, and where long double has a 64-bit
- * mantissa or more, against the series transcribed in long double within
- * 1e-10: 6 checks.
+ * mantissa or more, against the series transcribed in long double (2000B
+ * with its fixed offsets, UPSTREAM-BUGS 220) within 1e-10: 6 checks.
  *
  * Measured after the fix: (a) within 5.7e-12, the position differences'
  * rounding over the step; (b) within 2.6e-11 to 1e8 and 1.1e-9 beyond (the
@@ -83,7 +83,8 @@
 /* check (c)'s reference: calc_nutation_iau2000ab() transcribed, every
  * operation in long double (64-bit mantissa or more), its arguments
  * from J exactly and its constants read as long double; IAU 2000A
- * (b2000 = 0) or 2000B; dpsi and deps in degrees */
+ * (b2000 = 0) or 2000B, with its fixed offsets for the planetary terms
+ * (UPSTREAM-BUGS 220); dpsi and deps in degrees */
 typedef long double LD;
 static LD dnorm_ld(LD x, LD p)
 {
@@ -123,8 +124,11 @@ static void nut_ld(double J, int b2000, LD *out)
   }
   out[0] = dpsi * o1;
   out[1] = deps * o1;
-  if (b2000)
+  if (b2000) {
+    out[0] += -0.135L / 3600000.0L;
+    out[1] += 0.388L / 3600000.0L;
     return;
+  }
   for (j = 0; j < 13; j++)
     pa[j] = dnorm_ld(pc[j][0] + pc[j][1] * T, p2);
   pa[13] = (0.02438175L + 0.00000538691L * T) * T;

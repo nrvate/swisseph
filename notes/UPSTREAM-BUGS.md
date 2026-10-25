@@ -238,6 +238,9 @@ worst were in code that had never executed even once.
 | 208 | A fictitious body or `swe_calc_orbel()`'s orbit whose light time leaves the Swiss files' span is answered from Moshier's Sun, 0, taken for the barycentric one, under either setting: the light-time loop's `main_planet_bary()` falls to Moshier on its own and answers OK. Cupido at JD 2378496.6 with the files of 1800-2400 alone 258, 4.33e-3 deg off the complete directory's and the Moshier request's, strict too | Correctness (behaviour) | `sweph.c` |
 | 199 | `swe_nod_aps()`'s osculating nodes' and apsides' speeds put each epoch of their difference into the frame of date at that epoch, so within the stencil of a short-term precession window's edge the difference took the frame's step: with IAU 1976 under Vondrak ("0,9,1") on JPL and the Swiss files the Moon's points 5.99e-3 deg/day off at J2000 - 2 centuries and 6.49e-3 at + 2, the planets' up to 1.69e-2 (Uranus's); with IAU 2006 ("0,9,8") at -+ 75 centuries the Moon's 7.9, Mars's 8.1, Jupiter's 41.5 | Correctness | `swecl.c` |
 | 201 | `swe_nod_aps()`'s osculating nodes' and apsides' speeds (entry 80) are a three-point difference over 2^-6 day (the Moon 2^-11), off by h^2 / 6 of the point's third derivative where a near-circular orbit's apsides turn fast, and over the Moon's short step by its points' noise: against nine-point differences of the positions, 1800-2100, Neptune's heliocentric perihelion 5.3e-7 deg/day off in 1815, Uranus's 4.2e-8, the Earth's 3.5e-8, Jupiter's 2.2e-8, the Moon's geocentric apsides 7.9e-8 and nodes 1.6e-8, the distances' speeds 1.2e-8 AU/day | Correctness | `swecl.c` |
+| 218 | `swe_calc(SE_ECL_NUT)` with SEFLG_NONUT, and SEFLG_SIDEREAL and SEFLG_J2000, which imply it, answers the nutation cached for the last date asked without the flag: at 2460000.5 after a call at J2000, J2000's dpsi -0.003870001 and deps -0.001602611 deg and the true obliquity 23.434664974 for the mean 23.436267584, where a fresh context answers zero nutation and the true obliquity the mean | Correctness (behaviour) | `sweph.c` |
+| 219 | IAU 1980 and its Herring 1987 corrections, and SEFLG_JPLHOR's IAU 1980, evaluate their Delaunay arguments, polynomials to T^3 some 5e13" at 1e9 days, in double (entry 188's for 2000A and 2000B): against the series in mpmath dpsi 1.2e-10 deg off at 4e8 to 1e9 days, 9.0e-8 to 1e10, 3.7e-3 to 1e11 and 8.2 deg to 1e12, where `SE_ECL_NUT` answers | Correctness | `swephlib.c` |
+| 220 | IAU 2000B leaves out the published fixed offsets in lieu of its planetary terms (McCarthy & Luzum 2003; SOFA `iauNut00b`, NOVAS `iau2000b`: dpsi -0.135 mas, deps +0.388 mas): 3.75e-8 deg in dpsi and 1.08e-7 in deps at every date, 6.4e-10 and 1.9e-9 rad off SOFA's test values | Correctness | `swephlib.c` |
 
 ---
 
@@ -14679,6 +14682,231 @@ Noticed, not fixed:
   model alone, their latitude's 8.4e-7 (declination's 3.5e-6), its
   nodes' 1.9e-7, from there to 1/4 day within 1e-8; entry 186's last
   noticed item (the Moshier Moon's own frame there), another item's.
+
+## 218. `swe_calc(SE_ECL_NUT)` with SEFLG_NONUT answers the nutation cached for the last date asked without it: at 2460000.5 after J2000, J2000's dpsi -0.003870001 deg and a true obliquity 1.6e-3 deg off the mean
+
+**Severity: Correctness (behaviour: the answer depends on an earlier call, `swe_calc()` and `swe_calc_ut()` with SE_ECL_NUT under SEFLG_NONUT, SEFLG_SIDEREAL or SEFLG_J2000, every model and ephemeris, both builds)**
+**Where:** `sweph.c`: `swecalc()`
+
+Entry 196's noticed item. `plaus_iflag()` sets SEFLG_NONUT under
+SEFLG_SIDEREAL and SEFLG_J2000, and under it `swi_check_nutation()`
+computes nothing, since no place takes the nutation then; but
+`swecalc()` built SE_ECL_NUT's four from `ctx->nut.nutlo` regardless,
+which holds the nutation of the last instant asked without the flag, or
+zeros on a fresh context. Measured on Moshier, the default models, a
+fresh context against one that asked J2000 without the flag first, at
+2460000.5: true obliquity, mean, dpsi, deps
+
+- fresh: 23.436267584, 23.436267584, 0, 0;
+- after J2000: 23.434664974, 23.436267584, -0.003870001, -0.001602611
+  (J2000's nutation; the true obliquity the mean plus J2000's deps);
+
+and the same under SEFLG_NONUT with SEFLG_SPEED, SEFLG_RADIANS,
+SEFLG_EQUATORIAL or SEFLG_JPLHOR_APPROX, SEFLG_SIDEREAL and SEFLG_J2000,
+every nutation model, the upstream build alike (its SEFLG_EQUATORIAL
+answering zeros, entry 90 part 2).
+
+The answer a call must give is the fresh context's: zero nutation and the
+true obliquity the mean. That is what the flag means ("no nutation, i.e.
+mean equinox of date", swephprg 3.3.1: without nutation the true
+obliquity is the mean), what `swetest` reads it as (under -nonut and
+-sid it prints `x[0]` as "Epsilon (m)", with no nutation line, and turns
+its places of the mean equinox to the equator, and the house positions, by
+`x[0]`), and the only answer that is the same at every call. The other
+reading, the date's nutation with the flag changing places alone, has no
+support in the manual or the code, which computes no nutation under it.
+
+The other caches SE_ECL_NUT reads were checked for the same: the
+obliquity's (`swi_check_ecliptic()`, keyed on the instant and the JPL
+Horizons bits), the nutation's (`swi_check_nutation()`, the instant, the
+speed bit and those bits) and the nutation memo (`calc_nutation()`, the
+instant and the model; none under the Horizons flags): SE_ECL_NUT at 1950
+Jan 1 under four flag sets and six model settings, fresh against after
+the default and SEFLG_JPLHOR_APPROX at the instant and a model change: 0
+differ. The interpolation (`swe_set_interpolate_nut()`) does depend on
+earlier calls, by design (noticed below).
+
+**Fix, as done here:** under SEFLG_NONUT `swecalc()` answers SE_ECL_NUT as
+the true obliquity and the mean both the mean obliquity, dpsi and deps 0,
+the fresh context's values bit for bit, after the obliquity's and
+nutation's checks have run as before (`swe_calc_pctr()` calls SE_ECL_NUT
+for them). Behind `#ifndef SWE_UPSTREAM_COMPAT`. Without SEFLG_NONUT
+nothing changes; the hot paths do not pass here.
+
+G162 `tests/nutseries.c` (with entries 219 and 220), check (a):
+SE_ECL_NUT under SEFLG_NONUT, with SEFLG_SPEED, SEFLG_RADIANS,
+SEFLG_EQUATORIAL and SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX, SEFLG_SIDEREAL and
+SEFLG_J2000, under the default, IAU 1980 and IAU 2000B, at 1950 Jan 1,
+J2000 + 0.37 and 2460000.5, on a context that asked the instant and then
+J2000 + 0.5 without the flags against a fresh one: bit for bit with the
+return flag, dpsi and deps 0, the true obliquity the mean and the mean the
+call's without the flags. 0 of 63 differ; before the fix and in the
+upstream build 63 of 63 fail. G24 `ecl_nut_nonut_stale`: SE_ECL_NUT |
+SEFLG_NONUT at 2460000.5, fresh against after J2000, the largest
+difference: 0 shipped (3.87e-3 deg before the fix), 3.87e-3 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR (by design of an opt-in approximation). With
+  `swe_set_interpolate_nut(TRUE)` the nutation is a quadratic through
+  three nodes a day apart, placed by the first call outside the last ones'
+  span: at an instant it depends on the earlier calls. SE_ECL_NUT on a
+  fresh context against after a call 0.6 to 1.3 day earlier, 200
+  instants: up to 6.7e-7 deg (2.4 mas) in dpsi and deps, both builds.
+  Nodes on a fixed grid of days would make it a function of the instant.
+
+## 219. IAU 1980 and 1987's arguments, SEFLG_JPLHOR's IAU 1980's too, are evaluated in double, some 5e13" at 1e9 days: dpsi 1.2e-10 deg off the series at 4e8 to 1e9 days, 9.0e-8 to 1e10, 3.7e-3 to 1e11, 8.2 deg to 1e12
+
+**Severity: Correctness (`swe_calc(SE_ECL_NUT)`, the nutation and everything of date that takes it, past |J| 4e8 days under IAU 1980 or 1987 set explicitly, SEFLG_JPLHOR, and SEFLG_JPLHOR_APPROX before 1962: above the floor from about 1e9 days), both builds**
+**Where:** `swephlib.c`: `calc_nutation_iau1980()`, `calc_nutation_iau1980_rate()`, new `nut_80_args_exact()`; entry 188's `nut_ls_args_exact()` split into `nut_t_exact()` and `nut_arg_exact()`
+
+Entry 196's noticed item. Entry 188's defect in the other series: IAU
+1980's Delaunay arguments (`calc_nutation_iau1980()`, the FK5 polynomials
+to T^3 in arcseconds), evaluated in double and then reduced: at |J -
+J2000| = 1e9 days (T = 27400) some 5e13" (the Moon's mean anomaly's
+1717915922.633" T), their last bit 8e-3", T's own rounding carried into
+the 3 c3 T^3 term and each product's; every term's angle is off by that,
+and the 18.6-year term's amplitude, 17.1996" + 0.01742" T, is 494" there.
+Herring's 1987 corrections (SEMOD_NUT_IAU_CORR_1987) and SEFLG_JPLHOR's
+IAU 1980 (with the IERS corrections, held at their end values past the
+table, or before 1962 under SEFLG_JPLHOR_APPROX's SEMOD_JPLHORA_3 a fixed
+64.284 and 6.151 mas) take the same function. Measured on Moshier,
+SE_ECL_NUT against the series evaluated in mpmath at 400 bits at the same
+double J (`nt[]` read from `swephlib.c`, the first terms, the amplitudes'
+T terms, the arguments at the exact T, reduced mod 1296000" exactly), 40
+instants a band of |J - J2000|, either sign, dpsi and deps, deg:
+
+| | 1e8..4e8 | 4e8..1e9 | 1e9..1e10 | 1e10..1e11 | 1e11..1e12 |
+|---|---|---|---|---|---|
+| before | 4.0e-11, 6.7e-11 | 1.2e-10, 2.7e-10 | 9.0e-8, 2.6e-8 | 3.7e-3, 7.4e-5 | 8.2, 0.56 |
+| after | the same | 1.0e-16, 7.5e-18 | 7.6e-16, 5.0e-17 | 1.4e-14, 5.5e-16 | 1.6e-13, 4.6e-15 |
+
+IAU 1980, 1987 and SEFLG_JPLHOR_APPROX before 1962 alike; by half
+decades the floor is left at 1e9 to 3.2e9 (1.8e-9). Near J2000 the series
+as evaluated is within 1.4e-16 deg of mpmath, 2.2e-12 at 1e7 to 1e8. The
+rate (`swi_nutation_rate()`, the series' own derivative, entry 163)
+against five-point differences of `swi_nutation()` over 2^-6 day at 4.1e8
+to 1e9: 8.2e-9 and 6.3e-9 deg/day, the places' jitter.
+
+**Fix, as done here:** entry 188's, past |J| = 4e8 days
+(`SWI_NUT_ARGS_JMIN`, moved above `calc_nutation_iau1980()` to be read
+there): `nut_80_args_exact()` evaluates MM, MS, FF, DD and OM in
+double-double, T from J exactly, each constant its double and the rest of
+its decimal value (`nut_80_dd[]`, from mpmath), Horner's products by
+`fma()`, reduced modulo 1296000" exactly. `calc_nutation_iau1980()` takes
+them, and so does `calc_nutation_iau1980_rate()`, so the rate stays the
+derivative of the places. Entry 188's code is shared, not copied:
+`nut_ls_args_exact()` is now `nut_t_exact()` and a loop over
+`nut_arg_exact()`, the same operations in the same order (the default and
+IAU 2000A unchanged bit for bit at 1508 instants over |J - J2000| 1e2 to
+1e12). Within 4e8 days nothing changes, bit for bit (1161 instants, IAU
+1980, 1987 and the Horizons approximation, the places and the rates): the
+double evaluation there is within 6.7e-11 deg, and that is the step where
+the two meet. Behind `#ifndef SWE_UPSTREAM_COMPAT`. Only these models
+reach the code; the default's hot paths do not.
+- After: within 1.6e-13 deg of the series in mpmath out to 1e12 (the table
+  above); the rate within 1.6e-14 and 2.5e-14 deg/day of the places'
+  five-point differences over 2^-6 day at 4.1e8 to 1e9, 1.0e-11 to
+  4.5e-11 over 2^-7 at 1e9 to 1e10 (the difference's own truncation as
+  the arguments turn faster).
+
+G162 `tests/nutseries.c`, check (b): SE_ECL_NUT under IAU 1980, 1987 and
+SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX before 1962 at 32 instants with |J -
+J2000| log-uniform over 4e8..1e12, either sign, against the series in
+mpmath (a table in the test): per decade within 1e-12 deg, 12 checks,
+measured 6.9e-17, 5.6e-16, 6.7e-15 and 8.5e-14 (the Horizons
+approximation 1.8e-14 at most); before the fix and in the upstream build
+12 of 12 fail, 1.4e-10, 7.6e-8, 2.4e-3 and 8.7 deg. Check (d): the rate
+under IAU 1980 and 1987 at 32 instants 4.1e8..1e9 against five-point
+differences over 2^-6 day within 1e-12 deg/day, 4 checks, 1.6e-14 and
+2.5e-14 (8.2e-9 and 6.3e-9 before; not built upstream). G24
+`nut80_args_jitter`: SE_ECL_NUT under IAU 1980 at eight instants 2.1e9
+to 4.9e9 days either side of J2000, the fourth differences over 2^-12 day
+/ sqrt(70), the worst: 3.98e-16 deg shipped (1.14e-8 before the fix),
+1.14e-8 compat.
+
+Noticed, not fixed:
+- RESIDUAL (2.1e-7 deg at 1e10 to 1e11 days, 3.2e-4 at 1e11 to 1e12;
+  8.2e-10 at 1e9 to 1e10, under the floor). Woolard's
+  (`calc_nutation_woolard()`) arguments are revolutions times t in double
+  too, `360 * (a - (long) a)`: against its formula in mpmath, 24 instants
+  a decade, dpsi 7.1e-12 at 1e8 to 1e9, 8.2e-10, 2.1e-7 and 3.2e-4 deg
+  beyond, deps 2.4e-12, 4.2e-10, 9.1e-8, 9.9e-6.
+
+## 220. IAU 2000B leaves out its published fixed offsets for the planetary terms: 3.75e-8 deg in dpsi and 1.08e-7 in deps at every date
+
+**Severity: Correctness (the nutation under SEMOD_NUT_IAU_2000B: in this fork set explicitly, upstream's default; 0.135 mas in dpsi and 0.388 mas in deps at every date, both builds)**
+**Where:** `swephlib.c`: `calc_nutation_iau2000ab()`
+
+Entry 196's noticed item. IAU 2000B (McCarthy & Luzum 2003, Celest. Mech.
+Dyn. Astron. 85, 37) is MHB2000's 77 largest luni-solar terms and fixed
+offsets standing in for the long-period planetary terms it leaves out.
+SOFA's `iauNut00b` and NOVAS's `iau2000b` (which cites the paper and the
+IERS Conventions 2003, ch. 5) both add dpsi -0.135 mas and deps +0.388
+mas; SOFA's note 7: the paper's -1.5835 and +1.6339 mas are for its
+"total nutations" (frame bias and precession folded in), Luzum's -0.135
+and +0.388 for the "rigorous" method, frame bias, precession and nutation
+applied apart, which is the library's (`swi_bias()`, `swi_precess()`,
+the nutation). The library's 2000B is the 2000A function with the loop
+cut at `NLS_2000B` and the planetary and P03 parts skipped: no offset.
+Nothing in the code or the manuals says why ("IAU 2000B (could be switched
+to 2000A by the user)", swisseph.doc 3; "fast, but precision of
+milli-arcsec", swephexp.h); the offsets are part of the model, not a
+correction to it.
+
+Measured on Moshier, SE_ECL_NUT under "0,0,0,4" against the library's 77
+terms on its own arguments in mpmath at 300 bits, seven dates from -1000
+to 2100: 3.75e-8 deg in dpsi and -1.08e-7 in deps at every one (without
+the offsets the same reference agrees within 1.9e-14). Against SOFA's
+published test values for `iauNut00b` at TT 2453736.5 (t_sofa_c.c:
+-0.9632552291148362783e-5 and 0.4063197106621159367e-4 rad), which an
+mpmath evaluation of SOFA's form (the arguments' linear terms, the
+offsets) reproduces to 5e-24 rad: 6.44e-10 rad in dpsi and -1.88e-9 in
+deps.
+
+Where 2000B is used: only through `calc_nutation()` under
+SEMOD_NUT_IAU_2000B (in this fork set explicitly: the default is 2000A on
+the grid, which is 2000A's alone; in the compat build it is the default),
+directly or through the interpolation's nodes, which are
+`calc_nutation()`'s and so carry whatever it gives; its rate,
+`calc_nutation_2000b_rate()`, differentiates the terms, and the offsets
+have none. Under SEFLG_JPLHOR_APPROX with SEMOD_JPLHORA_2 the
+approximation's own offsets (-41.775 and -6.8192 mas) are added to
+whichever 2000 model is set, now 2000B's with its offsets.
+
+**Fix, as done here:** `calc_nutation_iau2000ab()` adds -0.135 mas to dpsi
+and +0.388 mas to deps under SEMOD_NUT_IAU_2000B, so the model is the
+published one. Behind `#ifndef SWE_UPSTREAM_COMPAT`: the compat build's
+default keeps upstream's values. The rate, the grid and the default
+nutation are unchanged, bit for bit.
+- After: within 1.9e-14 deg of the series with the offsets in mpmath;
+  against SOFA's test values -1.02e-11 and -9.0e-13 rad, SOFA's arguments
+  being their linear terms alone (noticed below).
+- G140's long double reference for 2000B (check (c)) now carries the
+  offsets: 1.93e-12 deg, as before. G1's `cov:nutmodel[4]`,
+  `swe_sidtime()` at J2000 under 2000B, moves from 18.697138162535065 to
+  18.697138160241526 h (the equation of the equinoxes' -0.124 mas); the
+  baseline is the coordinator's. G139's rows under "0,8,8,4" move in their
+  last digits (within their limits).
+
+G162 `tests/nutseries.c`, check (c): SE_ECL_NUT under IAU 2000B at eight
+dates -1000..3500 against the series with the offsets in mpmath (a table
+in the test) within 1e-13 deg, measured 1.6e-14; and at TT 2006 Jan 1
+against SOFA's test values within 3e-11 rad, measured 1.02e-11. 2 checks;
+before the fix and in the upstream build both fail (1.08e-7 deg, 1.88e-9
+rad). G162 passes 81 of 81; before the fix it fails 81 of 81, the
+upstream build 77 of its 77. G24 `nut00b_sofa_off`: SE_ECL_NUT under IAU
+2000B at TT 2006 Jan 1 against SOFA's test values, the larger difference:
+1.02e-11 rad shipped (1.88e-9 before the fix), 1.88e-9 compat.
+
+Noticed, not fixed:
+- RESIDUAL (7.4e-9 deg at 2023, 1.6e-7 at 2100, 1.4e-5 at AD 1000, 1.5e-4
+  at -1000). The published 2000B (SOFA `iauNut00b`, NOVAS `iau2000b`)
+  takes the Delaunay arguments' linear terms alone; the library's 2000B
+  takes the Simon et al. (1994) polynomials to T^4, as its 2000A. Against
+  SOFA's form in mpmath, after this fix: dpsi 5.9e-10 deg off at 2006,
+  7.4e-9 at 2023, 2.9e-8 (deps 9.1e-8) at 1900, 1.6e-7 at 2100, 1.4e-5 at
+  AD 1000 and 1.5e-4 at -1000. Within the model's own 1 mas over
+  1995-2050, but over the floor from a few years off 2006.
 
 ## How these were found
 

@@ -1264,6 +1264,26 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
    * ecliptic and nutation                  * 
    ******************************************/
   if (ipl == SE_ECL_NUT) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 218: under SEFLG_NONUT (and SEFLG_SIDEREAL and
+     * SEFLG_J2000, which plaus_iflag() makes imply it) swi_check_nutation()
+     * computes no nutation, and the one cached for the last date asked
+     * without the flag was answered: at 2460000.5 after a call at J2000,
+     * J2000's dpsi -0.003870001 and deps -0.001602611 deg and the true
+     * obliquity 23.434664974 for the mean 23.436267584, where a fresh
+     * context answers zero nutation and the true obliquity the mean. That
+     * is the flag's meaning ("no nutation, i.e. mean equinox of date",
+     * swephprg 3.3.1), and swetest prints x[0] under it as "Epsilon (m)",
+     * with no nutation line, and turns places of the mean equinox to the
+     * equator by it. Every call answers it now. */
+    if (iflag & SEFLG_NONUT) {
+      x[0] = ctx->oec.eps * RADTODEG;
+      x[1] = x[0];
+      x[2] = 0;
+      x[3] = 0;
+      return(iflag);
+    }
+#endif
     x[0] = ctx->oec.eps + ctx->nut.nutlo[1];	/* true ecliptic */
     x[1] = ctx->oec.eps;			/* mean ecliptic */
     x[2] = ctx->nut.nutlo[0];		/* nutation in longitude */

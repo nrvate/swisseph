@@ -1894,6 +1894,13 @@ static const short nt[] = {
  ENDMARK,
 };
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Past |J| = SWI_NUT_ARGS_JMIN days the series' Delaunay arguments are
+ * evaluated in double-double (bugs 188 and 219, below). */
+#define SWI_NUT_ARGS_JMIN 4e8
+static void nut_80_args_exact(double J, double *arg);
+#endif
+
 static int calc_nutation_iau1980(swe_ctx *ctx, double J, double *nutlo)
 {
   /* arrays to hold sines and cosines of multiple angles */
@@ -1943,6 +1950,28 @@ static int calc_nutation_iau1980(swe_ctx *ctx, double J, double *nutlo)
    */
   DD = 1602961601.328 * T + 1072261.307 + (0.019 * T - 6.891) * T2;
   DD = swe_degnorm(DD/3600) * DEGTORAD;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 219: bug 188's, in IAU 1980 and its Herring 1987
+   * corrections, SEFLG_JPLHOR's IAU 1980 too: the arguments, polynomials
+   * to T^3 some 5e13" at |J| 1e9 days, evaluated in double, their rounding
+   * (T's, the constants', each product's) on every term's angle and on the
+   * main term's amplitude, 17.2" + 0.0174" T, 494" there: against the
+   * series in mpmath, dpsi 1.2e-10 deg off at |J - J2000| 4e8 to 1e9
+   * days, 9.0e-8 to 1e10 (1.8e-9 at 1e9 to 3.2e9), 3.7e-3 to 1e11 and
+   * 8.2 deg to 1e12, where SE_ECL_NUT answers. Past 4e8 days (188's bound)
+   * the five are evaluated in double-double and reduced modulo 1296000"
+   * exactly: within 1.6e-13 deg of the series to 1e12, 1.0e-16 at 4e8 to
+   * 1e9. Within the bound nothing changes, bit for bit. */
+  if (fabs(J) >= SWI_NUT_ARGS_JMIN) {
+    double a[5];
+    nut_80_args_exact(J, a);
+    MM = a[0];
+    MS = a[1];
+    FF = a[2];
+    DD = a[3];
+    OM = a[4];
+  }
+#endif
   args[0] = MM;
   ns[0] = 3;
   args[1] = MS;
@@ -2108,8 +2137,8 @@ static int calc_nutation_iau1980(swe_ctx *ctx, double J, double *nutlo)
  * constants split into the double and its decimal remainder, each product
  * by fma() -- and reduced modulo 1296000" exactly (fmod() of the high
  * part), then made radians: within a few 1e-12 deg of the long double
- * series out to 1e9 days. Within the bound nothing changes. */
-#define SWI_NUT_ARGS_JMIN 4e8
+ * series out to 1e9 days. Within the bound nothing changes.
+ * (SWI_NUT_ARGS_JMIN, 4e8, is defined above calc_nutation_iau1980().) */
 static const double nut_ls_dd[5][5][2] = {	/* arcsec: the double, the rest */
   {{485868.249036, 6.2063336372375486e-12}, {1717915923.2178, 9.8037719726562502e-08},
    {31.8792, -8.6970430857036259e-16}, {0.051635, -3.419486915845482e-19},
@@ -2134,29 +2163,64 @@ static void nut_two_sum(double a, double b, double *s, double *e)
   *e = (a - (x - bb)) + (b - bb);
   *s = x;
 }
+/* T = (J - J2000) / 36525 as th + tl, from J exactly */
+static void nut_t_exact(double J, double *th, double *tl)
+{
+  double dh, dl;
+  nut_two_sum(J, -J2000, &dh, &dl);
+  *th = dh / 36525.0;
+  *tl = (fma(-*th, 36525.0, dh) + dl) / 36525.0;
+}
+/* c[0] + c[1] T + ... + c[n] T^n, arcsec, each c[i] its double and the
+ * rest, at T = th + tl, radians in [0, 2 pi] */
+static double nut_arg_exact(const double (*c)[2], int n, double th, double tl)
+{
+  double ph = c[n][0], pl = c[n][1], m, me, e, r;
+  int i;
+  for (i = n - 1; i >= 0; i--) {	/* p = p T + c[i] */
+    m = ph * th;
+    me = fma(ph, th, -m) + (ph * tl + pl * th);
+    nut_two_sum(m, me, &m, &me);
+    nut_two_sum(m, c[i][0], &ph, &e);
+    e += me + c[i][1];
+    nut_two_sum(ph, e, &ph, &pl);
+  }
+  r = fmod(fmod(ph, 1296000.0) + pl, 1296000.0);
+  if (r < 0)
+    r += 1296000.0;
+  return r / 3600.0 * DEGTORAD;
+}
 /* M, SM, F, D and OM at J, radians in [0, 2 pi] */
 static void nut_ls_args_exact(double J, double *arg)
 {
-  double dh, dl, th, tl;
-  int k, i;
-  nut_two_sum(J, -J2000, &dh, &dl);
-  th = dh / 36525.0;
-  tl = (fma(-th, 36525.0, dh) + dl) / 36525.0;
-  for (k = 0; k < 5; k++) {
-    double ph = nut_ls_dd[k][4][0], pl = nut_ls_dd[k][4][1], m, me, e, r;
-    for (i = 3; i >= 0; i--) {	/* p = p T + c[i] */
-      m = ph * th;
-      me = fma(ph, th, -m) + (ph * tl + pl * th);
-      nut_two_sum(m, me, &m, &me);
-      nut_two_sum(m, nut_ls_dd[k][i][0], &ph, &e);
-      e += me + nut_ls_dd[k][i][1];
-      nut_two_sum(ph, e, &ph, &pl);
-    }
-    r = fmod(fmod(ph, 1296000.0) + pl, 1296000.0);
-    if (r < 0)
-      r += 1296000.0;
-    arg[k] = r / 3600.0 * DEGTORAD;
-  }
+  double th, tl;
+  int k;
+  nut_t_exact(J, &th, &tl);
+  for (k = 0; k < 5; k++)
+    arg[k] = nut_arg_exact(nut_ls_dd[k], 4, th, tl);
+}
+/* Upstream bug 219: IAU 1980's arguments (calc_nutation_iau1980()), the
+ * same way: MM, MS, FF, DD, OM, arcsec, to T^3 */
+static const double nut_80_dd[5][4][2] = {	/* arcsec: the double, the rest */
+  {{485866.733, -7.4505805969238283e-12}, {1717915922.633, 1.02996826171875e-07},
+   {31.310, 1.2789769243681803e-15}, {0.064, -1.3322676295501879e-18}},
+  {{1287099.804, -3.7252902984619141e-12}, {129596581.224, -6.9141387939453129e-09},
+   {-0.577, -4.2632564145606012e-17}, {-0.012, 2.498001805406602e-19}},
+  {{335778.877, 2.1420419216156005e-11}, {1739527263.137, -8.3923339843749995e-08},
+   {-13.257, -3.2684965844964608e-16}, {0.011, 6.38378239159465e-19}},
+  {{1072261.307, -2.9802322387695313e-11}, {1602961601.328, -6.8664550781249995e-08},
+   {-6.891, 1.4210854715202004e-17}, {0.019, 4.7184478546569156e-19}},
+  {{450160.280, -2.7939677238464354e-11}, {-6962890.539, -1.2665987014770509e-10},
+   {7.455, -7.105427357601002e-17}, {0.008, -1.6653345369377348e-19}},
+};
+/* MM, MS, FF, DD and OM at J, radians in [0, 2 pi] */
+static void nut_80_args_exact(double J, double *arg)
+{
+  double th, tl;
+  int k;
+  nut_t_exact(J, &th, &tl);
+  for (k = 0; k < 5; k++)
+    arg[k] = nut_arg_exact(nut_80_dd[k], 3, th, tl);
 }
 #endif
 
@@ -2235,6 +2299,22 @@ static int calc_nutation_iau2000ab(swe_ctx *ctx, double J, double *nutlo)
   }
   nutlo[0] = dpsi * O1MAS2DEG;
   nutlo[1] = deps * O1MAS2DEG;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 220: IAU 2000B (McCarthy & Luzum 2003, Cel. Mech. 85,
+   * 37) is the 77 luni-solar terms and fixed offsets in lieu of the
+   * planetary terms it leaves out: dpsi -0.135 mas and deps +0.388 mas in
+   * SOFA's iauNut00b and NOVAS's iau2000b, Luzum's values for frame bias,
+   * precession and nutation applied apart, as here (the paper's -1.5835
+   * and +1.6339 are for its "total nutations"). They were left out: 3.75e-8
+   * deg in dpsi and 1.08e-7 in deps at every date; at SOFA's test instant,
+   * TT 2006 Jan 1, 6.4e-10 and 1.9e-9 rad off its values. Added now: there
+   * 1.0e-11 and 9e-13 rad, SOFA taking the arguments' linear terms alone.
+   * Constant, so the rate (calc_nutation_2000b_rate()) is unchanged. */
+  if (nut_model == SEMOD_NUT_IAU_2000B) {
+    nutlo[0] += -0.135 / 3600.0 / 1000.0;
+    nutlo[1] += 0.388 / 3600.0 / 1000.0;
+  }
+#endif
   if (nut_model == SEMOD_NUT_IAU_2000A) {
     /* planetary nutation 
      * note: The MHB2000 code computes the luni-solar and planetary nutation
@@ -3152,6 +3232,8 @@ static void calc_nutation_iau1980_rate(swe_ctx *ctx, double J, double *rate)
   dargs[3] = (1602961601.328 + (3 * 0.019 * T - 2 * 6.891) * T) * as2r;
   args[4] = swe_degnorm((-6962890.539 * T + 450160.280 + (0.008 * T + 7.455) * T2) / 3600) * DEGTORAD;
   dargs[4] = (-6962890.539 + (3 * 0.008 * T + 2 * 7.455) * T) * as2r;
+  if (fabs(J) >= SWI_NUT_ARGS_JMIN)	/* past 4e8 days exactly, bug 219 */
+    nut_80_args_exact(J, args);
   for (k = 0; k <= 4; k++) {
     arg = args[k];
     n = ns[k];

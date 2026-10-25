@@ -3926,6 +3926,89 @@ static double ecl_nut_far_answered(void)
   return n;
 }
 
+/* UPSTREAM-BUGS 218: SE_ECL_NUT with SEFLG_NONUT at 2460000.5, Moshier, on
+ * a fresh context and on one that asked J2000 without the flag first: the
+ * largest difference of the four, deg. The fresh context answers zero
+ * nutation and the true obliquity the mean; upstream answers the other the
+ * nutation cached at J2000 (dpsi -0.00387). -1 if a call fails. */
+static double ecl_nut_nonut_stale(void)
+{
+  double x[6], y[6], z[6], r = 0;
+  char serr[AS_MAXCH];
+  int k;
+  swe_ctx *a = swe_ctx_new(), *b = swe_ctx_new();
+  if (a == NULL || b == NULL
+      || swe_calc_r(a, 2460000.5, SE_ECL_NUT, SEFLG_MOSEPH | SEFLG_NONUT, x, serr) < 0
+      || swe_calc_r(b, 2451545.0, SE_ECL_NUT, SEFLG_MOSEPH, z, serr) < 0
+      || swe_calc_r(b, 2460000.5, SE_ECL_NUT, SEFLG_MOSEPH | SEFLG_NONUT, y, serr) < 0)
+    r = -1;
+  for (k = 0; k < 4 && r >= 0; k++)
+    if (fabs(x[k] - y[k]) > r)
+      r = fabs(x[k] - y[k]);
+  swe_ctx_free(a);
+  swe_ctx_free(b);
+  return r;
+}
+
+/* UPSTREAM-BUGS 219: IAU 1980's arguments past 4e8 days. SE_ECL_NUT's dpsi
+ * and deps under IAU 1980 set explicitly at eight instants 2.1e9 to 4.9e9
+ * days either side of J2000, their fourth differences over 2^-12 day /
+ * sqrt(70), the worst, deg. The terms' own curvature puts it near 1e-16;
+ * the arguments evaluated in double, some 1e14" there, jitter it in
+ * upstream's build. -1 if a call fails. */
+static double nut80_args_jitter(void)
+{
+  static const double dj[8] = { -4.9e9, -3.8e9, -2.7e9, -2.1e9, 2.1e9, 2.7e9, 3.8e9, 4.9e9 };
+  const double h = 1.0 / 4096;
+  double worst = 0;
+  char serr[256], mod[] = "0,0,0,1";
+  int d, k, j;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_astro_models_r(c, mod, 0);
+  for (d = 0; d < 8; d++) {
+    double t = floor((2451545.0 + dj[d] + 0.3) * 256) / 256, v[5][6];
+    for (k = 0; k < 5; k++)
+      if (swe_calc_r(c, t + (k - 2) * h, SE_ECL_NUT, SEFLG_MOSEPH, v[k], serr) < 0) {
+        swe_ctx_free(c);
+        return -1;
+      }
+    for (j = 2; j < 4; j++) {
+      double e = fabs(v[0][j] + v[4][j] - 4 * (v[1][j] + v[3][j]) + 6 * v[2][j]) / sqrt(70);
+      if (e > worst)
+        worst = e;
+    }
+  }
+  swe_ctx_free(c);
+  return worst;
+}
+
+/* UPSTREAM-BUGS 220: IAU 2000B's fixed offsets for the planetary terms.
+ * SE_ECL_NUT's dpsi and deps under IAU 2000B (upstream's default) at TT
+ * 2453736.5 (2006 Jan 1) against SOFA's test values for iauNut00b, the
+ * larger difference, rad. The shipped build has the offsets (1.0e-11
+ * left, SOFA's arguments being their linear terms alone); upstream leaves
+ * them out, 1.88e-9 in deps. -1 if the call fails. */
+static double nut00b_sofa_off(void)
+{
+  static const double sofa[2] = { -0.9632552291148362783e-5, 0.4063197106621159367e-4 };
+  double x[6], r = 0;
+  char serr[AS_MAXCH], mod[] = "0,0,0,4";
+  int k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_astro_models_r(c, mod, 0);
+  if (swe_calc_r(c, 2453736.5, SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0)
+    r = -1;
+  for (k = 0; k < 2 && r >= 0; k++)
+    if (fabs(x[2 + k] * DEGTORAD - sofa[k]) > r)
+      r = fabs(x[2 + k] * DEGTORAD - sofa[k]);
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 163: the nutation's rate far from J2000. The Sun's right
  * ascension speed minus the same with SEFLG_NONUT under IAU 2000A set
  * explicitly, against a five-point difference of the same two calls'
@@ -5592,7 +5675,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5761,6 +5844,9 @@ int main(int argc, char **argv)
   nodmoshwin = node_mosh_window_off();
   nodosc5 = nodaps_osc_rate_off();
   nodoscwin = nodaps_window_speed_off();
+  eclnonut = ecl_nut_nonut_stale();
+  nut80jit = nut80_args_jitter();
+  nut00b = nut00b_sofa_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -7172,6 +7258,30 @@ int main(int argc, char **argv)
   else {
     printf("  osc. points across a window %.2e deg/day FAIL: expected %s\n",
            nodoscwin, WANT_DEFECT ? "> 1e-5" : "< 5e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (eclnonut > 1e-4) : (eclnonut == 0))
+    printf("  SE_ECL_NUT NONUT stale %.2e deg OK\n", eclnonut);
+  else {
+    printf("  SE_ECL_NUT NONUT stale %.2e deg FAIL: expected %s\n",
+           eclnonut, WANT_DEFECT ? "> 1e-4" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nut80jit > 1e-10) : (nut80jit >= 0 && nut80jit < 1e-13))
+    printf("  IAU 1980 past 4e8 jitter %.2e deg OK\n", nut80jit);
+  else {
+    printf("  IAU 1980 past 4e8 jitter %.2e deg FAIL: expected %s\n",
+           nut80jit, WANT_DEFECT ? "> 1e-10" : "< 1e-13");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nut00b > 1e-9) : (nut00b >= 0 && nut00b < 3e-11))
+    printf("  2000B against SOFA     %.2e rad OK\n", nut00b);
+  else {
+    printf("  2000B against SOFA     %.2e rad FAIL: expected %s\n",
+           nut00b, WANT_DEFECT ? "> 1e-9" : "< 3e-11");
     bad++;
   }
 

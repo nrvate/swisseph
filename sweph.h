@@ -1553,6 +1553,18 @@ struct epsilon {
  *     Jupiter's 41.5 with IAU 2006 at 75 centuries (the compat build's are
  *     upstream's, over 1e-3 day per AU: 0.80 there) (UPSTREAM-BUGS 199,
  *     G154, G24)
+ *   - swe_calc(SE_ECL_NUT) under SEFLG_NONUT (and SEFLG_SIDEREAL,
+ *     SEFLG_J2000) answering the nutation cached for the last date asked
+ *     without the flag: at 2460000.5 after J2000, J2000's dpsi -0.00387 deg
+ *     and the true obliquity 1.6e-3 deg off the mean, where a fresh
+ *     context answers zero and the mean (UPSTREAM-BUGS 218, G162, G24)
+ *   - IAU 1980 and 1987's arguments, SEFLG_JPLHOR's IAU 1980's too,
+ *     evaluated in double past 4e8 days: dpsi 1.2e-10 deg off the series
+ *     at 4e8 to 1e9 days, 9.0e-8 to 1e10, 3.7e-3 to 1e11 and 8.2 deg to
+ *     1e12 (UPSTREAM-BUGS 219, G162, G24)
+ *   - IAU 2000B, the compat build's default nutation, without its
+ *     published fixed offsets for the planetary terms: dpsi 3.75e-8 deg
+ *     and deps 1.08e-7 off at every date (UPSTREAM-BUGS 220, G162, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
