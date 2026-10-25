@@ -1121,6 +1121,12 @@ struct epsilon {
  *     another thread's setter closed its files and emptied its caches
  *     half-way: a crash on the JPL file, 4.3e-6..1.1e-5 deg mixed answers
  *     (UPSTREAM-BUGS 115, G112)
+ *   - (nothing for UPSTREAM-BUGS 123: swe_close() bumping the shared
+ *     configuration's generation instead of zeroing it, and resetting in
+ *     it only what it resets in the context, so the path, JPL file, delta
+ *     t, interpolation, lapse rate and fallback it keeps survive the next
+ *     setter, is in both builds; the master is this fork's, and upstream's
+ *     swe_close() keeps those settings on its thread; G120)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

@@ -15,8 +15,10 @@
  *   - the path and the setting on the main thread, then a second thread;
  *   - a second thread that has computed already, then the setting;
  *   - the setting, swe_close() and the path again, then a second thread:
- *     the main thread keeps its setting (swe_close() keeps it), the new
- *     thread starts from the variable (swe_close() drops the master);
+ *     the main thread keeps its setting (swe_close() keeps it), and so
+ *     does the master, so the new thread takes it too (UPSTREAM-BUGS 123;
+ *     before it, swe_close() emptied the master and the new thread
+ *     started from the variable, which this asserted);
  * the second thread reads the setting back (its first call, and after its
  * calculation) and its Mars is refused (return < 0) with the setting 0 and
  * answered from Moshier (SEFLG_MOSEPH in the return) with 1; the main
@@ -282,9 +284,9 @@ int main(int argc, char **argv)
           nfail++;
           continue;
         }
-        /* after swe_close() the master is the defaults again, so a new
-         * thread starts from the variable; this one keeps its setting */
-        bad = wrong(&a.thr, o == O_CLOSE ? env : fb) || wrong(&a.main_, fb)
+        /* swe_close() keeps the setting, in the master too (bug 123), so
+         * a new thread after it takes the setting as this one keeps it */
+        bad = wrong(&a.thr, fb) || wrong(&a.main_, fb)
               || (o == O_AFTER && (a.initial_get != env
                                    || (env ? a.initial_ret < 0 : a.initial_ret >= 0)));
         if (bad) {

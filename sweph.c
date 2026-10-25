@@ -2109,10 +2109,11 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
  * the JPL file, the planet save areas, the EOP and fixed-star tables, and
  * the cached angles. Shared by swe_close() and swe_ctx_free().
  *
- * Deliberately NOT here: swi_config_reset(), which drops the process-wide
- * config master. That is right for swe_close() -- documented as releasing
- * everything the library holds -- and wrong for swe_ctx_free(), where
- * freeing one context must not reconfigure every other one. */
+ * Deliberately NOT here: swi_config_reset(), which resets the process-wide
+ * config master in what this resets. That is right for swe_close() --
+ * documented as releasing everything the library holds -- and wrong for
+ * swe_ctx_free(), where freeing one context must not reconfigure every
+ * other one. */
 static void ctx_release(swe_ctx *ctx)
 {
   /* The published DE numbers go with the files: a closed library knows
@@ -2195,7 +2196,8 @@ static void ctx_release(swe_ctx *ctx)
   }
 /*  swed.ephe_path_is_set = FALSE;
   *swed.ephepath = '\0'; */
-  /* Drop the shared master too.
+  /* Drop the shared master too, in what this resets (bug 123: only that,
+   * so swi_config_reset() has to follow any change here).
    *
    * swe_close() is documented as releasing everything the library holds.
    * Without this the master outlives it, and a thread starting afterwards
@@ -2259,14 +2261,11 @@ void CALL_CONV swe_close_r(swe_ctx *ctx)
 void CALL_CONV swe_close(void)
 {
   swe_ctx *ctx = swi_default_ctx();
-  /* bug 122: the fallback setting outlives the close (ctx_release() keeps
-   * it), so this context keeps owning it; dropped with the rest, the next
-   * sync after any other setter took the variable's value: 1 set, then
-   * swe_close() and swe_set_topo(), read 0. */
-  int32 own_fallback = ctx->cfg_local & SWI_CFG_FALLBACK;
   swe_close_r(ctx);
+  /* The master resets what ctx_release() resets and keeps what it keeps,
+   * and this context keeps owning what it kept: the fallback setting
+   * (bug 122) and every other (bug 123). */
   swi_config_reset(ctx);
-  ctx->cfg_local |= own_fallback;
 }
 
 /* sets ephemeris file path. 

@@ -155,6 +155,7 @@ worst were in code that had never executed even once.
 | 119 | A thread that adopts another thread's `swe_set_jpl_file()` keeps the old file's positions, and one that adopts another's `swe_set_ephe_path()` the old directory's segments, and answers from them (this fork's) | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h` |
 | 120 | With the Swiss Moon file missing, the Moon and the Earth come from Moshier under a SEFLG_SWIEPH flag, and the strict setting answers | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 115 | A calculation on the default context (this fork's) adopts another thread's setter half-way through: its files closed under it (a crash on the JPL file), one answer from two configurations | Correctness (a crash; wrong answers) | `sweconfig.c`, `sweph.c`, `swecl.c` |
+| 123 | `swe_close()` zeroes the shared configuration's generation, so a running thread misses the close and the publishes after it, and empties it, so a setting the close keeps -- the path, the JPL file, delta t, the nutation interpolation, the lapse rate, the fallback -- goes back to its default at the next setter and never reaches a thread started after it (this fork's) | Correctness (behaviour) | `sweconfig.c`, `sweconfig.h`, `sweph.c` |
 
 ---
 
@@ -7564,7 +7565,118 @@ context is reverted to the default by the next sync after any other
 setter: `swe_set_delta_t_userdef(0.001)`, `swe_close()`, delta t at J2000
 0.001 days, then after a `swe_set_topo()` 0.000739 (computed). The lapse
 rate and nutation interpolation, which `ctx_release()` keeps too, take the
-same path through `swi_config_apply()` (read, not measured).
+same path through `swi_config_apply()` (read, not measured). Fixed as entry
+123, which also has the master keep this setting across `swe_close()`, so
+G119's close case now expects it on the new thread too.
+
+## 123. `swe_close()` zeroes the shared configuration's generation and empties it: a thread misses the close and the publishes after it, and a setting the close keeps is lost at the next setter (this fork's)
+
+**Severity: Correctness (behaviour: a setting lost or never seen -- delta t, the path, the JPL file, the nutation interpolation, the lapse rate, the fallback -- on the closing thread after its next setter, on every thread started after the close, and on a running thread after the close and the publishes that follow it)**
+**Where:** `sweconfig.c`: `swi_config_reset()`; `sweph.c`: `swe_close()`; `sweconfig.h`
+
+Entry 122's noticed item. `swe_close()` releases the default context
+(`ctx_release()`), then resets the shared configuration in
+`swi_config_reset()`, which zeroed the master, generation and all, and
+dropped every group the context owned; the next publish refilled the master
+from the defaults (bug 83).
+
+- The generation. A thread on the default context that had synced at
+  generation N compares the master's with N, and after the close the master
+  counted from 0 again: `swe_set_delta_t_userdef(0.001)`, a second thread
+  computes, `swe_close()`, the path and `swe_set_delta_t_userdef(0.002)`,
+  and the second thread still answered 0.001. The path, the lapse rate, the
+  fallback, the observer, the sidereal mode and the tidal acceleration did
+  the same, each set to a second value with as many publishes as before the
+  close. The close itself, a generation of 0 ("nothing published"), reached
+  no running thread: it kept the closed session's observer (a topocentric
+  Moon at 222.988 deg where the main thread is refused "geographic position
+  has not been set"), sidereal mode (Lahiri's 23.857 deg for the default
+  24.740) and tidal acceleration (-23.8946 for -25.80: delta t in AD 1000
+  1305.30 s for 1474.72 s).
+- The kept settings. `ctx_release()` keeps the path, the JPL file's name,
+  delta t, the nutation interpolation, the lapse rate and the fallback
+  setting, as upstream's `swe_close()` keeps the first five, and resets the
+  observer, the sidereal mode and models, the tidal acceleration and the
+  path's DE numbers. The emptied master put the kept ones back to their
+  defaults at the closing context's next sync after a setter of any other
+  group -- `swe_set_topo()`, `swe_set_sid_mode()`, `swe_set_tid_acc()` or
+  the path again: delta t 0.001, a calculation and `swe_close()` gave delta
+  t at J2000 0.001 days, and after the setter 0.000739 (computed); the path
+  went back to the compiled default, so a Swiss Mars at J2000 was refused
+  ("not available"), and every calculation on the files with it; the JPL
+  file to the default name, its Mars refused; the nutation at J2000 + 0.37
+  was exact (-13.927054") where interpolated (-13.926980"); the Sun from
+  2000 m 14 min before its true rise was refracted to -1.066 deg, at the
+  default lapse rate, where 0.05 K/m leaves it below the dip at its true
+  -1.965. Bug 122 had the closing context keep owning the fallback group, so
+  the context kept that one, but the master lost it too. A thread started
+  after the close found the generation 0 and adopted nothing: no path, delta
+  t computed, the interpolation off, the default lapse rate, the variable's
+  fallback setting, in every case.
+
+Both are this fork's: upstream has no shared configuration, and its
+`swe_close()` keeps those settings on its thread. The compat build had both,
+the master being active in both builds.
+
+**Fix, as done here** (not behind `SWE_UPSTREAM_COMPAT`: the master and its
+reset are this fork's and active in both builds, so the `#else` would
+restore this fork's defect, not upstream's behaviour, as with entries 83 and
+122): `swi_config_reset()` resets in the master exactly what `ctx_release()`
+resets in the context -- the observer, sidereal and tidal groups to the
+defaults, the path's two DE numbers to 0 -- and keeps the rest: the path and
+JPL file names, delta t, the nutation interpolation, the lapse rate and the
+fallback setting. It bumps the generation instead of zeroing it (a master
+nothing was ever published to stays at 0, untouched), so every thread on the
+default context takes the close at its next calculation and sees every
+publish after it. The closing context gives up its ownership of the three
+groups the close reset and keeps the rest, which replaces bug 122's special
+case in `swe_close()`. Of the two readings -- the master keeping what the
+close keeps, or the master reset and only the closing context keeping it,
+as bug 122 had it -- this is the first, because the manual has
+`swe_close()` "release all resources (open files and allocated memory)"
+and has the parameters of `swe_set_topo()` and `swe_set_sid_mode()` survive
+it: it describes no setting being reset, so a setting the close keeps stays
+the library's, for the other threads and the contexts made after it as for
+the closing one. The second would turn a kept setting into the closing
+thread's private copy that no thread or context started after the close
+sees; G119's close case asserted that for the fallback setting and now
+expects the setting on the new thread. A running thread that had adopted a
+group the close resets adopts the reset too, as the closing thread has it.
+`swi_config_sync()`, the hot path, is unchanged.
+
+G120 `tests/closekeep.c`, each scenario in a forked process. A: each kept
+setting -- the path, de200.eph, delta t 0.001, the interpolation on, the
+lapse rate 0.05, the fallback 1 -- after the path, then a Swiss Sun,
+`swe_close()`, and the path again, `swe_set_topo()`, `swe_set_sid_mode()`,
+`swe_set_tid_acc()` or nothing; the main thread and a thread started then
+observe it (the Mars and its file, the JPL Mars, delta t, the nutation at
+J2000 + 0.37, the Sun below the dip, the setting read back) and must answer
+as a fresh process given the same calls without `swe_close()`, within 1e-9:
+28 scenarios. B: each of the eight groups set, a second thread computes,
+then `swe_close()` and nothing, or the path and the group's other value; the
+second thread must answer as the main thread: 16 scenarios. 44 pass in both
+builds. Before the fix 38 fail: all 28 of A (the main thread after a setter
+for every kept setting but the fallback, the new thread in every one) and
+10 of B (7 with the other value, 3 with nothing). The compat build 39: the
+interpolation set off again also failed there, where in the default build
+the interpolation setter's own first sync (bug 83) had already put the main
+thread's setting back to off, so setting it published nothing and no
+generation collided. G119 with its close case changed passes 28 in both
+builds (2 fail before the fix, the new thread taking the variable's value).
+No compat difference, so no G24 case. G113, G100, G97, G82, G2, check-ctx
+and G24 pass.
+
+Noticed, not fixed: `swe_set_interpolate_nut()` resets the interpolation's
+nodes and not the nutation cached on the instant alone, nor does a thread
+adopting the change: interpolation on, the nutation at J2000 + 0.37, then
+off, and the same instant again answers the interpolated -13.926980"
+(7.42e-5" from the exact value; 8.38e-5" in the compat build, where the
+setter is upstream's). G120's second thread therefore syncs at another
+instant. And the manual says the parameters of `swe_set_topo()` and
+`swe_set_sid_mode()` survive `swe_close()`, where upstream's code and this
+fork's reset both: after the close a topocentric Moon is refused
+"geographic position has not been set" and the ayanamsa is the default's
+24.740 deg for Lahiri's 23.857.
 
 ## 120. With the Swiss Moon file missing, the Moon and the Earth come from Moshier under a SEFLG_SWIEPH flag, and the strict setting answers
 

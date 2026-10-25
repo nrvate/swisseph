@@ -15,9 +15,11 @@
  *    house calculations at Cairo and other latitudes. Main's topocentric
  *    result must not move.
  *
- * 2. swe_close() MUST CLEAR THE SHARED MASTER.
- *    Otherwise a thread started afterwards adopts the configuration of a
- *    session the caller believes was released, and reopens its files.
+ * 2. swe_close() MUST CLEAR THE SHARED MASTER of what it resets -- the
+ *    observer here. Otherwise a thread started afterwards adopts the
+ *    configuration of a session the caller believes was released. (What
+ *    swe_close() keeps, such as the path, stays the master's: UPSTREAM-BUGS
+ *    123.)
  *
  * Build: see tests/Makefile (make cfgleak)
  */

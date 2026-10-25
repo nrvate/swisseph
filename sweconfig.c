@@ -659,17 +659,44 @@ void swi_config_inherit(swe_ctx *ctx)
 }
 
 /*======================================================================
- * swe_close() drops this thread's state; the master must go with it, or a
- * later thread would resurrect the closed configuration.
+ * swe_close() drops this thread's state; the master drops with it what
+ * the close drops, or a later thread would resurrect the closed
+ * configuration, and keeps what the close keeps.
+ *
+ * Upstream bug 123 -- this fork's, as the master is, so not behind
+ * SWE_UPSTREAM_COMPAT: this zeroed the master, generation and all, and the
+ * next publish refilled it from the defaults. A thread that had synced at
+ * generation N missed the Nth publish after the close (delta t 0.001, a
+ * second thread computes, swe_close(), delta t 0.002: it answered 0.001),
+ * and the close itself, a generation of 0, reached no thread. A setting
+ * ctx_release() keeps -- the path, the JPL file, delta t, the nutation
+ * interpolation, the lapse rate, the fallback -- went back to its default
+ * at the next sync after any other setter (delta t 0.001 and swe_close():
+ * 0.001 days at J2000, 0.000739 after a swe_set_topo()), and a thread
+ * started after the close never had it. The master now resets exactly
+ * what ctx_release() resets -- the observer, the sidereal mode and models,
+ * the tidal acceleration, the path's DE numbers -- and keeps the rest, as
+ * the manual's swe_close() releases files and memory, not settings; the
+ * generation is bumped, never zeroed; and the context gives up only the
+ * groups the close reset (bug 122 kept the fallback's alone).
  *====================================================================*/
+#define SWI_CFG_CLOSED (SWI_CFG_TOPO | SWI_CFG_SID | SWI_CFG_TIDACC)
+
 void swi_config_reset(swe_ctx *ctx)
 {
+  struct swe_config d;
   swi_mutex_lock(&cfg_mutex);
-  memset((void *) &cfg_master, 0, sizeof(cfg_master));
-  cfg_master_armed = FALSE;       /* the next publish starts from the defaults */
+  if (cfg_master_armed) {         /* armed: something has been published */
+    d.generation = 0;
+    cfg_defaults(&d);
+    cfg_merge(&cfg_master, &d, SWI_CFG_CLOSED);
+    cfg_master.sweph_denum_moon = 0;	/* as ctx_release() */
+    cfg_master.jpldenum_cfg = 0;
+    swi_gen_bump(&cfg_master.generation);
+  }
   swi_mutex_unlock(&cfg_mutex);
   ctx->cfg_seen = 0;
-  ctx->cfg_local = 0;
+  ctx->cfg_local &= ~SWI_CFG_CLOSED;
 }
 
 /*======================================================================
