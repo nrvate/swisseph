@@ -311,6 +311,12 @@ static int32 fsizer(swe_ctx *ctx, char *serr)
       khi = i + 1;
     }
   }
+  /* no body with a positive offset: eh_ipt[khi * 3 - 3] below is eh_ipt[-3] */
+  if (khi == 0) {
+    if (serr != NULL)
+      sprintf(serr, "JPL ephemeris file has no coefficient offsets");
+    return NOT_AVAILABLE;
+  }
   if (khi == 12) 
     nd = 2;
   else
@@ -730,6 +736,23 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
       if (ipt[i * 3 + 1] > (int32) (sizeof(js->pc) / sizeof(js->pc[0]))) {
 	if (serr != NULL)
 	  sprintf(serr, "JPL ephemeris file has an invalid coefficient count (%d) for body %d", (int) ipt[i * 3 + 1], i);
+	return NOT_AVAILABLE;
+      }
+    }
+    /* And the offset and the sub-interval count, which the length identity
+     * below does not bound: interp() reads ncf * na * k doubles from
+     * buf[ipt[i*3] - 1] at sub-intervals 0 to na - 1, so each body that is
+     * there (the planets, the Moon and the Sun always) must have them inside
+     * the record's js->ncoeffs, after its two epochs. A file trading one
+     * body's na for another's keeps its length and reads past buf[]. */
+    for (i = 0; i < 13; ++i) {
+      int32 ncf = ipt[i * 3 + 1], na = ipt[i * 3 + 2], base = ipt[i * 3];
+      if (i > 10 && ncf <= 0)
+	continue;	/* no nutations or librations on the file */
+      if (ncf < 1 || na < 1 || base < 3
+	  || (double) base - 1 + (double) ncf * na * (i == 11 ? 2 : 3) > js->ncoeffs) {
+	if (serr != NULL)
+	  sprintf(serr, "JPL ephemeris file has invalid coefficients for body %d (offset %d, %d x %d)", i, (int) base, (int) ncf, (int) na);
 	return NOT_AVAILABLE;
       }
     }

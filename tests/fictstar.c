@@ -33,7 +33,10 @@
  *          answers;
  *   F3     a star the catalogue does not have, with serr NULL:
  *          swe_fixstar() and swe_fixstar_mag() must fail, not answer with
- *          the file's last star.
+ *          the file's last star;
+ *   F4     a first line without a comma, which has no second field to trim
+ *          (it crashed the reader): the same as F1, the message saying the
+ *          line is invalid.
  * Each case runs in a child process, in a directory of links to EPHEDIR's
  * files built in /tmp.
  * Run as
@@ -118,9 +121,10 @@ static const struct kase rgCase[] = {
   {"O16 \"T 2\" as T * 2", ORBEQ, 0,
    "J1900, J1900, 163.7409 + T 2, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, A\n",
    "J1900, J1900, 163.7409 + 2 * T, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, B\n"},
-  {"F1 a star line with too few fields", STARBAD, 0, NULL, "incomplete"},
+  {"F1 a star line with too few fields", STARBAD, 0, "Atest,alTes,ICRS,1,2,3\n", "incomplete"},
   {"F2 no star catalogue", STARNONE, 0, NULL, "sefstars.txt"},
   {"F3 a star not there, serr NULL", STARNULL, 0, NULL, NULL},
+  {"F4 a star line without a comma", STARBAD, 0, "a line without a comma\n", "invalid line"},
 };
 #define NCASE ((int) (sizeof rgCase / sizeof rgCase[0]))
 
@@ -317,7 +321,7 @@ int main(int argc, char **argv)
       if ((f = fopen(src, "r")) == NULL || (g = fopen(dst, "w")) == NULL)
         ok = -1;
       else {
-        fputs("Atest,alTes,ICRS,1,2,3\n", g);
+        fputs(k->value, g);
         while (fgets(s, sizeof s, f) != NULL)
           fputs(s, g);
         fclose(f);

@@ -52,7 +52,10 @@ static void putd (unsigned char *p, double v) { memcpy(p, &v, 8); }
 
 /* Writes a header whose ipt[] is filled from `ncf` and `na`, with body 10
  * (ipt[30]) carrying `maxoff` so ksize is computed from it. ss0/ss1/ss2 set
- * the segment range, which is what drives nseg in the length computation. */
+ * the segment range, which is what drives nseg in the length computation.
+ * Every offset is at least 3, after the record's two epochs, and every body
+ * ends inside the record: state() refuses a file whose coefficients do not,
+ * before it reaches the length checks these fixtures are for. */
 static int write_eph_ss(const char *path, int ncf, int na, int maxoff,
                         double ss0, double ss1, double ss2)
 {
@@ -69,7 +72,7 @@ static int write_eph_ss(const char *path, int ncf, int na, int maxoff,
   putd (h + 2680, 149597870.7);    /* au    */
   putd (h + 2688, 81.3);           /* emrat */
   for (i = 0; i < 12; i++) {
-    put32(h + 2696 + (i * 3 + 0) * 4, 1);
+    put32(h + 2696 + (i * 3 + 0) * 4, 3);   /* after the record's two epochs */
     put32(h + 2696 + (i * 3 + 1) * 4, ncf);
     put32(h + 2696 + (i * 3 + 2) * 4, na);
   }
@@ -77,7 +80,7 @@ static int write_eph_ss(const char *path, int ncf, int na, int maxoff,
   put32(h + 2696 + 31 * 4, ncf);
   put32(h + 2696 + 32 * 4, na);
   put32(h + 2840, 431);               /* numde */
-  put32(h + 2844, 1);                 /* lpt[0] -> ipt[36] */
+  put32(h + 2844, 3);                 /* lpt[0] -> ipt[36] */
   put32(h + 2848, ncf);
   put32(h + 2852, na);
 
