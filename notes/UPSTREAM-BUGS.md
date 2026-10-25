@@ -177,6 +177,7 @@ worst were in code that had never executed even once.
 | 140 | The topocentric site is placed by UT1 = TT - delta t rounded to a double, 2^-31 day: a staircase in delta t whose rate leaves out delta t's, which the site's velocity carries -- the topocentric speed of an orbit 0.01 AU from the Earth 1.8e-8 to 4.7e-8 deg/day off five-point differences of its positions (2.8e-7 on de200), the topocentric Moon's 2.5e-7, on `swe_calc_orbel()` and seorbel.txt alike | Correctness | `sweph.c` |
 | 141 | `swe_calc_orbel()` (this fork's) returns SEFLG_SWIEPH where no ephemeris was named (18178 for `swe_calc()`'s 18176 with SEFLG_BARYCTR and SEFLG_SPEED) and drops SEFLG_RADIANS with SEFLG_XYZ (4354 for 12546): not `swe_calc()`'s return flag for the same flags, the answer the same | Correctness (behaviour) | `sweph.c` |
 | 142 | `swe_get_ayanamsa_ex()`, its `_ut` form, the sidereal houses and `swe_gauquelin_sector()`'s methods 0 and 1 with SEFLG_JPLHOR and no IERS corrections loaded -- de200, a thread or context that never loaded them, eop_1962_today.txt missing or broken off -- read the corrections' table, NULL, and crash (SIGSEGV), where `swe_calc()` takes the flag as SEFLG_JPLHOR_APPROX | Crash | `swephlib.c`, `swephlib.h`, `sweph.c`, `swecl.c` |
+| 143 | A thread or context that adopts another thread's `swe_set_jpl_file()` (this fork's) -- a thread running across it, one started after it, a context made after it -- never loads the IERS corrections, so its SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX where the setter's does not: dpsi, the ayanamsa and the sidereal houses 4.2e-2" off the setter's on G134's fixtures | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h` |
 
 ---
 
@@ -8579,7 +8580,7 @@ Noticed, not fixed:
   (`load_dpsi_deps()` runs in `swe_set_jpl_file()` alone), so its
   `SEFLG_JPLHOR` becomes `SEFLG_JPLHOR_APPROX` ("you did not call
   swe_set_jpl_file()") where the setter's thread keeps it: dpsi on the
-  fixtures -13.522732" for -13.564630" (4.2e-2").
+  fixtures -13.522732" for -13.564630" (4.2e-2"). Entry 143.
 - `swe_set_ephe_path()` keeps the corrections of the old directory
   (only `swe_close()` frees them, and the loader loads once): after A,
   B and `swe_set_jpl_file()`, `SEFLG_JPLHOR` answered A's -13.479309"
@@ -9719,6 +9720,55 @@ there: their ayanamsa's nutation is interpolated from the nodes the
 houses' own nutation of no flags builds just before (entry 134's unkeyed
 nodes); after the fix it passes all 48. No G24 case: the fix is in both
 builds.
+
+## 143. A thread or context that adopts another thread's `swe_set_jpl_file()` never loads the IERS corrections, so its SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX where the setter's does not (this fork's)
+
+**Severity: Correctness (behaviour: a setting without effect on every context but the setter's; dpsi, the ayanamsa and every place of date under SEFLG_JPLHOR 4.2e-2" off the setter's on G134's fixtures)**
+**Where:** `sweconfig.c`: `swi_config_apply()`; `sweph.c`: `load_dpsi_deps()`'s callers
+
+Entry 134's noticed item. `load_dpsi_deps()` runs in `swe_set_jpl_file()`
+(and, since entry 131, at the reread after `swe_close()`) on the context
+that calls it, when the file opens with a DE number of 403 or more. A
+context that takes the setting from the shared configuration
+(`swi_config_apply()`, entry 119's route) closes its JPL file and adopts
+the name and the DE number, and loaded no corrections: `eop_dpsi_loaded`
+stayed 0, and `plaus_iflag()` turned its SEFLG_JPLHOR into
+SEFLG_JPLHOR_APPROX with "you did not call swe_set_jpl_file(); default to
+SEFLG_JPLHOR_APPROX". Three routes: a thread on the default context running
+across the main thread's `swe_set_jpl_file()` (at its next sync), a thread
+started after it (its first start's sync), and a context made after it
+(`swe_ctx_new()`'s inheritance). Measured on G19's synthetic DE431 header
+with G122's corrections A, Lahiri, at 2000 Jan 7.37 after the same call at
+Jan 7: `SE_ECL_NUT` with SEFLG_JPLEPH | SEFLG_JPLHOR | SEFLG_SPEED
+answered dpsi -13.488712" for the setter's -13.530688" (4.20e-2"), under
+SEFLG_JPLHOR_APPROX's return flag (524545 for 393473, SEFLG_JPLHOR with
+SEFLG_ICRS); `swe_get_ayanamsa_ex()` and the sidereal cusps of
+`swe_houses_ex2()` 4.20e-2" (1.166e-5 deg) with it, on each route; with
+the interpolation on, the thread across the setter the same, -13.489375"
+for -13.531351". Both builds: the adoption is this fork's code (upstream's
+threads share no setting).
+
+**Fix, as done here:** `swi_config_apply()` calls `swi_dpsi_deps_adopt()`
+(`sweph.c`) for an adopted path or JPL file: with the adopted DE number 403
+or more and no corrections loaded, it loads them as the setter does, along
+the adopted path, and drops what was computed without them -- the nutation
+kept at an instant, the topocentric observer and the interpolation's nodes
+built under SEFLG_JPLHOR (in the compat build, which keys neither the
+nodes nor the nutation on the flags, all the nodes). In both builds, as the
+adoption is this fork's (entries 119, 126, 129, 134). No hot path: it runs
+only when a context adopts a path or a JPL file.
+
+G134 `tests/eopfollow.c`, extended with 12 checks, each in a forked
+process, bit for bit with its return flag against a fresh process whose
+main thread set the path and the fixture and made the same calls:
+`SE_ECL_NUT` with its speed, `swe_get_ayanamsa_ex()` and `swe_houses_ex2()`
+sidereal Placidus with the speeds, all with SEFLG_JPLEPH | SEFLG_JPLHOR, at
+2000 Jan 7 and 7.37, by a thread running across `swe_set_jpl_file()`
+(started by the same call before it), the same interpolated, a thread
+started after it and a context made after it. 60 checks in all; before the
+fix the 12 fail (4.20e-2"), the compat build 11 of them (the interpolated
+houses passing there on entry 134's unkeyed nodes); after it both builds
+pass 60.
 
 ## How these were found
 

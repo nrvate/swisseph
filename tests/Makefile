@@ -1294,8 +1294,10 @@ check-fbbary: fbbary
 # eop_1962_today.txt or with one that breaks off -- answers as
 # SEFLG_JPLHOR_APPROX, as swe_calc() takes it, from the ayanamsa, the
 # sidereal houses and the Gauquelin sectors, which read the missing table
-# and crashed (UPSTREAM-BUGS 142; G19's synthetic DE431 header, with
-# corrections the test writes in $TMPDIR or /tmp).
+# and crashed (UPSTREAM-BUGS 142); and a thread or context that adopts
+# another's swe_set_jpl_file() loads the corrections the setter loaded
+# (UPSTREAM-BUGS 143). On G19's synthetic DE431 header, with corrections
+# the test writes in $TMPDIR or /tmp.
 check-eopfollow: eopfollow
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./eopfollow $(EPHE)
 

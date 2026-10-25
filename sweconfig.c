@@ -478,6 +478,10 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     }
 #endif
   }
+  /* Upstream bug 143, in both builds (the adoption is this fork's): the
+   * IERS corrections the adopted JPL file's setter loaded */
+  if (path_changed)
+    swi_dpsi_deps_adopt(ctx);
   /* dt_changed is in here for the reason G26 records: the observer is built
    * from UT = TT minus delta t, and topd.teval keys only the instant. The
    * adopting thread needs the same invalidation the setting thread gets

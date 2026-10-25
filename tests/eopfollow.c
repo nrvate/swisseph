@@ -32,7 +32,27 @@
  * (SWE_UPSTREAM_COMPAT) crashed in 46, the interpolated houses passing
  * there, their ayanamsa's nutation interpolated from the nodes the houses'
  * own nutation of no flags builds (entry 134's unkeyed nodes); it passes
- * all 48 now, the fix being in both builds, as a crash's. Run as
+ * all 48 now, the fix being in both builds, as a crash's.
+ *
+ * And where the setting is adopted (UPSTREAM-BUGS 143): load_dpsi_deps()
+ * ran in swe_set_jpl_file() alone, so a context taking the JPL file from
+ * the shared configuration never loaded the corrections, and its
+ * SEFLG_JPLHOR fell to SEFLG_JPLHOR_APPROX where the setter's did not. The
+ * main thread sets path A (the fixture with eop_1962_today.txt) and the
+ * fixture; SE_ECL_NUT with SEFLG_SPEED, swe_get_ayanamsa_ex() and
+ * swe_houses_ex2() sidereal with the speeds, all with SEFLG_JPLEPH |
+ * SEFLG_JPLHOR, at 2000 Jan 7 and then Jan 7.37, by a thread running
+ * across the setter (started by the same call before it), the same with
+ * the nutation interpolated, a thread started after it and a context made
+ * after it, against a fresh process whose main thread set both and made
+ * the calls. 12 checks, 60 in all.
+ *
+ * Measured before the fix, the 12 fail: dpsi -13.488712" for -13.530688"
+ * (4.20e-2"; interpolated -13.489375" for -13.531351"), the return
+ * SEFLG_JPLHOR_APPROX's, the ayanamsa and the cusps 4.20e-2" with it. The
+ * upstream build failed 11, the interpolated houses passing there on entry
+ * 134's unkeyed nodes; the adoption is this fork's, fixed in both builds,
+ * and both pass. Run as
  *   eopfollow EPHEDIR
  */
 #include <math.h>
@@ -161,6 +181,115 @@ static void run1(int x, int q, int fresh, struct obs *o)
     return;
   }
   probe(NULL, q, t, fresh, o);
+}
+
+/* The corrections where the setting is adopted (UPSTREAM-BUGS 143): the
+ * main thread sets path A and the DE431 fixture, whose
+ * swe_set_jpl_file() loads A's eop_1962_today.txt; then a thread started
+ * before it, one started after it and a context made after it make the
+ * calls. The probes with SEFLG_JPLEPH | SEFLG_JPLHOR (and SEFLG_SPEED for
+ * SE_ECL_NUT) at 2000 Jan 7 and 7.37; the second is compared. */
+enum { P_NUT, P_AYA, P_HOUSE, NP };
+static const char *PN[NP] = { "SE_ECL_NUT", "swe_get_ayanamsa_ex()",
+  "swe_houses_ex2() sidereal" };
+static const int PV[NP] = { 2, 0, 1 };	/* dpsi, the ayanamsa, cusp 1 */
+static void probe2(swe_ctx *c, int p, double t, struct obs *o)
+{
+  char serr[AS_MAXCH];
+  memset(o, 0, sizeof *o);
+  switch (p) {
+    case P_NUT:
+      o->ret = c ? swe_calc_r(c, t, SE_ECL_NUT, JH | SEFLG_SPEED, o->v, serr)
+                 : swe_calc(t, SE_ECL_NUT, JH | SEFLG_SPEED, o->v, serr);
+      break;
+    case P_AYA:
+      o->ret = c ? swe_get_ayanamsa_ex_r(c, t, JH, o->v, serr)
+                 : swe_get_ayanamsa_ex(t, JH, o->v, serr);
+      break;
+    case P_HOUSE:
+      o->ret = c ? swe_houses_ex2_r(c, t, JH | SEFLG_SIDEREAL, GEO[1], GEO[0], 'P',
+                                    o->v, o->v + 13, o->v + 23, o->v + 36, serr)
+                 : swe_houses_ex2(t, JH | SEFLG_SIDEREAL, GEO[1], GEO[0], 'P',
+                                  o->v, o->v + 13, o->v + 23, o->v + 36, serr);
+      break;
+  }
+}
+
+/* the probe at T0F and T0F + 0.37, the second kept */
+static void probe2x(swe_ctx *c, int p, struct obs *o)
+{
+  probe2(c, p, T0F, o);
+  probe2(c, p, T0F + 0.37, o);
+}
+
+enum { A_THREAD, A_THREADI, A_NEWTHREAD, A_CTX, NA };
+static const char *AN[NA] = { "a thread running across swe_set_jpl_file()",
+  "the same, interpolated", "a thread started after it",
+  "a context made after it" };
+
+static pthread_barrier_t bar;
+static int th_p;
+static void *second2(void *arg)
+{
+  struct obs o;
+  (void) arg;
+  probe2(NULL, th_p, T0F, &o);	/* started, without the corrections */
+  pthread_barrier_wait(&bar);
+  pthread_barrier_wait(&bar);
+  probe2x(NULL, th_p, &th_o);
+  return NULL;
+}
+static void *second2new(void *arg)
+{
+  (void) arg;
+  probe2x(NULL, th_p, &th_o);
+  return NULL;
+}
+
+/* route a, or (fresh) the main thread with the final setting */
+static void run2(int a, int p, int fresh, struct obs *o)
+{
+  char jf[64];
+  pthread_t th;
+  strcpy(jf, JPL_FIXTURE);
+  swe_set_ephe_path(DIRS[D_A]);
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  if (a == A_THREADI)
+    swe_set_interpolate_nut(1);
+  if (fresh) {
+    swe_set_jpl_file(jf);
+    probe2x(NULL, p, o);
+    return;
+  }
+  th_p = p;
+  switch (a) {
+    case A_THREAD: case A_THREADI:
+      pthread_barrier_init(&bar, NULL, 2);
+      if (pthread_create(&th, NULL, second2, NULL) != 0)
+        exit(3);
+      pthread_barrier_wait(&bar);
+      swe_set_jpl_file(jf);
+      pthread_barrier_wait(&bar);
+      pthread_join(th, NULL);
+      *o = th_o;
+      break;
+    case A_NEWTHREAD:
+      swe_set_jpl_file(jf);
+      if (pthread_create(&th, NULL, second2new, NULL) != 0)
+        exit(3);
+      pthread_join(th, NULL);
+      *o = th_o;
+      break;
+    case A_CTX: {
+      swe_ctx *c;
+      swe_set_jpl_file(jf);
+      if ((c = swe_ctx_new()) == NULL)
+        exit(3);
+      probe2x(c, p, o);
+      swe_ctx_free(c);
+      break;
+    }
+  }
 }
 
 /* run(k, p, fresh) in a forked process: 0, -1 if it failed, or the signal
@@ -357,6 +486,22 @@ int main(int argc, char **argv)
       if (differ(&ot, &of, &d)) {
         printf("    %s, %s: %.3e off SEFLG_JPLHOR_APPROX's (return %d, %d) FAIL\n",
                XN[x], QN[q], d, ot.ret, of.ret);
+        nfail++;
+      }
+    }
+  for (x = 0; x < NA; x++)
+    for (q = 0; q < NP; q++) {
+      struct obs ot, of;
+      double d;
+      n++;
+      if (in_child(run2, x, q, 0, &ot) != 0 || in_child(run2, x, q, 1, &of) != 0) {
+        printf("    %s, %s: child failed\n", AN[x], PN[q]);
+        nfail++;
+        continue;
+      }
+      if (differ(&ot, &of, &d)) {
+        printf("    %s, %s: %.3e off the setter's (%.6f\" for %.6f\", return %d, %d) FAIL\n",
+               AN[x], PN[q], d, ot.v[PV[q]] * 3600, of.v[PV[q]] * 3600, ot.ret, of.ret);
         nfail++;
       }
     }

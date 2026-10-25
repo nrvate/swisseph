@@ -1240,6 +1240,10 @@ struct epsilon {
  *     so the sidereal houses, swe_gauquelin_sector() and calc_nutation()
  *     itself, which crashed on the missing table, is in both builds, a
  *     crash's fix; G134)
+ *   - (nothing for UPSTREAM-BUGS 143: a thread or context adopting another
+ *     thread's swe_set_jpl_file() loading the IERS corrections its setter
+ *     loaded, where its SEFLG_JPLHOR fell to SEFLG_JPLHOR_APPROX (4.2e-2"
+ *     in dpsi), is in both builds: that adoption is this fork's code; G134)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -2057,6 +2061,9 @@ extern AS_BOOL swi_ephe_path_none(swe_ctx *ctx);
  * the setters read them (UPSTREAM-BUGS 131). */
 extern void swi_denum_reread(swe_ctx *ctx);
 #endif
+/* The IERS corrections of an adopted JPL file, loaded as its setter loads
+ * them (UPSTREAM-BUGS 143; both builds, the adoption being this fork's) */
+extern void swi_dpsi_deps_adopt(swe_ctx *ctx);
 /* What denum_unread names (bug 131; never set under SWE_UPSTREAM_COMPAT) */
 #define SWI_DENUM_MOON 1	/* the moon file's header, along the path */
 #define SWI_DENUM_JPL  2	/* the JPL file swe_set_jpl_file() read */

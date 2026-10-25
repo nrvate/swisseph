@@ -2696,7 +2696,7 @@ void load_dpsi_deps(swe_ctx *ctx)
   char *cpos[20];
   int n = 0, iyear, mjd = 0, mjdsv = 0;
   double dpsi, deps, TJDOFS = 2400000.5;
-  if (ctx->eop_dpsi_loaded > 0) 
+  if (ctx->eop_dpsi_loaded > 0)
     return;
   fp = swi_fopen(ctx, -1, DPSI_DEPS_IAU1980_FILE_EOPC04, ctx->ephepath, NULL);
   if (fp == NULL) {
@@ -2782,6 +2782,47 @@ void load_dpsi_deps(swe_ctx *ctx)
   }
   ctx->eop_dpsi_loaded = 2;
   fclose(fp);
+}
+
+/* What was computed from the IERS corrections: the nutation kept at an
+ * instant and the topocentric observer, and the interpolation's nodes
+ * built under SEFLG_JPLHOR (bug 134). Upstream keys none of them on the
+ * flags, so its nodes all go. */
+static void dpsi_deps_forget(swe_ctx *ctx)
+{
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->nut.tnut = SWI_NUT_NEVER;
+  ctx->nutv.tnut = SWI_TJD_NEVER;
+  ctx->topd.teval = SWI_TJD_NEVER;
+  if (!(ctx->interpol.nut_jplhor & SEFLG_JPLHOR))
+    return;
+#else
+  ctx->nut.tnut = 0;
+  ctx->nutv.tnut = 0;
+  ctx->topd.teval = 0;
+#endif
+  ctx->interpol.tjd_nut0 = 0;
+  ctx->interpol.tjd_nut2 = 0;
+}
+
+/* Upstream bug 143 (this fork's): a context adopting another's JPL file
+ * -- a thread on the default context at its sync, a thread's first start,
+ * swe_ctx_new() -- never loaded the IERS corrections, which only
+ * swe_set_jpl_file() read: its SEFLG_JPLHOR became SEFLG_JPLHOR_APPROX
+ * ("you did not call swe_set_jpl_file()") where the setter's did not,
+ * dpsi on G134's DE431 fixture at 2000 Jan 7.37 -13.488712" for
+ * -13.530688" (4.20e-2"), the ayanamsa and the sidereal houses with it.
+ * Loaded now as the setter loads them, for a JPL file of DE 403 or later,
+ * along the adopted path, and what was computed without them goes. Called
+ * by swi_config_apply() for an adopted path or JPL file, in both builds:
+ * the adoption is this fork's. */
+void swi_dpsi_deps_adopt(swe_ctx *ctx)
+{
+  if (ctx->jpldenum_cfg < 403 || ctx->eop_dpsi_loaded > 0)
+    return;
+  load_dpsi_deps(ctx);
+  if (ctx->eop_dpsi_loaded > 0)
+    dpsi_deps_forget(ctx);
 }
 
 /* Close the .se1 files.
