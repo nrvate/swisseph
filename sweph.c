@@ -7477,6 +7477,8 @@ static int32 load_all_fixed_stars(swe_ctx *ctx, char *serr)
     }
   }
   rewind(ctx->fixfp);
+  /* a load that failed part way left its records */
+  free(ctx->fixed_stars);
   ctx->fixed_stars = NULL;
   while (fgets(s, AS_MAXCH, ctx->fixfp) != NULL) {
     // skip comment lines
@@ -7895,6 +7897,17 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
   }
 }
 
+/* A star is not found, and the catalogue did not load: the error of its
+ * load comes first, since it is why. */
+static void report_catalogue_load_error(char *serr, int32 retc_load, const char *serr_load)
+{
+  char s[AS_MAXCH];
+  if (serr == NULL || retc_load != ERR)
+    return;
+  snprintf(s, AS_MAXCH, "%s", serr);
+  snprintf(serr, AS_MAXCH, "%.170s; %.80s", serr_load, s);
+}
+
 static AS_BOOL get_builtin_star(char *star, char *sstar, char *srecord)
 {
   /* some stars are built-in, because they are required for Hindu
@@ -7979,7 +7992,9 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   /* moved to ctx->sp.fs2 (Phase 3c) */
   /* moved to ctx->sp.fs2 (Phase 3c) */
   char srecord[AS_MAXCH + 20];	/* 20 byte for SE_STARFILE */
+  char serr_load[AS_MAXCH];
   int retc;
+  int32 retc_load;
   struct fixed_star stardata;
   if (serr != NULL)
     *serr = '\0';
@@ -7987,7 +8002,10 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   swi_open_trace(serr);
   trace_swe_fixstar(1, star, tjd, iflag, xx, serr);
 #endif /* TRACE */
-  load_all_fixed_stars(ctx, serr); // loads stars unless loaded with an earlier call of function
+  /* loads stars unless loaded with an earlier call of function; a built-in
+   * star needs no catalogue, so the load's error is kept for the search */
+  *serr_load = '\0';
+  retc_load = load_all_fixed_stars(ctx, serr_load);
   retc = fixstar_format_search_name(star, sstar, serr);
   if (retc == ERR)
     goto return_err;
@@ -8007,8 +8025,10 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   /* sequential fixed star number: get it from array directly */
   } 
   retc = search_star_in_list(ctx, sstar, &stardata, serr);
-  if (retc == ERR)
+  if (retc == ERR) {
+    report_catalogue_load_error(serr, retc_load, serr_load);
     goto return_err;
+  }
   /******************************************************/
   found:
   //strcpy(slast_stardata, srecord);
@@ -8084,11 +8104,16 @@ int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *
   //static TLS char slast_stardata[AS_MAXCH];
   /* moved to ctx->sp.fs2mag (Phase 3c) */
   /* moved to ctx->sp.fs2mag (Phase 3c) */
+  char serr_load[AS_MAXCH];
   int retc;
+  int32 retc_load;
   struct fixed_star stardata;
   if (serr != NULL)
     *serr = '\0';
-  load_all_fixed_stars(ctx, serr); // loads stars unless loaded with an earlier call of function
+  /* loads stars unless loaded with an earlier call of function; its error is
+   * kept for the search */
+  *serr_load = '\0';
+  retc_load = load_all_fixed_stars(ctx, serr_load);
   retc = fixstar_format_search_name(star, sstar, serr);
   if (retc == ERR)
     goto return_err;
@@ -8099,8 +8124,10 @@ int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *
     goto found;
   }
   retc = search_star_in_list(ctx, sstar, &stardata, serr);
-  if (retc == ERR)
+  if (retc == ERR) {
+    report_catalogue_load_error(serr, retc_load, serr_load);
     goto return_err;
+  }
   /******************************************************/
   found:
   ctx->sp.fs2mag.last_stardata = stardata;
@@ -8817,8 +8844,8 @@ static int32 swi_fixstar_load_record(swe_ctx *ctx, char *star, char *srecord, ch
     if (strlen(serr) + strlen(star) < AS_MAXCH) {
       snprintf(serr, AS_MAXCH, "star %.230s not found", star);
     }
-    return ERR;
   }
+  return ERR;
   found:
   strcpy(srecord, s);
   retc = fixstar_cut_string(ctx, srecord, star, &stardata, serr);

@@ -277,7 +277,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-eopload \
+       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -361,6 +361,9 @@ sidnod: sidnod.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 spicarv: spicarv.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+fictstar: fictstar.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 # G22: reorder(), swejpl.c's byte-swapping path, which measured 0.00% --
@@ -510,6 +513,15 @@ check-sidnod: sidnod
 check-spicarv: spicarv
 	@env -u SE_EPHE_PATH ./spicarv
 
+# G32: a malformed seorbel.txt line -- a character no element term has, a
+# non-numeric epoch or equinox, an empty field, too few fields, a power after
+# T outside 1 to 4 -- or a broken sefstars.txt is refused with a message
+# naming the file, line and field, in bounded time (a 5 s alarm per case: the
+# term reader used to loop for ever), and the other bodies and the built-in
+# stars answer. Crafted copies in /tmp.
+check-fictstar: fictstar
+	@env -u SE_EPHE_PATH ./fictstar $(EPHE)
+
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
 	@printf '# fixture: 1620 moved off the built-in 124.00\n1620  200.0\n' \
@@ -613,7 +625,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f dtobs fictlt obliq nutgrid sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt

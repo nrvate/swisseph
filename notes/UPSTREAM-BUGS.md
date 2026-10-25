@@ -54,6 +54,7 @@ worst were in code that had never executed even once.
 | 16 | `swe_pheno(SE_ECL_NUT)` indexes two tables with -1 | Memory | `swecl.c` |
 | 17 | `ipl * 100` overflows int32 for a large negative body number | Robustness | `sweph.c` |
 | 18 | Changing delta t does not invalidate the cached topocentric observer | Correctness | `swephlib.c`, `sweph.c` |
+| 23 | A bad `seorbel.txt` field hangs `swe_calc()`, terms such as "T5" or ".0" are misread, a broken `sefstars.txt` is reported as "star not found" | Correctness / Robustness | `swemplan.c`, `sweph.c` |
 
 ---
 
@@ -1326,6 +1327,54 @@ the same differenced distance rate to 1e-9 AU/day; with the old value it
 fails by 2.49e-3. The other built-in records (Revati, Pushya, Mula) were
 compared with SIMBAD the same day: Pushya's radial velocity and Mula's are
 current, and Revati (zeta Psc) has no radial velocity in SIMBAD to compare.
+
+## 23. A bad `seorbel.txt` field hangs `swe_calc()`, terms such as "T5" or ".0" are misread, and a broken `sefstars.txt` is reported as "star not found"
+
+**Severity: Correctness (a hang; fictitious-body elements read wrongly without an error, Cupido 1.0° off at J2000; the error that explains a failure lost; a wrong star answered OK)**
+**Where:** `swemplan.c`: `check_t_terms()`, `read_elements_file()`; `sweph.c`: `swe_fixstar2_r()`, `swe_fixstar2_mag_r()`, `load_all_fixed_stars()`, `swi_fixstar_load_record()`
+
+An element field of `seorbel.txt` is a sum of terms, each a product of
+numbers and powers of T. `check_t_terms()` reads it, and:
+
+- a character that is none of sign, blank, `*`, T, digit or point ("12x",
+  "40.99837e0", "0.0046q", "171.4333 * x", "nan") was consumed by no branch
+  and the loop came back to it for ever: `swe_calc()` for that body never
+  returned, in any of the six fields;
+- the power after T was `atoi()`: "T5" to "T9" (and "T12") were ignored, so
+  "163.7409 + 1 * T5" read as 164.7409, "T0" read as T, and "T 2" (`atoi()`
+  skips blanks) as T2 times 2;
+- a number was taken only if `atof()` was not 0 or it began with '0', so
+  ".0" was skipped and the term read with factor 1 ("163.7409 + .0 * T" as
+  "+ T", Cupido 1.0° off at J2000), and "1.2.3" read as 1.2;
+- an empty field was the value 0.
+
+`read_elements_file()` read the epoch and equinox with `atof()` ("2451545.0abc"
+as 2451545, an empty field as JD 0), and a line with fewer than nine fields
+stopped the scan, so every body after it was refused too ("name not found"
+for Hades when Cupido's line was cut).
+
+In `sefstars.txt`, `swe_fixstar2()` and `swe_fixstar2_mag()` dropped
+`load_all_fixed_stars()`'s return: a catalogue line that does not parse, or no
+catalogue, was reported only as "could not find star name aldebaran". A load
+that failed part way kept its table, and the next call's load dropped the
+pointer to it. `swe_fixstar()` and `swe_fixstar_mag()` with `serr` NULL
+answered a star that is not there with the file's last (Gliese 710).
+
+**Fix, as done here:** `check_t_terms()` refuses a field when a pass consumes
+nothing (exactly the case that looped), when it is empty, when a power after T
+is not 1 to 4 ("T0", "T5", "T2.5"; T alone is T1), and when a run of digits
+and points is not one number (".", "1.2.3"); a number is its value by
+`strtod()`. The epoch and equinox are a whole finite number or a name. A short
+line refuses its own body only. All refusals name the file, the line and the
+field ("error in file seorbel.txt, line      28: mean anomaly value
+invalid"). A star not found after the catalogue failed to load is reported
+with the load's error first ("data of star 'Atest,alTes' incomplete; error,
+swe_fixstar(): could not find star name aldebaran"); the reload frees the
+partial table; the record reader returns ERR with `serr` NULL. Every body of
+the distributed `seorbel.txt` (six instants and its names), catalogue stars
+1 to 1141 through `swe_fixstar2()` and `swe_fixstar2_mag()`, and lines 1 to
+1210 through `swe_fixstar()` and `swe_fixstar_mag()` are bit for bit as
+before. G32 `tests/fictstar.c`: 19 cases in child processes under a 5 s alarm.
 
 ## How these were found
 
