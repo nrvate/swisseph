@@ -95,6 +95,7 @@ worst were in code that had never executed even once.
 | 61 | A topocentric fixed star is deflected from the geocenter | Correctness | `sweph.c` |
 | 59 | Four small house defects: Placidus cusps unconverged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files | Correctness | `swehouse.c` |
 | 68 | Three house residues: Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps 13..36 after the Porphyry fallback, ARMC's rate for a Placidus cusp on an equinox point | Correctness | `swehouse.c` |
+| 64 | The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms | Correctness | `swecl.c` |
 
 ---
 
@@ -2977,6 +2978,47 @@ before). The upstream build fails all three (14 failures). G24
 deg/day shipped, 105 compat). G45's Placidus and Gauquelin tolerance,
 left at the old 3.5e-8 deg convergence, is now 2e-7 deg/day + 5e-10 of the
 rate (worst 9.4e-8, 1.4e-10 of the rate, with bug 59's 1e-12 convergence).
+
+## 64. The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms
+
+**Severity: Correctness (4e-6 deg/day on Jupiter's mean aphelion at +-3000 years; Mars 4.2e-8 deg/day in longitude, 5.8e-9 in latitude and 6.6e-10 AU/day in distance at +-500)**
+**Where:** `swecl.c`, `swe_nod_aps_r()`, the mean points of Mercury..Neptune
+
+The mean node, perihelion, inclination, semi-major axis and eccentricity of
+a planet are cubics in T (`el_node`, `el_peri`, `el_incl`, `el_sema`,
+`el_ecce`), and the points' positions carry all four terms. Their rates,
+`vincl`, `vsema`, `vecce` and the node's and perihelion's speeds, were
+`ep[1] / 36525`: the linear term. Bug 55 made the speeds central differences
+of the elements carried +-2^-6 day, so the differences were of a straight
+line and the quadratic and cubic terms were never in them (entry 55 left it
+open). Measured against five-point differences of the library's own
+positions (true positions, no deflection), mean nodes, perihelia and
+aphelia of Mercury..Neptune, geocentric and heliocentric, seven instants
+-3000..+3000: longitude speeds off by 5.4e-7 (Mercury) to 4.2e-6 (Jupiter)
+deg/day, latitude by 1.9e-8 to 1.6e-7, distance by 1.6e-10 (Mercury
+heliocentric) to 5.9e-8 (Jupiter geocentric) AU/day.
+
+**Fix, as done here:** the rates are the polynomials' derivatives at t,
+(ep[1] + t (2 ep[2] + 3 ep[3] t)) / 36525; the central differences over
++-2^-6 day of the straight lines they give are the rates at t. Positions
+are unchanged to the bit. After: longitude <= 5.3e-10 deg/day (geocentric
+Mercury; heliocentric <= 8e-12), latitude <= 2.8e-11, distance <= 2.2e-11
+AU/day.
+
+G63 `tests/planetaspeed.c`: the same fourteen cases (Mercury..Neptune,
+geocentric and heliocentric), the four points, longitude, latitude and
+distance speeds within 1.5e-9, 1e-10 deg/day and 1e-10 AU/day; the
+upstream build and the build before this fix both fail all 42 checks
+(three per case). The
+gate uses SEFLG_TRUEPOS|SEFLG_NOGDEFL: with the apparent position the
+heliocentric distance rates of Uranus and Neptune and Mars's geocentric
+longitude speed (5.6e-9 deg/day in G54) carry 1e-9 AU/day and 5e-9 deg/day
+of the deflection's and aberration's own rates, which this entry does not
+touch. G54's Mars limits, ten times the Moon's, are the Moon's now except
+the longitude, 1e-8 (measured 5.6e-9, 9.8e-11 latitude, 1.2e-10 distance).
+G24 `planet_apsis_rate_off`: Jupiter's mean aphelion's heliocentric
+longitude speed at -3000, 2.1e-12 deg/day shipped, 3.8e-6 compat. G42, G47,
+G54 pass; G1 rows of the planets' mean points' speeds move.
 
 ## How these were found
 

@@ -802,6 +802,9 @@ struct epsilon {
  *   - a topocentric fixed star's light deflection was made from the
  *     geocenter, the topocentric flag not passed to it (3e-7 to 9e-6 arcsec
  *     5-40 degrees from the Sun; UPSTREAM-BUGS 61, G60)
+ *   - the planets' mean nodes' and apsides' speeds used the linear terms of
+ *     their elements' polynomials only (4e-6 deg/day on Jupiter's aphelion
+ *     at +-3000 years, 4.2e-8 on Mars at +-500; UPSTREAM-BUGS 64, G63)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

@@ -5394,6 +5394,31 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       sema = MOON_MEAN_DIST / AUNIT;
       vsema = 0;
     } else {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 64: the planets' mean elements' rates were the linear
+       * terms only, ep[1] / 36525; the t^2 and t^3 terms of the polynomials
+       * were left out of every speed -- Mars 4.2e-8 deg/day in longitude,
+       * 5.8e-9 in latitude, 6.6e-10 AU/day in distance at +-500 years, more
+       * further out. The rates are now the polynomials' derivatives at t. */
+      iplx = ipl_to_elem[ipl];
+      ep = el_incl[iplx];
+      incl = ep[0] + ep[1] * t + ep[2] * t * t + ep[3] * t * t * t;
+      vincl = (ep[1] + t * (2 * ep[2] + 3 * ep[3] * t)) / 36525;
+      ep = el_sema[iplx];
+      sema = ep[0] + ep[1] * t + ep[2] * t * t + ep[3] * t * t * t;
+      vsema = (ep[1] + t * (2 * ep[2] + 3 * ep[3] * t)) / 36525;
+      ep = el_ecce[iplx];
+      ecce = ep[0] + ep[1] * t + ep[2] * t * t + ep[3] * t * t * t;
+      vecce = (ep[1] + t * (2 * ep[2] + 3 * ep[3] * t)) / 36525;
+      ep = el_node[iplx];
+      /* ascending node */
+      xna[0] = ep[0] + ep[1] * t + ep[2] * t * t + ep[3] * t * t * t;
+      xna[3] = (ep[1] + t * (2 * ep[2] + 3 * ep[3] * t)) / 36525;
+      /* perihelion */
+      ep = el_peri[iplx];
+      xpe[0] = ep[0] + ep[1] * t + ep[2] * t * t + ep[3] * t * t * t;
+      xpe[3] = (ep[1] + t * (2 * ep[2] + 3 * ep[3] * t)) / 36525;
+#else
       iplx = ipl_to_elem[ipl];
       ep = el_incl[iplx];
       incl = ep[0] + ep[1] * t + ep[2] * t * t + ep[3] * t * t * t;
@@ -5412,6 +5437,7 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       ep = el_peri[iplx];
       xpe[0] = ep[0] + ep[1] * t + ep[2] * t * t + ep[3] * t * t * t;
       xpe[3] = ep[1] / 36525;
+#endif
     }
     /* descending node */
     xnd[0] = swe_degnorm(xna[0] + 180);
