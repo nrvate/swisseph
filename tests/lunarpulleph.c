@@ -1,24 +1,26 @@
-/* lunarpulleph.c -- G65: a far body's aberration rate carries the Moon's pull
- * on the Earth on the JPL and Moshier ephemerides too.
+/* lunarpulleph.c -- G65: the aberration rate's Earth carries the Moon's pull
+ * and the planets' on every ephemeris.
  *
  * UPSTREAM-BUGS 62 gave the aberration rate's tau a(teval) term the Moon's
- * pull (0.6% of a, 7.5% of a') from the geocentric Moon in the Swiss save
- * area. JPL and Moshier have no Moon there, so they kept the Sun-only a' and
- * the 10-day switch: Nibiru, the Christ Comet, Planet 9, VEA and Harrington
- * were off their positions' rate by 2e-7 to 5e-7 deg/day (UPSTREAM-BUGS 66).
- * The Moon at teval is now read for them (JPL: J_MOON about J_EARTH;
- * Moshier: the lunar theory) when the light time is past 0.3 day, and the
- * same whole-form tau (a_Sun + a_m) is taken there.
+ * pull from the Swiss save area. JPL and Moshier kept the Sun-only a' and the
+ * 10-day switch: Nibiru, the Christ Comet, Planet 9, VEA were off their
+ * positions' rate by 2e-7 to 6e-7 deg/day (UPSTREAM-BUGS 66). Part 2: the
+ * Moon is now the one the Earth was made with, on JPL (the EMB-less-Moon
+ * read) and Moshier (embofs), for every light time, so Harrington and Pluto
+ * (under 0.3 day) get its rate too (1.4e-8 to 1.7e-8 before, 1e-9 after);
+ * and past 0.3 day the whole tau a takes the pull of Mercury, Venus, Mars,
+ * Jupiter and Saturn as well as the Sun's and Moon's (4e-9 on the far
+ * bodies before, under 1e-9 after, on Swiss too).
  *
- * The check: Nibiru, the Christ Comet, Planet 9, VEA, Harrington and Pluto,
- * apparent geocentric and topocentric (Zurich), on Moshier (seven dates
- * -300..+300 years) and on de200.eph (seven dates 1650..2150): longitude and
- * latitude speeds within 5e-8 deg/day of a five-point difference of the
- * positions over 2^-7 day at multiples of it. Measured <= 3.6e-8 (Harrington
- * topocentric, which stays below the switch; the rest <= 2.8e-8). The build
- * before the fix fails 16 of the 24 rows (Nibiru, the Christ Comet, Planet 9,
- * VEA) at 5.9e-8 to 6.0e-7 deg/day; the upstream build fails them all (and
- * Harrington's, by its missing aberration rate). Run as
+ * The check: Nibiru, Harrington, the Christ Comet, Planet 9, VEA, Pluto,
+ * Zeus and Kronos, apparent geocentric and topocentric (Zurich), Swiss
+ * files, de200.eph and Moshier, seven dates 1650..2150: longitude and
+ * latitude speeds within 2e-9 deg/day (Swiss, JPL; measured <= 1.0e-9) or
+ * 1e-8 (Moshier; measured <= 6.2e-9, the Moshier Earth's own acceleration
+ * noise) of a five-point difference of the positions over 2^-7 day at
+ * multiples of it. The build before part 2 fails 40 of 48 rows on
+ * Swiss/JPL/Moshier (Swiss 4.6e-9, JPL and Moshier up to 1.7e-8); the
+ * build before part 1 and the upstream build fail them all. Run as
  *   lunarpulleph EPHEDIR
  */
 #include <math.h>
@@ -31,9 +33,12 @@ int main(int argc, char **argv)
     {SE_FICT_OFFSET + 9, "Nibiru"}, {SE_FICT_OFFSET + 11, "Harrington"},
     {SE_FICT_OFFSET + 19, "Christ Comet"}, {SE_FICT_OFFSET + 20, "Planet 9"},
     {SE_FICT_OFFSET + 25, "VEA"}, {SE_PLUTO, "Pluto"},
+    {SE_ZEUS, "Zeus"}, {SE_KRONOS, "Kronos"},
   };
-  static const double y0[2] = {1650, -300};	/* first year, per ephemeris */
-  static const double dy[2] = {500.0 / 6, 100};
+  static const char *const eph[3] = {"Swiss", "JPL", "Mosh"};
+  static const double y0[3] = {1650, 1650, 1650};	/* first year, per ephemeris */
+  static const double dy[3] = {500.0 / 6, 500.0 / 6, 500.0 / 6};
+  static const double lim[3] = {2e-9, 2e-9, 1e-8};	/* deg/day */
   const double h = 1.0 / 128;
   char serr[256];
   int ie, ib, ic, y, k, i, bad = 0;
@@ -45,17 +50,17 @@ int main(int argc, char **argv)
   swe_set_ephe_path(argv[1]);
   swe_set_jpl_file("de200.eph");
   swe_set_topo(8.55, 47.37, 400);
-  printf("G65: far bodies' speeds carry the Moon's pull on JPL and Moshier\n");
-  for (ie = 0; ie < 2; ie++) {
-    for (ib = 0; ib < 6; ib++) {
+  printf("G65: the aberration rate's Earth carries the Moon's and planets' pull\n");
+  for (ie = 0; ie < 3; ie++) {
+    for (ib = 0; ib < 8; ib++) {
       for (ic = 0; ic < 2; ic++) {
-        int32 fl = (ie ? SEFLG_MOSEPH : SEFLG_JPLEPH) | (ic ? SEFLG_TOPOCTR : 0);
+        int32 fl = (ie == 2 ? SEFLG_MOSEPH : ie ? SEFLG_JPLEPH : SEFLG_SWIEPH) | (ic ? SEFLG_TOPOCTR : 0);
         double w[2] = {0, 0};
         for (y = 0; y < 7; y++) {
           double jd = floor((2451545.0 + (y0[ie] + y * dy[ie] - 2000) * 365.25 + 37.3 * y) * 256) / 256;
           double x[6], d[5][6];
           if (swe_calc(jd, rgb[ib].ipl, fl | SEFLG_SPEED, x, serr) < 0) {
-            printf("  %-6s %-14s ERROR %s\n", ie ? "Mosh" : "JPL", rgb[ib].sz, serr);
+            printf("  %-6s %-14s ERROR %s\n", eph[ie], rgb[ib].sz, serr);
             bad++;
             break;
           }
@@ -74,10 +79,10 @@ int main(int argc, char **argv)
               w[i] = e;
           }
         }
-        printf("  %-6s %-14s %-5s lon %.2e lat %.2e deg/day\n", ie ? "Mosh" : "JPL",
+        printf("  %-6s %-14s %-5s lon %.2e lat %.2e deg/day\n", eph[ie],
                rgb[ib].sz, ic ? "topo" : "geo", w[0], w[1]);
-        if (w[0] > 5e-8 || w[1] > 5e-8) {
-          printf("    FAIL: speed off its positions' rate by more than 5e-8 deg/day\n");
+        if (w[0] > lim[ie] || w[1] > lim[ie]) {
+          printf("    FAIL: speed off its positions' rate by more than %.0e deg/day\n", lim[ie]);
           bad++;
         }
       }

@@ -125,6 +125,11 @@ struct jpl_save {
   int32 nrl;            /* record currently buffered in buf[]  */
   int    np, nv, nac, njk;  /* Chebyshev degrees already built in */
   double twot;              /* pc[]/vc[]/ac[]/jc[]; keyed off pc[1] */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* UPSTREAM-BUGS 66: the geocentric Moon the last Earth read took from the
+   * file, and its instant (0: none) */
+  double moong[6], moong_t;
+#endif
 };
 
 
@@ -468,6 +473,15 @@ int swi_pleph(swe_ctx *ctx, double et, int ntarg, int ncent, double *rrd, char *
     
   } else {
     if (list[J_EARTH] == 2) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* the Earth is the EMB less the Moon's share: the geocentric Moon is
+       * in hand here (UPSTREAM-BUGS 66) */
+      if (ntarg == J_EARTH && list[J_MOON] == 2) {
+	for (i = 0; i < 6; ++i)
+	  js->moong[i] = pv[i + 6*J_MOON];
+	js->moong_t = et;
+      }
+#endif
       for (i = 0; i < 6; ++i) 
 	pv[i + 6*J_EARTH] -= pv[i + 6*J_MOON] / (js->eh_emrat + 1.);
     }
@@ -961,6 +975,21 @@ static void reorder(char *x, int size, int number)
     sp1 += size;
   }
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* The geocentric Moon from the last swi_pleph() read of the Earth, if that
+ * was at et: no extra read (UPSTREAM-BUGS 66). */
+int swi_pleph_moon(swe_ctx *ctx, double et, double *d)
+{
+  const struct jpl_save *js = ctx->jpl;
+  int i;
+  if (js == NULL || js->moong_t != et)
+    return FALSE;
+  for (i = 0; i < 6; i++)
+    d[i] = js->moong[i];
+  return TRUE;
+}
+#endif
 
 void swi_close_jpl_file(swe_ctx *ctx)
 {

@@ -800,7 +800,9 @@ struct epsilon {
  *     on the Earth: 0.6% of the acceleration, 7.5% of its rate (2.3e-7
  *     deg/day on Nibiru's speed, 6e-7 on VEA's; UPSTREAM-BUGS 62, G61)
  *   - the same Moon's pull was left out on JPL and Moshier (2e-7 to 6e-7
- *     deg/day on a far fictitious body's speed; UPSTREAM-BUGS 66, G65)
+ *     deg/day on a far fictitious body's speed; UPSTREAM-BUGS 66, G65), and so
+ *     was the planets' pull on it past 0.3 day of light time (4e-9 on the
+ *     far bodies, Swiss files too)
  *   - a topocentric fixed star's light deflection was made from the
  *     geocenter, the topocentric flag not passed to it (3e-7 to 9e-6 arcsec
  *     5-40 degrees from the Sun; UPSTREAM-BUGS 61, G60)
@@ -1428,6 +1430,12 @@ struct swe_ctx {
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;
   struct plan_data pldat[SEI_NPLANETS];
+#ifndef SWE_UPSTREAM_COMPAT
+  /* the geocentric Moon (equatorial J2000, AU, AU/day) that the saved Earth
+   * was made with, on JPL and Moshier; t is its instant, 0 for none
+   * (UPSTREAM-BUGS 66) */
+  struct { double t, x[6]; int32 iephe; } earth_moon;
+#endif
   /* nddat is deliberately the heavier plan_data, not node_data.
    *
    * Every access does touch only node_data's five members, so the leaner

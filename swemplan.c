@@ -77,7 +77,7 @@
 
 static void embofs_mosh(swe_ctx *ctx, double J, double *xemb);
 #ifndef SWE_UPSTREAM_COMPAT
-static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb);
+static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb, double *moon);
 #endif
 static int check_t_terms(double t, char *sinp, double *doutp, double *drate);
 
@@ -544,8 +544,10 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       swi_coortrf2(xe, xe, -seps2000, ceps2000);
       swi_coortrf2(xe + 3, xe + 3, -seps2000, ceps2000);
       embofs_mosh(ctx, tjd, xe);
-      embofs_mosh_rate(ctx, tjd, xe + 3);
+      embofs_mosh_rate(ctx, tjd, xe + 3, do_save ? ctx->earth_moon.x : NULL);
       if (do_save) {
+	ctx->earth_moon.t = tjd;
+	ctx->earth_moon.iephe = SEFLG_MOSEPH;
 	pedp->teval = tjd;		  
 	pedp->xflgs = -1;
 	pedp->iephe = SEFLG_MOSEPH;
@@ -746,7 +748,7 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
  * over +-2^-8 day, exact instants for any JD below 2^44, divided by
  * their actual distance. Over that step the short lunar series above is
  * a parabola to 1.4e-12 AU/day (1e-10 of the Earth's speed). */
-static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb)
+static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb, double *moon)
 {
   double x1[3] = {0, 0, 0}, x2[3] = {0, 0, 0};
   double t1 = tjd + 1.0 / 256, t2 = tjd - 1.0 / 256;
@@ -755,6 +757,15 @@ static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb)
   embofs_mosh(ctx, t2, x2);
   for (i = 0; i <= 2; i++)
     vemb[i] += (x1[i] - x2[i]) / (t1 - t2);
+  /* UPSTREAM-BUGS 66: the offsets are -Moon/(1+EMRAT), so the two reads
+   * above are the geocentric Moon at tjd +-2^-8 day: its velocity is their
+   * difference, its place their mean (a parabola's error, 1e-10 AU). The
+   * aberration rate's Earth wants it (acceleration, 0.6%). */
+  if (moon != NULL)
+    for (i = 0; i <= 2; i++) {
+      moon[i] = -(x1[i] + x2[i]) / 2 * (EARTH_MOON_MRAT + 1.0);
+      moon[i+3] = -(x1[i] - x2[i]) / (t1 - t2) * (EARTH_MOON_MRAT + 1.0);
+    }
 }
 #endif
 

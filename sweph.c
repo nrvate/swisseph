@@ -1434,6 +1434,9 @@ static void free_planets(swe_ctx *ctx)
     }
     memset((void *) &ctx->pldat[i], 0, sizeof(struct plan_data));
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  memset((void *) &ctx->earth_moon, 0, sizeof(ctx->earth_moon));
+#endif
   for (i = 0; i <= SE_NPLANETS; i++) /* "<=" is correct! see decl. */
     memset((void *) &ctx->savedat[i], 0, sizeof(struct save_positions));
   /* clear node data space */
@@ -2703,6 +2706,12 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
     /* barycentric earth */
     if (tjd != pedp->teval || tjd == 0) {
       retc = swi_pleph(ctx, tjd, J_EARTH, J_SBARY, xpe, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+      if (do_save && retc == OK && swi_pleph_moon(ctx, tjd, ctx->earth_moon.x)) {
+	ctx->earth_moon.t = tjd;
+	ctx->earth_moon.iephe = SEFLG_JPLEPH;
+      }
+#endif
       if (do_save) {
 	pedp->teval = tjd;
 	pedp->xflgs = -1;	/* new light-time etc. required */
@@ -4987,11 +4996,20 @@ static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, ch
  * 1e-3 day (the Moon) the term is under 1e-5 of the rate and is skipped.
  * Upstream bug 66: bug 62 had the Moon on the Swiss files only; on JPL
  * and Moshier a far fictitious body kept the Sun-only a' and the 10-day
- * switch (2e-7 to 5e-7 deg/day). Past 0.3 day of light time the geocentric
- * Moon at teval is now read there too (swi_pleph J_MOON-J_EARTH; Moshier's
- * lunar theory), for the whole-form tau (a_Sun + a_m) only: nearer bodies
- * keep the Sun's a' and pay no read (the missing 7.5% of a' costs
- * tau omega / 2 * 0.6% < 2e-4 of tau a at 0.3 day).
+ * switch (2e-7 to 6e-7 deg/day), and Harrington and Pluto lacked the
+ * Moon's 7.5% of a' (1.4e-8 to 1.7e-8). The Moon is now the one the saved
+ * Earth was made from, kept by that computation at no extra read:
+ * ctx->earth_moon, the geocentric Moon of the JPL Earth (EMB less the
+ * Moon's share, swi_pleph) and of Moshier's (embofs_mosh, whose rate
+ * difference holds the Moon's velocity and place). It serves every light
+ * time. Without it (an Earth not saved at teval) the Moon is read past
+ * 0.3 day. Past 0.3 day tau a is whole and now also holds the pull of
+ * Mercury, Venus, Mars, Jupiter and Saturn on the Earth, 5e-5 of a each for
+ * Jupiter and Venus at their nearest (4e-9 deg/day on the far bodies,
+ * Swiss files too), from Moshier's heliocentric places (1e-2 of the pull is
+ * plenty); only bodies past 0.3 day pay for them. Below 0.3 day the series
+ * reads the planets' share in the difference of the Earth's velocities
+ * (its jerk, 8e-6 of tau a, is left out).
  * Without the Moon in hand, past 10 days the series itself fails (3.7e-4
  * deg/day at the 462 days of a body 80,000 AU out), and tau a(teval) is
  * taken whole from the Sun's pull, -GM r/r^3: that leaves out the Moon's
@@ -4999,6 +5017,33 @@ static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, ch
  * xsun is the barycentric Sun at teval (unused on Moshier, whose Earth is
  * heliocentric); NULL leaves the plain difference. Sets xout to xe with
  * the velocity the term should read. */
+/* The inner planets', Jupiter's and Saturn's pull on the Earth at teval,
+ * sum GM_p (P - E) / |P - E|^3 in AU/day^2, from Moshier's heliocentric
+ * places (arcseconds are plenty: the pull is 1e-4 of the Sun's and wants
+ * 1e-2 of itself), E the Earth's heliocentric place (equatorial J2000). */
+static void planets_pull(swe_ctx *ctx, double teval, const double *e, double *ap)
+{
+  static const struct { int iplm; double mrat; } pl[] = {
+    {0, 6023600.0}, {1, 408523.72}, {3, 3098703.6}, {4, 1047.3486}, {5, 3497.898},
+  };
+  const double gm = HELGRAVCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT);
+  int k, i;
+  for (i = 0; i <= 2; i++)
+    ap[i] = 0;
+  for (k = 0; k < 5; k++) {
+    double p[3], d[3], dd;
+    if (swi_moshplan2(ctx, teval, pl[k].iplm, p) < 0)
+      continue;
+    swi_polcart(p, p);
+    swi_coortrf2(p, p, -ctx->oec2000.seps, ctx->oec2000.ceps);
+    for (i = 0; i <= 2; i++)
+      d[i] = p[i] - e[i];
+    dd = sqrt(square_sum(d));
+    for (i = 0; i <= 2; i++)
+      ap[i] += gm / pl[k].mrat * d[i] / (dd * dd * dd);
+  }
+}
+
 static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *xeteval,
                             const double *xsun, const double *xe, double *xout)
 {
@@ -5011,31 +5056,34 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
     xout[i] = xe[i];
   if (tau < 1e-3)
     return;
-  /* the Moon's pull on the Earth, a_m = GM_m d/|d|^3, and its rate */
-  if (pmdp->teval == teval && pmdp->iephe == SEFLG_SWIEPH
-      && ctx->pldat[SEI_EARTH].iephe == SEFLG_SWIEPH) {
+  /* the Moon's pull on the Earth, a_m = GM_m d/|d|^3, and its rate: from
+   * the save area on the Swiss files, from the Earth's own read on JPL (the
+   * Earth is the EMB less the Moon's share) and Moshier (embofs), else, past
+   * the switch, read here */
+  {
     const double gmm = GEOGCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT) / EARTH_MOON_MRAT;
-    const double *d = pmdp->x;
-    double dd = sqrt(square_sum(d)), dv = 0;
-    for (i = 0; i <= 2; i++)
-      dv += d[i] * d[i+3];
-    for (i = 0; i <= 2; i++) {
-      am[i] = gmm * d[i] / (dd * dd * dd);
-      jm[i] = gmm * (d[i+3] - 3 * d[i] * dv / (dd * dd)) / (dd * dd * dd);
-    }
-    have_moon = TRUE;
-  } else if (tau > 0.3) {
-    /* JPL and Moshier have no Moon in the save area: read it, but only
-     * where its pull is taken whole (past the switch below), so the
-     * planets inside 0.3 day of light time pay nothing. */
     double dm[6];
-    int ie = ctx->pldat[SEI_EARTH].iephe;
-    if ((ie == SEFLG_JPLEPH && swi_pleph(ctx, teval, J_MOON, J_EARTH, dm, NULL) == OK)
-        || (ie == SEFLG_MOSEPH && swi_moshmoon(ctx, teval, NO_SAVE, dm, NULL) == OK)) {
-      const double gmm = GEOGCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT) / EARTH_MOON_MRAT;
-      double dd = sqrt(square_sum(dm));
+    const double *d = NULL;
+    if (pmdp->teval == teval && pmdp->iephe == SEFLG_SWIEPH
+        && ctx->pldat[SEI_EARTH].iephe == SEFLG_SWIEPH) {
+      d = pmdp->x;
+    } else if (ctx->earth_moon.t == teval && ctx->pldat[SEI_EARTH].teval == teval
+               && ctx->earth_moon.iephe == ctx->pldat[SEI_EARTH].iephe) {
+      d = ctx->earth_moon.x;
+    } else if (tau > 0.3) {
+      int ie = ctx->pldat[SEI_EARTH].iephe;
+      if ((ie == SEFLG_JPLEPH && swi_pleph(ctx, teval, J_MOON, J_EARTH, dm, NULL) == OK)
+          || (ie == SEFLG_MOSEPH && swi_moshmoon(ctx, teval, NO_SAVE, dm, NULL) == OK))
+        d = dm;
+    }
+    if (d != NULL) {
+      double dd = sqrt(square_sum(d)), dv = 0;
       for (i = 0; i <= 2; i++)
-        am[i] = gmm * dm[i] / (dd * dd * dd);
+        dv += d[i] * d[i+3];
+      for (i = 0; i <= 2; i++) {
+        am[i] = gmm * d[i] / (dd * dd * dd);
+        jm[i] = gmm * (d[i+3] - 3 * d[i] * dv / (dd * dd)) / (dd * dd * dd);
+      }
       have_moon = TRUE;
     }
   }
@@ -5050,6 +5098,11 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
   }
   rr = sqrt(square_sum(r));
   if (tau > (have_moon ? 0.3 : 10)) {
+    double ap[3];
+    /* Upstream bug 66: and the planets' pull on the Earth */
+    planets_pull(ctx, teval, r, ap);
+    for (i = 0; i <= 2; i++)
+      am[i] += ap[i];
     for (i = 0; i <= 2; i++)
       xout[i+3] = xeteval[i+3] + tau * (gm * r[i] / (rr * rr * rr) - am[i]);
     return;

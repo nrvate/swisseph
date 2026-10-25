@@ -104,6 +104,7 @@ worst were in code that had never executed even once.
 | 69 | The nutation matrix's rate holds the mean obliquity still | Correctness | `sweph.c` |
 | 70 | `swe_nod_aps()`'s apparent speeds are not the rate of the aberration it applies | Correctness | `swecl.c`, `sweph.c` |
 | 65 | Kronos' built-in semi-axis has two digits swapped, and the Kepler solver's starting guess is wrong | Correctness | `swemplan.c` |
+| 66 | The aberration rate's Earth lacks the Moon on JPL and Moshier, and the planets everywhere | Correctness | `sweph.c` |
 
 ---
 
@@ -3285,7 +3286,7 @@ longitude at JD 687314.573 from its fixed point, 3.4e-4 mas shipped,
 1.17e3 compat. Baselines: interpolated-perigee positions move by up to
 1.2", the apogee's by 2.5 mas.
 
-## 66. The Moon's pull on the aberration rate's Earth is on the Swiss files only
+## 66. The aberration rate's Earth lacks the Moon on JPL and Moshier, and the planets everywhere
 
 **Severity: Correctness (2e-7 to 6e-7 deg/day on a far fictitious body's longitude speed on JPL and Moshier)**
 **Where:** `sweph.c`: `earth_at_lt_sun()`
@@ -3315,12 +3316,37 @@ JPL, a little above the Swiss 8e-9 for the missing 7.5% of a'. Bench
 calc-swieph/calc-moseph: the bodies never reach the new branch; the runs
 differ by load noise (moseph min 1.055 s after, 1.026 before, load 5-7).
 
+**Part 2 (the residual, and the planets).** (a) Below 0.3 day of light time
+JPL and Moshier still lacked the Moon's 7.5% of a': Harrington 1.4e-8
+deg/day, Pluto 1.7e-8. The Moon is already in hand there: the JPL Earth is
+the EMB less the Moon's share (`swi_pleph` keeps that geocentric Moon,
+`jplplan` saves it with the Earth), and Moshier's `embofs_mosh_rate` differences
+the Moon-offset series at teval +-2^-8 day, whose mean and quotient are the
+Moon's place and velocity. Both are kept in `ctx->earth_moon` for the saved
+Earth and serve every light time (no extra read; the 0.3-day read stays as a
+fallback for an Earth not saved at teval). (b) On every ephemeris, past 0.3
+day tau a took the Sun's and Moon's pull only: the planets' pull on the Earth
+(Jupiter 1.6e-8 AU/day^2, Venus as much at its nearest) was 4e-9 deg/day on
+the far bodies (Nibiru, Planet 9, VEA, Christ Comet, Kronos; Zeus 3e-9 on
+JPL), Swiss files included. `planets_pull()` adds Mercury, Venus, Mars,
+Jupiter and Saturn from Moshier's heliocentric places (Uranus and up: under
+1e-10), only for bodies past 0.3 day. Measured after, geocentric/topocentric:
+Swiss <= 8.3e-10, JPL <= 1.0e-9 (Harrington 4e-10/1.0e-9, Pluto 4e-10); Moshier
+Harrington 3e-10 to 1.1e-9 and Pluto 3e-10 to 1.6e-9, but the far bodies stay at
+2e-9 to 6e-9: that is the Moshier Earth's own acceleration (the series' small
+monthly terms), not the model; a full Moshier Moon in place of the short one
+gives the same. Bench calc-swieph/calc-moseph/jpl-interp: within noise (min of
+two runs 0.5567/0.5549 s, 1.0298/1.0376 s vs 0.5485/0.5495, 1.0361/1.0526
+before). Left out below 0.3 day: the planets' jerk, 8e-6 of tau a.
+
 G65 `tests/lunarpulleph.c`: Nibiru, Harrington, the Christ Comet, Planet 9,
-VEA and Pluto, geocentric and topocentric, JPL and Moshier, seven dates each,
-longitude and latitude speeds within 5e-8 deg/day (measured <= 3.6e-8; the
-build before this fix fails 16 of 24 rows at 5.9e-8 to 6.0e-7; the upstream
-build fails them all). G24: `far_body_moon_pull_eph_off`, VEA's longitude
-speed on JPL and Moshier, 4.5e-9 shipped, 3.4e-5 compat.
+VEA, Pluto, Zeus and Kronos, geocentric and topocentric, Swiss files, JPL and
+Moshier, seven dates 1650..2150, longitude and latitude speeds within 2e-9
+deg/day (Swiss, JPL; measured <= 1.0e-9) or 1e-8 (Moshier, <= 6.2e-9). The
+build before part 2 fails Swiss at 4.6e-9, JPL and Moshier up to 1.7e-8; the
+build before part 1 fails the far-body rows at 5.9e-8 to 6.0e-7; the upstream
+build fails them all. G24: `far_body_moon_pull_eph_off`, VEA's longitude
+speed on JPL and Moshier, 1.6e-9 shipped, 3.4e-5 compat.
 
 ## 69. The nutation matrix's rate holds the mean obliquity still
 

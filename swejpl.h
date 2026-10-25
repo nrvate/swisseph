@@ -94,6 +94,9 @@ typedef struct swe_ctx swe_ctx;
  * Librations and Nutations are not affected by ncent.
  */
 extern int swi_pleph(swe_ctx *ctx, double et, int ntarg, int ncent, double *rrd, char *serr);
+#ifndef SWE_UPSTREAM_COMPAT
+extern int swi_pleph_moon(swe_ctx *ctx, double et, double *d);
+#endif
 
 /*
  * read the ephemeris constants. ss[0..2] returns start, end and granule size.
