@@ -3558,6 +3558,12 @@ again:
           if (strcmp(s, fname) != 0)
             goto again;
         }
+        /* Neither neighbour is here either: report the instant's own
+         * file, not the last neighbour tried (2026-10-25 review, D6:
+         * semo_12 and semo_06 missing, the Moon at 1200 said
+         * "semo_06.se1 not found"). */
+        if (serr != NULL && *serr_own != '\0')
+          snprintf(serr, AS_MAXCH, "%s", serr_own);
       }
 #endif
       return(NOT_AVAILABLE);

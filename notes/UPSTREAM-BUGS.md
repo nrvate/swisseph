@@ -5927,6 +5927,11 @@ semo_12 missing, fresh against warm from 1200.0 + 10, 0 shipped and compat,
 1e9 (NaN) before the fix. G24, G62, G83 and G88 pass; G99 also under ASan
 and UBSan.
 
+Also (2026-10-25 review, D6): with both the instant's own file and the
+neighbour missing (semo_12 and semo_06), serr named the neighbour last
+tried, "semo_06.se1 not found", for the Moon at 1200; it names the
+instant's own file now, as with no neighbour at all. G99 (e) checks it.
+
 ## 95. The Moshier Moon's velocity is a difference of the series, and the osculating apogee's eccentricity is sqrt(1 - p / a): the osculating apogee and perigee jitter
 
 **Severity: Correctness (Moshier: `swe_nod_aps()`'s osculating perigee and apogee speeds noisy by up to 5.5e-6 deg/day, SE_OSCU_APOG's by 1.4e-7, positions by 3.4e-9 deg; de200: SE_OSCU_APOG's speed by 2.4e-8 deg/day; the Moshier Moon's speed 1.2e-10 of itself off)**

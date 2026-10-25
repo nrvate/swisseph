@@ -351,6 +351,25 @@ int main(int argc, char **argv)
     } else
       printf("  (d) semo_18 under semo_12's name: 0 fail\n");
   }
+  /* (e): both the instant's file and its neighbour missing -- serr names
+   * the instant's own file, not the neighbour last tried */
+  {
+    char de[] = "/tmp/missfileXXXXXX";
+    static const char *const rgTwo[2] = {"semo_12.se1", "semo_06.se1"};
+    struct ans a;
+    if (build(de, ephe, rgTwo, 2) != 0) {
+      perror(de);
+      unbuild(de);
+      return 2;
+    }
+    a = fresh_calc(de, J1200 + 5, SE_MOON, SEFLG_SPEED);
+    unbuild(de);
+    if (strstr(a.serr, "semo_12.se1") == NULL || strstr(a.serr, "semo_06.se1") != NULL) {
+      printf("  (e) semo_12 and semo_06 missing: serr '%s'\n", a.serr);
+      nbad[2]++;
+    } else
+      printf("  (e) semo_12 and semo_06 missing: names semo_12, 0 fail\n");
+  }
   printf("  %d rows: 1. %d not finite, 2. %d warm differ, 3. %d off or unannounced\n", nrow,
          nbad[0], nbad[1], nbad[2]);
   k = nbad[0] + nbad[1] + nbad[2];
