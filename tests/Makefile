@@ -1595,7 +1595,10 @@ check-nutseries: nutseries
 # refuses; a call's answer independent of the calls before it; every
 # sidereal time and ARMC in range, IAU 1976, IAU 2006 and IERS 2010 on their
 # formulas to 1e-12 deg out to the bound, the default smooth over
-# consecutive JDs (UPSTREAM-BUGS 209, 214, 234).
+# consecutive JDs (UPSTREAM-BUGS 209, 214, 234); the long-term sidereal
+# time refused past its precession model's range, NaN and ERR, Vondrak
+# 2011's line kept past its 2000 centuries (256); the default smooth over
+# consecutive JDs at 1e12 with the library's own delta t (257).
 check-sidtrange: sidtrange
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./sidtrange $(EPHE)
 

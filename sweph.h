@@ -1767,6 +1767,15 @@ struct epsilon {
  *     under the strict setting; this fork's barycentric speed (bug 78) on
  *     that path SIGSEGV, which the compat build has not (UPSTREAM-BUGS
  *     248, G174, G24)
+ *   - the long-term sidereal time answered past its precession model's
+ *     range, where the precession is refused: swe_sidtime() and
+ *     swe_sidtime0() under IAU 2006, Laskar 1986 and Owen 1990 at J2000 +
+ *     400 and - 1000 centuries, and swe_azalt() SE_EQU2HOR and
+ *     swe_azalt_rev() SE_HOR2EQU from them (UPSTREAM-BUGS 256, G159, G24;
+ *     the compat build's long-term sidereal time is upstream's, which takes
+ *     swi_precess() at the date); the sidereal times' far delta t in
+ *     double-double, UPSTREAM-BUGS 257, G159, is in entry 234's exact
+ *     forms, this fork's, and has no upstream form
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

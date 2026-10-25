@@ -3081,6 +3081,14 @@ static void swe_azalt_r_body(swe_ctx *ctx, double tjd_ut,
   double x[6], xra[3];
   double armc = swe_degnorm(swe_sidtime_r(ctx, tjd_ut) * 15 + geopos[0]);
   double mdd, eps_true;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 256: the sidereal time refused past its precession
+   * model's range (swi_sidt_range()), NaN: no answer, as past the bound */
+  if (isnan(armc)) {
+    xaz[0] = xaz[1] = xaz[2] = NAN;
+    return;
+  }
+#endif
   for (i = 0; i < 2; i++)
     xra[i] = xin[i];
   xra[2] = 1;
@@ -3183,6 +3191,14 @@ static void swe_azalt_rev_r_body(swe_ctx *ctx, double tjd_ut,
   double geolat = geopos[1];
   double armc = swe_degnorm(swe_sidtime_r(ctx, tjd_ut) * 15 + geolon);
   double eps_true, dang;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 256, as in swe_azalt_r_body(): SE_HOR2EQU's declination,
+   * the site's alone, answered with the right ascension NaN */
+  if (isnan(armc)) {
+    xout[0] = xout[1] = NAN;
+    return;
+  }
+#endif
   for (i = 0; i < 2; i++)
     xaz[i] = xin[i];
   xaz[2] = 1;

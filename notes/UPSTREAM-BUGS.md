@@ -284,6 +284,8 @@ worst were in code that had never executed even once.
 | 242 | The Swiss files' range refusal words the file by the body's index, and every body first reads the barycentric Sun, index 10, past Pluto's: "asteroid eph. file (sepl_168.se1)" for the Sun, the Moon, the planets, Ceres and Cupido at 8e6 days, "(seplm132.se1)" at -3.1e6 | Correctness (error reporting) | `sweph.c` |
 | 244 | A JPL request falling to the Swiss files (the JPL file missing) returns an empty serr where `sweph()` opens a file, `main_planet()`'s "SwissEph file 'de999.eph' not found ... \ntrying Swiss Eph; " wiped with the file search's messages: 16 of 19 kinds of call fresh, kept where a file is open; `swe_pheno()` and `_ut()` always | Correctness (error reporting) | `sweph.c`, `swecl.c` |
 | 248 | The barycentric Sun's fall from a missing JPL file keeps SEFLG_JPLEPH: with SEFLG_SPEED this fork's light-time rate (entry 78) reads the JPL file through a NULL handle, SIGSEGV, fresh, warm and strict; without it 17921 for the Swiss request's 17922, SEFLG_SPEED3 18049 for 18050, and the strict setting answers; upstream 18177 for 18178 | Correctness (a crash; behaviour) | `sweph.c` |
+| 256 | The long-term sidereal time integrates its precession model's rate past the model's range, out to 2000 centuries, where entry 212 refuses the model: `swe_sidtime()` and `swe_sidtime0()` answer there under the ten polynomial models and Owen 1990, 0.03 to 17.5 deg off Vondrak 2011's at the range's end, over 64 consecutive JDs at 800 .. 1999 centuries off a line by up to 2.5e-5 deg under IAU 2006, 1.05 under Simon 1994, 8.4 under Owen; `swe_azalt()` SE_EQU2HOR and `swe_azalt_rev()` SE_HOR2EQU from them; and at -13200 on the Swiss files the houses OK from it | Correctness (behaviour) | `swephlib.c`, `swehouse.c`, `swecl.c` |
+| 257 | With the library's own delta t the sidereal times take delta t's far parabola evaluated in double, 2 ulps off its formula (1.3e-4 day at 1e12): the default over 64 consecutive JDs off its line by 4.1e-9 .. 5.1e-9 deg at -+1e12, 1.3e-9 .. 2.0e-9 at -+5e11 | Correctness | `swephlib.c` |
 
 ---
 
@@ -18460,6 +18462,201 @@ G174 (f): those four calls fresh and warm as G174 (e), and strict refused:
 12 calls. Before the fix 0 of 12 (6 crashed, two of them strict), after
 12; the upstream build 0 (the flag JPL's, the strict setting answering).
 G24 `bary_sun_fall_flag`: the return flag, 18178 shipped, 18177 compat.
+
+## 256. The long-term sidereal time integrates its precession model's rate past the model's range, where entry 212 refuses the model: `swe_sidtime()` and `swe_sidtime0()` answer there, over 64 consecutive JDs at 800 .. 1999 centuries off a line by up to 2.5e-5 deg under IAU 2006, 1.05 under Simon 1994, 8.4 under Owen 1990
+
+**Severity: Correctness (behaviour: values answered from a precession model where the library refuses it, by functions with no error return; and the houses from such a value), this fork's long-term sidereal time (entries 29, 181, 209)**
+**Where:** `swephlib.c`: new `swi_sidt_range()`, `swe_sidtime0_r()`; `swehouse.c`: `house_range()`; `swecl.c`: `swe_azalt_r_body()`, `swe_azalt_rev_r_body()`
+
+Entry 235's noticed item. Outside 1850 .. 2050 the long-term sidereal
+time (SEMOD_SIDT_LONGTERM, the default) is ERA(UT1) plus the accumulated
+precession in right ascension of the instant's precession model (entry
+181), integrated from that model's matrices out to `SIDT_PRA_TFAR`, 2000
+centuries, and a line beyond (entry 209). Entry 212 refuses each
+polynomial model's precession past the widest body range, -3100015.5 ..
+8000016.5 (-+152 centuries), Owen 1990's past its pieces' -4853455.5 ..
+9756544.5 (-+200), Vondrak 2011's past -+2000 centuries, and entry 217
+their mean obliquity likewise. The integral took every model's matrices
+to 2000 centuries. Measured on ts20 3e41806, "0,M,0,0,0,0,0,4", delta t
+0.3 day where the TT does not matter:
+- `swe_sidtime()` and `swe_sidtime0()` answered at every date past the
+  range, out to the date bound; `swe_azalt()` SE_EQU2HOR and
+  `swe_azalt_rev()` SE_HOR2EQU from them (their ecliptic forms NaN there
+  already, SE_ECL_NUT refusing, entry 214).
+- Over 64 consecutive JDs at 800 .. 1999 centuries, off the line through
+  the first and last by 1.4e-7 .. 2.5e-5 deg under IAU 2006 (and
+  "0,8,8,0,0,0,0,4"), 2.0e-8 .. 4.1e-7 IAU 1976, 1.8e-8 .. 6.1e-7
+  Newcomb, 8.8e-8 .. 1.8e-5 IAU 2000, 1.7e-7 .. 1.3e-3 Bretagnon 2003,
+  5.8e-6 .. 0.45 Laskar 1986, to 0.55 and 0.50 deg Williams 1994 with
+  and without Laskar's obliquity, 6.0e-6 .. 1.05 Simon 1994, 7.6e-6 ..
+  8.4 Owen 1990: the matrices' rounding at their terms' size past their
+  fit. Within the table's 400 centuries (its Hermite) and past 2000 (the
+  line) 4e-14 .. 5.5e-12.
+- At the range's end the models' long-term sidereal times lie 0.03 ..
+  17.5 deg off Vondrak 2011's, their rates 0 .. 1915"/cy apart (IAU 1976
+  and Newcomb 17.4 and 17.5 deg, 1908 and 1915"/cy at +152 centuries; IAU
+  2006 1.7 deg and 149"/cy, -2.1 and 268 at -152; Owen 0.03 deg at +200),
+  and at 1999 centuries anywhere, -172 .. +178 deg.
+- The houses refuse there already, by the obliquity at their TT (entries
+  213, 217), which takes the ephemeris's delta t where the sidereal time
+  takes the default's: at -13200 on the Swiss files 0.033 day apart, and
+  there, the houses' TT 0.01 day inside and the sidereal time's 0.023
+  past, Placidus answered OK from the sidereal time past the range.
+
+Vondrak 2011 is kept answering. Entry 209 made the line past 2000
+centuries, a(TFAR) + w(TFAR) (T - TFAR), so that the integral takes no
+matrix past Vondrak's fit, and entry 212 set Vondrak's precession range
+to that span, "where bug 209's sidereal time stops its integral": under
+Vondrak the long-term sidereal time takes no refused matrix, and past
+the span its line is the precession's motion at the span's end continued
+(64-JD lines within 1.8e-13 deg at 2001 and 2500 centuries, continuous at
+the end in value and rate), as Vondrak's obliquity answers to the bound
+(entry 196); the default houses and entry 234's checks to 1e12 rest on
+it. For the other models nothing extends them: entry 209 has their rates
+"leave any precession's far sooner", and a line from their range's end
+would carry rates up to 1915"/cy off Vondrak's; their obliquity is
+refused there, so SE_ECL_NUT and the houses refuse already, and
+`swe_sidtime()`'s equation of the equinoxes takes that obliquity. So
+the most accurate answer there is none: refused, as the precession is.
+
+**Fix, as done here:**
+- `swi_sidt_range()`: OK, or ERR with serr naming the model's range ("jd
+  8000016.75 outside the IAU 2006 (Capitaine & alii) precession model's
+  range -3100015.5 .. 8000016.5"), for the long-term sidereal time at a
+  UT: its TT (the default delta t, `sidt_deltat()`), the model
+  `swi_precess()` takes there (`frame_chosen_model()`), its range tested
+  at that TT held to -+`SIDT_PRA_TFAR`, the integral's reach: so never
+  under Vondrak 2011, under the others past their ranges. Within 1850 ..
+  2050 and under the other three sidereal times always OK.
+- `swe_sidtime0_r()`, and so `swe_sidtime()`, NaN where it refuses, after
+  the date bound (entry 214). `swi_sidtime0()`, the house speeds' frames
+  HOUSE_SPEED_DT about the instant, unbounded as before: within 1/64 day
+  of a range's end the speeds answer, their frames past it taking the
+  sidereal time as they take the obliquity.
+- `house_range()` refuses where it refuses too (ERR, the cusps, ascmc and
+  speeds 0, serr): the -13200 sliver, where its NaN would have come out
+  as ERR "very close to polar circle, switched to Porphyry" with every
+  cusp NaN.
+- `swe_azalt()` and `swe_azalt_rev()` NaN in every output where the
+  sidereal time is NaN (SE_HOR2EQU's declination, the site's alone, was
+  answered with the right ascension NaN).
+- Within each range nothing changes, bit for bit: of 1805 lines (19
+  model sets, the default, the eleven long-term models, "0,9,1", "0,9,8",
+  "0,9,6", "0,10,10" and the three other sidereal times, at 95 dates
+  across the ranges' ends and out to the bound; `swe_sidtime()`,
+  `swe_sidtime0()`, Placidus with speeds, Gauquelin sidereal, Koch,
+  `swe_azalt()` and `swe_azalt_rev()` with either flag) 748 differ by
+  this entry, each refused under a model other than Vondrak's at a TT
+  past its range (177 more by entry 257, past 1.4e8 days); of 52000
+  sidereal times under 13 model sets at 0.002-day steps across the
+  ranges' ends and out to 1e12, 31020 refused, each and only where TT is
+  past the range, the rest bit for bit but entry 257's under "0,9,8"
+  past 2.7e8 days.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; the compat build's long-term
+  sidereal time is upstream's (entry 29's defect), which takes
+  `swi_precess()` at the date.
+- Cost (with entry 257), `perf stat -e instructions:u`, bench, one
+  repetition: calc-swieph 12245893575 -> 12245893573, calc-moseph
+  23392557661 -> 23392557304, houses 19488116843 -> 19516509344 (+0.15%,
+  its dates after 2050 testing the range twice).
+
+G159 `tests/sidtrange.c`, new check (h): under the eleven long-term
+models, "0,8,8,0,0,0,0,4" and "0,9,8", 20 dates each (TT a quarter day
+inside and past each end of the range, TT -+400, 1000, 1999.5, 2000.5 and
+2500 centuries, UT -+1e9, -+1e11 and the doubles next inside -+1e12): past
+a non-Vondrak range the sidereal times NaN, Placidus with speeds ERR
+naming the range, SE_EQU2HOR and SE_HOR2EQU NaN in every output, else
+answered; the -13200 sliver refused, and the speeds 0.005 day inside
++17191 answered: 262 checks. Check (b) now expects the sidereal times
+and the equatorial forms NaN past the ten models' ranges. Measured: (h) 0
+of 262, (b) 660 of 660; before the fix (h) 199 of 262 (198 dates
+answered and the sliver), (b) 220 of 660; with the refusal but not
+SE_HOR2EQU's NaN, (h) 198 and (b) 440 fail by the declination; the
+upstream build (h) 201 of 262. G24 `sidt_lterm_range_answered`:
+`swe_sidtime()` at J2000 + 400 centuries and `swe_sidtime0()` at - 1000
+under IAU 2006 ("0,8,8,0,0,0,0,4"), Laskar 1986 and Owen 1990, answered: 0
+of 6 shipped (6 of 6 before the fix), 6 of 6 compat. G39, G35, G139,
+G155, G161, G160, G45 and G70 pass.
+
+Noticed, not fixed:
+- BEHAVIOUR. Under the three formula sidereal times (IAU 1976, IAU
+  2006, IERS 2010) `swe_sidtime()` takes the instant's mean obliquity
+  from `swi_epsiln()` into its equation of the equinoxes, past a
+  polynomial precession model's range the refused one: under
+  "0,8,0,0,0,0,0,3" 1.8e-3 deg off the same with Vondrak's obliquity at
+  +400 centuries, 6.0e-3 at +1000; "0,2,0,0,0,0,0,2" 6.1e-3 at +1000;
+  Owen with IAU 1976 1.3e-3; SE_ECL_NUT refuses at all of them.
+
+## 257. With the library's own delta t the sidereal times take delta t's far parabola evaluated in double, 2 ulps off its formula: the default over 64 consecutive JDs off its line by 4.1e-9 .. 5.1e-9 deg at -+1e12, 1.3e-9 .. 2.0e-9 at -+5e11
+
+**Severity: Correctness (precision: 5.85e-9 deg over consecutive JDs at 1e12, above the residual floor), this fork's exact sidereal times (entry 234)**
+**Where:** `swephlib.c`: new `sidt_deltat_dd()`, `sidt_tt_days()`, `sidt_dd_div()`, `sidt_dd_mul()`, `sidt_dd_add()`; `sidtime_iers2010_exact()`, `sidt_iau_exact()`, `sidtime_era_long_exact()`
+
+Entry 234's noticed item. Entry 234 made TT = UT + delta t exact, the
+days from J2000 a triple-double of the UT and delta t's double. Delta t
+past the data is each model's parabola, c1 ((Y - y1) / 100)^2 + c0
+seconds and a tidal term, Y = 2000 + (tjd - J0) / 365.25 (or 365.2425),
+in double. At 1e12 days Y is 2.7e9, its ulp 4.8e-7 year (1.7e-4 day),
+and a JD's ulp moves it by less: Y is a staircase, and delta t (2.8e11
+days, ulp 6.1e-5) with it. Measured, the default models, 64 consecutive
+JDs from the doubles 1 day inside -+1e12: delta t off its line by
+1.22e-4 and 1.83e-4 day, 2 ulps off its formula (the formula in long
+double, itself on its line to 9e-8 day: off it by 1.3e-4 and 1.5e-4
+day); the formula rounded once to a double still 6.1e-5 day off its
+line. The long-term sidereal time's precession line moves 3.5e-5 deg a
+day of TT, so the default sidereal time over those JDs was off its line
+by 4.1e-9 and 5.1e-9 deg (4.2e-9 .. 5.1e-9 under each of the five delta
+t models, 5.85e-9 at worst), 1.3e-9 .. 2.0e-9 at -+5e11, 4.2e-11 ..
+6.1e-11 at -+1e11, 4e-13 .. 7e-13 at -+1e10; delta t rounded once to a
+double would leave 2.1e-9. It is delta t's own rounding, not TT's (exact
+since entry 234); evaluating the parabola in double-double re-derives
+nothing, so it is done.
+
+**Fix, as done here:**
+- Past `SIDT_DT_DD_JMIN`, 1e7 days from J2000 (-+27400 years, where
+  every model's delta t is its far parabola), the exact sidereal times
+  take delta t as a double-double, `sidt_deltat_dd()`: the context's
+  model's parabola as `calc_deltat()` writes it, six forms (Stephenson
+  2016's future and past, the other models' future, Morrison and
+  Stephenson 2004's and Espenak and Meeus 2006's past, Stephenson 1997's,
+  Stephenson and Morrison 1984's Borkowski), each year's epoch and length,
+  the divisor 100 and the constants as written, the tidal term with the
+  tidal acceleration `calc_deltat()` takes for iflag -1. It must agree
+  with `calc_deltat()`'s double to 1e-13 of itself (2 ulps measured), or
+  that double is taken; a user's delta t is taken as given.
+  `sidt_tt_days()` makes TT - J2000 of the UT and both parts.
+- Within 1e7 days nothing changes, bit for bit (the low part 0, the sum
+  the same). Past it, before less after: under Vondrak 2011 the sidereal
+  times by up to 2.3e-9 deg and the houses' cusps and ascmc by up to
+  3.8e-9 deg (from 2.2e9 days), the Ascendant's speed by 8.2e-8 deg/day
+  (its frames' delta t); IAU 2006 and IERS 2010, whose T^5 terms there
+  turn an ulp of delta t into turns, by up to 180 deg from 1.4e8 days.
+- The default sidereal time over those 64 JDs is now within 1.8e-13 deg
+  of its line at -+1e12, 1.1e-13 at -+5e11 (1.9e-13 .. 2.7e-13 at worst
+  under each delta t model).
+- No compat form: entry 234's exact forms are this fork's; the compat
+  build's long-term sidereal time is upstream's, whose TT terms round
+  flat over 64 JDs at 1e11 .. 1e12 (2.6e-12 deg off a line). G24 has no
+  case.
+- Cost: a call at 1e12 0.29 -> 0.33 us, at 1e9 within the noise of a
+  loaded machine (2.2 .. 2.9 us); nothing within 1e7 days (entry 256's
+  bench counts).
+
+G159 `tests/sidtrange.c`, new check (i): the default sidereal time with
+the library's own delta t, under each of the five delta t models, over 64
+consecutive JDs at J2000 -+1e11, -+5e11 and the doubles next inside
+-+1e12, within 1e-11 deg of its line: 0 of 30, worst 2.3e-13 deg; before
+the fix 30 of 30 (5.85e-9 deg), with entry 256 fixed alone the same; the
+upstream build passes (its flat terms).
+
+Noticed, not fixed:
+- BEHAVIOUR. The default nutation's arguments are polynomials in T to
+  T^4, which far out turn faster than any stencil: at TT 1e9 days from
+  J2000 dpsi moves 1.4e-3 deg in 1/64 day, 0.11 at 3e9, 2.5 at 1e10, 16.6
+  at 1e11 (|dpsi| to 13.4 deg), so there the apparent sidereal time, the
+  houses and SE_ECL_NUT are as noisy, and the house speeds (frames 1/64
+  day apart) 2.1e3 .. 7.7e3 deg/day off five-point differences over 1/16
+  day at 1e11 .. 1e12; entry 196 keeps the nutation to 1e12.
 
 ## How these were found
 

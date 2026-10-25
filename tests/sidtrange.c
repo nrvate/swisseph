@@ -1,6 +1,7 @@
 /* sidtrange.c -- G159: the long-term sidereal time costs a bounded time at
  * every date within |J| 1e12 days; past it and at no date the functions
- * without an error return answer NaN and the houses refuse.
+ * without an error return answer NaN and the houses refuse, and so past
+ * its precession model's range; its TT is delta t's formula's.
  *
  * The defects. UPSTREAM-BUGS 209: past its table's 400 centuries the
  * long-term sidereal time (this fork's, bug 29; swephlib.c sidt_pra())
@@ -45,7 +46,10 @@
  * 213, 217: every date here under the ten, |J| 3e7 and more; under the
  * other five sets UT 1e12 and the double next inside, TT 1.28e12), the
  * houses refuse, ERR with serr naming the range and the cusps 0, and the
- * ecliptic forms are NaN. 660 dates by models, 450 of them refusing.
+ * ecliptic forms are NaN; past the model's range swe_sidtime() and
+ * swe_sidtime0() are NaN too, and SE_EQU2HOR and SE_HOR2EQU in every
+ * output (UPSTREAM-BUGS 256). 660 dates by models, 450 of them refusing,
+ * 440 of those the sidereal times too.
  *
  * Check (c): past the bound and at no date. 21 dates (|J| the double past
  * 1e12, 1.5e12, 1e13, 1e20, 1e84, 1e200, 1e300, 1e308, DBL_MAX and inf,
@@ -61,7 +65,8 @@
  * UT 1e9 to 1e12) under the default models and IAU 2006 long-term, on a
  * fresh context in order, against a context that first took 1e12, -1e12,
  * 1e13, NaN, -1e300 and -inf and then the dates in reverse, and one that
- * took them with the other model set between each: bit for bit.
+ * took them with the other model set between each: bit for bit (IAU 2006's
+ * NaN past its range, bug 256, at 18 of the 20).
  *
  * UPSTREAM-BUGS 234: the sidereal times were their formulas evaluated in
  * double and then reduced, IAU 2006's and IAU 1976's seconds by 86400
@@ -92,13 +97,54 @@
  * within 1e-11 deg (delta t 0.3 day, its own rounding kept out). At -+7.3e7
  * days (2000 centuries) it needs bug 235 too: the integral's rate.
  *
+ * UPSTREAM-BUGS 256: the long-term sidereal time integrated its precession
+ * model's rate out to 2000 centuries under every model, past the ten
+ * polynomial models' -+152 centuries and Owen 1990's -+200, where bug 212
+ * refuses their matrices: swe_sidtime() and swe_sidtime0() answered from
+ * them there, over 64 consecutive JDs at 800 .. 1999 centuries off a line
+ * by up to 2.5e-5 deg under IAU 2006, 1.05 under Simon 1994, 8.4 under
+ * Owen; swe_azalt() and swe_azalt_rev() from them. UPSTREAM-BUGS 257: with
+ * the library's own delta t the default sidereal time over 64 consecutive
+ * JDs at -+1e12 was off its line by 4.1e-9 .. 5.1e-9 deg: delta t's far
+ * parabola evaluated in double, 2 ulps (1.3e-4 day) off its formula.
+ *
+ * Check (h): the range. Under the eleven long-term precession models,
+ * "0,8,8,0,0,0,0,4" and "0,9,8", with the long-term sidereal time, at 20
+ * dates each (TT a quarter day inside and past each end of the model's
+ * range, TT -+400, 1000, 1999.5, 2000.5 and 2500 centuries, UT -+1e9,
+ * -+1e11 and the doubles next inside -+1e12): where TT is past the range
+ * of a model other than Vondrak 2011 swe_sidtime() and swe_sidtime0() NaN,
+ * Placidus with speeds ERR naming the range with its cusps and ARMC 0,
+ * swe_azalt() SE_EQU2HOR and swe_azalt_rev() SE_HOR2EQU NaN in every
+ * output; elsewhere the sidereal times in [0, 24), those two finite and
+ * the houses not refused for a range (but where TT is past 1e12, bug 213).
+ * And under IAU 2006 two ends: at -13200, where the houses' TT on the
+ * Swiss files lies 0.033 day after the sidereal time's (default delta
+ * t's), the houses' 0.01 day inside and the sidereal time's past, the
+ * houses ERR naming the precession model's range and 0, not answered from
+ * a refused sidereal time; 0.005 day inside +17191 the houses with speeds
+ * OK, finite, the ARMC's within 1 deg/day of 360.99 (their frames past it
+ * take the sidereal time as the obliquity, unbounded). 262 checks.
+ *
+ * Check (i): the default sidereal time with the library's own delta t,
+ * under each of the five delta t models, over 64 consecutive JDs at J2000
+ * -+1e11, -+5e11 and the doubles next inside -+1e12, on the line through
+ * the first and last within 1e-11 deg. 30 lines.
+ *
  * Measured (the -O0 test build): (a) 14 of 14 bounded, the first call at
  * 1e12 0.0050 s against the table's 0.0029 (0.031 and 0.022 before bug
  * 235's analytic rate), a call there 1.1e-4 s against 2.8e-5 (the
  * nutation's arguments in double-double past 4e8 days, bug 188);
  * (b) 660 of 660 as expected; (c) 273 of 273 refused or NaN; (d) 0 differ;
  * (e) 0 of 8828; (f) 0 of 108, worst 1.3e-13 deg past 5e5 days, 1.2e-11
- * within; (g) 0 of 20, worst 2.5e-12 deg. Before bug 234's fix: (e) 26 of
+ * within; (g) 0 of 20, worst 2.5e-12 deg; (h) 0 of 262; (i) 0 of 30, worst
+ * 2.3e-13 deg. Before bugs 256 and 257: (b) 220 of 660 (the sidereal times
+ * and the equatorial forms answered past the ten models' ranges), (h) 199
+ * of 262 (198 dates answered, the -13200 houses OK from the refused
+ * sidereal time), (i) 30 of 30, worst 5.85e-9 deg (4.2e-11 .. 6.1e-11 at
+ * -+1e11); 256 fixed alone, (i) 30 of 30; with 256's refusal but not
+ * SE_HOR2EQU's NaN, (b) and (h) fail by its declination, answered. Before
+ * bug 234's fix: (e) 26 of
  * 8828, (f) 75 of 108 (IAU 1976 off by 0.049 deg, IAU 2006 by 163, IERS
  * 2010 by 160), (g) 20 of 20, worst 1.3e-4 deg; bug 234 fixed but not 235,
  * (g) fails at -+7.3e7 days, 7.0e-9 and 5.0e-9 deg. Before bug 209's fix
@@ -109,12 +155,15 @@
  * -1e300, -1e308, -DBL_MAX, -inf), the rest answered; (d) hung. Before
  * bugs 213 and 217, (b) 210 of 660, the houses and ecliptic forms answered
  * past the models' ranges and the houses at TT past 1e12. The upstream
- * build fails 755: (b) 450 of 660 (210 as expected), the same and the
+ * build fails 956: (b) 450 of 660 (210 as expected), the same and the
  * ecliptic forms answered where TT is past 1e12 (its SE_ECL_NUT answers
  * there); (c) 187 of 273 (86 refused or NaN, the NaN of 1e84 and beyond
  * its only no-answers); (e) 19 of 8828; (f) 83 of 108 (IERS 2010 4.4e-8
  * deg off within 5e5 days, its terms in plain double); (g) 16 of 20,
- * worst 2.8e-8 deg; (a) and (d) pass. Run as
+ * worst 2.8e-8 deg; (h) 201 of 262 (its long-term sidereal time,
+ * upstream's, takes swi_precess() at the date); (a), (d) and (i) pass
+ * (upstream's long-term formula rounds its TT terms flat over 64 JDs at
+ * 1e11 .. 1e12, 2.6e-12 deg off a line). Run as
  *   sidtrange EPHEDIR
  */
 #include <float.h>
@@ -239,9 +288,11 @@ static int answered_under(double m)
     int poly = m >= 1 && m <= 11 && m != 9;
     double lo = m == 10 ? -4853455.5 : -3100015.5, hi = m == 10 ? 9756544.5 : 8000016.5;
     int r, past = !(tt >= -1e12 && tt <= 1e12) || (poly && !(tt >= lo && tt <= hi)), ok = 1;
+    /* and the long-term sidereal time past its model's range (bug 256) */
+    int sref = poly && !(tt >= lo && tt <= hi);
     s = swe_sidtime_r(c, t);
     s0 = swe_sidtime0_r(c, t, 23.44, -0.004);
-    if (!isfinite(s) || !isfinite(s0))
+    if (sref ? !(isnan(s) && isnan(s0)) : (!isfinite(s) || !isfinite(s0)))
       ok = 0;
     serr[0] = '\0';
     r = swe_houses_ex2_r(c, t, SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
@@ -250,9 +301,9 @@ static int answered_under(double m)
            || !fin(cu + 1, 12) || !fin(a, 8) || !fin(cs + 1, 12) || !fin(as, 8)))
       ok = 0;
     swe_azalt_r(c, t, SE_EQU2HOR, geo, 0, 10, xin, x);
-    if (!fin(x, 3)) ok = 0;
+    if (sref ? !allnan(x, 3) : !fin(x, 3)) ok = 0;
     swe_azalt_rev_r(c, t, SE_HOR2EQU, geo, hin, x);
-    if (!fin(x, 2)) ok = 0;
+    if (sref ? !allnan(x, 2) : !fin(x, 2)) ok = 0;
     swe_azalt_r(c, t, SE_ECL2HOR, geo, 0, 10, xin, x);
     if (past ? !allnan(x, 3) : !fin(x, 3)) ok = 0;
     swe_azalt_rev_r(c, t, SE_HOR2ECL, geo, hin, x);
@@ -518,12 +569,152 @@ static int line_at(double d)
   return 0;
 }
 
+/* (h): bug 256. The long-term sidereal time under each precession model:
+ * the eleven long-term ones, "0,8,8,0,0,0,0,4" and Vondrak 2011 with IAU
+ * 2006 short-term ("0,9,8") */
+static const char *MH[13] = {
+  "0,1", "0,2", "0,3", "0,4", "0,5", "0,6", "0,7", "0,8", "0,9", "0,10", "0,11",
+  "0,8,8,0,0,0,0,4", "0,9,8" };
+static const int MHL[13] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 8, 9 };	/* long-term */
+/* the UT whose TT (the default delta t's, the sidereal time's) is tt */
+static double ut_of_tt(swe_ctx *c, double tt)
+{
+  double ut = tt;
+  int k;
+  for (k = 0; k < 6; k++)
+    ut = tt - swe_deltat_ex_r(c, ut, -1, NULL);
+  return ut;
+}
+static int lterm_range_under(double mh)
+{
+  int m = (int) mh, lm = MHL[m], i, s, bad = 0;
+  swe_ctx *c = fresh(MH[m]);
+  double lo = lm == 10 ? -4853455.5 : lm == 9 ? 2451545 - 2000 * 36525.0 : -3100015.5;
+  double hi = lm == 10 ? 9756544.5 : lm == 9 ? 2451545 + 2000 * 36525.0 : 8000016.5;
+  static const double cy[5] = { 400, 1000, 1999.5, 2000.5, 2500 };
+  double geo[3] = {10, 50, 100}, xin[3] = {100, 1, 1}, hin[2] = {100, 20};
+  for (s = 0; s < 2; s++)
+    for (i = 0; i < 10; i++) {
+      double sg = s ? -1 : 1, t, tt, v, v0, x[6], y[6], cu[13], a[10], cs[13], as[10];
+      char serr[AS_MAXCH];
+      int r, refused, hrefused, ok = 1;
+      if (i < 2)	/* TT a quarter day inside the range's end, past it */
+        tt = (s ? lo : hi) + sg * (i ? 0.25 : -0.25);
+      else if (i < 7)
+        tt = 2451545 + sg * cy[i - 2] * 36525.0;
+      if (i < 7) {
+        t = ut_of_tt(c, tt);
+      } else {
+        t = i == 9 ? sg * nextafter(1e12, 0) : sg * (i == 7 ? 1e9 : 1e11);
+        tt = t + swe_deltat_ex_r(c, t, -1, NULL);
+      }
+      /* Vondrak 2011 answers past its range, its line (bug 209) */
+      refused = lm != 9 && !(tt >= lo && tt <= hi);
+      hrefused = refused || !(fabs(tt) <= 1e12);	/* bug 213 */
+      v = swe_sidtime_r(c, t);
+      v0 = swe_sidtime0_r(c, t, 23.44, -0.004);
+      if (refused ? !(isnan(v) && isnan(v0)) : !(v >= 0 && v < 24 && v0 >= 0 && v0 < 24))
+        ok = 0;
+      serr[0] = '\0';
+      r = swe_houses_ex2_r(c, t, SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
+      if (hrefused ? !(r == ERR && strstr(serr, "outside the") != NULL && cu[1] == 0 && a[2] == 0)
+          : ((r < 0 && strstr(serr, "outside the") != NULL) || !fin(cu + 1, 12) || !fin(as, 8)))
+        ok = 0;
+      swe_azalt_r(c, t, SE_EQU2HOR, geo, 0, 10, xin, x);
+      swe_azalt_rev_r(c, t, SE_HOR2EQU, geo, hin, y);
+      if (refused ? !(allnan(x, 3) && allnan(y, 2)) : !(fin(x, 3) && fin(y, 2)))
+        ok = 0;
+      if (!ok) {
+        if (bad < 3)
+          printf("  (h) models %s TT %.17g: sidtime %g %g, houses %d [%s], azalt %g, rev %g %g\n",
+                 MH[m], tt, v, v0, r, serr, x[0], y[0], y[1]);
+        bad++;
+      }
+    }
+  swe_ctx_free(c);
+  return bad;
+}
+/* (h), the range's ends under IAU 2006: at -13200 the houses' TT (the
+ * Swiss files' delta t) lies 0.033 day after the sidereal time's (the
+ * default's): there the houses refused, not answered from a refused
+ * sidereal time; and within HOUSE_SPEED_DT of +17191 the speeds answered,
+ * their frames past it taking the sidereal time as the obliquity is */
+static int lterm_range_edges(double unused)
+{
+  swe_ctx *c = fresh("0,8");
+  double cu[13], a[10], cs[13], as[10], t, ts, tl, target = -3100015.5 + 0.01;
+  char serr[AS_MAXCH];
+  int r, k, bad = 0;
+  (void) unused;
+  /* the houses' TT 0.01 day inside, the sidereal time's past */
+  t = target;
+  for (k = 0; k < 6; k++)
+    t = target - swe_deltat_ex_r(c, t, SEFLG_SWIEPH, NULL);
+  tl = t + swe_deltat_ex_r(c, t, SEFLG_SWIEPH, NULL);
+  ts = t + swe_deltat_ex_r(c, t, -1, NULL);
+  serr[0] = '\0';
+  r = swe_houses_ex2_r(c, t, SEFLG_SWIEPH | SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
+  if (!(tl >= -3100015.5 && ts < -3100015.5) || r != ERR
+      || strstr(serr, "precession model's range") == NULL || cu[1] != 0 || a[2] != 0) {
+    printf("  (h) the houses' TT %.17g, the sidereal time's %.17g: houses %d [%s] asc %g\n",
+           tl, ts, r, serr, a[0]);
+    bad++;
+  }
+  t = ut_of_tt(c, 8000016.5 - 0.005);
+  serr[0] = '\0';
+  r = swe_houses_ex2_r(c, t, SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
+  if (r != OK || !fin(cu + 1, 12) || !fin(cs + 1, 12) || !fin(as, 8) || !(fabs(as[2] - 360.99) < 1)) {
+    printf("  (h) TT 0.005 day inside +17191: houses %d [%s] armc' %.17g\n", r, serr, as[2]);
+    bad++;
+  }
+  swe_ctx_free(c);
+  return bad;
+}
+
+/* (i): bug 257. The default sidereal time with the library's own delta t
+ * (under each delta t model) over 64 consecutive JDs about J2000 -+ 1e11,
+ * -+ 5e11 and the double next inside -+ 1e12, within 1e-11 deg of the line */
+static double worst_i;
+static int dt_line_under(double md)
+{
+  static const double ji[3] = { 1e11, 5e11, 1e12 };
+  char mod[40];
+  swe_ctx *c;
+  int i, s, j, bad = 0;
+  sprintf(mod, "%d", (int) md);
+  c = fresh(mod);
+  for (i = 0; i < 3; i++)
+    for (s = 0; s < 2; s++) {
+      double jd = 2451545 + (s ? -1 : 1) * ji[i], v[65], a0, w = 0;
+      if (jd > 1e12 - 1) jd = 1e12 - 1;
+      if (jd < -1e12 + 1) jd = -1e12 + 1;
+      a0 = swe_sidtime0_r(c, jd, 23.4, 0);
+      for (j = 0; j <= 64; j++) {
+        v[j] = wrap_deg(swe_sidtime0_r(c, jd, 23.4, 0) - a0);
+        jd = nextafter(jd, 1e13);
+      }
+      for (j = 1; j < 64; j++)
+        if (fabs(v[j] - v[64] * j / 64) > w)
+          w = fabs(v[j] - v[64] * j / 64);
+      if (w > worst_i)
+        worst_i = w;
+      if (!(w <= 1e-11)) {
+        if (bad < 2)
+          printf("  (i) delta t model %d, J2000 %+g days: %.2e deg off the line\n",
+                 (int) md, (s ? -1 : 1) * ji[i], w);
+        bad++;
+      }
+    }
+  swe_ctx_free(c);
+  return bad;
+}
+
 int main(int argc, char **argv)
 {
   static const double ja[7] = { 1e8, 1e9, 1e10, 1e11, 8e11, 1e12, 0 };
   static const double jc[10] = { 0, 1.5e12, 1e13, 1e20, 1e84, 1e200, 1e300, 1e308, DBL_MAX, INFINITY };
   static const double jg[10] = { 5.1e5, 1e6, 1e7, 7.3e7, 1e8, 1e9, 1e10, 1e11, 5e11, 1e12 };
-  int i, m, k, ba = 0, bb = 0, bc = 0, bd, be = 0, bf = 0, bg = 0, nb = 0;
+  int i, m, k, ba = 0, bb = 0, bc = 0, bd, be = 0, bf = 0, bg = 0, bh = 0, bi = 0, nb = 0;
   if (argc != 2) {
     fprintf(stderr, "usage: sidtrange EPHEDIR\n");
     return 2;
@@ -609,9 +800,25 @@ int main(int argc, char **argv)
       bg += line_at(k ? -jg[i] : jg[i]);
   printf("  (g) %d of 20 off the line, worst %.2e deg\n", bg, worst_g);
 
-  if (ba + bb + bc + bd + be + bf + bg)
-    printf("G159 FAIL: %d\n", ba + bb + bc + bd + be + bf + bg);
+  /* (h) */
+  for (m = 0; m < 13; m++) {
+    int r = in_child("(h) the long-term sidereal time, the models of MH[]", 10, lterm_range_under, m);
+    bh += r < 0 ? 20 : r;
+  }
+  {
+    int r = in_child("(h) the range's ends", 10, lterm_range_edges, 0);
+    bh += r < 0 ? 2 : r;
+  }
+  printf("  (h) %d of 262 not as their precession model's range has them\n", bh);
+
+  /* (i) */
+  for (m = 1; m <= 5; m++)
+    bi += dt_line_under(m);
+  printf("  (i) %d of 30 off the line, worst %.2e deg\n", bi, worst_i);
+
+  if (ba + bb + bc + bd + be + bf + bg + bh + bi)
+    printf("G159 FAIL: %d\n", ba + bb + bc + bd + be + bf + bg + bh + bi);
   else
     printf("G159 PASS\n");
-  return ba + bb + bc + bd + be + bf + bg != 0;
+  return ba + bb + bc + bd + be + bf + bg + bh + bi != 0;
 }

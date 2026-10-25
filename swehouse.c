@@ -140,7 +140,7 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
 static int sunshine_solution_makransky(double ramc, double lat, double ecl, struct houses *hsp);
 static int sunshine_solution_treindl(double ramc, double lat, double ecl, struct houses *hsp);
 #ifndef SWE_UPSTREAM_COMPAT
-static int house_range(swe_ctx *ctx, double tjde, int32 iflag, int ito,
+static int house_range(swe_ctx *ctx, double tjd_ut, double tjde, int32 iflag, int ito,
                        double *cusp, double *ascmc, double *cusp_speed,
                        double *ascmc_speed, char *serr);
 #endif
@@ -171,7 +171,7 @@ static int swe_houses_r_body(swe_ctx *ctx, double tjd_ut,
   double tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
 #ifndef SWE_UPSTREAM_COMPAT
   /* bug 213: ERR, as for its own reasons, and the outputs 0 */
-  if (house_range(ctx, tjde, 0, toupper(hsys) == 'G' ? 36 : 12,
+  if (house_range(ctx, tjd_ut, tjde, 0, toupper(hsys) == 'G' ? 36 : 12,
                   cusp, ascmc, NULL, NULL, NULL) == ERR)
     return ERR;
 #endif
@@ -502,13 +502,19 @@ static void houses_less_rate(int hsys, int retc, double rate, double *cusp_speed
  * (swi_frame_range(), the model swi_epsiln(tjde, 0) takes); sidereal, the
  * ayanamsa's instant and t0 within theirs (swi_ayanamsa_range()). ERR,
  * cusp[0..ito], ascmc[0..9] and the speeds 0, serr naming the range;
- * before anything is computed or the sidereal time read. */
-static int house_range(swe_ctx *ctx, double tjde, int32 iflag, int ito,
+ * before anything is computed or the sidereal time read.
+ * Upstream bug 256: and the ARMC, the long-term sidereal time at UT
+ * tjd_ut, within its precession model's range (swi_sidt_range()), whose TT
+ * takes the default delta t where tjde takes the ephemeris's: 0.033 day
+ * apart at -13200 on the Swiss files, where its NaN came out as ERR "very
+ * close to polar circle, switched to Porphyry" and every cusp NaN. */
+static int house_range(swe_ctx *ctx, double tjd_ut, double tjde, int32 iflag, int ito,
                        double *cusp, double *ascmc, double *cusp_speed,
                        double *ascmc_speed, char *serr)
 {
   int i;
   if (swi_frame_range(ctx, tjde, 0, SWI_FRAME_EPS, "jd", serr) == OK
+      && swi_sidt_range(ctx, tjd_ut, serr) == OK
       && (!(iflag & SEFLG_SIDEREAL) || swi_ayanamsa_range(ctx, tjde, iflag, serr) == OK))
     return OK;
   for (i = 0; i <= ito; i++) {
@@ -591,7 +597,7 @@ static int swe_houses_ex2_r_body(swe_ctx *ctx, double tjd_ut,
     SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
 #ifndef SWE_UPSTREAM_COMPAT
   /* bug 213 (house_range()) */
-  if (house_range(ctx, tjde, iflag, ito, cusp, ascmc, cusp_speed, ascmc_speed,
+  if (house_range(ctx, tjd_ut, tjde, iflag, ito, cusp, ascmc, cusp_speed, ascmc_speed,
                   serr) == ERR)
     return ERR;
 #endif

@@ -191,6 +191,9 @@ extern int swi_deltat_range(double tjd, const char *what, char *serr);
 extern double swi_deltat_nobound(swe_ctx *ctx, double tjd, int32 iflag);
 extern int swi_frame_range(swe_ctx *ctx, double J, int32 iflag, int which,
                            const char *what, char *serr);
+/* and the long-term sidereal time's at UT tjd_ut: its precession model's
+ * range at its TT, out to where its integral stops (bug 256) */
+extern int swi_sidt_range(swe_ctx *ctx, double tjd_ut, char *serr);
 #endif
 extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 #ifndef SWE_UPSTREAM_COMPAT

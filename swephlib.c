@@ -5594,6 +5594,104 @@ static void sidt_days(double a, double b, double *d)
   x[2] = b;
   sidt_td_norm(x, 3, d);
 }
+/* Upstream bug 257: TT = UT + delta t was exact (bug 234), but delta t's
+ * far parabola was evaluated in double, the year Y rounded to its ulp
+ * (4.8e-7 year at 1e12 days) and each term after it: 2 ulps off the
+ * formula (1.3e-4 day of 2.8e11 at 1e12), and its double alone half an
+ * ulp. With the library's own delta t the default sidereal time over 64
+ * consecutive JDs was off its line by 4.1e-9 .. 5.1e-9 deg at -+1e12, 1.3e-9
+ * .. 2.0e-9 at -+5e11 (the precession's line moves 3.5e-5 deg a day of
+ * TT); delta t rounded once to a double still 2.1e-9. Now past
+ * SIDT_DT_DD_JMIN days from J2000, where every model's delta t is its
+ * parabola past the data, the sidereal times take that parabola in
+ * double-double, as calc_deltat() writes it for the context's model, its
+ * tidal term with the tidal acceleration it takes (iflag -1), each
+ * decimal year length and divisor as written; it must agree with
+ * calc_deltat()'s double to 1e-13 of itself, or that double is taken.
+ * A user's delta t is taken as given. */
+#define SIDT_DT_DD_JMIN  1e7	/* days from J2000, about -+27400 years */
+/* (ah + al) / b */
+static void sidt_dd_div(double ah, double al, double b, double *h, double *l)
+{
+  double q = ah / b;
+  *l = (fma(-q, b, ah) + al) / b;
+  *h = q;
+}
+/* (ah + al) (bh + bl) */
+static void sidt_dd_mul(double ah, double al, double bh, double bl, double *h, double *l)
+{
+  double p, e;
+  sidt_two_prod(ah, bh, &p, &e);
+  e += ah * bl + al * bh;
+  nut_two_sum(p, e, h, l);
+}
+/* (ah + al) + b */
+static void sidt_dd_add(double ah, double al, double b, double *h, double *l)
+{
+  double s, e;
+  nut_two_sum(ah, b, &s, &e);
+  nut_two_sum(s, e + al, h, l);
+}
+/* delta t at UT tjd for the sidereal times (sidt_deltat()'s), days, as
+ * dt[0] + dt[1] */
+static void sidt_deltat_dd(swe_ctx *ctx, double tjd, double *dt)
+{
+  /* each model's parabola past its data, calc_deltat()'s: its year's
+   * epoch and length (Y = 2000 + (tjd - J0) / len), the year y1 of
+   * c1 ((Y - y1) / 100)^2 + c0 + c0b seconds, and the tidal acceleration
+   * of its term -0.000091 (tid_acc - t0) (Y - 1955)^2 (0: none) */
+  static const double far[6][7] = {
+    {2451544.5, 365.25, 2000, 32.5, 42.5, 0, 0},	/* future, Stephenson 2016 */
+    {2451544.5, 365.25, 1820, 31, -20, 0, 0},	/* future, the others */
+    {J2000, 365.2425, 1825, 32.5, -320, -179.7337208, SE_TIDAL_STEPHENSON_2016},
+    {J2000, 365.2425, 1820, 32, -20, 0, SE_TIDAL_26},	/* Morrison 2004, Espenak 2006 */
+    {J2000, 365.25, 1735, 35, -20, 0, SE_TIDAL_26},	/* Stephenson 1997 */
+    {J2000, 365.25, 1625, 35, 40, 0, 0},	/* Stephenson 1984, Borkowski */
+  };
+  const double *f;
+  double hi = sidt_deltat(ctx, tjd), qh, ql, bh, bl, sh, sl, yh, yl, tid_acc;
+  int32 denumret;
+  int m = ctx->astro_models[SE_MODEL_DELTAT];
+  dt[0] = hi;
+  dt[1] = 0;
+  if (m == 0) m = SEMOD_DELTAT_DEFAULT;
+  if (ctx->delta_t_userdef_is_set || !(fabs(tjd - J2000) >= SIDT_DT_DD_JMIN)
+      || m < SEMOD_DELTAT_STEPHENSON_MORRISON_1984 || m > SEMOD_DELTAT_STEPHENSON_ETC_2016)
+    return;
+  if (tjd > J2000)
+    f = far[m == SEMOD_DELTAT_STEPHENSON_ETC_2016 ? 0 : 1];
+  else
+    f = far[m == SEMOD_DELTAT_STEPHENSON_ETC_2016 ? 2 : m >= SEMOD_DELTAT_STEPHENSON_MORRISON_2004 ? 3
+            : m == SEMOD_DELTAT_STEPHENSON_1997 ? 4 : 5];
+  nut_two_sum(tjd, -f[0], &qh, &ql);
+  sidt_dd_div(qh, ql, f[1], &qh, &ql);	/* Y - 2000 */
+  sidt_dd_add(qh, ql, 2000 - f[2], &bh, &bl);
+  sidt_dd_div(bh, bl, 100, &bh, &bl);
+  sidt_dd_mul(bh, bl, bh, bl, &sh, &sl);
+  sidt_dd_mul(sh, sl, f[3], 0, &sh, &sl);
+  sidt_dd_add(sh, sl, f[4], &sh, &sl);
+  sidt_dd_add(sh, sl, f[5], &sh, &sl);
+  if (f[6] != 0) {
+    swi_get_tid_acc(ctx, tjd, 0, 9999, &denumret, &tid_acc, NULL);	/* calc_deltat()'s, iflag -1 */
+    sidt_dd_add(qh, ql, 2000 - 1955.0, &yh, &yl);
+    sidt_dd_mul(yh, yl, yh, yl, &yh, &yl);
+    sidt_dd_mul(yh, yl, -0.000091 * (tid_acc - f[6]), 0, &yh, &yl);
+    sidt_dd_add(sh, sl + yl, yh, &sh, &sl);
+  }
+  sidt_dd_div(sh, sl, 86400.0, &sh, &sl);
+  if (fabs((sh - hi) + sl) <= 1e-13 * fabs(hi)) {	/* its formula, else calc_deltat()'s */
+    dt[0] = sh;
+    dt[1] = sl;
+  }
+}
+/* TT - J2000 at UT tjd, days, exactly: UT + delta t (bug 257) */
+static void sidt_tt_days(swe_ctx *ctx, double tjd, double *d)
+{
+  double x[4];
+  nut_two_sum(tjd, -J2000, &x[0], &x[1]);
+  sidt_deltat_dd(ctx, tjd, &x[2]);
+  sidt_td_norm(x, 4, d);
+}
 /* each decimal constant's triple-double, in the powers of days its
  * polynomial takes (mpmath, 400 bits) */
 static const double sidt_era_td[2][3] = {	/* turns */
@@ -5702,7 +5800,7 @@ static double sidt_np_exact(const double *d)
 static double sidtime_iers2010_exact(swe_ctx *ctx, double tjd)
 {
   double d[3], r[3];
-  sidt_days(tjd, sidt_deltat(ctx, tjd), d);
+  sidt_tt_days(ctx, tjd, d);	/* bug 257 */
   sidt_td_poly(sidt_10_td, 5, d, r);
   return swe_degnorm(era_deg_exact(tjd) + sidt_td_mod(r, 1296000.0) / 3600.0 + sidt_np_exact(d));
 }
@@ -5712,7 +5810,7 @@ static double sidt_iau_exact(swe_ctx *ctx, int iau2006, double jd0, double secs)
 {
   double du[3] = {jd0 - J2000, 0, 0}, s[3] = {secs, 0, 0}, d[3], r[3], g;
   if (iau2006) {
-    sidt_days(jd0, sidt_deltat(ctx, jd0), d);
+    sidt_tt_days(ctx, jd0, d);	/* bug 257 */
     sidt_td_poly(sidt_06_td, 5, d, r);
     g = sidt_td_mod(r, 86400.0);
     sidt_td_mul(sidt_06u_td, du, r);
@@ -5992,7 +6090,7 @@ static double sidtime_era_long_exact(swe_ctx *ctx, double tjd, int model)
 {
   double dt = sidt_deltat(ctx, tjd), d[3], p;
   double tt = (tjd + dt - J2000) / 36525.0, pra = sidt_pra(ctx, tt, model);
-  sidt_days(tjd, dt, d);
+  sidt_tt_days(ctx, tjd, d);	/* bug 257 */
   if (fabs(tt) <= SIDT_PRA_TFAR) {
     p = 0.014506 + SIDT_PRA_NUTC * tt + pra;
   } else {
@@ -6065,6 +6163,41 @@ static double sidt_lterm_offset(swe_ctx *ctx, int ib, int model)
   sl->ofs = ofs;
   sl->valid = TRUE;
   return ofs;
+}
+
+/* Upstream bug 256: the long-term sidereal time integrated the rate of the
+ * instant's precession model out to SIDT_PRA_TFAR (2000 centuries) under
+ * every model, where bug 212 refuses each polynomial model's matrices past
+ * -+152 centuries and Owen 1990's past -+200 (bug 217): there swe_sidtime()
+ * and swe_sidtime0() answered from them, 0.03 to 17.5 deg off Vondrak
+ * 2011's at the range's end and -172 .. +178 at 2000 centuries, their rates
+ * there 0 to 1915"/cy apart, and over 64 consecutive JDs at 800 .. 1999
+ * centuries off a line by 1.4e-7 .. 2.5e-5 deg under IAU 2006, to 1.05 deg
+ * under Simon 1994 and 8.4 under Owen 1990 (the matrices' rounding past
+ * their fit); swe_azalt() SE_EQU2HOR and swe_azalt_rev() SE_HOR2EQU from
+ * them. Refused now as the precession is: OK, or ERR with serr naming the
+ * model's range at the sidereal time's TT, where its integral would take a
+ * matrix past it; swe_sidtime() and swe_sidtime0() NaN there, the houses
+ * ERR. Vondrak 2011's range is where the integral stops, and past it the
+ * accumulated precession is its line (bug 209), which takes no matrix: it
+ * answers to the date bound, as its obliquity does (bug 196). Within each
+ * range nothing changes, bit for bit. */
+int swi_sidt_range(swe_ctx *ctx, double tjd_ut, char *serr)
+{
+  double tt, tc, tf = J2000 + SIDT_PRA_TFAR * 36525.0, tb = J2000 - SIDT_PRA_TFAR * 36525.0;
+  int sidt_model, pm;
+  swi_init_swed_if_start(ctx);
+  sidt_model = ctx->astro_models[SE_MODEL_SIDT];
+  if (sidt_model == 0) sidt_model = SEMOD_SIDT_DEFAULT;
+  /* swe_sidtime0_r_body()'s long-term branch, its TT and model */
+  if (sidt_model != SEMOD_SIDT_LONGTERM || (tjd_ut > SIDT_LTERM_T0 && tjd_ut < SIDT_LTERM_T1))
+    return OK;
+  tt = tjd_ut + sidt_deltat(ctx, tjd_ut);
+  pm = frame_chosen_model(ctx, tt);
+  tc = tt > tf ? tf : tt < tb ? tb : tt;	/* the integral's reach */
+  if (frame_model_range(pm, 1, tc, "jd", NULL) == OK)
+    return OK;
+  return frame_model_range(pm, 1, tt, "jd", serr);
 }
 #endif
 static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double nut)
@@ -6211,7 +6344,12 @@ double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut
     return NAN;
 #endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 256: past the long-term sidereal time's model's range */
+  ret = swi_sidt_range(ctx, tjd, NULL) == OK ? swe_sidtime0_r_body(ctx, tjd, eps, nut) : NAN;
+#else
   ret = swe_sidtime0_r_body(ctx, tjd, eps, nut);
+#endif
   swi_config_release(ctx);
   return ret;
 }
