@@ -843,7 +843,8 @@ check-moshprec: moshprec
 
 # G55: the interpolated apogee and perigee are their iteration's fixed
 # point, not five or four passes short of it (UPSTREAM-BUGS 56); their and
-# the mean apogee's SEFLG_J2000 latitude speeds are their rates.
+# the mean apogee's SEFLG_J2000 latitude speeds are their rates; the
+# perigee's light time from its distance's two-pass estimate (bug 72).
 check-intpconv: intpconv
 	@env -u SE_EPHE_PATH ./intpconv $(EPHE)
 

@@ -7750,14 +7750,14 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
    * flag set (TRUEPOS aside). tau is the apsis's distance over c, from the
    * first passes of the iteration at t (swi_intp_apsides_est()): the
    * distance is stationary at the apsis, so two passes put the perigee's
-   * within 4 km and one the apogee's within 1 km over 20000 dates
+   * within 4.3 km and one the apogee's within 1 km over 20000 dates
    * -10000..+12000, at most 0.0013 mas of position (one pass would leave
-   * the perigee 83 km, 0.026 mas). The estimate is four lunar evaluations
-   * (~42,000 instructions each) besides the iteration's own: with bugs 45
-   * and 56 a call without the speed flag is 1.41 (perigee) and 1.29
-   * (apogee) of upstream's instructions, at instants a day apart 1.83 and
-   * 1.80 with this build's IAU 2000A nutation node; the three apsides of a
-   * velocity for tau V cost 3.2 (UPSTREAM-BUGS 44).
+   * the perigee 92 km). The estimate is seven (perigee) and four (apogee)
+   * lunar evaluations (~42,000 instructions each) besides the iteration's
+   * own: with bugs 45, 56 and 72 a call without the speed flag is 1.57
+   * (perigee) and 1.29 (apogee) of upstream's instructions, at instants a
+   * day apart 1.99 and 1.80 with this build's IAU 2000A nutation node; the
+   * three apsides of a velocity for tau V cost 3.2 (UPSTREAM-BUGS 44).
    * Upstream bug 45: the speed was the difference over +-0.1 day, off by
    * the h^2 term, 1.1e-4 deg/day on the perigee. It is now the three
    * positions 2^-8 day apart about t - tau, where that term (1.7e-7) and
@@ -7768,7 +7768,12 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
     const double h = INTP_APS_SPEED_INTV;
     double tlt = tjd, taudot = 0, est[3], r, rdot;
     if (!(iflag & SEFLG_TRUEPOS)) {
-      swi_intp_apsides_est(ctx, tjd, est, ipl, ipl == SE_INTP_PERG ? 2 : 1);
+      /* Bug 72 (this fork's): the pass count compared ipl, an SEI_ index,
+       * with SE_INTP_PERG, so the perigee's estimate took one pass, not
+       * two: its distance up to 92 km from the converged one (rms 20, 20000
+       * dates -10000..+12000), its position 0.0049 mas and its speed 1.1e-7
+       * deg/day off (-3000..+3000). Two passes: 4.3 km (rms 1.1). */
+      swi_intp_apsides_est(ctx, tjd, est, ipl, ipl == SEI_INTP_PERG ? 2 : 1);
       tlt = tjd - est[2] * AUNIT / CLIGHT / 86400.0;
     }
     memset((void *) ndp->xreturn, 0, 24 * sizeof(double));

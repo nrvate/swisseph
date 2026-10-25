@@ -494,6 +494,28 @@ static double intp_fixpoint_off(void)
   return fabs(swe_difdeg2n(x[0], 73.311264799172)) * 3600000.0;
 }
 
+/* Bug 72: the interpolated perigee at JD 2486223.6015625 (2094), NONUT,
+ * against its TRUEPOS position at t - tau, tau its TRUEPOS distance at t
+ * over c, mas. The fork's one-pass light-time estimate left it 4.4e-3 mas
+ * off; upstream has no light time without SEFLG_SPEED, 91 mas. */
+static double intp_lighttime_off(void)
+{
+  double t = 2486223.6015625, xa[6], xt[6], tau, d2 = 0, r2 = 0;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_INTP_PERG, SEFLG_SWIEPH | SEFLG_NONUT | SEFLG_XYZ, xa, serr);
+  swe_calc(t, SE_INTP_PERG, SEFLG_SWIEPH | SEFLG_TRUEPOS | SEFLG_NONUT | SEFLG_XYZ, xt, serr);
+  tau = sqrt(xt[0] * xt[0] + xt[1] * xt[1] + xt[2] * xt[2]) * (1.49597870700e11 / 299792458.0 / 86400.0);
+  swe_calc(t - tau, SE_INTP_PERG, SEFLG_SWIEPH | SEFLG_TRUEPOS | SEFLG_NONUT | SEFLG_XYZ, xt, serr);
+  for (k = 0; k < 3; k++) {
+    d2 += (xa[k] - xt[k]) * (xa[k] - xt[k]);
+    r2 += xt[k] * xt[k];
+  }
+  return sqrt(d2 / r2) * 206264806.24709636;
+}
+
 /* A fixed star's distance rate: Spica's, geocentric apparent, against a
  * five-point difference of its distance over 2^-8 day, AU/day. Upstream
  * takes the deflection's and the aberration's rates as differences of two
@@ -1193,7 +1215,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1223,6 +1245,7 @@ int main(int argc, char **argv)
   intpsf = intp_speedflag_off();
   intprough = intp_rough_off();
   intpfix = intp_fixpoint_off();
+  intplt = intp_lighttime_off();
   stardd = star_dist_rate_off();
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
@@ -1443,6 +1466,14 @@ int main(int argc, char **argv)
   else {
     printf("  intp perigee fixed pt  %.2e mas     FAIL: expected %s\n",
            intpfix, WANT_DEFECT ? "> 500" : "< 0.01");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (intplt > 10) : (intplt < 1e-3))
+    printf("  intp perigee light t.  %.2e mas     OK\n", intplt);
+  else {
+    printf("  intp perigee light t.  %.2e mas     FAIL: expected %s\n",
+           intplt, WANT_DEFECT ? "> 10" : "< 1e-3");
     bad++;
   }
 

@@ -1,6 +1,7 @@
 /* intpconv.c -- G55: the interpolated lunar apogee and perigee are their
- * iteration's fixed point, and their SEFLG_J2000 latitude speeds are the
- * rates of their positions.
+ * iteration's fixed point, their SEFLG_J2000 latitude speeds are the
+ * rates of their positions, and the perigee's light time is its
+ * distance's.
  *
  * The defect (UPSTREAM-BUGS 56): swi_intp_apsides() finds the apsis by
  * steps along a line in the lunar arguments, and the next pass's line goes
@@ -17,6 +18,12 @@
  * of that rate already brought both to <= 2.1e-8. Checked here, as no
  * other gate does for these bodies.
  *
+ * Bug 72 (this fork's): intp_apsides() chose the light-time estimate's
+ * passes by comparing ipl, an SEI_ index, with SE_INTP_PERG, so the
+ * perigee's took one pass, not two: its distance up to 92 km from the
+ * converged one (rms 20 km), the position up to 0.0049 mas off. Now two
+ * passes, 4.3 km (rms 1.1).
+ *
  * The check (Swiss files; the apsides are analytic):
  * (a) the perigee and apogee at ten dates, the eight where the old
  *     iteration stopped farthest from its fixed point in -3000..+3000 and
@@ -31,9 +38,15 @@
  *     a five-point difference over 2^-4 day of the positions at multiples
  *     of 2^-8 day: within 1e-7 deg/day (measured <= 2.7e-9 interpolated,
  *     2.1e-8 the mean apogee).
- * The upstream build fails (a) by 1164 mas (perigee; 2.4 the apogee) and
- * (b) by 4.5e-7 deg/day (interpolated) and 7.6e-7 (mean apogee), 63 of
- * 68 checks. Run as
+ * (c) the perigee at the five of 3000 dates in -3000..+3000 where bug 72's
+ *     one-pass estimate moved it most, NONUT, against the TRUEPOS position
+ *     at t - tau, tau its TRUEPOS distance at t over c: within 1e-3 mas
+ *     (measured 3.6e-8, the estimate within the JD's resolution of tau;
+ *     one pass 3.5e-3..4.9e-3).
+ * The upstream build fails (a) by 1164 mas (perigee; 2.4 the apogee),
+ * (b) by 4.5e-7 deg/day (interpolated) and 7.6e-7 (mean apogee) and (c)
+ * by 110 mas (no light time in x, none at all without SEFLG_SPEED), 68 of
+ * 73 checks. Run as
  *   intpconv EPHEDIR
  */
 #include <math.h>
@@ -41,6 +54,14 @@
 #include "swephexp.h"
 
 #define DEG2MAS 3600000.0
+#define RAD2MAS 206264806.24709636
+#define AU_LT_DAYS (1.49597870700e11 / 299792458.0 / 86400.0)
+/* (c): the five dates of 3000 in -3000..+3000 where the one-pass
+ * light-time estimate moved the perigee most */
+static const double rgLt[5] = {
+  2207849.5698793186, 2486223.6015625, 2223707.9878828423,
+  1184806.05078125, 2549429.4271334051,
+};
 
 /* jd, then perigee and apogee longitude and latitude (deg), the fixed point
  * of the iteration in the mean ecliptic of date */
@@ -76,7 +97,7 @@ static int calc(swe_ctx *c, double jd, int ipl, int32 fl, double *x)
 int main(int argc, char **argv)
 {
   swe_ctx *c;
-  double x[6], p[5][6], h = 1.0 / 16, wa[2] = {0, 0}, wb[3] = {0, 0, 0};
+  double x[6], p[5][6], h = 1.0 / 16, wa[2] = {0, 0}, wb[3] = {0, 0, 0}, wc = 0;
   int i, j, k, s, bad = 0;
   if (argc < 2) {
     fprintf(stderr, "usage: intpconv EPHEDIR\n");
@@ -97,6 +118,24 @@ int main(int argc, char **argv)
       if (e > wa[j]) wa[j] = e;
       if (e > 0.01) bad++;
     }
+  }
+  /* (c) the perigee's light time: X(t) against the TRUEPOS X(t - tau),
+   * tau the TRUEPOS distance at t over c (r moves <= 0.04 km over tau) */
+  for (i = 0; i < 5; i++) {
+    double t = rgLt[i], xa[6], xt[6], tau, d2 = 0, r2 = 0, e;
+    if (calc(c, t, SE_INTP_PERG, SEFLG_NONUT | SEFLG_XYZ, xa)
+        || calc(c, t, SE_INTP_PERG, SEFLG_TRUEPOS | SEFLG_NONUT | SEFLG_XYZ, xt))
+      return 1;
+    tau = sqrt(xt[0] * xt[0] + xt[1] * xt[1] + xt[2] * xt[2]) * AU_LT_DAYS;
+    if (calc(c, t - tau, SE_INTP_PERG, SEFLG_TRUEPOS | SEFLG_NONUT | SEFLG_XYZ, xt))
+      return 1;
+    for (k = 0; k < 3; k++) {
+      d2 += (xa[k] - xt[k]) * (xa[k] - xt[k]);
+      r2 += xt[k] * xt[k];
+    }
+    e = sqrt(d2 / r2) * RAD2MAS;
+    if (e > wc) wc = e;
+    if (e > 1e-3) bad++;
   }
   /* (b) the J2000 latitude speed */
   for (i = 0; i < 3; i++) {
@@ -119,6 +158,7 @@ int main(int argc, char **argv)
   printf("  (a) from the fixed point: perigee %.1e mas, apogee %.1e mas\n", wa[0], wa[1]);
   printf("  (b) J2000 latitude speed off: %s %.1e, %s %.1e, %s %.1e deg/day\n",
          rgSpd[0].sz, wb[0], rgSpd[1].sz, wb[1], rgSpd[2].sz, wb[2]);
+  printf("  (c) perigee from its converged light time: %.1e mas\n", wc);
   swe_ctx_free(c);
   if (bad) {
     printf("G55 FAIL: %d\n", bad);

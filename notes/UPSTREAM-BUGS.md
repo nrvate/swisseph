@@ -106,6 +106,7 @@ worst were in code that had never executed even once.
 | 65 | Kronos' built-in semi-axis has two digits swapped, and the Kepler solver's starting guess is wrong | Correctness | `swemplan.c` |
 | 66 | The aberration rate's Earth lacks the Moon on JPL and Moshier, and the planets everywhere | Correctness | `sweph.c` |
 | 76 | A fixed star's aberration rate takes the Earth's acceleration half a step back | Correctness | `sweph.c` |
+| 72 | The interpolated perigee's light-time estimate takes one pass, not two (this fork's) | Correctness | `sweph.c` |
 
 ---
 
@@ -2244,33 +2245,33 @@ Cost, in instructions per `swe_calc()` (`perf stat -e instructions:u`,
 gcc -O2 with LTO, 2000 calls less a run of none; timings on the loaded
 machine were not reliable). An apsis is lunar-series evaluations,
 ~42,000 instructions each: upstream takes 18 (perigee) and 15 (apogee),
-three times that with SEFLG_SPEED. The estimate of tau adds 4, one pass
-for both apsides (`intp_apsides()` compares the SEI_ index with
-SE_INTP_PERG, so the perigee's second pass is never taken; it would add
-3 more and move the perigee by at most 0.0049 mas, 3000 dates
--3000..+3000); entry 45 adds 2 to the perigee, entry 56 2 more and 1 to
-the apogee. Shipped (e8fd2ac, this fix and entry 45; then c8e3710, entry
-56), against the compat build, at instants 0.01 day apart:
+three times that with SEFLG_SPEED. The estimate of tau adds 7 to the
+perigee (two passes) and 4 to the apogee (one); until entry 72 the
+perigee's took one pass too, 4. Entry 45 adds 2 to the perigee, entry 56
+2 more and 1 to the apogee. Shipped (e8fd2ac, this fix and entry 45;
+c8e3710, entry 56; then entry 72), against the compat build, at instants
+0.01 day apart:
 
-| | upstream | e8fd2ac | c8e3710 | lunar evaluations |
-|---|---|---|---|---|
-| perigee | 0.78e6 | 1.01e6 (1.30x) | 1.10e6 (1.41x) | 18 -> 24 -> 26 |
-| apogee | 0.66e6 | 0.81e6 (1.23x) | 0.85e6 (1.29x) | 15 -> 19 -> 20 |
-| perigee, SEFLG_SPEED | 2.31e6 | 2.70e6 (1.17x) | 2.95e6 (1.28x) | 54 -> 64 -> 70 |
-| apogee, SEFLG_SPEED | 1.94e6 | 2.07e6 (1.07x) | 2.20e6 (1.13x) | 45 -> 49 -> 52 |
+| | upstream | e8fd2ac | c8e3710 | entry 72 | lunar evaluations |
+|---|---|---|---|---|---|
+| perigee | 0.78e6 | 1.01e6 (1.30x) | 1.10e6 (1.41x) | 1.22e6 (1.57x) | 18 -> 24 -> 26 -> 29 |
+| apogee | 0.66e6 | 0.81e6 (1.23x) | 0.85e6 (1.29x) | 0.85e6 (1.29x) | 15 -> 19 -> 20 -> 20 |
+| perigee, SEFLG_SPEED | 2.31e6 | 2.70e6 (1.17x) | 2.95e6 (1.28x) | 3.08e6 (1.33x) | 54 -> 64 -> 70 -> 73 |
+| apogee, SEFLG_SPEED | 1.94e6 | 2.07e6 (1.07x) | 2.20e6 (1.13x) | 2.20e6 (1.14x) | 45 -> 49 -> 52 -> 52 |
 
 At instants a day or more apart every `swe_calc()` of this build, of any
 body, also evaluates a node of its default nutation (IAU 2000A on a
 grid, ~0.33e6 instructions a node; upstream's whole mean-apogee call,
 2000B included, is 0.03e6), which is not the apsides' work: there the
-shipped perigee is 1.43e6 against 0.78e6 at daily steps (1.83x), 1.55e6
-at instants 1.37 day apart (1.99x; 1.47e6, 1.88x, at e8fd2ac), the
-apogee 1.18e6 (1.80x) and 1.31e6 (1.99x). Best of five timings, 0.01 day
-apart, c8e3710 against compat: perigee 87 against 65 us, apogee 66
-against 55. Nothing in the rise is work done twice: it is the evaluation
-count above, each one the price of a fix. A first version took
-X(t) - tau V(t), which needs the velocity, three apsides (60
-evaluations), on every call: 3.2x without the flag (2.52e6).
+shipped perigee is 1.56e6 against 0.78e6 at daily steps (1.99x; 1.43e6,
+1.83x, at c8e3710), 1.68e6 at instants 1.37 day apart (2.15x; 1.55e6 at
+c8e3710, 1.47e6 at e8fd2ac), the apogee 1.18e6 (1.80x) and 1.31e6
+(1.99x). Best of five timings, 0.01 day apart, c8e3710 against compat:
+perigee 87 against 65 us, apogee 66 against 55. Nothing in the rise is
+work done twice: it is the evaluation count above, each one the price of
+a fix. A first version took X(t) - tau V(t), which needs the velocity,
+three apsides (60 evaluations), on every call: 3.2x without the flag
+(2.52e6).
 
 G46 `tests/intpaps.c` (a), (b): the position with and without the flag,
 six flag sets, identical (upstream 140 mas, angle plus distance); the
@@ -3418,6 +3419,44 @@ deg/day. The build before the fix fails all 8 (1.9e-10 to 1.03e-9); the
 upstream build fails all 8 (2.6e-6 to 4.3e-4, bugs 49 and 58 besides).
 G24 `star_aberr_accel_off`: Polaris's right ascension speed in 2100,
 1.78e-11 deg/day shipped, 2.99e-6 compat.
+
+## 72. The interpolated perigee's light-time estimate takes one pass, not two
+
+**Severity: Correctness (this fork's, from entry 44's fix: the perigee 0.0049 mas off its light-time position, its speed 1.1e-7 deg/day, 1.8e-7 with SEFLG_SPEED3)**
+**Where:** `sweph.c`: `intp_apsides()`
+
+Entry 44's fix takes tau from the first passes of the apsis's iteration
+at t, two for the perigee and one for the apogee, chosen as `ipl ==
+SE_INTP_PERG ? 2 : 1`. But `ipl` there is the SEI_ index (5), never
+SE_INTP_PERG (22), so both took one pass: the perigee's distance was up
+to 92 km from the converged iteration's (rms 20 km, 20000 dates
+-10000..+12000; 86 km over -3000..+3000), tau up to 0.31 ms off. Found
+while measuring entry 44's cost under callgrind (four lunar evaluations
+for the estimate, not seven). Not in the compat build, which has no
+estimate.
+
+**Fix, as done here:** the comparison is with SEI_INTP_PERG: two passes,
+4.3 km (rms 1.1 km; three would be 0.13 km). Over 3000 dates
+-3000..+3000 and nine flag sets the perigee moves by up to 0.0049 mas
+(0.0053 in right ascension), its speeds by up to 1.1e-7 deg/day (1.8e-7
+SEFLG_SPEED3), toward the converged light time: against the TRUEPOS
+position at t - tau, tau the TRUEPOS distance over c, rms 9.8e-4 ->
+2.1e-4 mas over 5000 dates (the apogee's, with its 1 km estimate, 7.4e-5:
+the positions' own noise between neighbouring JDs), G46's (b) 3.0e-3 ->
+1.8e-3 mas. The apogee is unchanged to the bit; positions are still
+identical with and without SEFLG_SPEED and as smooth (G46 (a), (c)
+unchanged: 0, 2.2e-3 mas). Cost: three lunar evaluations, perigee
+1.10e6 -> 1.22e6 instructions per call without the flag (+11%), 2.95e6
+-> 3.08e6 with it (entry 44's table).
+
+G55 `tests/intpconv.c` (c): the perigee at the five dates of those 3000
+where the one-pass estimate moved it most, NONUT, against the TRUEPOS
+position at t - tau, within 1e-3 mas (3.6e-8: the estimate is tau to
+within the JD's resolution there; one pass 3.5e-3..4.9e-3, upstream 110
+mas); the upstream build fails 68 of 73. G24 `intp_lighttime_off`: the
+same at JD 2486223.6015625, 4.5e-9 mas shipped, 91 compat (4.4e-3 with
+one pass). Baselines: interpolated-perigee positions move by up to
+0.005 mas, their speeds by 1.8e-7 deg/day.
 
 ## How these were found
 
