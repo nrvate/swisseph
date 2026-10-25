@@ -4099,7 +4099,11 @@ static int get_aya_correction(swe_ctx *ctx, int iflag, double *corr, char *serr)
   return OK;
 }
 
-int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
+/* swi_get_ayanamsa_ex()'s body. dspeed, when not NULL, receives the
+ * ayanamsa's rate in deg/day, the derivative of the same computation; it
+ * is non-NULL only from swi_get_ayanamsa_with_speed() (UPSTREAM-BUGS 91),
+ * and the value does not depend on it. */
+static int32 get_ayanamsa(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, double *dspeed, char *serr)
 {
   double x[6], eps, t0, corr;
   struct sid_data *sip = &ctx->sidd;
@@ -4124,6 +4128,10 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
   if (otherflag & SEFLG_TRUEPOS) iflag_true |= SEFLG_TRUEPOS;
   if (otherflag & SEFLG_NOABERR) iflag_true |= SEFLG_NOABERR;
   if (otherflag & SEFLG_NOGDEFL) iflag_true |= SEFLG_NOGDEFL;
+  if (dspeed != NULL) {
+    iflag_galequ |= SEFLG_SPEED;
+    iflag_true |= SEFLG_SPEED;
+  }
   /* warning, if swe_set_ephe_path() or swe_set_jplfile() was not called yet,
    * although ephemeris files are required */
   if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH) 
@@ -4151,6 +4159,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     }
     /*fprintf(stderr, "serr=%s\n", serr);*/
     *daya = swe_degnorm(x[0] - 180);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
   }
   if (sid_mode == SE_SIDM_TRUE_REVATI) {
@@ -4158,6 +4168,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_true, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 359.8333333333);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
   }
   if (sid_mode == SE_SIDM_TRUE_PUSHYA) {
@@ -4165,6 +4177,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_true, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 106);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
   }
   if (sid_mode == SE_SIDM_TRUE_SHEORAN) {
@@ -4172,6 +4186,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_true, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 103.49264221625);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
   }
   if (sid_mode == SE_SIDM_TRUE_MULA) {
@@ -4179,6 +4195,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_true, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 240);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
   }
   if (sid_mode ==  SE_SIDM_GALCENT_0SAG) {
@@ -4186,6 +4204,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_true, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 240.0);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
     /*return swe_degnorm(x[0] - 359.83333333334);*/
   }
@@ -4194,6 +4214,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_true, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 270.0);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
     /*return swe_degnorm(x[0] - 359.83333333334);*/
   }
@@ -4202,6 +4224,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_true, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 210.0 - 90.0 * 0.3819660113);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
     /*return swe_degnorm(x[0] - 359.83333333334);*/
   }
@@ -4214,6 +4238,15 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     eps = swi_epsiln(ctx, tjd_et, iflag) * RADTODEG;
     *daya = swi_armc_to_mc(x[0], eps);
     *daya = swe_degnorm(*daya - 246.6666666667);
+#ifndef SWE_UPSTREAM_COMPAT
+    if (dspeed != NULL) {
+      /* tan mc = tan ra / cos eps, differentiated */
+      double sa = sin(x[0] * DEGTORAD), ca = cos(x[0] * DEGTORAD);
+      double se = sin(eps * DEGTORAD), ce = cos(eps * DEGTORAD);
+      double edot = swi_obliquity_rate(ctx, tjd_et, iflag, FALSE) * RADTODEG;
+      *dspeed = (ce * x[3] + sa * ca * se * edot) / (ce * ce * ca * ca + sa * sa);
+    }
+#endif
     return (retflag & SEFLG_EPHMASK);
     /*return swe_degnorm(x[0] - 359.83333333334);*/
   }
@@ -4222,6 +4255,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_galequ, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 150);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
   }
   if (sid_mode == SE_SIDM_GALEQU_TRUE) {
@@ -4229,6 +4264,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_galequ, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 150);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
   }
   if (sid_mode == SE_SIDM_GALEQU_MULA) {
@@ -4236,6 +4273,8 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_galequ, x, serr)) == ERR)
       return ERR;
     *daya = swe_degnorm(x[0] - 150 - 6.6666666667);
+    if (dspeed != NULL)
+      *dspeed = x[3];
     return (retflag & SEFLG_EPHMASK);
   }
   if (!(sip->sid_mode & SE_SIDBIT_ECL_DATE)) {
@@ -4257,6 +4296,11 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     /* to J2000 */
     if (tjd_et != J2000)
       swi_precess(ctx, x, tjd_et, 0, J_TO_J2000);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* the vernal point of date, at rest there, moves in J2000 at dP^T/dt */
+    if (dspeed != NULL)
+      swi_precess_speed(ctx, x, tjd_et, 0, J_TO_J2000);
+#endif
     /* to t0 */
     t0 = sip->t0;
     if (sip->t0_is_UT)
@@ -4265,6 +4309,16 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     /* to ecliptic t0 */
     eps = swi_epsiln(ctx, t0, 0);
     swi_coortrf(x, x, eps);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* t0's frame is fixed: the velocity turns with the position; the
+     * longitude's rate is (x vy - y vx) / (x^2 + y^2), the ayanamsa's
+     * its negative */
+    if (dspeed != NULL) {
+      swi_precess(ctx, x + 3, t0, 0, J2000_TO_J);
+      swi_coortrf(x + 3, x + 3, eps);
+      *dspeed = -(x[0] * x[4] - x[1] * x[3]) / (x[0] * x[0] + x[1] * x[1]) * RADTODEG;
+    }
+#endif
     /* to polar */
     swi_cartpol(x, x);
     /* subtract initial value of ayanamsa */
@@ -4293,6 +4347,18 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
     swi_precess(ctx, x, tjd_et, 0, J2000_TO_J);
     // epsilon of date
     eps = swi_epsiln(ctx, tjd_et, 0);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* the point, at rest in J2000, moves in the date's equator at dP/dt,
+     * and in its ecliptic with the mean obliquity's turning too */
+    if (dspeed != NULL) {
+      double xv[6] = {x[0], x[1], x[2], 0, 0, 0};
+      swi_precess_speed(ctx, xv, tjd_et, 0, J2000_TO_J);
+      swi_coortrf(xv, xv, eps);
+      swi_coortrf(xv + 3, xv + 3, eps);
+      swi_ecl_frame_speed(xv, swi_obliquity_rate(ctx, tjd_et, 0, FALSE));
+      *dspeed = (xv[0] * xv[4] - xv[1] * xv[3]) / (xv[0] * xv[0] + xv[1] * xv[1]) * RADTODEG;
+    }
+#endif
     // to polar
     swi_coortrf(x, x, eps);
     swi_cartpol(x, x);
@@ -4305,8 +4371,29 @@ int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
   return iflag;
 }
 
+int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
+{
+  return get_ayanamsa(ctx, tjd_et, iflag, daya, NULL, serr);
+}
+
 int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 91: the rate was (a(t) - a(t - 0.001)) / 0.001. In the
+   * precession modes that divides the ayanamsa's own rounding, 1e-14 to
+   * 7e-14 deg, by a thousandth of a day: 1.3e-11 to 9e-11 deg/day off
+   * five-point differences of its values (Lahiri 6.3e-11), on every
+   * sidereal speed. In the star modes it is a backward difference of an
+   * aberrated, deflected longitude, off by half its curvature times the
+   * step: 9e-10 to 1.1e-9 deg/day, 2.1e-6 for True Revati with zeta Psc
+   * 0.3 deg from the Sun (1981). Across 0 deg (Lahiri, 285 AD) it took
+   * the 360 deg jump: 3.6e5 deg/day for 0.001 day. Now get_ayanamsa()
+   * gives the rate with the value: the star modes the star's own speed
+   * (Wilhelm's through its projection), the precession modes the vernal
+   * point's or the t0 point's velocity carried by swi_precess_speed()
+   * through the same rotations, the ecliptic of date's turning included. */
+  return get_ayanamsa(ctx, tjd_et, iflag, daya, daya + 1, serr);
+#else
   double daya_t2, t2;
   double tintv = 0.001;
   int32 retflag;
@@ -4319,6 +4406,7 @@ int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 iflag, doub
     return ERR;
   daya[1] = (daya[0] - daya_t2) / tintv;
   return retflag;
+#endif
 }
 
 int32 CALL_CONV swe_get_ayanamsa_ex_ut_r(swe_ctx *ctx, double tjd_ut, int32 iflag, double *daya, char *serr)

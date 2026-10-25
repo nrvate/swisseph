@@ -975,6 +975,12 @@ struct epsilon {
  *     Vondrak series is not there (turned 4.848e-12 rad about x): every
  *     place of date at exactly J2000 2.7e-10 deg off its neighbours in
  *     latitude (UPSTREAM-BUGS 87, G86)
+ *   - swi_get_ayanamsa_with_speed() took the ayanamsa's rate as a backward
+ *     difference over 0.001 day: the precession modes' rounding over that
+ *     step (1.3e-11 to 9e-11 deg/day on every sidereal speed), the star
+ *     modes' curvature (1e-9, 2.1e-6 for True Revati at zeta Psc's
+ *     conjunction), and 3.6e5 deg/day where the ayanamsa crosses 0
+ *     (UPSTREAM-BUGS 91, G90)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

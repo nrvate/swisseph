@@ -388,6 +388,33 @@ static double defl_disc_rate_off(void)
   return fabs(x[3] - y[3] - r);
 }
 
+/* UPSTREAM-BUGS 91: True Revati with zeta Psc 0.3 deg from the Sun
+ * (1981-04-08): the ayanamsa's speed in the Sun's sidereal speed (its
+ * tropical speed without nutation less it) against a five-point
+ * difference of tropical less sidereal longitude over 2^-8 day, deg/day.
+ * The rate was a backward difference over 0.001 day of the aberrated,
+ * deflected star, off by half its curvature times the step, 2.1e-6 */
+static double aya_star_rate_off(void)
+{
+  const double t = 2444704.30859375, h = 1.0 / 256;
+  double xt[6], xs[6], d[5], r;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_sid_mode(SE_SIDM_TRUE_REVATI, 0, 0);
+  for (k = 0; k < 5; k++) {
+    swe_calc(t + (k - 2) * h, SE_SUN, SEFLG_SWIEPH | SEFLG_NONUT, xt, serr);
+    swe_calc(t + (k - 2) * h, SE_SUN, SEFLG_SWIEPH | SEFLG_SIDEREAL, xs, serr);
+    d[k] = xt[0] - xs[0];
+  }
+  r = (8 * (d[3] - d[1]) - (d[4] - d[0])) / (12 * h);
+  swe_calc(t, SE_SUN, SEFLG_SWIEPH | SEFLG_NONUT | SEFLG_SPEED, xt, serr);
+  swe_calc(t, SE_SUN, SEFLG_SWIEPH | SEFLG_SIDEREAL | SEFLG_SPEED, xs, serr);
+  swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+  return fabs(xt[3] - xs[3] - r);
+}
+
 /* UPSTREAM-BUGS 34 in swe_nod_aps(): Pluto's osculating ascending node
  * seen from Zurich, its longitude speed against a five-point difference,
  * deg/day; the aberration rate was upstream's chord, 3e-4 off */
@@ -1789,7 +1816,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1873,6 +1900,7 @@ int main(int argc, char **argv)
   toposite = topo_accel_off();
   oscaps = oscu_apsis_speed_off();
   eclnut = ecl_nut_speed3_off();
+  ayastar = aya_star_rate_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2466,6 +2494,13 @@ int main(int argc, char **argv)
   else {
     printf("  deflection rate in disc %.2e deg/day FAIL: expected %s\n",
            defldisc, WANT_DEFECT ? "> 1e-6" : "< 2e-8");
+    bad++;
+  }
+  if (WANT_DEFECT ? (ayastar > 1e-7) : (ayastar < 2e-10))
+    printf("  ayanamsa rate, star     %.2e deg/day OK\n", ayastar);
+  else {
+    printf("  ayanamsa rate, star     %.2e deg/day FAIL: expected %s\n",
+           ayastar, WANT_DEFECT ? "> 1e-7" : "< 2e-10");
     bad++;
   }
 

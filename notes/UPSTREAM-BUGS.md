@@ -125,6 +125,7 @@ worst were in code that had never executed even once.
 | 90 | `swe_calc(SE_ECL_NUT, SEFLG_SPEED3)` differences the four angles as a position; `jplplan()`'s Earth also takes the other-planet branch; `-Og` false positive on `dt` | Correctness / Memory | `sweph.c` |
 | 93 | `swe_nod_aps()`'s aberration rate takes the Moshier Earth's acceleration from the gravitational jerk | Correctness | `sweph.c` |
 | 87 | The precession at exactly J2000 is the identity, which the Vondrak series is not | Correctness | `swephlib.c` |
+| 91 | The ayanamsa's speed is a backward difference over 0.001 day | Correctness | `sweph.c` |
 
 ---
 
@@ -5276,6 +5277,104 @@ rounding). The upstream build fails 549 rows, ts20 before the fix 526,
 this build with SWE_UPSTREAM_COMPAT 549. G24 `j2000_lat_off`: the Sun's
 latitude at J2000 against the mean of J2000 +- 2^-30, 6.5e-15 deg
 shipped, 2.73e-10 compat. G70, G57, G68, G41 pass.
+
+## 91. The ayanamsa's speed is a backward difference over 0.001 day
+
+**Severity: Correctness (every sidereal speed off the rate by 1.3e-11 to 9e-11 deg/day in the precession modes, 1e-9 in the star modes, 2.1e-6 for True Revati near the Sun; 3.6e5 deg/day for 0.001 day where the ayanamsa crosses 0)**
+**Where:** `sweph.c`: `swi_get_ayanamsa_with_speed()` (now through `get_ayanamsa()`, `swi_get_ayanamsa_ex()`'s body with the rate), and through it every sidereal speed of the traditional algorithm (`app_pos_rest()`, the mean and osculating nodes and apsides, the fixed stars, `swe_nod_aps()`)
+
+`swi_get_ayanamsa_with_speed()` took the ayanamsa's rate as
+(a(t) - a(t - 0.001)) / 0.001. Measured against five-point differences
+of the ayanamsa's own values at binary-fraction instants, all modes,
+1900-2000, the Swiss files:
+
+- **The precession modes** (all but the twelve taken from a star): a(t)
+  carries its own rounding, 1e-14 to 7e-14 deg (the precession's matrices
+  and the polar angle; steps of 1e-14 on a 1e-4 day grid), which a
+  thousandth of a day turns into 1.3e-11 to 8.9e-11 deg/day (Lahiri
+  6.3e-11, Fagan/Bradley 7.9e-11). The reference converges to the same
+  values over 2^-6 to 1 day: it is the speed's, not the reference's. It is
+  the 5.3-5.7e-11 on every sidereal row of G85.
+- **The star modes** (True Citra, Revati, Pushya, Sheoran, Mula, the
+  Galactic Centre modes, the galactic-equator ones): a(t) is a star's
+  longitude with aberration and deflection, and the backward difference is
+  off by half its curvature times the step: 9.0e-10 to 1.1e-9 deg/day, and
+  2.1e-6 for True Revati at JD 2444704.3086 (1981-04-08), zeta Psc 0.32 deg
+  from the Sun. The galactic-equator modes (the pole's place without
+  aberration) 2.8-3.7e-11.
+- **Across 0 deg** (Lahiri, JD 1825399.07, 285 AD) the difference took the
+  360 deg jump: -3.6e5 deg/day for 0.001 day after the crossing.
+
+SEFLG_NONUT makes no difference: the ayanamsa is always the mean one, and
+SEFLG_SIDEREAL implies SEFLG_NONUT. J2000, J1900, B1950 and Mardyks
+(forced onto the ecliptic of t0) and SE_SIDBIT_ECL_T0 / SSY_PLANE never
+take this speed.
+
+**Fix, as done here:** the star modes take the star's own speed
+(`swe_fixstar_r()` with SEFLG_SPEED; its positions are bit-identical with
+or without it, 400 dates, four flag sets; its speed within 5.8e-12 of
+its rate), the Wilhelm mode the derivative of its projection, tan mc =
+tan ra / cos eps, with the mean obliquity's rate; the precession modes
+the derivative itself, the point's velocity carried through the same
+rotations: the vernal point of date, at rest there, moves in J2000 at
+dP^T/dt (`swi_precess_speed()`, the Vondrak series' M and dM/dt in one
+pass), turns with it into t0's fixed ecliptic, and its longitude's rate is
+(x vy - y vx) / (x^2 + y^2); with SE_SIDBIT_ECL_DATE the t0 point, at rest
+in J2000, moves at dP/dt into the date's equator and with the mean
+obliquity's turning (`swi_ecl_frame_speed()`) into its ecliptic. The
+values are computed as before, bit for bit; the rate needs no difference,
+so there is nothing to wrap at 0 deg. A precession mode reads two
+precessions fewer than upstream's two ayanamsas, a star mode one star
+instead of two: a Lahiri sidereal planet 9.2 -> 8.3 us, a True Citra one
+14.9 -> 10.5 (calc-swieph and calc-moseph are tropical, untouched).
+Upstream's code is under `SWE_UPSTREAM_COMPAT`. After, at the same dates:
+the precession modes within 5.6e-15 deg/day of a five-point difference
+over 8 days (6.3e-15 with the SE1.64, SE1.70 and SE2.00 precession
+models, whose rates `swi_precess_speed()` takes over +-1 day), the star
+modes <= 3.1e-12 over 2^-6 day (9.3e-13 over 2^-4), True Revati at the
+conjunction 3.7e-11 against a reference over 2^-8 day (whose own
+truncation is 8.9e-9 over 2^-6), the crossing 2.1e-14. Sidereal positions
+do not move: 2736 places, with and without SEFLG_SPEED (19 modes and SIDBITs, 12 bodies, six dates,
+Swiss and Moshier) are bit-identical but Neptune's and Pluto's at JD
+2378496.637 in the star modes, 6.7e-10 deg, the Swiss files' join at
+1800.0, where which file answers depends on the calls before (entry 84's
+note); speeds move by the fix, up to 8.4e-10 deg/day. G85's sidereal rows
+go from 5.3-5.7e-11 to 2.1-5.0e-12, as its other frames, and its sidereal
+limit from 2e-10 to 2e-11; the build before the fix fails those 15 rows.
+
+G90 `tests/ayaspeed.c`: a = the Sun's tropical longitude without nutation
+less its sidereal one, its speed the difference of the speeds, against
+five-point differences: 43 predefined modes, SE_SIDM_USER (t0 TT and UT),
+Lahiri and USER with SE_SIDBIT_ECL_DATE, with and without SEFLG_NONUT,
+Swiss files and Moshier, nine dates (-2000..2900, 1800..2200 for the
+star modes); the precession modes over 1 day within 2e-12 deg/day
+(measured <= 1.1e-13, the reference's noise), the star modes over 2^-6 day within 2e-11
+(<= 6.3e-12), True Revati at the conjunction within 2e-10 (3.7e-11),
+Lahiri 2^-12 day past 0 deg within 2e-12 (2.1e-14): 1694 checks. The
+build before the fix fails 1506 (precession modes 2.9e-11 to 7.9e-11,
+star modes 3.9e-11 to 9.8e-10, the conjunction 2.1e-6, the crossing 3.6e5;
+only the modern galactic pole's two modes pass, 1.6e-11); the upstream
+build fails 1546 (its Moshier stars 5.1e-7, their own). G24
+`aya_star_rate_off`: True Revati at the conjunction, 3.7e-11 deg/day
+shipped, 2.1e-6 compat.
+
+Measured with it and not this entry's: the topocentric aberration
+residual of G51, 3.1-9.6e-10 deg/day against 2.5e-11 geocentric, is bug
+79's site acceleration (`observer_accel()` over +-2^-6 day divided by
+sin(omega h) / (omega h)): applied in scratch it falls to 1.6-3.7e-11 at
+all four latitudes.
+The Swiss-file Mercury and Venus position jitter of 1e-11 to 2e-11 deg on
+1e-4 day scales is not there: at binary-fraction instants 2^-13 day apart
+their geocentric longitudes' noise (fourth differences / sqrt(70)) is
+2.5e-14 to 6e-14 deg rms, 1.7e-13 at the most (2200), a few ulps: default
+flags, SEFLG_TRUEPOS, NOGDEFL, NOABERR, heliocentric, barycentric and
+on Moshier at J2000, the default flags at six more epochs -1000..2900,
+and the same at bf04301's parent; five-point speed residuals over ten
+epochs -2900..2900 go as 1/h from that (1.8e-8 deg/day over 2^-16).
+Over 1e-4 day steps that are not binary the noise is 1.9e-10 to 2.4e-10
+deg rms: the instants' own rounding (ulp 4.7e-10 day at JD 2.45e6 times
+1.2-1.4 deg/day), which five-point differences over 1e-4 day turn into a
+few 1e-6 deg/day; the measurement's, not the library's.
 
 ## How these were found
 

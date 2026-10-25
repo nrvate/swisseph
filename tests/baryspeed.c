@@ -21,17 +21,20 @@
  * after a request for Mars ten years on, so the Earth's slot is elsewhere.
  * Against five-point differences over 2^-6 day at binary-fraction
  * instants: longitude times cos(latitude) and latitude within 2e-11
- * deg/day (measured <= 4.2e-12), 2e-10 sidereal (<= 5.7e-11, the same on
- * every body: the ayanamsa's rate), 2e-9 for the Sun on the files (9.7e-10,
- * their own); the distance rate within 5e-11 of the distance per day
+ * deg/day (measured <= 5e-12, sidereal included: it was 5.7e-11 on every
+ * sidereal body, the ayanamsa's rate as a backward difference over 0.001
+ * day, until UPSTREAM-BUGS 91, and the limit 2e-10), 2e-9 for the Sun on
+ * the files (9.7e-10, their own); the distance rate within 5e-11 of the distance per day
  * (<= 9.1e-12). Also the JPL Sun's latitude speed as
  * the first request of a context, within 2e-9, and its sidereal longitude
  * after the Mars request against the tropical less the ayanamsa, within
  * 1e-9 deg (measured 0): 162 checks. The build before the fix fails 4,
  * all the JPL Sun's: the first request (NaN), of date (1.85e-5 deg/day),
  * sidereal (3.8e-5 deg/day; 0.140 deg in longitude); without nutation the
- * stale mean obliquity's rate is 5.9e-12, within the limit. The upstream
- * build fails all 162 (with entries 73 and 78 not there either). Run as
+ * stale mean obliquity's rate is 5.9e-12, within the limit. The build
+ * before bug 91's fix fails the other 15 sidereal rows (5.3e-11 to
+ * 5.7e-11). The upstream build fails all 162 (with entries 73 and 78 not
+ * there either). Run as
  *   baryspeed EPHEDIR
  */
 #include <math.h>
@@ -147,7 +150,7 @@ int main(int argc, char **argv)
         }
         snprintf(what, sizeof what, "%s %s, bary, %s", ename[e], bname[b], fname[f]);
         judge(what, ang, rel,
-              (e == 1 && body[b] == SE_SUN) ? 2e-9 : frame[f] == SEFLG_SIDEREAL ? 2e-10 : 2e-11,
+              (e == 1 && body[b] == SE_SUN) ? 2e-9 : 2e-11,
               5e-11);
       }
   /* the sidereal JPL barycentric Sun takes the ayanamsa of its own date */
