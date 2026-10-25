@@ -1201,6 +1201,11 @@ struct epsilon {
  *     taking the nutation kept at its instant whatever flags computed it
  *     (6.2e-2") (UPSTREAM-BUGS 134, G122). A thread adopting a change of
  *     mode empties the nodes in both builds, as above
+ *   - (nothing for UPSTREAM-BUGS 137: a thread adopting another's path
+ *     zeroing the closed JPL file's DE number, as the branch for a new JPL
+ *     file does, so its JPLEPH delta t takes the term of the files it has
+ *     now, is in both builds; the adoption is this fork's, and upstream's
+ *     threads share no configuration; G132)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

@@ -447,6 +447,14 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
       swi_close_jpl_file(ctx);
       ctx->jpl_file_is_open = FALSE;
     }
+    /* Upstream bug 137, in both builds (the adoption is this fork's): the
+     * closed file's DE number stayed, and calc_deltat() takes it for every
+     * SEFLG_JPLEPH delta t: a thread that had de200.eph open and adopted
+     * another's path to a directory without it answered delta t in AD 1700
+     * 3.012003 s for 14.286718, the fresh process's and the setter's
+     * (swi_close_keep_topo_etc() zeroes it). Zeroed with the file, as the
+     * jpl_only branch above zeroes it. */
+    ctx->jpldenum = 0;
     swi_close_ephe_files(ctx, FORGET_DENUM);
     swi_free_fict_lines(ctx);
     ctx->last_epheflag = 0;

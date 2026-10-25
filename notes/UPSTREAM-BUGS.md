@@ -169,6 +169,7 @@ worst were in code that had never executed even once.
 | 135 | `swe_calc_orbel()` (this fork's) answers a barycentric Moshier request, which `swe_calc()` refuses: the heliocentric place under a return flag with SEFLG_BARYCTR set, 5.7e-3 AU off the barycentric one (0.29 deg at a = 1.2 AU) | Correctness (behaviour) | `sweph.c` |
 | 136 | `swe_calc_orbel()` (this fork's) with elements of the equinox of date holds that equinox at the observation instant through the light time and leaves its turning out of the speed: 1.9e-2 deg at a = 80000 AU, 6.9e-6 deg at 30 AU, 3.5e-7 deg at 1.2 AU off the same elements as a seorbel.txt JDATE body, the speeds 4.0e-5 to 8.8e-5 deg/day off them and off the positions' rate | Correctness | `sweph.c`, `swephexp.h` |
 | 134 | The interpolation's nodes are keyed on neither the JPL Horizons flags of the call nor the approximation's mode (`SE_MODEL_JPLHORA_MODE`), nor go with the IERS corrections `swe_close()` frees, and `swe_get_ayanamsa_ex()` takes the nutation kept at its instant whatever flags computed it: another setting's nutation answers there, 6.2e-2" after the flag per call, 0.104" after a change of mode, 0.131" across the corrections | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
+| 137 | A thread that had the JPL file open and adopts another thread's `swe_set_ephe_path()` keeps the closed file's DE number, so its SEFLG_JPLEPH delta t takes that file's tidal term: 3.012003 s in AD 1700 for the 14.286718 of the setting thread and a fresh process, after a path without the file or the same path by another string (this fork's) | Correctness (behaviour) | `sweconfig.c` |
 
 ---
 
@@ -9057,6 +9058,81 @@ geometric, J2000 equatorial XYZ, Swiss files: its velocity against a
 five-point difference of its positions over 2^-7 day, four dates in 2025.
 1.73e-14 AU/day shipped, 6.11e-7 AU/day compat (the frame's turning,
 omega x r); 6.11e-7 shipped before the fix.
+
+Noticed, not fixed: a thread that had the JPL file open and adopts another
+thread's `swe_set_ephe_path()` to a directory without it kept the file's DE
+number, so its SEFLG_JPLEPH delta t in AD 1700 was 3.012003 s for the
+14.286718 a fresh process with that path gives (before this entry too).
+Fixed as entry 137.
+
+## 137. A thread that had the JPL file open and adopts another thread's `swe_set_ephe_path()` keeps the file's DE number: its JPLEPH delta t takes the closed file's tidal term (this fork's)
+
+**Severity: Correctness (behaviour: delta t for a JPL file the thread no longer has, 11.27 s in AD 1700, on the adopting thread)**
+**Where:** `sweconfig.c`: `swi_config_apply()`, its branch for an adopted path
+
+Entry 131's noticed item. A thread on the default context that follows
+the shared configuration adopts another thread's `swe_set_ephe_path()` in
+`swi_config_apply()`. Its branch for a new path closed the JPL file and
+kept the file's DE number (`ctx->jpldenum`), which the branch for a new
+JPL file alone zeroes (bug 103), and which the setting thread's
+`swi_close_keep_topo_etc()` zeroes; `calc_deltat()` takes it, upstream's
+line, for every SEFLG_JPLEPH delta t. So after the path,
+`swe_set_jpl_file("de200.eph")` and a JPL Sun on a second thread, which
+opened the file, the main thread's path to a directory without de200.eph
+left the second thread's `swe_deltat_ex()` in AD 1700 with SEFLG_JPLEPH at
+3.012003 s, de200's term (-23.8946), where the setting thread, a thread
+started after it, an explicit context given the same calls and a fresh
+process given the same setters answer 14.286718 (the default term: the
+file is nowhere along the path); and the same after the path again by
+another string (EPHEDIR/.), where the file is still there and the path
+setter forgets its DE number by design (the 2026-09-16 review's F4). The
+stale number stayed until the thread opened a JPL file again;
+`swe_get_tid_acc()` after it followed it (-23.8946). `swe_deltat()` was
+not moved, its guess being Swiss; `swi_get_denum()` reads the number only
+for a JPLEPH calculation, which opens the file first.
+
+The two branches differ otherwise, each measured on a thread adopting
+the change against the setting thread:
+- `last_epheflag`, zeroed by the path branch alone: the JPL-file branch
+  forgets the positions itself (`swi_adopted_files_forget()`, bug 119), so
+  the next calculation's switch has nothing more to forget; G116's JPL
+  cases answer bit for bit as the setting thread.
+- The Swiss files, seorbel.txt's lines and the star catalogue, closed and
+  emptied by the path branch alone: the JPL-file branch keeps them as the
+  same path's, by design (bug 103). A JPL Sirius by `swe_fixstar2()` on
+  a thread adopting de200.eph to G116's de200x.eph equals the setting
+  thread's bit for bit (the crafted file moves it 8.8e-11 deg).
+- The tidal term, the heliacal memos and the observer: in both.
+
+**Fix, as done here:** the path branch zeroes the DE number with the
+file, as the JPL-file branch does. In both builds: the adoption is this
+fork's, and upstream's threads share no configuration.
+
+G132 `tests/jpldenum.c`, each case in a forked process: the path and
+de200.eph, a JPL Sun by the reader, then the last setter (none, the path
+again as EPHEDIR/., a path without de200.eph, a JPL file that is not
+there), read by the setting thread, a thread that computed before the
+last setter, a thread started after it and an explicit context:
+`swe_deltat_ex()` in AD 1700 with SEFLG_JPLEPH and its serr,
+`swe_get_tid_acc()`, `swe_deltat()` and the getter again, bit for bit as
+a fresh process given the same setters alone. 16 pass; before the fix the
+running thread fails after the two paths, 2. The compat build fails 7,
+with the fix and without, by the upstream behaviour it restores: there
+the running thread's first delta t reads the number before the call
+syncs (bugs 124, 128), and a new thread warns on its first call (bug 110)
+and guesses from the file it has open (bug 103); with a
+`swe_get_tid_acc()` first, which syncs, its running thread answers
+14.286718 with the fix and 3.012003 without. No G24 case: the fix is in
+both builds.
+
+Noticed, not fixed: a thread adopting another thread's path keeps the old
+directory's delta t table, which the setter rereads (its
+`swi_close_keep_topo_etc()` clears `init_dt_done`, the adoption does not):
+with a swe_deltat.txt giving 80.0 s for 1990 in the first directory, the
+adopting thread's `swe_deltat()` at 1990 Jan 1 stayed 79.987645 s after
+the other thread's path to EPHEDIR, where that thread and a fresh process
+answer 56.856191 (23.13 s). `leapsec_done`, cleared beside it, likewise
+(not measured).
 
 ## How these were found
 
