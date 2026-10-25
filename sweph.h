@@ -1372,6 +1372,13 @@ struct epsilon {
  *     speed 8.7e-5 deg/day off within a day of J2000 + 2 centuries with
  *     IAU 1976 and Vondrak, its place 1.4e-9 deg through the light time
  *     (UPSTREAM-BUGS 184, G139)
+ *   - the equinox-of-date frame turning of the JDATE fictitious bodies,
+ *     this fork's central difference over -+1 day (UPSTREAM-BUGS 48),
+ *     taken across a short-term precession model's window edges and Owen
+ *     1990's joins: Selena's speed 8.0e-5 to 9.5e-5 deg/day off within a
+ *     day of J2000 -+ 2 centuries with IAU 1976 and Vondrak, Vulcan's
+ *     1.6e-5, and swe_calc_orbel()'s SE_ORBEL_EQ_DATE the same, 8.7e-5 on
+ *     an Earth orbit of 0.053 AU (UPSTREAM-BUGS 185, G139)
  *   - the path setter and swe_close() reading the kept JPL file again only
  *     when its DE number had been read, not when swe_set_jpl_file() had
  *     named it and failed along the path then set: after a path without

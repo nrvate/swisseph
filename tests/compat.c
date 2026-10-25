@@ -3695,6 +3695,70 @@ static double mosh_moon_window_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 185: the speeds of elements of the equinox of date across a
+ * short-term precession window's edge. On the Swiss files with "0,9,1",
+ * geometric (SEFLG_TRUEPOS), at J2000 + 2 centuries (the edge's instant
+ * the window's) -+ 0.5 day and -+ 2^-14 day: Selena (seorbel.txt, JDATE)
+ * and swe_calc_orbel() of an Earth orbit of 0.053 AU (SE_ORBEL_EQ_DATE,
+ * moved by its mean motion), their ecliptic speeds against five-point
+ * differences of their places over 2^-6 day on the instant's side
+ * (centred, else one-sided), the largest, deg/day. The shipped build
+ * differenced the frame, R(t -+ 1), across the edge within a day either
+ * side (8.7e-5); upstream's Selena moves on a fixed ellipse in a fixed
+ * frame, and the compat build keeps the orbit's central difference. */
+static double jdate_window_off(void)
+{
+  static const double o5[5] = { -25.0 / 12, 4, -3, 4.0 / 3, -1.0 / 4 };
+  const double ts = 2524595.0, h = 1.0 / 64;
+  const double dt[4] = { -0.5, -1.0 / 16384, 1.0 / 16384, 0.5 };
+  const int32 fl = SEFLG_SWIEPH | SEFLG_TRUEPOS;
+  double x[6], f[5][6], r = 0;
+  char serr[256], mod[] = "0,9,1,0,0,0,0,0";
+  int i, j, k, b;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_astro_models_r(c, mod, 0);
+  for (b = 0; b < 2; b++)
+    for (i = 0; i < 4; i++) {
+      double t = ts + dt[i];
+      int dir = (t <= ts) ? -1 : 1, centred = (i == 0 || i == 3);
+      for (k = -1; k < 5; k++) {
+        double tk = k < 0 ? t : centred ? t + (k - 2) * h : t + dir * k * h;
+        double *y = k < 0 ? x : f[k];
+        int32 fk = k < 0 ? fl | SEFLG_SPEED : fl;
+        int32 rc;
+        if (b == 0) {
+          rc = swe_calc_r(c, tk, SE_WHITE_MOON, fk, y, serr);
+        } else {
+          double el[6] = { 40, 0.053, 0.05, 30, 60, 5 };
+          el[0] += sqrt(0.0000298122353216 * 0.0000298122353216 / (el[1] * el[1] * el[1]))
+                   * 180 / M_PI * (tk - ts);
+          rc = swe_calc_orbel_r(c, tk, el, SE_EARTH, SE_ORBEL_EQ_DATE, 0, fk, y, serr);
+        }
+        if (rc < 0) {
+          swe_ctx_free(c);
+          return -1;
+        }
+      }
+      for (j = 0; j < 2; j++) {
+        double d = 0;
+        if (centred)
+          d = (8 * (f[3][j] - f[1][j]) - (f[4][j] - f[0][j])) / (12 * h);
+        else {
+          for (k = 0; k < 5; k++)
+            d += o5[k] * (f[k][j] - f[0][j]);
+          d *= dir / h;
+        }
+        if (fabs(x[3 + j] - d) > r)
+          r = fabs(x[3 + j] - d);
+      }
+    }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 163: the nutation's rate far from J2000. The Sun's right
  * ascension speed minus the same with SEFLG_NONUT under IAU 2000A set
  * explicitly, against a five-point difference of the same two calls'
@@ -4641,7 +4705,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4790,6 +4854,7 @@ int main(int argc, char **argv)
   nutfar = nut_far_rate_off();
   owenjoin = owen_join_speed_off();
   moshmoonwin = mosh_moon_window_off();
+  jdatewin = jdate_window_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -6005,6 +6070,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier Moon at window %.2e deg/day FAIL: expected %s\n",
            moshmoonwin, WANT_DEFECT ? "> 1e-7" : "< 1e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jdatewin > 1e-6) : (jdatewin >= 0 && jdatewin < 1e-9))
+    printf("  equinox of date window %.2e deg/day OK\n", jdatewin);
+  else {
+    printf("  equinox of date window %.2e deg/day FAIL: expected %s\n",
+           jdatewin, WANT_DEFECT ? "> 1e-6" : "< 1e-9");
     bad++;
   }
 

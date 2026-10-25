@@ -61,6 +61,14 @@
  * its place 1.4e-9 deg through the light time (5e-8 deg/day in the speed
  * of the five points a day further out).
  *
+ * The defect (UPSTREAM-BUGS 185): the elements of the equinox of date, the
+ * JDATE bodies of seorbel.txt and swe_calc_orbel()'s SE_ORBEL_EQ_DATE,
+ * add their frame's turning as (R(t + 1) x - R(t - 1) x) / 2 at the
+ * elements' instant (under light time the emission instant), which reached
+ * across the same edges: with "0,9,1" Selena's speed 8.0e-5 to 9.5e-5
+ * deg/day off within a day of them, an Earth orbit of 0.053 AU 8.7e-5, a
+ * Sun orbit of 1.2 AU 4.6e-5, Vulcan 7.7e-6.
+ *
  * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
  * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
  * difference after the step too), at 1799 Jan 1 the default models; and
@@ -88,8 +96,18 @@
  * Check (c): bodies whose frame turning is their own difference of the
  * frame: the Moshier Moon and topocentric Moon with "0,9,1" and the IERS
  * 2010 sidereal time at J2000 -+ 2 centuries, ecliptic and equatorial,
- * over the same three spans, against the references of check (a): 24
- * checks within 1e-8 deg/day.
+ * over the same three spans, against the references of check (a); and
+ * Selena, Vulcan and two swe_calc_orbel() orbits of the equinox of date
+ * (0.053 AU about the Earth, 1.2 AU about the Sun, moved by their mean
+ * motion), apparent places, on de200 at - 2 centuries (Vulcan, behind the
+ * Sun's disc there, left out: the deflection's curvature truncates its
+ * reference to 1.8e-8; the Swiss files join a day and a half after it)
+ * and on the Swiss files at + 2: each instant judged in its cell, the same
+ * side of the step at the instant (the precession of date) and at its
+ * emission instant (the elements' frame), t less the light time of the
+ * distance; an instant between the two, a light time wide, has no
+ * five-point reference and is passed over. 66 checks within 1e-8
+ * deg/day.
  *
  * Check (b): the rates themselves under SEFLG_JPLHOR, which swe_calc()
  * takes only with a DE 403 file and the IERS corrections: the precession's
@@ -117,7 +135,11 @@
  * (c) within 2.97e-9 (the reference's own on the Moshier Moon); before the
  * fix of bug 184 all 24 fail (8.0e-5 to 9.0e-5 the day either side,
  * 4.4e-8 to 1.1e-7 a day further out); the upstream build fails them too
- * (its Moon's speed 5.2 deg/day off within 5e-5 day of the edge).
+ * (its Moon's speed 5.2 deg/day off within 5e-5 day of the edge). The
+ * elements of date within 1.03e-9 (Vulcan); before the fix of bug 185, 34
+ * of those 42 fail (Selena 7.6e-5 to 9.5e-5, Vulcan 4.6e-6 to 7.7e-6);
+ * the upstream build fails all 66 of (c) (its Selena on a fixed ellipse
+ * 1.1e-5 off, Vulcan 3.0e-3), 226 of its 234.
  * Before the fix of bug 153, 38 of the first 84 checks fail: every body but sidereal Mars on the day
  * before the step under both settings and on the day after under the
  * second, and SPEED3 on both days under both, by 1.57e-5 to 1.09 deg/day.
@@ -171,16 +193,26 @@ static const struct {
 #define NSET ((int) (sizeof SET / sizeof SET[0]))
 
 #define EPHMASK (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)
+/* light time, days per AU */
+#define LTDAY (499.004783836 / 86400.0)
 
-enum { B_SUN, B_MOON, B_MARS, B_POLARIS, B_SIDMARS, B_TOPOMOON, B_SPEED3, NB };
-static const char *BN[NB] = { "Sun", "Moon", "Mars", "Polaris", "sidereal Mars",
-  "topocentric Moon", "Mars SPEED3" };
+/* check (a)'s bodies, then check (c)'s own: Selena and Vulcan (seorbel.txt,
+ * equinox of date), and swe_calc_orbel() orbits of the equinox of date, one
+ * about the Earth and one about the Sun */
+enum { B_SUN, B_MOON, B_MARS, B_POLARIS, B_SIDMARS, B_TOPOMOON, B_SPEED3, NB,
+  B_SELENA = NB, B_VULCAN, B_ORBGEO, B_ORBHEL, NBC };
+static const char *BN[NBC] = { "Sun", "Moon", "Mars", "Polaris", "sidereal Mars",
+  "topocentric Moon", "Mars SPEED3", "Selena", "Vulcan", "orbit about Earth",
+  "orbit about Sun" };
 static const char *RN[3] = { "day before", "day after", "outside" };
 
-/* the step and flags in use */
+/* the step and flags in use; LTCELL: a place's frame of date is its
+ * emission instant's too (the equinox of date of check (c)'s elements), so
+ * the step is seen at the instant and again a light time after it */
 static double TS;
 static int LEFT;
 static int32 FL;
+static int LTCELL;
 
 /* the place at t, in degrees, and its speeds; the flags returned checked to
  * be the ephemeris asked for (de200's in check (a)), with the Horizons
@@ -199,9 +231,28 @@ static int place(swe_ctx *c, int b, double t, int32 xf, double *x)
     break;
   case B_SIDMARS: rf = swe_calc_r(c, t, SE_MARS, fl | SEFLG_SIDEREAL, x, serr); break;
   case B_TOPOMOON: rf = swe_calc_r(c, t, SE_MOON, fl | SEFLG_TOPOCTR, x, serr); break;
-  default:
+  case B_SPEED3:
     rf = swe_calc_r(c, t, SE_MARS, (fl & ~SEFLG_SPEED) | SEFLG_SPEED3, x, serr);
     break;
+  case B_SELENA: rf = swe_calc_r(c, t, SE_WHITE_MOON, fl, x, serr); break;
+  case B_VULCAN: rf = swe_calc_r(c, t, SE_VULCAN, fl, x, serr); break;
+  default: {
+    /* moved from TS by the two-body mean motion swe_calc_orbel() takes */
+    double el[6] = { 40, 0.053, 0.05, 30, 60, 5 }, mu;
+    int32 ctr = SE_EARTH;
+    if (b == B_ORBHEL) {
+      el[1] = 1.2;
+      el[2] = 0.2;
+      el[4] = 80;
+      el[5] = 12;
+      ctr = SE_SUN;
+    }
+    mu = (ctr == SE_SUN) ? 0.01720209895 * 0.01720209895
+                         : 0.0000298122353216 * 0.0000298122353216;
+    el[0] += sqrt(mu / (el[1] * el[1] * el[1])) * 180 / M_PI * (t - TS);
+    rf = swe_calc_orbel_r(c, t, el, ctr, SE_ORBEL_EQ_DATE, 0, fl, x, serr);
+    break;
+  }
   }
   if (rf < 0 || (rf & EPHMASK) != (FL & EPHMASK)
       || (b != B_SIDMARS && (rf & SEFLG_JPLHOR_APPROX) != (FL & SEFLG_JPLHOR_APPROX))) {
@@ -241,6 +292,37 @@ static double off(swe_ctx *c, int b, double t, int32 xf, int *skip, int *err)
   int n = (b == B_TOPOMOON) ? 4 : 2, k, j, centred = 1, dir;
   double h = (b == B_TOPOMOON) ? 1.0 / 128 : 1.0 / 64, x[6], f[9][6], r = 0;
   *skip = 0;
+  if (LTCELL) {
+    /* the places' cell: the instant's side of the step and its emission
+     * instant's, t less the light time of the distance; none of the
+     * references fits between the two, a light time wide */
+    double te;
+    int pass;
+    if (place(c, b, t, xf, x) < 0) {
+      *err = 1;
+      return 0;
+    }
+    te = t - x[2] * LTDAY;
+    dir = left_of(t) ? -1 : 1;
+    for (pass = 0; pass < 2; pass++) {
+      int in = (left_of(t) == left_of(te));
+      centred = (pass == 0);
+      for (k = 0; k <= 2 * n && in; k++) {
+        double tk = centred ? t + (k - n) * h : t + dir * k * h;
+        if (place(c, b, tk, xf, f[k]) < 0) {
+          *err = 1;
+          return 0;
+        }
+        in = same_side(tk, t) && same_side(tk - f[k][2] * LTDAY, te);
+      }
+      if (in)
+        break;
+    }
+    if (pass == 2) {
+      *skip = 1;
+      return 0;
+    }
+  } else {
   for (k = 1; k <= n; k++)
     if (!same_side(t - k * h, t) || !same_side(t + k * h, t))
       centred = 0;
@@ -259,6 +341,7 @@ static double off(swe_ctx *c, int b, double t, int32 xf, int *skip, int *err)
       *err = 1;
       return 0;
     }
+  }
   }
   for (j = 0; j < 2; j++) {
     double d = 0, v;
@@ -422,12 +505,19 @@ int main(int argc, char **argv)
       int left;
       int32 fl;
       const char *mod;
-      int nb, b[3];
+      int ltcell, nb, b[4];
     } SC[] = {
       /* the Moshier Moon (UPSTREAM-BUGS 184) at IAU 1976's window edges,
        * the IERS 2010 sidereal time */
-      { 2524595.0, 1, SEFLG_MOSEPH, "0,9,1,0,0,0,0,3", 2, { B_MOON, B_TOPOMOON } },
-      { 2378495.0, 0, SEFLG_MOSEPH, "0,9,1,0,0,0,0,3", 2, { B_MOON, B_TOPOMOON } },
+      { 2524595.0, 1, SEFLG_MOSEPH, "0,9,1,0,0,0,0,3", 0, 2, { B_MOON, B_TOPOMOON } },
+      { 2378495.0, 0, SEFLG_MOSEPH, "0,9,1,0,0,0,0,3", 0, 2, { B_MOON, B_TOPOMOON } },
+      /* the elements of the equinox of date (UPSTREAM-BUGS 185): at - 2
+       * centuries on de200 (the Swiss files join a day and a half after
+       * it, where their Earth steps; Vulcan, behind the Sun's disc there,
+       * is left to the Swiss files at + 2 centuries) */
+      { 2378495.0, 0, SEFLG_JPLEPH, "0,9,1,0,0,0,0,3", 1, 3, { B_SELENA, B_ORBGEO, B_ORBHEL } },
+      { 2524595.0, 1, SEFLG_SWIEPH, "0,9,1,0,0,0,0,3", 1, 4,
+        { B_SELENA, B_VULCAN, B_ORBGEO, B_ORBHEL } },
     };
     for (m = 0; m < (int) (sizeof SC / sizeof SC[0]); m++) {
       char mod[40];
@@ -435,9 +525,11 @@ int main(int argc, char **argv)
       TS = SC[m].ts;
       LEFT = SC[m].left;
       FL = SC[m].fl;
+      LTCELL = SC[m].ltcell;
       nq = instants(tq);
       strcpy(mod, SC[m].mod);
       swe_set_ephe_path_r(c, argv[1]);
+      swe_set_jpl_file_r(c, "de200.eph");
       swe_set_topo_r(c, 8.55, 47.37, 400);
       swe_set_delta_t_userdef_r(c, ldexp(1, -11));
       swe_set_astro_models_r(c, mod, 0);
@@ -474,6 +566,7 @@ int main(int argc, char **argv)
         }
       swe_ctx_free(c);
     }
+    LTCELL = 0;
   }
 #ifndef SWE_UPSTREAM_COMPAT
   {

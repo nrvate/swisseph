@@ -6582,6 +6582,26 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
    * 112's: this function is not upstream's, so there is no upstream
    * behaviour to restore. G126. */
   if (of_date) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 185: and that difference reached across the frame's
+     * steps (a short-term model's window edges, Owen 1990's joins;
+     * swi_frame_step_side()): with "0,9,1" an Earth orbit of 0.053 AU
+     * 8.0e-5 deg/day off within a day of J2000 -+ 2 centuries. There the
+     * three-point derivative on tequ's side, as swi_osc_el_plan()'s. */
+    int side = swi_frame_step_side(ctx, tequ, 1, 0, SWI_FRAME_PREC | SWI_FRAME_EPS);
+    if (side != 0) {
+      double xc[3];
+      swi_coortrf(xe, xc, -swi_epsiln(ctx, tequ, 0));
+      swi_precess(ctx, xc, tequ, 0, J_TO_J2000);
+      swi_coortrf(xe, xr, -swi_epsiln(ctx, tequ + side, 0));
+      swi_precess(ctx, xr, tequ + side, 0, J_TO_J2000);
+      swi_coortrf(xe, xe, -swi_epsiln(ctx, tequ + 2 * side, 0));
+      swi_precess(ctx, xe, tequ + 2 * side, 0, J_TO_J2000);
+      for (i = 0; i <= 2; i++)
+        xp[3+i] += side * (4 * xr[i] - 3 * xc[i] - xe[i]) / 2;
+      return OK;
+    }
+#endif
     swi_coortrf(xe, xr, -swi_epsiln(ctx, tequ + 1, 0));
     swi_precess(ctx, xr, tequ + 1, 0, J_TO_J2000);
     swi_coortrf(xe, xe, -swi_epsiln(ctx, tequ - 1, 0));

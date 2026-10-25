@@ -1412,12 +1412,33 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
    * +-1 day: smooth polynomials and long-period series, so the
    * difference is exact to rounding (1e-16 of the 3.8e-5 deg/day). */
   if (fict_ifl & FICT_JDATE) {
-    swi_coortrf(xe, xr, -swi_epsiln(ctx, tequ + 1, 0));
-    swi_precess(ctx, xr, tequ + 1, 0, J_TO_J2000);
-    swi_coortrf(xe, xe, -swi_epsiln(ctx, tequ - 1, 0));
-    swi_precess(ctx, xe, tequ - 1, 0, J_TO_J2000);
-    for (i = 0; i <= 2; i++)
-      xp[3+i] += (xr[i] - xe[i]) / 2;
+    /* Upstream bug 185: the frame's models step where the precession or
+     * the obliquity changes model (a short-term model's window edges,
+     * Owen 1990's joins; swi_frame_step_side()), and R(tequ -+ 1) reached
+     * across: with IAU 1976 short-term under Vondrak ("0,9,1") Selena's
+     * speed 8.0e-5 deg/day off within a day of J2000 -+ 2 centuries,
+     * Vulcan's 1.3e-5. There now the three-point derivative on tequ's
+     * side, R(t), R(t + s), R(t + 2s), s = -+1 day, as bug 153's
+     * precession rate. */
+    int side = swi_frame_step_side(ctx, tequ, 1, 0, SWI_FRAME_PREC | SWI_FRAME_EPS);
+    if (side != 0) {
+      double xc[3];
+      swi_coortrf(xe, xc, -swi_epsiln(ctx, tequ, 0));
+      swi_precess(ctx, xc, tequ, 0, J_TO_J2000);
+      swi_coortrf(xe, xr, -swi_epsiln(ctx, tequ + side, 0));
+      swi_precess(ctx, xr, tequ + side, 0, J_TO_J2000);
+      swi_coortrf(xe, xe, -swi_epsiln(ctx, tequ + 2 * side, 0));
+      swi_precess(ctx, xe, tequ + 2 * side, 0, J_TO_J2000);
+      for (i = 0; i <= 2; i++)
+        xp[3+i] += side * (4 * xr[i] - 3 * xc[i] - xe[i]) / 2;
+    } else {
+      swi_coortrf(xe, xr, -swi_epsiln(ctx, tequ + 1, 0));
+      swi_precess(ctx, xr, tequ + 1, 0, J_TO_J2000);
+      swi_coortrf(xe, xe, -swi_epsiln(ctx, tequ - 1, 0));
+      swi_precess(ctx, xe, tequ - 1, 0, J_TO_J2000);
+      for (i = 0; i <= 2; i++)
+        xp[3+i] += (xr[i] - xe[i]) / 2;
+    }
   }
 #endif
 #ifndef SWE_UPSTREAM_COMPAT

@@ -213,6 +213,7 @@ worst were in code that had never executed even once.
 | 177 | On Moshier the barycentric Sun's slot keeps what the files or JPL last left in it, and five Moshier paths read it as their Sun -- the light deflection, the heliocentric Moon, an asteroid's frame, the fictitious bodies' and `swe_calc_orbel()`'s Sun: a Swiss request fallen to Moshier after a Swiss call at another instant, at 1500, the heliocentric Moon 0.41 deg off the same call in a fresh process, Ceres heliocentric 0.14, `swe_calc_orbel()`'s orbit about the Sun 0.071 and Cupido 9.1e-3 under SEFLG_TRUEPOS, the deflection 1.66e-7 on Mercury and 1.7e-9 on Mars, `swe_nod_aps()`'s Venus 1.5e-7 | Correctness (behaviour) | `swemplan.c` |
 | 183 | Owen 1990's precession and obliquity are pieces 80 centuries long that do not meet at their joins (0.095 mas in the mean obliquity at -10000, 0.086 and 0.091 mas in the precession at +6000 and +14000), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across, with Owen 1990 chosen and under SEFLG_JPLHOR's models outside 1799-2202: the rates 2.6e-8, 9.8e-9 and 1.1e-8 deg/day off within a day of them, Mars's speeds 1.1e-8, SEFLG_SPEED3 1.1e-4 | Correctness | `swephlib.c` |
 | 184 | The Moshier Moon's frame turning, (R(t + 1) x - R(t - 1) x) / 2 of the ecliptic of date to the J2000 equator (entry 95), reaches across a short-term precession model's window edges: with IAU 1976 short and Vondrak long its speed 8.0e-5 to 9.0e-5 deg/day off within a day of J2000 -+ 2 centuries, the topocentric Moon's alike, its apparent place 1.36e-9 deg through the light time | Correctness | `swemmoon.c` |
+| 185 | The equinox-of-date frame turning of the seorbel.txt JDATE bodies (entry 48) and of `swe_calc_orbel()`'s SE_ORBEL_EQ_DATE (entry 136), (R(t + 1) x - R(t - 1) x) / 2 at the elements' instant, reaches across a short-term precession model's window edges and Owen 1990's joins: with IAU 1976 short and Vondrak long, within a day of J2000 -+ 2 centuries Selena's speed 8.0e-5 to 9.5e-5 deg/day off, an Earth orbit of 0.053 AU 8.7e-5, Vulcan 1.6e-5 | Correctness | `swemplan.c`, `sweph.c` |
 
 ---
 
@@ -12489,6 +12490,68 @@ Noticed, not fixed:
   entry 66), whose places precess at their own instants: within 2^-8
   day after the window's edges the Sun's speed is 9.0e-10 to 9.9e-10
   deg/day off (none with SEFLG_NOABERR), Mars's 9.6e-10. Below the floor.
+
+## 185. The equinox-of-date frame turning of the JDATE fictitious bodies and `swe_calc_orbel()` differences the frame across a short-term precession window's edges: Selena's speed 8.0e-5 to 9.5e-5 deg/day off within a day either side, Vulcan's up to 1.6e-5
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976 or 2000 and another long-term model, or with Owen 1990 at its joins: within a day of the step, as seen at the emission instant, the speed of every seorbel.txt body of the equinox of date (JDATE) and of every `swe_calc_orbel()` orbit of SE_ORBEL_EQ_DATE off by the frame's difference across it, Selena's 8.0e-5 to 9.5e-5 deg/day, an Earth orbit of 0.053 AU 8.0e-5 to 8.7e-5, a Sun orbit of 1.2 AU 3.8e-5 to 4.9e-5, Vulcan 4.6e-6 to 1.6e-5)**
+**Where:** `swemplan.c`: `swi_osc_el_plan()`; `sweph.c`: `swi_orbel_to_state()`
+
+Entry 160's noticed item. Elements of the equinox of date are referred to
+a frame that turns with t, and their speed carries its turning (entries
+48 and 136): R'(t) x as (R(t + 1) x - R(t - 1) x) / 2, R the
+ecliptic-of-date-to-J2000 rotation (`swi_epsiln()` and `swi_precess()`,
+no flags), at tequ, the instant the elements are evaluated at -- under
+light time the emission instant. R steps where the precession or the
+obliquity changes model (entry 160's window edges: with "0,9,1" 0.53"
+and 0.57" in the precession at J2000 -+ 2 centuries, 3.4 and 81.6 mas in
+the obliquity; entry 183's Owen joins), and the difference reached
+across within a day of the step. Against five-point differences of the
+positions over 2^-6 day in the instant's cell (G139's check (c): the
+same side of the step at the instant and at its emission instant, for
+the precession of date is the observer's and the elements' frame the
+emission's), "0,9,1" with the IERS 2010 sidereal time, the worst over the
+day before the edge, the day after and the rest: on de200 at - 2
+centuries Selena 7.99e-5 deg/day (7.61e-5 equatorial), an Earth orbit of
+0.053 AU 8.37e-5, a Sun orbit of 1.2 AU 4.33e-5, the rest included (its
+emission instant within a day of the edge a day after it); on the Swiss
+files at + 2 centuries Selena 9.45e-5, Vulcan 7.74e-6, the Earth orbit
+8.74e-5, the Sun orbit 4.55e-5; geometric (SEFLG_TRUEPOS) alike, and
+Vulcan 1.55e-5 on the Swiss files at - 2 centuries.
+
+**Fix, as done here:** where `swi_frame_step_side(ctx, tequ, 1, 0,
+SWI_FRAME_PREC | SWI_FRAME_EPS)` says the frame's models change within a
+day of tequ, the turning is the three-point derivative on tequ's side, s
+(4 R(tequ + s) x - 3 R(tequ) x - R(tequ + 2s) x) / 2, s = -+1 day, as
+entry 153's precession rate, in both functions. Elsewhere the central
+difference, unchanged; the test returns at once under the default
+models. Behind `#ifndef SWE_UPSTREAM_COMPAT`: the fictitious bodies'
+turning is this fork's (entry 48); `swe_calc_orbel()` is this fork's and
+its compat build keeps the central difference (entry 136's).
+- After: on de200 at - 2 centuries Selena within 1.77e-10 deg/day, the
+  Earth orbit 3.16e-10, the Sun orbit 1.97e-11; on the Swiss files at + 2
+  centuries Selena 7.71e-10, Vulcan 1.03e-9, the Earth orbit 5.55e-10,
+  the Sun orbit 1.87e-11; SEFLG_TRUEPOS within 3.3e-11, Vulcan 1.5e-9.
+- No hot path: neither function is on the planets' path.
+
+G139 `tests/framestep.c`, extended: check (c) takes Selena, the Earth
+orbit and the Sun orbit on de200 at J2000 - 2 centuries, and with Vulcan
+on the Swiss files at + 2 centuries, apparent places, ecliptic and
+equatorial, over the three spans, in the instant's cell (an instant whose
+emission falls on the other side has no five-point reference there and
+is passed over): 42 checks within 1e-8, measured within 1.03e-9. Before
+the fix 34 of the 42 fail (all but the rest at + 2 centuries). The
+upstream build fails all 66 of (c)'s, 226 of its 234 (its Selena moves on
+a fixed ellipse, 1.06e-5 deg/day off, Vulcan 3.0e-3). The - 2 centuries
+row takes de200: the Swiss files' 1800 join is a day and a half after it,
+and their Earth steps there and half a day earlier (the Sun's geometric
+longitude by some 8e-8 deg, entry 89's joins), which the references
+reach; and Vulcan, behind the Sun's disc there (0.07 deg from its
+centre), has a reference truncated by the deflection's curvature (1.8e-8
+deg/day over 2^-6, 1.9e-9 over 2^-10). G24 `jdate_window_off`: Selena's
+and the Earth orbit's ecliptic speeds, geometric, on the Swiss files with
+"0,9,1" at J2000 + 2 centuries -+ 0.5 day and -+ 2^-14 day against the
+five-point difference on their side, the largest: 1.73e-11 deg/day
+shipped (8.67e-5 before the fix), 4.48e-3 compat.
 
 ## How these were found
 
