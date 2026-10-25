@@ -2197,6 +2197,27 @@ static double nodaps_ut_fallback_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 189: swe_get_orbital_elements() of the Earth on Moshier,
+ * the longitude of perihelion's fourth difference over 2 days about 2000
+ * Jan 30.5, deg. The EMB was Moshier's Earth plus Moshier's Moon, where the
+ * Earth is made with the short lunar series' Moon: the perihelion wobbled
+ * with their difference, 8e-3 deg semi-monthly, 1.6e-3 here before the
+ * fix and upstream; now the series' EMB, smooth, 7.6e-7. */
+static double orbel_mosh_emb_off(void)
+{
+  double d[5][50];
+  const double h = 2, jd = 2451574.0;
+  char serr[256];
+  int j;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (j = 0; j < 5; j++)
+    if (swe_get_orbital_elements(jd + (j - 2) * h, SE_EARTH, SEFLG_MOSEPH, d[j], serr) < 0)
+      return 1e9;
+  return fabs(swe_difdeg2n(d[4][5], d[3][5]) - 3 * swe_difdeg2n(d[3][5], d[2][5])
+              + 3 * swe_difdeg2n(d[2][5], d[1][5]) - swe_difdeg2n(d[1][5], d[0][5]));
+}
+
 /* UPSTREAM-BUGS 140: the site's move for a user delta t a quarter ulp of
  * UT1 longer, at TT 2000 Jan 1.5, Zurich, Swiss files: the site as the
  * Sun's geocentric less topocentric true J2000 equatorial ICRS XYZ place,
@@ -5178,7 +5199,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5316,6 +5337,7 @@ int main(int argc, char **argv)
   nodutfb = nodaps_ut_fallback_off();
   mmsetting = moshmoon_setting_ret();
   starjplb = star_jpl_beyond_ret();
+  orbmemb = orbel_mosh_emb_off();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -6332,6 +6354,14 @@ int main(int argc, char **argv)
   else {
     printf("  nod_aps_ut fallback dt %.2e deg FAIL: expected %s\n",
            nodutfb, WANT_DEFECT ? "> 1e-7" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbmemb > 1e-4 && orbmemb < 1e9) : (orbmemb < 1e-5))
+    printf("  orbel Moshier EMB      %.2e deg OK\n", orbmemb);
+  else {
+    printf("  orbel Moshier EMB      %.2e deg FAIL: expected %s\n",
+           orbmemb, WANT_DEFECT ? "> 1e-4" : "< 1e-5");
     bad++;
   }
 

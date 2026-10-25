@@ -1498,6 +1498,10 @@ struct epsilon {
  *     answers 260; and a fallen star going on with the ephemeris bits
  *     asked, a heliocentric one fallen to Moshier 7.8e-8 deg off the
  *     Moshier request (UPSTREAM-BUGS 198, G133, G24)
+ *   - swe_get_orbital_elements()'s Earth-Moon barycentre on Moshier as its
+ *     Earth plus its Moon, not the short series' Moon the Earth was made
+ *     with: the Earth's longitude of perihelion 8.0e-3 deg off at 2000
+ *     (UPSTREAM-BUGS 189, G107, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

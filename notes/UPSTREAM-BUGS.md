@@ -228,6 +228,7 @@ worst were in code that had never executed even once.
 | 197 | A save-area answer skips entry 120's strict test, which read the setting of the call that filled the area: the semo files missing, Mars at 1500 answered 258 with the fallback allowed and again 258 from the area after `swe_set_ephe_fallback(0)` (or another thread's setting adopted), where a fresh strict context refuses it (-1); every Earth-seen body the area answers, `swe_calc_ut()` too | Correctness (behaviour) | `sweph.c` |
 | 198 | The star functions with SEFLG_JPLEPH outside the JPL file's span return `main_planet_bary()`'s BEYOND_EPH_LIMITS as their error: on de200.eph at 1500 and 2406, the fallback allowed, Aldebaran -1 "outside JPL eph. range" by all four functions, where `swe_calc()` of Mars falls to Moshier and answers 260; strict, that message, not the downgrade's; and a fallen star went on with the ephemeris bits asked: de200's frame (2.3e-6 deg off the Moshier request), and a heliocentric star fallen to Moshier without the Sun's barycentric place (7.8e-8 deg) | Correctness (behaviour) | `sweph.c` |
 | 196 | `swe_calc(SE_ECL_NUT)` takes any date and answers it with its flags, where no other body is answered past the mean node's -3100015.5 .. 8000016.5: on Moshier under the default models the true and mean obliquity NaN from 1.3e60 days, dpsi 1.2e72 deg at 1e82 and NaN with deps from 4e82, NaN at -+inf and NaN, and at -1e300 (the empty caches' SWI_TJD_NEVER) the zeros of caches never filled, under every nutation model; past 1e12 days the series as evaluated leave the residual floor (IAU 2000B 1.5e-7 deg off at 1e12 to 3e12, 2.2 deg at 3e13 to 1e14, noise beyond) | Correctness (behaviour) | `sweph.c` |
+| 189 | `swe_get_orbital_elements()` on Moshier builds the Earth-Moon barycentre as entry 180's did, Moshier's Earth plus Moshier's Moon, where that Earth is the EMB less the short lunar series' Moon: the Earth's longitude of perihelion wobbles 8.0e-3 deg about the series' EMB's at 2000 (4.1e-2 at -3000), a 9.7e-6 and q 5.3e-6 relative, and `swe_orbit_max_min_true_distance()` with them | Correctness | `swecl.c` |
 
 ---
 
@@ -13740,6 +13741,66 @@ and NaN, one process each, 10 s cap, Moshier and Swiss):
   offsets for the planetary terms (McCarthy and Luzum 2003; SOFA nut00b's
   -0.135 and +0.388 mas): 3.75e-8 deg in dpsi and 1.08e-7 in deps at
   every date, both builds.
+
+## 189. `swe_get_orbital_elements()` on Moshier builds the Earth-Moon barycentre from a Moon other than the one Moshier's Earth was made with: the Earth's elements wobble with the short lunar series' error, the longitude of perihelion 8.0e-3 deg at 2000
+
+**Severity: Correctness (Moshier's Earth's osculating elements off the ellipse of Moshier's own EMB: the longitude of perihelion 8.0e-3 deg at 2000, 4.1e-2 at -3000, the perihelion distance 3.8e-6 and 3.9e-5 AU, a up to 9.7e-6 relative; `swe_orbit_max_min_true_distance()` of the Sun and the geocentric ones with them), both builds**
+**Where:** `swecl.c`: `swe_get_orbital_elements_r_body()`, and through it `swe_orbit_max_min_true_distance()`
+
+Found with entry 180. The Earth's elements are the Earth-Moon
+barycentre's, built as the Earth plus the geocentric Moon over 1 + EMRAT,
+as `swe_nod_aps()` built its ellipse. Moshier's Earth is its series' EMB
+less the short lunar series' Moon (`embofs_mosh()`), and the Moon added
+back was Moshier's own, 0.24 deg away at 2000, 1.55 deg at -3000: the EMB
+1.3e-7 AU and 3.2e-8 AU/day off the series' at 2000 (7.9e-7 AU, 2.0e-7
+AU/day at -3000), in the lunar terms of 9 to 35 days the short series
+leaves out. The ellipse amplifies the velocity's error: the longitude of
+perihelion (`dret[5]`) wobbled 8.04e-3 deg about the series' EMB's at
+2000, 4.05e-2 at -3000, the perihelion distance 3.8e-6 and 3.85e-5 AU;
+on G107's eight dates -2500..2800 a 9.7e-6, e 8.9e-6, q 5.3e-6 relative,
+the anomalies 2.6e-2 deg, the periods 1e-5 and the time of perihelion
+3e-2 day. `swe_orbit_max_min_true_distance()` takes the Earth's (the
+EMB's) ellipse from it: the Sun's maximum, minimum and true distances on
+Moshier 2.2e-6, 4.0e-6 and 2.3e-7 AU off the files' at 2000 (60 days
+from 2000 Apr 10), 1.2e-7, 3.4e-7 and 1.0e-7 after; Mars's geocentric
+ones 3.5e-6, 4.9e-6 and 5.6e-7 AU, 1.4e-6, 2.2e-6 and 4.3e-7 after.
+Moshier's Earth's longitude of perihelion against the files', 60 days
+from each date, the largest, and the perihelion distance's:
+
+| Moshier's Earth, `swe_get_orbital_elements()` | before | after |
+|---|---|---|
+| 2000 | 8.04e-3 deg, 4.0e-6 AU | 9.8e-4 deg, 3.4e-7 AU |
+| 0 | 1.20e-2, 6.3e-6 | 5.2e-4, 2.0e-7 |
+| -2000 | 3.09e-2, 2.6e-5 | 4.2e-3, 3.5e-6 |
+| -3000 | 6.16e-2, 5.3e-5 | 2.99e-2, 1.5e-5 |
+
+What remains is Moshier's EMB series against the files', as in entry 180.
+
+**Fix, as done here:**
+- On Moshier the Moon added to the Earth is the one the Earth was made
+  with, the short series' geocentric Moon its computation keeps
+  (`ctx->earth_moon`, ICRS equatorial), when it is that Earth's (the
+  instant and Moshier), given the frame bias `swe_calc()` gives Moshier's
+  places (DE403's) and turned into the J2000 ecliptic of the places here,
+  as entry 180 does in `swe_nod_aps()`: the EMB is the series' own to its
+  last bits, and the elements those of its ellipse.
+- The files, JPL and a Moon from Moshier on the files' Earth (entry 120)
+  as before. `swe_orbit_max_min_true_distance()` takes the Earth's
+  elements from here, and nothing else builds a Moshier EMB.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+G107 `tests/orbelgm.c` built Moshier's EMB the old way for its
+eccentricity-vector reference, which agreed with the defect: it now takes
+the Moon the Earth was made with (the context's, biased and turned into
+the J2000 ecliptic), and its two Moshier Earth rows are 0 off it in a, e,
+q, the perihelion and the anomalies; before the fix they fail (the
+perihelion and anomalies 2.57e-2 deg, a 9.72e-6, e 8.92e-6, q 5.25e-6
+relative), the other 58 pass; the upstream build fails its 60 as before.
+G87 and G48 pass.
+
+G24 `orbel_mosh_emb_off`: the fourth difference over 2 days of the
+Earth's Moshier longitude of perihelion about 2000 Jan 30.5: 7.6e-7 deg
+shipped (1.6e-3 before the fix), 1.63e-3 compat.
 
 ## How these were found
 

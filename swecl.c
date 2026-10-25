@@ -7068,6 +7068,25 @@ static int32 swe_get_orbital_elements_r_body(swe_ctx *ctx, double tjd_et,
     if (swe_calc_r(ctx, tjd_et, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR), xposm, serr) == ERR)
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 189: on Moshier the Earth is its series' EMB less the
+     * short lunar series' Moon (embofs_mosh()), and the EMB here was that
+     * Earth plus Moshier's own Moon, 0.24 deg away at 2000, 1.55 deg at
+     * -3000, as in swe_nod_aps() (bug 180): the longitude of perihelion
+     * wobbled 8.0e-3 deg about the series' EMB's at 2000, 4.1e-2 at -3000,
+     * the perihelion distance 3.8e-6 and 3.9e-5 AU, and
+     * swe_orbit_max_min_true_distance() with it. Now the Moon the Earth was
+     * made with (ctx->earth_moon, ICRS equatorial), given the frame bias
+     * swe_calc() gives Moshier (DE403's) and turned into the J2000
+     * ecliptic of the places here, so the EMB is the series' own. */
+    if ((iflag & SEFLG_EPHMASK) == SEFLG_MOSEPH && ctx->earth_moon.t == tjd_et
+        && ctx->earth_moon.iephe == SEFLG_MOSEPH
+        && ctx->pldat[SEI_EARTH].teval == tjd_et && ctx->pldat[SEI_EARTH].iephe == SEFLG_MOSEPH) {
+      for (j = 0; j <= 5; j++)
+        xposm[j] = ctx->earth_moon.x[j];
+      swi_bias(ctx, xposm, tjd_et, iflJ2000, FALSE);
+      swi_coortrf2(xposm, xposm, ctx->oec2000.seps, ctx->oec2000.ceps);
+      swi_coortrf2(xposm + 3, xposm + 3, ctx->oec2000.seps, ctx->oec2000.ceps);
+    }
     /* bug 108: with the ratio the Earth was made from the EMB with */
     for (j = 0; j <= 5; j++)
       xpos[j] += xposm[j] / (swi_emb_mrat(ctx, iflag & SEFLG_EPHMASK) + 1.0);

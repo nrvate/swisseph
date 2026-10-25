@@ -19,13 +19,19 @@
  * period a^1.5 sidereal years, without the body's mass (Jupiter's 4.8e-4,
  * 2.1 days, long; the time of perihelion passage 1.6 days off), the
  * tropical period 3.9e-5 long and the synodic one against k, not the
- * sidereal year.
+ * sidereal year. UPSTREAM-BUGS 189: on Moshier the EMB was Moshier's Earth
+ * plus Moshier's Moon, where the Earth is made from the series' EMB with
+ * the short lunar series' Moon (embofs_mosh()), 0.24 deg away at 2000: the
+ * EMB off the series', its perihelion 2.6e-2 deg off here at most, a 9.7e-6
+ * and q 5.3e-6 relative.
  *
  * The check: the Swiss files, de200 and Moshier, and a DE4xx JPL file if
  * one is named, eight dates (-2500..2800; JPL 1700..2100), Mercury..Pluto,
  * the Earth (EMB) and the Moon, two-body and SEFLG_ORBEL_AA. Against the
  * eccentricity vector of swe_calc()'s own heliocentric (the Moon
- * geocentric) J2000 state, with the header's GMS + GMi (the Moon GMB) or,
+ * geocentric) J2000 state (the EMB's with the Moon the Earth was made with,
+ * on Moshier the short series', which the context keeps), with the
+ * header's GMS + GMi (the Moon GMB) or,
  * for SEFLG_ORBEL_AA, GMS and the GMs of every planet out to this one (the
  * Earth's EMB counts as one, GMB), the Swiss files' header by their DE
  * number:
@@ -44,7 +50,8 @@
  *
  * 20 rows an ephemeris, 60 without a DE4xx file. The build before bug 108,
  * the build before bug 111 (the periods) and the upstream build
- * (SWE_UPSTREAM_COMPAT) fail all 60. Run as
+ * (SWE_UPSTREAM_COMPAT) fail all 60, the build before bug 189 Moshier's
+ * two Earth rows. Run as
  *   orbelgm EPHEDIR [DE4XX_FILE]
  * DE4XX_FILE a path to a JPL file of DE number 403 or above (SE_TEST_DE4 in
  * the Makefile); without one that leg is skipped and says so.
@@ -53,6 +60,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "swephexp.h"
+#include "sweph.h"	/* the context's earth_moon, Moshier's EMB (bug 189) */
+#include "swephlib.h"	/* swi_bias() */
 
 #define EPHBITS (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)
 static const double rgYear[8] = {-2500, -1000, 0, 1000, 1700, 1900, 2000, 2800};
@@ -145,9 +154,26 @@ static int leg(swe_ctx *c, int32 eph, const char *name, const double *gm,
         return -1;
       }
       if (rgPl[ip] == SE_EARTH) {	/* the Earth-Moon barycentre */
+        /* with the Moon the Earth was made from: on Moshier not its Moon
+         * but the short lunar series' (embofs_mosh()), which the Earth's
+         * computation keeps, ICRS equatorial (UPSTREAM-BUGS 189), here
+         * with the frame bias and in the J2000 ecliptic of the places */
+        double em[6] = {0, 0, 0, 0, 0, 0};
+#ifndef SWE_UPSTREAM_COMPAT	/* the upstream build keeps no such Moon */
+        int moshem = eph == SEFLG_MOSEPH && c->earth_moon.t == t
+                     && c->earth_moon.iephe == SEFLG_MOSEPH;
+        for (j = 0; j <= 5; j++)
+          em[j] = c->earth_moon.x[j];
+        if (moshem)
+          swi_bias(c, em, t, fl, FALSE);
+        swi_coortrf2(em, em, c->oec2000.seps, c->oec2000.ceps);
+        swi_coortrf2(em + 3, em + 3, c->oec2000.seps, c->oec2000.ceps);
+#else
+        int moshem = 0;
+#endif
         swe_calc_r(c, t, SE_MOON, fl, xm, serr);
         for (j = 0; j <= 5; j++)
-          x[j] += xm[j] / (emrat + 1.0);
+          x[j] += (moshem ? em[j] : xm[j]) / (emrat + 1.0);
       }
       r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
       v2 = x[3] * x[3] + x[4] * x[4] + x[5] * x[5];
