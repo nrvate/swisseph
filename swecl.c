@@ -6820,17 +6820,37 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
    * geometrically from ecl. longitude and latitude 
    */
   if (imeth == 0 || imeth == 1) {
+    /* A sector is the body's place on its diurnal circle, which no zodiac,
+     * frame or form of the place moves: the place is set below, as
+     * ecliptic longitude and latitude in degrees, in the frame of the true
+     * ecliptic of date (the ARMC and the true obliquity). So it is computed
+     * with the flags that choose the body's direction from the observer
+     * and no other: the ephemeris and its Horizons corrections,
+     * SEFLG_TOPOCTR, SEFLG_TRUEPOS, SEFLG_NOABERR, SEFLG_NOGDEFL and
+     * SEFLG_CENTER_BODY. SEFLG_SIDEREAL, SEFLG_NONUT, SEFLG_ICRS,
+     * SEFLG_J2000, SEFLG_EQUATORIAL, SEFLG_RADIANS, SEFLG_XYZ and the
+     * speeds would set another frame's place in this one; SEFLG_HELCTR and
+     * SEFLG_BARYCTR a direction from elsewhere on the observer's sky.
+     * They are ignored, as methods 2 to 5 ignore them. A sidereal place
+     * takes no Horizons corrections (plaus_iflag()), so with SEFLG_SIDEREAL
+     * neither the place nor the frame takes them: every method answers
+     * the sector of the call without SEFLG_SIDEREAL. */
+    int32 iflag_pl = iflag & (SEFLG_EPHMASK | SEFLG_TOPOCTR | SEFLG_TRUEPOS | SEFLG_NOABERR
+                              | SEFLG_NOGDEFL | SEFLG_CENTER_BODY
+                              | SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+    if (iflag & SEFLG_SIDEREAL)
+      iflag_pl &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
     t_et = t_ut + swe_deltat_ex_r(ctx, t_ut, iflag, serr);
-    eps = swi_epsiln(ctx, t_et, iflag) * RADTODEG;
-    swi_nutation(ctx, t_et, iflag, nutlo);
+    eps = swi_epsiln(ctx, t_et, iflag_pl) * RADTODEG;
+    swi_nutation(ctx, t_et, iflag_pl, nutlo);
     nutlo[0] *= RADTODEG;
     nutlo[1] *= RADTODEG;
     armc = swe_degnorm(swe_sidtime0_r(ctx, t_ut, eps + nutlo[1], nutlo[0]) * 15 + geopos[0]);
     if (do_fixstar) {
-      if (swe_fixstar_r(ctx, starname, t_et, iflag, x0, serr) == ERR)
+      if (swe_fixstar_r(ctx, starname, t_et, iflag_pl, x0, serr) == ERR)
 	return ERR;
     } else {
-      if (swe_calc_r(ctx, t_et, ipl, iflag, x0, serr) == ERR)
+      if (swe_calc_r(ctx, t_et, ipl, iflag_pl, x0, serr) == ERR)
 	return ERR;
     }
     if (imeth == 1) 

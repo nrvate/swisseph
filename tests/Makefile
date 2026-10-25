@@ -277,7 +277,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse \
+       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse check-gauqflags \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -401,6 +401,9 @@ hdrbound_ubsan: hdrbound.c $(SWEOBJ_UBSAN)
 	$(CC) $(CFLAGS) $(UBSANFLAGS) $^ -o $@ $(LIBS)
 
 hposinhouse: hposinhouse.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+gauqflags: gauqflags.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 # G22: reorder(), swejpl.c's byte-swapping path, which measured 0.00% --
@@ -628,6 +631,13 @@ check-hdrbound: hdrbound
 check-hposinhouse: hposinhouse
 	@env -u SE_EPHE_PATH ./hposinhouse $(EPHE)
 
+# G42: a Gauquelin sector is the body's place on its diurnal circle: with
+# SEFLG_SIDEREAL, a frame or form flag (NONUT, ICRS, J2000, EQUATORIAL,
+# RADIANS, XYZ) or a centre (HELCTR, BARYCTR) methods 0 and 1 answer the
+# call without it, and with a direction flag the place's own sector.
+check-gauqflags: gauqflags
+	@env -u SE_EPHE_PATH ./gauqflags $(EPHE)
+
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
 	@printf '# fixture: 1620 moved off the built-in 124.00\n1620  200.0\n' \
@@ -731,7 +741,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse
+	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse gauqflags
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt

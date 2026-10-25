@@ -64,6 +64,7 @@ worst were in code that had never executed even once.
 | 30 | A refused Swiss file empties the constants of every file left open; the path setter crashes on a refused moon file | Correctness / Memory | `sweph.c` |
 | 31 | Values read from an ephemeris file's header and from the delta-psi and fixed-star tables index and size arrays unchecked | Memory | `sweph.c`, `swejpl.c` |
 | 32 | `swe_house_pos()` answers a place in the wrong house: Sripati 1.0 for all of house 12 and half of house 1, the horizon system counted backwards south of the equator | Correctness | `swehouse.c` |
+| 33 | `swe_gauquelin_sector()` methods 0 and 1 moved by SEFLG_SIDEREAL (2.6 sectors) and by the frame, form and centre flags (up to 18.4 sectors) | Correctness | `swecl.c` |
 
 ---
 
@@ -1787,6 +1788,55 @@ Porphyry's cusps at Sripati's middles k + 0.5 within 1e-7 (1.8e-8; 5
 checks). Before the fix 21 of the 253 fail: 'S' and 's' at every latitude,
 'H' and 'h' at 33.87S, the equator and 60S, and all five middles checks
 (0.5 house off). Every other letter passed before.
+
+## 33. `swe_gauquelin_sector()` methods 0 and 1 move with SEFLG_SIDEREAL and with every flag that names the place's frame, form or centre: Mars at 1950, Zurich, Lahiri 2.62 sectors, SEFLG_XYZ 18.3
+
+**Severity: Correctness (a sector, a place on the observer's diurnal circle, moved by flags that do not move the body there: every sidereal request 1.0 to 4.8 sectors off at Zurich, 1800-2100; SEFLG_NONUT, ICRS, J2000, EQUATORIAL, RADIANS, XYZ, HELCTR and BARYCTR up to 18.4 sectors)**
+**Where:** `swecl.c`: `swe_gauquelin_sector_r()`, methods 0 and 1
+
+A Gauquelin sector is the share of its semi-arc a body has run since its
+rising or setting, its place on its diurnal circle, which no zodiac or
+coordinate frame moves. Methods 0 and 1 are `swe_house_pos()` of the body's
+ecliptic longitude and latitude in 'G' (swephprg 16.1), which "requires
+TROPICAL positions"; iflag is documented as "flag for ephemeris and
+SEFLG_TOPOCTR", and methods 2 to 5 pass `swe_rise_trans()` the ephemeris
+bits alone. But methods 0 and 1 computed the body with iflag as given and set
+the place it answered, as longitude and latitude in degrees, in the frame of
+the true ecliptic of date (the ARMC and the true obliquity). Mars at UT
+2433282.5, Zurich (8.55E, 47.37N, 400 m), Swiss files, method 0, 2.6855985
+plain:
+- SEFLG_SIDEREAL (Lahiri) 5.3075799, +2.62 sectors (method 1 +2.69): the
+  sidereal longitude set in the tropical frame, the body moved back by the
+  ayanamsa; up to 3.42 sectors over Mars, the Moon, Spica and the mean node
+  at six dates 1800..2100, in every sidereal setting and on every ephemeris;
+- SEFLG_NONUT -1.14e-4 (the mean place in the true frame), SEFLG_ICRS
+  -1.5e-8, SEFLG_J2000 -0.0875, SEFLG_EQUATORIAL -0.148 (right ascension
+  and declination taken for longitude and latitude), SEFLG_RADIANS +17.8,
+  SEFLG_XYZ +18.3 (method 1 +18.4);
+- SEFLG_HELCTR and SEFLG_BARYCTR +3.88: a direction from the Sun or the
+  barycentre set on the observer's sky.
+
+**Fix, as done here:** methods 0 and 1 compute the place with the flags that
+choose the body's direction from the observer and no other: the ephemeris
+and its Horizons corrections, SEFLG_TOPOCTR, TRUEPOS, NOABERR, NOGDEFL and
+CENTER_BODY. The others are ignored, as methods 2 to 5 ignore them, not
+refused. A sidereal place takes no Horizons corrections, so with
+SEFLG_SIDEREAL neither the place nor the frame takes them, and every method
+answers the sector of the call without SEFLG_SIDEREAL. G42
+`tests/gauqflags.c`, at Zurich, six dates 1800..2100, on de200, the Swiss
+files and Moshier: (a) with SEFLG_SIDEREAL (five sidereal settings, the
+sidereal call also with SEFLG_JPLHOR_APPROX and SEFLG_JPLHOR) the call
+without it, bit for bit, methods 0 to 5 (42 checks); (b) the sidereal method
+1 sector k lies between the sidereal Gauquelin cusps k and k + 1 (9); (c)
+methods 0 and 1 with each frame, form or centre flag on six bases of
+direction flags as the base alone, bit for bit (66); (d) on each base the
+sector is `swe_house_pos()` of the place it gives in the true frame of date
+within 1e-11 (7.1e-15; 15); (e) methods 2 to 5 with each flag as without (4).
+Before the fix the sidereal call with SEFLG_JPLHOR crashed (the frame's
+nutation reads the IERS table, absent); without that case 99 of 136 fail:
+30 of (a) (up to 3.42 sectors), all 9 of (b) (up to 23.0 deg outside), 60 of
+(c) (up to 18.0 sectors; SPEED, SPEED3 and ICRS on de200 pass). The golden
+transcript's sector rows do not move.
 
 ## How these were found
 
