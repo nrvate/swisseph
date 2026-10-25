@@ -36,22 +36,24 @@
  * double, to the emission instant along its velocity (bug 81's rounding,
  * 8.6e-7" on Vulcan), and c is the library's, DE431's AU (the old
  * 173.1446326846693 AU/day is the AA 2006 AU's: 6e-11 of every light
- * time, VEA's 2.8e-8 day long). Five dates 1725..2125, and a fourth body:
- * a circular orbit at 80000 AU through swe_calc_orbel() (its own light-time
- * path, app_pos_etc_orbel()), the mean anomaly given at each instant, seen
- * from the Sun (E = 0, the light time from the Sun at t): its geocentric
- * places are 3.5e-8 to 1.1e-7 AU off its heliocentric ones less the
- * Earth, a matter apart from the light time.
+ * time, VEA's 2.8e-8 day long). Five dates 1725..2125, and a fourth and a
+ * fifth body: a circular orbit at 80000 AU through swe_calc_orbel() (its
+ * own light-time path, app_pos_etc_orbel()), the mean anomaly given at
+ * each instant, seen from the Sun (E = 0, the light time from the Sun at
+ * t) and from the Earth. Until bug 130 paired its frame bias the orbit's
+ * geocentric places were 3.5e-8 to 1.1e-7 AU off its heliocentric ones
+ * less the Earth, and only the first was checked here.
  *
  * Measured, check 2, within 1e-6" (it was 1e-3"): Proserpina 1.2e-9",
- * Vulcan 4.0e-9", VEA 2.9e-12", the orbel orbit 1.1e-9". The build before
- * bug 125 fails VEA at 1.12e-3" and the orbel orbit at 1.13e-3": over
- * their light time of 462 days the Sun was carried by the Taylor step
- * s v_S + s^2 a_S / 2, which leaves out the turn of its loop about the
- * barycentre (1.9e-4 AU across the line of sight in 2025, up to 5.8e-4
- * AU). The build before bug 109 fails the four at 7.3e-3" to 9.6e-3" (the
- * Sun held still); the upstream build fails seven of the eight checks
- * (bug 26's 63.7" on the first besides). Run as
+ * Vulcan 4.0e-9", VEA 2.9e-12", the orbel orbit 1.8e-10" from the Sun and
+ * from the Earth (1.1e-9" and 2.7e-7" before bug 130). The build before
+ * bug 125 fails VEA at 1.12e-3" and the orbel orbit from the Sun at
+ * 1.13e-3": over their light time of 462 days the Sun was carried by the
+ * Taylor step s v_S + s^2 a_S / 2, which leaves out the turn of its loop
+ * about the barycentre (1.9e-4 AU across the line of sight in 2025, up to
+ * 5.8e-4 AU). The build before bug 109 fails those four at 7.3e-3" to
+ * 9.6e-3" (the Sun held still); the upstream build fails eight of the ten
+ * checks (bug 26's 63.7" on the first besides). Run as
  *   fictlt
  */
 #include <math.h>
@@ -125,7 +127,7 @@ static int SunBary(double jd, int32 fl, double *xs, char *serr)
 
 int main(void)
 {
-  static const char *rgszName[] = {"Proserpina", "Vulcan", "VEA", "orbel"};
+  static const char *rgszName[] = {"Proserpina", "Vulcan", "VEA", "orbel", "orbel geo"};
   const double c = 299792458.0 * 86400 / 1.495978707e11;   /* AU per day */
   char dir[] = "/tmp/fictltXXXXXX", path[256], serr[256];
   int32 base = SEFLG_MOSEPH | SEFLG_J2000 | SEFLG_NONUT | SEFLG_XYZ;
@@ -140,13 +142,11 @@ int main(void)
   fclose(pf);
   swe_set_ephe_path(dir);
   printf("G27: fictitious light time on the orbit, independent of SEFLG_SPEED\n");
-  for (ib = 0; ib < 4; ib++) {
+  for (ib = 0; ib < 5; ib++) {
     double wSpeed = 0, wDef = 0, tau = 0.0;
     for (id = 0; id < 5; id++) {
       const double jd = 2461300.5 + 36525.0 * (id - 3);
-      /* the orbel orbit seen from the Sun (E = 0): its geocentric places
-       * are off its heliocentric ones less the Earth by 1e-7 AU, a matter
-       * apart from the light time */
+      /* the orbel orbit seen from the Sun (E = 0), and from the Earth */
       int32 ctr = ib == 3 ? SEFLG_HELCTR : 0;
       double xs[6], xn[6], xe[6] = {0, 0, 0}, xb[6], s0[3], s1[3], d[3], r, dSpeed, dDef;
       if (Calc(jd, ib, astr | ctr | SEFLG_SPEED, xs, serr) < 0 ||

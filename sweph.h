@@ -1163,6 +1163,11 @@ struct epsilon {
  *     (8.45e-3" in dpsi), and the topocentric observer across any change
  *     of model (UPSTREAM-BUGS 129, G122). A thread adopting the change
  *     empties both in both builds: that adoption is this fork's code
+ *   - swe_calc_orbel() (this fork's) without bug 20's frame-bias pair, as
+ *     upstream's fictitious path it follows there: its J2000 answer seen
+ *     from the ICRS Earth, 3.2e-8 to 1.1e-7 AU on every geocentric place,
+ *     and with SEFLG_ICRS the body unturned, 23 mas (UPSTREAM-BUGS 130,
+ *     G126)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

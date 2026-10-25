@@ -1873,6 +1873,34 @@ static double mosh_far_lt_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 130: swe_calc_orbel()'s geocentric true J2000 equatorial
+ * XYZ place of an orbit with a = 1.2 AU against its heliocentric place less
+ * swe_calc()'s heliocentric Earth, Swiss files, four dates through 2025,
+ * AU. The orbel path never paired the frame bias (bug 20's, on its copy of
+ * the fictitious path): the ICRS Earth in a J2000 answer, 3.2e-8 to
+ * 1.1e-7 AU by the Earth's direction; the upstream build's fictitious
+ * path, which it follows there, has no pair either. */
+static double orbel_bias_off(void)
+{
+  double w = 0, el[6] = {40, 1.2, 0.2, 30, 80, 12}, xg[6], xh[6], xe[6];
+  int32 fl = SEFLG_SWIEPH | SEFLG_TRUEPOS | SEFLG_J2000 | SEFLG_EQUATORIAL | SEFLG_XYZ;
+  char serr[256];
+  int k, i;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 4; k++) {
+    double t = 2460676.5 + 91.3 * k;
+    if (swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl, xg, serr) < 0
+        || swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl | SEFLG_HELCTR, xh, serr) < 0
+        || swe_calc(t, SE_EARTH, fl | SEFLG_HELCTR, xe, serr) < 0)
+      return 1;
+    for (i = 0; i < 3; i++)
+      if (fabs(xg[i] - (xh[i] - xe[i])) > w)
+        w = fabs(xg[i] - (xh[i] - xe[i]));
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 86: the JPL barycentric Sun's sidereal (Lahiri) longitude,
  * right after a request for Mars ten years on, against its tropical
  * longitude less the ayanamsa at its own date, deg. The Sun is answered in
@@ -3140,7 +3168,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep, holdstart, nutmodel;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep, holdstart, nutmodel, orbelbias;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3255,6 +3283,7 @@ int main(int argc, char **argv)
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
+  orbelbias = orbel_bias_off();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
   closekeep = close_keeps_off();	/* last: see the function */
@@ -4080,6 +4109,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier VEA light time %.2e deg FAIL: expected %s\n",
            moshfarlt, WANT_DEFECT ? "> 1e-7" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbelbias > 1e-8) : (orbelbias < 1e-14))
+    printf("  orbel frame bias       %.2e AU OK\n", orbelbias);
+  else {
+    printf("  orbel frame bias       %.2e AU FAIL: expected %s\n",
+           orbelbias, WANT_DEFECT ? "> 1e-8" : "< 1e-14");
     bad++;
   }
 

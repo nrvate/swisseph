@@ -162,6 +162,7 @@ worst were in code that had never executed even once.
 | 127 | `swe_close()` resets the observer and the sidereal mode, which the manual has survive it: after it a topocentric calculation is refused ("geographic position has not been set") and a sidereal one is in Fagan/Bradley's mode, 0.88 deg off Lahiri's -- on the closing thread, every thread on the default context and an explicit context closed by `swe_close_r()` | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 | 128 | A thread's first call reads the configuration before its context has started (this fork's): the main thread's user delta t answered 63.83 s for 86.40 s by `swe_deltat_ex()` and every function of UT through it (the Moon 3.1e-3 deg), its sidereal-time model missed by `swe_sidtime0()`, its models listed as zeros | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h`, `swephlib.c`, `swedate.c` |
 | 129 | A change of nutation model -- `swe_set_astro_models()`, its adoption by another thread, an explicit context, `SE_SIDBIT_PREC_ORIG`, `swe_close()` -- keeps the interpolation's nodes of the old model, and any change of model the topocentric observer: the old model answers at an instant already computed, 8.7e-3" in dpsi, the topocentric Moon 0.17" in AD 1000 after a delta t model | Correctness (behaviour) | `swephlib.c`, `sweconfig.c`, `sweph.h` |
+| 130 | `swe_calc_orbel()` (this fork's) never pairs the frame bias, entry 20's defect on its copy of the fictitious path: its geocentric places are seen from the ICRS Earth, 3.2e-8 to 1.1e-7 AU off its heliocentric ones less the Earth (1.4e-5 deg at a = 1.2 AU), and with SEFLG_ICRS the body stays unturned, 23 mas off the same elements in seorbel.txt | Correctness | `sweph.c` |
 
 ---
 
@@ -8445,6 +8446,88 @@ interpolation on, `SE_ECL_NUT` with `SEFLG_JPLHOR_APPROX` at JD 2433282.5
 -3.261906" (6.2e-2"); with it at both, `swe_set_astro_models()` of
 `SEMOD_JPLHORA_2` between, -3.199992" for -3.303286" (0.103"). Both
 builds.
+
+## 130. `swe_calc_orbel()` never pairs the frame bias: its geocentric places are seen from the ICRS Earth, and SEFLG_ICRS leaves the body unturned (this fork's)
+
+**Severity: Correctness (3.2e-8 to 1.1e-7 AU on every geocentric and topocentric place, 1.4e-5 deg on an orbit with a = 1.2 AU; 4.9e-6 to 6.1e-6 deg from every centre with SEFLG_ICRS)**
+**Where:** `sweph.c`: `app_pos_etc_orbel()`
+
+`app_pos_etc_orbel()` is the fork's copy of the fictitious bodies' path,
+`app_pos_etc_plan_osc()`, made for `swe_calc_orbel()` (f45e0b1,
+2026-09-17) before entry 20 paired the frame bias on that path (9ed27ec,
+2026-09-29). The pair was never carried to the copy. The elements' state
+(`swi_orbel_to_state()`) is dynamical J2000; the Sun or the Earth added to
+it is ICRS on every ephemeris with a bias (DE403 and later, the Swiss
+files, Moshier); and nothing turned either. So a J2000 answer was seen
+from the ICRS Earth, entry 20's defect:
+
+- Every geocentric and topocentric place was off by (I - B)(S - E):
+  3.2e-8 to 1.1e-7 AU by the Earth's direction (2025, 48 dates), whatever
+  the orbit and every flag set, SEFLG_TRUEPOS included. Against the same
+  elements read from a seorbel.txt (G126, five dates 1700..2150):
+  1.1e-5 to 1.45e-5 deg at a = 1.2 AU (1.5e-7 deg/day), 2.0e-7 deg at
+  30 AU, 6.2e-10 deg at 80000 AU.
+- A barycentric place was off by (I - B) S: 3.2e-8 deg at 1.2 AU.
+- An orbit about the Earth was off heliocentrically and barycentrically
+  by the whole Earth's turn, 6.1e-6 deg, and topocentrically by the
+  site's, 2.1e-8 deg at a = 0.01 AU.
+- With SEFLG_ICRS the body itself stayed dynamical from every centre:
+  4.9e-6 to 6.1e-6 deg, the bias's 23 mas.
+
+The geocentric place less the heliocentric one is not the Earth that
+`swe_calc(SE_EARTH, SEFLG_HELCTR)` returns: up to 1.1e-7 AU. de200, an
+ephemeris with no frame bias, agreed to 1.6e-11 deg.
+
+**Fix, as done here:** entry 20's pair, on the same condition
+(`swi_get_denum(SEI_EARTH) >= 403`). The body goes to ICRS (the backward
+`swi_bias()`) before its centre is added, at teval and at every retarded
+epoch of the light-time loop. The whole goes back to J2000 (the forward
+`swi_bias()`) where `app_pos_etc_plan_osc()` takes it, unless SEFLG_ICRS.
+So the pair cancels on the body and turns only what came from the
+ephemeris. Behind `#ifndef SWE_UPSTREAM_COMPAT`, as entry 20's own pair
+is, although the function is the fork's: its compat build follows
+upstream's fictitious path, as for entries 81 (part 3), 88 and 109, and
+that path has no pair. Only `swe_calc_orbel()` pays: two rotations a
+call and one per light-time iteration.
+
+Left as they are:
+- On the Earth-centred orbit (a = 0.01 AU) the two paths' speeds differ
+  by up to 1.0e-11 deg/day, 5.8e-12 on a = 1.2 AU: their light-time
+  rates, the same before the fix and on de200. Below the floor, not
+  fixed.
+- Moshier with SEFLG_BARYCTR: `swe_calc()` refuses it, and
+  `swe_calc_orbel()` answers it with the heliocentric place, 5.7e-3 AU
+  off the Swiss barycentric one, returning SEFLG_BARYCTR. A matter apart,
+  not fixed here; G126 leaves that centre out on Moshier.
+
+G126 `tests/orbelbias.c`. Check 1: `swe_calc_orbel()` against `swe_calc()`
+of the same elements, written to a seorbel.txt in a temp dir (each with
+the date as its epoch and M0 + n T, n of KGAUSS or KGAUSS_EARTH). Four
+orbits (1.2 AU; 30 AU on the B1950 equinox; 80000 AU circular; 0.01 AU
+about the Earth), five dates spread over the year, four centres, twelve
+flag sets (of date, J2000, ICRS, equatorial, XYZ, true, no aberration, no
+nutation, sidereal), on the Swiss files, de200, Moshier and an optional
+DE4xx file (SE_TEST_DE4, as G104): 240 rows an orbit, 180 on Moshier.
+Within 6.8e-13 deg and 1.0e-11 deg/day (limits 1e-11, 1e-10). Check 2:
+the true J2000 equatorial geocentric place and velocity are the
+heliocentric ones less `swe_calc()`'s heliocentric Earth, the barycentric
+ones the heliocentric plus its barycentric Sun, and about the Earth the
+heliocentric ones the geocentric plus the Earth: within 3.6e-16 and
+6.7e-18 of the distance (limit 1e-14). Before the fix 16 failures, 24
+with DE431; the compat build fails 20, 28 with DE431 (check 2 by 7.1e-8
+of the distance; check 1 by its other upstream defects too).
+
+G27 `tests/fictlt.c` gains a fifth row, the same orbel orbit seen from the
+Earth: 1.83e-10" from B(t - tau) - E(t), 2.70e-7" before the fix (within
+its 1e-6" limit, the orbit being at 80000 AU). The row from the Sun moves
+1.05e-9" -> 1.83e-10". The compat build fails eight of the ten checks.
+
+G24 `orbel_bias_off`: the geocentric true J2000 equatorial XYZ place of
+the 1.2 AU orbit less its heliocentric one plus the Earth, Swiss files,
+four dates in 2025: 2.22e-16 AU shipped, 8.52e-8 AU compat.
+
+G126, G27, G65, G87, G107, G48, G108 and G24 (both ways) pass. G1's
+output is bit-identical to the build before's.
 
 ## How these were found
 

@@ -6080,6 +6080,25 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
   struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
   struct epsilon *oe = &ctx->oec2000;
   int32 epheflag = SEFLG_DEFAULTEPH;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 130, this fork's swe_calc_orbel(): bug 20's defect on
+   * this copy of the fictitious bodies' path, which was made before bug 20
+   * was fixed there and never got the fix. The elements' state is
+   * dynamical J2000, the Sun and the Earth added to it ICRS, and neither
+   * was turned: a J2000 answer was seen from the ICRS Earth. Every
+   * geocentric and topocentric place was off by (I - B)(S - E), 3.2e-8 to
+   * 1.1e-7 AU by the Earth's direction (1.4e-5 deg on an orbit of a = 1.2
+   * AU, 2.0e-7 deg at 30 AU), a barycentric one by (I - B) S (3.2e-8 deg),
+   * an Earth-centred orbit's heliocentric one by the whole 6.1e-6 deg, and
+   * with SEFLG_ICRS the body was left unturned from every centre, 4.9e-6
+   * to 6.1e-6 deg (the bias's 23 mas) off the same elements read from
+   * seorbel.txt. Now bug 20's pair: the body to ICRS before the centre is
+   * added, at teval and at every retarded epoch, and the whole back to
+   * J2000 where a planet takes it, on the same condition, so the pair
+   * cancels on the body and turns only what came from the ephemeris.
+   * G126. */
+  AS_BOOL bias = swi_get_denum(ctx, SEI_EARTH, pedp->iephe) >= 403;
+#endif
   dt = dtsave_for_defl = 0;	/* dummy assign to silence gcc */
   if (iflag & SEFLG_MOSEPH) {
     epheflag = SEFLG_MOSEPH;
@@ -6093,6 +6112,10 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
    * xsun/xearth at its end */
   if (swi_orbel_to_state(ctx, tjd, el, mu, tequ, pdp->x, serr) != OK)
     return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (bias)	/* bug 130 */
+    swi_bias(ctx, pdp->x, tjd, SEFLG_SPEED, TRUE);
+#endif
   if (iplctr == SE_EARTH) {
     for (i = 0; i <= 5; i++)
       pdp->x[i] += pedp->x[i];
@@ -6239,6 +6262,8 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       elret[0] = el[0] - dmot * dt;
       if (swi_orbel_to_state(ctx, t, elret, mu, tequ, xx, serr) != OK)
 	return ERR;
+      if (bias)	/* bug 130 */
+        swi_bias(ctx, xx, t, SEFLG_SPEED, TRUE);
       if (iplctr == SE_EARTH) {
         for (i = 0; i <= 5; i++)
           xx[i] += xearth[i];
@@ -6371,6 +6396,11 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
 	xx[i] += xobs[i] - xobs2[i];
 #endif
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 130: ICRS to J2000, as app_pos_etc_plan_osc() does */
+  if (!(iflag & SEFLG_ICRS) && bias)
+    swi_bias(ctx, xx, pdp->teval, iflag, FALSE);
+#endif
   /* save J2000 coordinates; required for sidereal positions */
   for (i = 0; i <= 5; i++)
     xxsv[i] = xx[i];
