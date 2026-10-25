@@ -207,6 +207,7 @@ worst were in code that had never executed even once.
 | 160 | A short-term precession model the caller chooses (IAU 1976 or 2000 within 2 centuries of J2000, IAU 2006 within 75) steps to the long-term one at its window's edges (0.53" with IAU 1976 under Vondrak, 107" with IAU 2006 at 75 centuries), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across: every speed of date 8.0e-5 deg/day off within a day inside the window, latitudes 9.3e-7 the day before, SEFLG_SPEED3 0.80; with IAU 2006 1.5e-2 | Correctness | `swephlib.c` |
 | 163 | `swi_nutation_rate()` (this fork's, entry 58's) takes every nutation model but the default's grid as a central difference over -+1e-4 day, which divides the series' rounding by 2e-4 day: under IAU 1980 to 2000B set explicitly the nutation's part of every speed of date 5.2e-10 deg/day off at 2.5e6 to 5.4e6 days from J2000, 1e-10 near it; the rate itself 1.2e-9 at 1e6 to 5.5e6 days, 3.2e-8 at 2.5e7 to 1e8, 5.1e-7 at 1e8 to 4e8 | Correctness | `swephlib.c` |
 | 176 | `swe_nod_aps()` turns the osculating ellipse of a request fallen to Moshier by the frame bias of the DE number asked: SEFLG_JPLEPH on de200 outside its years leaves Moshier's state in DE200's frame, unbiased, where `swe_calc()` takes the ephemeris that answered: Mars's node at 1500 1.58e-4 deg off the Moshier request's, the Moon's 6.5e-5 | Correctness (behaviour) | `swecl.c` |
+| 178 | `swe_nod_aps()` gives its heliocentric and barycentric points aberration (the Sun's barycentric velocity) and `swi_deflect_light()`'s deflection, whose observer is the Earth whatever the centre, where `swe_calc()` gives those places neither: Jupiter's heliocentric mean descending node at J2000, in line with the Sun from the Earth, 9.6e-4 deg off, its barycentric speeds 3.4e-2 deg/day, Mars's points 4.1e-6 deg | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -11979,6 +11980,89 @@ G78, G42, G53, G46 and G38 pass.
 G24 `nodaps_jplfb_bias_off`: Mars's heliocentric osculating node at 1500
 Jan 1, SEFLG_JPLEPH on de200 fallen to Moshier against SEFLG_MOSEPH: 0
 shipped, 1.58e-4 deg compat.
+
+## 178. `swe_nod_aps()` gives its heliocentric and barycentric points aberration and the Earth's light deflection, where `swe_calc()` gives those places neither
+
+**Severity: Correctness (behaviour: points off the frame of `swe_calc()`'s places at the same centre, returned OK; Jupiter's heliocentric mean descending node at J2000 9.6e-4 deg off, its barycentric speeds 3.4e-2 deg/day; Mars's heliocentric points 4.1e-6 deg), both builds**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Found by entries 167-169's work. `plaus_iflag()` sets SEFLG_NOABERR |
+SEFLG_NOGDEFL for heliocentric and barycentric output, so `swe_calc()`'s
+places there carry neither (its heliocentric Mars is the same bit for bit
+with them). `swe_nod_aps()` read only SEFLG_TRUEPOS, SEFLG_NOABERR and
+SEFLG_NOGDEFL (and kept the Moon from both, but for the aberration of its
+heliocentric points):
+- the heliocentric points took the aberration of their observer, the
+  barycentric Sun, moving at about 1e-5 AU/day (3e-6 deg; the
+  barycentric observer is at rest, its aberration nothing);
+- both took `swi_deflect_light()`'s deflection, whose observer is the Earth
+  (or the site) whatever the centre: the vector from the Sun or the
+  barycentre to the point was deflected as if the Earth looked along it.
+  Where that direction passes the Sun as the Earth sees it the
+  deflection is the limb's: Jupiter's mean descending node at J2000, at
+  280.46 deg with the Sun at 280.37 from the Earth, 9.62e-4 deg.
+
+The Swiss files at 2000 Jan 1.5, 2000 Jul 1.5, 1900 Jan 0.75 and 2050 Jan
+1, mean and osculating, the largest against SEFLG_NOABERR | SEFLG_NOGDEFL
+(longitude plus latitude):
+
+| points | heliocentric (aberration, deflection) | its speeds | barycentric (the deflection) | its speeds |
+|---|---|---|---|---|
+| Mercury | 3.21e-6 deg (3.05e-6, 2.75e-7) | 8.7e-9 deg/day | 2.80e-7 | 6.9e-9 |
+| Mars | 4.09e-6 (3.05e-6, 1.15e-6) | 2.1e-8 | 1.15e-6 | 2.1e-8 |
+| Jupiter | 9.64e-4 (2.85e-6, 9.63e-4) | 4.7e-3 | 8.46e-4 | 3.4e-2 |
+| Saturn | 2.10e-5 (2.46e-6, 1.97e-5) | 3.3e-6 | 1.97e-5 | 3.3e-6 |
+| Neptune | 5.79e-6 (3.06e-6, 4.04e-6) | 1.4e-7 | 4.04e-6 | 1.4e-7 |
+| Pluto | 1.43e-5 (3.27e-6, 1.42e-5) | 1.6e-6 | 1.42e-5 | 1.6e-6 |
+| the Sun, the Earth | 3.95e-6 (2.16e-6, 3.72e-6) | 2.5e-6 | 2.83e-6 | 1.4e-6 |
+| the Moon | 2.20e-6 (the aberration) | 4.6e-8 | 0 | 0 |
+
+JPL alike; Moshier the deflection alone (its heliocentric observer is the
+origin, unmoving), barycentric refused (entry 149). Both builds.
+
+**The right answer.** None of either, as `swe_calc()`. Aberration and
+deflection are what an observer sees: aberration the observer's velocity
+against the barycentric frame, deflection the Sun's field bending the ray
+on its way to the observer. The barycentre is at rest, so its aberration
+is nothing; an observer at the Sun's centre sits on the deflecting mass,
+where the deflection is not defined, and the formula's Sun-observer
+distance is zero. What remains, the Sun's 15 m/s against the barycentre,
+would be an aberration of the Sun's motion, which no other place in the
+library gives a heliocentric observer: a heliocentric place is a
+direction in the barycentric frame from the Sun, not an observation.
+Taken alike, a heliocentric planet and its own nodes and apsides are in
+one frame. The Earth's deflection on a vector from the Sun was nobody's. The flag itself is left as given,
+so a star mode's ayanamsa (the star apparent, as `swe_calc()`'s
+heliocentric sidereal places take it: Mars's mean node under True Citra
+at J2000 sits on `swe_calc()`'s ayanamsa, 1.3e-3 deg from the
+astrometric star's) is unchanged.
+
+**Fix, as done here:**
+- After the centre bits are read (entry 169), heliocentric and
+  barycentric output takes no aberration and no deflection, the Moon's
+  heliocentric points included.
+- Now those points are the SEFLG_NOABERR | SEFLG_NOGDEFL ones bit for bit,
+  every body and method, the files, JPL and Moshier, `swe_nod_aps_ut()`
+  too; geocentric and topocentric points as before.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+G146 `tests/nodapshel.c` (new): (a) the Swiss files, de200 and Moshier,
+heliocentric and barycentric, the Sun, the Moon, Mercury to Pluto, the
+Earth and Chiron, mean, osculating, SE_NODBIT_OSCU_BAR and osculating
+with SE_NODBIT_FOPOINT, four instants, the default flags with and without
+SEFLG_SPEED and SEFLG_TRUEPOS against the same with SEFLG_NOABERR |
+SEFLG_NOGDEFL, the return and points bit for bit; (b) `swe_nod_aps_ut()`
+alike for the Moon and Mars; (c) the geocentric and topocentric points of
+Mars and Jupiter still apparent (4.8e-3 deg at least from the
+astrometric). 3520 rows pass; before the fix 1808 fail (1784 of (a),
+9.64e-4 deg, and 24 of (b), 4.1e-6), the upstream build 2120. G143 (1453
+rows), G133 (1120), G79, G47, G69, G104, G92, G78, G42, G53, G46 and G38
+pass.
+
+G24 `nodaps_hel_defl_off`: Jupiter's heliocentric mean descending node at
+J2000, the files, the default flags against SEFLG_NOABERR |
+SEFLG_NOGDEFL: 0 shipped, 8.22e-4 deg compat (9.62e-4 in the default
+build before the fix).
 
 ## How these were found
 

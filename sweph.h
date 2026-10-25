@@ -1393,6 +1393,10 @@ struct epsilon {
  *     frame bias of the DE number asked: SEFLG_JPLEPH on de200 fallen to
  *     Moshier at 1500, Mars's node 1.58e-4 deg off the Moshier request's
  *     (UPSTREAM-BUGS 176, G143, G24)
+ *   - swe_nod_aps()'s heliocentric and barycentric points with aberration
+ *     and the Earth's light deflection, which swe_calc() gives neither
+ *     place: Jupiter's heliocentric mean descending node at J2000 9.6e-4
+ *     deg off (UPSTREAM-BUGS 178, G146, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

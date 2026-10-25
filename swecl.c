@@ -5575,6 +5575,18 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     iflag &= ~(SEFLG_HELCTR | SEFLG_BARYCTR);
   if (iflag & SEFLG_BARYCTR)
     iflag &= ~SEFLG_HELCTR;
+  /* Upstream bug 178: and no aberration or deflection for the heliocentric
+   * and barycentric points, as swe_calc() has none for those places
+   * (plaus_iflag() sets SEFLG_NOABERR | SEFLG_NOGDEFL). The heliocentric
+   * points took the aberration of the Sun's barycentric velocity (Mars's
+   * 3.0e-6 deg), and both took swi_deflect_light()'s deflection, whose
+   * observer is the Earth whatever the centre: a vector from the Sun or
+   * the barycentre deflected as if the Earth saw along it, Jupiter's mean
+   * descending node at J2000, in line with the Sun from the Earth, 9.6e-4
+   * deg, its barycentric speed 3.4e-2 deg/day. The flag itself is kept,
+   * so that a star mode's ayanamsa stays swe_calc()'s for those places. */
+  if (iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))
+    do_aberr = do_defl = FALSE;
 #endif
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */
