@@ -1534,14 +1534,17 @@ check-framehold: framehold
 check-spanedge: spanedge
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./spanedge $(EPHE)
 
-# G154: swe_nod_aps()'s osculating nodes' and apsides' speeds are their
-# positions' rate: a five-point difference, not a three-point one off by
-# its truncation where a near-circular orbit's apsides turn fast (Neptune's
-# perihelion 5.3e-7 deg/day, the Moon's apsides 7.9e-8), and across a
-# short-term precession window's edge each side's own rate, every epoch in
-# tjd's side's frame (the Moon's points 6.5e-3 at J2000 -+ 2 centuries
-# under "0,9,1", Jupiter's 41.5 at 75 centuries under "0,9,8"), against
-# nine-point differences of the positions (UPSTREAM-BUGS 201, 199).
+# G154: swe_nod_aps()'s nodes' and apsides' speeds are their positions'
+# rate: the osculating ones a five-point difference, not a three-point one
+# off by its truncation where a near-circular orbit's apsides turn fast
+# (Neptune's perihelion 5.3e-7 deg/day, the Moon's apsides 7.9e-8), and
+# across a short-term precession window's edge each side's own rate, every
+# epoch in tjd's side's frame (the Moon's points 6.5e-3 at J2000 -+ 2
+# centuries under "0,9,1", Jupiter's 41.5 at 75 centuries under "0,9,8"),
+# Moshier's Moon's too (1.01e-5); the J2000 frame's turning there the
+# side's own (8.0e-5, 1.9e-2 at 75 centuries); the sidereal speeds the
+# ayanamsa's rate taken off (3.83e-5); against nine-point differences of
+# the positions (UPSTREAM-BUGS 201, 199, 228, 229, 230).
 check-nodaposcrate: nodaposcrate
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodaposcrate $(EPHE)
 

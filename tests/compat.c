@@ -4506,6 +4506,149 @@ static double nodaps_window_speed_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 228: swe_nod_aps()'s SEFLG_J2000 speeds across a
+ * short-term precession window's edge. The Moon's mean ascending node,
+ * J2000 ecliptic, on the Swiss files under IAU 1976 and Vondrak ("0,9,1")
+ * at J2000 - 2 centuries -+ 1/2 day (TT; the edge's instant is the
+ * window's), the longitude's speed against a nine-point central difference
+ * over 2^-5 day of the same call's positions, all on the instant's side,
+ * the larger, deg/day. The shipped build took the J2000 frame's turning as
+ * a difference of its rotation over -+1 day, across the edge (7.99e-5);
+ * upstream's J2000 points are of another frame (UPSTREAM-BUGS 47), their
+ * speeds off them by 2.3e-7. -1 if a call fails. */
+static double nodaps_j2000_window_off(void)
+{
+  const double ts = 2378495.0, h = ldexp(1, -5);
+  const double dt[2] = { -0.5, 0.5 };
+  const double c9[4] = { 4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280 };
+  const int32 fl = SEFLG_SWIEPH | SEFLG_J2000;
+  char mod[40] = "0,9,1,0,0,0,0,0", serr[256];
+  double r = 0;
+  int i, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_astro_models_r(c, mod, 0);
+  for (i = 0; i < 2 && r >= 0; i++) {
+    double t = ts + dt[i], x[4][6], p[2][4][6], d = 0;
+    if (swe_nod_aps_r(c, t, SE_MOON, fl | SEFLG_SPEED, SE_NODBIT_MEAN, x[0], x[1], x[2], x[3],
+                      serr) < 0) {
+      r = -1;
+      break;
+    }
+    for (k = 1; k <= 4; k++) {
+      if (swe_nod_aps_r(c, t + k * h, SE_MOON, fl, SE_NODBIT_MEAN, p[0][0], p[0][1], p[0][2],
+                        p[0][3], serr) < 0
+          || swe_nod_aps_r(c, t - k * h, SE_MOON, fl, SE_NODBIT_MEAN, p[1][0], p[1][1],
+                           p[1][2], p[1][3], serr) < 0) {
+        r = -1;
+        break;
+      }
+      d += c9[k - 1] * swe_difdeg2n(p[0][0][0], p[1][0][0]);
+    }
+    if (r < 0)
+      break;
+    d /= h;
+    if (fabs(x[0][3] - d) > r)
+      r = fabs(x[0][3] - d);
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
+/* UPSTREAM-BUGS 229: Moshier's Moon's osculating points across a
+ * short-term precession window's edge. Its perigee, geocentric ecliptic of
+ * date, under IAU 1976 and Vondrak ("0,9,1") at J2000 - 2 centuries -+
+ * 2^-8 and -+ 2^-14 day (TT), the longitude's speed against a nine-point
+ * central difference over 2^-5 day of the point of the side's model alone
+ * ("0,1,1" inside, "0,9,9" outside), the largest, deg/day. The shipped
+ * build differenced the Moon's places with the frame's turning of each
+ * epoch's own side (1.01e-5); upstream's Moon speed is a difference of its
+ * places across the edge (UPSTREAM-BUGS 184), the perigee's 3.1e5 deg/day
+ * off at 2^-14 day. -1 if a call fails. */
+static double nodaps_mosh_moon_window_off(void)
+{
+  const double ts = 2378495.0, h = ldexp(1, -5);
+  const double dt[4] = { -1.0 / 256, -1.0 / 16384, 1.0 / 16384, 1.0 / 256 };
+  const double c9[4] = { 4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280 };
+  const char *ms[3] = { "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" };
+  double r = 0;
+  swe_ctx *cc[3];
+  char serr[256];
+  int i, k;
+  for (k = 0; k < 3; k++) {
+    char mod[40];
+    cc[k] = swe_ctx_new();
+    if (cc[k] == NULL)
+      return -1;
+    strcpy(mod, ms[k]);
+    swe_set_ephe_path_r(cc[k], EPHE);
+    swe_set_astro_models_r(cc[k], mod, 0);
+  }
+  for (i = 0; i < 4 && r >= 0; i++) {
+    double t = ts + dt[i], x[4][6], p[2][4][6], d = 0;
+    swe_ctx *cr = cc[dt[i] < 0 ? 2 : 1];
+    if (swe_nod_aps_r(cc[0], t, SE_MOON, SEFLG_MOSEPH | SEFLG_SPEED, SE_NODBIT_OSCU,
+                      x[0], x[1], x[2], x[3], serr) < 0) {
+      r = -1;
+      break;
+    }
+    for (k = 1; k <= 4; k++) {
+      if (swe_nod_aps_r(cr, t + k * h, SE_MOON, SEFLG_MOSEPH, SE_NODBIT_OSCU,
+                        p[0][0], p[0][1], p[0][2], p[0][3], serr) < 0
+          || swe_nod_aps_r(cr, t - k * h, SE_MOON, SEFLG_MOSEPH, SE_NODBIT_OSCU,
+                           p[1][0], p[1][1], p[1][2], p[1][3], serr) < 0) {
+        r = -1;
+        break;
+      }
+      d += c9[k - 1] * swe_difdeg2n(p[0][2][0], p[1][2][0]);
+    }
+    if (r < 0)
+      break;
+    d /= h;
+    if (fabs(x[2][3] - d) > r)
+      r = fabs(x[2][3] - d);
+  }
+  for (k = 0; k < 3; k++)
+    swe_ctx_free(cc[k]);
+  return r;
+}
+
+/* UPSTREAM-BUGS 230: swe_nod_aps()'s sidereal speeds. The Moon's mean
+ * ascending node, Lahiri, on the Swiss files at J2000, the longitude's
+ * speed against a five-point central difference over 2^-5 day of its
+ * positions, deg/day. The shipped build took the ayanamsa off the
+ * longitude and its rate not off the speed (3.82e-5, Lahiri's rate), as
+ * upstream does. -1 if a call fails. */
+static double nodaps_sid_rate_off(void)
+{
+  const double t = 2451545.0, h = ldexp(1, -5);
+  const int32 fl = SEFLG_SWIEPH | SEFLG_SIDEREAL;
+  double x[4][6], p[5][4][6];
+  char serr[256];
+  int k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+  if (swe_nod_aps_r(c, t, SE_MOON, fl | SEFLG_SPEED, SE_NODBIT_MEAN, x[0], x[1], x[2], x[3],
+                    serr) < 0) {
+    swe_ctx_free(c);
+    return -1;
+  }
+  for (k = 0; k < 5; k++)
+    if (swe_nod_aps_r(c, t + (k - 2) * h, SE_MOON, fl, SE_NODBIT_MEAN, p[k][0], p[k][1],
+                      p[k][2], p[k][3], serr) < 0) {
+      swe_ctx_free(c);
+      return -1;
+    }
+  swe_ctx_free(c);
+  return fabs(x[0][3] - (8 * swe_difdeg2n(p[3][0][0], p[1][0][0])
+                         - swe_difdeg2n(p[4][0][0], p[0][0][0])) / (12 * h));
+}
+
 /* UPSTREAM-BUGS 187: the house speeds across a short-term precession
  * window's edge. Equal houses' Ascendant speed at Zurich on the Swiss files
  * under IAU 1976 and Vondrak ("0,9,1"), delta t 2^-11 day, at J2000 - 2
@@ -6020,7 +6163,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6195,6 +6338,9 @@ int main(int argc, char **argv)
   nodmoshwin = node_mosh_window_off();
   nodosc5 = nodaps_osc_rate_off();
   nodoscwin = nodaps_window_speed_off();
+  nodj2kwin = nodaps_j2000_window_off();
+  nodmmwin = nodaps_mosh_moon_window_off();
+  nodsidr = nodaps_sid_rate_off();
   eclnonut = ecl_nut_nonut_stale();
   nut80jit = nut80_args_jitter();
   nut00b = nut00b_sofa_off();
@@ -7646,6 +7792,30 @@ int main(int argc, char **argv)
   else {
     printf("  osc. points across a window %.2e deg/day FAIL: expected %s\n",
            nodoscwin, WANT_DEFECT ? "> 1e-5" : "< 5e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodj2kwin > 1e-7) : (nodj2kwin >= 0 && nodj2kwin < 5e-9))
+    printf("  J2000 points across a window %.2e deg/day OK\n", nodj2kwin);
+  else {
+    printf("  J2000 points across a window %.2e deg/day FAIL: expected %s\n",
+           nodj2kwin, WANT_DEFECT ? "> 1e-7" : "< 5e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodmmwin > 1e-5) : (nodmmwin >= 0 && nodmmwin < 5e-9))
+    printf("  Moshier Moon's points across a window %.2e deg/day OK\n", nodmmwin);
+  else {
+    printf("  Moshier Moon's points across a window %.2e deg/day FAIL: expected %s\n",
+           nodmmwin, WANT_DEFECT ? "> 1e-5" : "< 5e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodsidr > 1e-5) : (nodsidr >= 0 && nodsidr < 1e-9))
+    printf("  sidereal points' rate  %.2e deg/day OK\n", nodsidr);
+  else {
+    printf("  sidereal points' rate  %.2e deg/day FAIL: expected %s\n",
+           nodsidr, WANT_DEFECT ? "> 1e-5" : "< 1e-9");
     bad++;
   }
 

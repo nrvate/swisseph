@@ -5531,20 +5531,39 @@ static void nodaps_ecl_rot_j2000(swe_ctx *ctx, double *x, double t, int32 iflag)
  * mean ecliptic of tjd, to the J2000 equator; with SEFLG_SPEED the
  * velocity is rotated and given the frame's turning, R'(tjd) x, the
  * rotation's central difference over NODAPS_FRAME_DT a side (smooth over
- * centuries; truncation ~1e-15 of the rate). */
+ * centuries; truncation ~1e-15 of the rate).
+ * Upstream bug 228: R steps where the precession or the obliquity changes
+ * model (a short-term model's window edges, Owen 1990's joins;
+ * swi_frame_step_side()), and R(tjd -+ 1) reached across: with IAU 1976
+ * short-term under Vondrak ("0,9,1") every point's speed, mean and
+ * osculating, 2.9e-5 to 1.05e-4 deg/day off within a day of J2000 -+ 2
+ * centuries (the Moon's mean node 7.99e-5 at every instant there), with
+ * IAU 2006 ("0,9,8") 7.1e-3 to 1.9e-2 at -+ 75 centuries.
+ * There now the three-point derivative on tjd's side, R(t), R(t + s),
+ * R(t + 2s), s = -+NODAPS_FRAME_DT, as bugs 184's and 185's. */
 #define NODAPS_FRAME_DT 1.0
 static void nodaps_ecl_to_j2000(swe_ctx *ctx, double *x, double tjd, int32 iflag)
 {
-  double xm[3], xp[3];
-  int i;
+  double xm[3], xp[3], xc[3];
+  int i, side;
   if (iflag & SEFLG_SPEED) {
+    side = swi_frame_step_side(ctx, tjd, NODAPS_FRAME_DT, iflag, SWI_FRAME_PREC | SWI_FRAME_EPS);
     for (i = 0; i <= 2; i++)
-      xm[i] = xp[i] = x[i];
-    nodaps_ecl_rot_j2000(ctx, xm, tjd - NODAPS_FRAME_DT, iflag);
-    nodaps_ecl_rot_j2000(ctx, xp, tjd + NODAPS_FRAME_DT, iflag);
-    nodaps_ecl_rot_j2000(ctx, x + 3, tjd, iflag);
-    for (i = 0; i <= 2; i++)
-      x[i + 3] += (xp[i] - xm[i]) / (2 * NODAPS_FRAME_DT);
+      xm[i] = xp[i] = xc[i] = x[i];
+    if (side != 0) {
+      nodaps_ecl_rot_j2000(ctx, xc, tjd, iflag);
+      nodaps_ecl_rot_j2000(ctx, xm, tjd + side * NODAPS_FRAME_DT, iflag);
+      nodaps_ecl_rot_j2000(ctx, xp, tjd + 2 * side * NODAPS_FRAME_DT, iflag);
+      nodaps_ecl_rot_j2000(ctx, x + 3, tjd, iflag);
+      for (i = 0; i <= 2; i++)
+        x[i + 3] += side * (4 * xm[i] - 3 * xc[i] - xp[i]) / (2 * NODAPS_FRAME_DT);
+    } else {
+      nodaps_ecl_rot_j2000(ctx, xm, tjd - NODAPS_FRAME_DT, iflag);
+      nodaps_ecl_rot_j2000(ctx, xp, tjd + NODAPS_FRAME_DT, iflag);
+      nodaps_ecl_rot_j2000(ctx, x + 3, tjd, iflag);
+      for (i = 0; i <= 2; i++)
+        x[i + 3] += (xp[i] - xm[i]) / (2 * NODAPS_FRAME_DT);
+    }
   }
   nodaps_ecl_rot_j2000(ctx, x, tjd, iflag);
 }
@@ -5594,8 +5613,8 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   int32 ipli;
   int istart, iend;
   int32 iflJ2000;
-  double daya;
 #ifdef SWE_UPSTREAM_COMPAT
+  double daya;
   double plm;
 #endif
   double t = (tjd_et - J2000) / 36525, dt;
@@ -5616,7 +5635,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   double pargx, eax, pp, sinE;
 #else
   double dtosc = 0, rosc[NODAPS_NOSC] = {0, 0, 0, 0, 0};
-  AS_BOOL hold = FALSE, holdi;	/* bug 199 */
+  AS_BOOL hold = FALSE, holdi, moshm;	/* bugs 199, 229 */
   int32 held[2];
   double teps = 0, tnut = 0;
 #endif
@@ -6170,10 +6189,24 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
        * Moshier request's, Mars's node at 1500 Jan 1 1.58e-4 deg
        * heliocentric, 1.56e-4 geocentric, the Moon's 2.9e-5. Now the bit
        * of the call that gave this state. */
-      /* bug 199: not Moshier's Moon, which is of date already, taken to
-       * J2000 by the frame at its epoch (ecldat_equ2000()), which
-       * swi_plan_for_osc_elem() undoes (lunar_osc_elem() holds none) */
-      holdi = hold && !(ipli == SE_MOON && (retx & SEFLG_EPHMASK) == SEFLG_MOSEPH);
+      /* Upstream bug 229: bug 199 left Moshier's Moon out of its hold: of
+       * date, it is taken to J2000 by the frame at its epoch
+       * (ecldat_equ2000()) and back by the same one here, which undoes it
+       * for the place, but its velocity carries the frame's turning, R'(t)
+       * x (bugs 95, 184), which swi_plan_for_osc_elem() turns and does not
+       * take off, so the orbit and its points move with the precession
+       * model's rates, and within the stencil of a window's edge the
+       * five-point speed took the step between its epochs: under "0,9,1"
+       * within 1/32 day of J2000 - 2 centuries the apsides' longitude
+       * speeds 1.01e-5 deg/day off the side's model alone's, their
+       * latitude's 8.4e-7 (declination's 3.5e-6), the nodes' 1.9e-7; at + 2
+       * 2.8e-6 and 2.1e-7. Held now as lunar_osc_elem() holds it (bug 202):
+       * the Moon read again under the held frame from its own epoch on
+       * (swi_moshmoon(), whose frame turning is then the held model's
+       * central difference, its saves of the unheld one bypassed), but at
+       * tjd, whose Moon's turning is its side's already. */
+      moshm = ipli == SE_MOON && (retx & SEFLG_EPHMASK) == SEFLG_MOSEPH;
+      holdi = hold && (!moshm || t != tjd_et);
       if (holdi) {
         /* the obliquity and nutation memos swe_calc() left at another
          * epoch are its own side's model's: computed afresh under the held
@@ -6183,6 +6216,21 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
         if (t != tjd_et)
           ctx->oec.teps = ctx->nut.tnut = SWI_TJD_NEVER;
         swi_frame_model_hold(ctx, tjd_et, held);
+        if (moshm) {
+          struct plan_data *pmdp = &ctx->pldat[SEI_MOON];
+          double tm = pmdp->teval, te = ctx->earth_moon.t;
+          int32 retm;
+          pmdp->teval = ctx->earth_moon.t = SWI_TJD_NEVER;
+          retm = swi_moshmoon(ctx, t, FALSE, xpos[i], serr);	/* no save */
+          pmdp->teval = tm;
+          ctx->earth_moon.t = te;
+          if (retm == ERR) {
+            swi_frame_model_release(ctx, held);
+            ctx->oec.teps = teps;
+            ctx->nut.tnut = tnut;
+            return ERR;
+          }
+        }
       }
       swi_plan_for_osc_elem(ctx, (iflg0 & ~SEFLG_EPHMASK) | (retx & SEFLG_EPHMASK)
                             | (iflag & SEFLG_ICRS), t, xpos[i]);	/* bug 108 */
@@ -6871,9 +6919,30 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
       } else {
       /* traditional algorithm */
         swi_cartpol_sp(pldat.xreturn+6, pldat.xreturn); 
+#ifndef SWE_UPSTREAM_COMPAT
+        /* Upstream bug 230: the ayanamsa was taken off the longitude and
+         * its rate not off the speed, so every point's sidereal longitude
+         * speed was the tropical one, mean and osculating, every centre:
+         * 3.83e-5 deg/day off its positions' rate under Lahiri, 1.38e-4
+         * geocentric under True Citra (Spica's aberration), the Moon's mean
+         * node at J2000 -5.29538e-2 deg/day where swe_calc()'s sidereal
+         * SE_MEAN_NODE gives -5.29920e-2. Now the rate too, by the function
+         * swe_calc()'s sidereal speeds take it from; without SEFLG_SPEED
+         * the ayanamsa alone, as before. */
+        {
+          double dayas[2] = {0, 0};
+          if (((iflag & SEFLG_SPEED)
+               ? swi_get_ayanamsa_with_speed(ctx, tjd_et, iflag, dayas, serr)
+               : swi_get_ayanamsa_ex(ctx, tjd_et, iflag, dayas, serr)) == ERR)
+            return ERR;
+          pldat.xreturn[0] -= dayas[0] * DEGTORAD;
+          pldat.xreturn[3] -= dayas[1] * DEGTORAD;
+        }
+#else
 	if (swi_get_ayanamsa_ex(ctx, tjd_et, iflag, &daya, serr) == ERR)
 	  return ERR;
         pldat.xreturn[0] -= daya * DEGTORAD;
+#endif
         swi_polcart_sp(pldat.xreturn, pldat.xreturn+6); 
       }
     } 

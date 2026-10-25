@@ -1629,6 +1629,19 @@ struct epsilon {
  *     speed 1.2e-8 deg/day off a fresh call's at J2000); the strict
  *     refusal is this fork's (entry 120), which the compat build has not
  *     (UPSTREAM-BUGS 227, G117, G24)
+ *   - swe_nod_aps()'s SEFLG_J2000 speeds within a day of a short-term
+ *     precession window's edge taking the frame's turning across it: every
+ *     point 2.9e-5 to 1.05e-4 deg/day off with IAU 1976 under Vondrak, 1.9e-2
+ *     with IAU 2006 at 75 centuries (the compat build's J2000 points are
+ *     upstream's, UPSTREAM-BUGS 47) (UPSTREAM-BUGS 228, G154, G24)
+ *   - swe_nod_aps()'s Moshier Moon's osculating points within their stencil
+ *     of a short-term precession window's edge taking each epoch's own
+ *     side's frame turning: the apsides' speeds 1.01e-5 deg/day off with
+ *     IAU 1976 under Vondrak (the compat build's are upstream's, its Moon's
+ *     speed differenced across the edge) (UPSTREAM-BUGS 229, G154, G24)
+ *   - swe_nod_aps()'s sidereal speeds (the traditional method) without the
+ *     ayanamsa's rate: 3.83e-5 deg/day off under Lahiri, 1.38e-4 under True
+ *     Citra (UPSTREAM-BUGS 230, G154, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
