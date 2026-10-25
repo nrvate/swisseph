@@ -903,6 +903,8 @@ struct epsilon {
  *   - app_pos_etc_sun() subtracted the Sun read at t - tau from the Swiss
  *     files' heliocentric Earth, not the Sun at t as de200 and the planets
  *     do (3.0e-6 deg; UPSTREAM-BUGS 78 part 2, G77)
+ *   - app_pos_etc_sbar() gave the barycentric Sun its velocity at teval, not
+ *     at t - tau (3.1e-9 deg/day; UPSTREAM-BUGS 78 part 3, G77)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

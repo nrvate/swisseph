@@ -6597,11 +6597,29 @@ static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr)
     /* Upstream bug 78: the light time from the barycentre had no rate:
      * 5.8e-9 deg/day on the barycentric Sun's longitude speed against
      * five-point differences, 5.8e-10 without light time. v dtau/dt with
-     * the observer at the barycentre (lt_rate_exact()): 3.1e-9 after, the
-     * rest the velocity taken at teval rather than t - dt. */
+     * the observer at the barycentre (lt_rate_exact()). And the velocity
+     * was the one at teval, not at t - dt, off by dt a: 3.1e-9 deg/day
+     * with the rate. The Sun read at t - dt for its velocity (the place
+     * along the line is off by a dt^2 / 2, 1e-17 AU, and stays, so it is
+     * the same with or without SEFLG_SPEED). */
     if (iflag & SEFLG_SPEED) {
       static const double xo[6] = {0, 0, 0, 0, 0, 0};
-      double xxsp[3];
+      double xxsp[3], xs[6], t = psbdp->teval - dt;
+      int retc;
+      if (iflag & SEFLG_JPLEPH) {
+        retc = swi_pleph(ctx, t, J_SUN, J_SBARY, xs, serr);
+        if (retc != OK) {
+          swi_close_jpl_file(ctx);
+          ctx->jpl_file_is_open = FALSE;
+          return retc;
+        }
+      } else {
+        retc = sweph(ctx, t, SEI_SUNBARY, SEI_FILE_PLANET, iflag, NULL, NO_SAVE, xs, serr);
+        if (retc != OK)
+          return retc;
+      }
+      for (i = 3; i <= 5; i++)
+        xx[i] = xs[i];
       lt_rate_exact(xx, xo, xxsp);
       for (i = 0; i <= 2; i++)
         xx[i+3] -= xxsp[i];

@@ -20,6 +20,12 @@
  * geocentric Sun without aberration, through the same code, had the same
  * omission, 6.8e-10 and 9.1e-10 deg/day on the files and de200: within
  * 5e-10 (measured 3.5e-10, its true positions' own floor).
+ * The barycentric Sun, in J2000 equatorial coordinates (its speed of
+ * date on de200 is another matter), without a light-time rate and with
+ * its velocity at teval rather than t - tau (part 3): 6.0e-9 and 3.7e-9
+ * deg/day upstream, 3.1e-9 and 2.1e-9 with the rate alone; within 2e-9 on
+ * the Swiss files and 5e-10 on de200 (measured 1.3e-9 and 6.3e-11, the
+ * true positions' own floors).
  * (2) Mercury, Venus and Mars, geocentric, topocentric and heliocentric,
  * the astrometric position (SEFLG_NOABERR | SEFLG_NOGDEFL, J2000, ICRS,
  * XYZ) against X(t - tau) - O(t) with tau iterated to its fixed point
@@ -30,12 +36,12 @@
  * Within 1e-11 deg (measured <= 5.2e-13). The heliocentric Earth the same
  * way on the Swiss files and de200, within 1e-11 (measured 3.8e-14): the
  * Swiss files subtracted the Sun read at t - tau, 3.0e-6 deg off (part 2).
- * The build before the fix fails 34 of the 36 rows (all but the two
- * heliocentric Earth positions, which part 2 adds): the Earth's by 1.6e-6 to
+ * The build before the fix fails all 38 rows: the Earth's by 1.6e-6 to
  * 1.8e-6 deg/day, the Sun's by 6.8e-10 and 9.1e-10, the planets by 1.8e-11
  * (Mars heliocentric) to 7.2e-10 deg (Mercury geocentric). The build before
- * part 2 fails the Swiss heliocentric Earth's position by 3.0e-6 deg. The
- * upstream build fails all 36.
+ * part 2 fails the Swiss heliocentric Earth's position by 3.0e-6 deg, the
+ * build before part 3 both barycentric Suns. The upstream build fails all
+ * 38.
  * Run as
  *   ltconv EPHEDIR
  */
@@ -162,6 +168,9 @@ int main(int argc, char **argv)
       bad += body_rate(SE_EARTH, rge[ie].fl, SEFLG_BARYCTR, sz, 2e-9);
       snprintf(sz, sizeof sz, "Sun %s noaberr", rge[ie].sz);
       bad += body_rate(SE_SUN, rge[ie].fl, SEFLG_NOABERR, sz, 5e-10);
+      snprintf(sz, sizeof sz, "Sun %s bary J2000 equ", rge[ie].sz);
+      bad += body_rate(SE_SUN, rge[ie].fl, SEFLG_BARYCTR | SEFLG_J2000 | SEFLG_EQUATORIAL, sz,
+                       rge[ie].fl == SEFLG_JPLEPH ? 5e-10 : 2e-9);
     }
   }
   for (ie = 0; ie < 2; ie++) {

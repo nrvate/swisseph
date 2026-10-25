@@ -3991,6 +3991,33 @@ and de200, within 1e-11 deg: 3.4e-14 and 3.8e-14 measured, 3.0e-6 on the
 Swiss files before (de200 2.3e-10 before part 1); the upstream build
 3.0e-6 and 2.3e-10.
 
+**Part 3, the barycentric Sun's velocity.** `app_pos_etc_sbar()` moves
+the barycentric Sun back along its velocity by the light time from the
+barycentre, and with part 1 takes the light time's rate, but the
+velocity it reported was the one at teval, not at t - tau: off by tau a,
+the Sun's acceleration by the planets (1e-8 AU/day^2 over 5e-5 day, at
+0.005-0.01 AU). In J2000 equatorial coordinates, thirteen dates, steps
+2^-6..2^-9: 3.1e-9 deg/day on the Swiss files, 2.1e-9 on de200 with the
+rate (6.0e-9 and 3.7e-9 upstream). Fixed: with SEFLG_SPEED the Sun is
+read at t - tau for its velocity; the place stays the line's, off by
+a tau^2 / 2 = 1e-17 AU, so positions are the same with or without
+SEFLG_SPEED and do not move. After: 1.2e-9 and 6.3e-11 deg/day, each the
+true positions' own floor. One extra read on SE_SUN | SEFLG_BARYCTR |
+SEFLG_SPEED calls only. G77 gains both rows, within 2e-9 (Swiss files)
+and 5e-10 (de200): 38 rows.
+
+Not fixed here: Moshier solves the light time in its heliocentric frame,
+which leaves out the Sun's motion over it, v_Sun tau. In an apparent
+position that cancels against the aberration taken with the heliocentric
+Earth's velocity (the apparent place depends on the relative velocity
+only): the two together are within 1e-9 deg of the barycentric answer,
+measured by solving both ways on the Swiss files' positions. The
+remainder is in SEFLG_NOABERR and heliocentric Moshier positions: 3.0e-6
+deg (v_Sun / c) on every planet. Removing it needs the Sun's
+barycentric velocity, which Moshier does not have. The heliocentric
+Moshier speeds 2e-9 to 7e-9 deg/day off their positions, seen before
+entry 53, are gone with it: <= 2.2e-10 now, Mercury to Vesta.
+
 ## 81. A fictitious body's light-time position is read at the rounded instant
 
 **Severity: Correctness (3.9e-8 deg on Waldemath's apparent position, a jitter that a five-point difference over 2^-7 day turns into 1e-6 to 5.5e-6 deg/day; 3.4e-7 deg/day on Vulcan heliocentric, 6.7e-8 on Selena under Moshier)**
