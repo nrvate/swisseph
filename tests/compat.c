@@ -896,12 +896,48 @@ static int house_fix_off(double *placid)
   return n;
 }
 
+/* UPSTREAM-BUGS 68, three house residues, as the number present (0..3):
+ * a SEFLG_MOSEPH Sunshine call returning the Swiss Sun's declination,
+ * Gauquelin at 80N (fallen back to Porphyry) leaving cusp 13 as the caller
+ * had it (7), and the Placidus cusp 11 speed at the ARMC (330) that puts it
+ * on the equinox point being ARMCS (465.61 against 360.99). *plac gets the
+ * latter's error from a five-point difference, deg/day. */
+static int house_resid_off(double *plac)
+{
+  const double jd = 2461223.5 + 0.3125, h = 1.0 / 256;
+  double c[37], a[10], cs[37], as[10], xs[6], f[4];
+  char serr[256];
+  int k, n = 0;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc_ut(jd, SE_SUN, SEFLG_EQUATORIAL, xs, serr);
+  swe_houses_ex2(jd, SEFLG_MOSEPH, 47, 8.55, 'I', c, a, NULL, NULL, serr);
+  if (fabs(a[9] - xs[1]) < 1e-9)
+    n++;
+  for (k = 0; k < 37; k++)
+    c[k] = 7;
+  swe_houses_ex2(jd, SEFLG_RADIANS, 80, 8.55, 'G', c, a, cs, as, serr);
+  if (c[13] != 0)
+    n++;
+  for (k = 0; k < 4; k++) {
+    static const int off[4] = {-2, -1, 1, 2};
+    swe_houses_armc(330 + off[k] * h, 47, 23.4392911, 'P', c, a);
+    f[k] = c[11];
+  }
+  swe_houses_armc_ex2(330, 47, 23.4392911, 'P', c, a, cs, as, serr);
+  *plac = fabs(cs[11] - (8 * (swe_difdeg2n(f[2], f[1])) - swe_difdeg2n(f[3], f[0])) / (12 * h) * 360.98564736629);
+  if (*plac > 1e-3)
+    n++;
+  swe_close();
+  return n;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp;
-  int hfix;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp;
+  int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -942,6 +978,7 @@ int main(int argc, char **argv)
   hspd = house_speed_off(0);
   hsid = house_speed_off(1);
   hfix = house_fix_off(&hfixp);
+  hres = house_resid_off(&hresp);
   moshr = mosh_rough();
   moshs = mosh_speed_off();
   moonpull = far_body_moon_pull_off();
@@ -1234,6 +1271,14 @@ int main(int argc, char **argv)
   else {
     printf("  house defects (59)     %d/4, Placidus %.2e deg/day FAIL: expected %s\n",
            hfix, hfixp, WANT_DEFECT ? "4/4" : "0/4");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (hres == 3) : (hres == 0))
+    printf("  house residue (68)     %d/3, equinox cusp %.2e deg/day OK\n", hres, hresp);
+  else {
+    printf("  house residue (68)     %d/3, equinox cusp %.2e deg/day FAIL: expected %s\n",
+           hres, hresp, WANT_DEFECT ? "3/3" : "0/3");
     bad++;
   }
 

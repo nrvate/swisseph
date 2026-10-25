@@ -769,6 +769,11 @@ struct epsilon {
  *     sidereal Makransky 'i' computed Treindl's 'I'; Sunshine houses
  *     returned ERR and Porphyry without the Swiss files (UPSTREAM-BUGS
  *     59, G58)
+ *   - swe_houses_ex2(): the Sun of Sunshine houses asked with no ephemeris
+ *     flag (Swiss for a SEFLG_MOSEPH call); Gauquelin cusps and speeds
+ *     13..36 left stale after the Porphyry fallback; a Placidus or
+ *     Gauquelin cusp on an equinox point moving at the ARMC's rate
+ *     (465.6 deg/day against 360.99) (UPSTREAM-BUGS 68, G67)
  *   - the Moshier series formed their arguments as freq * T and reduced
  *     them after, rounding at more time than the JD resolves (Mercury
  *     3.9e-3 mas, the Moon 0.011 mas between consecutive JDs at -3000);

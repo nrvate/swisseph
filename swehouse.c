@@ -485,6 +485,13 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
 #endif
   if (toupper(hsys) ==  'I') {	// compute sun declination for sunshine houses
     int flags = SEFLG_SPEED| SEFLG_EQUATORIAL;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 68: the Sun's declination was asked with no ephemeris
+     * flag, so a SEFLG_JPLEPH or SEFLG_MOSEPH call got the Swiss
+     * ephemeris' Sun whatever the caller chose (Moshier's is 0.1" off; the
+     * JPL file's, 1e-3" and more). The caller's ephemeris bits go with it. */
+    flags |= iflag & (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH);
+#endif
     retc_makr = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, flags, xp, NULL);
 #ifndef SWE_UPSTREAM_COMPAT
     /* Upstream bug 59, as in swe_houses_r() */
@@ -520,6 +527,19 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
     if (toupper(hsys) ==  'I') 	
       ascmc[9] = xp[1];	// declination in ascmc[9];
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 68: Gauquelin houses that fell back to Porphyry (retc < 0)
+   * have 12 cusps; cusps 13..36 and their speeds were left as the caller
+   * had them, and the RADIANS conversion below multiplied them anyway. They
+   * are 0 now, in degrees and in radians. */
+  if (toupper(hsys) == 'G' && retc < 0 && retc_makr >= 0) {
+    for (i = 13; i <= 36; i++) {
+      cusp[i] = 0;
+      if (cusp_speed != NULL)
+        cusp_speed[i] = 0;
+    }
+  }
+#endif
   if (iflag & SEFLG_RADIANS) {
     for (i = 1; i <= ito; i++)
       cusp[i] *= DEGTORAD;
@@ -2144,7 +2164,18 @@ porphyry:
       tant = tand(asind(sine * sind(Asc1(rectasc, fh1, sine, cose))));
       if (fabs(tant) < VERY_SMALL) {
 	hsp->cusp[ih] = rectasc;
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 68: with the first-guess cusp on the equator (tan dec
+ * < 1e-10) the speed was ARMCS, the ARMC's, though the cusp is rectasc
+ * and moves at A_x, the Asc1 rate at the pole height m tan(fi) that the
+ * semi-arc fraction m gives there (f'(C) = 0 on the equator, as in
+ * PlacDer()): 360.99 deg/day for cusps that move at 415..788 (47N, 60N).
+ * Now A_x. Same at the
+ * five sites below. */
+	if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDer(rectasc, atand(ih2 / 9.0 * tanfi), sine, cose) * ARMCS;
+#else
 	if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+#endif
       } else {
 	/* pole height */
 	f = atand(sind(asind(tanfi * tant) * ih2 / 9)  /tant);
@@ -2190,7 +2221,12 @@ porphyry:
       tant = tand(asind(sine * sind(Asc1(rectasc, fh1, sine, cose))));
       if (fabs(tant) < VERY_SMALL) {
         hsp->cusp[ih] = rectasc;
+#ifndef SWE_UPSTREAM_COMPAT
+	/* Upstream bug 68, as above */
+	if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDer(rectasc, atand(ih2 / 9.0 * tanfi), sine, cose) * ARMCS;
+#else
 	if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+#endif
       } else {
         f = atand(sind(asind(tanfi * tant) * ih2 / 9) / tant);
         /*  pole height */
@@ -2359,7 +2395,12 @@ porphyry:
     ih = 11;
     if (fabs(tant) < VERY_SMALL) {
       hsp->cusp[ih] = rectasc;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 68, as above */
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDer(rectasc, atand(1 / 3.0 * tanfi), sine, cose) * ARMCS;
+#else
       if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+#endif
     } else {
       /* pole height */
       f = atand(sind(asind(tanfi * tant) / 3)  /tant);  
@@ -2399,7 +2440,12 @@ porphyry:
     ih = 12;
     if (fabs(tant) < VERY_SMALL) {
       hsp->cusp[ih] = rectasc;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 68, as above */
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDer(rectasc, atand(2 / 3.0 * tanfi), sine, cose) * ARMCS;
+#else
       if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+#endif
     } else {
       f = atand(sind(asind(tanfi * tant) / 1.5) / tant);  
       /*  pole height */
@@ -2439,7 +2485,12 @@ porphyry:
     ih = 2;
     if (fabs(tant) < VERY_SMALL) {
       hsp->cusp[ih] = rectasc;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 68, as above */
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDer(rectasc, atand(2 / 3.0 * tanfi), sine, cose) * ARMCS;
+#else
       if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+#endif
     } else {
       f = atand(sind(asind(tanfi * tant) / 1.5) / tant);
       /*  pole height */
@@ -2479,7 +2530,12 @@ porphyry:
     ih = 3;
     if (fabs(tant) < VERY_SMALL) {
       hsp->cusp[ih] = rectasc;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 68, as above */
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDer(rectasc, atand(1 / 3.0 * tanfi), sine, cose) * ARMCS;
+#else
       if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+#endif
     } else {
       f = atand(sind(asind(tanfi * tant) / 3) / tant);  
       /*  pole height */

@@ -27,10 +27,12 @@
  * boundary, the Asc changing hemisphere within the polar circle), fall
  * back to Porphyry anywhere on it, or turn a corner in it (the two steps
  * disagree by 1e-4: Pullen's quadrant branches) are skipped. The limit is
- * 1e-6 deg/day + 3e-8 of the rate: Placidus and Gauquelin cusps converge
- * only to 3.5e-8 deg, and their differences carry the rate of that error,
- * 2e-8 of the speed at 60N (the speed is the converged cusp's, as
- * tightening the iteration shows). Measured over 56104 speeds: worst
+ * 1e-6 deg/day + 3e-8 of the rate; Placidus and Gauquelin, whose cusps
+ * the iteration converges to 1e-12 deg (UPSTREAM-BUGS 59), 2e-7 deg/day +
+ * 5e-10 of the rate (before that fix they converged only to 3.5e-8 deg,
+ * and their differences carried the rate of that error, 2e-8 of the speed
+ * at 60N; now the worst is 9.4e-8 deg/day, 1.4e-10 of the rate, the
+ * differencing's own noise). Measured over 55924 speeds: worst
  * 5.8e-6 deg/day, APC at 70N (5.7e-9 of its 5000 deg/day), every other
  * system below 9.6e-7. The upstream build fails every system: whole signs
  * and 0 Aries (674 deg/day), Porphyry (926), Krusinski (1070), Koch
@@ -134,7 +136,8 @@ int main(int argc, char **argv)
                 continue;	/* a kink within it */
               ref = d[1] + (d[1] - d[0]) / 15;
               err = fabs(sp[f] - ref);
-              lim = 1e-6 + 3e-8 * fabs(ref);
+              lim = (hs == 'P' || hs == 'G') ? 2e-7 + 5e-10 * fabs(ref)
+                                             : 1e-6 + 3e-8 * fabs(ref);
               ncmp++;
               if (err > worst) { worst = err; wref = ref; }
               if (fabs(ref) > 1 && err / fabs(ref) > wrel) wrel = err / fabs(ref);

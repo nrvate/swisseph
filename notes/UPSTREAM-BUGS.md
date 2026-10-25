@@ -94,6 +94,7 @@ worst were in code that had never executed even once.
 | 62 | The aberration rate's Earth leaves out the Moon's pull | Correctness | `sweph.c` |
 | 61 | A topocentric fixed star is deflected from the geocenter | Correctness | `sweph.c` |
 | 59 | Four small house defects: Placidus cusps unconverged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files | Correctness | `swehouse.c` |
+| 68 | Three house residues: Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps 13..36 after the Porphyry fallback, ARMC's rate for a Placidus cusp on an equinox point | Correctness | `swehouse.c` |
 
 ---
 
@@ -2933,6 +2934,47 @@ tropical cusps less the ayanamsa (41 deg); Sunshine houses OK without files
 (ERR). The upstream build fails all four (251 failures). G24
 `house_fix_off`: 0/4 defects shipped, 4/4 compat (Placidus cusp 11 at 60N:
 7.4e-10 deg/day shipped, 1.25 compat).
+
+## 68. Three house residues: Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the ARMC's rate for a cusp on an equinox point
+
+**Severity: Correctness (6e-6 deg on a Sunshine declination; 24 cusps and 24 speeds left as the caller had them; 105 to 427 deg/day on a Placidus cusp speed at one instant)**
+**Where:** `swehouse.c`: `swe_houses_ex2_r()`, `CalcH()` (Placidus, Gauquelin)
+
+1. `swe_houses_ex2_r()` asked `swe_calc_ut_r()` for the Sun's declination
+(Sunshine houses) with no ephemeris flag, so a `SEFLG_MOSEPH` (or
+`SEFLG_JPLEPH`) call got the Swiss ephemeris' Sun whatever the caller
+chose: at 2026-07, 47N, the declination 23.026219549 against Moshier's
+23.026225559 (6.0e-6 deg; the cusps 3.8e-6 deg). `swe_houses_r()` has no
+`iflag`, so there is nothing to pass there.
+2. A Gauquelin call (36 cusps) that fell back to Porphyry (within the
+polar circle, a negative return) has 12 cusps. Cusps 13..36 and their
+speeds stayed as the caller had them, and with `SEFLG_RADIANS` the
+conversion multiplied them anyway: at 80N arrays prefilled with 7 came
+back 7 in degrees and 0.1222 in radians, 24 cusps and 24 speeds each.
+3. In the Placidus and Gauquelin branches, when the first-guess cusp is on
+the equator (|tan dec| < 1e-10, the cusp at an equinox point; cusps 11, 12,
+2, 3 and sectors 2..9, 29..36) the cusp is the right ascension and its
+speed was set to ARMCS, 360.99 deg/day. The cusp moves at A_x, the rate of
+Asc1 in the right ascension at the pole height m tan(fi) the semi-arc
+fraction m gives there (f'(C) = 0 on the equator, as `PlacDer()` takes it):
+465.6 deg/day for Placidus cusp 11 at 47N, 524.8 at 60N, 787.9 for cusp 12.
+
+**Fix, as done here:** (1) the caller's `SEFLG_JPLEPH`, `SEFLG_SWIEPH` and
+`SEFLG_MOSEPH` bits go with the Sun's call; bug 59's Moshier retry on a
+refusal stays. (2) After the call, a Gauquelin return below zero zeroes
+cusps and speeds 13..36 before the radians conversion. (3) The speed is
+A_x * ARMCS at pole height atan(m tan fi), the same limit `PlacDer()`
+uses. No cost: none of it is on a path that was not already taken.
+
+G67 `tests/houseresid.c`: the MOSEPH call's `ascmc[9]` is Moshier's Sun to
+1e-12 (the Swiss one before); 96 of 96 entries 0 at 80N (24 of 96 stale);
+the 12 equinox-point cusps (Placidus 11, 12, 2, 3; Gauquelin 9, 29; 47N and
+60N) within 6.5e-8 deg/day of five-point differences (up to 427 deg/day off
+before). The upstream build fails all three (14 failures). G24
+`house_resid_off`: 0/3 defects shipped, 3/3 compat (equinox cusp 3.8e-8
+deg/day shipped, 105 compat). G45's Placidus and Gauquelin tolerance,
+left at the old 3.5e-8 deg convergence, is now 2e-7 deg/day + 5e-10 of the
+rate (worst 9.4e-8, 1.4e-10 of the rate, with bug 59's 1e-12 convergence).
 
 ## How these were found
 
