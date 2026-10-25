@@ -212,6 +212,15 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el, double
 static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el, double mu, double tequ, AS_BOOL of_date, int32 iplctr, int32 iflag, char *serr);
 static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr);
+#ifndef SWE_UPSTREAM_COMPAT
+static int vel_at_lt_fwd(swe_ctx *ctx, double teval, double tau, int32 epheflag, int32 iflag,
+                         AS_BOOL sun, const double *x0, double *v, char *serr);
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
+/* app_pos_etc_moon(): the light time's Moon was Moshier's, tjd's the
+ * files' (UPSTREAM-BUGS 264) */
+#define MOON_LT_MOSHMOON (-4)
+#endif
 static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr);
 extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *xx);
 static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, double tjd, char *serr);
@@ -1429,6 +1438,12 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
    * moon                                   * 
    ******************************************/
   } else if (ipl == SE_MOON) {
+#ifndef SWE_UPSTREAM_COMPAT
+    AS_BOOL moon_redo = FALSE;	/* bug 264: tjd read again with Moshier's Moon */
+    char serr0[AS_MAXCH];
+    if (serr != NULL)
+      strcpy(serr0, serr);
+#endif
     /* internal planet number */
     ipli = SEI_MOON;
     pdp = &ctx->pldat[ipli];
@@ -1458,8 +1473,14 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	break;
       case SEFLG_SWIEPH:
 	sweph_moon:
+#ifndef SWE_UPSTREAM_COMPAT
+	ctx->moshmoon_force = moon_redo;	/* bug 264 */
+#endif
 	retc = sweplan(ctx, tjd, ipli, SEI_FILE_MOON, iflag, DO_SAVE,
 			NULL, NULL, NULL, NULL, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+	ctx->moshmoon_force = FALSE;
+#endif
 	if (retc == ERR)
 	  goto return_error;
 	/* if sweph file not found, switch to moshier */
@@ -1487,8 +1508,51 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	break;
     } 
     /* heliocentric, lighttime etc. */
+#ifndef SWE_UPSTREAM_COMPAT
+    retc = app_pos_etc_moon(ctx, iflag, serr);
+    /* Upstream bug 264: a light-time read past the span of the ephemeris
+     * that answered at tjd refused the call (the files of 1800-2400 alone
+     * 1e-5 day after sepl_18's start: -1, "sepl_12.se1 not found", with
+     * the fallback allowed too), or went on with zeros (JPL, above), or
+     * with another Moon (the semo files). Now as a planet's light-time
+     * read in main_planet(): JPL's BEYOND_EPH_LIMITS and the files'
+     * NOT_AVAILABLE answer on Moshier, the downgrade refused under the
+     * strict setting and noted otherwise; a Moon from Moshier at t where
+     * the semo file holds tjd reads tjd again with Moshier's Moon, as
+     * where the file is missing (the Earth there kept for this answer
+     * only: the calls to come take the files' Moon at tjd). */
+    if (retc == MOON_LT_MOSHMOON && !moon_redo) {
+      moon_redo = TRUE;
+      pdp->teval = SWI_TJD_NEVER;
+      pedp->teval = SWI_TJD_NEVER;
+      if (serr != NULL)
+        strcpy(serr, serr0);
+      goto sweph_moon;
+    }
+    if (moon_redo && ctx->moshmoon_earth_t == tjd && pedp->iephe == SEFLG_SWIEPH) {
+      pedp->teval = SWI_TJD_NEVER;
+      ctx->moshmoon_earth_t = SWI_TJD_NEVER;
+    }
+    if (retc == NOT_AVAILABLE && (iflag & SEFLG_JPLEPH)) {
+      iflag = (iflag & ~SEFLG_JPLEPH) | SEFLG_SWIEPH;
+      if (serr != NULL && strlen(serr) + 30 < AS_MAXCH)
+        strcat(serr, " \ntrying Swiss Eph; ");
+      goto sweph_moon;
+    }
+    if ((retc == NOT_AVAILABLE || retc == BEYOND_EPH_LIMITS)
+        && (iflag & (SEFLG_JPLEPH | SEFLG_SWIEPH))
+        && tjd > MOSHLUEPH_START && tjd < MOSHLUEPH_END) {
+      if (serr != NULL && strlen(serr) + 30 < AS_MAXCH)
+        strcat(serr, (iflag & SEFLG_JPLEPH) ? " \nusing Moshier Eph; " : " \nusing Moshier eph.; ");
+      iflag = (iflag & ~SEFLG_EPHMASK) | SEFLG_MOSEPH;
+      goto moshier_moon;
+    }
+    if (retc != OK)
+      goto return_error;
+#else
     if ((retc = app_pos_etc_moon(ctx, iflag, serr)) != OK)
       goto return_error; /* retc may be wrong with sidereal calculation */
+#endif
   /********************************************** 
    * barycentric sun                            * 
    * (only JPL and SWISSEPH ephemerises)        *
@@ -4067,9 +4131,28 @@ static int sweplan(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, AS
       for (i = 0; i <= 5; i++)
 	xpm[i] = pmdp->x[i];
     } else {
+#ifndef SWE_UPSTREAM_COMPAT
+      char sv[AS_MAXCH];
+      if (ctx->moshmoon_force && serr != NULL)
+        strcpy(sv, serr);
+#endif
       retc = sweph(ctx, tjd, SEI_MOON, SEI_FILE_MOON, iflag, NULL, do_save, xpm, serr);
-      if (retc == ERR) 
+      if (retc == ERR)
 	return(retc);
+#ifndef SWE_UPSTREAM_COMPAT
+      /* bug 264: the file answers, but the call's Moon is Moshier's: as the
+       * Moshier Moon below, the serr the call had (sweph() empties it on
+       * opening a file) */
+      if (ctx->moshmoon_force && ctx->fidat[SEI_FILE_MOON].fptr != NULL) {
+        if (serr != NULL)
+          strcpy(serr, sv);
+        retc = swi_moshmoon(ctx, tjd, do_save, xpm, serr);
+        if (retc != OK)
+          return(retc);
+        moon_mosh = TRUE;
+        ctx->moshmoon_used = TRUE;
+      } else
+#endif
       /* if moon file doesn't exist, take moshier moon */
       if (ctx->fidat[SEI_FILE_MOON].fptr == NULL) {
 	if (serr != NULL && strlen(serr) + 35 < AS_MAXCH)
@@ -5345,6 +5428,16 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	  if (retc != OK) {
 	    swi_close_jpl_file(ctx);
 	    ctx->jpl_file_is_open = FALSE;
+#ifndef SWE_UPSTREAM_COMPAT
+	    /* Upstream bug 264: and an asteroid's, whose Sun read past the
+	     * span the asteroid's read below overwrote with OK: on de200.eph
+	     * 2^-6 day after its start Chiron 124.8395 deg for 124.8200,
+	     * Ceres 215.196 for 215.320, flag 1 with the read's "outside JPL
+	     * eph. range", strict answering; with SEFLG_SPEED the Earth's
+	     * read then reached the file closed here, a segfault. Returned:
+	     * swecalc() reads the asteroid again on Moshier, or refuses. */
+	    return retc;
+#endif
 	  } 
 	  /* asteroid */
 	  retc = sweph(ctx, t, ipli, ifno, iflag, xsun, NO_SAVE, xx, serr);
@@ -8044,6 +8137,50 @@ int swi_observer_accel_fwd(swe_ctx *ctx, double teval, int32 epheflag, int32 ifl
   return OK;
 }
 
+/* Upstream bug 265: the velocity at teval - tau of the Earth (sun FALSE)
+ * or of the barycentric Sun (TRUE) for a rate whose read there, which the
+ * call without SEFLG_SPEED does not make, is past the span of the
+ * ephemeris that answered at teval (within tau after a span's start): the
+ * parabola through the velocity at teval, x0[3..5], and those read at
+ * teval + h and teval + 2h (h = 2^-9 day), by epheflag as
+ * swi_observer_accel_fwd() reads them, at -tau. The aberration rate
+ * takes it whole, an error dv as dv / r rad/day: the Earth's jerk, which
+ * v - tau a leaves out, is 8.5e-11 AU/day over the Sun's tau, 4.8e-9
+ * deg/day; the parabola's error is tau (tau + h) (tau + 2h) / 6 of the
+ * velocity's third derivative, 1e-14 AU/day. */
+static int vel_at_lt_fwd(swe_ctx *ctx, double teval, double tau, int32 epheflag, int32 iflag,
+                         AS_BOOL sun, const double *x0, double *v, char *serr)
+{
+  const double h = 1.0 / 512, x = -tau;
+  const double l0 = (x - h) * (x - 2 * h) / (2 * h * h), l1 = -x * (x - 2 * h) / (h * h),
+               l2 = x * (x - h) / (2 * h * h);
+  double xe[2][6], xs[2][6];
+  AS_BOOL was = ctx->moshmoon_used;
+  char s[AS_MAXCH], *sp = (serr != NULL) ? s : NULL;
+  int i, k, retc;
+  int32 fl = (iflag & ~(SEFLG_EPHMASK | SEFLG_TOPOCTR)) | epheflag | SEFLG_SPEED;
+  for (k = 0; k < 2; k++) {
+    int32 used = epheflag;
+    *s = '\0';
+    retc = main_planet_bary(ctx, teval + (k + 1) * h, SEI_EARTH, epheflag, fl, NO_SAVE,
+                            &used, xe[k], xe[k], xs[k], NULL, sp);
+    if (retc == OK && used != epheflag)
+      retc = NOT_AVAILABLE;
+    ctx->moshmoon_used = was;
+    if (retc != OK) {
+      if (serr != NULL) {
+        if (*s == '\0')
+          sprintf(s, "jd %.8f: the rate's reads leave the ephemeris's span", teval + (k + 1) * h);
+        strcpy(serr, s);
+      }
+      return ERR;
+    }
+  }
+  for (i = 0; i <= 2; i++)
+    v[i] = l0 * x0[i+3] + l1 * (sun ? xs[0] : xe[0])[i+3] + l2 * (sun ? xs[1] : xe[1])[i+3];
+  return OK;
+}
+
 /* Upstream bug 35: the light time's rate was taken as the change, over a
  * day, of the light-time displacement of a body moved linearly along its
  * velocity (xxsp), which is off by the curvature of that day's motion:
@@ -9101,6 +9238,16 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
     if (iflag & SEFLG_SPEED) {
       double tlt = pedp->teval - sqrt(square_sum(xx)) * AUNIT / CLIGHT / 86400.0;
       double xelt[6], xobs2[6];
+      /* Upstream bug 265: this read, made for the rate alone, left the
+       * span where the call without SEFLG_SPEED answers: Moshier's Sun
+       * within its light time after the planets' start - 0.3 day (bug
+       * 255's margin) -1, "outside Moshier planet range", for 4. There
+       * the Earth's velocity at tlt is now taken from reads after teval
+       * (vel_at_lt_fwd()). (The files' and JPL's Sun read at t, as near,
+       * and fall back without the flag too.) */
+      char se[AS_MAXCH];
+      if (serr != NULL)
+        strcpy(se, serr);
       switch (pedp->iephe) {
         case SEFLG_JPLEPH:
           retc = swi_pleph(ctx, tlt, J_EARTH, J_SBARY, xelt, serr);
@@ -9109,8 +9256,23 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
           retc = sweplan(ctx, tlt, SEI_EARTH, SEI_FILE_PLANET, iflag, NO_SAVE, xelt, NULL, NULL, NULL, serr);
           break;
         default:
-          retc = swi_moshplan(ctx, tlt, SEI_EARTH, NO_SAVE, xelt, xelt, serr);
+          if (!(tlt >= MOSHPLEPH_START - 0.3 && tlt <= MOSHPLEPH_END + 0.3)
+              && pedp->teval >= MOSHPLEPH_START - 0.3 && pedp->teval <= MOSHPLEPH_END + 0.3)
+            retc = BEYOND_EPH_LIMITS;	/* not read: past the span */
+          else
+            retc = swi_moshplan(ctx, tlt, SEI_EARTH, NO_SAVE, xelt, xelt, serr);
           break;
+      }
+      if ((retc == BEYOND_EPH_LIMITS && pedp->iephe != SEFLG_SWIEPH)
+          || (retc == NOT_AVAILABLE && pedp->iephe == SEFLG_SWIEPH)) {
+        if (serr != NULL)
+          strcpy(serr, se);
+        if (vel_at_lt_fwd(ctx, pedp->teval, pedp->teval - tlt, pedp->iephe, iflag, FALSE,
+                          pedp->x, xelt + 3, serr) != OK)
+          return ERR;
+        for (i = 0; i <= 2; i++)	/* (only the velocity is read) */
+          xelt[i] = pedp->x[i] - (pedp->teval - tlt) * pedp->x[i+3];
+        retc = OK;
       }
       if (retc != OK)
         return retc;
@@ -9345,6 +9507,16 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
         if (retc != OK) {
 	      swi_close_jpl_file(ctx);
 	      ctx->jpl_file_is_open = FALSE;
+#ifndef SWE_UPSTREAM_COMPAT
+	  /* Upstream bug 264: a read past the file's span, within the light
+	   * time after its start, went on with the vectors swi_pleph() had
+	   * zeroed, the Moon at the barycentre: on de200.eph 1e-5 day after
+	   * its start the Moon 256.12 deg at 0.98 AU, the Sun's direction,
+	   * for 159.82, flag 1, strict answering; heliocentric 148.4 deg
+	   * for 76.7, barycentric 1e-4 AU off. Returned, as the planets'
+	   * light-time reads return it: swecalc() falls back or refuses. */
+	  return retc;
+#endif
         } 
 	for (i = 0; i <= 5; i++)
 	  xx[i] += xe[i];
@@ -9367,6 +9539,17 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
            * There the read now holds teval's model (swi_frame_model_hold(),
            * as bug 202 holds the Moon's epochs): the place the side's
            * model alone's bit for bit. */
+          /* Upstream bug 264: and on the files the read took Moshier's
+           * Moon where the semo file does not hold t, the files' at tjd:
+           * 1e-5 day after semo_18's start (semo_12 missing) the Moon 2.7e-6
+           * deg off the Moshier Moon the call answers with (flag 4), the
+           * Earth at tjd made from the files' Moon; and within the light
+           * time after its end the files' Moon at t under Moshier's flag,
+           * its note gone, 4.8e-4 deg off. With Moshier's Moon at tjd (the
+           * file's missing there, mosh_mixed) it is Moshier's at t too;
+           * with the files' at tjd and Moshier's at t, MOON_LT_MOSHMOON:
+           * swecalc() reads tjd again with Moshier's Moon. */
+          AS_BOOL was = ctx->moshmoon_used;
           int side = 0;
           if (mosh_mixed) {
             double h = pdp->teval - t;	/* exact, t being near teval */
@@ -9374,6 +9557,8 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
             if (side == 0)
               side = swi_frame_step_side(ctx, pdp->teval, h, ctx->oec.epsflag, SWI_FRAME_EPS);
           }
+          ctx->moshmoon_used = FALSE;
+          ctx->moshmoon_force = mosh_mixed;
           if (side > 0) {
             int32 held[2];
             swi_frame_model_hold(ctx, pdp->teval, held);
@@ -9381,6 +9566,10 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
             swi_frame_model_release(ctx, held);
           } else
             retc = sweplan(ctx, t, SEI_MOON, SEI_FILE_MOON, iflag, NO_SAVE, xx, xe, xs, NULL, serr);
+          ctx->moshmoon_force = FALSE;
+          if (retc == OK && !mosh_mixed && ctx->moshmoon_used)
+            retc = MOON_LT_MOSHMOON;
+          ctx->moshmoon_used = was || ctx->moshmoon_used;
         }
 #else
         retc = sweplan(ctx, t, SEI_MOON, SEI_FILE_MOON, iflag, NO_SAVE, xx, xe, xs, NULL, serr);
@@ -9681,17 +9870,34 @@ static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr)
       static const double xo[6] = {0, 0, 0, 0, 0, 0};
       double xxsp[3], xs[6], t = psbdp->teval - dt;
       int retc;
+      /* Upstream bug 265: that read, which the call without SEFLG_SPEED
+       * does not make, left the span within the light time after its
+       * start, and the call was refused where that one answers: on
+       * de200.eph 4.4e-5 day after its start -1 ("outside JPL eph.
+       * range") for 17921, the files of 1800-2400 alone after sepl_18's
+       * start -1 for 17922. There the velocity at t is now taken from
+       * reads after teval (vel_at_lt_fwd()). */
+      char se[AS_MAXCH];
+      if (serr != NULL)
+        strcpy(se, serr);
       if (iflag & SEFLG_JPLEPH) {
         retc = swi_pleph(ctx, t, J_SUN, J_SBARY, xs, serr);
-        if (retc != OK) {
+        if (retc != OK && retc != BEYOND_EPH_LIMITS) {
           swi_close_jpl_file(ctx);
           ctx->jpl_file_is_open = FALSE;
           return retc;
         }
       } else {
         retc = sweph(ctx, t, SEI_SUNBARY, SEI_FILE_PLANET, iflag, NULL, NO_SAVE, xs, serr);
-        if (retc != OK)
+        if (retc != OK && retc != NOT_AVAILABLE)
           return retc;
+      }
+      if (retc != OK) {
+        if (serr != NULL)
+          strcpy(serr, se);
+        if (vel_at_lt_fwd(ctx, psbdp->teval, psbdp->teval - t, iflag & SEFLG_EPHMASK, iflag,
+                          TRUE, psbdp->x, xs + 3, serr) != OK)
+          return ERR;
       }
       for (i = 3; i <= 5; i++)
         xx[i] = xs[i];
@@ -11289,6 +11495,13 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
        * 75: five points 2^-5 day apart, 4.7e-7 (the node 6.6e-9). */
       speed_intv = OSC_INTV_MOSH;
       npt = OSC_NPT_MOSH;
+      /* Upstream bug 265: within two steps of the Moon's range (below),
+       * half the step: the one-sided five-point difference's truncation,
+       * h^4 / 5 of the fifth derivative, is six times the central's, and
+       * at 2^-5 day the apogee's speed was 4.1e-8 deg/day off its places'
+       * rate where the central's is within 6e-9; at 2^-6, 2e-9 */
+      if (!(tjd - 2 * speed_intv >= MOSHLUEPH_START - 0.2 && tjd + 2 * speed_intv <= MOSHLUEPH_END + 0.2))
+        speed_intv /= 2;
       /* Upstream bug 202: Moshier's Moon, of date, is taken to J2000 and
        * back at its epoch by the same frame, but its velocity carries the
        * frame's turning there, R'(t) x (entries 95, 184), which
@@ -11309,12 +11522,29 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 #endif
       ord = (npt == 5) ? ord5 : ord3;
       kstart = (iflag & SEFLG_SPEED) ? 0 : npt - 1;
-      for (k = kstart; k < npt; k++) {
-	i = ord[k];
-	t = tjd + osc_off[i] * speed_intv;
 #ifndef SWE_UPSTREAM_COMPAT
-	rr[i] = osc_round_err(tjd, osc_off[i] * speed_intv, t);	/* bug 75 */
-	if (hold && i != 2) {	/* bug 202: not tjd's */
+      /* Upstream bug 265: bug 225's defect on Moshier: a speed epoch past
+       * the Moon's range (0.2 day past MOSHLUEPH_START .. MOSHLUEPH_END,
+       * bug 255) refused the call, within 2^-4 day inside either margin,
+       * where the call without SEFLG_SPEED answers 4, and past the margin
+       * named its own instant, where that call names tjd. Skipped now, not
+       * read: tjd's read decides, and the speed is taken on its side as
+       * bug 225 takes it. */
+      osc_span_init(&osp, osc_off, ord, npt);
+      for (k = kstart; k < osp.nl; k++) {
+	i = osp.ord[k];
+	t = tjd + osp.off[i] * speed_intv;
+	rr[i] = osc_round_err(tjd, osp.off[i] * speed_intv, t);	/* bug 75 */
+	if (i != 2 && !(t >= MOSHLUEPH_START - 0.2 && t <= MOSHLUEPH_END + 0.2)) {
+	  osc_span_save(&osp, i, serr);
+	  if (osc_span_out(&osp, k, i, serr) < 0) {
+	    if (serr != NULL)
+	      sprintf(serr, "jd %.8f: the Moon's speed epochs leave Moshier's range", tjd);
+	    return ERR;
+	  }
+	  continue;
+	}
+	if (osc_span_hold(&osp, k, hold) && i != 2) {	/* bug 202: not tjd's */
 	  /* Upstream bug 245: under the hold swi_moshmoon() answered from its
 	   * save of the Moon Moshier's Earth was made with at the epoch (entry
 	   * 191), unheld, where a swe_calc() of the Moon, the Earth, the Sun
@@ -11336,6 +11566,9 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	} else
 	  retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);
 #else
+      for (k = kstart; k < npt; k++) {
+	i = ord[k];
+	t = tjd + osc_off[i] * speed_intv;
 	retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);/**/
 #endif
 	if (retc == ERR)
@@ -11343,8 +11576,10 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	/* precession and nutation etc. */
 	retc = swi_plan_for_osc_elem(ctx, iflag|SEFLG_SPEED, t, xpos[i]); /* retc is always ok */
 #ifndef SWE_UPSTREAM_COMPAT
-	if (hold && i != 2)
+	if (osc_span_hold(&osp, k, hold) && i != 2)
 	  swi_frame_model_release(ctx, held);
+	if (i == 2 && osc_span_extend(ctx, &osp, tjd, iflag, speed_intv, npt, serr) != OK)
+	  return ERR;
 #endif
       }
       break;
@@ -14442,7 +14677,7 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
 	  sprintf(serr2 + strlen(serr2), ": %s", serr);
 	if (strlen(serr2) + 17 < AS_MAXCH) 
 	  strcat(serr2, ". Defaulting to ");
-	if (strlen(serr2) + strlen(SE_FNAME_DFT2) < AS_MAXCH) 
+	if (strlen(serr2) + strlen(SE_FNAME_DFT2) < AS_MAXCH)
 	  strcat(serr2, SE_FNAME_DFT2);
         strcpy(serr, serr2);
       }

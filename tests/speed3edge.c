@@ -57,10 +57,10 @@
  * Measured: 1212 rows pass, the speeds within 2.79e-5 deg/day of their
  * places' rate (the Moon's central difference, its nominal 2 dt 1.7e-6 of
  * itself off the instants' interval: UPSTREAM-BUGS 249's notes), the nodes
- * and apsides 6.8e-7; 46 rows SEFLG_SPEED's own (the barycentric Sun past
- * de200.eph's and sepl_18's start, Moshier's Sun at its planets' start,
- * Moshier's node and apogee within 2^-5 day of the Moon's margins:
- * refused). Before the fix 494 fail (173 the flag, 223 serr, 96 the speed,
+ * and apsides 6.8e-7; no row SEFLG_SPEED's own (46 before UPSTREAM-BUGS
+ * 265: the barycentric Sun past de200.eph's and sepl_18's start, Moshier's
+ * Sun at its planets' start, Moshier's node and apogee within 2^-5 day of
+ * the Moon's margins: refused). Before the fix 494 fail (173 the flag, 223 serr, 96 the speed,
  * off by 8.9e-5 to 4.5 deg/day, 2 the warm process). The upstream build
  * fails 730 (also its SEFLG_SPEED3 speed, 2a + b, entry 31's).
  *

@@ -288,6 +288,8 @@ worst were in code that had never executed even once.
 | 257 | With the library's own delta t the sidereal times take delta t's far parabola evaluated in double, 2 ulps off its formula (1.3e-4 day at 1e12): the default over 64 consecutive JDs off its line by 4.1e-9 .. 5.1e-9 deg at -+1e12, 1.3e-9 .. 2.0e-9 at -+5e11 | Correctness | `swephlib.c` |
 | 258 | With the Moon files missing and the fallback allowed, the Swiss request's Moon, fallen to Moshier's, is read again at its light-time instant, of date and put into J2000 by the frame there: within its light time after a short-term window's edge, with IAU 1976 under Vondrak, its longitude 1.715e-4 deg off the side's model alone's after J2000 + 2 centuries (1.588e-4 after - 2), its speed 2.29e-2 deg/day off its places' rate; heliocentric within 500 s 4.6e-7 deg | Correctness (behaviour) | `sweph.c` |
 | 259 | A topocentric star's aberration rate reads its site at tjd -+ 1e-5 day, of date and put into J2000 by the frame at its instant, across a step of the frame's models, on every ephemeris: with IAU 1976 under Vondrak within 1e-5 day of J2000 + 2 centuries Polaris's topocentric right ascension speed 8.33e-5 deg/day off its places' rate (3.41e-4 with the IERS 2010 sidereal time, 2.52e-4 at - 2), across SEFLG_JPLHOR_APPROX's 1962 step 9.49e-5 | Correctness | `sweph.c` |
+| 264 | Within its light time after an ephemeris's start the Moon's read at the light-time instant falls past the span and is not taken as a planet's: on de200.eph 1e-5 day after its start the JPL Moon 256.12 deg at 0.98 AU (the Sun's direction) for 159.82, flag 1, strict answering; the files of 1800-2400 alone refuse it with the fallback allowed; at semo_18's edges two Moons in one answer (2.7e-6 and 4.8e-4 deg); an asteroid's Sun read there overwritten, Chiron 0.0195 deg and Ceres 0.12 off under flag 1, a segfault with SEFLG_SPEED | Correctness (behaviour) | `sweph.c` |
+| 265 | SEFLG_SPEED refuses where the call without it answers: the barycentric Sun within its light time after de200.eph's and sepl_18's starts (-1 for 17921, 17922), Moshier's Sun after its planets' start - 0.3 day, Moshier's true node and osculating apogee within 2^-5 day inside its Moon's margins (-1 for 4) | Correctness (behaviour) | `sweph.c` |
 | 268 | The houses of the ecliptic of t0 and the solar system plane (`sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`; J2000, J1900, B1950 always) return in ascmc[2] the auxiliary ARMC they are computed in, armc - dvpx, where the manual gives the ARMC: at Zurich, 1800-2100, 0.0043 deg off on the ecliptic of 1900, 0.0085 J2000's, 3.90 the solar system plane, its speed 1.3e-7 to 2.7e-6 deg/day; given it, `swe_house_pos()` puts the sidereal cusps' places 1.4e-4 to 0.34 house off their numbers in P R C H X | Correctness | `swehouse.c` |
 | 269 | Sidereal whole signs on those planes are the auxiliary frame's signs moved by the frames' offset, not sidereal sign starts: 8.94 deg off on the ecliptic of 1900, 2.1-2.8 J1900, B1950 and J2000, 20.3 the solar system plane (cusp 1 against the sidereal Ascendant's sign), their speeds 6.7e-5 deg/day where they stand still; 'n' not taken as 'N', 0 Aries moved 2.80 to 25.3 deg | Correctness | `swehouse.c` |
 | 270 | `swe_house_pos()` in Sripati ('S') is Porphyry's position plus 0.5 cut by "if (hpos > 12) hpos = 1": all of house 12 and the first half of house 1 answer 1.0, tropically too (cusp 12 + 1e-4 of the house 1.000000 for 12.000003, house 12's middle 1 for 12.5) | Correctness | `swehouse.c` |
@@ -19484,6 +19486,152 @@ Noticed, not fixed:
 - RESIDUAL (1.2e-7 house, 3.6e-6 deg). Krusinski's ('U') position on the
   equator of its own cusps given with latitude 1e-300: 1.2e-7 house off
   their numbers (9.3e-9 elsewhere, the 0.001").
+
+## 264. Within its light time after an ephemeris's start the Moon's read at the light-time instant falls past the span and is not taken as a planet's: on de200.eph 1e-5 day after its start the JPL Moon 256.12 deg at 0.98 AU (the Sun's direction) for 159.82, flag 1, strict answering; and an asteroid's Sun there, Chiron 0.0195 deg off, a segfault with SEFLG_SPEED
+
+**Severity: Correctness (behaviour: a wrong place under the ephemeris's flag where the fallback answers or the strict setting refuses, a refusal where the fallback answers, two Moons in one answer, a crash)**
+**Where:** `sweph.c`: `swecalc()`, `sweplan()`, `app_pos_etc_moon()`, `app_pos_etc_plan()`
+
+The Moon is read at tjd and at its light-time instant t = tjd - tau
+(tau 1.2e-5 to 1.6e-5 day geocentric, 0.0057 heliocentric and
+barycentric). A planet's read at t past the span of the ephemeris that
+answered at tjd returns its BEYOND_EPH_LIMITS or NOT_AVAILABLE, and
+`main_planet()` falls back or refuses; the Moon's did not:
+- JPL: `app_pos_etc_moon()` closed the file and went on with the vectors
+  `swi_pleph()` had zeroed, the Moon at the barycentre. On de200.eph 1e-5
+  day after its start the geocentric Moon 256.12 deg at 0.98 AU, the
+  Sun's direction, for 159.82 (the Moshier request 159.81), flag 1 with
+  no note, the strict setting answering; heliocentric 148.4 deg for
+  76.7, barycentric 1e-4 AU off. (Upstream's build reads an Earth never
+  read: the place is the stack's, 256.117 in one process, 21.8 in
+  another.)
+- The Swiss files of 1800-2400 alone, 1e-5 day after sepl_18's start:
+  -1, "sepl_12.se1 not found", with the fallback allowed too, where the
+  call before the start answers 4 from Moshier.
+- The semo files: 1e-5 day after semo_18's start with semo_12 missing,
+  Moshier's Moon at t (bug 120's fallback) with the Earth at tjd made
+  from the files' Moon, 2.7e-6 deg off the Moshier Moon the call is
+  flagged with; within tau after semo_18's end with semo_24 missing, the
+  files' Moon at t under Moshier's flag, its note lost, 4.8e-4 deg off
+  geocentric (1e-6 heliocentric).
+An asteroid on JPL reads the Sun at its light-time instant before its own
+file: `app_pos_etc_plan()` kept the Sun's error code only until the
+asteroid's read overwrote it with OK, and computed from the zeroed Sun:
+on de200.eph 2^-6 day after its start (Chiron's light time 0.054 day,
+Ceres's 0.019) Chiron 124.8395 deg for 124.8200, Ceres 215.196 for
+215.320, Pholus and Pallas likewise from 2^-4 and 2^-6 day, flag 1 with
+"outside JPL eph. range" in serr, the strict setting answering; with
+SEFLG_SPEED the Earth's read after it reached the file closed there, a
+segfault (`state()`, `ctx->jpl` NULL), heliocentric, barycentric,
+equatorial and ICRS alike. Within 2^-8 day of the start the Earth's own
+fall takes the whole asteroid to Moshier first, as it should. Measured
+on every body (0-21, Cupido, Isis, `SE_AST_OFFSET + 433` whose file is
+not here)
+geocentric, topocentric, heliocentric, barycentric and equatorial, with
+and without SEFLG_SPEED, at 2^-k day, k = 2..20, after de200.eph's start
+and before its end: 46 such answers at the start, none at the end; at
+sepl_18's start with the files of 1800-2400 alone none (the Swiss
+asteroid's read returns its NOT_AVAILABLE).
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`:
+- `app_pos_etc_moon()` returns the JPL read's error, and `swecalc()`'s
+  Moon falls back as a planet's light-time read does: JPL's
+  BEYOND_EPH_LIMITS to Moshier (" \nusing Moshier Eph; "), its
+  NOT_AVAILABLE to the files (" \ntrying Swiss Eph; "), the files'
+  NOT_AVAILABLE to Moshier (" \nusing Moshier eph.; "); the strict
+  setting refuses each downgrade, as before the start.
+- Where the light-time read on the files took Moshier's Moon and tjd's
+  the file's (MOON_LT_MOSHMOON from `app_pos_etc_moon()`), tjd is read
+  again with Moshier's Moon (`ctx->moshmoon_force`, `sweplan()` taking
+  `swi_moshmoon()` where the file answers), as where the file is
+  missing, serr as before the first read; the Earth made so is kept for
+  this answer only (the save area's teval cleared after it, so the calls
+  to come take the files' Moon at tjd).
+- `app_pos_etc_plan()` returns the asteroid's Sun's error, and
+  `swecalc()`'s asteroid branch reads the asteroid again on Moshier as it
+  already did for its own read's ("sun: jd ... outside JPL eph. range
+  ...;\nusing Moshier eph.; ") or the strict setting refuses.
+Each answer is the fallback's whole: on de200.eph and sepl_18 the
+Moshier request's flag and place bit for bit (the asteroids' too), at
+semo_18's edges the directory without semo_18's flag, place and serr. A
+random survey of 8000 `swe_calc()` answers in each of six directories
+(complete, the files of 1800-2400 alone, without semo_12, without
+semo_24, none, de200.eph as de406.eph), both settings: identical bit for
+bit, serr too. Cost: 6000 x 10 bodies with SEFLG_SPEED, instructions
+6213454715 before, 6213441256 after (Swiss), 11732226501 and 11737529393
+(Moshier, +0.05%).
+
+G171 `tests/ltstart.c`, check (a): the Moon, and on de200.eph and
+sepl_18 the Sun, Mars and Pluto, on de200.eph Chiron and Ceres,
+geocentric, topocentric, heliocentric, barycentric and equatorial, with
+and without SEFLG_SPEED, both settings, at three instants within each
+one's light time after de200.eph's start, sepl_18's start (the files of
+1800-2400 alone), semo_18's start (semo_12 missing) and its end (semo_24
+missing), each in a pristine process against the fallback whole as
+above (the note as the call before the start notes it, strict that
+call's refusal at tjd), with SEFLG_SPEED against the call without it,
+and each edge's calls in one process as their pristine ones: 680 rows
+pass. Before the fix 241 fail (de200.eph's start 122, 62 of them the
+asteroids', a segfault each with SEFLG_SPEED; sepl_18's 60; semo_18's
+start 29, its end 30); the upstream build 400. G24
+`moon_lt_start_ret`: the JPL Moon 2^-17 day after de200.eph's start,
+flag 4 with the Moshier request's place shipped, 1 compat;
+`ast_lt_start_ret`: Chiron 2^-6 day after it, 4 shipped, 1 compat.
+G158, G165, G99, G117, G133, G40, G53, G157, G46, G154, G155 and G170
+pass.
+
+## 265. SEFLG_SPEED refuses where the call without it answers: the barycentric Sun within its light time after de200.eph's and sepl_18's starts, Moshier's Sun after its planets' start - 0.3 day, Moshier's true node and osculating apogee within 2^-5 day inside its Moon's margins
+
+**Severity: Correctness (behaviour: a refusal where the call without the flag answers)**
+**Where:** `sweph.c`: `app_pos_etc_sbar()`, `app_pos_etc_sun()`, `lunar_osc_elem()`
+
+Three reads made for a speed alone fall past a span where the call
+without the flag reads only tjd:
+- The barycentric Sun's light-time rate (entry 78) reads the Sun's
+  velocity at t = tjd - tau (4.4e-5 day): within that after de200.eph's
+  start -1 for 17921 ("outside JPL eph. range"), after sepl_18's start
+  with the files of 1800-2400 alone -1 for 17922 ("sepl_12.se1 not
+  found"), both settings.
+- Moshier's Sun's aberration rate (entry 34) reads the Earth at its
+  light-time instant: within 0.0057 day after the planets' start - 0.3
+  (625000.2, entry 255's margin) -1 for 4.
+- Moshier's true node and osculating apogee with SEFLG_SPEED read the
+  Moon at tjd -+ 0.1 day (NODE_CALC_INTV_MOSH, five points to 2^-5 x 4
+  since entry 201): within that inside the Moon's range -+ 0.2 day
+  (entry 255) a speed epoch past it refused the call, -1 for 4: entry
+  225's defect on Moshier, whose test of the margins came later.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, as entries
+225 and 249 do it, the speed from reads on the instant's side:
+- the Sun's velocity at t, where its read falls past (JPL
+  BEYOND_EPH_LIMITS, the files' NOT_AVAILABLE; serr as before it), is
+  the parabola through the velocities at tjd, tjd + h and tjd + 2h (h =
+  2^-9 day) taken back to t (`vel_at_lt_fwd()`: Lagrange weights at -tau,
+  the ephemeris checked the same); so the Earth's for Moshier's Sun, its
+  place at t then x - tau v (the series is not read past its margin);
+- Moshier's node and apogee halve the step near the Moon's margins and
+  skip the epochs past them (entry 225's `osc_span` machinery, now on
+  Moshier too): the speed the one-sided difference from the side
+  within; past the margins refused alike, tjd named.
+The answers' flags, places and serr are those without the flag; the
+speeds within 2.35e-9 deg/day of the places' one-sided rate (the
+barycentric Sun's own reference noise, the same inside the span), the
+node's 6.6e-10, the apogee's 3.0e-9 (before the halving, at 2^-5 day,
+4.1e-8). Elsewhere bit for bit (entry 264's survey).
+
+G171 `tests/ltstart.c`, check (b): SEFLG_SPEED, both settings, the
+barycentric Sun 2^-20, 2^-17 and 2^-15 day after de200.eph's and
+sepl_18's starts, Moshier's Sun (geocentric, topocentric, equatorial)
+2^-20, 2^-12 and 2^-9 day after 625000.2, Moshier's true node and
+apogee (geocentric, equatorial, J2000) at five instants inside 625000.3
+and 2818000.7 and one 2^-10 day outside: each answers as without the
+flag, its speeds within 1e-8 deg/day of one-sided differences inward of
+the places (five points 2^-8 day apart, nine 2^-4 apart for the node and
+apogee), each edge's calls in one process as pristine: 160 rows pass;
+before 150 fail, the upstream build 150. G165 (entry 249) now counts no
+row SEFLG_SPEED's own (46 before). G24 `mosh_node_margin_ret`: the
+Moshier true node 2^-8 day inside 625000.3 with SEFLG_SPEED, 260
+shipped, -1 compat.
 
 ## How these were found
 

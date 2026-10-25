@@ -4557,6 +4557,85 @@ static double horizon_south_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 264: the JPL Moon on de200.eph 2^-17 day after its start,
+ * within its light time, the fallback allowed: the flag, if the place is
+ * the Moshier request's within 1e-9 deg or the flag says JPL. The
+ * light-time read before the file's start went on with vectors swi_pleph()
+ * had zeroed (and upstream with an Earth never read, so the place is the
+ * stack's: 256.117 deg, the Sun's direction, in one process, 21.8 in
+ * another, for 159.805), flag 1; the call falls back whole now, flag 4,
+ * the Moshier request's place bit for bit. */
+static double moon_lt_start_ret(void)
+{
+  double x[6], y[6], r = -9;
+  const double jd = 2305424.5 + 1.0 / 131072;
+  char serr[AS_MAXCH];
+  swe_ctx *c = swe_ctx_new(), *d = swe_ctx_new();
+  if (c != NULL && d != NULL) {
+    int32 f;
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "de200.eph");
+    swe_set_ephe_fallback_r(c, 1);
+    swe_set_ephe_path_r(d, EPHE);
+    f = swe_calc_r(c, jd, SE_MOON, SEFLG_JPLEPH, x, serr);
+    if (f >= 0 && swe_calc_r(d, jd, SE_MOON, SEFLG_MOSEPH, y, serr) >= 0
+        && (f == SEFLG_JPLEPH || fabs(swe_difdeg2n(x[0], y[0])) < 1e-9))
+      r = f;
+  }
+  if (c != NULL)
+    swe_ctx_free(c);
+  if (d != NULL)
+    swe_ctx_free(d);
+  return r;
+}
+
+/* UPSTREAM-BUGS 265: Moshier's true node with SEFLG_SPEED 2^-8 day inside
+ * its Moon's start - 0.2 day, where the call without the flag answers 4:
+ * a speed epoch past the Moon's range refused the call, -1 (upstream reads
+ * its epochs 0.1 day away); the epoch is skipped now and the speed taken
+ * on tjd's side, 260. */
+static double mosh_node_margin_ret(void)
+{
+  double x[6], r = -9;
+  char serr[AS_MAXCH];
+  swe_ctx *c = swe_ctx_new();
+  if (c != NULL) {
+    r = swe_calc_r(c, 625000.3 + 1.0 / 256, SE_TRUE_NODE, SEFLG_MOSEPH | SEFLG_SPEED, x, serr);
+    swe_ctx_free(c);
+  }
+  return r;
+}
+
+/* UPSTREAM-BUGS 264: and an asteroid's: Chiron on de200.eph 2^-6 day
+ * after its start, within its light time (0.054 day), the fallback
+ * allowed: the flag, if the place is the Moshier request's within 1e-9 deg
+ * or the flag says JPL. The Sun's read past the start was overwritten by
+ * the asteroid's OK, the Sun's vector zeroed: 124.8395 deg for 124.8200,
+ * flag 1; returned now, the asteroid read again on Moshier, flag 4. */
+static double ast_lt_start_ret(void)
+{
+  double x[6], y[6], r = -9;
+  const double jd = 2305424.5 + 1.0 / 64;
+  char serr[AS_MAXCH];
+  swe_ctx *c = swe_ctx_new(), *d = swe_ctx_new();
+  if (c != NULL && d != NULL) {
+    int32 f;
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "de200.eph");
+    swe_set_ephe_fallback_r(c, 1);
+    swe_set_ephe_path_r(d, EPHE);
+    f = swe_calc_r(c, jd, SE_CHIRON, SEFLG_JPLEPH, x, serr);
+    if (f >= 0 && swe_calc_r(d, jd, SE_CHIRON, SEFLG_MOSEPH, y, serr) >= 0
+        && (f == SEFLG_JPLEPH || fabs(swe_difdeg2n(x[0], y[0])) < 1e-9))
+      r = f;
+  }
+  if (c != NULL)
+    swe_ctx_free(c);
+  if (d != NULL)
+    swe_ctx_free(d);
+  return r;
+}
+
 /* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
  * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
  * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
@@ -7330,7 +7409,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -7512,6 +7591,9 @@ int main(int argc, char **argv)
   msgfar = far_msg_unreadable();
   moshrng = mosh_range_misnamed();
   speed3span = speed3_span_edge_off();
+  moonltstart = moon_lt_start_ret();
+  moshnodemargin = mosh_node_margin_ret();
+  astltstart = ast_lt_start_ret();
   sidtlrng = sidt_lterm_range_answered();
   fallmoonwin = fall_moon_window_off();
   topostarwin = topo_star_window_off();
@@ -9406,6 +9488,30 @@ int main(int argc, char **argv)
   else {
     printf("  horizon houses, south  %.0f houses FAIL: expected %s\n",
            horsouth, WANT_DEFECT ? ">= 1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moonltstart == SEFLG_JPLEPH) : (moonltstart == SEFLG_MOSEPH))
+    printf("  JPL Moon in de200's lt %.0f OK\n", moonltstart);
+  else {
+    printf("  JPL Moon in de200's lt %.0f FAIL: expected %s\n",
+           moonltstart, WANT_DEFECT ? "1" : "4");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshnodemargin == ERR) : (moshnodemargin == (SEFLG_MOSEPH | SEFLG_SPEED)))
+    printf("  Moshier node at margin %.0f OK\n", moshnodemargin);
+  else {
+    printf("  Moshier node at margin %.0f FAIL: expected %s\n",
+           moshnodemargin, WANT_DEFECT ? "-1" : "260");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (astltstart == SEFLG_JPLEPH) : (astltstart == SEFLG_MOSEPH))
+    printf("  JPL Chiron in de200's lt %.0f OK\n", astltstart);
+  else {
+    printf("  JPL Chiron in de200's lt %.0f FAIL: expected %s\n",
+           astltstart, WANT_DEFECT ? "1" : "4");
     bad++;
   }
 

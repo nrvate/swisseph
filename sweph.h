@@ -1787,6 +1787,19 @@ struct epsilon {
  *     right ascension 8.3e-5 deg/day off with IAU 1976 under Vondrak (the
  *     compat build reads its site at tjd - 1e-5 day only, across after
  *     the step: 6.0e-5) (UPSTREAM-BUGS 259, G170, G24)
+ *   - within its light time after an ephemeris's start the Moon's read
+ *     at the light-time instant past the span taken: on de200.eph the
+ *     Moon from zeroed vectors (the compat build's from an Earth never
+ *     read, the stack's), flag 1, strict answering; the files alone
+ *     refusing with the fallback allowed; two Moons at semo_18's edges;
+ *     an asteroid's Sun there overwritten by its read's OK (Chiron
+ *     0.0195 deg off, flag 1) and with SEFLG_SPEED a segfault
+ *     (UPSTREAM-BUGS 264, G171, G24)
+ *   - SEFLG_SPEED refused where the call without it answers: the
+ *     barycentric Sun's velocity and Moshier's Sun's Earth read at the
+ *     light-time instant past a start, Moshier's true node and apogee
+ *     reading speed epochs past its Moon's margins (UPSTREAM-BUGS 265,
+ *     G171, G24)
  *   - the houses of the ecliptic of t0 and the solar system plane
  *     returning in ascmc[2], and its speed, the auxiliary ARMC they are
  *     computed in: 3.90 deg off the ARMC on the solar system plane, 0.0043
@@ -2597,6 +2610,10 @@ struct swe_ctx {
    * a saved Earth made so (UPSTREAM-BUGS 120) */
   AS_BOOL moshmoon_used;
   double moshmoon_earth_t;
+  /* sweplan() takes Moshier's Moon even where a semo file holds the
+   * instant: the Moon's own reads, where its light time crosses a Moon
+   * file's edge (UPSTREAM-BUGS 264) */
+  AS_BOOL moshmoon_force;
   /* swe_nod_aps()'s reads for points the Moon does not reach, the Sun's
    * and the Earth's heliocentric and barycentric ones: Moshier's Moon taken
    * unrefused, as with the fallback (UPSTREAM-BUGS 192) */
