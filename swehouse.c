@@ -385,6 +385,29 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
   return swe_houses_ex2_r(swi_default_ctx(), tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
 }
 
+/* The houses of the ecliptic of t0 and of the solar system plane are
+ * computed in an auxiliary frame and moved to the sidereal plane, cusps and
+ * ascmc alike. Two points do not move with them: ascmc[2] is the ARMC of
+ * the date, as the caller gave it, not the auxiliary ARMC the houses were
+ * computed at; and whole signs, computed as equal houses in the auxiliary
+ * frame, start at the sidereal sign of cusp 1, 30 deg apart, and stand
+ * still. */
+static void sidereal_plane_fix(int hsys, double armc, double *cusp, double *ascmc,
+                               double *cusp_speed)
+{
+  int i;
+  ascmc[2] = armc;
+  if (toupper(hsys) == 'W') {
+    cusp[1] -= fmod(cusp[1], 30);
+    for (i = 2; i <= 12; i++)
+      cusp[i] = swe_degnorm(cusp[1] + (i - 1) * 30);
+    if (cusp_speed != NULL) {
+      for (i = 1; i <= 12; i++)
+        cusp_speed[i] = 0;
+    }
+  }
+}
+
 /*
  * houses to sidereal
  * ------------------
@@ -424,11 +447,14 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
 			   char *serr)
 {
   int i, j, retc = OK;
-  double x[6], xvpx[6], x2[6], epst0, xnorm[6];
+  double x[6], xvpx[6], x2[6], xc[3], epst0, xnorm[6];
   double rxy, rxyz, c2, epsx, sgn, fac, dvpx, dvpxe;
   double armcx;
   struct sid_data *sip = &ctx->sidd;
   int ito;
+  /* whole signs are computed as equal houses, then floored to their
+   * signs (sidereal_plane_fix()) */
+  int ihs = toupper(hsys) == 'W' ? 'E' : hsys;
   if (toupper(hsys) == 'G')
     ito = 36;
   else
@@ -477,22 +503,27 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
   /* auxiliary armc */
   armcx = swe_degnorm(armc - dvpx);        /* 3 */
   /* compute axes and houses: */
-  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, ihs, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
   if (retc < 0)
     ito = 12;		/* Porphyry: the sectors 13..36 stay 0 */
   /* distance between auxiliary vernal point and
-   * vernal point of t0 (a section on the sidereal plane) */
-  dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
-  if (tjde < sip->t0)
-    dvpxe = -dvpxe;
+   * vernal point of t0 (a section on the sidereal plane): the signed angle
+   * from the first to the second about the pole of the ecliptic of t0
+   * (xnorm, the plane's positive sense). It is about p (t - t0) + dpsi, so
+   * its sign is not the sign of t - t0 for some 130 days on one side of
+   * t0; and it passes 0 there, where acos() would lose its digits. */
+  swi_cross_prod(xvpx, x, xc);
+  dvpxe = atan2((xc[0] * xnorm[0] + xc[1] * xnorm[1] + xc[2] * xnorm[2]) / rxyz,
+                xvpx[0] * x[0] + xvpx[1] * x[1] + xvpx[2] * x[2]) * RADTODEG;  /* 5 */
   for (i = 1; i <= ito; i++)                     /* 6, 7 */
     cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0);
-  for (i = 0; i <= SE_NASCMC; i++) {
+  for (i = 0; i < SE_NASCMC; i++) {	/* the points; [8] is 0, [9] the Sun's declination */
     if (i == 2)	/* armc */
       continue;
     ascmc[i] = swe_degnorm(ascmc[i] - dvpxe - sip->ayan_t0);
   }
-  if (hsys == 'N') { /* 1 = 0° Aries */
+  sidereal_plane_fix(hsys, armc, cusp, ascmc, cusp_speed);
+  if (toupper(hsys) == 'N') { /* 1 = 0° Aries */
     for (i = 1; i <= ito; i++) {
       cusp[i] = (i - 1) * 30;
     }
@@ -538,6 +569,9 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   double armcx;
   struct sid_data *sip = &ctx->sidd;
   int ito;
+  /* whole signs are computed as equal houses, then floored to their
+   * signs (sidereal_plane_fix()) */
+  int ihs = toupper(hsys) == 'W' ? 'E' : hsys;
   if (toupper(hsys) == 'G')
     ito = 36;
   else
@@ -589,7 +623,7 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   /* auxiliary armc */
   armcx = swe_degnorm(armc - dvpx);        /* 3 */
   /* compute axes and houses: */
-  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, ihs, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
   if (retc < 0)
     ito = 12;		/* Porphyry: the sectors 13..36 stay 0 */
   /* distance between the auxiliary vernal point at t and
@@ -618,12 +652,13 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   x00 = x0[0] * RADTODEG;                       /* 7 */
   for (i = 1; i <= ito; i++)                     /* 6, 8, 9 */
     cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0 - x00);
-  for (i = 0; i <= SE_NASCMC; i++) {
+  for (i = 0; i < SE_NASCMC; i++) {	/* the points; [8] is 0, [9] the Sun's declination */
     if (i == 2)	/* armc */
       continue;
     ascmc[i] = swe_degnorm(ascmc[i] - dvpxe - sip->ayan_t0 - x00);
   }
-  if (hsys == 'N') { /* 1 = 0° Aries */
+  sidereal_plane_fix(hsys, armc, cusp, ascmc, cusp_speed);
+  if (toupper(hsys) == 'N') { /* 1 = 0° Aries */
     for (i = 1; i <= ito; i++) {
       cusp[i] = (i - 1) * 30;
     }

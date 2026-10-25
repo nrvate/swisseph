@@ -65,6 +65,7 @@ worst were in code that had never executed even once.
 | 31 | Values read from an ephemeris file's header and from the delta-psi and fixed-star tables index and size arrays unchecked | Memory | `sweph.c`, `swejpl.c` |
 | 32 | `swe_house_pos()` answers a place in the wrong house: Sripati 1.0 for all of house 12 and half of house 1, the horizon system counted backwards south of the equator | Correctness | `swehouse.c` |
 | 33 | `swe_gauquelin_sector()` methods 0 and 1 moved by SEFLG_SIDEREAL (2.6 sectors) and by the frame, form and centre flags (up to 18.4 sectors) | Correctness | `swecl.c` |
+| 34 | Sidereal houses on the ecliptic of t0 and the solar system plane (J2000, J1900, B1950 always): ascmc[2] the auxiliary ARMC, whole signs off the sidereal signs, a step of 2 dpsi at t0, ascmc[8] not 0 | Correctness | `swehouse.c` |
 
 ---
 
@@ -1837,6 +1838,64 @@ nutation reads the IERS table, absent); without that case 99 of 136 fail:
 30 of (a) (up to 3.42 sectors), all 9 of (b) (up to 23.0 deg outside), 60 of
 (c) (up to 18.0 sectors; SPEED, SPEED3 and ICRS on de200 pass). The golden
 transcript's sector rows do not move.
+
+## 34. Sidereal houses on the ecliptic of t0 and the solar system plane: ascmc[2] the auxiliary ARMC, whole signs 8.94 deg off the sidereal signs, a step of 2 dpsi at t0, ascmc[8] moved by up to 359 deg
+
+**Severity: Correctness (every house call with SE_SIDBIT_ECL_T0 or SE_SIDBIT_SSY_PLANE, and with the J2000, J1900 and B1950 modes, which always take the first: ascmc[2] 0.0043 to 3.90 deg off; whole signs up to 20.3 deg off; every cusp and ascmc 2 |dpsi| off for some 130 days on one side of t0; ascmc[8] nonzero)**
+**Where:** `swehouse.c`: `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`
+
+These houses are computed by `swe_houses_armc_ex2_r()` in an auxiliary
+frame, the true equator of date and the sidereal plane cut at the
+auxiliary vernal point, at the auxiliary ARMC (armc - dvpx), and moved to
+the sidereal plane by that point's sidereal longitude (dvpxe + ayan_t0, less
+the plane's zero point on the solar system plane). Measured at Zurich
+(47.37N, 8.55E), UT 2378496.5, 2433282.5, 2451545.0 and 2488069.5:
+
+- ascmc[2], documented as the ARMC (swephprg 15.4), was the auxiliary ARMC
+  the loop skipped: 4.27e-3 deg off the tropical call's on the user's
+  ecliptic of 1900 (t0 2415020.0) and J1900, 6.55e-3 on Lahiri's ecliptic of
+  t0, 8.51e-3 J2000, 3.904 on the solar system plane. Given it,
+  `swe_house_pos()` put the sidereal cusps' places (carried to the ecliptic
+  of date) off their numbers in the systems the manual says work there: on
+  the ecliptic of 1900 X 1.42e-4 house to H 3.10e-4, on the solar system
+  plane P 0.184 to C 0.339.
+- Whole signs ('W', 'w') were the auxiliary frame's signs moved by the
+  frames' offset: 30 deg apart but 8.94 deg off a sidereal sign start on the
+  ecliptic of 1900 and Lahiri's, 2.80 J1900 and J2000, 20.3 on the solar
+  system plane, and their speeds the Ascendant's and MC's, 621 to 650
+  deg/day. 0 Aries was set for `hsys == 'N'` only, so 'n' was moved off it,
+  by up to 25.3 deg.
+- dvpxe was `acos()`, 0 .. 180, negative before t0. It is about p (t - t0)
+  + dpsi, so for some 130 days on one side of t0 (where p (t - t0) and dpsi
+  differ in sign) its sign was wrong and every cusp and ascmc 2 |dvpxe|
+  off, a step of 2 dpsi at t0: the cusps against a construction by vectors
+  9.64e-3 deg off just before t0 on the ecliptic of 1900 and J1900, 7.74e-3
+  just after on J2000's, 9.32e-3 before on Lahiri's.
+- The loops that move ascmc ran `i <= SE_NASCMC` and moved ascmc[8], which
+  the manual gives as 0, by the frames' offset: at UT 2433282.5 336.84 deg
+  on the ecliptic of 1900 and Lahiri's, 359.30 J1900, 0.70 J2000, 340.40 on
+  the solar system plane.
+
+**Fix, as done here:** ascmc[2] is the ARMC the function was given (its speed
+was the ARMC's already). Whole signs are computed as equal houses in the
+auxiliary frame and moved; cusp 1 is then floored to its sign, cusp k is
+cusp 1 + 30 (k - 1), their speeds 0. 0 Aries is set for `toupper(hsys) ==
+'N'`. dvpxe is the signed angle from the auxiliary vernal point to t0's
+about the pole of the ecliptic of t0, by `atan2()`, continuous through t0.
+The two loops run `i < SE_NASCMC`. G43 `tests/sidplanehouses.c`, at Zurich:
+(a) six settings (the user's ecliptic of 1900 and solar system plane,
+Lahiri's both, J1900, J2000), four dates, ascmc[2] and its speed the
+tropical call's bit for bit, and for the user settings the carried
+sidereal cusps given ascmc[2] at their numbers in P R C H X within 1e-7
+house (9.26e-9; 16 checks); (b) 'W' 'w' 'N' 'n' 'E' 'A' 'D' 'V' there at
+their definitions within 1e-9 deg (1.1e-13), the whole signs' speeds 0
+(48); (c) the ecliptic of 1900, J1900, J2000 and Lahiri's at TT t0 -+ 2^-20
+.. 200 days, Regiomontanus and Campanus cusps against the vector
+construction within 1e-11 deg (2.3e-13; 4); (d) ascmc[8] and its speed 0,
+ascmc[9] the tropical call's, in 'P' 'I' 'G' 'W' (6). Before the fix 44 of
+the 74 fail: all 16 of (a), 18 of (b) ('W', 'w' and 'n' in each setting),
+all of (c) and (d). The golden transcript's cov:hsys_sid[eclt0] row (Lahiri,
+J2000) moves by 5.0e-13 deg, the `acos()`'s rounding.
 
 ## How these were found
 
