@@ -1383,6 +1383,11 @@ struct epsilon {
  *     double past 4e8 days, some 1e14" there: dpsi 9.5e-9 deg off the
  *     series in long double at 8e8 to 1e9 days, jittering by 4e-9 deg
  *     between instants 2^-12 day apart (UPSTREAM-BUGS 188, G140)
+ *   - swe_calc(SE_ECL_NUT) answering any date with its flags: past |J|
+ *     1e12 days, where the series leave the residual floor, the true and
+ *     mean obliquity NaN from 1.3e60, dpsi 1.2e72 deg at 1e82 and NaN from
+ *     4e82, NaN at -+inf and NaN, the empty caches' zeros at -1e300
+ *     (UPSTREAM-BUGS 196, G152, G24)
  *   - the path setter and swe_close() reading the kept JPL file again only
  *     when its DE number had been read, not when swe_set_jpl_file() had
  *     named it and failed along the path then set: after a path without

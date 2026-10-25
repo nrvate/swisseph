@@ -3824,6 +3824,28 @@ static double nut_args_jitter(void)
   return worst;
 }
 
+/* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
+ * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
+ * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
+ * Moshier, the default models; the number answered with the flags. The
+ * shipped build refuses all 7; upstream answers all 7. */
+static double ecl_nut_far_answered(void)
+{
+  static const double tq[7] = { 1e13, 1e82, 1e84, -1e300, INFINITY, -INFINITY, NAN };
+  double x[6];
+  char serr[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 7; i++) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    if (swe_calc_r(c, tq[i], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) >= 0)
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
 /* UPSTREAM-BUGS 163: the nutation's rate far from J2000. The Sun's right
  * ascension speed minus the same with SEFLG_NONUT under IAU 2000A set
  * explicitly, against a five-point difference of the same two calls'
@@ -5156,7 +5178,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5314,6 +5336,7 @@ int main(int argc, char **argv)
   nutjitter = nut_args_jitter();
   housewin = house_window_speed_off();
   nodewin = node_window_speed_off();
+  eclnutfar = ecl_nut_far_answered();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -6637,6 +6660,14 @@ int main(int argc, char **argv)
   else {
     printf("  true node across a window %.2e deg/day FAIL: expected %s\n",
            nodewin, WANT_DEFECT ? "> 1e-5" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (eclnutfar == 7) : (eclnutfar == 0))
+    printf("  SE_ECL_NUT past 1e12   %.0f/7 answered OK\n", eclnutfar);
+  else {
+    printf("  SE_ECL_NUT past 1e12   %.0f/7 answered FAIL: expected %s\n",
+           eclnutfar, WANT_DEFECT ? "7" : "0");
     bad++;
   }
 

@@ -340,6 +340,10 @@ char *CALL_CONV swe_get_library_path(char *s)
 }
 #endif	// NO_SWE_GLP
 
+#ifndef SWE_UPSTREAM_COMPAT
+#define SWI_ECL_NUT_JMAX 1e12	/* |J| SE_ECL_NUT answers, days (bug 196) */
+#endif
+
 /* The routine called by the user.
  * It checks whether a position for the same planet, the same t, and the
  * same flag bits has already been computed. 
@@ -411,6 +415,27 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * perturbation and therefore crashes with body 134340 Pluto. */
   if (ipl == SE_AST_OFFSET + 134340)
     ipl = SE_PLUTO;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 196: SE_ECL_NUT took any date and answered it with its
+   * flags. On Moshier, the default models: the true and mean obliquity NaN
+   * from |J| 1.3e60 days (Vondrak 2011's polynomials overflow), dpsi 1.2e72
+   * deg at 1e82 and NaN with deps from 4e82 (the series' T^4 arguments),
+   * NaN at -+inf and NaN, and at -1e300, the empty caches' SWI_TJD_NEVER,
+   * the zeros of caches never filled. Refused now, before any cache is
+   * read, past |J| = SWI_ECL_NUT_JMAX, 1e12 days: past it the series as
+   * evaluated (double-double arguments, bug 188) leave the residual floor
+   * -- IAU 2000B 6.8e-11 deg off the series at 3e11..1e12, 1.5e-7 at
+   * 1e12..3e12, 2.2 deg at 3e13..1e14, noise beyond -- and by 1.4e12 their
+   * main term's amplitude is 180 deg; 1e12 is swi_nutation_rate()'s guard
+   * for absurd dates already. Within it all four are finite under every
+   * model (G152). */
+  if (ipl == SE_ECL_NUT && !(tjd >= -SWI_ECL_NUT_JMAX && tjd <= SWI_ECL_NUT_JMAX)) {
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "jd %.10g outside the obliquity and nutation range %g .. %g",
+               tjd, -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+    goto return_error;
+  }
+#endif
   /* if ephemeris flag != ephemeris flag of last call,
    * we clear the save area, to prevent swecalc(ctx) using
    * previously computed data for current calculation.

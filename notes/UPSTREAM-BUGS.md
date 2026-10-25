@@ -227,6 +227,7 @@ worst were in code that had never executed even once.
 | 187 | `swe_houses_ex2()`'s cusp and ascmc speeds take the ARMC's, the obliquity's and the sidereal houses' ayanamsa's and auxiliary frames' rates as differences 1/64 day either side, across a short-term precession window's edge within 1/64 day of it: every speed 2.1e-3 to 8.1e-3 deg/day off with IAU 1976 under Vondrak (4.65e-5 with the IERS 2010 sidereal time, the obliquity's step alone), sidereal 3.9e-3 to 5.1e-3, 0.58 with IAU 2006 at 75 centuries | Correctness | `swehouse.c` |
 | 197 | A save-area answer skips entry 120's strict test, which read the setting of the call that filled the area: the semo files missing, Mars at 1500 answered 258 with the fallback allowed and again 258 from the area after `swe_set_ephe_fallback(0)` (or another thread's setting adopted), where a fresh strict context refuses it (-1); every Earth-seen body the area answers, `swe_calc_ut()` too | Correctness (behaviour) | `sweph.c` |
 | 198 | The star functions with SEFLG_JPLEPH outside the JPL file's span return `main_planet_bary()`'s BEYOND_EPH_LIMITS as their error: on de200.eph at 1500 and 2406, the fallback allowed, Aldebaran -1 "outside JPL eph. range" by all four functions, where `swe_calc()` of Mars falls to Moshier and answers 260; strict, that message, not the downgrade's; and a fallen star went on with the ephemeris bits asked: de200's frame (2.3e-6 deg off the Moshier request), and a heliocentric star fallen to Moshier without the Sun's barycentric place (7.8e-8 deg) | Correctness (behaviour) | `sweph.c` |
+| 196 | `swe_calc(SE_ECL_NUT)` takes any date and answers it with its flags, where no other body is answered past the mean node's -3100015.5 .. 8000016.5: on Moshier under the default models the true and mean obliquity NaN from 1.3e60 days, dpsi 1.2e72 deg at 1e82 and NaN with deps from 4e82, NaN at -+inf and NaN, and at -1e300 (the empty caches' SWI_TJD_NEVER) the zeros of caches never filled, under every nutation model; past 1e12 days the series as evaluated leave the residual floor (IAU 2000B 1.5e-7 deg off at 1e12 to 3e12, 2.2 deg at 3e13 to 1e14, noise beyond) | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -13592,6 +13593,153 @@ Noticed, not fixed:
   Moshier's places: Mars at 1500 3.5e-4 deg off the Moshier request,
   Aldebaran 3.5e-4 at 1500 and 1.4e-5 at 2000; fallen to the Swiss files
   the same (524546).
+
+## 196. `swe_calc(SE_ECL_NUT)` takes any date and answers it with its flags: dpsi 1.2e72 deg at 1e82 days, NaN from 4e82, the obliquities NaN from 1.3e60, NaN at -+inf and NaN, zeros at -1e300
+
+**Severity: Correctness (behaviour: NaN, or a value no evaluation of the models gives, returned with the call's flags and no error, from `swe_calc()` and `swe_calc_ut()` with SE_ECL_NUT, every nutation and precession model, both builds)**
+**Where:** `sweph.c`: `swe_calc_r_body()`
+
+Entry 188's noticed item. SE_ECL_NUT is the one body `swe_calc()` takes
+at any date: the widest range of any other is the mean node's and
+apogee's, -3100015.5 .. 8000016.5 (`MOSHNDEPH_START`, `_END`; Moshier's
+planets 625000.5 .. 2818000.5), refused with "jd ... outside ... range".
+Measured on Moshier, a fresh context each, the default models, returned
+flags 4 (2 under SEFLG_SWIEPH), true obliquity, mean obliquity, dpsi,
+deps in deg:
+- at 1e12, the bound kept below: 55.9356, 51.4679, 84.4936, 4.46779;
+  past it, 1e13: 45.7077, 51.4665, -1293.91, -5.7588; 1e20: -5.6e8,
+  51.4663, 1.17e10, -5.6e8;
+- the mean obliquity, and with it the true, NaN from |J| 1.3e60 (Vondrak
+  2011's pole polynomials overflow; 90 at 1e40, 45 at 1e60); dpsi
+  1.22481e72 at 1e82, dpsi and deps NaN from 4e82 (the arguments' T^4
+  term);
+- +-inf and NaN: all four NaN;
+- -1e300, which is `SWI_TJD_NEVER`, the empty caches' instant: 0, 0, 0, 0,
+  the obliquity's and the nutation's caches matching it and never filled.
+IAU 1980, 1987, 2000A, 2000B and Woolard alike (IAU 1980's dpsi still
+finite at 1e84, -3.4e73 deg, NaN at 1e300).
+
+Where to stop, measured. The series as the library evaluates them (bug
+188's double-double arguments past 4e8 days) against the IAU 2000B series
+evaluated in mpmath at 400 bits at the same double J (its 77 terms read
+from swenut2000a.h), 16 instants a band, either sign, dpsi and deps, deg:
+6.0e-13 and 1.2e-14 at 1e11 to 3.2e11, 6.8e-11 and 2.4e-11 at 3.2e11 to
+1e12; then 1.5e-7 and 6.2e-10 at 1e12 to 3.2e12, 1.3e-5 at 3.2e12 to
+1e13, 1.0e-3 at 1e13 to 3.2e13, 2.2 deg at 3.2e13 to 1e14, 537 deg at 1e14
+to 3.2e14, noise beyond. The arguments themselves against mpmath: 2.6e-11
+rad at 5.6e11 to 1e12, 7.5e-8 at 5.6e12 to 1e13, 1.7e-3 at 5.6e13 to 1e14,
+1.6 rad at 3.2e14 to 5.6e14 (their T^4 terms, some 1e30" at 1e13, past
+double-double's 32 digits). So the series leave the residual floor at
+1e12; and by 1.36e12 days the main term's amplitude, 17.2" + 0.0175" T,
+is 180 deg, no small rotation. 1e12 is `swi_nutation_rate()`'s guard for
+absurd dates already. Within it every model is finite: 86400 calls, the
+six nutation models by the eleven long-term precession models and the
+default, five short-term settings, and Moshier, SEFLG_JPLHOR_APPROX,
+SEFLG_JPLHOR and SEFLG_NONUT, at +-1e12 and |J| log-uniform over
+1e7..1e12: none non-finite, |dpsi| up to 136 deg. A physical bound
+(Vondrak 2011 is fitted over -+200000 years, 7.3e7 days; its mean
+obliquity is 64.6 deg at 4e8) or the mean node's range would refuse what
+entries 152 and 188 made the series answer to the floor, which G140
+checks out to 1e9 and G29 to 1e12.
+
+**Fix, as done here:** `swe_calc()` (and so `swe_calc_ut()`) refuses
+SE_ECL_NUT at a TT date past |J| = `SWI_ECL_NUT_JMAX`, 1e12 days, and at
+-+inf and NaN (the test is `!(tjd >= -1e12 && tjd <= 1e12)`): ERR, the
+six outputs 0 as `swe_calc()` zeroes them, serr "jd 1e+13 outside the
+obliquity and nutation range -1e+12 .. 1e+12" (the date by `%.10g`, so
+no date overruns serr). It is tested first, before the ephemeris switch,
+the save area and the obliquity's and nutation's caches are read, so a
+refusal leaves nothing behind and -1e300 matches no cache. Behind
+`#ifndef SWE_UPSTREAM_COMPAT`.
+- After: every date past the bound refused; within it nothing changes,
+  bit for bit: 48000 calls (fifteen model sets, eight flag sets, +-1e12,
+  J2000, 0, the mean node's range's ends, |J| log-uniform over 1e5..1e12
+  and uniform over J2000 -+ 1.1e7) identical to the tip's, and G140,
+  G122, G138, G89, G57, G68 and G70 print the tip's transcript.
+- `swe_azalt()` and `swe_azalt_rev()` take the true obliquity from
+  SE_ECL_NUT at TT and do not read its return: past the bound they turn
+  by 0 now where they turned by the absurd or NaN obliquity (noticed
+  below; they have no error to return).
+- Cost, `perf stat -e instructions:u`, bench's calc-moseph and
+  calc-swieph (one repetition): 23340857332 and 12273178915 before,
+  23341097091 and 12273418694 after (+0.001%, +0.002%).
+
+G152 `tests/eclnutrange.c`: (a) SE_ECL_NUT at 23 dates (|J| the next
+double past 1e12, 1.5e12, 1e13, 1e14, 1e20, 1e60, 1e82, 1e84, 1e300,
+DBL_MAX and inf, either sign, and NaN) under the six nutation models and
+five flag sets, each twice on a fresh context, and `swe_calc_ut()` at UT
+1e12 (TT 1.28e12), 1e13, -inf and NaN: ERR, outputs 0, the range named;
+(b) at -+1e12, the doubles next inside, 40 instants over |J| 1e7..1e12
+under the six nutation models by the twelve precession settings and three
+flag sets: OK and finite; (c) J2000 and 1e12 after refusals at 1e13,
+-1e300 and NaN against a fresh context, bit for bit. Measured: 1384 of
+1384 refused, 9504 of 9504 finite, 0 values differ. Before the fix and in
+the upstream build 0 of 1384 refused; (b) and (c) pass. G29
+`tests/nutgrid.c`: its 729 instants past 1e12 of the 4000 over |J|
+1e7..1e13 are checked refused by both contexts, the rest compared as
+before: 0.5714 and 0.2129 uas, the tip's. G24 `ecl_nut_far_answered`:
+SE_ECL_NUT at 1e13, 1e82, 1e84, -1e300, -+inf and NaN, a fresh context
+each, the number answered with its flags: 0 of 7 shipped (7 before the
+fix), 7 of 7 compat.
+
+Noticed, not fixed (`swe_*` called at J = 1e12, 1e20, 1e84, -+1e300, -+inf
+and NaN, one process each, 10 s cap, Moshier and Swiss):
+- BEHAVIOUR. `swe_sidtime()` under the default SEMOD_SIDT_LONGTERM
+  integrates the precession's rate from the end of `sidt_pra()`'s
+  400-century table in 10-century panels on every call: 0.02 s at J 1e8,
+  0.11 s at 1e9, 1.0 s at 1e10, past the 10 s cap at 1e12, and with it
+  `swe_houses_ex2()`, `swe_azalt()`, `swe_azalt_rev()` and
+  `swe_gauquelin_sector()`. Past |J| 7.8e14 its panel count `(int)
+  ceil(fabs(b - a) / 10.0)` overflows (float-cast-overflow) and it ends;
+  at -1e300 and -inf (TT NaN) `k = (int) floor(x)` of NaN indexes
+  `pt->a[side][INT_MIN]`: SIGSEGV, in all five.
+- BEHAVIOUR. `swe_calc()` of the mean node and apogee, the Moshier
+  planets, Moon and fictitious bodies, `swe_nod_aps()` and
+  `swe_fixstar2()` on Moshier refuse a far date with `sprintf(s, "jd %f
+  outside ...")` into a 256-byte buffer: from |J| 1e195 the date's digits
+  overrun it (glibc's fortify aborts, "buffer overflow detected").
+- BEHAVIOUR. A NaN date passes `J < START || J > END`: the mean node,
+  apogee and the Moon's mean points (`swe_nod_aps()`) SIGSEGV in
+  `corr_mean_node()` and `corr_mean_apog()`, their tables indexed by
+  `(int) floor(NaN)`; SE_CUPIDO on
+  Moshier answers flags 260, `swe_nod_aps()` of Mars's mean points 0,
+  `swe_fixstar2()` on Moshier 4, `swe_gauquelin_sector()` 0, all NaN.
+- BEHAVIOUR. `swe_get_ayanamsa_ex()` and its `_ut` form answer OK
+  flags with 121.4 deg at 1e12 (Lahiri), 1.17e10 deg at 1e20 (it adds
+  dpsi), NaN at 1e84, -+1e300, -+inf and NaN.
+- BEHAVIOUR. `swe_houses_ex2()` at 1e20 and beyond: ERR with "within
+  polar circle, switched to Porphyry" at latitude 50 (the obliquity 51.47
+  deg), its cusps filled, NaN from 1e84 and at +inf and NaN, the ascendant
+  speed NaN at 1e20.
+- BEHAVIOUR. `swe_sidtime()`, `swe_sidtime0()`, `swe_azalt()`,
+  `swe_azalt_rev()` (no error to return) give NaN at 1e84, +1e300, +inf
+  and NaN; `swe_deltat_ex()` 0 at NaN with no serr, inf or NaN at
+  -+1e300.
+- BEHAVIOUR. On the Swiss files past |J| 7.8e11 the file name is made
+  from `swe_revjul()`'s year cast to int (float-cast-overflow): "SwissEph
+  file 'seplm21474840.se1' not found" for `swe_fixstar2()` and
+  `swe_nod_aps()` at 1e12 to 1e300.
+- BEHAVIOUR. Every long-term precession model but Vondrak 2011 is a
+  polynomial in T whose mean obliquity leaves 0..180 deg at |J| 0.8e7 to
+  3.2e7 days (Simon 1994 at -8.0e6, IAU 2006 at 1.38e7, Williams 1994 at
+  3.15e7, back inside near 7.5e7), past the mean node's range and within
+  this bound: SE_ECL_NUT answers it, Laskar 1986 1.6e51 deg at 1e12, IAU
+  2006 -1.9e26, Owen 1990 3.5e46; the houses take the same
+  `swi_epsiln()`.
+- BEHAVIOUR. SE_ECL_NUT with SEFLG_NONUT answers the nutation cached for
+  the last date asked without it: at 2460000.5 after J2000, dpsi
+  -0.003870001 and deps -0.001602611 deg (J2000's) and the true obliquity
+  23.434664974 for the mean 23.436267584; both builds.
+- RESIDUAL. IAU 1980 and 1987, and SEFLG_JPLHOR's IAU 1980, evaluate
+  their arguments in double, T^3 terms included (bug 188's for 2000A and
+  2000B): against mpmath 0.009" at 1e9 days, 0.093" at 1e10, 124" at
+  1e11, 0.029 rad at 3e11, 1.38 rad at 1e12; above the floor in dpsi from
+  about 1e9 (some 6e-9 deg there, by the main term's amplitude, estimated
+  not measured), noise near the bound.
+- RESIDUAL. IAU 2000B as implemented leaves out the published fixed
+  offsets for the planetary terms (McCarthy and Luzum 2003; SOFA nut00b's
+  -0.135 and +0.388 mas): 3.75e-8 deg in dpsi and 1.08e-7 in deps at
+  every date, both builds.
 
 ## How these were found
 

@@ -30,7 +30,9 @@
  * deg (3.6 uas), the residual floor. Measured 0.57 uas (1.6e-10 deg; the
  * series' own rounding there, as far from a long double evaluation of
  * it), and 0 beyond 4e8; before the fix 2.4e35 uas, near 1e12. The compat
- * build, whose default is 2000B, fails it too (1.4e10 uas).
+ * build, whose default is 2000B, fails it too (1.4e10 uas). Past |J| 1e12
+ * SE_ECL_NUT refuses (UPSTREAM-BUGS 196): the 729 instants there are
+ * checked refused, by both contexts, the rest compared as before.
  * Moshier, no files. Run as
  *   nutgrid
  */
@@ -69,10 +71,19 @@ int main(void)
     if (wl > 0.05 || wo > 0.05) bad++;
   }
   {
-    /* far from J2000: within the 1e-9 deg floor, |J| out past the guard */
+    /* far from J2000: within the 1e-9 deg floor, |J| out past the guard;
+     * past 1e12, refused (UPSTREAM-BUGS 196) */
     double wl = 0, wo = 0;
+    int nfar = 0, nref = 0;
     for (i = 0; i < 4000; i++) {
       double t = (i & 1 ? -1 : 1) * pow(10.0, 7.0 + 6.0 * (rand() / (double) RAND_MAX));
+      if (fabs(t) > 1e12) {
+        nfar++;
+        if (swe_calc_r(cg, t, SE_ECL_NUT, SEFLG_MOSEPH, g, serr) < 0 && g[2] == 0 &&
+            swe_calc_r(cd, t, SE_ECL_NUT, SEFLG_MOSEPH, d, serr) < 0 && d[2] == 0)
+          nref++;
+        continue;
+      }
       if (swe_calc_r(cg, t, SE_ECL_NUT, SEFLG_MOSEPH, g, serr) < 0 ||
           swe_calc_r(cd, t, SE_ECL_NUT, SEFLG_MOSEPH, d, serr) < 0) {
         printf("  ERROR %s\n", serr);
@@ -81,8 +92,9 @@ int main(void)
       if (fabs(g[2] - d[2]) * 3.6e9 > wl) wl = fabs(g[2] - d[2]) * 3.6e9;
       if (fabs(g[3] - d[3]) * 3.6e9 > wo) wo = fabs(g[3] - d[3]) * 3.6e9;
     }
-    printf("  %-14s worst dpsi %.4g uas, deps %.4g uas (limit 3.6)\n", "|J| 1e7..1e13", wl, wo);
-    if (!(wl <= 3.6 && wo <= 3.6)) bad++;
+    printf("  %-14s worst dpsi %.4g uas, deps %.4g uas (limit 3.6)\n", "|J| 1e7..1e12", wl, wo);
+    printf("  %-14s %d of %d refused\n", "|J| 1e12..1e13", nref, nfar);
+    if (!(wl <= 3.6 && wo <= 3.6) || nref != nfar) bad++;
   }
   swe_ctx_free(cg);
   swe_ctx_free(cd);
