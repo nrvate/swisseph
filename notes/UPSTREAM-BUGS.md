@@ -138,6 +138,7 @@ worst were in code that had never executed even once.
 | 103 | Files closed and reopened when nothing changed (the implicit `SE_EPHE_PATH` path after any setter, the same path or JPL file again, an ephemeris switch, another thread's JPL file), and `swe_deltat()`'s ephemeris guessed from the files this thread has open (partly this fork's) | Correctness, performance | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h` |
 | 105 | `swe_nod_aps()`'s osculating ellipses take the Astronomical Almanac's GM, not the ephemeris's, and Pluto Mercury's mass | Correctness | `swecl.c`, `sweph.c`, `sweph.h` |
 | 102 | Moshier's light time holds the Sun still: v_S tau left out of every place without aberration and every heliocentric one | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
+| 107 | With the files named by `SE_EPHE_PATH`, a first call that reads a file before `swe_calc()` names the path reads it along the compiled default path, and some read it twice: delta t, sidereal time, houses, stars, ayanamsa, eclipses, leap seconds, a JPL file | Correctness, performance | `sweph.c`, `swephlib.c`, `swedate.c` |
 
 ---
 
@@ -6137,7 +6138,8 @@ Noticed, not fixed: with the files named by `SE_EPHE_PATH`, the first
 path, so it reads `swe_deltat.txt` along the compiled default path: with
 a `swe_deltat.txt` giving 70.0 s for 2000 in the `SE_EPHE_PATH`
 directory, the first Moon at 2000 Jan 1 12h was 223.323751 deg and the
-second 223.324610 (8.6e-4 deg); and the table is read twice.
+second 223.324610 (8.6e-4 deg); and the table is read twice. Fixed in
+entry 107.
 
 G102 `tests/keepopen.c`: the seven counted rounds, each answer against a
 fresh process within 1e-12, and the three guess cases: 10 pass. Before the
@@ -6351,6 +6353,68 @@ fix fails G77's nine Moshier rows by 3.0e-6 deg, G52's twelve by 8.2 to
 heliocentric on Moshier against the files, five dates 1900..2100, 1.9e-10
 deg shipped (2.8e-6 before the fix), 1.25e-5 compat. G24, G52, G63, G84,
 G77 and G33 pass.
+
+## 107. With the files named by `SE_EPHE_PATH`, a first call that reads a file before `swe_calc()` names the path reads it along the compiled default path, and some read it twice
+
+**Severity: Correctness (returned values: 6.17 s of delta t, 8.6e-4 deg on the Moon, 7.6e-5 deg of altitude, 3.9e-9 deg on the house cusps) and performance (files opened twice)**
+**Where:** `sweph.c`: `swi_fopen()`, `open_jpl_file()`, `swe_set_ephe_path_r()` (its moon-header pre-open, now `ephe_path_read_moon()`), `swi_ephe_path_name_first_use()`; `swephlib.c`: `calc_deltat()`, `swi_get_tid_acc()`; `swedate.c`: `init_leapsec()`
+
+With no `swe_set_ephe_path()` call, the path is the one `SE_EPHE_PATH`
+names, set by the first `swe_calc()` (and, since entry 98, the first
+star function). Everything that reads a file before that ran along
+whatever the context held: a context not yet initialised has no path, so
+`swe_deltat.txt` and `seleapsec.txt` were looked up along the compiled
+default (`.:/users/ephe2/:/users/ephe/`), and the initialisation that
+came after wiped what had been read, so it was read again. G106 puts the
+files in a directory of links with its own `swe_deltat.txt` (70.0 s for
+2000-2002, against the built-in 63.83 s at J2000), names it by
+`SE_EPHE_PATH`, and calls each entry point first, twice, in a fresh
+process, against `swe_set_ephe_path()` of the same directory:
+
+| First call | Opens outside the path | Off the explicit path |
+|---|---|---|
+| `swe_calc_ut()` Moon | 6 | 8.6e-4 deg (the second call 0) |
+| `swe_deltat()`, `swe_deltat_ex()` | 6 | 6.17 s |
+| `swe_sidtime()` | 8 | 1.76e-10 h |
+| `swe_houses()`, `swe_houses_ex2()` | 8, 6 | 3.9e-9 deg |
+| `swe_azalt()` after the Sun | 6 | 7.6e-5 deg |
+| `swe_fixstar_ut()`, `swe_fixstar2_ut()` | 6 | 2.9e-6, 1.4e-6 deg (the second call 0) |
+| `swe_get_ayanamsa_ut()`, `_ex_ut()` | 6 | 2.7e-9, 2.9e-9 deg |
+| `swe_lun_eclipse_how()` | 6 | 5.6e-4 (magnitude) |
+| `swe_rise_trans()` Sun | 6 | (under 1e-12) |
+| `swe_pheno_ut()` Moon | 6 | 7.8e-4 deg |
+| `swe_utc_to_jd()` (`seleapsec.txt`) | 3 | 6.7e-5 day of UT1 |
+| `swe_set_jpl_file("de200.eph")` + JPLEPH Mars | 9, the file opened twice | 5.5e-5 deg |
+
+`swe_calc()`, the eclipse searches, `swe_heliacal_ut()` and
+`swe_fixstar2_mag()` named the path before reading and pass. Upstream's
+own (legacy-master: 17 of the 22 fail, the star functions without the
+catalogue as in entry 98).
+
+**Fix, as done here** (behind `#ifndef SWE_UPSTREAM_COMPAT`):
+
+- The path is named at the first file a context opens along its path
+  (`swi_fopen()` with the context's path, `open_jpl_file()` with it) or
+  the first tidal term it takes from the moon file (`swi_get_tid_acc()`
+  for SWIEPH), so before anything is read: `SE_EPHE_PATH` resolved, the
+  moon file's header read for its DE number as `swe_set_ephe_path()`
+  does, local and marked implicit as `swi_set_ephe_path_implicit()`
+  marks it. Nothing is closed, as nothing is open; the tidal term of the
+  request under way is left as it was resolved. The later implicit-path
+  sites then find a path and do nothing.
+- `calc_deltat()` initialises a context first, and `init_leapsec()` too,
+  so a table is read once, into an initialised context, along its path.
+  The "Please call swe_set_ephe_path()" note on a first delta t is kept.
+
+G106 `tests/firstpath.c`: the 22 first calls, no open outside the path,
+no file opened twice, the first answer equal to the second and to the
+explicit path's within 1e-12: 22 pass. Before the fix 16 fail, the
+compat build 17 (its star functions also lose the catalogue, entry 98),
+the upstream build 17. G24 `calc_ut_first_path_off`: 0 deg shipped,
+8.59e-4 deg compat. G24, G81, G82, G91, G97, G100, G102 (its open counts
+0), G2 and the context gate pass. Instructions (perf, the bench
+workloads): `houses` 19566.2M for 19569.6M (+0.017 %), the others +6k of
+12-23G.
 
 ## How these were found
 

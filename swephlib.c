@@ -3112,11 +3112,22 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
   double B, Y, Ygreg, dd;
   int iy;
   int32 retc;
-  int deltat_model = ctx->astro_models[SE_MODEL_DELTAT];
+  int deltat_model;
   double tid_acc;
   int32 denum, denumret;
   int32 epheflag, otherflag;
   int islot;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 107: a context first used for delta t was initialised
+   * after it -- by the iflag branch below, or by swe_sidtime() and others
+   * after their delta t with iflag -1 -- so swe_deltat.txt was read along
+   * the compiled default path and then wiped by the initialisation, and
+   * read again. Initialised first, it is read once, along the path. */
+  AS_BOOL started = FALSE;
+  if (!ctx->swed_is_initialised)
+    started = (swi_init_swed_if_start(ctx) == 1);
+#endif
+  deltat_model = ctx->astro_models[SE_MODEL_DELTAT];
 //fprintf(stderr, "dmod=%f, %.f\n", (double) deltat_model, (double) SEMOD_DELTAT_DEFAULT);
   if (deltat_model == 0) deltat_model = SEMOD_DELTAT_DEFAULT;
   epheflag = iflag & SEFLG_EPHMASK;
@@ -3137,7 +3148,11 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
      * F1). The resolver's fallback alone keeps delta-t independent of
      * which files are open. */
     if (epheflag & SEFLG_SWIEPH) denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
+#ifndef SWE_UPSTREAM_COMPAT
+    if ((swi_init_swed_if_start(ctx) == 1 || started) && !(epheflag & SEFLG_MOSEPH)) {
+#else
     if (swi_init_swed_if_start(ctx) == 1 && !(epheflag & SEFLG_MOSEPH)) {
+#endif
       if (serr != NULL) 
 	strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_deltat_ex()");
       retc = swi_set_tid_acc(ctx, tjd, epheflag, denum, NULL);  /* _set_ saves tid_acc in swed */
@@ -3982,6 +3997,11 @@ int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, int
     }
     /* SEFLG_SWIEPH wanted or SEFLG_JPLEPH failed: */
     if (iflag & SEFLG_SWIEPH) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 107: a first delta t from the moon file named by
+       * SE_EPHE_PATH, not from no file at all (see sweph.c) */
+      swi_ephe_path_name_first_use(ctx);
+#endif
       if (ctx->fidat[SEI_FILE_MOON].fptr != NULL) {
 	denum = ctx->fidat[SEI_FILE_MOON].sweph_denum;
       } else if (denum == 0 && ctx->sweph_denum_moon != 0) {

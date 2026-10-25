@@ -783,6 +783,62 @@ static double dt_userdef_first_off(void)
   return v;
 }
 
+/* The first swe_calc_ut() Moon at J2000 against the second, deg, with the
+ * files named by SE_EPHE_PATH: a directory of links to them plus its own
+ * swe_deltat.txt (70 s over 2000-2002). Upstream's first delta t reads the
+ * table along the compiled default path, before swe_calc() sets the
+ * implicit one, and takes the built-in 63.83 s: 8.6e-4 deg (UPSTREAM-BUGS
+ * 107). Pristine library, so forked first in main(), as above. */
+static double calc_ut_first_path_off(void)
+{
+  static const char *F[] = { "sepl_18.se1", "semo_18.se1", "seas_18.se1" };
+  char dir[] = "/tmp/compat-fp-XXXXXX", ephe[PATH_MAX], p[PATH_MAX + 32], q[sizeof dir + 32];
+  int fd[2];
+  unsigned j;
+  double v = -1;
+  pid_t pid;
+  FILE *fp;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL)
+    return -1;
+  for (j = 0; j < sizeof F / sizeof F[0]; j++) {
+    snprintf(p, sizeof p, "%s/%s", ephe, F[j]);
+    snprintf(q, sizeof q, "%s/%s", dir, F[j]);
+    if (symlink(p, q) != 0)
+      return -1;
+  }
+  snprintf(q, sizeof q, "%s/swe_deltat.txt", dir);
+  if ((fp = fopen(q, "w")) == NULL)
+    return -1;
+  fputs("2000 70.0\n2001 70.0\n2002 70.0\n", fp);
+  fclose(fp);
+  if (pipe(fd) == 0) {
+    fflush(stdout);
+    if ((pid = fork()) == 0) {
+      double x[2][6], d;
+      char serr[256];
+      close(fd[0]);
+      setenv("SE_EPHE_PATH", dir, 1);
+      swe_calc_ut(2451545.0, SE_MOON, SEFLG_SWIEPH, x[0], serr);
+      swe_calc_ut(2451545.0, SE_MOON, SEFLG_SWIEPH, x[1], serr);
+      d = fabs(swe_difdeg2n(x[0][0], x[1][0]));
+      _exit(write(fd[1], &d, sizeof d) == (ssize_t) sizeof d ? 0 : 3);
+    }
+    close(fd[1]);
+    if (pid < 0 || read(fd[0], &v, sizeof v) != (ssize_t) sizeof v)
+      v = -1;
+    close(fd[0]);
+    if (pid > 0)
+      waitpid(pid, NULL, 0);
+  }
+  unlink(q);
+  for (j = 0; j < sizeof F / sizeof F[0]; j++) {
+    snprintf(q, sizeof q, "%s/%s", dir, F[j]);
+    unlink(q);
+  }
+  rmdir(dir);
+  return v;
+}
+
 /* Venus's limiting magnitude at humidity 80 % right after one at 40 %,
  * same instant and place, against the same request with the memos elsewhere
  * first, mag. Upstream's ka() and Deltam() memos are keyed on the Sun's
@@ -2141,13 +2197,14 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
 
   dtfirst = dt_userdef_first_off();   /* first: it needs a pristine library */
+  dtpath = calc_ut_first_path_off();  /* so does this */
   nodmosh = nodaps_mosh_lat_off();
 
   contam = jplhor_contaminates();
@@ -2543,6 +2600,14 @@ int main(int argc, char **argv)
   else {
     printf("  delta t, other thread  %.2e s FAIL: expected %s\n",
            dtthr, WANT_DEFECT ? "> 1" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (dtpath > 1e-4) : (dtpath >= 0 && dtpath < 1e-12))
+    printf("  first calc_ut, path    %.2e deg OK\n", dtpath);
+  else {
+    printf("  first calc_ut, path    %.2e deg FAIL: expected %s\n",
+           dtpath, WANT_DEFECT ? "> 1e-4" : "< 1e-12");
     bad++;
   }
 

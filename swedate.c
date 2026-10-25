@@ -332,6 +332,14 @@ static int init_leapsec(swe_ctx *ctx)
   int i;
   char s[AS_MAXCH];
   char *sp;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 107: swe_utc_to_jd() as a context's first call read
+   * seleapsec.txt before the context was initialised, along the compiled
+   * default path, and the initialisation (swe_deltat_ex() below it) wiped
+   * the table. Initialised first, it is read along the path, once. */
+  if (!ctx->swed_is_initialised)
+    swi_init_swed_if_start(ctx);
+#endif
   if (!ctx->leapsec_done) {
     ctx->leapsec_done = TRUE;
     /* seed the working copy; the file below only ever EXTENDS it */

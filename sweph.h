@@ -926,6 +926,12 @@ struct epsilon {
  *     Moshier's light time with the Sun held still, v_S tau left out (3.0e-6
  *     deg on every Moshier place without aberration and every heliocentric
  *     one; UPSTREAM-BUGS 102, G101)
+ *   - with the files named by SE_EPHE_PATH, a first call that reads a file
+ *     before swe_calc() names the path -- swe_calc_ut()'s delta t,
+ *     swe_deltat(), swe_sidtime(), swe_houses(), the stars, the ayanamsa,
+ *     eclipses, swe_utc_to_jd()'s leap seconds, swe_set_jpl_file() --
+ *     read it along the compiled default path, and some read it again
+ *     (8.6e-4 deg on the first Moon; UPSTREAM-BUGS 107, G106)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -1792,6 +1798,9 @@ extern void swi_fixstar_forget(swe_ctx *ctx);
 /* The path first use sets when none has been, local and marked implicit
  * (UPSTREAM-BUGS 103). */
 extern void swi_set_ephe_path_implicit(swe_ctx *ctx);
+/* Name that path, without closing anything, at the first file or moon
+ * tidal term a context takes from it (UPSTREAM-BUGS 107). */
+extern void swi_ephe_path_name_first_use(swe_ctx *ctx);
 #endif
 
 /* Shared configuration layer. Included here, after struct sid_data and

@@ -246,6 +246,7 @@ static void free_planets(swe_ctx *ctx);
 static void planets_forget_instants(swe_ctx *ctx);
 static void ephe_switch_forget(swe_ctx *ctx);
 #endif
+static void ephe_path_read_moon(swe_ctx *ctx);
 static void ctx_release(swe_ctx *ctx);
 
 #ifdef TRACE
@@ -2053,6 +2054,36 @@ void CALL_CONV swe_close(void)
  * won't return planet positions previously computed from other
  * ephemerides
  */
+/* Open the lunar ephemeris file for J2000 and read its header, to learn
+ * the DE number and set the tidal acceleration of the Moon. Upstream ran
+ * a full swe_calc() of the Moon for this, which also opened the planet
+ * file and filled the save area; the header is all that is used. */
+static void ephe_path_read_moon(swe_ctx *ctx)
+{
+  struct file_data *fdp = &ctx->fidat[SEI_FILE_MOON];
+  char fname[AS_MAXCH];
+  swi_gen_filename(J2000, SEI_MOON, fname);
+  if ((fdp->fptr = swi_fopen(ctx, SEI_FILE_MOON, fname, ctx->ephepath, NULL)) != NULL) {
+    if (read_const(ctx, SEI_FILE_MOON, NULL) != OK) {
+      /* read_const() has closed it: fclose(NULL) here crashed the path
+       * setter on a refused moon file (UPSTREAM-BUGS 104) */
+      memset((void *) fdp, 0, sizeof(struct file_data));
+    }
+#ifndef SWE_UPSTREAM_COMPAT
+    else	/* the span it answers for, as sweph() opens it (bug 89) */
+      file_nominal_span(J2000, SEI_MOON, fname, &fdp->tnom0, &fdp->tnom1);
+#endif
+  }
+  if (fdp->fptr != NULL)
+    swi_set_tid_acc(ctx, 0, 0, fdp->sweph_denum, NULL);
+  /* Whatever the pre-open found is what every context inheriting this
+   * configuration must use for its tidal term -- including "nothing",
+   * so that a tree without a moon file answers with the default term on
+   * its first delta-t too, not only after a failed open. Published with
+   * SWI_CFG_PATH. */
+  ctx->sweph_denum_moon = (fdp->fptr != NULL) ? fdp->sweph_denum : 0;
+}
+
 /* The directory list swe_set_ephe_path() adopts for `path`: SE_EPHE_PATH
  * if set, else `path`, else the compiled default, ending in DIR_GLUE. */
 static void ephe_path_resolve(const char *path, char *s)
@@ -2084,6 +2115,39 @@ void swi_set_ephe_path_implicit(swe_ctx *ctx)
 {
   SWI_CFG_LOCAL(ctx, swe_set_ephe_path_r(ctx, NULL));
   ctx->ephe_path_implicit = TRUE;
+}
+#endif
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 107: the path a first use sets from SE_EPHE_PATH was set by
+ * swe_calc() (and the star functions) only, after whatever the call had
+ * read before it: swe_calc_ut()'s delta t read swe_deltat.txt along the
+ * compiled default path, so with the files named by SE_EPHE_PATH the first
+ * Moon at 2000 Jan 1 12h took the built-in delta t (63.83 s) and the
+ * second the directory's table (70.0 s): 8.6e-4 deg apart, and the table
+ * read twice; swe_deltat() (6.17 s), swe_sidtime(), swe_houses(), the
+ * stars' and the ayanamsa's _ut forms, swe_azalt(), swe_pheno_ut(),
+ * swe_lun_eclipse_how(), swe_rise_trans(), swe_utc_to_jd()'s leap seconds
+ * and swe_set_jpl_file()'s file (de200.eph opened twice) the same. The path is named now at the first
+ * file a context opens along its path, or the first tidal term it takes
+ * from the moon file (swi_get_tid_acc()), before anything is read -- so
+ * without closing anything, as there is nothing to close: the path, the
+ * moon file's header for its DE number, local and marked implicit as
+ * swi_set_ephe_path_implicit() does. The tidal term of the request under
+ * way is left as it was resolved. */
+void swi_ephe_path_name_first_use(swe_ctx *ctx)
+{
+  char s[AS_MAXCH];
+  double tid_acc = ctx->tid_acc;
+  if (!ctx->swed_is_initialised || ctx->ephe_path_is_set || ctx->jpl_file_is_open)
+    return;
+  ephe_path_resolve(NULL, s);
+  snprintf(ctx->ephepath, AS_MAXCH, "%s", s);
+  ctx->ephe_path_is_set = TRUE;
+  ctx->ephe_path_implicit = TRUE;
+  ctx->ephe_path_live = TRUE;
+  ephe_path_read_moon(ctx);
+  ctx->tid_acc = tid_acc;
 }
 #endif
 
@@ -2137,30 +2201,7 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
    * a full swe_calc() of the Moon for this, which also opened the planet
    * file and filled the save area; the header is all that is used. */
   ctx->last_epheflag = 2;
-  {
-    struct file_data *fdp = &ctx->fidat[SEI_FILE_MOON];
-    char fname[AS_MAXCH];
-    swi_gen_filename(J2000, SEI_MOON, fname);
-    if ((fdp->fptr = swi_fopen(ctx, SEI_FILE_MOON, fname, ctx->ephepath, NULL)) != NULL) {
-      if (read_const(ctx, SEI_FILE_MOON, NULL) != OK) {
-        /* read_const() has closed it: fclose(NULL) here crashed the path
-         * setter on a refused moon file (UPSTREAM-BUGS 104) */
-        memset((void *) fdp, 0, sizeof(struct file_data));
-      }
-#ifndef SWE_UPSTREAM_COMPAT
-      else	/* the span it answers for, as sweph() opens it (bug 89) */
-        file_nominal_span(J2000, SEI_MOON, fname, &fdp->tnom0, &fdp->tnom1);
-#endif
-    }
-    if (fdp->fptr != NULL)
-      swi_set_tid_acc(ctx, 0, 0, fdp->sweph_denum, NULL);
-    /* Whatever the pre-open found is what every context inheriting this
-     * configuration must use for its tidal term -- including "nothing",
-     * so that a tree without a moon file answers with the default term on
-     * its first delta-t too, not only after a failed open. Published
-     * below with SWI_CFG_PATH. */
-    ctx->sweph_denum_moon = (fdp->fptr != NULL) ? fdp->sweph_denum : 0;
-  }
+  ephe_path_read_moon(ctx);
 #ifdef TRACE
   swi_open_trace(NULL);
   swi_trace_lock();
@@ -3660,6 +3701,10 @@ FILE *swi_fopen(swe_ctx *ctx, int ifno, char *fname, char *ephepath, char *serr)
   char *cpos[20];
   char s[2 * AS_MAXCH];
   char s1[AS_MAXCH];
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ephepath == ctx->ephepath)
+    swi_ephe_path_name_first_use(ctx);	/* bug 107 */
+#endif
   if (ifno >= 0) {
     fnamp = ctx->fidat[ifno].fnam;
   } else {
@@ -11558,6 +11603,10 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
 {
   int retc;
   char serr2[AS_MAXCH];
+#ifndef SWE_UPSTREAM_COMPAT
+  if (fpath == ctx->ephepath)
+    swi_ephe_path_name_first_use(ctx);	/* bug 107 */
+#endif
   retc = swi_open_jpl_file(ctx, ss, fname, fpath, serr);
   /* If we fail with default JPL ephemeris (DE431), we try the second default
    * (DE406), but only if serr is not NULL and an warning message can be 
