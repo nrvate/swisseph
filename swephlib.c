@@ -1042,15 +1042,30 @@ static void get_owen_t0_icof(double tjd, double *t0, int *icof)
   *icof = j;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 200: the piece of instant tjd, or while one is held
+ * (swi_frame_model_hold(), sidt_pra_rate()) the piece of the held instant,
+ * which then holds at every instant: see swi_frame_model_hold() */
+static void owen_t0_icof(swe_ctx *ctx, double tjd, double *t0, int *icof)
+{
+  get_owen_t0_icof(ctx->owen_hold ? ctx->owen_hold_t : tjd, t0, icof);
+}
+#endif
+
 /* precession matrix Owen 1990 */
-static void owen_pre_matrix(double tjd, double *rp, int iflag)
+static void owen_pre_matrix(swe_ctx *ctx, double tjd, double *rp, int iflag)
 {
   int i, icof = 0;
   double eps0 = 0, chia = 0, psia = 0, oma = 0;
   double coseps0, sineps0, coschia, sinchia, cospsia, sinpsia, cosoma, sinoma;
   double k[10], tau[10];
   double t0;
+#ifndef SWE_UPSTREAM_COMPAT
+  owen_t0_icof(ctx, tjd, &t0, &icof);	/* bug 200 */
+#else
+  (void) ctx;
   get_owen_t0_icof(tjd, &t0, &icof);
+#endif
 //  fprintf(stderr, "%d, %.17f\n", icof, t0);
   tau[0] = 0;
   tau[1] = (tjd - t0) / 36525.0 / 40.0;
@@ -1107,12 +1122,17 @@ static void owen_pre_matrix(double tjd, double *rp, int iflag)
     fprintf(stderr, "(%.17f   %.17f   %.17f)\n", rp[i*3], rp[i*3+1],rp[i*3+2]);
   } */
 }
-static void epsiln_owen_1986(double tjd, double *eps)
+static void epsiln_owen_1986(swe_ctx *ctx, double tjd, double *eps)
 {
   int i, icof = 0;
   double k[10], tau[10];
   double t0;
+#ifndef SWE_UPSTREAM_COMPAT
+  owen_t0_icof(ctx, tjd, &t0, &icof);	/* bug 200 */
+#else
+  (void) ctx;
   get_owen_t0_icof(tjd, &t0, &icof);
+#endif
   *eps = 0;
   tau[0] = 0;
   tau[1] = (tjd - t0) / 36525.0 / 40.0;
@@ -1188,7 +1208,7 @@ double swi_epsiln(swe_ctx *ctx, double J, int32 iflag)
     if (J > 2378131.5 && J < 2525323.5) { // between 1.1.1799 and 1.1.2202
       eps = (((1.813e-3*T-5.9e-4)*T-46.8150)*T+84381.448)*DEGTORAD/3600;
     } else {
-      epsiln_owen_1986(J, &eps);
+      epsiln_owen_1986(ctx, J, &eps);
       eps *= DEGTORAD;
     }
   } else if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_2) {
@@ -1222,7 +1242,7 @@ double swi_epsiln(swe_ctx *ctx, double J, int32 iflag)
     + 84381.448;
     eps *= DEGTORAD/3600.0;
   } else if (prec_model == SEMOD_PREC_OWEN_1990) {
-    epsiln_owen_1986(J, &eps);
+    epsiln_owen_1986(ctx, J, &eps);
     eps *= DEGTORAD;
 //fprintf(stderr, "epso=%.17f\n", eps);
   } else { /* SEMOD_PREC_VONDRAK_2011 */
@@ -1578,7 +1598,7 @@ static int precess_2(swe_ctx *ctx, double *R, double J, int32 iflag, int directi
   return(0);
 }
 
-static int precess_3(double *R, double J, int direction, int iflag, int prec_meth)
+static int precess_3(swe_ctx *ctx, double *R, double J, int direction, int iflag, int prec_meth)
 {
   //double T;
   double x[3], pmat[9];
@@ -1599,7 +1619,7 @@ static int precess_3(double *R, double J, int direction, int iflag, int prec_met
    */
   //T = (J - J2000)/36525.0;
   if (prec_meth == SEMOD_PREC_OWEN_1990)
-    owen_pre_matrix(J, pmat, iflag);
+    owen_pre_matrix(ctx, J, pmat, iflag);
   else
     pre_pmat(J, pmat);
   if (direction == -1) {
@@ -1654,7 +1674,7 @@ int swi_precess(swe_ctx *ctx, double *R, double J, int32 iflag, int direction )
     if (J > 2378131.5 && J < 2525323.5) { // between 1.1.1799 and 1.1.2202
       return precess_1(R, J, direction, SEMOD_PREC_IAU_1976);
     } else { 
-      return precess_3(R, J, direction, iflag, SEMOD_PREC_OWEN_1990);
+      return precess_3(ctx, R, J, direction, iflag, SEMOD_PREC_OWEN_1990);
     }
   /* Use IAU 1976 formula for a few centuries.  */
   } else if (prec_model_short == SEMOD_PREC_IAU_1976 && fabs(T) <= PREC_IAU_1976_CTIES) {
@@ -1682,12 +1702,12 @@ int swi_precess(swe_ctx *ctx, double *R, double J, int32 iflag, int direction )
   } else if (prec_model == SEMOD_PREC_WILLIAMS_1994 || prec_model == SEMOD_PREC_WILL_EPS_LASK) {
     return precess_2(ctx, R, J, iflag, direction, SEMOD_PREC_WILLIAMS_1994);
   } else if (prec_model == SEMOD_PREC_OWEN_1990) { 
-    return precess_3(R, J, direction, iflag, SEMOD_PREC_OWEN_1990);
+    return precess_3(ctx, R, J, direction, iflag, SEMOD_PREC_OWEN_1990);
   } else { /* SEMOD_PREC_VONDRAK_2011 */
     //int i;
     //int retval = precess_3(R, J, direction, iflag, SEMOD_PREC_VONDRAK_2011);
     // for (i = 0; i < 3; i++) printf("%.9f, ", R[i]);
-    return precess_3(R, J, direction, iflag, SEMOD_PREC_VONDRAK_2011);
+    return precess_3(ctx, R, J, direction, iflag, SEMOD_PREC_VONDRAK_2011);
   }
 }
 
@@ -2943,11 +2963,11 @@ static AS_BOOL frame_is_jplhor(swe_ctx *ctx, double J, int32 iflag)
  * at +14000 (both continuous at -2000 to 1e-14 deg). Each piece is its own
  * model here, so the rates keep to the instant's piece. */
 #define FRAME_OWEN_PIECE(icof)  (SEMOD_NPREC + 1 + (icof))
-static int frame_owen_piece(double J)
+static int frame_owen_piece(swe_ctx *ctx, double J)
 {
   double t0;
   int icof;
-  get_owen_t0_icof(J, &t0, &icof);
+  owen_t0_icof(ctx, J, &t0, &icof);	/* a piece held (bug 200) at every J */
   return FRAME_OWEN_PIECE(icof);
 }
 
@@ -2973,14 +2993,14 @@ static int frame_chosen_model(swe_ctx *ctx, double J)
   if (prec_model_short == SEMOD_PREC_IAU_2006 && fabs(T) <= PREC_IAU_2006_CTIES)
     return SEMOD_PREC_IAU_2006;
   if (prec_model == SEMOD_PREC_OWEN_1990)
-    return frame_owen_piece(J);
+    return frame_owen_piece(ctx, J);
   return prec_model;
 }
 static int frame_prec_model(swe_ctx *ctx, double J, int32 iflag)
 {
   if (frame_is_jplhor(ctx, J, iflag))
     return (J > SWI_JPLHOR_IAU1976_T0 && J < SWI_JPLHOR_IAU1976_T1)
-           ? SEMOD_PREC_IAU_1976 : frame_owen_piece(J);
+           ? SEMOD_PREC_IAU_1976 : frame_owen_piece(ctx, J);
   return frame_chosen_model(ctx, J);
 }
 static int frame_eps_model(swe_ctx *ctx, double J, int32 iflag)
@@ -2989,7 +3009,7 @@ static int frame_eps_model(swe_ctx *ctx, double J, int32 iflag)
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
   if (frame_is_jplhor(ctx, J, iflag))
     return (J > SWI_JPLHOR_IAU1976_T0 && J < SWI_JPLHOR_IAU1976_T1)
-           ? SEMOD_PREC_IAU_1976 : frame_owen_piece(J);
+           ? SEMOD_PREC_IAU_1976 : frame_owen_piece(ctx, J);
   /* SEMOD_JPLHORA_2: IAU 1976's obliquity throughout */
   if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_2)
     return SEMOD_PREC_IAU_1976;
@@ -3068,20 +3088,32 @@ int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which
  * holds a model; the caller's two entries saved in saved[2], which
  * swi_frame_model_release() puts back. For a difference whose places are
  * of date at instants about J, across a window's edge: each then J's
- * side's own frame. */
+ * side's own frame.
+ * Upstream bug 200: and with Owen 1990 J's piece (bug 183) at every
+ * instant, its joins gone too: the piece of J held (ctx->owen_hold_t,
+ * owen_t0_icof()), ctx->owen_hold counting the holds of a piece, so that
+ * a hold within one keeps it. Only a piece's hold holds Owen 1990
+ * (frame_chosen_model() names no other way), so a release finding it
+ * held is one. */
 void swi_frame_model_hold(swe_ctx *ctx, double J, int32 *saved)
 {
   int m = frame_chosen_model(ctx, J);
-  if (m > SEMOD_NPREC)	/* a piece of Owen 1990 (bug 183): the model */
-    m = SEMOD_PREC_OWEN_1990;
   saved[0] = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
   saved[1] = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
+  if (m > SEMOD_NPREC) {	/* a piece of Owen 1990 (bug 183): the model */
+    m = SEMOD_PREC_OWEN_1990;
+    if (ctx->owen_hold++ == 0)	/* and its piece (bug 200) */
+      ctx->owen_hold_t = J;
+  }
   ctx->astro_models[SE_MODEL_PREC_LONGTERM] = m;
   ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = m;
 }
 
 void swi_frame_model_release(swe_ctx *ctx, const int32 *saved)
 {
+  if (ctx->astro_models[SE_MODEL_PREC_LONGTERM] == SEMOD_PREC_OWEN_1990
+      && ctx->owen_hold > 0)	/* a piece's hold (bug 200) */
+    ctx->owen_hold--;
   ctx->astro_models[SE_MODEL_PREC_LONGTERM] = saved[0];
   ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = saved[1];
 }
@@ -5154,19 +5186,37 @@ static void sidt_pra_matrix(swe_ctx *ctx, double tjd, double m[3][3])
  * do: outside the window the long-term model's own, inside the short-term
  * one's, each spliced as it would be alone. It is continuous wherever the
  * precession is and steps at the edges with it. */
-static double sidt_pra_rate(swe_ctx *ctx, double tc, int model)
+/* Upstream bug 200: and Owen 1990 is pieces (bug 183), whose joins at
+ * JD -1931455.5, 990544.5, 3912544.5 and 6834544.5 lie half a day from
+ * the nodes at -120, -40, +40 and +120 centuries: each such node's rate
+ * took both pieces, their mean, where the cubic Hermite of each interval
+ * wants the interval's own piece's. The pieces' rates there differ by
+ * 1.5e-5, 2.9e-5, 3.2e-5 and 1.33e-4"/cy, so the sidereal time bent from
+ * the per-piece Hermite by up to 1.1e-6, 2.2e-6, 2.4e-6 and 1.0e-5"
+ * (3.1e-10, 6.0e-10, 6.6e-10 and 2.8e-9 deg) through the century either
+ * side. Now the rate is that of the piece holding instant tp (tc's
+ * interval's, ctx->owen_hold as swi_frame_model_hold() holds one), which no
+ * other model reads; a join's node has its interval beyond's too
+ * (sidt_pra()). The Gauss points of the integral lie 725 days or more from
+ * the nodes, so their rates over -+ SIDT_PRA_DH are their own piece's. */
+static double sidt_pra_rate(swe_ctx *ctx, double tc, int model, double tp)
 {
   double tjd = J2000 + tc * 36525.0, mp[3][3], mm[3][3], m[3][3], w = 0;
+  double oht = ctx->owen_hold_t;
   int32 pl = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
   int32 ps = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
-  int k;
+  int k, oh = ctx->owen_hold;
   ctx->astro_models[SE_MODEL_PREC_LONGTERM] = model;
   ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = model;
+  ctx->owen_hold = 1;
+  ctx->owen_hold_t = J2000 + tp * 36525.0;
   sidt_pra_matrix(ctx, tjd + SIDT_PRA_DH, mp);
   sidt_pra_matrix(ctx, tjd - SIDT_PRA_DH, mm);
   sidt_pra_matrix(ctx, tjd, m);
   ctx->astro_models[SE_MODEL_PREC_LONGTERM] = pl;
   ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = ps;
+  ctx->owen_hold = oh;
+  ctx->owen_hold_t = oht;
   for (k = 0; k <= 2; k++)
     w += (mp[1][k] - mm[1][k]) / (2 * SIDT_PRA_DH) * m[0][k];
   return w * RADTODEG * 3600.0 * 36525.0;
@@ -5188,8 +5238,8 @@ static double sidt_pra_integral(swe_ctx *ctx, double a, double b, int model)
   for (p = 0; p < n; p++) {
     double c = a + (p + 0.5) * h;
     for (i = 0; i < 4; i++)
-      sum += gw[i] * (sidt_pra_rate(ctx, c - gx[i] * h / 2, model)
-                      + sidt_pra_rate(ctx, c + gx[i] * h / 2, model));
+      sum += gw[i] * (sidt_pra_rate(ctx, c - gx[i] * h / 2, model, c - gx[i] * h / 2)
+                      + sidt_pra_rate(ctx, c + gx[i] * h / 2, model, c + gx[i] * h / 2));
   }
   return sum * h / 2;
 }
@@ -5210,8 +5260,9 @@ static double sidt_pra(swe_ctx *ctx, double tc, int model)
     ctx->sidt_pra.next = !ctx->sidt_pra.next;
     pt->prec_model = model;
     pt->a[0][0] = pt->a[1][0] = 0;
-    pt->w[0][0] = pt->w[1][0] = sidt_pra_rate(ctx, 0, model);
+    pt->w[0][0] = pt->w[1][0] = sidt_pra_rate(ctx, 0, model, 0);
     pt->nnode[0] = pt->nnode[1] = 1;
+    pt->njoin = 0;
     pt->valid = TRUE;
   }
   /* the interval [k, k + 1] holding x; beyond the table, its last one,
@@ -5220,8 +5271,23 @@ static double sidt_pra(swe_ctx *ctx, double tc, int model)
   /* nodes 0 .. k + 1 */
   for (n = pt->nnode[side]; n <= k + 1; n++) {
     double ta = sg * (n - 1) * SWI_SIDT_PRA_STEP, tb = sg * n * SWI_SIDT_PRA_STEP;
+    double hs = sg * SWI_SIDT_PRA_STEP / 2;
     pt->a[side][n] = pt->a[side][n - 1] + sidt_pra_integral(ctx, ta, tb, model);
-    pt->w[side][n] = sidt_pra_rate(ctx, tb, model);
+    /* bug 200: the rate of the interval before it, and at an Owen 1990
+     * join the beyond's too */
+    pt->w[side][n] = sidt_pra_rate(ctx, tb, model, tb - hs);
+    if (model == SEMOD_PREC_OWEN_1990 && pt->njoin < SWI_SIDT_PRA_JOINS) {
+      double t0;
+      int ib, ia;
+      get_owen_t0_icof(J2000 + (tb - hs) * 36525.0, &t0, &ib);
+      get_owen_t0_icof(J2000 + (tb + hs) * 36525.0, &t0, &ia);
+      if (ia != ib) {
+        pt->join[pt->njoin].side = side;
+        pt->join[pt->njoin].n = n;
+        pt->join[pt->njoin].w = sidt_pra_rate(ctx, tb, model, tb + hs);
+        pt->njoin++;
+      }
+    }
     pt->nnode[side] = n + 1;
   }
   if (x >= SWI_SIDT_PRA_NODES) {
@@ -5233,6 +5299,9 @@ static double sidt_pra(swe_ctx *ctx, double tc, int model)
   s = x - k;
   h = sg * SWI_SIDT_PRA_STEP;
   d0 = pt->w[side][k] * h;
+  for (j = 0; j < pt->njoin; j++)	/* bug 200: k a join, the beyond's */
+    if (pt->join[j].side == side && pt->join[j].n == k)
+      d0 = pt->join[j].w * h;
   d1 = pt->w[side][k + 1] * h;
   return pt->a[side][k] * (2 * s * s * s - 3 * s * s + 1)
        + d0 * (s * s * s - 2 * s * s + s)
@@ -5339,8 +5408,8 @@ static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double n
     /* bug 181: the precession model of the instant, TT, as swi_precess()
      * chooses it */
     int pm = frame_chosen_model(ctx, tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL));
-    if (pm > SEMOD_NPREC)	/* a piece of Owen 1990 (bug 183) */
-      pm = SEMOD_PREC_OWEN_1990;
+    if (pm > SEMOD_NPREC)	/* a piece of Owen 1990 (bug 183): its table is */
+      pm = SEMOD_PREC_OWEN_1990;	/* Owen's, each interval its piece's (bug 200) */
     gmst = (sidtime_era_long_deg(ctx, tjd, pm) / 15.0
             - sidt_lterm_offset(ctx, tjd >= SIDT_LTERM_T1, pm)) * 3600.0;
   } else

@@ -1515,6 +1515,20 @@ struct epsilon {
  *     deg/day on de200 (the compat build's speeds are upstream's, at ARMCS
  *     without the ayanamsa's rate: 5.4e-5 on Lahiri equal houses there)
  *     (UPSTREAM-BUGS 203, G156, G24)
+ *   - the true node's and osculating apogee's speeds within 1/32 day of
+ *     Owen 1990's joins with Owen 1990 chosen differencing the Moon in both
+ *     pieces' frames, this fork's hold taking Owen 1990 whole: 1.1e-5 and
+ *     9.3e-7 deg/day (the compat build's are upstream's, over 1e-4 day:
+ *     1.4e-3 there); and the long-term sidereal time's nodes at the joins
+ *     taking both pieces' mean rate, 2.8e-9 deg about +14000, which is
+ *     this fork's table (entry 29): the compat build has none
+ *     (UPSTREAM-BUGS 200, G155, G24)
+ *   - Moshier's true node's and osculating apogee's speeds within 1/16 day
+ *     of a short-term precession window's edge taking the precession
+ *     model's rates through its Moon's velocity at epochs on both sides:
+ *     1.05e-7 and 5.0e-6 deg/day with IAU 1976 under Vondrak (the compat
+ *     build's are upstream's, over 0.1 day: 5.5e-5 there) (UPSTREAM-BUGS
+ *     202, G155, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1860,11 +1874,17 @@ struct sidt_splice_memo {
  * integral has), two slots, for the reason given at struct nut_memo. */
 #define SWI_SIDT_PRA_STEP   1.0	/* centuries */
 #define SWI_SIDT_PRA_NODES  400	/* per side: +-400 centuries */
+/* UPSTREAM-BUGS 200: each interval's rates are its own Owen 1990 piece's,
+ * so a node at a join has two, w[] the interval's before it (toward
+ * J2000) and the beyond's in join[]: Owen's four joins */
+#define SWI_SIDT_PRA_JOINS  4
 struct sidt_pra_table {
   int32 prec_model;
   int nnode[2];		/* nodes computed, [0] before J2000, [1] after */
   double a[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec */
   double w[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec per century */
+  int njoin;
+  struct { int side, n; double w; } join[SWI_SIDT_PRA_JOINS];
   AS_BOOL valid;
 };
 struct sidt_pra_memo {
@@ -2269,6 +2289,12 @@ struct swe_ctx {
     struct swi_mosh_sun { double t, x[6], a[3]; } s[2];
     double tp[9], xp[9][6];
   } mosh_sun_bary;
+  /* while owen_hold is nonzero, Owen 1990's precession and obliquity are
+   * at every instant the piece's that holds instant owen_hold_t
+   * (swephlib.c, owen_t0_icof()): swi_frame_model_hold()'s, which counts
+   * its holds here, and sidt_pra_rate()'s (UPSTREAM-BUGS 200) */
+  int owen_hold;
+  double owen_hold_t;
 #endif
   /* nddat is deliberately the heavier plan_data, not node_data.
    *

@@ -10151,9 +10151,9 @@ static double osc_round_err(double a, double b, double s)
  * day of it; on the Swiss files at + 2 centuries 4.29e-3 and 6.49e-3. Now
  * the files' Moon (JPL, Swiss) is put into the frame of tjd's side's model
  * at every epoch there (swi_frame_model_hold()), so the speeds are that
- * side's own rate and the places at tjd those they were. Moshier's Moon
- * needs none: it is of date already, taken to J2000 by the same frame at
- * its epoch (ecldat_equ2000()), which this undoes. Whether to hold: */
+ * side's own rate and the places at tjd those they were. Bug 202: and
+ * Moshier's, whose velocity takes the frame's turning (below). Bug 200:
+ * and with Owen 1990 tjd's piece, across its joins. Whether to hold: */
 static AS_BOOL osc_frame_hold(swe_ctx *ctx, double tjd, int32 iflag, double intv, int npt)
 {
   if (!(iflag & SEFLG_SPEED))
@@ -10468,6 +10468,21 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
        * 75: five points 2^-5 day apart, 4.7e-7 (the node 6.6e-9). */
       speed_intv = OSC_INTV_MOSH;
       npt = OSC_NPT_MOSH;
+      /* Upstream bug 202: Moshier's Moon, of date, is taken to J2000 and
+       * back at its epoch by the same frame, but its velocity carries the
+       * frame's turning there, R'(t) x (entries 95, 184), which
+       * swi_plan_for_osc_elem() turns and does not take off: the orbit's
+       * plane, and the node and apogee, take the model's rates. IAU 1976
+       * against Vondrak at 1800 moves the node by 5.0e-9 deg, and within
+       * 1/16 day of a short-term window's edge the five-point speed took
+       * that as a step between its epochs: under "0,9,1" at J2000 -+ 2
+       * centuries the node's speed 9.5e-8 and 1.05e-7 deg/day off the
+       * side's model alone's, the apogee's 5.0e-6 and 1.4e-6. Held as the
+       * files' Moon is (bug 186), from the Moon's own epoch on, but for
+       * tjd's: its Moon's turning is its side's already, and held its
+       * one-sided difference (bug 184) would become the central one, the
+       * place 5e-12 deg off the one without SEFLG_SPEED. */
+      hold = osc_frame_hold(ctx, tjd, iflag, speed_intv, npt);
 #else
       speed_intv = NODE_CALC_INTV_MOSH;
 #endif
@@ -10478,12 +10493,22 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	t = tjd + osc_off[i] * speed_intv;
 #ifndef SWE_UPSTREAM_COMPAT
 	rr[i] = osc_round_err(tjd, osc_off[i] * speed_intv, t);	/* bug 75 */
+	if (hold && i != 2)	/* bug 202: not tjd's */
+	  swi_frame_model_hold(ctx, tjd, held);
 #endif
 	retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);/**/
+#ifndef SWE_UPSTREAM_COMPAT
+	if (retc == ERR && hold && i != 2)
+	  swi_frame_model_release(ctx, held);
+#endif
 	if (retc == ERR)
 	  return(retc);
 	/* precession and nutation etc. */
 	retc = swi_plan_for_osc_elem(ctx, iflag|SEFLG_SPEED, t, xpos[i]); /* retc is always ok */
+#ifndef SWE_UPSTREAM_COMPAT
+	if (hold && i != 2)
+	  swi_frame_model_release(ctx, held);
+#endif
       }
       break;
     default:

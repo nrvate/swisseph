@@ -232,6 +232,8 @@ worst were in code that had never executed even once.
 | 190 | `swe_nod_aps()` of the Sun with SEFLG_TOPOCTR answers its geocentric points: the site, set as the observer, is overwritten by the Sun, the observer of the Earth's orbit, so they carry no parallax (the perigee 2.3e-3 deg off in latitude at J2000, Zurich; the focal point 6.8e-2), where `swe_calc()`'s topocentric Sun is 2.3e-3 deg from its geocentric one | Correctness (behaviour) | `swecl.c` |
 | 191 | Moshier's Earth is the series' Earth-Moon barycentre less the short lunar series' Moon, six terms in longitude, not the full series' Moon `swe_calc()` gives: 1.3e-7 AU off its EMB less its own Moon's share at 2000 (7.9e-7 at -3000), and every geocentric place with it, the Sun's monthly error against the files 5.9e-6 deg at 2000 | Correctness | `swemplan.c`, `swemmoon.c` |
 | 203 | The sidereal houses' ayanamsa takes its nutation with the caller's flags, and with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` (SEFLG_JPLHOR fallen to it too) that nutation steps at 1962 Jan 20 (entry 153), while the houses' side test (entry 187) looked at the precession's and obliquity's models alone: the ayanamsa's difference 1/64 day either side reached across, every sidereal cusp and ascmc speed 6.38e-4 deg/day off its cusps' rate within 1/64 day of the step, every house system, Lahiri, True Citra, the ecliptic of date, de200 and the Swiss files alike | Correctness | `swehouse.c` |
+| 200 | Owen 1990's joins are not held where the model of the instant is taken whole: the true node's and osculating apogee's frame hold (entry 186) took Owen 1990, not the instant's piece (entry 183), so with Owen 1990 chosen their speeds within 1/32 day of the joins at -10000, +6000 and +14000 are 3.4e-6 to 1.1e-5 deg/day off (the apogee's 1.5e-7 to 9.3e-7); and the long-term sidereal time's table (entries 29, 181) gives its nodes half a day from the joins the mean of both pieces' rates, the sidereal time 2.8e-9 deg off the per-piece cubic about +14000 | Correctness | `swephlib.c`, `sweph.c`, `sweph.h` |
+| 202 | `lunar_osc_elem()` leaves Moshier's Moon out of entry 186's frame hold, but its velocity carries the frame's turning (entries 95, 184), which `swi_plan_for_osc_elem()` does not take off, so its true node and osculating apogee move with the precession model's rates: within 1/16 day of a short-term window's edge, with IAU 1976 under Vondrak at J2000 -+ 2 centuries, the node's speed 9.5e-8 and 1.05e-7 deg/day off the side's model's, the apogee's 5.0e-6 and 1.4e-6 | Correctness | `sweph.c` |
 
 ---
 
@@ -14097,6 +14099,180 @@ and (b).
 G24 `earth_mosh_moon_off`: Moshier's heliocentric Earth less the files',
 the fourth difference over 4 days, ten instants from 2000 Jan 1.5:
 3.81e-8 AU shipped (4.40e-7 before the fix), 4.40e-7 compat.
+
+## 200. Owen 1990's joins are not held: the true node's and osculating apogee's speeds 1.1e-5 and 9.3e-7 deg/day off within 1/32 day of them with Owen 1990 chosen, the long-term sidereal time's nodes there both pieces' mean rate, 2.8e-9 deg at +14000
+
+**Severity: Correctness (with `SE_MODEL_PREC_LONGTERM` set to Owen 1990 by `swe_set_astro_models()`: on JPL and the Swiss files the speeds of `SE_TRUE_NODE` and `SE_OSCU_APOG` within 1/32 day of the joins of Owen's pieces off their places' rate, 7.5e-6 and 1.5e-7 deg/day at -10000, 3.4e-6 and 9.3e-7 at +6000, 1.1e-5 and 4.0e-7 at +14000; and the long-term sidereal time in the centuries either side of the joins off the per-piece integral's cubic, up to 2.8e-9 deg about +14000, 3.1e-10 to 6.6e-10 at the others)**
+**Where:** `swephlib.c`: `swi_frame_model_hold()`, `swi_frame_model_release()`, `frame_owen_piece()`, `owen_pre_matrix()`, `epsiln_owen_1986()`, `precess_3()`, `sidt_pra_rate()`, `sidt_pra()`, new `owen_t0_icof()`; `sweph.h`: `struct swe_ctx` (`owen_hold`, `owen_hold_t`), `struct sidt_pra_table` (`njoin`, `join[]`)
+
+Since entry 183, `frame_chosen_model()` names with Owen 1990 the instant's
+piece, a number above SEMOD_NPREC (`FRAME_OWEN_PIECE()`), so that the
+rates keep to it; Owen's five fits of 80 centuries join at JD -1931455.5,
+990544.5, 3912544.5 and 6834544.5 (about -10000, -2000, +6000 and +14000,
+the join's instant the later piece's). The two later fixes that take a
+model from it, entry 186's hold and entry 181's sidereal time, took such a
+piece back to SEMOD_PREC_OWEN_1990, Owen's own joins then not held:
+- The hold: within 1/32 day of a join the true node's and osculating
+  apogee's five-point speed put the Moon at its epochs across it in the
+  other piece's frame. Measured on the Swiss files under "0,10" at G139's
+  105 instants about each join, against the speed of the side's piece
+  alone (a scratch build forcing `get_owen_t0_icof()`'s piece) and
+  against five-point differences over 2^-6 day of the true places on the
+  instant's side, the worst within 1/32 day: the node 7.46e-6 deg/day
+  (equatorial 7.40e-6) at -10000, 3.41e-6 (3.19e-6) at +6000, 1.02e-5
+  (1.10e-5) at +14000, its distance 6.5e-12 to 2.4e-11 AU/day; the apogee
+  1.54e-7 (1.61e-7), 9.25e-7 (9.23e-7) and 3.98e-7 (3.47e-7); at -2000,
+  where the pieces meet to 1e-14 deg, 1.1e-11 and 2.3e-11. Beyond 1/32 day
+  their own. On Moshier (entry 202) only -2000 is in range, 7.6e-10.
+- The sidereal time: its table's nodes at -120, -40, +40 and +120
+  centuries lie half a day after the joins, and each node's rate, a
+  difference over -+ SIDT_PRA_DH = 50 days, took both pieces, their mean,
+  where the cubic Hermite of each interval wants the rate of the
+  interval's own piece. The pieces' rates there differ by 1.52e-5,
+  2.88e-5, 3.16e-5 and 1.335e-4"/cy; against the cubic with each
+  interval's own end rates (the pieces' at the join nodes, from the same
+  difference with the piece forced) the sidereal time was off by up to
+  1.13e-6" (3.15e-10 deg) about -120 centuries, 2.15e-6" (5.97e-10)
+  about -40, 2.36e-6" (6.57e-10) about +40 and 9.98e-6" (2.77e-9) about
+  +120, through the interval either side, and nowhere else. The Gauss
+  points of the nodes' integrals lie 725 days or more from the nodes, so
+  their -+ 50-day rates are their own piece's: each interval's integral
+  differs from its own piece's only by the half day of the other one
+  (2e-9"). Only +120 was above the 1e-9 deg floor; the fix takes all
+  four.
+
+**Fix, as done here:** a piece of Owen 1990 can be held: while
+`ctx->owen_hold` is nonzero, `owen_pre_matrix()`, `epsiln_owen_1986()`
+and `frame_owen_piece()` take at every instant the piece holding instant
+`ctx->owen_hold_t` (`owen_t0_icof()`; the first two now take the
+context, as `precess_3()` passes it). `swi_frame_model_hold()`, given a
+piece, holds the models at SEMOD_PREC_OWEN_1990 as before and the piece
+of J too, counting its holds so that a hold within one keeps it, and
+`swi_frame_model_release()` lets it go (only a piece's hold holds Owen
+1990); its API is unchanged. `sidt_pra_rate()` takes the instant whose
+piece its rate is of: a Gauss point's own, a node's the interval's, so
+that `sidt_pra()` keeps at each node the rate of the interval before it
+and, at a join, the interval beyond's too (`join[]`, at most Owen's four),
+which the cubic takes as its interval's starting rate. The sidereal time
+still takes Owen's table as a whole. Behind `#ifndef SWE_UPSTREAM_COMPAT`;
+the compat build keeps upstream's node speeds over 1e-4 day and has no
+table (upstream's `sidtime_long_term()`).
+- After: within 1/32 day of the joins the node's and apogee's speeds are
+  the side's piece's own to 1.4e-13 deg/day; against the one-sided
+  references of true places 1.4e-10 for the node, 1.1e-9 for the apogee,
+  2.2e-14 AU/day. The table's cubic in the intervals at the joins is the
+  per-piece one bit for bit; against the exact per-piece integral within
+  1.5e-6" (4.3e-10 deg, the cubic's own error near the joins, where the
+  pieces' Chebyshev fits curve most; 2.0e-7" about an ordinary node).
+- Elsewhere bit for bit: the positions and speeds of the true node, the
+  osculating and interpolated apogees, the Moon and Mars on Moshier, the
+  Swiss files and de200, ecliptic, equatorial, of J2000 and without
+  nutation, under eight model settings ("0,0", "0,9,1", "0,9,8", "0,10",
+  "0,1,1", "0,9,9", "0,10,10", "0,10,1") at 40 dates each, and the
+  sidereal time at 400 dates -12900..+17000 but in the eight intervals at
+  Owen's joins under Owen 1990; the node's and apogee's places with
+  SEFLG_SPEED within 1/32 day of the joins.
+- Cost: with entry 202, `perf stat -e instructions:u`, 20000 Moshier
+  `SE_TRUE_NODE` and `SE_OSCU_APOG` with speeds and `swe_sidtime()`
+  1452..2400 on the default models, 25458873576 before, 25463185043 after
+  (+0.017%).
+
+G155 `tests/framehold.c`, new: check (a), "0,10" on the Swiss files at the
+four joins' 105 instants, the true node's and osculating apogee's true
+speeds (SEFLG_TRUEPOS: the apparent places' retarded instants round at the
+JD's resolution, which takes the one-sided reference to 2.6e-7 on the
+apogee at +14000), ecliptic and equatorial of date, the longitude's,
+latitude's and distance's against five-point differences over 2^-6 day of
+the places on the instant's side (one-sided where the centred ones reach
+across), the worst within 1/32 day and the rest: 32 checks within 1e-9
+deg/day for the node, 1e-8 for the apogee, 1e-13 AU/day; check (c), the
+long-term sidereal time's rate's kink at the four join nodes (cubic-exact
+one-sided derivatives of "0,10" less "0,9,9", whose nodes are the same and
+whose rotation angle and IERS terms cancel) against the precession's own
+kink at the join (-(dM/dt M^T)[1][0] by one-sided five-point differences
+of `swi_precess()` over 32 days): 4 checks within 2e-6"/cy, fork only.
+After within 1.4e-10, 1.1e-9 and 2.2e-14, and 3.9e-7"/cy; before the fix
+12 of (a)'s 32 fail, the node and apogee within 1/32 day at -10000, +6000
+and +14000 (3.2e-6 to 1.1e-5 and 1.5e-7 to 9.3e-7 deg/day), and all 4 of
+(c) (the kink 0 against 1.5e-5 to 1.33e-4"/cy). The upstream build fails
+all 32 of (a) (its node 4.3e-4 to 1.5e-3 deg/day off within 1/32 day of
+the three joins that step, its difference over 1e-4 day across them, and
+1.6e-8 to 1.9e-5 elsewhere). G24
+`node_owen_join_off`: the true node's true longitude speed on the Swiss
+files under "0,10" at +14000 -+ 2^-8 and -+ 2^-14 day against one-sided
+five-point differences of its places on the instant's side, the largest:
+5.97e-11 deg/day shipped (1.02e-5 before the fix), 1.37e-3 compat.
+
+## 202. Moshier's true node and osculating apogee take the precession model's rates through the Moon's velocity, and the frame hold left them out: within 1/16 day of a short-term window's edge their speeds 1.05e-7 and 5.0e-6 deg/day off the side's model's
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()`, on Moshier and the files' fall to it: the speeds of `SE_TRUE_NODE` and `SE_OSCU_APOG` within 1/16 day of the window's edges off the side's model's rate, 9.5e-8 and 5.0e-6 deg/day at J2000 - 2 centuries with IAU 1976 under Vondrak, 1.05e-7 and 1.4e-6 at + 2, their distances 2.5e-11 AU/day)**
+**Where:** `sweph.c`: `lunar_osc_elem()` (Moshier's case), `osc_frame_hold()`'s comment
+
+Entry 186's noticed item. Its hold left Moshier's Moon out: of date, it
+is taken to J2000 by the frame at its epoch (`ecldat_equ2000()`) and back
+by the same one (`swi_plan_for_osc_elem()`), which undoes it for the
+place. But its velocity carries the frame's turning, R'(t) x (entries 95,
+184), and `swi_plan_for_osc_elem()` turns the velocity without taking a
+turning off (as for the files' Moon, whose velocity is inertial), so the
+orbit's plane and the node and apogee move with the precession model's
+rates: IAU 1976 against Vondrak at 1800 the node by 5.0e-9 deg. Within
+1/16 day of an edge (OSC_INTV_MOSH = 1/32 day, five points) the speed's
+epochs on the other side took the other model's, a step between them.
+Measured on this tip (with entry 184's fix) under "0,9,1" at J2000 -+ 2
+centuries, at G139's 105 instants about each edge (TT), against the
+speeds of the side's model alone ("0,1,1" inside, "0,9,9" outside) and
+G139 check (f)'s nine-point central differences over 2^-3 day of its
+places alike, ecliptic and equatorial of date, the worst within 1/16 day:
+- at - 2 centuries the node 9.51e-8 deg/day (9.18e-8 in right
+  ascension), the apogee 5.04e-6 (5.04e-6), the distances 9.6e-12 and
+  1.5e-11 AU/day;
+- at + 2 the node 1.05e-7 (1.02e-7), the apogee 1.41e-6 (1.41e-6), the
+  distances 2.5e-11 and 3.3e-13.
+From 1/16 day to 2 days their own, within 2.9e-11 deg/day for the node
+and 1.1e-10 for the apogee of the side's model alone's speeds (the Moon's
+frame turning, within a day of the edge the one-sided difference of
+entry 184 where the model alone takes the central one). The earlier
+measurement of 1.6e-5 within 2^-7 day and 5.6e-3 out to 2 days (the
+apogee 0.19) was before entry 184, whose difference of the Moon's frame
+over -+ 1 day reached across the edge itself. "0,9,8"'s edges at -+ 75
+centuries (JD -287830 and 5190920) lie beyond Moshier's Moon (JD 625000.5
+to 2818000.5), which `swe_calc()` refuses there; of Owen 1990's joins
+(entry 200) only -2000's is within it, 7.6e-10.
+
+**Fix, as done here:** Moshier's case asks `osc_frame_hold()` (entry 186)
+with its own stencil and, where the model changes within it, holds the
+frame (`swi_frame_model_hold()`, with entry 200 Owen's piece too) from
+each epoch's Moon (`swi_moshmoon()`, whose frame turning then is the held
+model's central difference, entry 184 seeing no step) through its
+`swi_plan_for_osc_elem()`, released after it and before an error return.
+Not at tjd's own epoch: its Moon's turning is its side's already, and
+held its one-sided difference would become the central one, its place
+5e-12 deg off the one without SEFLG_SPEED. The places are unchanged bit
+for bit, with SEFLG_SPEED and without. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, with entry 75's stencil; the compat build keeps
+upstream's difference over 0.1 day.
+- After: within 1/16 day the speeds of the side's model alone to 4.8e-14
+  deg/day; against G139 check (f)'s reference the node within 4.5e-11,
+  the apogee 6.7e-9, the distances 1.0e-13 AU/day (the reference's own
+  noise, 3.2e-10, 8.2e-9 and 1.4e-13 beyond).
+- Elsewhere bit for bit, as entry 200's; the cost is entry 200's.
+
+G155 `tests/framehold.c`, check (b): Moshier, "0,9,1" at J2000 -+ 2
+centuries, the true node's and osculating apogee's speeds, ecliptic and
+equatorial of date, the longitude's, latitude's and distance's, against
+G139 check (f)'s reference at all 105 instants (Moshier's Moon has no
+segments to keep it from), the worst within 1/16 day and the rest: 16
+checks within 1e-9 deg/day for the node, 5e-8 for the apogee (G74's) and
+4e-13 AU/day. 52 checks in all; after within 3.2e-10, 8.2e-9 and
+1.4e-13; before the fix 8 of (b)'s 16 fail, all within 1/16 day (9.2e-8 to
+1.05e-7 and 1.4e-6 to 5.0e-6 deg/day), 24 of the 52 in all. The upstream
+build fails all 16 of (b) (its difference over 0.1 day across the edge,
+the node 6.7e-2 to 0.12 deg/day off within 1/16 day, the apogee 3.4, and
+9e-5 to 1.1e-4 beyond), all 48 of (a) and (b). G24
+`node_mosh_window_off`: Moshier's true node's longitude speed under
+"0,9,1" at J2000 - 2 centuries -+ 2^-8 and -+ 2^-14 day against the
+nine-point reference of the side's model alone, the largest: 1.85e-11
+deg/day shipped (9.51e-8 before the fix), 5.47e-5 compat.
 
 ## How these were found
 
