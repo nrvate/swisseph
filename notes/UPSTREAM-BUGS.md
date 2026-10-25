@@ -7075,6 +7075,33 @@ difference, 81 dates 1800..2200, AU:
   without aberration, the Earth's acceleration for the carry is the
   series' (`swi_mosh_earth_accel()`, entry 66 part 3).
 
+- **The mixed case.** With the Swiss files and the Moon's file missing,
+  `sweplan()` falls back to Moshier's Moon (its `pldat` marked Moshier)
+  while the Earth and the Sun stay the files'. That Earth is barycentric,
+  so the frame is the files'. `app_pos_etc_moon()` keys the Moshier frame
+  on the Moon's ephemeris alone, so this case took the files' Earth for
+  Moshier's heliocentric one:
+  - The first version of this fix read Moshier's heliocentric Earth at t
+    against the files' Sun, 0.09 to 0.43 deg off heliocentric.
+  - It also differenced Moshier's Earth series against the files' Earth
+    for the Earth's acceleration, 0.2 to 0.96 deg off barycentric and
+    2.5e-3 deg geocentric without aberration, the speed 337 deg/day.
+  - G99 caught 17 heliocentric and barycentric Moon rows of these (0.15 to
+    0.5 deg off the complete directory's answer).
+  - Bug 102's frame already did the same with v_Sun alone: v_Sun added to
+    barycentric velocities, 2.2e-6 deg, speeds 6.7e-7 deg/day.
+  - Bug 53's carry took the Sun's pull on the barycentric Earth as if it
+    were heliocentric, 6.9e-9 deg/day of the apparent Moon's speed.
+
+  Now a Moshier Moon with the files' Earth (`mosh_mixed`) takes no Moshier
+  frame. Its light time reads at t as the files' path does: `sweplan()`,
+  which falls back to Moshier's Moon again, with the files' Earth and Sun
+  there. The topocentric observer is built as on the files. It is behind
+  the same guard. The mixed answers are now as far from the complete
+  directory's as the Moshier Moon's own theory: 2e-6 to 4e-6 deg
+  heliocentric and barycentric, 1.9e-3 geocentric. Every other answer is
+  bit-identical to before (dumped), and the compat build is unchanged.
+
 - **The cost.** The series are memoised per planet and instant
   (`mosh_series_cart()`, the same bits as `swi_moshplan()`'s own
   evaluation), so the Sun's motion and a chart's bodies share them.
@@ -7154,7 +7181,7 @@ The 2% rule was waived for (d).
 The Swiss files' barycentric Sun jumps at its yearly segment joins (up to
 1.2e-8 AU). That is data, recorded in entry 102.
 
-G108 `tests/moshbary.c`, 34 rows:
+G108 `tests/moshbary.c`, 40 rows:
 - (1) Cupido, Isis, Vulcan and a swe_calc_orbel() orbit heliocentric
   against the files, within 2e-9 deg.
 - (2) Sirius, Spica and Polaris against the files: within 1e-9 deg without
@@ -7165,9 +7192,24 @@ G108 `tests/moshbary.c`, 34 rows:
   within 1e-12 AU, for the Sun, the Moon, Mercury to Pluto and Chiron, and
   the apparent distance rate of the Sun, the Moon, Mars and Pluto within
   1e-11 AU/day.
+- (5) The mixed case, the Swiss files without semo_12.se1, 13 dates
+  1300..1700:
+  - the Moon heliocentric, barycentric and geocentric without aberration,
+    against the light time's fixed point iterated from the same
+    directory's true barycentric places: within 1e-11 deg (measured
+    <= 9.8e-13), geocentric 1e-10 (1.0e-11);
+  - its speeds against five-point differences: heliocentric within 1e-9
+    deg/day (6.0e-12), without aberration and apparent within 2e-8 (1.0e-9,
+    the Moshier Moon's series).
 
-The build before the fix fails 30 rows. The upstream build fails 23: its
-11 distance rows pass, both its light times held heliocentric alike.
+The build before the fix fails 30 of the first 34 rows. The upstream build
+fails 23 of them: its 11 distance rows pass, both its light times held
+heliocentric alike. Of (5)'s six rows:
+- the build before bug 109 fails 5 (2.2e-6 deg, 6.7e-7 deg/day);
+- the first version of its fix fails 5 (0.43 deg heliocentric, 0.96
+  barycentric, 337 deg/day);
+- the upstream build fails all 6 (bug 53's straight line, 1.5e-7 to
+  3.0e-7 deg, speeds up to 1.4e-4 deg/day).
 
 G80's Moshier fixed-point reference now moves the body by the Sun's motion
 over the light time. Without that, its four Moshier rows fail by 2.5e-6 to
@@ -7181,7 +7223,7 @@ against the files, five dates 1900..2100. 1.2e-10 deg shipped, 3.05e-6
 compat.
 
 G108, G101, G95, G80, G87, G75, G60, G52, G84, G77, G33 and G24 (both
-ways) pass. The compat build's output is bit-identical to before
+ways) pass, and G99 with the mixed-case fix. The compat build's output is bit-identical to before
 (planets, stars, fictitious and orbel bodies, every flag set dumped).
 
 ## 116. `swe_set_astro_models()` of a version before 2.01 sets the tidal acceleration but publishes only the SID group (this fork's)

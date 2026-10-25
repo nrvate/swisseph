@@ -7637,8 +7637,20 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
 #ifndef SWE_UPSTREAM_COMPAT
   /* bug 102: Moshier's light time in a frame where the Sun moves; bug
    * 109: with aberration too, the Sun's motion from fewer planets there
-   * (its direction does not depend on it, its distance to 1e-13 AU) */
-  AS_BOOL mosh_bary = pdp->iephe == SEFLG_MOSEPH && !(iflag & SEFLG_TRUEPOS);
+   * (its direction does not depend on it, its distance to 1e-13 AU).
+   * Upstream bug 109, mixed: the Moon is Moshier's but the Earth and the
+   * Sun the Swiss files' when the Moon's file is missing (sweplan()'s
+   * fallback). That Earth is barycentric, so the frame is the files': no
+   * v_S, and the light time read at t as the files' path reads it, where
+   * sweplan() falls back to Moshier's Moon again. The Moshier branch took
+   * the files' Earth for Moshier's heliocentric one: v_S added to
+   * barycentric velocities (bug 102, 3e-6 deg), Moshier's heliocentric
+   * Earth read at t against the files' Sun (0.09-0.43 deg heliocentric),
+   * and its series' acceleration differenced against the files' Earth
+   * (0.2-0.96 deg barycentric, 337 deg/day without aberration). G108 (5). */
+  AS_BOOL mosh_mixed = pdp->iephe == SEFLG_MOSEPH && pedp->iephe == SEFLG_SWIEPH;
+  AS_BOOL mosh_bary = pdp->iephe == SEFLG_MOSEPH && !mosh_mixed
+                      && !(iflag & SEFLG_TRUEPOS);
   int mosh_set = (iflag & SEFLG_NOABERR) ? SWI_MOSH_SUN_FULL : SWI_MOSH_SUN_MOON;
   double xsb[6] = {0, 0, 0, 0, 0, 0}, asun[3] = {0, 0, 0}, xeh[6];
   const double *vsun = xsb + 3;
@@ -7725,8 +7737,10 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
 #ifndef SWE_UPSTREAM_COMPAT
     for (i = 0; i <= 2; i++)
       vb[i] = xx[i+3];	/* barycentric velocity at teval, every ephemeris */
-#endif
+    switch (mosh_mixed ? SEFLG_SWIEPH : pdp->iephe) {	/* bug 109, mixed */
+#else
     switch(pdp->iephe) {
+#endif
       case SEFLG_JPLEPH:
         retc = swi_pleph(ctx, t, J_MOON, J_EARTH, xx, serr);
         if (retc == OK)
@@ -7879,7 +7893,7 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
 #endif
     if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-      if (pdp->iephe != SEFLG_MOSEPH) {
+      if (pdp->iephe != SEFLG_MOSEPH || mosh_mixed) {
         if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xe, xobs2, NULL) != OK)
 	  return ERR;
       } else {		/* bug 109: built heliocentric, then the Sun's motion */

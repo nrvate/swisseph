@@ -48,20 +48,44 @@
  *     the giants alone in its v_S); and the apparent distance rate of the
  *     Sun, the Moon, Mars and Pluto against five-point differences over
  *     2^-7 day within 1e-11 AU/day (<= 3.3e-12).
- * The build before the fix fails 30 of the 34 rows: the 4 of (1) (2.8e-6
+ * (5) The mixed case: the Swiss files with semo_12.se1 missing, so that
+ *     1300..1700 (13 dates) the Moon is Moshier's while the Earth and the
+ *     Sun are the files' (sweplan()'s fallback), whose Earth is
+ *     barycentric: the Moon heliocentric, barycentric and geocentric
+ *     without aberration (SEFLG_NOGDEFL, J2000 ICRS XYZ) against the light
+ *     time's fixed point iterated here from the same directory's true
+ *     barycentric places, within 1e-11 deg (measured <= 9.8e-13) and 1e-10
+ *     geocentric (1.0e-11, the Moon at 0.0026 AU); the Moon's speeds
+ *     against five-point differences over 2^-7 day, heliocentric within
+ *     1e-9 deg/day (6.0e-12), without aberration and apparent within 2e-8
+ *     (1.0e-9, the Moshier Moon's series).
+ *     The first version of the bug-109 fix took the files' Earth for
+ *     Moshier's heliocentric one there: 0.43 deg heliocentric, 0.96
+ *     barycentric, 2.5e-3 geocentric without aberration, the speed without
+ *     aberration 337 deg/day (G99 failed its 17 heliocentric and
+ *     barycentric Moon rows); before bug 109 the bug-102 frame did the same
+ *     with v_S alone, 2.2e-6 deg and 6.7e-7 deg/day.
+ * The build before the fix fails 30 of the first 34 rows: the 4 of (1) (2.8e-6
  * to 3.0e-6 deg), the 12 of (2) (Sirius 9.2e-7 without aberration and
  * heliocentric, Spica 2.4e-8, Polaris 1.8e-8, 2.8e-6 to 2.9e-6
  * apparent), the 3 of (3) (4.1e-8, 5.1e-10, 6.3e-9) and the 11 distances
  * of (4) (Sun 4.8e-8 AU to Pluto 1.95e-6, Chiron 7.3e-7, the Moon 1.05e-10).
- * The upstream build fails 23: (1) to (3) (bugs 26, 35, 53 besides) and
- * the 4 distance rates; its 11 distance rows pass, both its light times
- * held heliocentric alike.
+ * The upstream build fails 23 of them: (1) to (3) (bugs 26, 35, 53
+ * besides) and the 4 distance rates; its 11 distance rows pass, both its
+ * light times held heliocentric alike. Of (5)'s 6 the build before bug 109
+ * fails 5, the first version of its fix 5, the upstream build all 6 (bug
+ * 53's straight line: 1.5e-7 to 3.0e-7 deg, its speeds 4.8e-5 to 1.4e-4
+ * deg/day).
  * Run as
  *   moshbary EPHEDIR
  */
+#include <dirent.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "swephexp.h"
 
 static const int32 FR = SEFLG_J2000 | SEFLG_ICRS | SEFLG_XYZ;
@@ -208,6 +232,138 @@ static int apdist(int ipl, const char *sz)
   return verdict(sz, w, 1e-12, "AU");
 }
 
+/* (5) the mixed case: a directory of links to every file of ephe but
+ * semo_12.se1, so that 1200..1800 the Moon is Moshier's and the Earth and
+ * the Sun the files' */
+static int build_mixed(char *dir, const char *ephe)
+{
+  DIR *d;
+  struct dirent *e;
+  char src[PATH_MAX + 300], dst[PATH_MAX + 300];
+  if (mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL) {
+    if (e->d_name[0] == '.' || strcmp(e->d_name, "semo_12.se1") == 0)
+      continue;
+    snprintf(src, sizeof src, "%s/%s", ephe, e->d_name);
+    snprintf(dst, sizeof dst, "%s/%s", dir, e->d_name);
+    if (symlink(src, dst) != 0) {
+      closedir(d);
+      return -1;
+    }
+  }
+  closedir(d);
+  return 0;
+}
+
+static void unbuild_mixed(const char *dir)
+{
+  DIR *d = opendir(dir);
+  struct dirent *e;
+  char p[PATH_MAX + 300];
+  if (d == NULL)
+    return;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.') {
+      snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
+      unlink(p);
+    }
+  closedir(d);
+  rmdir(dir);
+}
+
+static double mixed_date(int y)	/* 13 dates 1300..1700 */
+{
+  return floor((2451545.0 + (1300 + y * 400.0 / 12 - 2000) * 365.25 + 23.1 * y) * 256) / 256;
+}
+
+/* The astrometric Moon (SEFLG_NOABERR | SEFLG_NOGDEFL, J2000 ICRS XYZ),
+ * heliocentric, barycentric or geocentric, against the light time's fixed
+ * point iterated here from the same directory's true barycentric places:
+ * M(t - tau), moved by that instant's rounding, less the Sun's, nothing or
+ * the Earth's at t. Every answer must say Moshier for the Moon. */
+static int mixed_fixed_point(swe_ctx *c, int32 fo, const char *sz, double lim)
+{
+  const double cau = 299792458.0 * 86400.0 / 1.49597870700e11;
+  const int32 ft = SEFLG_SWIEPH | FR | SEFLG_TRUEPOS | SEFLG_BARYCTR | SEFLG_SPEED;
+  char serr[AS_MAXCH];
+  double w = 0;
+  int y, it, i;
+  for (y = 0; y < 13; y++) {
+    double t = mixed_date(y), X[6], O[6] = {0, 0, 0, 0, 0, 0}, M[6], d[3], tau = 0, old = -1;
+    serr[0] = '\0';
+    if (swe_calc_r(c, t, SE_MOON, SEFLG_SWIEPH | FR | SEFLG_NOABERR | SEFLG_NOGDEFL | fo, X, serr) < 0
+        || strstr(serr, "Moshier") == NULL) {
+      printf("  %s: not the mixed case (%s)\n", sz, serr);
+      return 1;
+    }
+    if (fo == SEFLG_HELCTR)
+      swe_calc_r(c, t, SE_SUN, ft, O, serr);
+    else if (fo == 0)
+      swe_calc_r(c, t, SE_EARTH, ft, O, serr);
+    for (it = 0; it < 30 && fabs(tau - old) > 1e-18; it++) {
+      double tp = t - tau, eps;
+      old = tau;
+      swe_calc_r(c, tp, SE_MOON, ft, M, serr);
+      eps = (t - tp) - tau;
+      for (i = 0; i < 3; i++)
+        d[i] = M[i] + eps * M[i + 3] - O[i];
+      tau = norm(d) / cau;
+    }
+    if (ang(X, d) > w)
+      w = ang(X, d);
+  }
+  return verdict(sz, w, lim, "deg");
+}
+
+/* the mixed Moon's speeds against five-point differences over 2^-7 day */
+static int mixed_rate(swe_ctx *c, int32 fl, const char *sz, double lim)
+{
+  char serr[AS_MAXCH];
+  double w = 0, h = 1.0 / 128;
+  int y, k, i;
+  for (y = 0; y < 13; y++) {
+    double t = mixed_date(y), x[6], d[5][6];
+    if (swe_calc_r(c, t, SE_MOON, SEFLG_SWIEPH | fl | SEFLG_SPEED, x, serr) < 0) {
+      printf("  %s ERROR %s\n", sz, serr);
+      return 1;
+    }
+    for (k = 0; k < 5; k++)
+      swe_calc_r(c, t + (k - 2) * h, SE_MOON, SEFLG_SWIEPH | fl, d[k], serr);
+    for (i = 0; i < 2; i++) {
+      double v[5], e;
+      for (k = 0; k < 5; k++)
+        v[k] = i ? d[k][i] : d[2][0] + swe_difdeg2n(d[k][0], d[2][0]);
+      e = fabs(x[3 + i] - (v[0] - 8 * v[1] + 8 * v[3] - v[4]) / (12 * h));
+      if (e > w)
+        w = e;
+    }
+  }
+  return verdict(sz, w, lim, "deg/day");
+}
+
+static int mixed(const char *ephe_arg)
+{
+  char ephe[PATH_MAX], dir[] = "/tmp/moshbary.XXXXXX";
+  swe_ctx *c;
+  int bad = 0;
+  if (realpath(ephe_arg, ephe) == NULL || build_mixed(dir, ephe) != 0) {
+    printf("  mixed: cannot build the directory\n");
+    return 1;
+  }
+  c = swe_ctx_new();
+  swe_set_ephe_path_r(c, dir);
+  bad += mixed_fixed_point(c, SEFLG_HELCTR, "mixed Moon helio fixed point", 1e-11);
+  bad += mixed_fixed_point(c, SEFLG_BARYCTR, "mixed Moon bary fixed point", 1e-11);
+  bad += mixed_fixed_point(c, 0, "mixed Moon noaberr fixed point", 1e-10);
+  bad += mixed_rate(c, SEFLG_HELCTR, "mixed Moon helio speed", 1e-9);
+  bad += mixed_rate(c, SEFLG_NOABERR, "mixed Moon noaberr speed", 2e-8);
+  bad += mixed_rate(c, 0, "mixed Moon apparent speed", 2e-8);
+  swe_ctx_free(c);
+  unbuild_mixed(dir);
+  return bad;
+}
+
 int main(int argc, char **argv)
 {
   static const struct { int ipl; const char *sz; } rgf[] = {
@@ -252,6 +408,7 @@ int main(int argc, char **argv)
     snprintf(sz, sizeof sz, "%s apparent distance rate", nm);
     bad += rate(rgr[i], 0, 2, 1, sz, 1e-11, "AU/day");
   }
+  bad += mixed(argv[1]);
   printf(bad ? "G108 FAIL: %d\n" : "G108 PASS\n", bad);
   return bad ? 1 : 0;
 }
