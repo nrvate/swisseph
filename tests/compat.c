@@ -4314,6 +4314,30 @@ static double mosh_range_misnamed(void)
   return n;
 }
 
+/* UPSTREAM-BUGS 249: Mars by swe_calc() with SEFLG_JPLEPH | SEFLG_SPEED3
+ * on de200.eph 2^-16 day before its end, the fallback allowed, its
+ * longitude speed against SEFLG_SPEED's, deg/day: the read at tjd + 1e-4
+ * day fell to Moshier on its own and the speed differenced its place with
+ * de200's, 0.72180 for 0.76100 (3.9e-2 off, upstream's 1.15e-1 with its
+ * three-point speed, entry 31's); the three places de200's now, the speed
+ * one-sided from before tjd (1.5e-10 off). */
+static double speed3_span_edge_off(void)
+{
+  double x[6], y[6], r = 1e9;
+  char serr[AS_MAXCH];
+  swe_ctx *c;
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "de200.eph");
+    swe_set_ephe_fallback_r(c, 1);
+    if (swe_calc_r(c, 2513392.5 - 1.0 / 65536, SE_MARS, SEFLG_JPLEPH | SEFLG_SPEED3, x, serr) >= 0
+        && swe_calc_r(c, 2513392.5 - 1.0 / 65536, SE_MARS, SEFLG_JPLEPH | SEFLG_SPEED, y, serr) >= 0)
+      r = fabs(x[3] - y[3]);
+    swe_ctx_free(c);
+  }
+  return r;
+}
+
 /* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
  * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
  * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
@@ -6689,7 +6713,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6870,6 +6894,7 @@ int main(int argc, char **argv)
   utcfar = utc_far_answered();
   msgfar = far_msg_unreadable();
   moshrng = mosh_range_misnamed();
+  speed3span = speed3_span_edge_off();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -8567,6 +8592,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier range named    %.0f/4 not the tested FAIL: expected %s\n",
            moshrng, WANT_DEFECT ? "4" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (speed3span > 1e-2) : (speed3span < 1e-6))
+    printf("  SPEED3 at de200's end  %.2e deg/day OK\n", speed3span);
+  else {
+    printf("  SPEED3 at de200's end  %.2e deg/day FAIL: expected %s\n",
+           speed3span, WANT_DEFECT ? "> 1e-2" : "< 1e-6");
     bad++;
   }
 

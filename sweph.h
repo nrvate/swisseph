@@ -1723,6 +1723,13 @@ struct epsilon {
  *   - Moshier's planets' and Moon's refusals naming 625000.50 ..
  *     2818000.50, where their tests take 0.3 and 0.2 day more either side
  *     (UPSTREAM-BUGS 255, G160, G24)
+ *   - swe_calc() with SEFLG_SPEED3 within its step of a span's edge taking
+ *     its three places from two ephemerides, each read falling back on its
+ *     own, or refused when one left Moshier's range: on de200.eph 2^-16
+ *     day before its end Mars's speed 0.72180 deg/day for 0.76100, the
+ *     Moon's 3.3725 for 14.0460, Moshier noted, strict answering (the
+ *     compat build's three reads are upstream's) (UPSTREAM-BUGS 249, G165,
+ *     G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

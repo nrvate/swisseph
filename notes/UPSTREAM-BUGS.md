@@ -273,6 +273,7 @@ worst were in code that had never executed even once.
 | 238 | swedate.c takes NaN and -+inf in its doubles: `swe_utc_to_jd()` OK at NaN seconds with both dates NaN, `swe_date_conversion()` OK of INT_MIN INT_MIN INT_MIN at a NaN hour, `swe_utc_time_zone()`, `swe_jdet_to_utc()` and `swe_jdut1_to_utc()` the hour and minute (int) of NaN; the last two answer a time past 1e12 days and, where the year holds in no int (from TT -6.19e11 and +9.14e11), `swe_revjul()`'s INT_MIN with a month, day and time | Correctness (behaviour; undefined behaviour) | `swedate.c` |
 | 243 | A refused date past about 1e188 days is its message: "jd %f outside ..." cut at 255 characters, the range lost, from 1e237 the text, `swe_utc_to_jd()`'s seconds likewise; and this fork's "%.10g" prints the double next past -+7.8e11 or -+1e12 as the bound | Correctness (error reporting) | `swephlib.c`, `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swecl.c`, `sweph.c`, `swehouse.c`, `swedate.c` |
 | 255 | Moshier's planets and Moon take 0.3 and 0.2 day past MOSHPLEPH's and MOSHLUEPH's ends (the margin for the light time and speed reads), and their refusals name the ends: Mars and Spica answer at 2818000.79, and 2818000.81 is refused "outside Moshier planet range 625000.50 .. 2818000.50"; the Moon at 2818000.69 and 2818000.71 likewise | Correctness (error reporting) | `swemplan.c`, `swemmoon.c` |
+| 249 | `swe_calc()` with SEFLG_SPEED3 reads the body at tjd - dt, tjd + dt and tjd, each read falling back on its own: within dt of a span's edge the speed differenced two ephemerides, on de200.eph 2^-16 day before its end Mars 0.72180 deg/day for 0.76100, the Moon 3.3725 for 14.0460, Pluto 45.98 for 0.0144, flag 129 (JPL), Moshier noted where the call without a flag says nothing, strict answering; the Swiss files' and Moon files' edges alike; a read past Moshier's range refused the call, -1 for 4 | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -17536,6 +17537,134 @@ Noticed, not fixed (not this entry's):
   ascension speed 8.2e-5 deg/day off the side's model alone's within
   2^-17 day before J2000 + 2 centuries (latitude 1.9e-6), 1.9e-4 (5.5e-6)
   before - 2.
+
+## 249. Within its step of a span's edge SEFLG_SPEED3 takes its three places from two ephemerides, each read falling back on its own: on de200.eph 2^-16 day before its end Mars's speed 3.9e-2 deg/day off, the Moon's 10.7, Pluto's 46, Moshier noted where the call without a flag says nothing, strict answering; past Moshier's range refused
+
+**Severity: Correctness (behaviour: a speed off by 1.4e-5 to 46 deg/day, a flag or serr not the instant's, strict answering from two ephemerides, or a refusal where the call without a speed flag answers)**
+**Where:** `sweph.c`: `swe_calc_r_body()`'s SEFLG_SPEED3 branch, new `speed3_read()`, `speed3_same()`
+
+With SEFLG_SPEED3 `swe_calc_r()` reads the body three times, at tjd - dt,
+tjd + dt and tjd (dt 1e-4 day, the Moon's 5e-5, the true node's and the
+osculating apogee's 2^-9, the interpolated apsides' 2^-8, entries 45 and
+54), by three calls of `swecalc()`, and each fell back on its own: within
+dt of a span's edge one read came from the next ephemeris and the speed
+was the difference of places from two. The flag was the last read's
+(tjd's), serr whatever the last read to write one left, and the strict
+test (entry 120's and the downgrade's) saw only tjd's read. Measured:
+- de200.eph 2^-16 day before its end, either setting: Mars's longitude
+  speed 0.72180 deg/day for 0.76100 (SEFLG_SPEED), the Moon's 3.3725 for
+  14.0460, the Sun's 1.0239 for 0.9719, Pluto's 45.98 for 0.0144, flag
+  129 (JPL), serr "jd 2513392.500085 outside JPL eph. range 2305424.50 ..
+  2513392.50; using Moshier Eph; ", where the call without a flag says
+  nothing; 2^-10 day before it the true node 0.5835 for 0.0181, the
+  apogee 7.34 for 3.08.
+- With the files of 1800-2400 alone, 2^-12 day after semo_18's start the
+  node -0.4433 for -0.0140, the apogee -3.800 for -2.121; with sepl_24
+  too (semo_18's end alone), 2^-16 day before it the Moon 132 (Moshier's
+  label, entry 120) with the files' place, its speed 19.506 for 14.664,
+  "using Moshier eph. for moon" noted, Mars 1.4e-5 deg/day off with the
+  note, strict both refused where the calls without a flag answer 2; 2^-12
+  day before it the node -0.1731 for 0.0173. At sepl_18's start (2^-18
+  day past the light time) the Moon in a warm process not a pristine
+  one's.
+- At Moshier's range: the files asked with none on the path, 2^-16 day
+  inside Moshier's end or start, -1 ("SwissEph file 'sepl_30.se1' not
+  found ...", the read at tjd + dt not inside the range the fallback
+  takes) where the call without a flag answers 4; Moshier asked 2^-16 day
+  inside its planets' margin (END + 0.3) -1 ("jd 2818000.800085 outside
+  Moshier planet range") for 4, and inside the Moon's (END + 0.2) the Moon
+  -1 for 4, where past it Moshier's Earth takes the short lunar series'
+  Moon for the full one's (entry 191), a step of 2.0e-8 AU (1.44e-7 deg in
+  the Sun's place): Mars's speed 0.42217 for 0.42618, the Sun's latitude
+  speed -1.86e-3 for 1.78e-5.
+
+**Fix, as done here:**
+- Entry 225's rule: a read counts only when answered as tjd's is, by its
+  ephemeris and with its Moon (`speed3_read()`, `speed3_same()`): entry
+  120's Moshier Moon for the files' Earth, and for a Moshier answer
+  whether its instant is past the full lunar series' range (0.2 day past
+  MOSHLUEPH_START/END), where its Earth is the short series'. The reads
+  at tjd -+ dt as before; where they agree (everywhere but an edge) the
+  rest as before, entry 153's frame side and all.
+- Where they do not, serr is put back as before the reads and tjd is read
+  (it decides the fallback or the refusal, as without a speed flag); the
+  side so answered gives the stencil, the other side's read replaced by
+  one at tjd + 2 s dt on it (s its sign), tjd read again last (the save
+  areas keep it, as entry 153's), serr that read's alone, entry 120's
+  mark tjd's; the speed the three-point one-sided difference over the
+  instants' own intervals (`calc_speed_side()`). Neither side so
+  answered, or a frame model's step (entry 153's) within 2 dt on the side
+  taken, is an ERR naming tjd ("SEFLG_SPEED3's places leave the
+  ephemeris's span both sides"); no span is that short. A read's serr
+  dropped with it, as entry 225's skipped epochs: a note owed only once
+  (the de406.eph fallback's on the JPL file's first open) is lost if the
+  dropped read made it.
+- Now at every edge below the call answers with the flag (with
+  SEFLG_SPEED3), place and serr of the call without a speed flag, under
+  either setting: Mars at de200.eph's end - 2^-16 0.7610044691 deg/day
+  for SEFLG_SPEED's 0.7610044693 (1.5e-10 off), the Moon 14.0460322086
+  for 14.0460323352, the node 2^-10 day before it 0.0180947678 for
+  0.0180947479, the apogee 3.0769052 for 3.0769050.
+- Elsewhere unchanged: 48000 SEFLG_SPEED3 answers (21 bodies, twelve
+  flag sets, JPL, Swiss and Moshier, random dates 1311-2544 and
+  -3000..3000; the complete directory, the files of 1800-2400 alone, no
+  Moon files, no files; both settings) bit for bit, but serr in 8 refused
+  JPL barycentric requests outside de200.eph, which named tjd - dt's
+  instant and now name tjd's, as without the flag. 40000 SEFLG_SPEED3
+  calls of the Sun to Pluto on the files take 4.32716e9 instructions for
+  4.32056e9 (+0.15%), with SEFLG_SPEED 1.84522e9 for 1.84518e9.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; the compat build's three reads
+  are upstream's.
+
+G165 `tests/speed3edge.c`: the Sun, the Moon, Mars, Pluto, the true node,
+the osculating apogee and the interpolated apogee, geocentric,
+topocentric, heliocentric, barycentric and equatorial, both settings, on
+de200.eph 2^-16 and 2^-10 day before its end and just inside its start
+(the planets 2^-18 day past the instant their call without a flag is
+first answered, strict; the Moon 2^-15, the nodes 2^-10), with the files
+of 1800-2400 at sepl_18's start and end and semo_18's start, with sepl_24
+at semo_18's end, at 1500 without the Moon files, at 2000 without files,
+at Moshier's range and margins (the files asked and Moshier asked), and
+at 2000 on de200.eph, the files and Moshier: each call in a pristine
+process answers with the flag, place and serr of the call without a speed
+flag, its speeds within 2e-6 deg/day + 3e-6 of the rate (the nodes and
+apsides 3e-6 + 3e-6) of five-point one-sided differences of the places
+inward (2^-8 day, the nodes and apsides 2^-6), and each edge's calls in
+one process as their pristine ones. 1212 rows pass, the speeds within
+2.79e-5 deg/day of the rate (the Moon, central, the residual noted
+below), the nodes and apsides 6.8e-7; before the fix 494 fail (173 the
+flag, 223 serr, 96 the speed, 2 the warm process), the upstream build 730.
+46 rows where SEFLG_SPEED itself does not answer as the call without a
+flag are counted apart (noted below).
+G24 `speed3_span_edge_off`: Mars with SEFLG_JPLEPH | SEFLG_SPEED3 on
+de200.eph 2^-16 day before its end, the fallback allowed, its longitude
+speed against SEFLG_SPEED's: 1.49e-10 deg/day shipped, 1.15e-1 compat
+(3.9e-2 shipped before the fix).
+
+Noticed, not fixed:
+- The JPL Moon within its light time (1.5e-5 day) after de200.eph's
+  start answers flag 1 with the Sun's direction: at JD 2305424.5 + 2^-17
+  256.1228 deg at 0.9817 AU for 159.8151 (de200's own just after; Moshier
+  159.8051), serr "jd 2305424.499992 outside JPL eph. range ...", strict
+  answering; heliocentric (within 0.0057 day, 1545, 148.44 deg for 76.70)
+  and barycentric (17921, 1.0e-4 AU) alike, with or without a speed flag.
+- SEFLG_SPEED itself refused where the call without it answers: the
+  barycentric Sun 2^-18 day past its first answered instant after
+  de200.eph's or sepl_18's start (-1, "jd 2305424.499959 outside JPL eph.
+  range", for 17921 and 17922); Moshier's Sun at its planets' start - 0.3
+  past its light time (-1, "jd 625000.194183 outside Moshier planet
+  range", for 4; Mars and Pluto answer); Moshier's true node and
+  osculating apogee within 2^-5 day inside the Moon's margins, START - 0.2
+  and END + 0.2 (-1, "jd 2818000.731235 outside Moshier's Moon range", for
+  4), entry 225's defect on Moshier, which SEFLG_SPEED3 now answers as
+  without a flag; past the margin both refused, SEFLG_SPEED's message
+  naming a speed epoch's instant.
+- SEFLG_SPEED3's central difference divides by the nominal 2 dt, where
+  tjd -+ dt round to the JD's grid (entry 75's cause, there for the
+  node): from JD 2097152 to 4194304 the instants are 2 (dt - 1.7e-10 dt)
+  apart, every such speed 1.7e-6 of itself high: the Moon's 2.15e-5
+  deg/day at 1500, Mars's 8.4e-7, the mean node's 9e-8. Above the floor;
+  the one-sided form takes the instants' own intervals.
 
 ## How these were found
 

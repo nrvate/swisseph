@@ -243,6 +243,9 @@ static void denormalize_positions(double *x0, double *x1, double *x2);
 static void calc_speed(double *x0, double *x1, double *x2, double dt);
 #ifndef SWE_UPSTREAM_COMPAT
 static void calc_speed_side(const double *xa, double *x1, const double *xb, double da, double db);
+static int32 speed3_read(swe_ctx *ctx, double t, int ipl, int32 iplmoon, int32 iflag,
+                         double *x, char *serr, int *moon);
+static AS_BOOL speed3_same(int32 ra, int ma, int32 rb, int mb);
 #endif
 static int32 plaus_iflag(swe_ctx *ctx, int32 iflag, int32 ipl, double tjd, char *serr);
 static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, double tdate, int32 iflag, 
@@ -682,10 +685,6 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 	dt = PLAN_SPEED_INTV;
 	break;
     } 
-    if ((sd->iflgsave = swecalc(ctx, tjd-dt, ipl, iplmoon, iflag, x0, serr)) == ERR)
-      goto return_error; 
-    if ((sd->iflgsave = swecalc(ctx, tjd+dt, ipl, iplmoon, iflag, x2, serr)) == ERR)
-      goto return_error; 
 #ifndef SWE_UPSTREAM_COMPAT
     {
       /* Upstream bug 153: with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3
@@ -695,14 +694,70 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
        * derivative on tjd's side, the third place at tjd -+ 2 dt taken
        * before tjd's, which the save areas keep.
        * Upstream bug 159: and at SEFLG_JPLHOR's steps of the precession and
-       * obliquity at 1799 and 2202 Jan 1 (8.9e-3 deg/day at 1799). */
-      int side = swi_frame_step_side(ctx, tjd, dt, sd->iflgsave, SWI_FRAME_ALL);
+       * obliquity at 1799 and 2202 Jan 1 (8.9e-3 deg/day at 1799).
+       * Upstream bug 249: each of the three reads fell back on its own, and
+       * within dt of a span's edge the speed was the difference of places
+       * from two ephemerides, the flag and the fallback tjd's read's, serr
+       * the last read's to write one: on de200.eph 2^-16 day before its end
+       * Mars 0.72180 deg/day for 0.76100 with SEFLG_SPEED, the Moon 3.3725
+       * for 14.0460, Pluto 45.98 for 0.0144, flag 129 (JPL), "outside JPL
+       * eph. range ... using Moshier Eph" noted, strict not refusing; the
+       * true node 2^-10 day before it 0.5835 for 0.0181; at Moshier's range
+       * edges a read outside refused the whole call, and within dt of 0.2
+       * day past Moshier's lunar range, where its Earth takes the short
+       * series' Moon (bug 191), Mars 0.42217 for 0.42618. Now, as bug 225's,
+       * a read counts only when answered as tjd's is, by its ephemeris and
+       * with its Moon (bug 120's; the short series'): where the reads at
+       * tjd -+ dt do not agree, tjd's read decides the fallback, as without
+       * the flag, the side not so answered is replaced by tjd + 2 s dt on
+       * the side s that is, the speed the three-point one-sided difference,
+       * serr tjd's read's alone; no side so answered, or a step of the
+       * frame's models within 2 dt on it, is an ERR. Where they agree as
+       * before. */
       double x3[24];
-      if (side != 0
-          && (sd->iflgsave = swecalc(ctx, tjd + 2 * side * dt, ipl, iplmoon, iflag, x3, serr)) == ERR)
-        goto return_error;
-      if ((sd->iflgsave = swecalc(ctx, tjd, ipl, iplmoon, iflag, sd->xsaves, serr)) == ERR)
+      int32 r0, r2;
+      int m0, m2, m1, m3, side;
+      AS_BOOL edge;
+      char sb[AS_MAXCH];
+      if (serr != NULL)
+        strcpy(sb, serr);
+      r0 = speed3_read(ctx, tjd - dt, ipl, iplmoon, iflag, x0, serr, &m0);
+      r2 = speed3_read(ctx, tjd + dt, ipl, iplmoon, iflag, x2, serr, &m2);
+      edge = !speed3_same(r0, m0, r2, m2);
+      if (!edge) {
+        sd->iflgsave = r2;
+        side = swi_frame_step_side(ctx, tjd, dt, sd->iflgsave, SWI_FRAME_ALL);
+      } else {
+        if (serr != NULL)
+          strcpy(serr, sb);
+        if ((sd->iflgsave = speed3_read(ctx, tjd, ipl, iplmoon, iflag, sd->xsaves, serr, &m1)) == ERR)
+          goto return_error;
+        side = speed3_same(r2, m2, sd->iflgsave, m1) ? 1 : speed3_same(r0, m0, sd->iflgsave, m1) ? -1 : 0;
+        if (side == 0 || swi_frame_step_side(ctx, tjd, 2 * dt, sd->iflgsave, SWI_FRAME_ALL) == -side) {
+          if (serr != NULL && side == 0)
+            snprintf(serr, AS_MAXCH, "jd %.8f: SEFLG_SPEED3's places leave the ephemeris's span both sides", tjd);
+          else if (serr != NULL)
+            snprintf(serr, AS_MAXCH, "jd %.8f: SEFLG_SPEED3's places meet a span's edge and a step of the frame's models", tjd);
+          goto return_error;
+        }
+        r2 = sd->iflgsave;	/* the reads to come are answered so */
+        m2 = m1;
+      }
+      if (side != 0) {
+        if ((sd->iflgsave = speed3_read(ctx, tjd + 2 * side * dt, ipl, iplmoon, iflag, x3, serr, &m3)) == ERR)
+          goto return_error;
+        if (!speed3_same(sd->iflgsave, m3, r2, m2)) {
+          if (serr != NULL)
+            snprintf(serr, AS_MAXCH, "jd %.8f: SEFLG_SPEED3's places leave the ephemeris's span both sides", tjd);
+          goto return_error;
+        }
+      }
+      if (edge && serr != NULL)
+        strcpy(serr, sb);
+      if ((sd->iflgsave = speed3_read(ctx, tjd, ipl, iplmoon, iflag, sd->xsaves, serr, &m1)) == ERR)
         goto return_error; 
+      if (edge)
+        ctx->moshmoon_used = (m1 & 1) != 0;	/* the reads not taken are not this answer's */
       if (side != 0) {
         double *xa = (side < 0) ? x0 : x2;
         denormalize_positions(xa, sd->xsaves, x3);
@@ -713,6 +768,10 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
       }
     }
 #else
+    if ((sd->iflgsave = swecalc(ctx, tjd-dt, ipl, iplmoon, iflag, x0, serr)) == ERR)
+      goto return_error; 
+    if ((sd->iflgsave = swecalc(ctx, tjd+dt, ipl, iplmoon, iflag, x2, serr)) == ERR)
+      goto return_error; 
     if ((sd->iflgsave = swecalc(ctx, tjd, ipl, iplmoon, iflag, sd->xsaves, serr)) == ERR)
       goto return_error; 
     denormalize_positions(x0, sd->xsaves, x2);
@@ -11972,6 +12031,33 @@ static void calc_speed_side(const double *xa, double *x1, const double *xb, doub
   for (j = 0; j <= 18; j += 6)
     for (k = j; k < j + 3; k++)
       x1[k+3] = w0 * x1[k] + wa * xa[k] + wb * xb[k];
+}
+
+/* Upstream bug 249: one of SEFLG_SPEED3's reads, swecalc()'s flag, and in
+ * *moon the Moon its Earth was made with: 1 Moshier's for the files' Earth
+ * (bug 120; ctx->moshmoon_used or'ed with it, as the reads always left
+ * it), 2 the short lunar series' for Moshier's Earth, which past the full
+ * series' range (swi_moshmoon() allows 0.2 day past it) replaces the full
+ * one's (bug 191): a step of 2.0e-8 AU in the Earth there, 1.44e-7 deg
+ * in the Sun's place */
+static int32 speed3_read(swe_ctx *ctx, double t, int ipl, int32 iplmoon, int32 iflag,
+                         double *x, char *serr, int *moon)
+{
+  AS_BOOL was = ctx->moshmoon_used;
+  int32 r;
+  ctx->moshmoon_used = FALSE;
+  r = swecalc(ctx, t, ipl, iplmoon, iflag, x, serr);
+  *moon = ctx->moshmoon_used ? 1 : 0;
+  if (r != ERR && (r & SEFLG_MOSEPH) && !(t >= MOSHLUEPH_START - 0.2 && t <= MOSHLUEPH_END + 0.2))
+    *moon |= 2;
+  ctx->moshmoon_used = was || (*moon & 1);
+  return r;
+}
+
+/* bug 249: two reads answered alike, by one ephemeris with one Moon */
+static AS_BOOL speed3_same(int32 ra, int ma, int32 rb, int mb)
+{
+  return ra != ERR && rb != ERR && (ra & SEFLG_EPHMASK) == (rb & SEFLG_EPHMASK) && ma == mb;
 }
 #endif
 
