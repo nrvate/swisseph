@@ -1,0 +1,222 @@
+diff --git a/swehouse.c b/swehouse.c
+index e4c76c2..d4968df 100644
+--- a/swehouse.c
++++ b/swehouse.c
+@@ -1111,9 +1111,27 @@ static void ssypl_aux(swe_ctx *ctx, double tjde, double eps, const double *nutlo
+   /* distance between the auxiliary vernal point at t and
+    * the sidereal zero point of 2000 at t
+    * (a section on the sidereal plane).
+-   */ 
++   */
++#ifndef SWE_UPSTREAM_COMPAT
++  /* Upstream bug 296: the distance was acos(), 0 .. 180 ("always
++   * positive for dates after 5400 bc"). It is the plane's zero point's
++   * longitude from the auxiliary vernal point, 107.59 deg at J2000 and
++   * some 50" a year more; it passes 0 in 5650 BC and 180 in AD 7217, and
++   * beyond them acos() folded it: every cusp and ascmc twice its distance
++   * from 0 or 180 off (XXX), and acos() near 1 kept
++   * 1e-8 rad (XXX). The signed angle about the plane's pole (xnorm, x to
++   * x + 3), by atan2(), as ecl_t0_aux()'s (bug 287); past 180 it wraps by
++   * 360, so its rate is taken as an angle (G182). */
++  {
++    double xc[3];
++    swi_cross_prod(xvpx, x, xc);
++    *dvpxe = atan2((xc[0] * xnorm[0] + xc[1] * xnorm[1] + xc[2] * xnorm[2]) / rxyz,
++                   xvpx[0] * x[0] + xvpx[1] * x[1] + xvpx[2] * x[2]) * RADTODEG;  /* 5 */
++  }
++#else
+   *dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
+                 /* (always positive for dates after 5400 bc) */
++#endif
+   *dvpxe -= SSY_PLANE_NODE * RADTODEG;
+ }
+ 
+@@ -1168,7 +1186,8 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
+                           hr->armc - house_rate(hr, dm, dvpx, dp, TRUE),
+                           house_rate(hr, em, epsx, ep, FALSE),
+                           cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+-    houses_less_rate(hsys, retc, house_rate(hr, dem, dvpxe, dep, FALSE), cusp_speed,
++    /* bug 296: an angle, which wraps by 360 in AD 7217 */
++    houses_less_rate(hsys, retc, house_rate(hr, dem, dvpxe, dep, TRUE), cusp_speed,
+                      ascmc_speed);
+   } else
+ #else
+@@ -3289,8 +3308,13 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
+   double xp[6], xeq[6], ra, de, mdd, mdn, sad, san;
+   double hpos, sinad, ad, a, admc, adp, samc, asc, mc, acmc, tant;
+   //double demc;
++#ifndef SWE_UPSTREAM_COMPAT
++  double fh, ra0, tanfi, sinfi, fac, dfac;	/* bug 300: tanx, raep */
++  double x[3], xasc[3], xs1, xs2, raaz, oblaz, xtemp; /* BK 21.02.2006 */
++#else
+   double fh, ra0, tanfi, sinfi, fac, dfac, tanx;
+   double x[3], xasc[3], xs1, xs2, raep, raaz, oblaz, xtemp; /* BK 21.02.2006 */
++#endif
+   double hcusp[37], ascmc[10];
+   double sine = sind(eps);
+   double cose = cosd(eps);
+@@ -3508,19 +3532,43 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
+       if (samc == 0)
+         is_invalid = TRUE;
+       if (fabs(samc) > 0) {
++#ifndef SWE_UPSTREAM_COMPAT
++	/* Upstream bug 299: a place that rises and sets is past [0, 2]
++	 * only within adp - admc of the meridian (-adp - admc of the
++	 * lower), where it has the longer semi-arc: there the rising time
++	 * (east) puts it past the MC, in house 9, the setting time (west)
++	 * before it, in house 10 (the IC: 4 and 3), as swisseph.htm 6.5
++	 * says Koch's places do; all of it failed, "in circumpolar area",
++	 * and with it the MC and IC themselves given with any latitude past
++	 * the exact-cusp test: Zurich's MC with latitude 1e-9 deg, the IC
++	 * with -1e-9 (the south the other way), on every date; with
++	 * 1e-300, where dfac is 0 or 2 and rounds past it, in 10 of 32
++	 * charts (47.37, 33.87 and 10 N and S, 60 N and S, four dates).
++	 * Its value, through the neighbouring house; beyond it, or for a
++	 * circumpolar place or MC, as before (G182). */
++	double dmax = is_circumpolar ? 0 : 1.0 / 3;
++#endif
+ 	if (mdd >= 0) { /* east */
+ 	  dfac = (mdd - adp + admc) / samc;
+ 	  xp[0] = swe_degnorm((dfac - 1) * 90);
+ 	  xp[0] = swe_degnorm(xp[0] + MILLIARCSEC);
+ 	  /* eastern object has longer SA than midheaven */
++#ifndef SWE_UPSTREAM_COMPAT
++	  if (dfac > 2 + dmax || dfac < -dmax)
++#else
+ 	  if (dfac > 2 || dfac < 0)
++#endif
+ 	    is_invalid = TRUE; /* if this is omitted, funny things happen */
+ 	} else {
+ 	  dfac = (mdd + 180 + adp + admc) / samc;
+ 	  xp[0] = swe_degnorm((dfac + 1) * 90);
+ 	  xp[0] = swe_degnorm(xp[0] + MILLIARCSEC);
+ 	  /* western object has longer SA than midheaven */
++#ifndef SWE_UPSTREAM_COMPAT
++	  if (dfac > 2 + dmax || dfac < -dmax)
++#else
+ 	  if (dfac > 2 || dfac < 0)
++#endif
+ 	    is_invalid = TRUE; /* if this is omitted, funny things happen */
+ 	}
+       }
+@@ -3612,9 +3660,11 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
+       }
+       break;
+     case 'U': /* Krusinski-Pisa-Goelzer */
++#ifdef SWE_UPSTREAM_COMPAT
+       if (fabs(geolat) < VERY_SMALL) {	/* code below does not like geolat 0 */
+         geolat = (geolat >= 0) ? VERY_SMALL : -VERY_SMALL;
+       }
++#endif
+       /* Purpose: find point where planet's house circle (meridian)
+        *   cuts house plane, giving exact planet's house position.
+        * Input data: ramc, geolat, asc.
+@@ -3629,7 +3679,33 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
+        * from asc on that plane to planet's meridian intersection 
+        * with this plane.
+        */
+-      /* I. find plane of 'asc-zenith' great circle relative to equator: 
++#ifndef SWE_UPSTREAM_COMPAT
++      /* Upstream bug 300: the house circle's node and inclination were
++       * taken through the horizon, the node turned into it and its
++       * altitude raised 90 deg; near the equator the node nears the
++       * zenith, the horizon's pole, and its azimuth was lost: Krusinski's
++       * cusps given back with latitude 1e-300 1.1e-7 house off their
++       * numbers on the equator (the latitude moved to 1e-10, VERY_SMALL),
++       * 6.8e-8 at 1e-9, 7.6e-11 at 1e-6, every place alike, 1e-14
++       * elsewhere. The circle's pole, the Asc x the zenith, gives both:
++       * on the equator too, the cusps within 1e-14 house (G182). */
++      {
++        double xa[3], xz[3], xn[3];
++        x[0] = asc; x[1] = 0.0; x[2] = 1.0;
++        swe_cotrans(x, x, -eps);
++        xa[0] = cosd(x[1]) * cosd(x[0]);
++        xa[1] = cosd(x[1]) * sind(x[0]);
++        xa[2] = sind(x[1]);
++        xz[0] = cosd(geolat) * cosd(armc);
++        xz[1] = cosd(geolat) * sind(armc);
++        xz[2] = sind(geolat);
++        swi_cross_prod(xa, xz, xn);
++        /* either node: the arcs below are differences from it */
++        raaz = swe_degnorm(atan2(xn[0], -xn[1]) * RADTODEG);
++        oblaz = atan2(sqrt(xn[0] * xn[0] + xn[1] * xn[1]), fabs(xn[2])) * RADTODEG;
++      }
++#else
++      /* I. find plane of 'asc-zenith' great circle relative to equator:
+        *   solve spherical triangle 'EP-asc-intersection of house circle with equator' */
+       /* Ia. Find intersection of house plane with equator: */
+       x[0] = asc; x[1] = 0.0; x[2] = 1.0;          /* 1. Start with ascendent on ecliptic     */
+@@ -3654,6 +3730,7 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
+       x[1] = x[1] + 90;                 /* 3. Add 90 deg do decl - so get the point on house plane most distant from equ. */
+       swe_cotrans(x, x, 90-geolat);     /* 4. Rotate back to equator              */
+       oblaz = x[1];                     /* 5. Obliquity of house plane to equator */
++#endif
+       /* II. Next find asc and planet position on house plane, 
+        *     so to find relative distance of planet from 
+        *     coords beginning. */
+diff --git a/tests/Makefile b/tests/Makefile
+index c0339c6..81020bc 100644
+--- a/tests/Makefile
++++ b/tests/Makefile
+@@ -284,7 +284,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
+        check-threads-workaround check-threads \
+        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
+        check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-moonlt check-jpltdb check-sidsplice check-sidera check-obliq check-nutgrid check-sidnod check-spicarv check-nutspeed check-eopload \
+-       check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-meanspeed check-oscspeed check-callorder check-filejoin check-missfile check-moonfile check-hdrbound check-fictstar check-starfail check-pathset check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary check-modelstid check-adoptfiles check-fbshare check-cfghold check-closekeep check-searchhold check-nutintp check-closesurvive check-holdstart check-orbelbias check-timeequ check-sunmemo check-closetid check-jpldenum check-fbbary check-eopfollow check-woolard check-framestep check-pctredge check-jplhorbias check-moonlesstid check-nodcentre check-nutderiv check-nodapshel check-eclnutrange check-moshemb check-housejplhora check-framehold check-spanedge check-nodaposcrate check-nutseries check-sidtrange check-nodbias check-sidhorflag check-absdate check-horfall check-farrange check-speed3edge check-sidhpos check-hposflag check-joinspeed check-refusal check-framefall check-sidhplane check-localsky check-housecusp \
++       check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-meanspeed check-oscspeed check-callorder check-filejoin check-missfile check-moonfile check-hdrbound check-fictstar check-starfail check-pathset check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary check-modelstid check-adoptfiles check-fbshare check-cfghold check-closekeep check-searchhold check-nutintp check-closesurvive check-holdstart check-orbelbias check-timeequ check-sunmemo check-closetid check-jpldenum check-fbbary check-eopfollow check-woolard check-framestep check-pctredge check-jplhorbias check-moonlesstid check-nodcentre check-nutderiv check-nodapshel check-eclnutrange check-moshemb check-housejplhora check-framehold check-spanedge check-nodaposcrate check-nutseries check-sidtrange check-nodbias check-sidhorflag check-absdate check-horfall check-farrange check-speed3edge check-sidhpos check-hposflag check-joinspeed check-refusal check-framefall check-sidhplane check-localsky check-housecusp check-houseedge \
+        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
+        check-hostile
+ 
+@@ -437,6 +437,9 @@ localsky: localsky.c $(SWEOBJ_STD) hposswetest
+ housecusp: housecusp.c $(SWEOBJ_STD)
+ 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+ 
++houseedge: houseedge.c $(SWEOBJ_STD)
++	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
++
+ speed3edge: speed3edge.c $(SWEOBJ_STD)
+ 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+ 
+@@ -1745,6 +1748,15 @@ check-localsky: localsky
+ check-housecusp: housecusp
+ 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./housecusp $(EPHE)
+ 
++# G182: the solar system plane's sidereal houses past 5650 BC and AD 7217
++# against a construction by vectors and their speeds their places' rate;
++# Koch's swe_house_pos() at the meridian of a place with latitude, the MC
++# and IC among them; Krusinski's on the equator against a construction;
++# every system's cusps given back past the exact-cusp test (UPSTREAM-BUGS
++# 296, 299, 300).
++check-houseedge: houseedge
++	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./houseedge $(EPHE)
++
+ # G108: Moshier's fictitious bodies, fixed stars, apparent distances and
+ # heliocentric Moon see the barycentre: fictitious and orbel bodies and
+ # stars against the Swiss files, the Moon's heliocentric and astrometric
+@@ -2047,7 +2059,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
+ 	@echo "G16 PASS"
+ 
+ clean:
+-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed housespeed housefix houseresid starspeed defldisc startopodefl starflags tjdzero nutrate nutobliq staraberr moshvel orbelspeed fictneg fictbuiltin lunarpull lunarpulleph nodaps2 intpaps node3speed moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra meanspeed moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile moonfile hdrbound hdrbound_ubsan fictstar starfail pathset helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary modelstid adoptfiles fbshare cfghold closekeep searchhold nutintp closesurvive holdstart orbelbias timeequ sunmemo closetid jpldenum fbbary eopfollow woolard framestep pctredge jplhorbias moonlesstid nodcentre nutderiv nodapshel eclnutrange moshemb housejplhora framehold spanedge nodaposcrate nutseries sidtrange nodbias sidhorflag absdate farrange speed3edge sidhpos hposflag hposswetest joinspeed refusal framefall sidhplane localsky housecusp .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt horfall
++	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed housespeed housefix houseresid starspeed defldisc startopodefl starflags tjdzero nutrate nutobliq staraberr moshvel orbelspeed fictneg fictbuiltin lunarpull lunarpulleph nodaps2 intpaps node3speed moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra meanspeed moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile moonfile hdrbound hdrbound_ubsan fictstar starfail pathset helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary modelstid adoptfiles fbshare cfghold closekeep searchhold nutintp closesurvive holdstart orbelbias timeequ sunmemo closetid jpldenum fbbary eopfollow woolard framestep pctredge jplhorbias moonlesstid nodcentre nutderiv nodapshel eclnutrange moshemb housejplhora framehold spanedge nodaposcrate nutseries sidtrange nodbias sidhorflag absdate farrange speed3edge sidhpos hposflag hposswetest joinspeed refusal framefall sidhplane localsky housecusp houseedge .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt horfall
+ 	@# golden --threads captures each worker through a temp file and removes
+ 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
+ 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
+@@ -2065,7 +2077,7 @@ clean:
+         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
+         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
+         check-ctxfiles check-compat check-jplhor check-hostile \
+-        check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-meanspeed check-oscspeed check-callorder check-filejoin check-missfile check-moonfile check-hdrbound check-fictstar check-starfail check-pathset check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary check-modelstid check-adoptfiles check-fbshare check-cfghold check-closekeep check-searchhold check-nutintp check-closesurvive check-holdstart check-orbelbias check-timeequ check-sunmemo check-closetid check-jpldenum check-fbbary check-eopfollow check-woolard check-framestep check-pctredge check-jplhorbias check-moonlesstid check-nodcentre check-nutderiv check-nodapshel check-eclnutrange check-moshemb check-housejplhora check-framehold check-spanedge check-nodaposcrate check-nutseries check-sidtrange check-nodbias check-sidhorflag check-absdate check-horfall check-farrange check-speed3edge check-sidhpos check-hposflag check-joinspeed check-refusal check-framefall check-sidhplane check-localsky check-housecusp \
++        check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-fictbuiltin check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-defldisc check-moonaspeed check-planetaspeed check-nodapsaberr check-nodapstopo check-nodaposcspeed check-nodapsmosh check-nutrate check-nutobliq check-staraberr check-moshvel check-startopodefl check-starflags check-tjdzero check-housespeed check-moshprec check-moshlt check-housefix check-houseresid check-aberrspeed check-moonsitespeed check-intpconv check-ltround check-ltconv check-fictltround check-orbelcalc check-geoltearth check-pctrspeed check-baryspeed check-ayaspeed check-nakshatra check-meanspeed check-oscspeed check-callorder check-filejoin check-missfile check-moonfile check-hdrbound check-fictstar check-starfail check-pathset check-helmemo check-firstset check-eclnutspeed check-j2000inst check-ephswitch check-pathkeep check-tidget check-oscsmooth check-keepopen check-nodapsgm check-moshsunlt check-firstpath check-orbelgm check-pathwarn check-moshbary check-modelstid check-adoptfiles check-fbshare check-cfghold check-closekeep check-searchhold check-nutintp check-closesurvive check-holdstart check-orbelbias check-timeequ check-sunmemo check-closetid check-jpldenum check-fbbary check-eopfollow check-woolard check-framestep check-pctredge check-jplhorbias check-moonlesstid check-nodcentre check-nutderiv check-nodapshel check-eclnutrange check-moshemb check-housejplhora check-framehold check-spanedge check-nodaposcrate check-nutseries check-sidtrange check-nodbias check-sidhorflag check-absdate check-horfall check-farrange check-speed3edge check-sidhpos check-hposflag check-joinspeed check-refusal check-framefall check-sidhplane check-localsky check-housecusp check-houseedge \
+         ci-image check-ci clean \
+         check-dtobs check-fictlt check-moonlt check-jpltdb check-sidsplice check-sidera check-obliq check-nutgrid check-nutspeed check-sidnod check-spicarv
+ 
+@@ -2251,7 +2263,7 @@ check-threadtiers: baseline.txt
+ 	  pids="$$pids $$!"; \
+ 	done; \
+ 	for p in $$pids; do wait $$p || rc=1; done; \
+-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg fictbuiltin lunarpull lunarpulleph intpaps node3speed starspeed defldisc moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh nutrate nutobliq staraberr moshvel startopodefl starflags tjdzero housespeed housefix houseresid ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra meanspeed moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile moonfile hdrbound hdrbound_ubsan fictstar starfail pathset helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary modelstid adoptfiles fbshare cfghold closekeep searchhold nutintp closesurvive holdstart orbelbias timeequ sunmemo closetid jpldenum fbbary eopfollow woolard framestep pctredge jplhorbias moonlesstid nodcentre nutderiv nodapshel eclnutrange moshemb housejplhora framehold spanedge nodaposcrate nutseries sidtrange nodbias sidhorflag absdate farrange speed3edge sidhpos hposflag hposswetest joinspeed refusal framefall sidhplane localsky housecusp .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; horfall \
++	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg fictbuiltin lunarpull lunarpulleph intpaps node3speed starspeed defldisc moonaspeed planetaspeed nodapsaberr nodapstopo nodaposcspeed nodapsmosh nutrate nutobliq staraberr moshvel startopodefl starflags tjdzero housespeed housefix houseresid ltround ltconv fictltround orbelcalc geoltearth pctrspeed baryspeed ayaspeed nakshatra meanspeed moshprec moshlt aberrspeed moonsitespeed intpconv oscspeed callorder filejoin missfile moonfile hdrbound hdrbound_ubsan fictstar starfail pathset helmemo firstset eclnutspeed j2000inst ephswitch pathkeep tidget oscsmooth keepopen nodapsgm moshsunlt firstpath orbelgm pathwarn moshbary modelstid adoptfiles fbshare cfghold closekeep searchhold nutintp closesurvive holdstart orbelbias timeequ sunmemo closetid jpldenum fbbary eopfollow woolard framestep pctredge jplhorbias moonlesstid nodcentre nutderiv nodapshel eclnutrange moshemb housejplhora framehold spanedge nodaposcrate nutseries sidtrange nodbias sidhorflag absdate farrange speed3edge sidhpos hposflag hposswetest joinspeed refusal framefall sidhplane localsky housecusp houseedge .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; horfall \
+ 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
+ 
+ # G10: numerical regression coverage for the JPL reader.

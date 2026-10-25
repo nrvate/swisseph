@@ -1,0 +1,107 @@
+diff --git a/sweph.c b/sweph.c
+index 758e857..b62777f 100644
+--- a/sweph.c
++++ b/sweph.c
+@@ -215,6 +215,7 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr);
+ #ifndef SWE_UPSTREAM_COMPAT
+ static int vel_at_lt_fwd(swe_ctx *ctx, double teval, double tau, int32 epheflag, int32 iflag,
+                          AS_BOOL sun, const double *x0, double *v, char *serr);
++static AS_BOOL lt_earth_mixed(swe_ctx *ctx, double teval);
+ #endif
+ #ifndef SWE_UPSTREAM_COMPAT
+ /* app_pos_etc_moon(): the light time's Moon was Moshier's, tjd's the
+@@ -5481,6 +5482,45 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
+ 	}
+ 	break;
+       case SEFLG_SWIEPH:
++#ifndef SWE_UPSTREAM_COMPAT
++	/* Upstream bug 301: the Earth read at t with the body is made from
++	 * the Moon at t, and within the light time after a Moon file's start
++	 * with the file before it missing that Moon was Moshier's, where the
++	 * Earth at teval, which the answer is seen from, is the file's: in
++	 * the files of 1200-2400 less semo_12, BUG301_MEASURE. The Earth at
++	 * t serves only the aberration rate (SEFLG_SPEED, seen from the
++	 * Earth). Where it takes Moshier's Moon and the Earth at teval the
++	 * file's the read is dropped now, with its note; for the rate its
++	 * velocity at t is taken from reads after teval (vel_at_lt_fwd(),
++	 * bug 265's). Where the Earth at teval is Moshier's Moon's too, as
++	 * before. */
++	{
++	  AS_BOOL was = ctx->moshmoon_used, mixed;
++	  char se[AS_MAXCH];
++	  if (serr != NULL)
++	    strcpy(se, serr);
++	  ctx->moshmoon_used = FALSE;
++	  if (ibody == IS_PLANET)
++	    retc = sweplan(ctx, t, ipli, ifno, iflag, NO_SAVE, xx, xearth, xsun, NULL, serr);
++	  else		/* asteroid */
++	    retc = sweplan(ctx, t, SEI_EARTH, SEI_FILE_PLANET, iflag, NO_SAVE, xearth, NULL, xsun, NULL, serr);
++	  mixed = retc == OK && lt_earth_mixed(ctx, pedp->teval);
++	  ctx->moshmoon_used = was || (!mixed && ctx->moshmoon_used);
++	  if (mixed) {
++	    if (serr != NULL)
++	      strcpy(serr, se);
++	    if ((iflag & SEFLG_SPEED) && !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))) {
++	      if (vel_at_lt_fwd(ctx, pedp->teval, pedp->teval - t, SEFLG_SWIEPH, iflag, FALSE,
++				pedp->x, xearth + 3, serr) != OK)
++		return ERR;
++	      for (i = 0; i <= 2; i++)	/* (only the velocity is read) */
++		xearth[i] = pedp->x[i] - (pedp->teval - t) * pedp->x[i+3];
++	    }
++	  }
++	  if (retc == OK && ibody != IS_PLANET)
++	    retc = sweph(ctx, t, ipli, ifno, iflag, xsun, NO_SAVE, xx, serr);
++	}
++#else
+ 	if (ibody == IS_PLANET) {
+ 	  retc = sweplan(ctx, t, ipli, ifno, iflag, NO_SAVE, xx, xearth, xsun, NULL, serr);
+ 	} else { 		/*asteroid*/
+@@ -5488,6 +5528,7 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
+ 	  if (retc == OK)
+ 	    retc = sweph(ctx, t, ipli, ifno, iflag, xsun, NO_SAVE, xx, serr);
+ 	}
++#endif
+ 	if (retc != OK)
+ 	  return(retc);
+ 	break;
+@@ -8206,6 +8247,18 @@ static int vel_at_lt_fwd(swe_ctx *ctx, double teval, double tau, int32 epheflag,
+   return OK;
+ }
+ 
++/* Upstream bugs 301, 302: a read of the Earth at a light-time instant,
++ * made with ctx->moshmoon_used FALSE, took Moshier's Moon (the Moon file
++ * does not hold that instant) where the Earth at teval is the files' own
++ * (made with the file's Moon): the read is past the span of the Moon that
++ * answered at teval, for vel_at_lt_fwd() to replace */
++static AS_BOOL lt_earth_mixed(swe_ctx *ctx, double teval)
++{
++  const struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
++  return ctx->moshmoon_used && pedp->iephe == SEFLG_SWIEPH && pedp->teval == teval
++         && ctx->moshmoon_earth_t != teval;
++}
++
+ /* Upstream bug 35: the light time's rate was taken as the change, over a
+  * day, of the light-time displacement of a body moved linearly along its
+  * velocity (xxsp), which is off by the curvature of that day's motion:
+@@ -9277,9 +9330,20 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
+         case SEFLG_JPLEPH:
+           retc = swi_pleph(ctx, tlt, J_EARTH, J_SBARY, xelt, serr);
+           break;
+-        case SEFLG_SWIEPH:
++        case SEFLG_SWIEPH: {
++          /* Upstream bug 302: and on the files, within the light time
++           * after a Moon file's start with the file before it missing,
++           * the read took Moshier's Moon where the Earth at teval is the
++           * file's: BUG302_MEASURE. There too now (lt_earth_mixed()). */
++          AS_BOOL was = ctx->moshmoon_used, mixed;
++          ctx->moshmoon_used = FALSE;
+           retc = sweplan(ctx, tlt, SEI_EARTH, SEI_FILE_PLANET, iflag, NO_SAVE, xelt, NULL, NULL, NULL, serr);
++          mixed = retc == OK && lt_earth_mixed(ctx, pedp->teval);
++          ctx->moshmoon_used = was || (!mixed && ctx->moshmoon_used);
++          if (mixed)
++            retc = NOT_AVAILABLE;
+           break;
++        }
+         default:
+           if (!(tlt >= MOSHPLEPH_START - 0.3 && tlt <= MOSHPLEPH_END + 0.3)
+               && pedp->teval >= MOSHPLEPH_START - 0.3 && pedp->teval <= MOSHPLEPH_END + 0.3)
