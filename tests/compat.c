@@ -681,6 +681,33 @@ static double moon_oscu_peri_noise(void)
   return sqrt(s / 20 / 70);
 }
 
+/* Venus's osculating perihelion distance from swe_nod_aps() on Moshier
+ * against the eccentricity vector of swe_calc()'s heliocentric state with
+ * DE403's GMS + GM2 (Moshier's planets are fitted to DE404), AU. Upstream
+ * takes the Sun's GM as HELGRAVCONST / AUNIT^3, 1.8e-10 below it
+ * (UPSTREAM-BUGS 105). */
+static double nodaps_gm_off(void)
+{
+  double t = floor(2460000.3 * 256) / 256, x[6], xn[6], xd[6], xp[6], xa[6];
+  double mu = 2.959122082855911e-4 + 7.243452486162703e-10, r, v2, rv, ev[3], e, a;
+  char serr[256];
+  int j;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_VENUS, SEFLG_MOSEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_TRUEPOS
+           | SEFLG_XYZ | SEFLG_SPEED, x, serr);
+  swe_nod_aps(t, SE_VENUS, SEFLG_MOSEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_TRUEPOS,
+              SE_NODBIT_OSCU, xn, xd, xp, xa, serr);
+  r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+  v2 = x[3] * x[3] + x[4] * x[4] + x[5] * x[5];
+  rv = x[0] * x[3] + x[1] * x[4] + x[2] * x[5];
+  for (j = 0; j < 3; j++)
+    ev[j] = ((v2 - mu / r) * x[j] - rv * x[j+3]) / mu;
+  e = sqrt(ev[0] * ev[0] + ev[1] * ev[1] + ev[2] * ev[2]);
+  a = 1 / (2 / r - v2 / mu);
+  return fabs(a * (1 - e) - xp[2]);
+}
+
 /* The flags swe_fixstar2() returns against swe_calc()'s for Mars, sidereal
  * and heliocentric Moshier: the bits that differ, counted. Upstream returns
  * the caller's iflag, without NONUT (1) and NOABERR|NOGDEFL (2)
@@ -2084,7 +2111,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2122,6 +2149,7 @@ int main(int argc, char **argv)
   oscspd = osc_speed_off(0);
   oscj2k = osc_speed_off(1);
   operinoise = moon_oscu_peri_noise();
+  nodapsgm = nodaps_gm_off();
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
   nodjd0 = nodaps_jd0_off();
@@ -2882,6 +2910,14 @@ int main(int argc, char **argv)
   else {
     printf("  after a refused file   %.2e deg FAIL: expected %s\n",
            refused, WANT_DEFECT ? "> 1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodapsgm > 1e-11) : (nodapsgm < 1e-13))
+    printf("  nod_aps Venus GM q     %.2e AU OK\n", nodapsgm);
+  else {
+    printf("  nod_aps Venus GM q     %.2e AU FAIL: expected %s\n",
+           nodapsgm, WANT_DEFECT ? "> 1e-11" : "< 1e-13");
     bad++;
   }
 

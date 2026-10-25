@@ -1027,6 +1027,12 @@ struct epsilon {
  *     refused (misnamed, damaged), emptying the constants of every file
  *     left open: the next calls failed "sepl_06.se1 is damaged (2)" until
  *     each had been reopened (UPSTREAM-BUGS 104, G99)
+ *   - swe_nod_aps()'s osculating ellipses fitted with the Astronomical
+ *     Almanac's GM, not the ephemeris's: the Moon's 3.3e-8 high (its
+ *     apsides 5e-5 deg off SE_OSCU_APOG's), the Sun's 1.8e-10 low,
+ *     plmass's planets for de200's and Mercury's mass for Pluto (Venus's
+ *     perihelion 3e-6 deg, de200's Neptune's 2.9e-3; UPSTREAM-BUGS 105,
+ *     G104)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1142,6 +1148,10 @@ extern int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 ifla
 extern double swi_armc_to_mc(double armc, double eps);
 
 extern int32 swi_get_denum(swe_ctx *ctx, int32 ipli, int32 iflag);
+#ifndef SWE_UPSTREAM_COMPAT
+extern double swi_gm_earth_moon(swe_ctx *ctx, int32 epheflag);
+extern double swi_gm_sun_planet(swe_ctx *ctx, int32 epheflag, int iel);
+#endif
 
 
 /* Upstream bug 71: the same idiom in every other cache keyed on an instant

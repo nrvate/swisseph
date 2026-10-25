@@ -8379,6 +8379,63 @@ static double gm_earth_moon(swe_ctx *ctx, int32 epheflag)
   if (denum >= 403) return 8.997011374291876e-10;   /* header.403; Moshier */
   return 8.997011658557308e-10;                     /* header.200 */
 }
+
+/* Upstream bug 105: swe_nod_aps()'s osculating ellipses, the Moon's about
+ * the Earth (G (M_earth + M_moon), above) and the planets' about the Sun:
+ * G (M_sun + M_planet) of the ephemeris in use, AU^3/day^2. iel is the
+ * planet, 0..8 Mercury..Pluto with 2 the Earth-Moon barycentre, or -1 for
+ * the Sun alone (asteroids, fictitious bodies). A JPL file's own GMS and
+ * GMi are used when it is open; otherwise those of the header the DE
+ * number names, as in gm_earth_moon() (ssd.jpl.nasa.gov/ftp/eph/planets/
+ * ascii, GROUP 1041, read 2026-10-24; Moshier's planets are fitted to
+ * DE404, taken as DE403). The Sun's is k^2 from DE200 to DE431,
+ * 2.9591220828411956e-4 in DE440/441; upstream's HELGRAVCONST / AUNIT^3
+ * is 1.80e-10 below the first, 1.76e-10 below the second, and its
+ * planets' masses are DE431's but Mercury's and Pluto's. */
+double swi_gm_earth_moon(swe_ctx *ctx, int32 epheflag)
+{
+  return gm_earth_moon(ctx, epheflag);
+}
+
+double swi_gm_sun_planet(swe_ctx *ctx, int32 epheflag, int iel)
+{
+  static const char *gmname[9] = {"GM1", "GM2", "GMB", "GM4", "GM5", "GM6",
+                                  "GM7", "GM8", "GM9"};
+  static const double gmde[5][10] = {
+    /* GMS, GM1 .. GM9 (GMB for the Earth-Moon barycentre) */
+    {2.9591220828411956e-4, 4.912500194889318e-11, 7.243452332644119e-10,
+     8.997011392947347e-10, 9.549548829725812e-11, 2.825345825225792e-07,
+     8.45970599337629e-08, 1.29202656496824e-08, 1.524357347885194e-08,
+     2.175096464893358e-12},				/* header.440, .441 */
+    {2.959122082855911e-4, 4.91248045036476e-11, 7.24345233264412e-10,
+     8.997011390199871e-10, 9.54954869555077e-11, 2.82534584083387e-07,
+     8.45970607324503e-08, 1.29202482578296e-08, 1.52435734788511e-08,
+     2.17844105197418e-12},				/* header.430, .431 */
+    {2.959122082855911e-4, 4.912547451450812e-11, 7.243452486162703e-10,
+     8.997011346712499e-10, 9.549535105779258e-11, 2.8253459095242264e-07,
+     8.459715185680659e-08, 1.2920249167819694e-08, 1.5243589007842763e-08,
+     2.1886997654259697e-12},				/* header.405, .406 */
+    {2.959122082855911e-4, 4.912547451450812e-11, 7.243452486162703e-10,
+     8.997011374291876e-10, 9.549535105779258e-11, 2.825345909524227e-07,
+     8.459715185680659e-08, 1.29202491678197e-08, 1.524358900784276e-08,
+     2.18869976542597e-12},				/* header.403; Moshier */
+    {2.959122082855911e-4, 4.912547451450812e-11, 7.243456209632766e-10,
+     8.997011658557308e-10, 9.549528942224058e-11, 2.8253421034459264e-07,
+     8.459468504830659e-08, 1.288816238138035e-08, 1.5321124812842762e-08,
+     2.2762477518636993e-12},				/* header.200 */
+  };
+  double gms, gmp = 0;
+  int32 denum;
+  int k;
+  if ((epheflag & SEFLG_JPLEPH) && ctx->jpl_file_is_open
+      && swi_get_jpl_const(ctx, "GMS", &gms) == OK && gms > 0
+      && (iel < 0 || iel > 8
+          || (swi_get_jpl_const(ctx, gmname[iel], &gmp) == OK && gmp > 0)))
+    return gms + gmp;
+  denum = swi_get_denum(ctx, SEI_EARTH, epheflag);
+  k = denum >= 440 ? 0 : denum >= 430 ? 1 : denum >= 405 ? 2 : denum >= 403 ? 3 : 4;
+  return gmde[k][0] + (iel >= 0 && iel <= 8 ? gmde[k][1 + iel] : 0);
+}
 #endif
 
 #ifndef SWE_UPSTREAM_COMPAT

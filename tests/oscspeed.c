@@ -23,9 +23,12 @@
  * own truncation and noise below 1e-11 on the node), in the ecliptic and
  * the equator, of date, without nutation and J2000. Within 1e-9 deg/day
  * for the node (measured <= 1.0e-10), 5e-8 for the apogee (<= 8.6e-9),
- * 5e-9 and 4e-7 on Moshier (6.5e-10, 7.2e-8), and 4e-13 AU/day in
+ * 5e-9 and 3e-8 on Moshier (6.5e-10, 8.2e-9), and 4e-13 AU/day in
  * distance (4.6e-14; Moshier 2e-12, 3.1e-13). Over 150 dates the worst
- * are 3.2e-10, 3.8e-8, 6.6e-9 and 4.7e-7. The build with the step fixed
+ * are 3.2e-10, 3.8e-8, 6.6e-9 and 1.8e-8. (The Moshier apogee's limit was
+ * 4e-7 until its Moon's velocity became the series' derivative,
+ * UPSTREAM-BUGS 95: 7.2e-8 before, 4.7e-7 over 150 dates; the build
+ * before that fails its five rows.) The build with the step fixed
  * but not the step size (UPSTREAM-BUGS 75's first part) fails 20 of the
  * 30 rows: the Swiss node by 1.6e-9, the apogee by 1.4e-7, Moshier's node
  * by 5.1e-8 and apogee by 2.0e-6, Moshier's distances by 6.7e-12 and
@@ -48,7 +51,7 @@ static const struct { int32 fl; int ipl; const char *sz; double lim, dlim; } rgC
   {SEFLG_JPLEPH, SE_TRUE_NODE, "de200 true node", 1e-9, 4e-13},
   {SEFLG_JPLEPH, SE_OSCU_APOG, "de200 osc. apogee", 5e-8, 4e-13},
   {SEFLG_MOSEPH, SE_TRUE_NODE, "Moshier true node", 5e-9, 2e-12},
-  {SEFLG_MOSEPH, SE_OSCU_APOG, "Moshier osc. apogee", 4e-7, 2e-12},
+  {SEFLG_MOSEPH, SE_OSCU_APOG, "Moshier osc. apogee", 3e-8, 2e-12},
 };
 /* the nine-point central difference, eighth order: over 2^-3 day its
  * truncation is ~1e-12 deg/day and its noise a fiftieth of a five-point's

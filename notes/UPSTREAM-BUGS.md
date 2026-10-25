@@ -136,6 +136,7 @@ worst were in code that had never executed even once.
 | 95 | The Moshier Moon's velocity is a difference of the series, and the osculating apogee's eccentricity is sqrt(1 - p / a): the osculating apogee and perigee jitter | Correctness | `swemmoon.c`, `sweph.c`, `sweph.h` |
 | 104 | A refused Swiss file empties the constants of every file left open, so the next calls fail on healthy files; the path setter crashes on a refused moon file (the crash this fork's) | Correctness / Memory | `sweph.c` |
 | 103 | Files closed and reopened when nothing changed (the implicit `SE_EPHE_PATH` path after any setter, the same path or JPL file again, an ephemeris switch, another thread's JPL file), and `swe_deltat()`'s ephemeris guessed from the files this thread has open (partly this fork's) | Correctness, performance | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h` |
+| 105 | `swe_nod_aps()`'s osculating ellipses take the Astronomical Almanac's GM, not the ephemeris's, and Pluto Mercury's mass | Correctness | `swecl.c`, `sweph.c`, `sweph.h` |
 
 ---
 
@@ -6145,6 +6146,92 @@ setter round opens nothing, having no shared configuration; its second
 thread finds no files at all, 600 opens). G24 `dt_guess_thread_off`: 0 s
 shipped, 169.4 s compat. G24, G81, G82, G83, G91, G97, G100, G2 and the
 context gate pass; bench within noise.
+
+## 105. `swe_nod_aps()`'s osculating ellipses take the Astronomical Almanac's GM, not the ephemeris's, and Pluto Mercury's mass
+
+**Severity: Correctness (the Moon's osculating apsides 5e-5 deg, 7.8e-6 deg/day and 2e-10 AU off SE_OSCU_APOG's; Venus's perihelion 3e-6 deg; on de200 Neptune's 2.9e-3 deg and 3.3e-5 AU, Uranus's 1.4e-4 deg; Pluto's 3.9e-5 deg and 2e-5 AU on every ephemeris)**
+**Where:** `swecl.c`: `swe_nod_aps_r()`, the osculating points (SE_NODBIT_OSCU, SE_NODBIT_OSCU_BAR); `sweph.c`: `swi_gm_earth_moon()`, `swi_gm_sun_planet()`
+
+`swe_nod_aps()` fits each osculating ellipse to the body's state with a
+GM: the Moon's G M_earth (1 + 1 / EARTH_MOON_MRAT) from the Astronomical
+Almanac's 1996 G M_earth, the planets' HELGRAVCONST (1 + 1 / plmass) /
+AUNIT^3. Neither is the ephemeris's own constant. The Moon's is 3.3e-8
+above DE441's GMB (bug 28 gave `lunar_osc_elem()`, SE_OSCU_APOG, the
+ephemeris's GMB, and left this copy); the Sun's is 1.80e-10 below k^2,
+the GMS of every JPL header from DE200 to DE431, and 1.76e-10 below
+DE440/441's; plmass is DE431's planets (but Mercury, 1.4e-5, and Pluto,
+5e-3), and de200's differ (Uranus 2.5e-3, Neptune 5e-3, Pluto 4e-2).
+And `ipl_to_elem[]` sends Pluto (9) to 0, Mercury's element: Pluto's
+ellipse took Mercury's mass, 1.6e-7 of the Sun's, where its own is
+7.4e-9. The eccentricity vector turns by about dGM / (GM e) and the
+semi-axis moves by about dGM / GM.
+
+Measured with SEFLG_TRUEPOS, 64 dates 1700..2100: the Moon's osculating
+apogee from `swe_nod_aps()` against SE_OSCU_APOG, distance 1.96e-10 AU
+(Swiss files), 1.85e-11 (de200, whose file GMB SE_OSCU_APOG takes),
+2.08e-10 (Moshier), longitude 5.3e-5 deg, 4.9e-6, 5.7e-5. The planets'
+perihelia against the eccentricity vector of `swe_calc()`'s own
+heliocentric J2000 state with the header's GMS + GMi (G104): distance
+up to 2.5e-10 AU (Venus), 1.8e-9 (Jupiter), 1.0e-8 (Neptune), Pluto
+6.9e-6; on de200 direction Venus 1.5e-6 deg, Jupiter 1.2e-6, Saturn
+8.1e-6, Uranus 1.3e-4, Neptune 2.5e-3, Pluto 3.7e-5.
+
+**Fix, as done here:** the ellipses take the ephemeris's constants: the
+Moon's `gm_earth_moon()` (bug 28's, exported as `swi_gm_earth_moon()`),
+the planets' `swi_gm_sun_planet()`: GMS + GMi (GMB for the Earth's orbit)
+from the JPL file's header when one is open, otherwise from the header the
+DE number names (DE440/441, DE430/431, DE405/406, DE403 for Moshier, DE200;
+ssd.jpl.nasa.gov/ftp/eph/planets/ascii, GROUP 1041, read 2026-10-24), the
+Sun's alone for asteroids and fictitious bodies; the ephemeris is the one
+`swe_calc()` answered with. Pluto takes its own element. After: the Moon's
+apogee distance against SE_OSCU_APOG <= 1.4e-16 AU on all three, longitude
+4.1e-11 deg on de200; the perihelia <= 6e-14 AU, direction <= 4e-12 deg
+on de200. Positions move by what was removed: geocentric default flags,
+900..2960 (de200 1959..2027), the Moon's points by 5.1e-5 deg (speeds
+7.8e-6 deg/day, distances 2.1e-10 AU), Venus's 3.0e-6 deg, the Sun's
+(the Earth's orbit) 6.1e-7, Jupiter's 3.0e-7, Mars's 1.1e-7, Chiron's
+2.5e-8, Pluto's 3.4e-5 deg and 1.9e-5 AU; on de200 Neptune's 2.9e-3 deg
+and 3.3e-5 AU, Uranus's 1.4e-4, Saturn's 8.6e-6, Jupiter's 1.5e-6. Not a
+hot path (once per `swe_nod_aps()` call).
+
+Left, recorded, not this defect:
+- The direction of the Moon's osculating apogee from `swe_nod_aps()`
+  still differs from SE_OSCU_APOG's on the Swiss files and Moshier, by
+  6.2e-6 deg in latitude and 2.4e-6 in longitude (SEFLG_TRUEPOS; twice
+  that with SEFLG_ICRS), and by 5.5e-6 deg from the eccentricity vector of
+  `swe_calc()`'s J2000 state; on de200, an ephemeris without a frame bias,
+  they agree to 4e-11. `swe_nod_aps()` reads `swe_calc()`'s J2000 state,
+  frame bias applied, and `swi_plan_for_osc_elem()` applies the bias again
+  (for DE >= 403), so every osculating point of every body on those
+  ephemerides is turned by the frame bias once more. Above the floor;
+  a separate item.
+- The Earth's (the Sun's) osculating ellipse is fitted to an EMB built
+  with EARTH_MOON_MRAT, the AA's 81.30055985, not the ephemeris's EMRAT
+  (DE200 81.300587): on de200 3.6e-7 deg on its perihelion and 1e-11 AU,
+  1.2e-7 deg with DE431's 81.30056907 (G104 builds the EMB the same way). Above the floor; a
+  separate item.
+- With the default (apparent) flags `swe_nod_aps()`'s and SE_OSCU_APOG's
+  apogees still differ by 9e-5 deg, as they always have: SE_OSCU_APOG
+  fits the light-time-corrected Moon, `swe_nod_aps()` the geometric one
+  and applies its corrections to the points. Two definitions, not a
+  rounding.
+- `swe_get_orbital_elements()` (`get_gmsm()`) takes the same AA
+  constants, with deliberate Astronomical Almanac factors on top, and the
+  same `ipl_to_elem[]` for Pluto; not changed here.
+
+G104 `tests/nodapsgm.c`: the Swiss files (their DE number's header,
+DE441 here), de200 and Moshier, eight dates each: (a) the Moon's apogee
+against SE_OSCU_APOG, distance within 1e-14 AU, direction within 1e-9 deg
+on de200; (b) Mercury..Pluto and the Earth (EMB) against their own
+eccentricity vectors, perihelion distance within 1e-12 AU, direction
+within 1e-9 deg on de200 (directions not compared on the others, above).
+30 rows, measured <= 1.4e-16 and 6e-14 AU, 4.1e-11 deg. The build before
+the fix fails all 30; the upstream build 27 (its two GMs agree for the
+Moon). G24 `nodaps_gm_off`: Venus's osculating perihelion distance on
+Moshier at JD 2460000.297 against DE403's GMS + GM2, 1.11e-16 AU shipped,
+1.15e-10 compat. G74's Moshier apogee limit tightened from 4e-7 to 3e-8
+deg/day (measured 8.2e-9; 1.8e-8 over 150 dates; the build before entry
+95 fails its five rows). G94, G74, G79, G86, G69 pass.
 
 ## How these were found
 

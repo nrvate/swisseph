@@ -5292,7 +5292,10 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   int32 ipli;
   int istart, iend;
   int32 iflJ2000;
-  double daya, plm;
+  double daya;
+#ifdef SWE_UPSTREAM_COMPAT
+  double plm;
+#endif
   double t = (tjd_et - J2000) / 36525, dt;
   double x[6], xx[24], *xp, xobs[6], x2000[6]; 
   double xpos[3][6], xnorm[6];
@@ -5314,6 +5317,9 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   double *xear = pedp->x;
   const double *ep;
   double Gmsm, dzmin;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 retc0 = 0;
+#endif
   double rxy, rxyz, fac, sgn;
   double sinnode, cosnode, sinincl, cosincl, sinu, cosu, cosE, cosE2;
   double uu, ny, ny2, c2, v2, ro, ro2, rn, rn2;
@@ -5560,8 +5566,13 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
    ***************************************/
   } else {
     /* first, we need a heliocentric distance of the planet */
+#ifndef SWE_UPSTREAM_COMPAT
+    if ((retc0 = swe_calc_r(ctx, tjd_et, ipli, iflg0, x, serr)) == ERR)
+      return ERR;
+#else
     if (swe_calc_r(ctx, tjd_et, ipli, iflg0, x, serr) == ERR)
       return ERR;
+#endif
     iflJ2000 = (iflag & SEFLG_EPHMASK)|SEFLG_J2000|SEFLG_EQUATORIAL|SEFLG_XYZ|SEFLG_TRUEPOS|SEFLG_NONUT|SEFLG_SPEED;
     ellipse_is_bary = FALSE;
     if (ipli != SE_MOON) {
@@ -5575,6 +5586,32 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     /* we need three positions and three speeds
      * for three nodes/apsides. from the three node positions,
      * the speed of the node will be computed. */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 105: the ellipses' GM was the Astronomical Almanac's,
+     * G M_earth (1 + 1 / EARTH_MOON_MRAT) for the Moon, 3.3e-8 above the
+     * ephemeris's GMB (DE431/441; bug 28 fixed lunar_osc_elem() alone), and
+     * HELGRAVCONST / AUNIT^3 for the Sun, 1.8e-10 below every JPL
+     * header's, with plmass's planets (DE200's Uranus is 2.5e-3 heavier)
+     * and Mercury's for Pluto.
+     * The eccentricity vector turns by about dGM / (GM e): the Moon's
+     * osculating apsides were 5.3e-5 deg off SE_OSCU_APOG's. Now the
+     * ephemeris's own constants (swi_gm_earth_moon(), swi_gm_sun_planet()). */
+    if (ipli == SE_MOON) {
+      dt = NODE_CALC_INTV;
+      dzmin = 1e-15;
+      Gmsm = swi_gm_earth_moon(ctx, retc0 & SEFLG_EPHMASK);
+    } else {
+      /* ipl_to_elem[] gives Pluto Mercury's element, 0: Pluto's ellipse
+       * took Mercury's mass, 1.6e-7 of the Sun's (its perihelion 1e-5 AU
+       * off, 3.7e-5 deg) */
+      int iel = ipli == SE_PLUTO ? 8
+                : ((ipli >= SE_MERCURY && ipli < SE_PLUTO) || ipli == SE_EARTH)
+                ? ipl_to_elem[ipl] : -1;
+      dt = NODE_CALC_INTV * 10 * x[2];
+      dzmin = 1e-15 * dt / NODE_CALC_INTV;
+      Gmsm = swi_gm_sun_planet(ctx, retc0 & SEFLG_EPHMASK, iel);
+    }
+#else
     if (ipli == SE_MOON) {
       dt = NODE_CALC_INTV;
       dzmin = 1e-15;
@@ -5588,6 +5625,7 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       dzmin = 1e-15 * dt / NODE_CALC_INTV;
       Gmsm = HELGRAVCONST * (1 + plm) /AUNIT/AUNIT/AUNIT*86400.0*86400.0;
     }
+#endif
     if (iflag & SEFLG_SPEED) {
       istart = 0;
       iend = 2;
