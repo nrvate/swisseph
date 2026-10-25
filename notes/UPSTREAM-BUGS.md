@@ -182,6 +182,7 @@ worst were in code that had never executed even once.
 | 151 | Woolard's nutation (`SEMOD_NUT_WOOLARD`) turns the Moon's mean anomaly at 13255523.59 revolutions a century, 10^4 times its 1325.552359, so its terms in it cycle every 3.97 minutes: dpsi up to 0.236" and deps 0.0226" off the series, the interpolation on it 0.196"; `SE_SIDBIT_PREC_ORIG`'s Newcomb ayanamsas take it | Correctness | `swephlib.c` |
 | 152 | The default nutation's grid (this fork's) leaves the IAU 2000A series it interpolates far inside its guard of |J| < 1e12 days, as the arguments' T^3 and T^4 terms speed them up: 2.3e-9 deg at |J| 6e8 (1.6 million years), 1.3e-4 at 1e9, 7 deg at 3e9, answered by `swe_calc(SE_ECL_NUT)` with no error; its rate 5.2e-4 deg/day at 1e9 | Correctness | `swephlib.c` |
 | 147 | A thread adopting another thread's `swe_set_ephe_path()` keeps the old directory's delta t table, leap seconds and planet-name memo (this fork's): delta t at 1990 79.987645 s for 56.856191, the TT of 2026 UTC 1 s late, Cupido's name from the old seorbel.txt; and calc_deltat()'s memo outlives a path change and `swe_close()` on every thread, the same 79.987645 s at an instant asked before it | Correctness (behaviour) | `sweconfig.c`, `swephlib.c`, `sweph.c` |
+| 148 | After `swe_set_ephe_path()` forgets the DE number of the JPL file whose name it keeps, the first JPLEPH delta t takes the default tidal term until a calculation opens the file: after the path, de200.eph and the path again by another string, the first UT JPL Moon in AD 1700 40.0057507520 deg and the second 40.0039614086 (1.79e-3 deg), `swe_deltat()`'s guess Swiss, where a fresh process given that path and de200.eph answers 40.0039614086 both times -- on every thread and context | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -9175,7 +9176,10 @@ the other thread's path to EPHEDIR, where that thread and a fresh process
 answer 56.856191 (23.13 s). `leapsec_done`, cleared beside it, likewise
 (not measured). Fixed as entry 147, with the leap seconds (1 s in 2026),
 the planet-name memo and the delta-t memo, which kept the old table on
-the setting thread too.
+the setting thread too. And F4's forgetting of the JPL file's DE number,
+by which the path again by another string answered above as a path
+without the file, is reversed by entry 148: the number is read again
+along the new path.
 
 ## 138. A JPL file a calculation opens sets the automatic tidal term for itself, not for the guess: after a path setter forgets the JPL DE number, `swe_get_tid_acc()` answers a term the next `swe_deltat()` does not use
 
@@ -9227,6 +9231,20 @@ the moon file's -25.936 (bug 101's, 3). G24 `jpl_open_tid_off`, the getter
 after that sequence against a fresh context given the second path: 0
 shipped, 2.04 compat (2.04 shipped before the fix).
 
+Since entry 148 the path setter reads the kept JPL file's DE number again
+along the new path, so "path, de200.eph, path again" is the configuration
+"path and de200.eph": G132 compares each case with a fresh process given
+the final settings, and after the path again the getter after the JPL
+Sun, the next `swe_deltat()` in 1800 and the getter again are de200's,
+-23.8946, 14.438958 s and -23.8946, as that process gives -- no longer the
+-25.936 and 18.902020 s above, which a replay of the calls gave. This
+entry's state, a calculation opening a JPL file the configuration does not
+name, is still reached by the default name: G24 `jpl_open_tid_off` now
+takes a path whose de431.eph (`SE_FNAME_DFT`) is de200.eph, no
+`swe_set_jpl_file()`, a TT JPL Sun and the getter, against a context then
+made and given that path, in a forked child called first: 0 shipped, 2.04
+compat.
+
 Noticed, not fixed: in the same state (the JPL file's name kept, its DE
 number forgotten by the path setter) the first JPLEPH delta t before a
 calculation has opened the file takes the default term, and the next the
@@ -9237,7 +9255,8 @@ times; the compat build the same (40.0057510966, then 40.0039617599).
 Reading the kept JPL file again along the new path in the path setter, as
 entry 131 does after `swe_close()`, would remove it and make this entry's
 guess JPL (de200's -23.8946, 14.438958 s in 1800) -- F4's choice, to be
-made there. And the getter after a delta t asked with a flag still
+made there. Fixed as entry 148, which made it. And the getter after a
+delta t asked with a flag still
 answers that delta t's term (upstream's, and bug 101's "the one the last
 delta t resolved"): after a second UT JPL Moon in this state it is
 -23.8946, and the next `swe_deltat()` takes -25.936.
@@ -10088,6 +10107,105 @@ without, by upstream behaviour it restores, of which these 3 by
 `swe_fixstar2()`'s catalogue, which upstream's path setter keeps (bug
 92), the running thread now answering as the setting thread. No G24 case:
 the fix is in both builds. G18 (`check-dtmemo`) and G116 pass.
+
+## 148. After the path setter forgets the JPL DE number of the file whose name it keeps, the first JPLEPH delta t takes the default tidal term until a calculation opens the file: the same call answers differently first and second
+
+**Severity: Correctness (behaviour: call order -- the first UT JPL Moon in AD 1700 1.79e-3 deg off the second, the first JPLEPH delta t 11.27 s off, and `swe_deltat()`'s guess Swiss for a configuration naming de200.eph -- on every thread and context)**
+**Where:** upstream `sweph.c` `swe_set_ephe_path()` (its `swi_close_keep_topo_etc()` closes the JPL file and keeps `jplfnam`; `calc_deltat()` takes the open file's DE number); here `sweph.c`: `swe_set_ephe_path_r()` (F4's `jpldenum_cfg = 0`), `swi_denum_reread()`
+
+Entry 138's noticed item; the coordinator's decision. `swe_set_ephe_path()`
+closes the JPL file and keeps its name, and since the 2026-09-16 review's
+F4 forgets its published DE number (`jpldenum_cfg`), so that a JPL delta
+t after a path to a directory without the file takes the default term, as
+upstream's does. But the name is kept, and a JPLEPH calculation opens the
+file by it along the new path: after `swe_set_ephe_path()`,
+`swe_set_jpl_file("de200.eph")` and the path again by another string
+(EPHEDIR/.), `swe_calc_ut()`'s JPL Moon in AD 1700 was 40.0057507520 deg
+on the first call, whose delta t took the default term (14.286718 s for
+de200's 3.012003), and 40.0039614086 on the second, the file open; a TT
+JPL Sun then left the getter and `swe_deltat()` on the Swiss files' term
+(entry 138: -25.936, 18.902020 s in 1800); and a fresh process given the
+path and de200.eph answers 40.0039614086 both times, 3.012003 s and the
+JPL guess (-23.8946, 14.438958 s). So on the setting thread, a thread
+adopting the path (the master's number zeroed with it), a thread started
+and a context made after it, and an explicit context given the same calls.
+The compat build the same: 40.0057510966, then 40.0039617599. Upstream's,
+its JPL delta t following the open file alone.
+
+The decision. Every gate here takes "the answer equals a fresh process
+with the same final settings". After "path, file, path" the configuration
+is the last path and the file, whose name the setter keeps: the same as
+"path, file". F4's case, a new path without the file, is a fresh process
+whose `swe_set_jpl_file()` fails there: no DE number, the default term.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`; the compat
+build keeps F4's zero and upstream's first and second answers): when a
+JPL file had been set and read (`jpldenum_cfg`), or is owed since
+`swe_close()` (`denum_unread`, bug 131), `swe_set_ephe_path()` reads it
+again along the new path once the moon file's header is read, as a fresh
+process's `swe_set_jpl_file()` reads it there and as bug 131 reads it
+after the close (`swi_denum_reread()`: the file opened, the IERS
+corrections of a DE 403 or later), and publishes its DE number with the
+path; where it is not found the number stays 0. A thread adopting the
+path takes that number with it, as it takes the moon file's; a context
+made after inherits it. The same path again keeps the number, as before
+(bug 103). Entry 138's G132 expectation after the path again follows (its
+entry says how).
+
+The open. Reading the number opens the JPL file in the setter, and the
+file stays open for the next JPL calculation, which opens nothing then.
+Counted with `fopen()` interposed over 100 rounds after a warm-up, before
+and after: G102's seven rounds 0, 0, 0, 0, 0, 0 and 396 both; G115's and
+G106's counted cases pass; with de200.eph set, a path alternating
+between two directories and a JPL Moon each round 396 both, the same path
+again and a JPL Moon 0 both, the path and then `swe_set_jpl_file()` of
+the same file each round 399 both (the setter finds it open); with a
+Swiss Moon each round 396 before and 495 after, one open of de200.eph per
+real path change, as a fresh process given those settings opens it. Made
+lazy as bug 131's (read at the next entry that is not a setter), it would
+open the same file at that Swiss Moon's entry, so it would keep no count; the setter's own read
+is bug 131's "the setters' own reads", and an adopting thread reads
+nothing. The one sequence it costs more: a path change followed at once
+by `swe_set_jpl_file()` of another file, one open. No hot path.
+
+G132 (`tests/jpldenum.c`, entry 137): the reference is now a fresh process
+given the final settings (the last path and the JPL file's name), not a
+replay of the calls, and the observation gains a UT JPL Moon in AD 1700
+twice, its return and longitude, which must agree, then the getter and
+`swe_deltat()`: 5 settings x 5 readers x 5 observations and one check, 126
+pass. Before the fix 30 fail: after the path again and after the tables'
+path (entry 147), on all 5 readers alike, the JPLEPH delta t 14.286718 s
+for 3.012003, the getter after the JPL Sun -25.936 for -23.8946 and
+`swe_deltat()` in 1800 18.902020 s for 14.438958, the first Moon
+40.0057507520 deg for the second 40.0039614086. The compat build fails 55
+of 126 with the fix and without, by upstream behaviour it restores, 18 of
+them this one's (the first delta t and the first Moon on the setting
+thread, a new thread, the explicit context and a context made after,
+after the path again and the tables' path, and the running thread's
+guess). G115 (`tests/pathset.c`) P4, the path, de200.eph and a path
+without semo_18.se1, now takes that path without de200.eph too, where
+there is nothing to read again, so that it still sees bug 118's term
+resolved for the state replaced (-23.8946 for -25.80), and its fresh
+process is given the path and de200.eph. G24 `jpl_path_moon_off`, the
+first UT JPL Moon in AD 1700 after the path, de200.eph and the path again
+against the second: 0 shipped, 1.79e-3 deg compat (and shipped before
+the fix). G24 `jpl_open_tid_off` (entry 138) moved to the default file
+name, as its entry says.
+
+Noticed, not fixed: a JPL file whose `swe_set_jpl_file()` failed along
+the path then set, and a path where it is: no number was ever read, so
+the path setter reads none (the condition is a number set and read, as
+bug 131's), and the first UT JPL Moon in AD 1700 is again 40.0057507520
+deg and the second 40.0039614086, `swe_deltat()` there 15.091463 s, where
+a fresh process given the second path and de200.eph answers 40.0039614086
+twice and 3.012003 s; the configuration does not record that a name was
+set (only the name, which a calculation's fallback to de406.eph rewrites
+too). And with no JPL file set at all, a JPLEPH calculation opens the
+default file by its name and the first delta t before it takes the
+default term: in a fresh process given a path whose de431.eph is
+de200.eph, the same two Moons; with the real files only where de431.eph
+is missing and the fallback finds de406.eph, whose term (-25.826) is not
+the default's (upstream's, not measured here).
 
 ## How these were found
 

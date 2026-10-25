@@ -1263,6 +1263,12 @@ struct epsilon {
  *     and planet-name memo as the setter does, and calc_deltat()'s memo
  *     emptied with the table it was made from, are in both builds; the
  *     adoption and the memo are this fork's; G132)
+ *   - swe_set_ephe_path() forgetting the DE number of the JPL file whose
+ *     name it keeps (F4), so the first JPLEPH delta t takes the default
+ *     tidal term until a calculation opens the file: after the path,
+ *     de200.eph and the path again, the first UT JPL Moon in AD 1700
+ *     1.79e-3 deg off the second, swe_deltat()'s guess Swiss
+ *     (UPSTREAM-BUGS 148, G132)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

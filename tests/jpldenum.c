@@ -38,16 +38,29 @@
  * The defect (UPSTREAM-BUGS 147): the setting thread's path change sends
  * the tables read along the path back to be read again (in
  * swi_close_keep_topo_etc(): swe_deltat.txt, seleapsec.txt, sefstars.txt
- * and seorbel.txt, the planet-name memo), and a thread adopting the change
- * kept all but the last two: after another thread's path from a directory
- * whose swe_deltat.txt gives 80.0 s for 1990 and whose seleapsec.txt adds
- * a leap second at 2025 Jul 1, to EPHEDIR, its delta t at 1990 Jan 1 was
- * 79.987645 s for the fresh process's 56.856191, swe_utc_to_jd()'s TT of
- * 2026 Jan 1 2461041.50081231 for .50080074 (1 s), and
- * swe_get_planet_name(SE_CUPIDO) the old seorbel.txt's name; and on the
- * setting thread and an explicit context too, delta t at an instant asked
- * before the change stayed 79.987645 s: calc_deltat()'s memo, consulted
- * before init_dt() reads the table again, outlived it.
+ * and seorbel.txt, the planet-name memo), and a thread adopting the
+ * change kept the first two and the memo: after another thread's path
+ * from a directory whose swe_deltat.txt gives 80.0 s for 1990 and whose
+ * seleapsec.txt adds a leap second at 2025 Jul 1, to EPHEDIR, its delta t
+ * at 1990 Jan 1 was 79.987645 s for the fresh process's 56.856191,
+ * swe_utc_to_jd()'s TT of 2026 Jan 1 2461041.50081231 for .50080074 (1
+ * s), and swe_get_planet_name(SE_CUPIDO) the old seorbel.txt's name; and
+ * on the setting thread and an explicit context too, delta t at an
+ * instant asked before the change stayed 79.987645 s: calc_deltat()'s
+ * memo, consulted before init_dt() reads the table again, outlived it.
+ *
+ * The defect (UPSTREAM-BUGS 148): the path setter kept the JPL file's name
+ * and forgot its DE number (F4), so after the path, de200.eph and the path
+ * again by another string the configuration named no JPL file while the
+ * name led a calculation to it: the first JPLEPH delta t took the default
+ * term (14.286718 s in AD 1700 for 3.012003) until a calculation opened
+ * the file, swe_calc_ut()'s JPL Moon in AD 1700 40.0057507520 deg on the
+ * first call and 40.0039614086 on the second, and swe_deltat() guessed the
+ * Swiss files, where a fresh process given that path and de200.eph
+ * answers 40.0039614086 both times, 3.012003 s and the JPL guess. The
+ * configuration after "path, file, path" is that path and that file: the
+ * reference below is a fresh process given the final settings, not a
+ * replay of the calls.
  *
  * The check, each case in a forked, pristine process: the path and
  * swe_set_jpl_file("de200.eph"); the reader computes a JPL Sun at J2000,
@@ -72,15 +85,19 @@
  * swe_utc_to_jd()'s TT of 2026 Jan 1, Sirius by swe_fixstar2() and
  * swe_fixstar(), Aldebaran by swe_fixstar(), Cupido and its name, where
  * the readers that compute first read them before the last setter, delta
- * t at 1990 last (the instant memoised). Each bit for bit as a fresh
- * process given the same setters on its main thread and nothing else, no
- * Sun: the guess follows the configuration, and a calculation does not
- * choose for it (as G128's closecalc). 5 settings x 5 readers x 4
- * observations = 100 checks, and 1 more: the first path's tables, read
+ * t at 1990 last (the instant memoised); and swe_calc_ut()'s JPL Moon in
+ * AD 1700 twice, its return and longitude, which must agree, then the
+ * getter and swe_deltat() there (bug 148). Each bit for bit as a fresh
+ * process given the final settings -- the last path and the JPL file's
+ * name, which the path setters keep -- on its main thread and nothing
+ * else, no Sun: the guess follows the configuration, and a calculation
+ * does not choose for it (as G128's closecalc). 5 settings x 5 readers x
+ * 5 observations = 125 checks, and 1 more: the first path's tables, read
  * alone, move every one of those values.
  *
  * Measured before the fixes, 22 of the first 48 (4 settings, the first 4
- * readers, 3 observations) fail. Bug 137's 2: the running thread after
+ * readers, 3 observations, against a replay of the same calls, the
+ * reference until bug 148) fail. Bug 137's 2: the running thread after
  * the path again and after the path without the file, delta t 3.012003 s
  * for 14.286718. Bug 138's 4: every reader after the path again, the
  * getter -23.8946 for -25.936 before the delta t. Bug 145's 16: iflag 0
@@ -90,21 +107,33 @@
  * differs from the fresh process. Bug 147's 3 of 101: the setting thread
  * and the explicit context, delta t 79.987645 s for 56.856191 (the memo),
  * and the running thread, that and the TT 1 s late and the name Cupido147
- * for Cupido. The fixes of 137 and 147 are in both builds (the adoption
- * and the memo are this fork's), 138's and 145's in the shipped build
- * only. The compat build (SWE_UPSTREAM_COMPAT) fails 52 of 101, with the
- * fixes and without, by upstream behaviour it restores: bug 145's 25,
- * upstream's 0; bug 137's observation 10 -- its running thread's first
- * delta t reads the DE number before the call syncs (bugs 124, 128), 4
- * cases, and a new thread warns on its first call (bug 110) and it and a
- * context made after guess from the file they have open (bug 103), 6;
- * with a swe_get_tid_acc() first, which syncs, its running thread answers
- * 14.286718 with the fix and 3.012003 without -- bug 138's 14: after the
- * path again and after the tables' path its getter and swe_deltat() both
- * follow the open file (-23.8946, 14.438958 s), 10, and after the path
- * without the file the refused JPL Sun's sync puts the master's -25.80
- * over the moon file's -25.936 on the default context (bug 101's copy of
- * an automatic value), 4; and bug 147's observation 3: swe_fixstar2()'s
+ * for Cupido. Bug 148's 30 of 126, against the final settings: after the
+ * path again and after the tables' path, on all 5 readers alike, the
+ * JPLEPH delta t 14.286718 s and swe_deltat() 15.091463 for 3.012003,
+ * after the JPL Sun the getter -25.936 for -23.8946 and swe_deltat() in
+ * 1800 18.902020 s for 14.438958, and the Moon's first call 40.0057507520
+ * deg for the second's 40.0039614086. The fixes of 137 and 147 are in
+ * both builds (the adoption and the memo are this fork's), 138's, 145's
+ * and 148's in the shipped build only. The compat build
+ * (SWE_UPSTREAM_COMPAT) fails 55 of 126, with the fixes and without, by
+ * upstream behaviour it restores:
+ * bug 145's 25, upstream's 0; bug 148's 18 -- after the path again and
+ * the tables' path the JPL DE number forgotten, so the first JPLEPH delta
+ * t takes the default term (14.286718 s) on the setting thread, a new
+ * thread, the explicit context and the context made after, 8, the
+ * running thread's swe_deltat() guessing from the file it no longer has
+ * open (bug 103), 2, and the first Moon 40.0057510966 deg for the second
+ * 40.0039617599 on the same four, 8; bug 137's observation 6 -- its
+ * running thread's first delta t reads the DE number before the call
+ * syncs (bugs 124, 128), 2, and a new thread warns on its first call (bug
+ * 110) and it and a context made after guess from the file they have
+ * open (bug 103), 4 -- and the Moon's 2, where the same running thread's
+ * serr names the instant of that first delta t; with a swe_get_tid_acc()
+ * first, which syncs, its running thread answers 14.286718 with the fix
+ * of 137 and 3.012003 without; bug 138's 1: after the path without the
+ * file, the explicit context's getter -25.936 where the fresh process's
+ * refused swe_set_jpl_file() left upstream's -25.80 until the next delta
+ * t (bugs 101, 118); and bug 147's observation 3: swe_fixstar2()'s
  * catalogue kept across the path setter (bug 92), Sirius 104.136831 deg
  * for 104.085304 on the setting thread, the explicit context and, with
  * the fix as the setting thread, the running thread, whose swe_fixstar()
@@ -154,11 +183,12 @@ static const char *KN[NK] = {
 enum { R_MAIN, R_RUN, R_NEW, R_CTX, R_CTXNEW, NR };
 static const char *RN[NR] = { "setting thread", "running thread", "new thread",
                               "explicit context", "context made after" };
-enum { O_DT, O_TT, O_F0, O_TAB, NO };
+enum { O_DT, O_TT, O_F0, O_TAB, O_MOON, NO };
 static const char *ON[NO] = { "JPLEPH delta t, the tidal term, swe_deltat()",
                               "a TT JPL Sun, the tidal term, swe_deltat()",
                               "swe_deltat_ex() with no ephemeris bit",
-                              "the path's tables: delta t, leap seconds, stars, seorbel.txt" };
+                              "the path's tables: delta t, leap seconds, stars, seorbel.txt",
+                              "a UT JPL Moon twice" };
 
 struct obs { double v[NV]; char err[AS_MAXCH]; };
 
@@ -256,6 +286,19 @@ static void last_setter(swe_ctx *c)
   }
 }
 
+/* bug 148: the reference's setters, those that leave the same final
+ * settings -- the last path and the JPL file's name, which every path
+ * setter keeps -- in a fresh process, each once */
+static void final_setters(swe_ctx *c)
+{
+  switch (K) {
+  case K_SAMEDIR: set_path(c, SAMEDIR); break;
+  case K_NOFILE: set_path(c, NOFILE); break;
+  default: set_path(c, EPHE); break;
+  }
+  set_jpl(c, K == K_JPLONLY ? "de406.eph" : "de200.eph");
+}
+
 static void jpl_sun(swe_ctx *c)
 {
   double x[6];
@@ -333,6 +376,18 @@ static void observe(swe_ctx *c, struct obs *a)
   memset(a, 0, sizeof *a);
   if (O == O_TAB) {
     tables(c, a);
+    return;
+  }
+  if (O == O_MOON) {		/* bug 148: the same call, first and second */
+    double x[6];
+    a->v[0] = c != NULL ? swe_calc_ut_r(c, T_1700, SE_MOON, SEFLG_JPLEPH, x, a->err)
+                        : swe_calc_ut(T_1700, SE_MOON, SEFLG_JPLEPH, x, a->err);
+    a->v[1] = x[0];
+    a->v[2] = c != NULL ? swe_calc_ut_r(c, T_1700, SE_MOON, SEFLG_JPLEPH, x, NULL)
+                        : swe_calc_ut(T_1700, SE_MOON, SEFLG_JPLEPH, x, NULL);
+    a->v[3] = x[0];
+    a->v[4] = tid(c);
+    a->v[5] = dt(c, T_1700);
     return;
   }
   if (O == O_DT) {
@@ -428,9 +483,8 @@ static int scenario(int r)
     first_setters(NULL);
     observe(NULL, &out);
     return 0;
-  default:			/* the reference: the setters alone */
-    first_setters(NULL);
-    last_setter(NULL);
+  default:			/* the reference: the final settings alone */
+    final_setters(NULL);
     observe(NULL, &out);
     return 0;
   }
@@ -530,6 +584,12 @@ int main(int argc, char **argv)
           bad++;
           continue;
         }
+        if (O == O_MOON && (a.v[0] != a.v[2] || a.v[1] != a.v[3])) {
+          printf("  %s, %s, %s: FAIL: first %.10f (%g), second %.10f (%g)\n",
+                 KN[K], ON[O], RN[r], a.v[1], a.v[0], a.v[3], a.v[2]);
+          bad++;
+          continue;
+        }
         if (memcmp(a.v, ref.v, sizeof a.v) == 0 && strcmp(a.err, ref.err) == 0)
           continue;
         printf("  %s, %s, %s: FAIL\n   ", KN[K], ON[O], RN[r]);
@@ -550,6 +610,9 @@ int main(int argc, char **argv)
       else if (O == O_F0)
         printf("  %-34s flag 0: delta t in 1950 %.6f s, in AD 1000 %.6f s\n",
                KN[K], ref.v[0], ref.v[3]);
+      else if (O == O_MOON)
+        printf("  %-34s UT JPL Moon in AD 1700 %.10f (%g), tidal term %.4f\n",
+               KN[K], ref.v[1], ref.v[0], ref.v[4]);
       else
         printf("  %-34s tables: delta t in 1990 %.6f s, TT of 2026 UTC %.8f,\n"
                "  %-34s Sirius %.9f and %.9f, %s %.9f deg\n",

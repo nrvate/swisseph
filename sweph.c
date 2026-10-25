@@ -2575,6 +2575,7 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
   AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
   char s[AS_MAXCH];
 #ifndef SWE_UPSTREAM_COMPAT
+  AS_BOOL jpl_kept;
   /* Upstream bug 103: the same path again closed every file, emptied every
    * cache and reopened the moon file for its header: 4 opens a call, 398
    * in 100 calls each followed by a Moon. A path the context already holds,
@@ -2607,6 +2608,9 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
    * files, so their DE numbers go with them. */
 #ifndef SWE_UPSTREAM_COMPAT
   ctx->path_naming_off = TRUE;	/* bug 118: this setter names it */
+  /* bug 148: a JPL file set and read, or owed since swe_close() */
+  jpl_kept = ctx->swed_is_initialised
+             && (ctx->jpldenum_cfg != 0 || (ctx->denum_unread & SWI_DENUM_JPL));
 #endif
   swi_close_keep_topo_etc(ctx, FORGET_DENUM);
   swi_init_swed_if_start(ctx);
@@ -2615,7 +2619,9 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
    * does not survive a path change either (2026-09-16 review, F4): kept,
    * a JPL delta-t after pointing the path at a directory without the
    * file still used the old file's term, where upstream uses the
-   * default. swe_set_jpl_file() publishes it again. */
+   * default. swe_set_jpl_file() publishes it again, and so, in the
+   * shipped build, does this setter below, read along the new path (bug
+   * 148). */
   ctx->jpldenum_cfg = 0;
 #ifndef SWE_UPSTREAM_COMPAT
   ctx->denum_unread = 0;	/* bug 131: read here, or not owed */
@@ -2642,6 +2648,23 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
   ctx->last_epheflag = 2;
   ephe_path_read_moon(ctx);
 #ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 148: the JPL file's name is kept and its DE number was
+   * forgotten here (F4 above), so after the path, de200.eph and the path
+   * again by another string the first JPLEPH delta t took the default
+   * term until a calculation opened the file by its name: the first UT JPL
+   * Moon in AD 1700 40.0057507520 deg, the second 40.0039614086, where a
+   * fresh process given that path and de200.eph answers 40.0039614086
+   * both times (1.79e-3 deg), and swe_deltat()'s guess Swiss. The
+   * configuration is that path and that file: the file is read again
+   * along the new path, as a fresh process's swe_set_jpl_file() reads it
+   * there and as swi_denum_reread() reads it after swe_close() (bug 131),
+   * and its DE number is published with the path; 0 where it is not found
+   * (F4's case). One open of the file, which stays open for the next JPL
+   * calculation, only when a JPL file had been set and read. */
+  if (jpl_kept) {
+    ctx->denum_unread = SWI_DENUM_JPL;
+    swi_denum_reread(ctx);
+  }
   ctx->path_naming_off = FALSE;
   setter_tid_acc_auto(ctx);	/* bug 118 */
 #endif

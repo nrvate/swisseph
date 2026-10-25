@@ -1500,7 +1500,10 @@ check-sunmemo: sunmemo
 # change delta t, the leap seconds, the stars and seorbel.txt's bodies and
 # names are the new directory's on a thread adopting it, and an instant
 # computed before it is not answered from the delta-t memo (UPSTREAM-BUGS
-# 147), on a context made after it too.
+# 147), on a context made after it too; and after the path, de200.eph and
+# the path again, which keeps the file's name, every reader answers as a
+# fresh process given that path and de200.eph, a UT JPL Moon the same on
+# its first call and its second (UPSTREAM-BUGS 148).
 check-jpldenum: jpldenum
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./jpldenum $(EPHE)
 

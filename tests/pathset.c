@@ -14,10 +14,12 @@
  *   P3  a thread's first Moon after the main thread's path: it opened
  *       ./semo_18.se1 before adopting the path -- want no open outside
  *       EPHEDIR in the whole process;
- *   P4  the path, then de200.eph, then a path without semo_18:
- *       swe_get_tid_acc() -23.8946 (the dropped JPL file's) for -25.80, on
- *       the setting thread; it and delta t in AD 1000 must be a fresh
- *       process's with that path alone, on a second thread too;
+ *   P4  the path, then de200.eph, then a path without semo_18 (nor
+ *       de200.eph): swe_get_tid_acc() -23.8946 (the dropped JPL file's)
+ *       for -25.80, on the setting thread; it and delta t in AD 1000 must
+ *       be a fresh process's with that path and de200.eph, which the path
+ *       keeps (UPSTREAM-BUGS 148: with the file there, its -23.8946 is
+ *       right), on a second thread too;
  *   P5  the path, de200.eph, then a JPL file that is not there: -23.8946
  *       for -25.936, against a fresh process with the path alone;
  *   P6  a path without semo_18, the file then linked in and the same path
@@ -177,8 +179,9 @@ static int same(const char *what, struct tdt a, struct tdt b)
   return 1;
 }
 
-/* a fresh process's reading with only this path set */
-static struct tdt fresh(const char *path)
+/* a fresh process's reading with only this path set, and this JPL file
+ * if one is named */
+static struct tdt fresh(const char *path, const char *jpl)
 {
   int fd[2], st;
   struct tdt r = {0, 0};
@@ -188,6 +191,8 @@ static struct tdt fresh(const char *path)
   if ((pid = fork()) == 0) {
     struct tdt v;
     swe_set_ephe_path(path);
+    if (jpl != NULL)
+      swe_set_jpl_file(jpl);
     v = reading();
     if (write(fd[1], &v, sizeof v) != (ssize_t) sizeof v)
       _exit(1);
@@ -251,7 +256,7 @@ static int p3(void)
 
 static int p4(void)
 {
-  struct tdt want = fresh(DNOMOON), m, w;
+  struct tdt want = fresh(DNOMOON, "de200.eph"), m, w;
   swe_set_ephe_path(EPHE);
   swe_set_jpl_file("de200.eph");
   swe_set_ephe_path(DNOMOON);
@@ -262,7 +267,7 @@ static int p4(void)
 
 static int p5(void)
 {
-  struct tdt want = fresh(EPHE), m;
+  struct tdt want = fresh(EPHE, NULL), m;
   swe_set_ephe_path(EPHE);
   swe_set_jpl_file("de200.eph");
   swe_set_jpl_file("no_such_file.eph");
@@ -275,7 +280,7 @@ static int p6(void)
   char p[PATH_MAX + 300], q[PATH_MAX + 300];
   double x[6];
   char serr[AS_MAXCH];
-  struct tdt want = fresh(DALL), a, b;
+  struct tdt want = fresh(DALL, NULL), a, b;
   int bad = 0;
   swe_set_ephe_path(DLATE);
   reading();
@@ -367,6 +372,12 @@ int main(int argc, char **argv)
   if (link_all(DALL, NULL) != 0 || link_all(DNOMOON, "semo_18.se1") != 0) {
     printf("G115: set-up failed\n");
     return 2;
+  }
+  {	/* without de200.eph too: P4's path, where the path setter finds no
+     * JPL file to read again (UPSTREAM-BUGS 148) */
+    char p[PATH_MAX + 40];
+    snprintf(p, sizeof p, "%s/de200.eph", DNOMOON);
+    unlink(p);
   }
   printf("G115: the path and JPL setters: no file left open or opened twice, the tidal term of what they set\n");
   for (i = 0; i < NCASE; i++) {

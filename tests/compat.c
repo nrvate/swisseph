@@ -3460,32 +3460,93 @@ static double close_tid_off(void)
   return fabs(dt - ref) * 86400;
 }
 
-/* swe_get_tid_acc() after the path, swe_set_jpl_file("de200.eph"), the
- * path again by another string, which forgets the JPL DE number, and a TT
- * JPL Sun, which opens the file, against a fresh context given that path.
- * Upstream sets the term for the file a calculation opens (its guess
- * follows the open file): de200's -23.8946 for the moon file's -25.936,
- * 2.04 (UPSTREAM-BUGS 138). */
+/* swe_get_tid_acc() after a path whose de431.eph, the JPL file's default
+ * name, is de200.eph (a directory of links), no swe_set_jpl_file(), and a
+ * TT JPL Sun, which opens it, against a context then made and given that
+ * path. Upstream sets the term for the file a calculation opens (its
+ * guess follows the open file): de200's -23.8946 for the moon file's
+ * -25.936, 2.04 (UPSTREAM-BUGS 138). The path again after
+ * swe_set_jpl_file() no longer reaches this: it reads the file's DE number
+ * again (bug 148). No JPL file may have been set, so main() calls this
+ * first and it runs in a forked child. */
 static double jpl_open_tid_off(void)
 {
-  double x[6], g, ref;
+  char dir[] = "/tmp/compatdftXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double v = -1;
+  int fd[2];
+  pid_t pid;
+  struct dirent *e;
+  DIR *d;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strcmp(e->d_name, SE_FNAME_DFT) != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  snprintf(p, sizeof p, "%s/de200.eph", ephe);
+  snprintf(q, sizeof q, "%s/%s", dir, SE_FNAME_DFT);
+  fflush(stdout);
+  if (symlink(p, q) == 0 && pipe(fd) == 0) {
+    if ((pid = fork()) == 0) {
+      double x[6], g, r = 100;
+      char serr[256];
+      swe_ctx *c;
+      close(fd[0]);
+      swe_set_ephe_path(dir);
+      swe_calc(2451545.0, SE_SUN, SEFLG_JPLEPH, x, serr);
+      g = swe_get_tid_acc();
+      if ((c = swe_ctx_new()) != NULL) {
+        swe_set_ephe_path_r(c, dir);
+        r = swe_get_tid_acc_r(c);
+        swe_ctx_free(c);
+      }
+      g = fabs(g - r);
+      _exit(write(fd[1], &g, sizeof g) == (ssize_t) sizeof g ? 0 : 3);
+    }
+    close(fd[1]);
+    if (pid < 0 || read(fd[0], &v, sizeof v) != (ssize_t) sizeof v)
+      v = -1;
+    close(fd[0]);
+    if (pid > 0)
+      waitpid(pid, NULL, 0);
+  }
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+  return v;
+}
+
+/* swe_calc_ut()'s JPL Moon in AD 1700 after the path,
+ * swe_set_jpl_file("de200.eph") and the path again by another string, the
+ * first call against the second, deg. Upstream's path setter forgets the
+ * file's DE number and keeps its name: the first delta t takes the default
+ * term until the calculation opens the file, 40.0057511 deg for 40.0039618
+ * (UPSTREAM-BUGS 148). */
+static double jpl_path_moon_off(void)
+{
+  double x[6], y[6];
   char serr[256], p2[AS_MAXCH];
-  swe_ctx *c;
   snprintf(p2, sizeof p2, "%s/.", EPHE);
   swe_close();
   swe_set_ephe_path(EPHE);
   swe_set_jpl_file("de200.eph");
   swe_set_ephe_path(p2);
-  swe_calc(2451545.0, SE_SUN, SEFLG_JPLEPH, x, serr);
-  g = swe_get_tid_acc();
-  if ((c = swe_ctx_new()) == NULL)
-    return INFINITY;
-  swe_set_ephe_path_r(c, p2);
-  ref = swe_get_tid_acc_r(c);
-  swe_ctx_free(c);
+  if (swe_calc_ut(2341972.5, SE_MOON, SEFLG_JPLEPH, x, serr) < 0
+      || swe_calc_ut(2341972.5, SE_MOON, SEFLG_JPLEPH, y, serr) < 0)
+    x[0] = 1e9;
   swe_close();
   swe_set_ephe_path(EPHE);
-  return fabs(g - ref);
+  return fabs(swe_difdeg2n(x[0], y[0]));
 }
 
 /* swe_deltat_ex() in AD 1000 with no ephemeris bit against SEFLG_SWIEPH,
@@ -3548,7 +3609,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3557,6 +3618,7 @@ int main(int argc, char **argv)
   dtfirst = dt_userdef_first_off();   /* first: it needs a pristine library */
   dtpath = calc_ut_first_path_off();  /* so does this */
   pathwarn = path_warn_first_count(); /* and this */
+  jplopen = jpl_open_tid_off();       /* and this: no JPL file set */
   modtid = models_tid_off();
   nodmosh = nodaps_mosh_lat_off();
 
@@ -3674,7 +3736,7 @@ int main(int argc, char **argv)
   eoppath = eop_path_kept_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
-  jplopen = jpl_open_tid_off();
+  jplmoon = jpl_path_moon_off();
   dtflag0 = dt_flag0_off();
   closekeep = close_keeps_off();	/* last: see the function */
 
@@ -4587,6 +4649,14 @@ int main(int argc, char **argv)
   else {
     printf("  term of a JPL opened   %.2e FAIL: expected %s\n",
            jplopen, WANT_DEFECT ? "> 1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jplmoon > 1e-3) : (jplmoon == 0))
+    printf("  JPL Moon, path again   %.2e deg OK\n", jplmoon);
+  else {
+    printf("  JPL Moon, path again   %.2e deg FAIL: expected %s\n",
+           jplmoon, WANT_DEFECT ? "> 1e-3" : "0");
     bad++;
   }
 
