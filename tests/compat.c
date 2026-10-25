@@ -406,6 +406,45 @@ static double orbel_speed_off(void)
   return fabs(x[3] - r);
 }
 
+/* UPSTREAM-BUGS 44: the interpolated perigee in 2100, its longitude with
+ * and without SEFLG_SPEED, mas. Its light-time step took the speed, zero
+ * without the flag: 107 mas apart */
+static double intp_speedflag_off(void)
+{
+  double jd = 2451545.0 + 36525.0 + 0.1234567, x[6], xs[6];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(jd, SE_INTP_PERG, SEFLG_SWIEPH, x, serr);
+  swe_calc(jd, SE_INTP_PERG, SEFLG_SWIEPH | SEFLG_SPEED, xs, serr);
+  return fabs(swe_difdeg2n(x[0], xs[0])) * 3600000.0;
+}
+
+/* UPSTREAM-BUGS 45: the same perigee's longitude at 16 consecutive
+ * representable JDs, the largest residual from their least-squares line,
+ * mas: the apsis's parabola steps of 1.8" cancelled to 1.3 mas */
+static double intp_rough_off(void)
+{
+  double jd = 2451545.0 + 36525.0 + 0.1234567, x[6], v[16], x0 = 0;
+  double st = 0, sv = 0, stt = 0, stv = 0, a, b, w = 0;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 16; k++) {
+    swe_calc(jd, SE_INTP_PERG, SEFLG_SWIEPH, x, serr);
+    if (k == 0) x0 = x[0];
+    v[k] = swe_difdeg2n(x[0], x0) * 3600000.0;
+    st += k; sv += v[k]; stt += (double) k * k; stv += k * v[k];
+    jd = nextafter(jd, 1e9);
+  }
+  b = (16 * stv - st * sv) / (16 * stt - st * st);
+  a = (sv - b * st) / 16;
+  for (k = 0; k < 16; k++)
+    w = fmax(w, fabs(v[k] - a - b * k));
+  return w;
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -563,7 +602,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -589,6 +628,8 @@ int main(int argc, char **argv)
   natopo = nodaps_topo_rate_off();
   nodflag = nodaps_speed_flag_move();
   nodj2k = nodaps_j2000_off();
+  intpsf = intp_speedflag_off();
+  intprough = intp_rough_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -762,6 +803,22 @@ int main(int argc, char **argv)
   else {
     printf("  nod_aps J2000 node     %.2e arcsec  FAIL: expected %s\n",
            nodj2k, WANT_DEFECT ? "> 1" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (intpsf > 50) : (intpsf < 1e-6))
+    printf("  intp perigee vs SPEED  %.2e mas     OK\n", intpsf);
+  else {
+    printf("  intp perigee vs SPEED  %.2e mas     FAIL: expected %s\n",
+           intpsf, WANT_DEFECT ? "> 50" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (intprough > 0.3) : (intprough < 0.01))
+    printf("  intp perigee rough     %.2e mas     OK\n", intprough);
+  else {
+    printf("  intp perigee rough     %.2e mas     FAIL: expected %s\n",
+           intprough, WANT_DEFECT ? "> 0.3" : "< 0.01");
     bad++;
   }
 

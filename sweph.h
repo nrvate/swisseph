@@ -323,6 +323,9 @@ typedef struct swe_ctx swe_ctx;
 #define NODE_CALC_INTV_MOSH   0.1		
 #define NUT_SPEED_INTV   0.0001
 #define DEFL_SPEED_INTV  0.0000005
+#ifndef SWE_UPSTREAM_COMPAT
+#define INTP_APS_SPEED_INTV  0.00390625	/* 2^-8 day, interpolated apsides (bug 45) */
+#endif
 
 #define SE_LAPSE_RATE        0.0065  /* deg K / m, for refraction */
 
@@ -732,6 +735,13 @@ struct epsilon {
  *     ellipse's two-body motion, without its elements' rates in T or an
  *     equinox of date's turning (2.9e-2 deg/day on Vulcan; UPSTREAM-BUGS
  *     48, G48)
+ *   - intp_apsides() moved the interpolated apsides back along their light
+ *     time by the speed, zero without SEFLG_SPEED, and not in x (111 mas
+ *     on the perigee; UPSTREAM-BUGS 44, G46)
+ *   - swi_intp_apsides() took its last steps from parabolas 18" and 1.8"
+ *     wide, rough by 1.3 mas between consecutive JDs, and the speeds
+ *     differenced over +-0.1 day and +-8.64 s (1.5e-3 deg/day; UPSTREAM-BUGS
+ *     45, G46)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

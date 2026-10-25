@@ -78,6 +78,8 @@ worst were in code that had never executed even once.
 | 46 | `swe_nod_aps()`'s positions depend on SEFLG_SPEED | Correctness | `swecl.c` |
 | 47 | `swe_nod_aps()` under SEFLG_J2000 is not the J2000 frame | Correctness | `swecl.c` |
 | 48 | A fictitious body's speed is a fixed ellipse's, not its elements' | Correctness | `swemplan.c` |
+| 44 | The interpolated apsides depend on SEFLG_SPEED, and x has no light time | Correctness | `sweph.c` |
+| 45 | The interpolated apsides are rough at the JD's resolution, and so are their speeds | Correctness | `swemmoon.c`, `sweph.c` |
 
 ---
 
@@ -2236,6 +2238,78 @@ deg/day (the daily-motion constant in place of KGAUSS, 1.4e-12 of
 it), Vulcan (55) by up to 2.8e-3 and Selena (56) by up to 4.8e-7, both
 now within 2.6e-8 and 7.8e-8 of five-point differences (were 2.8e-3
 and 4.9e-7). G17 unchanged.
+
+## 44. The interpolated apsides depend on SEFLG_SPEED, and x has no light time
+
+**Severity: Correctness (the interpolated perigee 111 mas apart with and without the speed flag, the apogee 13)**
+**Where:** `sweph.c`: `intp_apsides()`
+
+The apsis is moved back along its light time as `xx[i] -= dt * xx[i+3]`:
+the speed, zero unless SEFLG_SPEED is set, and `i` from 1, so the x
+coordinate never had it. Without the flag the position was geometric,
+with it light-time corrected in y and z only: tau v, tau ~1.2 s and v up
+to 2.3 deg/day, 111 mas on the perigee (scan C, every ephemeris and flag
+set) and 13 on the apogee.
+
+The intended position is the light-time corrected one: the code gates the
+step on SEFLG_TRUEPOS, and the osculating apogee, which the interpolated
+one smooths, is built from the Moon at t - tau.
+
+**Fix, as done here:** the three positions of the speed are always
+computed, and the apsis is X(t) - tau V(t) in all three coordinates for
+every flag set but TRUEPOS (off from X(t - tau) by tau^2 A / 2, 4e-4
+mas); its rate V (1 - dtau/dt) - tau A, dtau/dt = rdot / c. The position
+is the same with and without SEFLG_SPEED, to the bit. The cost without
+the flag is three apsides instead of one (75 to ~200 us).
+
+G46 `tests/intpaps.c` (a), (b): the position with and without the flag,
+six flag sets, identical (upstream 140 mas, angle plus distance); the
+cartesian position less the TRUEPOS one is -tau V within 1.9e-3 mas (the
+frame's turning over tau; upstream 120 mas). G24 `intp_speedflag_off`:
+0 shipped, 107 mas compat. Baselines: every interpolated-apsis position
+without SEFLG_SPEED moves by tau V, with it by tau V_x.
+
+## 45. The interpolated apsides are rough at the JD's resolution, and so are their speeds
+
+**Severity: Correctness (the perigee jumps 1.3 mas between consecutive JDs, its SEFLG_SPEED3 speed is off by 1.5e-3 deg/day, its default speed by 1.1e-4)**
+**Where:** `swemmoon.c`: `swi_intp_apsides()`; `sweph.c`: `intp_apsides()`, `swe_calc_r()`
+
+`swi_intp_apsides()` finds the apsis along a line in the lunar arguments
+as the vertex of parabolas through three distances dd apart, dd = 5 deg,
+0.5, ... 1.8" (0.18" for the perigee's last, unused, pass). At dd = 18"
+and 1.8" the parabola's slope and curvature are ~1e-6 km, read from a
+distance of 3.6e5 km held to ~1e-10 km; the step is still 1-3" there,
+because the iteration converges only linearly (by ~0.15 a pass on some
+dates), and carried ~1e-4 of itself in noise. The perigee's longitude
+jumped 1.3 mas between consecutive JDs at 2100 (sescan A, S = 351), 0.14
+at -3000; the apogee 0.023 mas. The speed was the difference over +-0.1
+day, off by its h^2 term (1.1e-4 deg/day on the perigee, 1.7e-6 the
+apogee), and SEFLG_SPEED3's over +-8.64 s of the jitter (1.5e-3, 3.7e-5).
+
+**Fix, as done here:** below dd = 180" the step is the Newton step
+-r'/r'' at the iteration's centre from five points 180" apart (the
+slope's h^4 term ~1e-14 rad, its noise ~1e-11 rad); the parabolas above
+are unchanged, and so is the number of passes, so the result is
+upstream's to its noise: within 0.17 mas, smoothly (the 18" parabola's
+own h^2 bias). The unused last pass computes only its centre. The
+perigee is smooth to 1.8e-3 mas, the apogee to 1.1e-3 (S <= 1.5 on
+lon). Both speeds difference over +-2^-8 day, where the h^2 term and the
+noise over 2h balance: within 2.1e-7 deg/day of a five-point difference
+(SEFLG_SPEED and SEFLG_SPEED3; 9e-13 AU/day on the distance).
+
+Not changed: the iteration stops after five (perigee) or four (apogee)
+passes, not at its fixed point, which lies up to 1.08" away for the
+perigee (2.4 mas the apogee) over -10000..+12000; converging would move
+the positions by that much. SEFLG_J2000's latitude speed is off by up to
+4.6e-7 deg/day (-3000), from the J2000 conversion shared with the mean
+apogee (7e-7 at 12000).
+
+G46 `tests/intpaps.c` (c), (d): 64 consecutive JDs on a line within 0.01
+mas (1.8e-3; upstream 1.3), the speeds within 1e-6 deg/day of a
+five-point difference at multiples of 2^-8 day (2.1e-7; upstream 1.8e-3
+on the Lahiri SPEED3 perigee). G24 `intp_rough_off`: 1.8e-3 mas shipped,
+1.2 compat. Baselines: interpolated-apsis positions move by <= 0.17 mas
+besides entry 44's light time, their speeds by up to 1.1e-4 deg/day.
 
 ## How these were found
 

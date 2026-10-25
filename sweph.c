@@ -542,6 +542,15 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 	 */
 	dt = NODE_CALC_INTV_MOSH;
 	break;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 45: 8.64 s apart, the positions' 1.3 mas jitter was
+       * 1.5e-3 deg/day in the perigee's speed (2.6e-6 once smooth). The
+       * step of their own speed, 2^-8 day. */
+      case SE_INTP_APOG:
+      case SE_INTP_PERG:
+	dt = INTP_APS_SPEED_INTV;
+	break;
+#endif
       default:
 	dt = PLAN_SPEED_INTV;
 	break;
@@ -7301,8 +7310,10 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
   struct epsilon *oe;
   struct nut *nut;
   double daya[2];
+#ifdef SWE_UPSTREAM_COMPAT
   double speed_intv = 0.1;
   double t, dt;
+#endif
   double xpos[3][6], xx[6], x[6];
   int32 speedf1, speedf2;
   oe = &ctx->oec;
@@ -7322,6 +7333,49 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
     ndp->iephe = iflag & SEFLG_MOSEPH;
     return OK;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 44: the light-time step below, x -= tau v, took v from the
+   * speed, which is zero without SEFLG_SPEED, and from i = 1, so the x
+   * coordinate never had it: the position depended on the speed flag, the
+   * perigee by 111 mas (tau v, tau = 1.2 s, v up to 2.3 deg/day), the
+   * apogee by 13. The apsis, like the osculating one built from the Moon
+   * at t - tau, is seen at t - tau: X(t) - tau V(t), for every flag set
+   * (TRUEPOS aside), off by tau^2 A / 2 ~ 4e-4 mas, and its rate is
+   * V (1 - dtau/dt) - tau A, dtau/dt = rdot / c. V and A come from the
+   * three positions, always computed.
+   * Upstream bug 45: the speed was the difference over +-0.1 day, off by
+   * the h^2 term, 1.1e-4 deg/day on the perigee. The three positions are
+   * now 2^-8 day apart, where that term (1.7e-7) and the positions' noise
+   * over 2h (0.0018 mas, 7e-8) balance: 2.1e-7 deg/day. */
+  {
+    const double h = INTP_APS_SPEED_INTV;
+    double r, rdot, tau, taudot, v[3], a[3];
+    for (i = 0; i < 3; i++) {
+      swi_intp_apsides(ctx, tjd + (i - 1) * h, xpos[i], ipl);
+      swi_polcart(xpos[i], xpos[i]);
+    }
+    for (i = 0; i < 3; i++) {
+      v[i] = (xpos[2][i] - xpos[0][i]) / (2 * h);
+      a[i] = (xpos[2][i] + xpos[0][i] - 2 * xpos[1][i]) / (h * h);
+      xx[i] = xpos[1][i];
+      xx[i+3] = v[i];
+    }
+    memset((void *) ndp->xreturn, 0, 24 * sizeof(double));
+    if (!(iflag & SEFLG_TRUEPOS)) {
+      r = sqrt(square_sum(xx));
+      rdot = (xx[0] * v[0] + xx[1] * v[1] + xx[2] * v[2]) / r;
+      tau = r * AUNIT / CLIGHT / 86400.0;
+      taudot = rdot * AUNIT / CLIGHT / 86400.0;
+      for (i = 0; i < 3; i++) {
+        xx[i] -= tau * v[i];
+        xx[i+3] = (v[i] - tau * a[i]) * (1 - taudot);
+      }
+    }
+    if (!(iflag & SEFLG_SPEED))
+      for (i = 3; i < 6; i++)
+        xx[i] = 0;
+  }
+#else
   /*********************************************
    * now three apsides * 
    *********************************************/
@@ -7350,6 +7404,7 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
     for (i = 1; i < 3; i++)
       xx[i] -= dt * xx[i+3];
   }
+#endif
   for (i = 0; i <= 5; i++) 
     ndp->xreturn[i+6] = xx[i];
   /*printf("%.10f, %.10f, %.10f, %.10f\n", xx[0] /DEGTORAD, xx[1] / DEGTORAD, xx [2], xx[3] /DEGTORAD);*/

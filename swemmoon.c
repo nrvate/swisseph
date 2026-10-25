@@ -1439,6 +1439,41 @@ ctx->moon.Sa = swi_mods3600( 4399609.65932 * ctx->moon.T + 180278.89694 );
 ctx->moon.Sa += (( 4.475946e-8*ctx->moon.T - 6.874806E-5 ) * ctx->moon.T + 7.56161437443E-1)*ctx->moon.T2;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* the step, arcsec of mean anomaly, below which the apsis iteration takes
+ * its Newton step from five points this far apart (bug 45) */
+#define INTP_APS_DD_FIVE 180.0
+/* the lunar distance with the arguments shifted by off along the
+ * iteration's line: m the mean anomaly, the Moon's argument of latitude,
+ * elongation and longitude at its centre, sp the Sun's mean anomaly and the
+ * planets' mean longitudes, f their periods in anomalistic months (the
+ * mean anomaly moves by off, the others by off / f); pol, if not NULL,
+ * gets the whole position */
+static double intp_aps_eval(swe_ctx *ctx, const double *m, const double *sp,
+  const double *f, double off, double *pol)
+{
+  int i;
+  ctx->moon.MP = m[0] + off;
+  ctx->moon.NF = m[1] + off/f[0];
+  ctx->moon.D  = m[2] + off/f[1];
+  ctx->moon.SWELP = m[3] + off/f[2];
+  ctx->moon.M  = sp[0] + off/f[3];
+  ctx->moon.Ve = sp[1] + off/f[4];
+  ctx->moon.Ea = sp[2] + off/f[5];
+  ctx->moon.Ma = sp[3] + off/f[6];
+  ctx->moon.Ju = sp[4] + off/f[7];
+  ctx->moon.Sa = sp[5] + off/f[8];
+  moon1(ctx);
+  moon2(ctx);
+  moon3(ctx);
+  moon4(ctx);
+  if (pol != NULL)
+    for (i = 0; i < 3; i++)
+      pol[i] = ctx->moon.moonpol[i];
+  return ctx->moon.moonpol[2];
+}
+#endif
+
 /* Calculate geometric coordinates of true interpolated Moon apsides
  */
 int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli)
@@ -1447,7 +1482,12 @@ double dd;
 double rsv[3];
 double sNF, sD, sLP, sMP, sM, sVe, sEa, sMa, sJu, sSa, fM, fVe, fEa, fMa, fJu, fSa, cMP, zMP, fNF, fD, fLP;
 double dMP, mLP, mNF, mD, mMP;
-int i, ii, iii, niter = 4;	/* niter: silence compiler warning */
+int ii, iii, niter = 4;	/* niter: silence compiler warning */
+#ifndef SWE_UPSTREAM_COMPAT
+double m4[4], sp[6], f[9];
+#else
+int i;
+#endif
 ii=1;
 zMP=27.55454988;
 fNF = 27.212220817/zMP;/**/
@@ -1488,6 +1528,46 @@ for (iii= 0; iii<=niter; iii++) {/**/
  mNF = sNF - dMP;
  mD  = sD  - dMP;
  mMP = sMP - dMP;
+#ifndef SWE_UPSTREAM_COMPAT
+ /* Upstream bug 45: the apsis is the minimum (maximum) of the distance
+  * along the iteration's line in the arguments, each step the vertex of the
+  * parabola through r(c - dd), r(c), r(c + dd), dd shrinking 5 deg, 0.5,
+  * 0.05, ... But r is a lunar distance, ~3.6e5 km held to ~1e-10 km, and
+  * at dd = 18" and 1.8" the parabola's slope and curvature, r' dd and
+  * r'' dd^2 ~ 1e-6 km, came out of the last few digits: the step, still
+  * 1-3" because the iteration converges only linearly (by 0.15 a step on
+  * some dates), carried 1e-4 of itself in noise. The perigee jumped 1.3 mas
+  * between consecutive JDs (2100), the apogee 0.023 mas. Below dd = 180"
+  * the step is now -r'/r'' at c from five points 180" apart, the slope's
+  * h^4 term ~1e-14 rad, its noise ~1e-11 rad (0.002 mas), the same Newton
+  * step the shrinking parabola approximates: the perigee is smooth to
+  * 0.0018 mas, the apogee to 0.0011, and both move by at most 0.17 mas
+  * from upstream's positions, smooth (the 18" parabola's own h^2 bias).
+  * The last pass's correction was never used, so its two side points are
+  * not computed. */
+ m4[0] = mMP; m4[1] = mNF; m4[2] = mD; m4[3] = mLP;
+ sp[0] = sM; sp[1] = sVe; sp[2] = sEa; sp[3] = sMa; sp[4] = sJu; sp[5] = sSa;
+ f[0] = fNF; f[1] = fD; f[2] = fLP; f[3] = fM; f[4] = fVe; f[5] = fEa;
+ f[6] = fMa; f[7] = fJu; f[8] = fSa;
+ if (iii == niter) {
+   intp_aps_eval(ctx, m4, sp, f, 0, pol);
+   break;
+ }
+ if (dd >= INTP_APS_DD_FIVE) {
+   for (ii = 0; ii <= 2; ii++)
+     rsv[ii] = intp_aps_eval(ctx, m4, sp, f, (ii-1)*dd, NULL);
+   cMP = (1.5*rsv[0] - 2*rsv[1] + 0.5*rsv[2]) / (rsv[0] + rsv[2] - 2*rsv[1]);
+   cMP *= dd;
+   cMP = cMP - dd;
+ } else {
+   double r5[5], d1, d2;
+   for (ii = 0; ii <= 4; ii++)
+     r5[ii] = intp_aps_eval(ctx, m4, sp, f, (ii-2)*INTP_APS_DD_FIVE, NULL);
+   d1 = (8 * (r5[3] - r5[1]) - (r5[4] - r5[0])) / 12;	/* r' h */
+   d2 = r5[1] + r5[3] - 2 * r5[2];			/* r'' h^2 */
+   cMP = -d1 / d2 * INTP_APS_DD_FIVE;
+ }
+#else
  for (ii = 0; ii <=2; ii++) {/**/
    ctx->moon.MP = mMP + (ii-1)*dd;       /**/
    ctx->moon.NF = mNF + (ii-1)*dd/fNF;
@@ -1511,6 +1591,7 @@ for (iii= 0; iii<=niter; iii++) {/**/
  cMP = (1.5*rsv[0] - 2*rsv[1] + 0.5*rsv[2]) / (rsv[0] + rsv[2] - 2*rsv[1]);/**/
  cMP *= dd;
  cMP = cMP - dd;
+#endif
  mMP += cMP;
  ctx->moon.MP = mMP;
  dd /= 10;
