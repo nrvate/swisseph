@@ -1091,6 +1091,11 @@ struct epsilon {
  *     0.001)) / 0.001 with t - 0.001 rounded: the step off by half an ulp
  *     of the date, 1.2e-8 deg/day on the node, 2.5e-8 on the apogee
  *     (UPSTREAM-BUGS 117, G114)
+ *   - a sefstars.txt that failed to load reread and reparsed by every
+ *     later swe_fixstar2() and swe_fixstar2_mag() (842 us a call at a bad
+ *     line 500), a missing one searched for on every call (two fopen());
+ *     upstream also rereads a catalogue repaired in place
+ *     (UPSTREAM-BUGS 121, G118)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1781,6 +1786,12 @@ struct swe_ctx {
   int32 n_fixstars_named;    // number of fixed stars with tradtional name
   int32 n_fixstars_records;  // number of fixed stars records in fixed_stars
   struct fixed_star *fixed_stars;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 121: a load of sefstars.txt that failed, and its error,
+   * kept until the path changes or swe_close() (swi_fixstar_forget()) */
+  int32 fixstars_load_failed;
+  char fixstars_load_err[AS_MAXCH];
+#endif
   /* seorbel.txt, read once per context. The text, not parsed numbers: the
    * elements carry T terms evaluated against tjd on every call. Dropped
    * whenever the ephemeris path can change. NULL until first use, and left

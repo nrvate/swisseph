@@ -149,6 +149,7 @@ worst were in code that had never executed even once.
 | 116 | `swe_set_astro_models()` of a version before 2.01 sets the tidal acceleration but publishes only the SID group, so the default context's next sync puts the automatic term back (this fork's) | Correctness | `swephlib.c` |
 | 109 | Moshier's fictitious bodies, fixed stars and apparent light time stay heliocentric, and its heliocentric Moon's speed is off its positions | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 | 117 | `swe_calc()`'s mean node and mean apogee speeds divide by 0.001 a step that is not 0.001 | Correctness | `sweph.c` |
+| 121 | A sefstars.txt that failed to load is reread and reparsed by every later star call, a missing one searched for on every call | Performance / files | `sweph.c`, `sweph.h` |
 
 ---
 
@@ -7279,6 +7280,55 @@ Measured with it, not fixed:
   the mean of the two slopes, as any difference must (a five-point
   reference over +-1 day there is off by up to 9.9e-9 deg/day). A kink in
   the positions themselves, upstream's model; left.
+
+## 121. A sefstars.txt that failed to load is reread and reparsed by every later star call, a missing one searched for on every call
+
+**Severity: Performance / files (a catalogue broken at line 500: 842 us a `swe_fixstar2()` call for 2.8, 718 us a `swe_fixstar2_mag()` call for 0.1, 1500 lines read a round of three; a missing catalogue: two fopen() a call)**
+**Where:** `sweph.c`: `load_all_fixed_stars()`, `swi_fixstar_forget()`; `sweph.h`: `swe_ctx`
+
+`load_all_fixed_stars()` marks the catalogue loaded by
+`n_fixstars_records > 0`, and only a load that reaches the end of the file
+sets it. A load that failed part way (a line `fixstar_cut_string()`
+refuses) left it 0, so the next `swe_fixstar2()` or `swe_fixstar2_mag()`
+loaded again: rewound the file, still open, and read and parsed it up to
+the bad line, every call. A missing catalogue left `fixfp` NULL, so every
+call searched the path for sefstars.txt and then fixstars.cat. Bug 113
+gave these calls the load's error and freed the partial table; it did
+not stop the reload.
+
+Measured, `swe_set_ephe_path()` to a directory of links to `ephe/` with
+sefstars.txt broken at line 500, 1000 calls after the first: Aldebaran
+and Sirius alternating in `swe_fixstar2()`, 842.2 us a call (2.8 with the
+complete catalogue), 0 fopen(); Spica in `swe_fixstar2_mag()` 717.6 us
+(0.1); 40 rounds of three calls read 60000 lines. With no sefstars.txt:
+2000 fopen() in 1000 calls of each, 4.1 and 3.3 us a call.
+
+**Fix, as done here:** the loader is wrapped: a load that fails sets
+`fixstars_load_failed` and keeps its error in `fixstars_load_err`, and
+frees the partial table at once; while it is set, each later load
+returns ERR with that error without touching the file, so
+`swe_fixstar2()` and `swe_fixstar2_mag()` report it as bug 113 made them.
+`swi_fixstar_forget()`, which runs wherever the path can change (a new
+path, a thread adopting another's) and in `swe_close()`, clears it. After:
+0 fopen() and 0 lines read in 40 rounds, broken or missing, each refusal
+headed by the first call's load error; 0.3 us a call broken, 0.5
+missing. A catalogue repaired in place is read again only after a new
+path or `swe_close()`: the same contract as the complete catalogue's
+table, which is not reread when the file changes either. `swe_fixstar()`
+and `swe_fixstar_mag()`, which search the open file themselves and never
+load the table, are unchanged.
+
+G118 `tests/starfail.c` (fopen() and fgets() interposed, each case in a
+child, crafted catalogues in /tmp): C1 broken at line 500 and C2 missing,
+40 rounds after the first failure open and read nothing (before: 0 opens
+and 60000 lines; 240 opens), the same error each time, built-in Spica
+answering; C3 a new path and C4 `swe_close()` load the complete catalogue
+again, Aldebaran bit for bit as before; C5 a repair in place is not seen
+without either. The build before the fix fails C1, C2 and C5; the
+upstream build all five, for bug 92 (it keeps the first path's catalogue,
+so the broken one is never read). G24 `star_load_kept`: after
+`swe_close()`, a failed load, then a repair in place: 0 (still refused)
+shipped, 1 (reread, answered) compat. G111, G91, G66 pass.
 
 ## How these were found
 

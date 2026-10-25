@@ -2212,6 +2212,63 @@ static int fict_star_line(const char *dir, const char *ephe, const char *cupido)
   return fclose(g);
 }
 
+/* swe_fixstar2() after sefstars.txt failed to load (broken at line 500)
+ * and was repaired in place, with neither a new path nor swe_close(): 1 if
+ * it answered from the repaired file, 0 if refused as before. Upstream
+ * reread the file on every call (UPSTREAM-BUGS 121); now the failure is
+ * kept, and the file not touched, until the path changes or swe_close(). */
+static double star_load_kept(void)
+{
+  char dir[] = "/tmp/compatslXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  char serr[256], star[64], s[1024];
+  double x[6], r = -1;
+  int n, k;
+  struct dirent *e;
+  DIR *d;
+  FILE *f, *g;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strcmp(e->d_name, "sefstars.txt") != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  snprintf(p, sizeof p, "%s/sefstars.txt", ephe);
+  snprintf(q, sizeof q, "%s/sefstars.txt", dir);
+  for (k = 0; k < 2; k++) {	/* broken, then repaired */
+    if ((f = fopen(p, "r")) == NULL || (g = fopen(q, "w")) == NULL)
+      break;
+    for (n = 1; fgets(s, sizeof s, f) != NULL; n++)
+      fputs(n == 500 && k == 0 ? "a line without a comma\n" : s, g);
+    fclose(f);
+    fclose(g);
+    if (k == 0) {
+      swe_close();
+      swe_set_ephe_path(dir);
+      strcpy(star, "Aldebaran");
+      if (swe_fixstar2(star, 2451545.0, 0, x, serr) >= 0)
+        break;
+    } else {
+      strcpy(star, "Aldebaran");
+      r = swe_fixstar2(star, 2451545.0, 0, x, serr) >= 0;
+    }
+  }
+  swe_close();
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+  return r;
+}
+
 static double fict_star_parse(void)
 {
   char dir[] = "/tmp/compatfsXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
@@ -2520,7 +2577,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2627,6 +2684,7 @@ int main(int argc, char **argv)
   fictstar = fict_star_parse();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
+  starkept = star_load_kept();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -3425,6 +3483,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier star, fict     %.2e deg FAIL: expected %s\n",
            moshbary, WANT_DEFECT ? "> 1e-7" : "< 2e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (starkept == 1) : (starkept == 0))
+    printf("  failed star load kept  %.0f OK\n", starkept);
+  else {
+    printf("  failed star load kept  %.0f FAIL: expected %s\n",
+           starkept, WANT_DEFECT ? "1 (reread)" : "0 (kept)");
     bad++;
   }
 

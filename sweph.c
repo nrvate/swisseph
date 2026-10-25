@@ -1870,6 +1870,8 @@ void swi_fixstar_forget(swe_ctx *ctx)
   ctx->n_fixstars_named = 0;
   ctx->n_fixstars_records = 0;
   ctx->is_old_starfile = FALSE;
+  ctx->fixstars_load_failed = FALSE;	/* bug 121 */
+  *ctx->fixstars_load_err = '\0';
 }
 #endif
 
@@ -10506,7 +10508,11 @@ int32 fixstar_cut_string(swe_ctx *ctx, char *srecord, char *star, struct fixed_s
  * value -2, without doing anything and without error string.
  * On success, the function returns value OK.
  * */
+#ifndef SWE_UPSTREAM_COMPAT
+static int32 load_fixed_stars_file(swe_ctx *ctx, char *serr)
+#else
 static int32 load_all_fixed_stars(swe_ctx *ctx, char *serr) 
+#endif
 {
   int32 retc = OK;
   int nstars = 0, nrecs = 0, nnamed = 0;
@@ -10581,6 +10587,36 @@ static int32 load_all_fixed_stars(swe_ctx *ctx, char *serr)
                     (int (CMP_CALL_CONV *)(const void *,const void *))(fixedstar_name_compare));
   return retc;
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 121: a load that failed left n_fixstars_records 0, so
+ * every later swe_fixstar2() and swe_fixstar2_mag() loaded again: a
+ * catalogue broken at line 500 was reread and reparsed up to it on every
+ * call (842 us a call for 2.8), and a missing one searched for along the
+ * path, sefstars.txt and fixstars.cat, two fopen() a call. The failure
+ * and its error are now kept until the path changes or swe_close()
+ * (swi_fixstar_forget()), and each later call reports the same error
+ * without touching the file; the partial table is freed at once. */
+static int32 load_all_fixed_stars(swe_ctx *ctx, char *serr)
+{
+  int32 retc;
+  if (ctx->fixstars_load_failed) {
+    if (serr != NULL)
+      strcpy(serr, ctx->fixstars_load_err);
+    return ERR;
+  }
+  *ctx->fixstars_load_err = '\0';
+  retc = load_fixed_stars_file(ctx, ctx->fixstars_load_err);
+  if (retc == ERR) {
+    ctx->fixstars_load_failed = TRUE;
+    free(ctx->fixed_stars);
+    ctx->fixed_stars = NULL;
+  }
+  if (serr != NULL && *ctx->fixstars_load_err != '\0')
+    strcpy(serr, ctx->fixstars_load_err);
+  return retc;
+}
+#endif
 
 /* function calculates a fixstar from a star data struct 
  * input:
