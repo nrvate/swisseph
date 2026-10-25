@@ -8216,8 +8216,27 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
      * the tropical one now, the Horizons bits dropped as the sidereal call
      * drops them (bug 223), so every method answers the sector of the
      * call without SEFLG_SIDEREAL. */
+    /* Upstream bug 252: the other flags that choose the place's frame or
+     * form, not its direction, reached the place and not this frame
+     * either: Mars at 1950, Zurich, Swiss files, method 0, against the
+     * call without, SEFLG_NONUT -1.14e-4 sector (the mean place in the
+     * true frame), SEFLG_ICRS -1.5e-8 (no frame bias), SEFLG_J2000
+     * -0.0875, SEFLG_EQUATORIAL -0.148 (right ascension and declination
+     * taken for longitude and latitude), SEFLG_RADIANS +17.8, SEFLG_XYZ
+     * +18.3; and SEFLG_HELCTR and SEFLG_BARYCTR +3.88, a direction from
+     * the Sun set on the observer's diurnal circle. iflag is "flag for
+     * ephemeris and SEFLG_TOPOCTR" (swephprg 16.1), and methods 2 to 5
+     * answer the observer's sector whatever else it holds. The place
+     * takes now the bits that choose the body's direction from the
+     * observer and no other: the ephemeris and its Horizons corrections,
+     * SEFLG_TOPOCTR, SEFLG_TRUEPOS, SEFLG_NOABERR and SEFLG_NOGDEFL (which
+     * swe_pheno() keeps too), SEFLG_CENTER_BODY; so it is in this frame's
+     * true ecliptic of date, in degrees. The centre flags are ignored, as
+     * methods 2 to 5 and swe_pheno() ignore them, not refused. */
+    iflag_pl &= SEFLG_EPHMASK | SEFLG_TOPOCTR | SEFLG_TRUEPOS | SEFLG_NOABERR
+                | SEFLG_NOGDEFL | SEFLG_CENTER_BODY | SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX;
     if (iflag & SEFLG_SIDEREAL)
-      iflag_pl &= ~(SEFLG_SIDEREAL | SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+      iflag_pl &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
     if (do_fixstar)
       retflag = swe_fixstar_r(ctx, starname, t_et, iflag_pl, x0, serr);
     else

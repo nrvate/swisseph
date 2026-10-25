@@ -5306,6 +5306,40 @@ static double sid_gauq_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 252: swe_gauquelin_sector() methods 0 and 1 with a flag
+ * that names the place's frame or form (SEFLG_NONUT, J2000, ICRS,
+ * EQUATORIAL, RADIANS, XYZ) or its centre (HELCTR, BARYCTR). Mars at UT JD
+ * 2433282.5 (1950) on the Swiss files, Zurich: the largest change of the
+ * sector with one of them, sectors. Upstream set that place in the true
+ * ecliptic of date's frame: 18.4 (SEFLG_XYZ, method 1). -1 if a call
+ * fails. */
+static double gauq_frame_flag_off(void)
+{
+  static const int32 F[8] = { SEFLG_NONUT, SEFLG_J2000, SEFLG_ICRS, SEFLG_EQUATORIAL,
+                              SEFLG_RADIANS, SEFLG_XYZ, SEFLG_HELCTR, SEFLG_BARYCTR };
+  double geo[3] = { 8.55, 47.37, 400 }, g0, g1, r = 0;
+  swe_ctx *c = swe_ctx_new();
+  char serr[256];
+  int m, f;
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  for (m = 0; m < 2; m++)
+    for (f = 0; f < 8; f++) {
+      if (swe_gauquelin_sector_r(c, 2433282.5, SE_MARS, NULL, SEFLG_SWIEPH, m, geo, 0, 0, &g0,
+                                 serr) < 0
+          || swe_gauquelin_sector_r(c, 2433282.5, SE_MARS, NULL, SEFLG_SWIEPH | F[f], m, geo, 0,
+                                    0, &g1, serr) < 0) {
+        swe_ctx_free(c);
+        return -1;
+      }
+      if (fabs(g1 - g0) > r)
+        r = fabs(g1 - g0);
+    }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 247: a star mode whose star is refused. True Citra at JD
  * 100000 on Moshier, Spica outside Moshier's range: of swe_get_ayanamsa_ex()
  * returning other than ERR, its ayanamsa other than 0, and the sidereal
@@ -6713,7 +6747,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6916,6 +6950,7 @@ int main(int argc, char **argv)
   nutorder = nut_intp_order_off();
   sidgauq = sid_gauq_off();
   staraya = star_aya_refused();
+  gauqflag = gauq_frame_flag_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -8600,6 +8635,14 @@ int main(int argc, char **argv)
   else {
     printf("  SPEED3 at de200's end  %.2e deg/day FAIL: expected %s\n",
            speed3span, WANT_DEFECT ? "> 1e-2" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (gauqflag > 1) : (gauqflag == 0))
+    printf("  Gauquelin frame flags  %.2e sector OK\n", gauqflag);
+  else {
+    printf("  Gauquelin frame flags  %.2e sector FAIL: expected %s\n",
+           gauqflag, WANT_DEFECT ? "> 1" : "0");
     bad++;
   }
 

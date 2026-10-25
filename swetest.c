@@ -743,6 +743,11 @@ static void remove_whitespace(char *s);
 static int cut_str_any(char *s, char *cutlist, char *cpos[], int nmax);
 #endif
 static int32 call_swe_fixstar(char *star, double te, int32 iflag, double *x, char *serr);
+#ifndef SWE_UPSTREAM_COMPAT
+static int32 hpos_flags(int32 iflg);
+static AS_BOOL hpos_keeps_place(int hsys);
+static double house_pos_body(int32 ipl_h, int hsys);
+#endif
 static void jd_to_time_string(double jut, char *stimeout);
 static char *our_strcpy(char *to, char *from);
 static int print_asteroids(double tjd, double dref, double orb);
@@ -1904,6 +1909,41 @@ int main(int argc, char *argv[])
         /* house position */
         if (strpbrk(fmt, "gGjzm") != NULL) {
 	  armc = swe_degnorm(swe_sidtime(tut) * 15 + geopos[0]);
+#ifndef SWE_UPSTREAM_COMPAT
+	  /* Upstream bug 253: the house position was swe_house_pos() of the
+	   * place printed, in the frame of the true obliquity and the ARMC
+	   * (the mean obliquity under -sid, -nonut and -j2000): Mars at
+	   * 1.1.1950 0h UT, Zurich, 'G', -fj 5.3075773 with -sid1 for
+	   * 2.6855985 without (2.62 sectors), -j2000 2.5980926, -nonut
+	   * 2.6855004, -hel 6.5610087, and right ascension, radians or x, y
+	   * taken for the longitude with -i; in the diff modes it was the
+	   * position of the difference or midpoint, set off against the
+	   * second body's: Mars - Sun, 'P', -fg -15.306 for -100.930. Now
+	   * each body's own place by the flags swe_gauquelin_sector() takes
+	   * (bug 252), in its true obliquity's frame, so no flag that names
+	   * the place's frame or form, nor the centre, moves it, and the
+	   * diff modes difference the two bodies' house positions, in
+	   * degrees. Sidereal whole signs and equal from 0 Aries ('W', 'N')
+	   * take the printed place still, the pseudo-bodies too. */
+	  if (ipl != SE_ECL_NUT && !hpos_keeps_place(ihsy)) {
+	    hposj = house_pos_body(ipl, ihsy);
+	    if (toupper(ihsy) == 'G')
+	      hpos = (hposj - 1) * 10;
+	    else
+	      hpos = (hposj - 1) * 30;
+	    if (diff_mode) {
+	      hpos2 = house_pos_body(ipldiff, ihsy);
+	      if (toupper(ihsy) == 'G')
+		hpos2 = (hpos2 - 1) * 10;
+	      else
+		hpos2 = (hpos2 - 1) * 30;
+	      if (diff_mode == DIFF_DIFF || diff_mode == DIFF_GEOHEL)
+		hpos = swe_difdeg2n(hpos, hpos2);
+	      else	/* DIFF_MIDP */
+		hpos = swe_deg_midp(hpos, hpos2);
+	    }
+	  } else {
+#endif
 	  for (i = 0; i < 6; i++) {
 	    xsv[i] = x[i];
 	  }
@@ -1950,6 +1990,9 @@ int main(int argc, char *argv[])
 		hpos = swe_rad_midp(hpos, hpos2);
 	    }
           }
+#ifndef SWE_UPSTREAM_COMPAT
+	  }
+#endif
         }
         strcpy(spnam, se_pname);
 	print_line(0, is_first, 0);
@@ -1974,6 +2017,10 @@ int main(int argc, char *argv[])
 	double ascmc[10];
 	double ascmc_speed[10];
 	int iofs; 
+#ifndef SWE_UPSTREAM_COMPAT
+	double hcusp[37], hascmc[10], hxobl[6];	/* bug 253 */
+	AS_BOOL hpos_own;
+#endif
 	if (toupper(ihsy) == 'G') // Gauquelin has 36 cusps
 	  nhouses = 36;
 	iofs = nhouses + 1;
@@ -1993,6 +2040,22 @@ int main(int argc, char *argv[])
 	  nhouses = 12; // instead of 36 with 'G'
 	  iofs = nhouses + 1;
 	} 
+#ifndef SWE_UPSTREAM_COMPAT
+	/* Upstream bug 253: the cusps' house positions were those of the
+	 * cusps printed, sidereal with -sid (Placidus cusp 1 at 330.07 deg
+	 * with -sid1, Zurich, 1950) and the mean frame's with -nonut
+	 * (0.00079), set in the true frame; now of the same points'
+	 * tropical places, the houses without the frame flags: each cusp
+	 * its own number. 'W' and 'N' sidereal as the planets above. */
+	hpos_own = strpbrk(fmt, "gGj") != NULL && !hpos_keeps_place(ihsy);
+	if (hpos_own) {
+	  char serr_h[AS_MAXCH];
+	  int32 hflag = hpos_flags(iflag);
+	  swe_houses_ex2(t, hflag, top_lat, top_long, ihsy, hcusp, hascmc, NULL, NULL, serr_h);
+	  if (swe_calc(te, SE_ECL_NUT, hflag, hxobl, serr_h) == ERR)
+	    hxobl[0] = xobl[0];
+	}
+#endif
 	is_first = TRUE;
 	for (ipl = 1; ipl < iofs+8; ipl++) {
 	  x[0] = cusp[ipl];
@@ -2019,6 +2082,15 @@ int main(int argc, char *argv[])
 	    swe_azalt(t, SE_ECL2HOR, gpos, datm[0], datm[1], x, xaz);
 	  }
 	  if (strpbrk(fmt, "gGj") != NULL) {
+#ifndef SWE_UPSTREAM_COMPAT
+	    if (hpos_own) {
+	      double xh[6];
+	      xh[0] = ipl >= iofs ? hascmc[ipl - iofs] : hcusp[ipl];
+	      xh[1] = 0;
+	      xh[2] = 1.0;
+	      hposj = swe_house_pos(armc, geopos[1], hxobl[0], ihsy, xh, serr);
+	    } else
+#endif
 	    hposj = swe_house_pos(armc, geopos[1], xobl[0], ihsy, x, serr);
 	    if (toupper(ihsy) == 'G')
 	      hpos = (hposj - 1) * 10;
@@ -2061,6 +2133,60 @@ static int32 call_swe_fixstar(char *star, double te, int32 iflag, double *x, cha
   else
     return swe_fixstar(star, te, iflag, x, serr);
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 253: the flags of the place a house position is taken
+ * from, as swe_gauquelin_sector() takes them (bug 252): those that choose
+ * the body's direction from the observer, the ephemeris and its Horizons
+ * corrections (none with -sid, as the sidereal place takes none), -topo,
+ * -true, -noaberr, -nodefl, -cob; not -sid, -j2000, -nonut, -icrs, -hel,
+ * -bary, the speeds or -i's equatorial, cartesian and radian forms. */
+static int32 hpos_flags(int32 iflg)
+{
+  int32 f = iflg & (SEFLG_EPHMASK | SEFLG_TOPOCTR | SEFLG_TRUEPOS | SEFLG_NOABERR
+                    | SEFLG_NOGDEFL | SEFLG_CENTER_BODY | SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+  if (iflg & SEFLG_SIDEREAL)
+    f &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+  return f;
+}
+
+/* sidereal whole signs and equal houses from 0 Aries: their house
+ * positions are left as they were, the printed place's */
+static AS_BOOL hpos_keeps_place(int hsys)
+{
+  return (iflag & SEFLG_SIDEREAL) && (toupper(hsys) == 'W' || toupper(hsys) == 'N');
+}
+
+/* the house position (1 <= h < 13, < 37 with 'G') of body ipl_h, the star
+ * if SE_FIXSTAR, at te: for 'G' by the rise and set methods
+ * swe_gauquelin_sector()'s, else swe_house_pos() of the place by
+ * hpos_flags(), its latitude 0 with method 1, in the frame of that
+ * place's true obliquity; 0 if the place is refused */
+static double house_pos_body(int32 ipl_h, int hsys)
+{
+  double xp[6], xo[6], cusp[100], h;
+  char sname[AS_MAXCH], serr_h[AS_MAXCH];
+  int32 hflag = hpos_flags(iflag), ret;
+  *sname = '\0';
+  if (ipl_h == SE_FIXSTAR)
+    strcpy(sname, star);
+  if (hpos_meth >= 2 && toupper(hsys) == 'G') {
+    swe_gauquelin_sector(tut, ipl_h, sname, iflag, hpos_meth, geopos, 0, 0, &h, serr);
+    return h;
+  }
+  if (ipl_h == SE_FIXSTAR)
+    ret = call_swe_fixstar(sname, te, hflag, xp, serr_h);
+  else
+    ret = swe_calc(te, ipl_h, hflag, xp, serr_h);
+  if (ret == ERR || swe_calc(te, SE_ECL_NUT, hflag, xo, serr_h) == ERR)
+    return 0;
+  if (hpos_meth == 1)
+    xp[1] = 0;
+  if (hsys == 'i' || hsys == 'I')
+    swe_houses_ex(t, hflag, geopos[1], geopos[0], hsys, cusp, cusp + 13);
+  return swe_house_pos(armc, geopos[1], xo[0], hsys, xp, serr);
+}
+#endif
 
 /* This function calculates the geocentric relative distance of a planet,
  * where the closest position has value 1000, and remotest position has 

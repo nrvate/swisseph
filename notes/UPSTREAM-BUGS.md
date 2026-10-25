@@ -275,6 +275,8 @@ worst were in code that had never executed even once.
 | 255 | Moshier's planets and Moon take 0.3 and 0.2 day past MOSHPLEPH's and MOSHLUEPH's ends (the margin for the light time and speed reads), and their refusals name the ends: Mars and Spica answer at 2818000.79, and 2818000.81 is refused "outside Moshier planet range 625000.50 .. 2818000.50"; the Moon at 2818000.69 and 2818000.71 likewise | Correctness (error reporting) | `swemplan.c`, `swemmoon.c` |
 | 249 | `swe_calc()` with SEFLG_SPEED3 reads the body at tjd - dt, tjd + dt and tjd, each read falling back on its own: within dt of a span's edge the speed differenced two ephemerides, on de200.eph 2^-16 day before its end Mars 0.72180 deg/day for 0.76100, the Moon 3.3725 for 14.0460, Pluto 45.98 for 0.0144, flag 129 (JPL), Moshier noted where the call without a flag says nothing, strict answering; the Swiss files' and Moon files' edges alike; a read past Moshier's range refused the call, -1 for 4 | Correctness (behaviour) | `sweph.c` |
 | 254 | `swe_house_pos()` of a tropical place answers the tropical house in whole signs ('W') and 0 Aries ('N'), where the manual counts every system as giving the sidereal house with the traditional method: Lahiri at Zurich, 1800-2100, a sidereal cusp's tropical place 0.298 house off its number in 'W', up to 0.842 in 'N'; the function takes no date or ayanamsa, so a documented limitation | Correctness (documented limitation) | `swehouse.c`, `swephexp.h` |
+| 252 | `swe_gauquelin_sector()` methods 0 and 1 set the place the body's call answered with every flag in the frame of the true ecliptic of date: the flags that name the place's frame or form (SEFLG_NONUT, ICRS, J2000, EQUATORIAL, RADIANS, XYZ) and the centre (HELCTR, BARYCTR) moved the sector, Mars at 1950, Zurich, method 0, NONUT -1.14e-4 sector, J2000 -0.0875, EQUATORIAL -0.148, RADIANS +17.8, XYZ +18.3, HELCTR and BARYCTR +3.88; methods 2 to 5 take the ephemeris alone | Correctness (behaviour) | `swecl.c` |
+| 253 | swetest's house positions (-fg, -fG, -fj) are `swe_house_pos()` of the place it printed: with -sid the sidereal place in the tropical frame (Mars at 1.1.1950 0h UT, Zurich, 'G', 5.3075773 for 2.6855985), with -j2000, -nonut, -hel, -bary, -icrs and -i's forms the place of that frame or form; in the diff modes the position of the difference or midpoint set off against the second body's (Mars - Sun, 'P', -15.306 deg for -100.930); the cusps' those of the cusps printed (sidereal house 1 at 330.07 deg) | Correctness (behaviour, program) | `swetest.c` |
 
 ---
 
@@ -17814,6 +17816,186 @@ Noticed, not fixed:
   ayan_t0 3.62e-5 deg off its tropical place at 1800-2100,
   where the cusps are at their numbers within 9.3e-9 house; a place and a
   cusp at one point of the sky so 3.62e-5 deg apart.
+
+## 252. `swe_gauquelin_sector()` methods 0 and 1 set the body's place with every flag in the frame of the true ecliptic of date: SEFLG_NONUT, ICRS, J2000, EQUATORIAL, RADIANS, XYZ, HELCTR and BARYCTR moved the sector, Mars at 1950, Zurich, up to 18.4 sectors
+
+**Severity: Correctness (behaviour: a flag that names the place's frame or form, or a centre that is not the observer's, moved a sector, a place in the observer's sky; methods 0 and 1, every body and star, every ephemeris)**
+**Where:** `swecl.c`: `swe_gauquelin_sector_r_body()`
+
+Entry 236's noticed item. Methods 0 and 1 compute the body with iflag and
+set the place it answers, as ecliptic longitude and latitude, in the
+frame of the true ecliptic of date: the ARMC from the sidereal time with
+the true obliquity and the nutation, and that obliquity (entry 236 cleared
+SEFLG_SIDEREAL from the place). Every other flag reached the place and not
+the frame. Measured, Mars at UT 2433282.5, Zurich (8.55E, 47.37N, 400 m),
+Swiss files, method 0, the sector less the call's without the flag:
+- SEFLG_NONUT -1.14e-4 (the mean place in the true frame; G167's sample,
+  six bodies at six dates 1800..2100, the shorter way round the 36, up
+  to 6.1e-4), SEFLG_ICRS -1.5e-8
+  (no frame bias; 9.9e-7 on the sample, none on de200, below DE403),
+  SEFLG_J2000 -0.0875 (0.33), SEFLG_EQUATORIAL -0.148 (right ascension
+  and declination taken for longitude and latitude; 8.09), SEFLG_RADIANS
+  +17.8 (17.9), SEFLG_XYZ +18.3 (method 1 +18.4; 17.7);
+- SEFLG_HELCTR +3.88 and SEFLG_BARYCTR +3.88 (13.9 and 17.8 on the
+  sample): a direction from the Sun or the barycentre set on the
+  observer's diurnal circle;
+- SEFLG_SPEED and SEFLG_SPEED3 nothing, bit for bit (upstream's place
+  takes them: 7.3e-9 sector on the Swiss files);
+- the flags that choose the body's direction from the observer, and
+  that the frame does not depend on: SEFLG_TOPOCTR -2.6e-4, TRUEPOS
+  -3.2e-4, NOABERR +1.1e-4, NOGDEFL -6.1e-8; CENTER_BODY on Jupiter
+  +8.5e-7; the Horizons flags on de200 (entry 223's frame) 4.6e-6. Each is
+  `swe_house_pos()` of the place it gives in the frame, to 7.1e-15
+  sector.
+
+What the manual says: swephprg 16.1 and 18.5.6 document iflag as "flag
+for ephemeris and SEFLG_TOPOCTR", and define methods 0 and 1 through
+`swe_house_pos()` of the body's ecliptic longitude and latitude, which
+"requires TROPICAL positions", of date, as its ARMC and obliquity are.
+Methods 2 to 5 pass `swe_rise_trans()` the ephemeris bits alone, and its
+rising and setting are the topocentric apparent place's, so they answer
+the observer's sector whatever else iflag holds. `swe_pheno()`, the
+library's other quantity of the observer's sky, keeps the ephemeris,
+SEFLG_TRUEPOS, NOGDEFL, NOABERR and TOPOCTR (and J2000, NONUT, which do
+not change its angles) and masks out HELCTR, BARYCTR and the rest.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, methods 0
+and 1 compute the place with the bits that choose the body's direction
+from the observer and no other: the ephemeris and its Horizons
+corrections (none with SEFLG_SIDEREAL, entry 236's rule), SEFLG_TOPOCTR,
+TRUEPOS, NOABERR, NOGDEFL and CENTER_BODY; so the place is in the frame's
+own true ecliptic of date, in degrees, and the frame takes the Horizons
+bits the place's call returned (entry 223). Readings:
+- The direction flags are honoured: each changes where the body is seen
+  from, not the frame, and the sector of that direction is coherent
+  (the place's `swe_house_pos()`, as the manual's method 0 with the
+  caller's own place); SEFLG_TOPOCTR is the one iflag documents.
+  Dropping them would move a deliberate caller's answer with no frame
+  defect to mend.
+- SEFLG_HELCTR and SEFLG_BARYCTR are ignored, not refused: iflag is the
+  ephemeris and SEFLG_TOPOCTR by the manual, a sector exists only on the
+  observer's sky, methods 2 to 5 already answer the observer's sector
+  with them, and `swe_pheno()` masks them the same way. Refusing would
+  have methods 0 and 1 refuse what 2 to 5 answer, and a chart's flag set
+  passed whole fail. The sector answered is the body's, geocentric or
+  topocentric.
+- After: G167's (a) bit for bit the call without; 198720 sectors with no
+  frame flag (400 dates 1800..2100, de200, the Swiss files and Moshier,
+  the Sun, Moon, Mars, Jupiter, both nodes, Chiron, Spica and Aldebaran,
+  methods 0 and 1 with no flag, SEFLG_TOPOCTR, TRUEPOS, NOABERR, NOGDEFL,
+  CENTER_BODY, JPLHOR_APPROX, SIDEREAL and SIDEREAL | TOPOCTR, methods 2
+  to 5 at every 20th date) bit for bit against ts20's tip.
+- Cost: none (one mask; no hot path).
+
+G167 `tests/hposflag.c` (a): methods 0 and 1 with each of SEFLG_SPEED,
+SPEED3, NONUT, ICRS, J2000, EQUATORIAL, RADIANS, XYZ, HELCTR, BARYCTR and
+all of them with SIDEREAL, on six bases of direction flags, the Sun, Moon,
+Mars, Jupiter, mean node and Spica at six dates, on each ephemeris, the
+call with the base alone bit for bit: 66 checks; (b): on each base the
+place's `swe_house_pos()` in its frame within 1e-11 sector: 18; (c):
+methods 2 to 5 with each flag as without: 4. Before the fix 52 of (a)
+fail (SPEED, SPEED3 and ICRS on de200 pass), after 0; with entry 253's
+(d) and (e), 144 of G167's 193 before, 0 after. The upstream build fails
+158: those, 8 more of (a) (its SPEED and SPEED3), 3 of (b) (entry 223's
+frame) and 3 more of (d). G24 `gauq_frame_flag_off`: Mars at UT 2433282.5
+on the Swiss files, the largest change of methods 0 and 1 with one of
+NONUT, J2000, ICRS, EQUATORIAL, RADIANS, XYZ, HELCTR, BARYCTR: 0 shipped,
+18.4 sectors compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. Methods 0 and 1 with SEFLG_TOPOCTR take the observer from
+  `swe_set_topo()`, not geopos, where methods 2 to 5 set geopos for the
+  call: the Moon at UT 2433282.5, geopos Zurich, 13.8513 with
+  `swe_set_topo()` at Zurich, 13.7248 with it at 70W 30S (0.126 sector),
+  ERR "geographic position has not been set" with none.
+- BEHAVIOUR. SE_EARTH, geocentric, answers OK with the sector of the zero
+  vector's longitude and latitude 0 (20.8625 at 1950, as the
+  heliocentric Sun's); with SEFLG_HELCTR now that, where it was the
+  heliocentric Earth's direction (10.5925).
+
+## 253. swetest's house positions are `swe_house_pos()` of the place it printed: with -sid the sidereal place in the tropical frame, Mars at 1.1.1950 0h UT, Zurich, 'G', 5.3075773 for 2.6855985; the diff modes' the position of the difference
+
+**Severity: Correctness (behaviour, the shipped program: -fg, -fG and -fj of every body and star with -sid, -j2000, -nonut, -icrs, -hel, -bary and -i's equatorial, radian and cartesian forms; of the diff modes always; of the cusps with -sid and -nonut)**
+**Where:** `swetest.c`: `main()`'s house position (planets, stars, the diff modes) and the houses' (cusps and axes as points)
+
+Entry 236's noticed item. swetest computes a body's house position as
+`swe_house_pos(armc, geolat, xobl[0], hsys, x)`, with x the place it
+printed and xobl[0] SE_ECL_NUT's obliquity for the call's flags (the
+mean one under -sid, -nonut and -j2000, entry 218), and the ARMC from
+`swe_sidtime()`. It calls `swe_gauquelin_sector()` only for 'G' by the
+rise and set methods (-hsyG2..5). Measured, Mars at 1.1.1950 0h UT,
+Zurich, 'G', -fj (2.6855985 plain):
+- -sid1 5.3075773 (entry 236's 2.62 sectors), -j2000 2.5980926, -nonut
+  2.6855004, -hel 6.5610087, -bary 6.5693781, -i with SEFLG_EQUATORIAL
+  2.5373503, with SEFLG_RADIANS 20.4535087 (right ascension, radians
+  taken for degrees); -icrs within the print here (8.4e-6 deg on the
+  sample below), -speed, -cob, -jplhora as plain; -true,
+  -noaberr, -nodefl and -topo their places' (2.6852818, 2.6857074,
+  2.6855984, 2.6853406);
+- the diff modes (-d, -D, -dh): x is the difference or midpoint, its
+  house position set off against the second body's: Mars - Sun, 'P', -fg
+  -15.306 deg for -100.930 (343.144 - 84.075), Mars/Sun 62.471 for 33.609;
+  with -i's radians the degrees differenced in radians;
+- the cusps and axes as points (-house with -fg): the cusp printed, with
+  -sid the sidereal one in the tropical frame (Placidus house 1 330.07
+  deg, -sid1, 1950), with -nonut the mean frame's (0.00079 deg).
+Over G167's sample (Zurich, 1800, 1950 and 2100) up to 179.9 deg off the
+run without the option; and against the library's house position of the
+tropical place, 5.3 houses in the diff modes plain, 11.1 with -sid1
+(33.2 sectors in 'G').
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT` (a program,
+not the library: no G24 case; G167 built with the switch fails as
+upstream), each body's house position is computed from its own place by
+entry 252's flags (the ephemeris and its Horizons corrections, none with
+-sid; -topo, -true, -noaberr, -nodefl, -cob), with SE_ECL_NUT's true
+obliquity for those flags and swetest's ARMC as before, latitude 0 for
+-hsyX1; 'G' by methods 2 to 5 by `swe_gauquelin_sector()` as before. So:
+- no option that names the place's frame or form, nor -hel or -bary,
+  moves a house position, as no flag moves the sector (entry 252);
+- the diff modes difference and take the midpoint of the two bodies' own
+  house positions, in degrees (-j the first body's number); the second
+  body by the first's method;
+- the cusps' and axes' house positions are those of the same points'
+  tropical places, the houses without -sid, -nonut and radians: each
+  cusp its own number. For the traditional sidereal method that is the
+  same point (the cusp less the ayanamsa); on the ecliptic of t0 and the
+  solar system plane it is the cusp of the chart's own system, which in
+  P R C H X G T is also its point's (entry 236);
+- sidereal whole signs and equal houses from 0 Aries ('W', 'N' with
+  -sid) are left as they were, the printed place's: their tropical place
+  is not their sidereal house position either (entry 236's noticed
+  item, 254's); the pseudo-bodies (delta t, sidereal time, obliquity,
+  nutation, time equation, ayanamsa) as before;
+- a refused place (a star or -cob outside its file) answers 0, as
+  `swe_house_pos()`'s own failure, not the house position of the zeros
+  printed.
+- After: against ts20's tip, every system (P K G E R C B W N I O X H T
+  M A V D Y S L Q U F i), with -hsyX1 and -hsyG3, the Sun to Pluto, both
+  nodes and both apogees, Spica and Aldebaran, the diff modes, 1800..2100, plain, -true, -noaberr,
+  -nodefl, -topo, -cob, -speed, de200 with and without -jplhora, and
+  Moshier, and 'W' and 'N' with -sid1, -sidt01 and -sidsp1: 3132 runs,
+  every line bit for bit but the diff modes' house positions and the
+  refused places' (the -cob outer planets at 1800; Aldebaran on Moshier,
+  for which swetest sets no file path).
+
+G167 `tests/hposflag.c` (d): the built swetest, house positions of the
+Moon, Mars, Jupiter and Spica, of the diff modes and of the cusps, with
+27 options on six bases, the run without as printed: 84 checks; (e): its
+house numbers the library's from the tropical place, the diff modes'
+the bodies' difference and midpoint, each cusp its number, plain, with
+-sid1 and -j2000, within 6e-8 house: 21 checks. Before the fix 72 of (d)
+and 20 of (e) fail, after 0. The upstream build fails 75 of (d) and 20 of
+(e).
+
+Noticed, not fixed:
+- BEHAVIOUR. swetest's meridian and zenith distances (-fm, -fz) and
+  right ascensions take the iflag | SEFLG_EQUATORIAL place: Mars at
+  1.1.1950 0h UT, Zurich, MD 74.4031 deg plain, 74.4039 with -sid1 and
+  -nonut (the mean equator), 75.0440 with -j2000; ZD 78.4430, 78.4437 and
+  79.0773. The cusps' are taken from the printed cusp with xobl[0]: with
+  -sid1 the Ascendant's ZD 69.0860 for 90.0000 and its RA 171.39 for
+  192.69, where a planet's RA with -sid1 is the mean equator's (183.03).
 
 ## How these were found
 

@@ -1730,6 +1730,11 @@ struct epsilon {
  *     Moon's 3.3725 for 14.0460, Moshier noted, strict answering (the
  *     compat build's three reads are upstream's) (UPSTREAM-BUGS 249, G165,
  *     G24)
+ *   - swe_gauquelin_sector()'s methods 0 and 1 setting the place the
+ *     body's call answered with every flag in the true ecliptic of date's
+ *     frame: Mars at 1950, Zurich, SEFLG_NONUT -1.14e-4 sector, J2000
+ *     -0.0875, EQUATORIAL -0.148, RADIANS +17.8, XYZ +18.3, HELCTR and
+ *     BARYCTR +3.88 off the call without (UPSTREAM-BUGS 252, G167, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
