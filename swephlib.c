@@ -2810,6 +2810,30 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
 }
 
 #ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 153: with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3 (the
+ * default mode), swi_precess(), swi_epsiln() and calc_nutation() take
+ * SEFLG_JPLHOR's models (IAU 1976, IAU 1980 plus a fixed offset) up to
+ * and including HORIZONS_TJD0_DPSI_DEPS_IAU1980 (1962 Jan 20) and the
+ * chosen models after it: a step of 0.113" in the precession (in
+ * longitude), 3.19 mas in the mean obliquity and 7.17e-2" in dpsi on the
+ * default models. A rate that differences them over t - h .. t + h must
+ * not reach across it: the speed at t is the rate of t's side's model.
+ * Returns -1 when t is at or before the step and t + h after it (difference
+ * backward), +1 when t is after it and t - h at or before it (forward), 0
+ * when the step is not within h, or not there under these flags
+ * (SEFLG_JPLHOR, which wins, takes its models throughout). */
+int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag)
+{
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+  if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
+  if (!(iflag & SEFLG_JPLHOR_APPROX) || (iflag & SEFLG_JPLHOR)
+      || jplhora_model != SEMOD_JPLHORA_3)
+    return 0;
+  if (t <= HORIZONS_TJD0_DPSI_DEPS_IAU1980)
+    return (t + h > HORIZONS_TJD0_DPSI_DEPS_IAU1980) ? -1 : 0;
+  return (t - h <= HORIZONS_TJD0_DPSI_DEPS_IAU1980) ? 1 : 0;
+}
+
 /* Upstream bug 58: the rate of the nutation angles, rad/day. Upstream took
  * (nut(t) - nut(t - h)) / h, h = NUT_SPEED_INTV, which is the rate at
  * t - h/2: it misses the fortnightly term's curvature, 6.5e-10 deg/day in
@@ -2844,6 +2868,25 @@ void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
     }
   } else {
     double a[2], b[2];
+    int side = swi_frame_step_side(ctx, tjd, NUT_SPEED_INTV, iflag);
+    if (side != 0) {
+      /* Upstream bug 153: within NUT_SPEED_INTV of SEMOD_JPLHORA_3's step
+       * the central difference took its 7.17e-2" in dpsi (the default
+       * model): every speed of date 9.96e-2 deg/day off in longitude there,
+       * 1.09 in Polaris's right ascension. Now the three-point derivative
+       * on t's side, over the instants' exact offsets (t + h is rounded at
+       * the JD's resolution). */
+      double n0[2], ta = tjd + side * NUT_SPEED_INTV, tb = tjd + 2 * side * NUT_SPEED_INTV;
+      double da = ta - tjd, db = tb - tjd;
+      double w0 = -(1 / da + 1 / db), wa = db / (da * (db - da)), wb = -da / (db * (db - da));
+      int i;
+      swi_nutation(ctx, tjd, iflag, n0);
+      swi_nutation(ctx, ta, iflag, a);
+      swi_nutation(ctx, tb, iflag, b);
+      for (i = 0; i <= 1; i++)
+        rate[i] = w0 * n0[i] + wa * a[i] + wb * b[i];
+      return;
+    }
     swi_nutation(ctx, tjd - NUT_SPEED_INTV, iflag, a);
     swi_nutation(ctx, tjd + NUT_SPEED_INTV, iflag, b);
     rate[0] = (b[0] - a[0]) / (2 * NUT_SPEED_INTV);

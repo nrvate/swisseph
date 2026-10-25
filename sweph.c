@@ -242,6 +242,9 @@ static double meff_slope(double r);
 #endif
 static void denormalize_positions(double *x0, double *x1, double *x2);
 static void calc_speed(double *x0, double *x1, double *x2, double dt);
+#ifndef SWE_UPSTREAM_COMPAT
+static void calc_speed_side(const double *xa, double *x1, const double *xb, double da, double db);
+#endif
 static int32 plaus_iflag(swe_ctx *ctx, int32 iflag, int32 ipl, double tjd, char *serr);
 static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, double tdate, int32 iflag, 
     double *xx, double *x2000, struct epsilon *oe, char *serr);
@@ -621,10 +624,36 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
       goto return_error; 
     if ((sd->iflgsave = swecalc(ctx, tjd+dt, ipl, iplmoon, iflag, x2, serr)) == ERR)
       goto return_error; 
+#ifndef SWE_UPSTREAM_COMPAT
+    {
+      /* Upstream bug 153: with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3
+       * the precession and nutation change model at 1962 Jan 20, and
+       * within dt of it the three places lay both sides of the step: Mars's
+       * longitude speed 5.75e-2 deg/day off. There now the three-point
+       * derivative on tjd's side, the third place at tjd -+ 2 dt taken
+       * before tjd's, which the save areas keep. */
+      int side = swi_frame_step_side(ctx, tjd, dt, sd->iflgsave);
+      double x3[24];
+      if (side != 0
+          && (sd->iflgsave = swecalc(ctx, tjd + 2 * side * dt, ipl, iplmoon, iflag, x3, serr)) == ERR)
+        goto return_error;
+      if ((sd->iflgsave = swecalc(ctx, tjd, ipl, iplmoon, iflag, sd->xsaves, serr)) == ERR)
+        goto return_error; 
+      if (side != 0) {
+        double *xa = (side < 0) ? x0 : x2;
+        denormalize_positions(xa, sd->xsaves, x3);
+        calc_speed_side(xa, sd->xsaves, x3, (tjd + side * dt) - tjd, (tjd + 2 * side * dt) - tjd);
+      } else {
+        denormalize_positions(x0, sd->xsaves, x2);
+        calc_speed(x0, sd->xsaves, x2, dt);
+      }
+    }
+#else
     if ((sd->iflgsave = swecalc(ctx, tjd, ipl, iplmoon, iflag, sd->xsaves, serr)) == ERR)
       goto return_error; 
     denormalize_positions(x0, sd->xsaves, x2);
     calc_speed(x0, sd->xsaves, x2, dt);
+#endif
   }
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 139: with the fallback allowed, a Swiss or JPL barycentric
@@ -6750,6 +6779,28 @@ void swi_precess_speed(swe_ctx *ctx, double *xx, double t, int32 iflag, int dire
   for (i = 0; i <= 2; i++)
     x0[i] = xx[i];
   swi_precess(ctx, x0, t, iflag, back);
+  {
+    /* Upstream bug 153: with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3 the
+     * model is IAU 1976 up to 1962 Jan 20 and the chosen one after it, a
+     * step of 0.113" in longitude: within a day before it P(t + 1) was the
+     * other model (and within a day after it P(t - 1), for a model other
+     * than Vondrak's), every speed of date 1.57e-5 deg/day off in
+     * longitude, Polaris's right ascension 1.31e-4. Within a day of it now
+     * the three-point derivative on t's side, P(t), P(t -+ 1), P(t -+ 2). */
+    int side = swi_frame_step_side(ctx, t, 1, iflag);
+    if (side != 0) {
+      double b[3], c[3];
+      for (i = 0; i <= 2; i++)
+        a[i] = b[i] = c[i] = x0[i];
+      swi_precess(ctx, c, t, iflag, direction);
+      swi_precess(ctx, a, t + side, iflag, direction);
+      swi_precess(ctx, b, t + 2 * side, iflag, direction);
+      swi_precess(ctx, xx+3, t, iflag, direction);
+      for (i = 0; i <= 2; i++)
+        xx[i+3] += side * (4 * a[i] - 3 * c[i] - b[i]) / 2;
+      return;
+    }
+  }
   for (i = 0; i <= 2; i++)
     a[i] = x0[i];
   swi_precess(ctx, a, t + 1, iflag, direction);
@@ -7216,7 +7267,17 @@ double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nu
 {
   double e0 = (ctx->oec.teps == tjd && ctx->oec.epsflag == SWI_EPS_KEY(iflag))
               ? ctx->oec.eps : swi_epsiln(ctx, tjd, iflag);
-  double rate = swi_epsiln(ctx, tjd + 1, iflag) - e0;
+  double rate;
+  /* Upstream bug 153: with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3 the
+   * mean obliquity is IAU 1976's up to 1962 Jan 20 and the chosen model's
+   * after it, a step of 3.19 mas on the default: within a day before it,
+   * eps(t + 1) was the other model's, the rate 8.9e-7 deg/day off (42 mas
+   * and 1.2e-5 with IAU 2006 after it). There now the difference back,
+   * eps(t) - eps(t - 1). */
+  if (swi_frame_step_side(ctx, tjd, 1, iflag) < 0)
+    rate = e0 - swi_epsiln(ctx, tjd - 1, iflag);
+  else
+    rate = swi_epsiln(ctx, tjd + 1, iflag) - e0;
   if (with_nut) {
     if (ctx->nut.tnut == tjd && ctx->nut.dnut_ok) {
       rate += ctx->nut.dnut[1];
@@ -10862,6 +10923,21 @@ static void calc_speed(double *x0, double *x1, double *x2, double dt)
   }
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 153: the slope at t of the parabola through x1 at t and xa,
+ * xb at t + da, t + db, both on one side of t (SEFLG_SPEED3 at
+ * SEMOD_JPLHORA_3's step, which calc_speed()'s t - dt .. t + dt would
+ * straddle) */
+static void calc_speed_side(const double *xa, double *x1, const double *xb, double da, double db)
+{
+  int j, k;
+  double w0 = -(1 / da + 1 / db), wa = db / (da * (db - da)), wb = -da / (db * (db - da));
+  for (j = 0; j <= 18; j += 6)
+    for (k = j; k < j + 3; k++)
+      x1[k+3] = w0 * x1[k] + wa * xa[k] + wb * xb[k];
+}
+#endif
+
 void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag)
 {
   /* The flags are part of the key, not just the epoch: a value cached under
@@ -12665,11 +12741,23 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
         pra += pdm[3 + i] * pm[i];
     } else {	/* the date's axes in J2000, rows of M */
       double ex[3] = {1, 0, 0}, eyp[3] = {0, 1, 0}, eym[3] = {0, 1, 0};
+      /* Upstream bug 153: within a day of SEMOD_JPLHORA_3's step, the
+       * difference on the instant's side, as in swi_precess_speed() */
+      int side = swi_frame_step_side(ctx, tjd, 1, iflag);
       swi_precess(ctx, ex, tjd, iflag, J_TO_J2000);
-      swi_precess(ctx, eyp, tjd + 1, iflag, J_TO_J2000);
-      swi_precess(ctx, eym, tjd - 1, iflag, J_TO_J2000);
-      for (i = 0; i <= 2; i++)
-        pra += (eyp[i] - eym[i]) / 2 * ex[i];
+      if (side != 0) {
+        double ey0[3] = {0, 1, 0};
+        swi_precess(ctx, ey0, tjd, iflag, J_TO_J2000);
+        swi_precess(ctx, eyp, tjd + side, iflag, J_TO_J2000);
+        swi_precess(ctx, eym, tjd + 2 * side, iflag, J_TO_J2000);
+        for (i = 0; i <= 2; i++)
+          pra += side * (4 * eyp[i] - 3 * ey0[i] - eym[i]) / 2 * ex[i];
+      } else {
+        swi_precess(ctx, eyp, tjd + 1, iflag, J_TO_J2000);
+        swi_precess(ctx, eym, tjd - 1, iflag, J_TO_J2000);
+        for (i = 0; i <= 2; i++)
+          pra += (eyp[i] - eym[i]) / 2 * ex[i];
+      }
     }
     xobs[3] = TWOPI * 1.00273781191135448 * (1 - ddt) + pra
       + nuttmp.dnut[0] * cos(eps) - nut * sin(eps) * nuttmp.dnut[1];

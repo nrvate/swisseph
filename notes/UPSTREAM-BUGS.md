@@ -183,6 +183,7 @@ worst were in code that had never executed even once.
 | 152 | The default nutation's grid (this fork's) leaves the IAU 2000A series it interpolates far inside its guard of |J| < 1e12 days, as the arguments' T^3 and T^4 terms speed them up: 2.3e-9 deg at |J| 6e8 (1.6 million years), 1.3e-4 at 1e9, 7 deg at 3e9, answered by `swe_calc(SE_ECL_NUT)` with no error; its rate 5.2e-4 deg/day at 1e9 | Correctness | `swephlib.c` |
 | 147 | A thread adopting another thread's `swe_set_ephe_path()` keeps the old directory's delta t table, leap seconds and planet-name memo (this fork's): delta t at 1990 79.987645 s for 56.856191, the TT of 2026 UTC 1 s late, Cupido's name from the old seorbel.txt; and calc_deltat()'s memo outlives a path change and `swe_close()` on every thread, the same 79.987645 s at an instant asked before it | Correctness (behaviour) | `sweconfig.c`, `swephlib.c`, `sweph.c` |
 | 148 | After `swe_set_ephe_path()` forgets the DE number of the JPL file whose name it keeps, the first JPLEPH delta t takes the default tidal term until a calculation opens the file: after the path, de200.eph and the path again by another string, the first UT JPL Moon in AD 1700 40.0057507520 deg and the second 40.0039614086 (1.79e-3 deg), `swe_deltat()`'s guess Swiss, where a fresh process given that path and de200.eph answers 40.0039614086 both times -- on every thread and context | Correctness (behaviour) | `sweph.c` |
+| 153 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, the precession's, the obliquity's, the nutation's and the topocentric site's rates and SEFLG_SPEED3 difference the frame's models across their step at 1962 Jan 20 (0.113" of precession, 7.17e-2" of dpsi): every speed of date 1.57e-5 deg/day off for a day before it (Polaris's right ascension 1.31e-4), 9.96e-2 within 1e-4 day (1.09), SEFLG_SPEED3 5.75e-2 either side | Correctness | `sweph.c`, `swephlib.c` |
 
 ---
 
@@ -9547,7 +9548,158 @@ Noticed, not fixed:
   and the obliquity change model with the nutation. Within
   `NUT_SPEED_INTV` (1e-4 day) of it the nutation's rate, a central
   difference there, takes its 7.17e-2" step: the speed 9.96e-2 deg/day
-  off at the switch - 2^-16 and - 2^-14 day.
+  off at the switch - 2^-16 and - 2^-14 day. Entry 153, fixed there.
+
+## 153. Under `SEMOD_JPLHORA_3` the frame's rates difference its models across their step at 1962 Jan 20: every speed of date 1.57e-5 deg/day off for a day before it, 9.96e-2 within 1e-4 day
+
+**Severity: Correctness (with SEFLG_JPLHOR_APPROX under its default mode, on a JPL file: every speed of date 1.57e-5 deg/day off in longitude for a day before 1962 Jan 20 0h TT, Polaris's right ascension 1.31e-4; 9.96e-2 within 1e-4 day of it, Polaris's right ascension 1.09; SEFLG_SPEED3 5.75e-2 within 1e-4 day either side)**
+**Where:** `sweph.c`: `swi_precess_speed()`, `swi_obliquity_rate()`, `swi_get_observer()`, `swe_calc()`'s SEFLG_SPEED3; `swephlib.c`: `swi_nutation_rate()`, new `swi_frame_step_side()`
+
+Entry 146's noticed item. With `SEFLG_JPLHOR_APPROX` and
+`SEMOD_JPLHORA_3` (the default mode), `swi_precess()`, `swi_epsiln()` and
+`calc_nutation()` take SEFLG_JPLHOR's models up to
+`HORIZONS_TJD0_DPSI_DEPS_IAU1980`, JD 2437684.5 = 1962 Jan 20 0h TT
+(inclusive) -- the IAU 1976 precession and obliquity, IAU 1980 nutation
+plus a fixed offset -- and the chosen models after it. Measured on de200
+at the step, between the instant and 2^-20 day after it less the motion:
+the precession (SEFLG_NONUT) 113.2 mas in Mars's longitude, 6.4 mas in
+its latitude, 123 mas in its right ascension, 942 mas in Polaris's; the
+mean obliquity 3.19 mas; dpsi 71.75 mas, deps 2.96 mas (entry 146). Speed
+is the rate of the position (entry 31), so on each side of a step it is
+the rate of that side's model. The rates that difference the models
+reached across it:
+- the precession's for a model other than Vondrak's, entry 49's fallback
+  (P(t + 1) x0 - P(t - 1) x0) / 2: the model is IAU 1976 before the step,
+  so for t in (switch - 1, switch] P(t + 1) was the other model, half the
+  step a day: every longitude speed of date 1.57e-5 deg/day off (the Sun,
+  the Moon, Mars, Polaris, Spica), right ascension 1.67e-5 to 1.71e-5,
+  Polaris's 1.31e-4. After the step too when the model chosen is not
+  Vondrak's: with IAU 2006, 1.57e-5 within a day after it;
+- the topocentric site's precession in right ascension (entry 73), the
+  same difference of the date's axes: 1.58e-7 deg/day more on the
+  topocentric Moon's speed (Zurich);
+- the mean obliquity's rate, eps(t + 1) - eps(t) (entry 33): for t in
+  (switch - 1, switch] the whole step a day, 8.9e-7 deg/day (3.19 mas;
+  the ecliptic latitude speeds up to 8.85e-7 by it alone, 4.9e-7 net of
+  the precession's); with IAU 2006 after the step 42 mas, 9.35e-6;
+- the nutation's rate, a central difference over `NUT_SPEED_INTV` = 1e-4
+  day (entry 58) wherever the default model's grid gives no derivative --
+  before the step -- and for any other model: within 1e-4 day before it
+  every longitude speed 9.96e-2 deg/day off, right ascension up to 0.108,
+  Polaris's 1.09, declination up to 3.85e-2 (Spica); within 1e-4
+  day after it for a chosen model, IAU 2000B 0.100, IAU 1980 8.93e-2;
+- `SEFLG_SPEED3`'s three places over 1e-4 day (entry 31): within 1e-4 day
+  either side, Mars's longitude speed 5.75e-2 off, its right ascension
+  6.32e-2.
+
+Measured against five-point differences of the same call's positions over
+2^-8 day on the instant's side of the step (centred where that fits, else
+one-sided), at every 1/64 day across switch -+ 2 and at switch -+ 2^-k,
+k = 7..26; with the interpolation on the same (entry 146 computes the
+nutation at the instant there). Upstream has the step and its rate the
+other way: a backward difference of the nutation, 0.200 deg/day off
+within 1e-4 day after the step.
+
+Not affected: sidereal places (`plaus_iflag()` drops the Horizons flags
+under SEFLG_SIDEREAL: sidereal Mars within 4.1e-10 throughout), the nodes,
+apsides and fictitious bodies (dropped likewise), the Swiss files and
+Moshier (the flags need a JPL file), the ayanamsa (its flags are masked to
+the ephemeris bits), `SEMOD_JPLHORA_1` and `_2` (no date). The frame bias
+and the Horizons offset in right ascension (`swi_bias()`,
+`swi_approx_jplhor()`) are fixed rotations on each side, and no rate
+differences them (but see below).
+
+**Fix, as done here:** `swi_frame_step_side(ctx, t, h, iflag)` says which
+side a difference of half-width h about t must keep to: -1 when t is at
+or before the step and t + h after it, +1 when t is after it and t - h at
+or before it, 0 otherwise, and under any other flags or mode
+(`SEFLG_JPLHOR`, which wins in all three models, has no step). Where it
+is not 0:
+- `swi_precess_speed()`'s fallback and the site's precession in right
+  ascension take the three-point derivative on t's side, from P(t),
+  P(t + s) and P(t + 2s), s = -+1 day: s (4 P(t + s) - 3 P(t) - P(t +
+  2s)) / 2;
+- `swi_obliquity_rate()` the difference back, eps(t) - eps(t - 1) (the
+  forward difference after the step never reaches across it);
+- `swi_nutation_rate()` the three-point derivative over t, t + s h and t +
+  2 s h, with the instants' exact offsets;
+- `SEFLG_SPEED3` a third place at tjd + 2 s dt, taken before tjd's (which
+  the save areas keep), and the three-point slope on tjd's side
+  (`calc_speed_side()`), over the exact offsets.
+
+The one-sided differences are of the central ones' order; their
+truncation, h^2 f''' / 3, is 1e-19 rad/day on the precession and
+1e-10"/day on the nutation. Elsewhere nothing changes: the test is a few
+comparisons, true only with SEFLG_JPLHOR_APPROX under mode 3 within h of
+the step. Behind `#ifndef SWE_UPSTREAM_COMPAT`; the fallback, the
+obliquity's, the nutation's and the site's rates are this fork's,
+upstream's SPEED3 is under `#else`.
+- After: the day before the step, the day after and the rest alike, within
+  the reference's own noise: the Sun, Mars and Spica within 4e-10 deg/day,
+  Polaris 6e-11 in longitude and 1.9e-9 in right ascension (one-sided over
+  2^-8, the reference's rounding times 1/cos(declination) = 82; 7.3e-10
+  over 2^-6), the Moon 1.0e-9 (over 2^-6), the topocentric Moon 5.4e-10
+  (delta t set to 2^-11 so that its UT1 is exact, a nine-point difference
+  over 2^-7 where it fits), with the default models, IAU 2006 with IAU
+  2000B, and IAU 1980 nutation; SPEED3 1.41e-6, its own everywhere.
+- The site's acceleration in the aberration rate (`observer_accel()`, a
+  central difference of the site's velocity over -+2^-6 day, entry 79)
+  still reaches across the step within 1/64 day of it: the topocentric Sun
+  7.3e-10 deg/day there against 1.9e-10 elsewhere (delta t exact). Below
+  the floor, left.
+- No hot path: the test runs in the fallback, the SPEED3 branch and the
+  nutation's differenced rate, and once per obliquity rate. `perf stat`
+  instructions, `swe_calc()` of the ten bodies with speed at 20000 instants
+  on the Swiss files: 20152347160 before, 20151689151 after. G1's
+  transcript is bit for bit the tip's (13000 rows).
+
+G139 `tests/framestep.c`: de200, SEFLG_JPLHOR_APPROX, the default models
+and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
+difference after the step too); the Sun, the Moon, Mars, Polaris, sidereal
+Mars, the topocentric Moon and Mars under SEFLG_SPEED3, ecliptic and
+equatorial, at 105 instants across (switch - 2, switch + 2], against
+five-point differences over 2^-6 day on the instant's side (the
+topocentric Moon's as above); the worst of the two speeds over the day
+before the step, the day after it and the rest: 84 checks within 1e-8
+deg/day (SPEED3 within 1e-5). Measured within 1.45e-9 (Polaris's right
+ascension under the second setting), SPEED3 1.41e-6. Before the fix 38 of
+84 fail: every body but sidereal Mars on the day before, under both
+settings, and on the day after under the second, SPEED3 on both days under
+both. The upstream build fails 80 of 84: its backward nutation rate across
+the step after it (0.200 deg/day, Polaris's right ascension 2.14) and,
+elsewhere, its own speed defects that earlier entries fixed (the
+topocentric Moon 4e-3, sidereal Mars 5e-7). G24 `jplhora_step_speed_off`:
+Mars's ecliptic longitude speed at the step - 0.5 day and -+ 2^-14 day
+against the five-point difference on its side, the largest: 4.19e-11 deg/day
+shipped (9.96e-2 before the fix), 0.200 compat. G32, G57, G122, G90, G75,
+G89 and G40 pass.
+
+Noticed, not fixed:
+- The same differences reach across the other steps of `swi_precess()`'s
+  and `swi_epsiln()`'s models. SEFLG_JPLHOR's IAU 1976 holds strictly
+  between 1799 Jan 1 and 2202 Jan 1, Owen 1990 outside, and mode 3 takes it
+  before 1962 too: at 1799 Jan 1 under mode 3 (the mean obliquity 17.57
+  mas, the precession 3.6 mas in Mars's longitude, 4.4 mas in its
+  latitude), within a day either side the Sun's latitude speed is 5.0e-6
+  deg/day off, Polaris's right ascension 5.6e-6, Mars's 8.9e-7, SPEED3
+  8.9e-3. A short-term model the caller chooses
+  (`SEMOD_PREC_IAU_1976` or `_IAU_2000` within 2 centuries of J2000,
+  `_IAU_2006` within 75) steps to the long-term one: with IAU 1976 short
+  and Vondrak long ("0,9,1"), at J2000 - 2 cy 8.0e-5 deg/day within a day
+  of it, SPEED3 0.80. `swi_frame_step_side()` would take them as more
+  steps, each with its own inclusive side.
+- In mode 3 `swi_bias()` leaves the frame bias and the Horizons offset in
+  right ascension out for tjd < the step, where the three models change at
+  tjd <= it: at exactly 1962 Jan 20 0h TT a place is the left side's
+  precession and nutation with the right side's bias (23 mas) and offset
+  (-51.26 mas in right ascension). Only with a JPL file of DE >= 403,
+  none here to measure.
+- `swi_approx_jplhor()` turns the position by that offset and not the
+  velocity, and leaves the table's rate out: the right ascension speed off
+  by the offset times rho'/rho, estimated 1.4e-7 deg/day on Mars near
+  quadrature (2.5e-7 rad times 0.01/day), 6e-8 on the Moon; after 1962
+  under mode 3, and always under `SEMOD_JPLHORA_1`, with DE >= 403. Not
+  measured here.
 
 ## 140. The topocentric site is placed by UT1 = TT - delta t rounded to a double: a staircase in delta t, whose rate leaves out delta t's that the velocity carries, 1.8e-8 to 4.7e-8 deg/day on an orbit 0.01 AU from the Earth
 

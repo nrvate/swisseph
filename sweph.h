@@ -1269,6 +1269,13 @@ struct epsilon {
  *     de200.eph and the path again, the first UT JPL Moon in AD 1700
  *     1.79e-3 deg off the second, swe_deltat()'s guess Swiss
  *     (UPSTREAM-BUGS 148, G132)
+ *   - the speeds of date across SEMOD_JPLHORA_3's step at 1962 Jan 20
+ *     under SEFLG_JPLHOR_APPROX taking rates that difference the models
+ *     across it: upstream's backward nutation rate 0.200 deg/day off
+ *     within 1e-4 day after it, SEFLG_SPEED3's three places 5.75e-2 either
+ *     side (this fork's precession, obliquity and site rates 1.57e-5 for a
+ *     day before it, its central nutation rate 9.96e-2 within 1e-4 day)
+ *     (UPSTREAM-BUGS 153, G139)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

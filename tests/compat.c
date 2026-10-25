@@ -3207,6 +3207,54 @@ static double woolard_md_cycle(void)
   return d;
 }
 
+/* UPSTREAM-BUGS 153: the speeds across SEMOD_JPLHORA_3's step at 1962 Jan
+ * 20, where the precession, obliquity and nutation change model. On de200
+ * with SEFLG_JPLHOR_APPROX, Mars's ecliptic longitude speed at the step
+ * - 0.5 day and -+ 2^-14 day against a five-point difference of its
+ * longitudes over 2^-6 day on the instant's side (centred, else one-sided),
+ * the largest, deg/day. The shipped build differenced the precession and
+ * obliquity across the step within a day before it and the nutation within
+ * 1e-4 day; upstream differences the nutation backward over 1e-4 day, across
+ * the step just after it. */
+static double jplhora_step_speed_off(void)
+{
+  static const double o5[5] = { -25.0 / 12, 4, -3, 4.0 / 3, -1.0 / 4 };
+  const double ts = 2437684.5, h = 1.0 / 64, dt[3] = { -0.5, -1.0 / 16384, 1.0 / 16384 };
+  const int32 ja = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX;
+  double x[6], f[5][6], r = 0;
+  char serr[256];
+  int i, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_jpl_file_r(c, "de200.eph");
+  for (i = 0; i < 3; i++) {
+    double t = ts + dt[i], d = 0;
+    int dir = (t <= ts) ? -1 : 1, centred = (i == 0);
+    if (swe_calc_r(c, t, SE_MARS, ja | SEFLG_SPEED, x, serr) < 0) {
+      swe_ctx_free(c);
+      return -1;
+    }
+    for (k = 0; k < 5; k++)
+      if (swe_calc_r(c, centred ? t + (k - 2) * h : t + dir * k * h, SE_MARS, ja, f[k], serr) < 0) {
+        swe_ctx_free(c);
+        return -1;
+      }
+    if (centred)
+      d = (8 * (f[3][0] - f[1][0]) - (f[4][0] - f[0][0])) / (12 * h);
+    else {
+      for (k = 0; k < 5; k++)
+        d += o5[k] * (f[k][0] - f[0][0]);
+      d *= dir / h;
+    }
+    if (fabs(x[3] - d) > r)
+      r = fabs(x[3] - d);
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3609,7 +3657,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3726,6 +3774,7 @@ int main(int argc, char **argv)
   nutjplhor = nut_jplhor_intp_off();
   nutstep = nut_step_intp_off();
   woolmd = woolard_md_cycle();
+  framestep = jplhora_step_speed_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
@@ -4721,6 +4770,14 @@ int main(int argc, char **argv)
   else {
     printf("  Woolard minute cycle   %.2e arcsec FAIL: expected %s\n",
            woolmd, WANT_DEFECT ? "> 1e-2" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (framestep > 1e-3) : (framestep >= 0 && framestep < 1e-8))
+    printf("  speed across a step    %.2e deg/day OK\n", framestep);
+  else {
+    printf("  speed across a step    %.2e deg/day FAIL: expected %s\n",
+           framestep, WANT_DEFECT ? "> 1e-3" : "< 1e-8");
     bad++;
   }
 
