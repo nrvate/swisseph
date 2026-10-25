@@ -74,8 +74,10 @@
  * -13.400650"), after B alone A's for SEFLG_JPLHOR_APPROX's -13.488712"
  * (4.20e-2", the return SEFLG_JPLHOR's), the ayanamsa the same. The
  * upstream build fails the 8 of the setter's thread and the explicit
- * context, whose path setter is upstream's (16 before); the adoption is
- * this fork's, fixed in both builds.
+ * context, whose path setter is upstream's (16 before), and since bug
+ * 148's reference the 2 of the second thread after B alone (that build's
+ * path setter reads no JPL file); the adoption is this fork's, fixed in
+ * both builds.
  *
  * And across swe_set_jpl_file() (UPSTREAM-BUGS 154): a file that loads no
  * corrections -- below DE 403, or not there -- kept those a DE 403 file had
@@ -116,7 +118,24 @@
  * failed, no table left allocated. 3 checks, 100 in all. Measured before
  * the fix, the 3 fail in both builds: eop_1962_today.txt left open after
  * each failed allocation, dpsi[] with it after deps[]'s (294912 bytes),
- * eop_finals.txt left open after the full table. Run as
+ * eop_finals.txt left open after the full table.
+ *
+ * And an eop_finals.txt that breaks off (UPSTREAM-BUGS 171): the loader
+ * set -3, which plaus_iflag() takes as no corrections, so a complete
+ * eop_1962_today.txt went with it and SEFLG_JPLHOR fell to
+ * SEFLG_JPLHOR_APPROX. In directory F (A's eop_1962_today.txt, finals
+ * days 51584 and 51586), SE_ECL_NUT and swe_get_ayanamsa_ex() with
+ * SEFLG_JPLHOR at Jan 7.37, at MJD 51583.5 (the finals day in the
+ * interpolation) and at MJD 51590 (past both), against a fresh process in
+ * P, whose eop_finals.txt holds 51584 alone, the days before the gap: bit
+ * for bit with the return flag. And the warnings: in F, SEFLG_JPLHOR kept
+ * and serr naming eop_finals.txt; after dpsi[]'s allocation failed
+ * (UPSTREAM-BUGS 172), the warning naming the memory, not a missing
+ * eop_1962_today.txt. 8 checks, 108 in all. Measured before the fix: the
+ * 6 fail, A's dpsi -13.530688" for SEFLG_JPLHOR_APPROX's -13.488712"
+ * (return 393217 for 524289) at Jan 7.37, and both warnings fail. The
+ * upstream build fails the 6 and the first warning (171 being behind
+ * SWE_UPSTREAM_COMPAT); 172 is in both builds. Run as
  *   eopfollow EPHEDIR
  */
 #include <dirent.h>
@@ -145,8 +164,9 @@ static const char *EPHE;
 static const double GEO[3] = { 8.55, 47.37, 400 };
 /* EPHE, the fixtures: A, B (other corrections), N (none), G (a gap), F (A's
  * and an eop_finals.txt that breaks off), M (a full table and an
- * eop_finals.txt with more) */
-enum { D_EPHE, D_A, D_B, D_N, D_G, D_F, D_M, ND };
+ * eop_finals.txt with more), P (A's and the days of F's eop_finals.txt
+ * before its gap) */
+enum { D_EPHE, D_A, D_B, D_N, D_G, D_F, D_M, D_P, ND };
 static char DIRS[ND][512];
 
 /* UPSTREAM-BUGS 155 and 156: the corrections' tables are counted, and one
@@ -655,6 +675,46 @@ static void run6(int h, int unused, int fresh, struct obs *o)
   o->v[2] = ntable;
 }
 
+/* eop_finals.txt broken off after the day it adds (UPSTREAM-BUGS 171): F
+ * against a fresh process in P, whose eop_finals.txt ends at the gap. The
+ * probe at Jan 7.37, at MJD 51583.5, where the finals day enters the
+ * interpolation, and at MJD 51590, past both tables. */
+static const double T7[] = { T0F + 0.37, 2451584.0, 2451590.5 };
+#define NT7 ((int) (sizeof T7 / sizeof T7[0]))
+static void run7(int k, int p, int fresh, struct obs *o)
+{
+  char jf[64];
+  strcpy(jf, JPL_FIXTURE);
+  swe_set_ephe_path(DIRS[fresh ? D_P : D_F]);
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  swe_set_jpl_file(jf);
+  probe2(NULL, p, T7[k], o);
+}
+
+/* The warnings (UPSTREAM-BUGS 171, 172): SE_ECL_NUT with SEFLG_JPLHOR in F
+ * keeps SEFLG_JPLHOR and names eop_finals.txt; after dpsi[]'s allocation
+ * failed, in A, it falls to SEFLG_JPLHOR_APPROX naming the memory. v[0]:
+ * the warning found, v[1]: SEFLG_JPLHOR returned. */
+enum { M_FINALS, M_NOMEM, NM };
+static const char *MN[NM] = { "eop_finals.txt broken off: SEFLG_JPLHOR kept, the file named",
+  "dpsi[]'s allocation failing: the memory named" };
+static void run8(int m, int unused, int fresh, struct obs *o)
+{
+  char jf[64], serr[AS_MAXCH] = "";
+  double x[6];
+  (void) unused;
+  (void) fresh;
+  memset(o, 0, sizeof *o);
+  strcpy(jf, JPL_FIXTURE);
+  swe_set_ephe_path(DIRS[m == M_FINALS ? D_F : D_A]);
+  counting = 1;
+  fail_table = m == M_NOMEM ? 1 : 0;
+  swe_set_jpl_file(jf);
+  o->ret = swe_calc(T0F, SE_ECL_NUT, JH, x, serr);
+  o->v[0] = strstr(serr, m == M_FINALS ? "eop_finals.txt corrupt after" : "no memory") != NULL;
+  o->v[1] = (o->ret & SEFLG_JPLHOR) != 0;
+}
+
 /* run(k, p, fresh) in a forked process: 0, -1 if it failed, or the signal
  * that ended it */
 static int in_child(void (*run)(int, int, int, struct obs *), int k, int p,
@@ -788,7 +848,7 @@ static int write_finals(const char *path, const int *mjd, int n)
   return fclose(fp);
 }
 
-static const char *SUB[ND] = { NULL, "", "/B", "/N", "/G", "/F", "/M" };
+static const char *SUB[ND] = { NULL, "", "/B", "/N", "/G", "/F", "/M", "/P" };
 static int make_fixtures(void)
 {
   char p[600], base[400], de200[PATH_MAX], q[PATH_MAX + 20];
@@ -826,6 +886,12 @@ static int make_fixtures(void)
     return -1;
   snprintf(p, sizeof p, "%s/eop_finals.txt", DIRS[D_M]);
   if (write_finals(p, fmore, 1) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[D_P]);
+  if (write_eop(p, -0.05, -1e-5, -0.005, -1e-6, 0) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/eop_finals.txt", DIRS[D_P]);
+  if (write_finals(p, fgap, 1) != 0)
     return -1;
   snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[D_A]);
   if (write_eop(p, -0.05, -1e-5, -0.005, -1e-6, 0) != 0)
@@ -990,6 +1056,37 @@ int main(int argc, char **argv)
     if ((x != H_FULL && o.v[0] >= (double) TABLE) || o.v[1] != 0) {
       printf("    %s: %.0f bytes left allocated (%.0f tables asked for), %.0f files open FAIL\n",
              HN[x], o.v[0], o.v[2], o.v[1]);
+      nfail++;
+    }
+  }
+  for (x = 0; x < NT7; x++)
+    for (q = 0; q < P_HOUSE; q++) {	/* SE_ECL_NUT, the ayanamsa */
+      struct obs ot, of;
+      double d;
+      n++;
+      if (in_child(run7, x, q, 0, &ot) != 0 || in_child(run7, x, q, 1, &of) != 0) {
+        printf("    eop_finals.txt broken off, JD %.2f, %s: child failed\n", T7[x], PN[q]);
+        nfail++;
+        continue;
+      }
+      if (differ(&ot, &of, &d)) {
+        printf("    eop_finals.txt broken off, JD %.2f, %s: %.3e off a fresh process's with the"
+               " days before the gap (%.6f\" for %.6f\", return %d, %d) FAIL\n", T7[x], PN[q],
+               d, ot.v[PV[q]] * 3600, of.v[PV[q]] * 3600, ot.ret, of.ret);
+        nfail++;
+      }
+    }
+  for (x = 0; x < NM; x++) {
+    struct obs o;
+    n++;
+    if (in_child(run8, x, 0, 0, &o) != 0) {
+      printf("    %s: child failed\n", MN[x]);
+      nfail++;
+      continue;
+    }
+    if (o.v[0] != 1 || o.v[1] != (x == M_FINALS)) {
+      printf("    %s: warning %s, SEFLG_JPLHOR %s (return %d) FAIL\n", MN[x],
+             o.v[0] == 1 ? "found" : "not found", o.v[1] != 0 ? "kept" : "dropped", o.ret);
       nfail++;
     }
   }

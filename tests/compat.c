@@ -3359,6 +3359,62 @@ static double jplhora_step_speed_off(void)
  * and de200.eph, arcsec; -1 if the fixtures cannot be written. Upstream
  * keeps A's under SEFLG_JPLHOR where the fresh context falls to
  * SEFLG_JPLHOR_APPROX: 4.19e-2". */
+/* UPSTREAM-BUGS 171: G134's fixture, eop_1962_today.txt for 2000 Jan 1 to
+ * Feb 9 and an eop_finals.txt whose one day, Feb 12, leaves a gap after
+ * it: dpsi with SEFLG_JPLHOR at 2000 Jan 7.37 on a context set to that
+ * directory and the fixture, against one set after eop_finals.txt is
+ * removed, arcsec. The broken finals file threw the complete
+ * eop_1962_today.txt away (-3), and SEFLG_JPLHOR fell to
+ * SEFLG_JPLHOR_APPROX, 4.19e-2" off; now its days are kept, 0. */
+static double eop_finals_cut_off(void)
+{
+  char base[400], p[480], l[200], jf[] = "de431fixture.eph";
+  const char *tmp = getenv("TMPDIR");
+  double x[6], y[6], t = 2451550.87, r = -1;
+  char serr[256];
+  const int32 jh = SEFLG_JPLEPH | SEFLG_JPLHOR;
+  swe_ctx *c;
+  FILE *fp;
+  snprintf(base, sizeof base, "%s/compat171.XXXXXX", tmp && *tmp ? tmp : "/tmp");
+  if (mkdtemp(base) == NULL)
+    return -1;
+  snprintf(p, sizeof p, "%s/%s", base, jf);
+  if (eop_write_jpl(p) != 0)
+    goto out;
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", base);
+  if (eop_write_eop(p, -0.05, -1e-5, -0.005, -1e-6) != 0)
+    goto out;
+  snprintf(p, sizeof p, "%s/eop_finals.txt", base);
+  if ((fp = fopen(p, "w")) == NULL)
+    goto out;
+  memset(l, ' ', sizeof l - 1);	/* finals.all: MJD at 7, Bulletin B at 168, 178 */
+  l[sizeof l - 1] = '\0';
+  l[7 + snprintf(l + 7, 8, "%5d", 51586)] = ' ';
+  l[168 + snprintf(l + 168, 9, "%7.3f", -50.0)] = ' ';
+  l[178 + snprintf(l + 178, 9, "%7.3f", -5.0)] = ' ';
+  fprintf(fp, "%s\n", l);
+  if (fclose(fp) != 0 || (c = swe_ctx_new()) == NULL)
+    goto out;
+  swe_set_ephe_path_r(c, base);
+  swe_set_jpl_file_r(c, jf);
+  swe_calc_r(c, t, SE_ECL_NUT, jh, x, serr);
+  swe_ctx_free(c);
+  unlink(p);
+  if ((c = swe_ctx_new()) == NULL)
+    goto out;
+  swe_set_ephe_path_r(c, base);
+  swe_set_jpl_file_r(c, jf);
+  swe_calc_r(c, t, SE_ECL_NUT, jh, y, serr);
+  swe_ctx_free(c);
+  r = fabs(x[2] - y[2]) * 3600;
+out:
+  snprintf(p, sizeof p, "%s/%s", base, jf); unlink(p);
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", base); unlink(p);
+  snprintf(p, sizeof p, "%s/eop_finals.txt", base); unlink(p);
+  rmdir(base);
+  return r;
+}
+
 static double eop_jpl_kept_off(void)
 {
   char base[400], p[480], q[PATH_MAX + 20], de200[PATH_MAX];
@@ -3806,7 +3862,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3934,6 +3990,7 @@ int main(int argc, char **argv)
   nodmb = nodaps_mosh_bary_ret();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
+  eopcut = eop_finals_cut_off();
   starkept = star_load_kept();
   eoppath = eop_path_kept_off();
   eopjpl = eop_jpl_kept_off();
@@ -4796,6 +4853,14 @@ int main(int argc, char **argv)
   else {
     printf("  pctr ephemeris returned %.0f FAIL: expected %s\n",
            pctreph, WANT_DEFECT ? "257" : "258");
+    bad++;
+  }
+
+  if (eopcut >= 0 && (WANT_DEFECT ? (eopcut > 1e-2) : (eopcut == 0)))
+    printf("  IERS kept past a broken eop_finals.txt %.2e arcsec OK\n", eopcut);
+  else {
+    printf("  IERS kept past a broken eop_finals.txt %.2e arcsec FAIL: expected %s\n",
+           eopcut, WANT_DEFECT ? "> 1e-2" : "0");
     bad++;
   }
 

@@ -191,6 +191,8 @@ worst were in code that had never executed even once.
 | 155 | `load_dpsi_deps()` allocates its two tables anew over those a load it gave up on left (a day missing, -2; eop_finals.txt broken off, -3): 589824 bytes leaked a reload | Memory | `sweph.c` |
 | 156 | `load_dpsi_deps()` leaves eop_1962_today.txt open when a table's allocation fails, `dpsi[]` allocated when `deps[]`'s does, and eop_finals.txt open when a full table meets more days | Memory | `sweph.c` |
 | 158 | `swe_calc_pctr()` overwrites the return of the centre's read at the light-time instant with the body's before testing it: a centre whose files begin between that instant and the date is taken as zero there, and Mars from Ceres in the first 0.024 day of seas_18.se1 returns 258 with a longitude speed 5.09e-3 deg/day off (0.130 upstream) | Correctness | `sweph.c` |
+| 171 | An eop_finals.txt that breaks off (a day missing after those it adds) makes `load_dpsi_deps()` set -3, which `plaus_iflag()` takes as no IERS corrections at all: a complete eop_1962_today.txt is thrown away with it, against upstream's own comment ("no error, as we do have data"), and SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX, dpsi 4.20e-2" off on G134's fixtures | Correctness (behaviour) | `sweph.c`, `sweph.h` |
+| 172 | A failed allocation of the IERS corrections' tables sets ERR, eop_1962_today.txt's "not found", so SEFLG_JPLHOR's warning names a missing file that had just been opened | Robustness (message) | `sweph.c`, `sweph.h` |
 
 ---
 
@@ -10005,7 +10007,8 @@ the fixture interpolated too), an explicit context and a second thread
 adopting each (interpolated too). 78 checks in all; before the fix 16 of
 the 18 fail, all but `swe_close()` on the setter's thread; the compat
 build fails the 8 of the setter's thread and the explicit context (16
-before). G24 `eop_path_kept_off`: dpsi at Jan 7.37 after A, the fixture,
+before), and since entry 148's reference for B alone the 2 of the second
+thread after it, its path setter reading no JPL file. G24 `eop_path_kept_off`: dpsi at Jan 7.37 after A, the fixture,
 B and the fixture against a fresh context's: 0 shipped (1.31e-1" before
 the fix), 1.31e-1" compat. With the three fixes (entries 142-144) G19,
 G103, G116, G122, G127, G24, G2 (check-threads) and check-ctx pass; G25
@@ -10811,6 +10814,68 @@ pass.
 
 G24 `pctr_ctr_edge_ret`: Mars from Ceres with SEFLG_SPEED at t0 + 2^-10
 day in that directory, the return: -1 shipped, 258 compat.
+
+## 171. An eop_finals.txt that breaks off throws away a complete eop_1962_today.txt: SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX, dpsi 4.20e-2" off
+
+**Severity: Correctness (behaviour: dpsi and the ayanamsa 4.20e-2" off on G134's fixtures, under SEFLG_JPLHOR, wherever eop_finals.txt has a gap after the days it adds)**
+**Where:** `sweph.c`: `load_dpsi_deps()`
+
+Found by entry 154's agent. `load_dpsi_deps()` reads eop_1962_today.txt
+(EOPC04) into `dpsi[]` and `deps[]`, sets `eop_dpsi_loaded` 1, and then
+appends the days of eop_finals.txt (finals.all) that follow it, one-day
+steps, Bulletin B or A. A day missing there set -3, under upstream's
+comment "no error, as we do have data; however, if this file is usefull,
+then swed.eop_dpsi_loaded will be set to 2". But `plaus_iflag()` takes
+every value <= 0 as no corrections ("file eop_finals.txt corrupt; default
+to SEFLG_JPLHOR_APPROX"), so the complete EOPC04 table, and the finals
+days before the gap, went with the broken file. In G134's directory F
+(fixture A's eop_1962_today.txt, MJD 51544-51583, and an eop_finals.txt of
+51584 and 51586), `SE_ECL_NUT` with SEFLG_JPLEPH | SEFLG_JPLHOR |
+SEFLG_SPEED at 2000 Jan 7.37 answered SEFLG_JPLHOR_APPROX's -13.488712"
+(return 524545) where the same directory with an eop_finals.txt of 51584
+alone answers -13.530688" (393473): 4.20e-2" (1.166e-5 deg). At MJD
+51583.5, where the finals day enters the interpolation, 1.184e-5 deg; at
+51590, past both, 1.150e-5; `swe_get_ayanamsa_ex()` the same.
+
+Fix, as done here (behind `#ifndef SWE_UPSTREAM_COMPAT`): the gap sets
+`SWI_EOP_FINALS_CUT` (3), a loaded state; `eop_tjd_end` is already the
+last day before the gap, so the table holds what a finals file ending
+there gives, and dates past it take its last value, as past any table's
+end. `plaus_iflag()` keeps SEFLG_JPLHOR and writes "file eop_finals.txt
+corrupt after JD n; its later days not used" in serr, so the broken file
+is still reported. A gap in eop_1962_today.txt itself (-2) is left as
+upstream has it: the main file corrupt, nothing taken from it.
+
+G134 `tests/eopfollow.c`, extended with 8 checks: in F, `SE_ECL_NUT` and
+`swe_get_ayanamsa_ex()` with SEFLG_JPLHOR at Jan 7.37, MJD 51583.5 and
+51590, bit for bit with the return against a fresh process in P (A's
+eop_1962_today.txt and an eop_finals.txt of 51584 alone); SEFLG_JPLHOR
+kept in F with serr naming eop_finals.txt; and entry 172's warning. 108
+checks in all. Before the fix the 8 fail; the compat build fails 27: the
+6 and the first warning, entry 144's 8, entry 154's 10, and since entry
+148's reference the 2 of the second thread after path B alone. G24
+`eop_finals_cut_off`: dpsi at Jan 7.37 in a directory whose eop_finals.txt
+has a gap at its first day, against the same after the file is removed:
+0 shipped, 4.19e-2" compat.
+
+## 172. A failed allocation of the IERS corrections' tables reports eop_1962_today.txt "not found"
+
+**Severity: Robustness (message only: the warning names a missing file that had just been opened; no answer changes)**
+**Where:** `sweph.c`: `load_dpsi_deps()`, `plaus_iflag()`
+
+Found by entry 154's agent, by reading. When `calloc()` of `dpsi[]` or
+`deps[]` fails, `load_dpsi_deps()` sets `eop_dpsi_loaded` to ERR, the
+value of eop_1962_today.txt not found, after having opened it; SEFLG_JPLHOR
+then falls to SEFLG_JPLHOR_APPROX with "file eop_1962_today.txt not found;
+default to SEFLG_JPLHOR_APPROX". Measured with G134's calloc() failing
+`dpsi[]`'s table: return 524289, that text.
+
+Fix, as done here: the failure sets `SWI_EOP_NOMEM` (-4), and
+`plaus_iflag()` says "no memory for the corrections of eop_1962_today.txt;
+default to SEFLG_JPLHOR_APPROX". In both builds, as entry 156's fix of the
+same branch: the text of a failure, which nothing computes from. G134's
+warning check: the memory named, SEFLG_JPLHOR dropped; before the fix it
+fails. No G24 case: the fix is in both builds.
 
 ## How these were found
 

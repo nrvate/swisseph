@@ -658,6 +658,9 @@ static const struct aya_init ayanamsa[SE_NSIDM_PREDEF] = {
 #define PLAN_DATA struct plan_data
 
 /* obliquity of ecliptic */
+#define SWI_EOP_NOMEM		(-4)	/* eop_dpsi_loaded: a table not allocated */
+#define SWI_EOP_FINALS_CUT	3	/* eop_dpsi_loaded: finals kept up to a gap */
+
 struct epsilon {
   double teps, eps, seps, ceps; 	/* jd, eps, sin(eps), cos(eps) */
   /* The flags eps was computed under. swi_epsiln() consults SEFLG_JPLHOR and
@@ -1273,6 +1276,12 @@ struct epsilon {
  *     by the body's before it was tested: a centre whose files begin
  *     after that instant taken as zero there, the speed 0.130 deg/day off
  *     upstream, returned OK (UPSTREAM-BUGS 158, G144)
+ *   - an eop_finals.txt that breaks off throwing away a complete
+ *     eop_1962_today.txt (-3): SEFLG_JPLHOR fallen to SEFLG_JPLHOR_APPROX,
+ *     dpsi 4.2e-2" off on G134's fixtures (UPSTREAM-BUGS 171, G134)
+ *   - (nothing for UPSTREAM-BUGS 172: a failed allocation of the IERS
+ *     tables now reports the memory, not eop_1962_today.txt "not found",
+ *     in both builds, as entry 156's fix of the same branch)
  *   - (nothing for UPSTREAM-BUGS 152: the default nutation's grid, which
  *     left the IAU 2000A series past 5e8 days and now gives way to it at
  *     4e8, is this fork's; the compat build's default, 2000B, is computed
@@ -1943,6 +1952,11 @@ struct swe_ctx {
   double eop_tjd_beg_horizons;
   double eop_tjd_end;
   double eop_tjd_end_add;
+  /* the IERS corrections: 0 not loaded, 1 eop_1962_today.txt, 2 and
+   * eop_finals.txt; ERR not found, -2 eop_1962_today.txt corrupt, -3
+   * eop_finals.txt corrupt (the compat build), SWI_EOP_NOMEM (bug 172);
+   * SWI_EOP_FINALS_CUT (bug 171) eop_finals.txt broken off, the days
+   * before the gap kept */
   int eop_dpsi_loaded;
   double tid_acc;
   AS_BOOL is_tid_acc_manual;

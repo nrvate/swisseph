@@ -2775,13 +2775,17 @@ void load_dpsi_deps(swe_ctx *ctx)
   }
   /* Upstream bug 156: a failed allocation left eop_1962_today.txt open,
    * and dpsi[] with it when deps[]'s failed (G134: one descriptor and
-   * 294912 bytes a call). Both go. In both builds, as bug 155's. */
+   * 294912 bytes a call). Both go. In both builds, as bug 155's.
+   * Upstream bug 172: and it set ERR, eop_1962_today.txt's "not found",
+   * which plaus_iflag() then reported for a file that had just been
+   * opened; SWI_EOP_NOMEM says what failed. In both builds, as bug 156's:
+   * the text of a failure no answer depends on. */
   if ((ctx->dpsi = (double *) calloc((size_t) SWE_DATA_DPSI_DEPS, sizeof(double))) == NULL
       || (ctx->deps = (double *) calloc((size_t) SWE_DATA_DPSI_DEPS, sizeof(double))) == NULL) {
     free(ctx->dpsi);
     ctx->dpsi = NULL;
     fclose(fp);
-    ctx->eop_dpsi_loaded = ERR;
+    ctx->eop_dpsi_loaded = SWI_EOP_NOMEM;
     return;
   }
   ctx->eop_tjd_beg_horizons = DPSI_DEPS_IAU1980_TJD0_HORIZONS;
@@ -2831,7 +2835,18 @@ void load_dpsi_deps(swe_ctx *ctx)
     if (mjdsv > 0 && mjd - mjdsv != 1) {
       /* no error, as we do have data; however, if this file is usefull,
        * then swed.eop_dpsi_loaded will be set to 2 */
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 171: -3, which plaus_iflag() takes as no corrections
+       * at all, so a complete eop_1962_today.txt went with the broken
+       * file: SEFLG_JPLHOR fell to SEFLG_JPLHOR_APPROX, dpsi 4.20e-2" off
+       * on G134's fixtures, against the comment above. The days read, the
+       * file's and eop_finals.txt's up to the gap, are one-day steps and
+       * kept, as a finals file ending there gives them; plaus_iflag()
+       * warns that the rest of eop_finals.txt was not used. */
+      ctx->eop_dpsi_loaded = SWI_EOP_FINALS_CUT;
+#else
       ctx->eop_dpsi_loaded = -3;
+#endif
       fclose(fp);
       return;
     }
@@ -11116,11 +11131,20 @@ static int32 plaus_iflag(swe_ctx *ctx, int32 iflag, int32 ipl, double tjd, char 
 	  case -3:
 	    strcpy(serr, "file eop_finals.txt corrupt; default to SEFLG_JPLHOR_APPROX");
 	    break;
+	  case SWI_EOP_NOMEM:	/* bug 172 */
+	    strcpy(serr, "no memory for the corrections of eop_1962_today.txt; default to SEFLG_JPLHOR_APPROX");
+	    break;
 	}
       }
       iflag &= ~SEFLG_JPLHOR;
       iflag |= SEFLG_JPLHOR_APPROX;
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* bug 171: the corrections up to the gap, the rest of the file not */
+    else if (ctx->eop_dpsi_loaded == SWI_EOP_FINALS_CUT && serr != NULL)
+      snprintf(serr, AS_MAXCH, "file eop_finals.txt corrupt after JD %.1f; its later days not used",
+               ctx->eop_tjd_end);
+#endif
   }
   if (iflag & SEFLG_JPLHOR) 
     iflag |= SEFLG_ICRS;
