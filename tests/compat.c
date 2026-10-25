@@ -2087,12 +2087,14 @@ static double file_join_off(void)
  * answers, deg; 1e9 if either is not finite. The neighbour-file lookup
  * that went wrong (F11) is this fork's and absent under the switch, whose
  * build takes the Moshier Moon both times: 0 both ways, the shipped build
- * NaN fresh and 37 deg off warm before the fix. */
+ * NaN fresh and 37 deg off warm before the fix. With the fallback allowed:
+ * the strict setting refuses the Moshier Moon since entry 120. */
 static double moon_neighbour_off(void)
 {
   char dir[] = "/tmp/compatmoXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
   double t = 2159377.5, x[6], y[6], r = -1;
   int32 fl = SEFLG_SWIEPH | SEFLG_SPEED;
+  int fb;
   char serr[256];
   struct dirent *e;
   DIR *d;
@@ -2108,6 +2110,8 @@ static double moon_neighbour_off(void)
   closedir(d);
   swe_close();
   swe_set_ephe_path(dir);
+  fb = swe_get_ephe_fallback();
+  swe_set_ephe_fallback(1);
   if (swe_calc(t, SE_MOON, fl, x, serr) >= 0) {
     swe_close();
     swe_set_ephe_path(dir);
@@ -2115,6 +2119,50 @@ static double moon_neighbour_off(void)
     if (swe_calc(t, SE_MOON, fl, y, serr) >= 0)
       r = (isfinite(x[0]) && isfinite(y[0])) ? fabs(swe_difdeg2n(x[0], y[0])) : 1e9;
   }
+  swe_close();
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+  swe_set_ephe_fallback(fb);
+  swe_set_ephe_path(EPHE);
+  return r;
+}
+
+/* UPSTREAM-BUGS 120: with semo_12.se1 missing (a directory of links to
+ * the others), the Swiss Moon at 1500 Jan 5 under the strict setting, its
+ * return code: sweplan() took Moshier's Moon, noted in serr, and the call
+ * returned SEFLG_SWIEPH | SEFLG_SPEED, 258, which swi_refuse_downgrade()
+ * could not see; refused now, -1. */
+static double moshmoon_strict_ret(void)
+{
+  char dir[] = "/tmp/compatmmXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double t = 2268936.5, x[6], r;
+  char serr[256];
+  struct dirent *e;
+  DIR *d;
+  int fb;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return 1e9;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strcmp(e->d_name, "semo_12.se1") != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  swe_close();
+  swe_set_ephe_path(dir);
+  fb = swe_get_ephe_fallback();
+  swe_set_ephe_fallback(0);
+  r = swe_calc(t, SE_MOON, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+  swe_set_ephe_fallback(fb);
   swe_close();
   if ((d = opendir(dir)) != NULL) {
     while ((e = readdir(d)) != NULL)
@@ -2786,7 +2834,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2889,6 +2937,7 @@ int main(int argc, char **argv)
   usernak = user_nakshatra_off();
   mapogspd = mean_apog_speed_off();
   moonnbr = moon_neighbour_off();
+  moshmoonr = moshmoon_strict_ret();
   refused = refused_file_off();
   fictstar = fict_star_parse();
   pathset = path_setter_118();
@@ -3614,6 +3663,14 @@ int main(int argc, char **argv)
     printf("  Moon, neighbour refused %.2e deg OK\n", moonnbr);
   else {
     printf("  Moon, neighbour refused %.2e deg FAIL: expected 0\n", moonnbr);
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshmoonr == (SEFLG_SWIEPH | SEFLG_SPEED)) : (moshmoonr < 0))
+    printf("  Moon, semo missing, strict %.0f OK\n", moshmoonr);
+  else {
+    printf("  Moon, semo missing, strict %.0f FAIL: expected %s\n",
+           moshmoonr, WANT_DEFECT ? "258" : "< 0");
     bad++;
   }
 

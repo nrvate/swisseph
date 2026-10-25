@@ -352,6 +352,9 @@ static int mixed(const char *ephe_arg)
     return 1;
   }
   c = swe_ctx_new();
+  /* the mixed case is a Moshier Moon substituted for a missing file, which the
+   * strict default refuses since bug 120: allowed here, as a caller would */
+  swe_set_ephe_fallback_r(c, 1);
   swe_set_ephe_path_r(c, dir);
   bad += mixed_fixed_point(c, SEFLG_HELCTR, "mixed Moon helio fixed point", 1e-11);
   bad += mixed_fixed_point(c, SEFLG_BARYCTR, "mixed Moon bary fixed point", 1e-11);

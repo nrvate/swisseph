@@ -1112,6 +1112,9 @@ struct epsilon {
  *     a configuration group, so another thread on the default context and
  *     a new context see it, is in both builds; the setting is this fork's
  *     and upstream has no such call; G119)
+ *   - with the Swiss Moon file missing, the Moon and the Earth made from
+ *     Moshier's Moon under a SEFLG_SWIEPH flag, answered under the strict
+ *     setting: the Moon 258 at 1500 (UPSTREAM-BUGS 120, G117)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1769,6 +1772,11 @@ struct swe_ctx {
    * was made with, on JPL and Moshier; t is its instant, 0 for none
    * (UPSTREAM-BUGS 66) */
   struct { double t, x[6]; int32 iephe; } earth_moon;
+  /* a Swiss read in this call took Moshier's Moon for want of the semo
+   * file (the Moon itself, or the Earth made from it); and the instant of
+   * a saved Earth made so (UPSTREAM-BUGS 120) */
+  AS_BOOL moshmoon_used;
+  double moshmoon_earth_t;
   /* the Sun's barycentric place, velocity and acceleration from Moshier's
    * planets at instant t, for each planet set, and the planets' series at
    * their own instants tp (UPSTREAM-BUGS 102, 109), swi_mosh_sun_bary()'s

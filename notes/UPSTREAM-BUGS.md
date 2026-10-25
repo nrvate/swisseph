@@ -153,6 +153,7 @@ worst were in code that had never executed even once.
 | 117 | `swe_calc()`'s mean node and mean apogee speeds divide by 0.001 a step that is not 0.001 | Correctness | `sweph.c` |
 | 121 | A sefstars.txt that failed to load is reread and reparsed by every later star call, a missing one searched for on every call | Performance / files | `sweph.c`, `sweph.h` |
 | 119 | A thread that adopts another thread's `swe_set_jpl_file()` keeps the old file's positions, and one that adopts another's `swe_set_ephe_path()` the old directory's segments, and answers from them (this fork's) | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h` |
+| 120 | With the Swiss Moon file missing, the Moon and the Earth come from Moshier under a SEFLG_SWIEPH flag, and the strict setting answers | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 
 ---
 
@@ -7563,6 +7564,89 @@ setter: `swe_set_delta_t_userdef(0.001)`, `swe_close()`, delta t at J2000
 0.001 days, then after a `swe_set_topo()` 0.000739 (computed). The lapse
 rate and nutation interpolation, which `ctx_release()` keeps too, take the
 same path through `swi_config_apply()` (read, not measured).
+
+## 120. With the Swiss Moon file missing, the Moon and the Earth come from Moshier under a SEFLG_SWIEPH flag, and the strict setting answers
+
+**Severity: Correctness (behaviour: an answer where the strict setting refuses, and a flag that names the wrong ephemeris; the Moon 0.6-5.0" off the files' at 1338-1776, a planet seen from that Earth 3.4e-8 deg)**
+**Where:** `sweph.c`: `sweplan()`, `swe_calc_r()`, `swe_calc_orbel_r()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `fixstar_obs_rate()`
+
+Found by an independent review. With a semo file missing (semo_12.se1,
+1200-1800) and its planet file present, `sweplan()` reads the Moon, finds
+the file not open, writes "using Moshier eph. for moon" into serr, takes
+`swi_moshmoon()`'s Moon and makes the Earth from the EMB less that Moon.
+Nothing else is told. `swe_calc()` of the Moon at 1500 returned 258
+(SEFLG_SWIEPH | SEFLG_SPEED), its place within 1.1e-10 deg of the
+SEFLG_MOSEPH Moon's. Mars, the Sun, a fixed star and an orbit about the
+Earth were seen from that Earth and returned SEFLG_SWIEPH too. Since the
+flags said Swiss, `swi_refuse_downgrade()` saw no substitution, and this
+fork's strict default answered all of them. A planet file missing is
+refused there (the whole body goes to Moshier and the flag says so). Both
+builds behave this way, and so did the tree before this PR.
+
+**Fix, as done here:**
+- `sweplan()` marks the context when a read takes Moshier's Moon
+  (`ctx->moshmoon_used`, cleared at the start of each `swe_calc_r()`,
+  each star read and each `swe_calc_orbel_r()`). It also keeps the
+  instant of a saved Earth made so (`ctx->moshmoon_earth_t`), so an Earth
+  reused from the save area is marked again.
+- Under the strict setting the answer is refused ("Swiss (.se1) Moon file
+  is not available for jd ...; the Moon, and the Earth made from it,
+  would come from Moshier ...") when it depends on that Moon:
+  - the Moon and the Earth themselves;
+  - any body seen from the Earth;
+  - a star unless heliocentric;
+  - an orbit about the Earth, or one seen from it.
+- What only reads the Earth on the way still answers, bit for bit as with
+  the complete directory: a heliocentric or barycentric planet, the
+  barycentric Sun, a heliocentric star, the mean node. The refused answer
+  is not left in `swe_calc_r()`'s save area.
+- With the fallback allowed, the Moon's flag is SEFLG_MOSEPH, the
+  ephemeris that answered, as `swephexp.h` promises ("The ephemeris
+  actually used is reported in the return flag either way") and as a
+  planet's full fallback does. `swe_calc_ut()` then takes Moshier's delta
+  t for it: before, the files' delta t with Moshier's Moon, 1.9e-3 deg off
+  the SEFLG_MOSEPH Moon at 1338.
+- A planet, the Sun, a star or an orbit keeps SEFLG_SWIEPH with serr's
+  note. Its body and the EMB are the files', and only the Earth's Moon
+  offset, 1/82 of the Moon's 0.6-5.0", is Moshier's: 3.4e-8 deg at most from
+  the complete directory's answer. A single ephemeris bit cannot say
+  "files, with an Earth 1/82 Moshier", and Swiss is the true answer for
+  the body asked. The true node already goes to Moshier itself and says
+  so.
+- No cost: calc-swieph 0.578 s against 0.584-0.591 s before, minimum the
+  same, checksum identical; calc-moseph untouched.
+
+G117 `tests/moonfile.c`: a directory of links in /tmp without
+semo_12.se1, four instants 1338..1776, 372 checks against the complete
+directory:
+- (a) strict refuses the Moon (Swiss, with no ephemeris flag, through
+  `swe_calc_ut()`, heliocentric), the Sun, Mars geocentric and
+  topocentric, the heliocentric Earth, the true node, both star functions
+  and an orbit about the Earth. It does so fresh and in a warm context
+  after a heliocentric Mars, each asked twice.
+- (b) strict answers the independent calls bit for bit, fresh and warm.
+- (c) with the fallback allowed, the Moon says SEFLG_MOSEPH and is that
+  Moon within 1e-9 deg; the others say Swiss, note Moshier, and are within
+  1e-6 deg.
+- (d) the complete directory answers each with the flag asked.
+- None fail. The build before the fix fails 152 (44 of (a), its 88 warm,
+  20 of (c)'s Moon); the SWE_UPSTREAM_COMPAT build 156.
+
+G24 `moshmoon_strict_ret`: the Swiss Moon at 1500 Jan 5 without
+semo_12.se1, strict, its return: -1 shipped, 258 compat. G24
+`moon_neighbour_off` (entry 100) now allows the fallback for its two
+calls, since the strict setting refuses the Moshier Moon it compares; 0
+both ways as before. G99, G109, G88 pass.
+
+Two defects of the fallback path were seen here and left (not this
+entry's):
+- **The heliocentric Moon is wrong.** A Swiss heliocentric Moon whose
+  Moon is Moshier's is 0.29 deg off the files' and the SEFLG_MOSEPH one
+  (1776: 4.679 against 4.392 deg). The Moshier branch of
+  `app_pos_etc_moon()` forms it heliocentric while the observer is the
+  files' barycentric Sun.
+- **The note is lost.** A topocentric call with SEFLG_SPEED loses serr's
+  "using Moshier eph. for moon" note.
 
 ## How these were found
 

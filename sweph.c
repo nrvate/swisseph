@@ -215,6 +215,9 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr);
 extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *xx);
 static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, double tjd, char *serr);
+#ifndef SWE_UPSTREAM_COMPAT
+static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr);
+#endif
 static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum);
 static int app_pos_etc_mean(swe_ctx *ctx, int ipl, int32 iflag, char *serr);
 static void nut_matrix(struct nut *nu, struct epsilon *oec); 
@@ -556,6 +559,9 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
   /* 
    * otherwise, new position must be computed 
    */
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->moshmoon_used = FALSE;	/* bug 120 */
+#endif
   if (!use_speed3) {
     /* 
      * with high precision speed from one call of swecalc(ctx) 
@@ -618,6 +624,26 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     denormalize_positions(x0, sd->xsaves, x2);
     calc_speed(x0, sd->xsaves, x2, dt);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 120: the Moon, or the Earth through it, from Moshier for
+   * want of the semo file. Refused under the strict setting when the
+   * answer depends on it: the Moon and the Earth themselves, and any body
+   * seen from the Earth (heliocentric and barycentric planets read the
+   * Earth too, but do not use it). With the fallback allowed the Moon's
+   * flag says Moshier, which is what answered; a planet keeps Swiss, its
+   * own place and the EMB being the files' and only the Earth's Moon
+   * offset, 1/82 of the Moon's error, Moshier's. */
+  if (ctx->moshmoon_used && (sd->iflgsave & SEFLG_SWIEPH)
+      && (ipl == SE_MOON || ipl == SE_EARTH
+          || !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)))) {
+    if (swi_refuse_moshmoon(ctx, tjd, serr)) {
+      sd->tsave = SWI_TJD_NEVER;	/* no cached answer to come back with */
+      goto return_error;
+    }
+    if (ipl == SE_MOON)
+      sd->iflgsave = (sd->iflgsave & ~SEFLG_EPHMASK) | SEFLG_MOSEPH;
+  }
+#endif
   end_swe_calc:
   if (iflag & SEFLG_EQUATORIAL) {
     xs = sd->xsaves+12;	/* equatorial coordinates */
@@ -871,6 +897,9 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
   }
 #endif
   retc_orbel:;
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->moshmoon_used = FALSE;	/* bug 120 */
+#endif
   /* Earth (and through it the Sun) with speeds, saved as any swe_calc()
    * of the Earth would save them; app_pos_etc_orbel reads the saved
    * vectors, like app_pos_etc_plan_osc does. Re-run on every retry: the
@@ -901,6 +930,15 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
    * from Moshier whatever swe_set_ephe_fallback() said. */
   if (swi_refuse_downgrade(ctx, epheflag_asked, epheflag, tjd_et, serr))
     goto return_error;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 120: an Earth made from Moshier's Moon, the semo file
+   * missing, refused where the answer depends on it: an orbit about the
+   * Earth, or one seen from it */
+  if ((epheflag & SEFLG_SWIEPH)
+      && (iplctr == SE_EARTH || !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)))
+      && swi_refuse_moshmoon(ctx, tjd_et, serr))
+    goto return_error;
+#endif
   /* same output selection as swe_calc() */
   for (j = 0; j < 24; j++)
     x[j] = xp[j];
@@ -1633,6 +1671,7 @@ static void planets_forget_instants(swe_ctx *ctx)
   for (i = 0; i <= SE_NPLANETS; i++)
     ctx->savedat[i].tsave = SWI_TJD_NEVER;
   ctx->earth_moon.t = SWI_TJD_NEVER;   /* bug 66's Moon of the saved Earth */
+  ctx->moshmoon_earth_t = SWI_TJD_NEVER;	/* bug 120's Earth */
   ctx->mosh_sun_bary.s[0].t = SWI_TJD_NEVER;	/* bug 102's Sun */
   ctx->mosh_sun_bary.s[1].t = SWI_TJD_NEVER;
   for (i = 0; i < 9; i++)		/* and bug 109's series */
@@ -2620,6 +2659,29 @@ static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, doubl
   return TRUE;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 120: with the semo file missing, sweplan() took the Moon
+ * from Moshier (its place equal to SEFLG_MOSEPH's within 1e-10 deg, 0.6-5.0"
+ * off the files) and made the Earth from it, noted in serr, and the call
+ * returned SEFLG_SWIEPH: swi_refuse_downgrade() saw no substitution, the
+ * planets' and the Moon's ephemeris bits being Swiss. Under the strict
+ * setting a Swiss answer whose Moon, or whose Earth through the Moon, is
+ * Moshier's is now refused; ctx->moshmoon_used says a read in this call
+ * took it. The caller decides whether its answer depends on it. */
+static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr)
+{
+  if (ctx->ephe_fallback || !ctx->moshmoon_used)
+    return FALSE;
+  if (serr != NULL)
+    snprintf(serr, AS_MAXCH,
+      "Swiss (.se1) Moon file is not available for jd %.4f; the Moon, and "
+      "the Earth made from it, would come from Moshier with lower precision. "
+      "Install the data files, or call swe_set_ephe_fallback(1) to allow the "
+      "substitution.", tjd);
+  return TRUE;
+}
+
+#endif
 /* SE_EPHE_FALLBACK=1 restores upstream's silent substitution without touching
  * the caller -- for programs that cannot be recompiled. Anything other than
  * unset, empty, or "0" enables it. */
@@ -3108,6 +3170,9 @@ static int sweplan(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, AS
   double xxp[6], xxm[6], xxs[6], xxe[6];
   double *xp, *xpe, *xpm, *xps;
   int32 speedf1, speedf2;
+#ifndef SWE_UPSTREAM_COMPAT
+  AS_BOOL moon_mosh = FALSE;
+#endif
   /* xps (barycentric sun) may be necessary because some planets on sweph 
    * file are heliocentric, other ones are barycentric. without xps, 
    * the heliocentric ones cannot be returned barycentrically.
@@ -3173,6 +3238,10 @@ static int sweplan(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, AS
 	retc = swi_moshmoon(ctx, tjd, do_save, xpm, serr);
 	if (retc != OK)
 	  return(retc);
+#ifndef SWE_UPSTREAM_COMPAT
+	moon_mosh = TRUE;	/* bug 120: told, not hidden */
+	ctx->moshmoon_used = TRUE;
+#endif
       }
     }
     if (xpmret != NULL)
@@ -3187,10 +3256,18 @@ static int sweplan(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, AS
 	  && (!speedf2 || speedf1)) {
       for (i = 0; i <= 5; i++)
 	xpe[i] = pebdp->x[i];
+#ifndef SWE_UPSTREAM_COMPAT
+      if (tjd == ctx->moshmoon_earth_t)	/* bug 120: made from Moshier's Moon */
+	ctx->moshmoon_used = TRUE;
+#endif
     } else {
       retc = sweph(ctx, tjd, SEI_EMB, SEI_FILE_PLANET, iflag, NULL, do_save, xpe, serr);
       if (retc != OK)
 	return(retc);
+#ifndef SWE_UPSTREAM_COMPAT
+      if (xpe == pebdp->x)
+	ctx->moshmoon_earth_t = moon_mosh ? tjd : SWI_TJD_NEVER;
+#endif
       /* earth from emb and moon */
       embofs(xpe, xpm);
       /* speed is needed, if
@@ -6918,6 +6995,8 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
                          &iephe_used, xa[k], xa[k], NULL, NULL, serr) != OK)
       return ERR;
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
+      return ERR;
+    if (!(iflag & SEFLG_HELCTR) && swi_refuse_moshmoon(ctx, tjd, serr))	/* bug 120 */
       return ERR;
   }
   for (i = 0; i <= 2; i++)
@@ -10888,12 +10967,20 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+    ctx->moshmoon_used = FALSE;	/* bug 120 */
+#endif
     if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, &iephe_used, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xsun, NULL, serr)) != OK) {
       return ERR;
     }
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 120: and an Earth made from Moshier's Moon, the semo
+     * file missing (a heliocentric star reads the Earth but uses only the
+     * Sun) */
+    if (!(iflag & SEFLG_HELCTR) && swi_refuse_moshmoon(ctx, tjd, serr))
+      return ERR;
     ephe_used = iephe_used;
 #endif
   }
@@ -12544,12 +12631,20 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+    ctx->moshmoon_used = FALSE;	/* bug 120 */
+#endif
     if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, &iephe_used, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xsun, NULL, serr)) != OK) {
       return ERR;
     }
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 120: and an Earth made from Moshier's Moon, the semo
+     * file missing (a heliocentric star reads the Earth but uses only the
+     * Sun) */
+    if (!(iflag & SEFLG_HELCTR) && swi_refuse_moshmoon(ctx, tjd, serr))
+      return ERR;
     ephe_used = iephe_used;
 #endif
   }

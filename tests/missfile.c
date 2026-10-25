@@ -362,7 +362,13 @@ int main(int argc, char **argv)
       unbuild(de);
       return 2;
     }
-    a = fresh_calc(de, J1200 + 5, SE_MOON, SEFLG_SPEED);
+    {
+      /* with the substitution allowed (bug 120 refuses it by default) */
+      swe_ctx *c = open_ctx(de);
+      swe_set_ephe_fallback_r(c, 1);
+      a = calc(c, J1200 + 5, SE_MOON, SEFLG_SPEED);
+      swe_ctx_free(c);
+    }
     unbuild(de);
     if (strstr(a.serr, "semo_12.se1") == NULL || strstr(a.serr, "semo_06.se1") != NULL) {
       printf("  (e) semo_12 and semo_06 missing: serr '%s'\n", a.serr);
