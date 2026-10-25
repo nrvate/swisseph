@@ -3591,6 +3591,58 @@ static double prec_window_speed_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 183: the speeds across a join of Owen 1990's pieces. On
+ * the Swiss files with Owen 1990 the long-term model ("0,10"), Mars's
+ * ecliptic speeds at the join near +6000 (JD 3912544.5, the later
+ * piece's) -+ 0.5 day and -+ 2^-14 day against five-point differences of
+ * its places over 2^-6 day on the instant's side (centred, else
+ * one-sided), the largest, deg/day. The shipped build differenced the
+ * precession across the join within a day either side (1.1e-8);
+ * upstream's speeds of date are off there by the defects earlier entries
+ * fixed. */
+static double owen_join_speed_off(void)
+{
+  static const double o5[5] = { -25.0 / 12, 4, -3, 4.0 / 3, -1.0 / 4 };
+  const double ts = 3912544.5, h = 1.0 / 64;
+  const double dt[4] = { -0.5, -1.0 / 16384, 1.0 / 16384, 0.5 };
+  double x[6], f[5][6], r = 0;
+  char serr[256], mod[] = "0,10,0,0,0,0,0,0";
+  int i, j, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_astro_models_r(c, mod, 0);
+  for (i = 0; i < 4; i++) {
+    double t = ts + dt[i];
+    int dir = (t < ts) ? -1 : 1, centred = (i == 0 || i == 3);
+    if (swe_calc_r(c, t, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr) < 0) {
+      swe_ctx_free(c);
+      return -1;
+    }
+    for (k = 0; k < 5; k++)
+      if (swe_calc_r(c, centred ? t + (k - 2) * h : t + dir * k * h, SE_MARS, SEFLG_SWIEPH,
+                     f[k], serr) < 0) {
+        swe_ctx_free(c);
+        return -1;
+      }
+    for (j = 0; j < 2; j++) {
+      double d = 0;
+      if (centred)
+        d = (8 * (f[3][j] - f[1][j]) - (f[4][j] - f[0][j])) / (12 * h);
+      else {
+        for (k = 0; k < 5; k++)
+          d += o5[k] * (f[k][j] - f[0][j]);
+        d *= dir / h;
+      }
+      if (fabs(x[3 + j] - d) > r)
+        r = fabs(x[3 + j] - d);
+    }
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 163: the nutation's rate far from J2000. The Sun's right
  * ascension speed minus the same with SEFLG_NONUT under IAU 2000A set
  * explicitly, against a five-point difference of the same two calls'
@@ -4537,7 +4589,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4684,6 +4736,7 @@ int main(int argc, char **argv)
   jplhor1799 = jplhor_1799_speed_off();
   precwin = prec_window_speed_off();
   nutfar = nut_far_rate_off();
+  owenjoin = owen_join_speed_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -5883,6 +5936,14 @@ int main(int argc, char **argv)
   else {
     printf("  nutation rate far out  %.2e deg/day FAIL: expected %s\n",
            nutfar, WANT_DEFECT ? "> 5e-10" : "< 5e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (owenjoin > 1e-9) : (owenjoin >= 0 && owenjoin < 1e-9))
+    printf("  speed across Owen join %.2e deg/day OK\n", owenjoin);
+  else {
+    printf("  speed across Owen join %.2e deg/day FAIL: expected %s\n",
+           owenjoin, WANT_DEFECT ? "> 1e-9" : "< 1e-9");
     bad++;
   }
 

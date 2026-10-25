@@ -1353,7 +1353,8 @@ check-woolard: woolard
 # precession's and obliquity's rates themselves (UPSTREAM-BUGS 159); a
 # short-term precession model's window edges, on de200 at J2000 - 2
 # centuries and in the rates themselves at -+ 2 and -+ 75 (UPSTREAM-BUGS
-# 160).
+# 160); the joins of Owen 1990's pieces in the rates themselves, chosen and
+# under SEFLG_JPLHOR (UPSTREAM-BUGS 183).
 check-framestep: framestep
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./framestep $(EPHE)
 

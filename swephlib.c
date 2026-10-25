@@ -2849,6 +2849,24 @@ static AS_BOOL frame_is_jplhor(swe_ctx *ctx, double J, int32 iflag)
  * 75) and the long-term one's outside, in the order the two functions
  * test them, so that a long-term IAU 1976 or 2000 wins over a later
  * short-term model and no step is seen where the model is the same. */
+/* Upstream bug 183: Owen 1990's precession and obliquity are fits in five
+ * pieces of 80 centuries (centres -14000, -6000, 2000, 10000, 18000),
+ * each taken from the midpoint before its centre to the midpoint after it
+ * (get_owen_t0_icof(), the midpoint's own instant the later piece's): JD
+ * -1931455.5, 990544.5, 3912544.5 and 6834544.5, about -10000, -2000,
+ * +6000 and +14000. The pieces do not meet: the mean obliquity steps by
+ * 0.095 mas at -10000, the precession by 0.086 mas at +6000 and 0.091 mas
+ * at +14000 (both continuous at -2000 to 1e-14 deg). Each piece is its own
+ * model here, so the rates keep to the instant's piece. */
+#define FRAME_OWEN_PIECE(icof)  (SEMOD_NPREC + 1 + (icof))
+static int frame_owen_piece(double J)
+{
+  double t0;
+  int icof;
+  get_owen_t0_icof(J, &t0, &icof);
+  return FRAME_OWEN_PIECE(icof);
+}
+
 static int frame_chosen_model(swe_ctx *ctx, double J)
 {
   double T = (J - J2000) / 36525.0;
@@ -2866,13 +2884,15 @@ static int frame_chosen_model(swe_ctx *ctx, double J)
     return SEMOD_PREC_IAU_2000;
   if (prec_model_short == SEMOD_PREC_IAU_2006 && fabs(T) <= PREC_IAU_2006_CTIES)
     return SEMOD_PREC_IAU_2006;
+  if (prec_model == SEMOD_PREC_OWEN_1990)
+    return frame_owen_piece(J);
   return prec_model;
 }
 static int frame_prec_model(swe_ctx *ctx, double J, int32 iflag)
 {
   if (frame_is_jplhor(ctx, J, iflag))
     return (J > SWI_JPLHOR_IAU1976_T0 && J < SWI_JPLHOR_IAU1976_T1)
-           ? SEMOD_PREC_IAU_1976 : SEMOD_PREC_OWEN_1990;
+           ? SEMOD_PREC_IAU_1976 : frame_owen_piece(J);
   return frame_chosen_model(ctx, J);
 }
 static int frame_eps_model(swe_ctx *ctx, double J, int32 iflag)
@@ -2881,7 +2901,7 @@ static int frame_eps_model(swe_ctx *ctx, double J, int32 iflag)
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
   if (frame_is_jplhor(ctx, J, iflag))
     return (J > SWI_JPLHOR_IAU1976_T0 && J < SWI_JPLHOR_IAU1976_T1)
-           ? SEMOD_PREC_IAU_1976 : SEMOD_PREC_OWEN_1990;
+           ? SEMOD_PREC_IAU_1976 : frame_owen_piece(J);
   /* SEMOD_JPLHORA_2: IAU 1976's obliquity throughout */
   if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_2)
     return SEMOD_PREC_IAU_1976;
@@ -2927,6 +2947,10 @@ static int frame_models(swe_ctx *ctx, double J, int32 iflag, int which)
  * of date 8.0e-5 deg/day off within a day inside the window, SEFLG_SPEED3
  * 0.80 within 1e-4 day; IAU 2006 at 75 centuries, 42" and 1.07e2", 1.5e-2
  * deg/day. Those steps are the precession's and the obliquity's too.
+ * Upstream bug 183: and Owen 1990's pieces (frame_owen_piece()), under
+ * SEFLG_JPLHOR's models outside 1799-2202 and as the long-term model:
+ * the obliquity's rate 2.6e-8 deg/day off the day before -10000, the
+ * precession's 9.8e-9 and 1.1e-8 either side of +6000 and +14000.
  * Returns -1 when t + h takes another model than t (difference backward),
  * +1 when t - h does (forward), 0 when neither does. */
 int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which)
@@ -2939,7 +2963,8 @@ int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which
       && !((which & (SWI_FRAME_PREC | SWI_FRAME_EPS))
            && (prec_model_short == SEMOD_PREC_IAU_1976
                || prec_model_short == SEMOD_PREC_IAU_2000
-               || prec_model_short == SEMOD_PREC_IAU_2006)))
+               || prec_model_short == SEMOD_PREC_IAU_2006
+               || ctx->astro_models[SE_MODEL_PREC_LONGTERM] == SEMOD_PREC_OWEN_1990)))
     return 0;
   k = frame_models(ctx, t, iflag, which);
   if (frame_models(ctx, t + h, iflag, which) != k)

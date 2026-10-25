@@ -1,7 +1,8 @@
 /* framestep.c -- G139: across the steps of the frame's models every speed of
  * date is the rate of its own side's model: SEMOD_JPLHORA_3's at 1962 Jan
- * 20, SEFLG_JPLHOR's at 1799 Jan 1 and 2202 Jan 1, and the edges of a
- * short-term precession model's window.
+ * 20, SEFLG_JPLHOR's at 1799 Jan 1 and 2202 Jan 1, the edges of a
+ * short-term precession model's window, and the joins of Owen 1990's
+ * pieces.
  *
  * The defect (UPSTREAM-BUGS 153): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), the precession, the mean obliquity
@@ -42,6 +43,16 @@
  * outside, unless the long-term model is another one differenced too),
  * the obliquity's the day before the edge, SPEED3's within 1e-4 day.
  *
+ * The defect (UPSTREAM-BUGS 183): Owen 1990's precession and obliquity,
+ * the long-term model chosen ("0,10") or SEFLG_JPLHOR's outside 1799-2202,
+ * are fits in pieces of 80 centuries joined at JD -1931455.5, 990544.5,
+ * 3912544.5 and 6834544.5 (about -10000, -2000, +6000, +14000; the join's
+ * instant the later piece's), and they do not meet: the mean obliquity
+ * steps by 0.095 mas at -10000, the precession by 0.086 and 0.091 mas at
+ * +6000 and +14000. The same rates reached across: the obliquity's 2.6e-8
+ * deg/day the day before -10000, the precession's 9.8e-9 and 1.1e-8 on
+ * both days at +6000 and +14000.
+ *
  * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
  * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
  * difference after the step too), at 1799 Jan 1 the default models; and
@@ -77,13 +88,18 @@
  * at -+ 75, IAU 1976 within IAU 2006 long-term ("0,8,1", differenced on
  * both sides) at - 2, and IAU 1976 at + 2 with SEFLG_JPLHOR_APPROX, whose
  * mode 3 takes the chosen models after 1962: 54 checks within 1e-8
- * deg/day. It calls the fork's own functions and is left out of the
+ * deg/day; and Owen 1990's joins, "0,10" at all four and SEFLG_JPLHOR at
+ * the three that step, 42 checks within 1e-9 (the residuals sat about the
+ * 1e-8 floor). It calls the fork's own functions and is left out of the
  * upstream build.
  *
  * Measured after the fix: (a) within 2.4e-9 (the Moon's one-sided
  * reference at J2000 - 2 centuries, 2.0e-9 at 1799; Polaris's right
  * ascension 1.45e-9 at 1962, the topocentric Moon 9.6e-10, the others
- * 7e-11), SPEED3 1.41e-6; (b) within 8.5e-12. Before the fix of bug 153,
+ * 7e-11), SPEED3 1.41e-6; (b) within 8.5e-12, at Owen's joins 1.9e-11.
+ * Before the fix of bug 183, 10 of the 42 at Owen's joins fail: the
+ * obliquity's rate 2.63e-8 the day before -10000, the precession's 9.80e-9
+ * and 1.09e-8 on both days at +6000 and +14000, under both settings. Before the fix of bug 153,
  * 38 of the first 84 checks fail: every body but sidereal Mars on the day
  * before the step under both settings and on the day after under the
  * second, and SPEED3 on both days under both, by 1.57e-5 to 1.09 deg/day.
@@ -387,21 +403,34 @@ int main(int argc, char **argv)
       int left;
       int32 fl;
       const char *mod;
+      double lim;
     } SB[] = {
       /* SEFLG_JPLHOR's own steps, both Owen's at their instant */
-      { 2378131.5, 1, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0" },
-      { 2525323.5, 0, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0" },
+      { 2378131.5, 1, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0", 1e-8 },
+      { 2525323.5, 0, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0", 1e-8 },
       /* the short-term windows' edges, the window's at its instant: IAU
        * 1976 and 2000 at J2000 -+ 2 centuries, IAU 2006 at -+ 75; with a
        * long-term model differenced too (IAU 2006, "0,8,1"); and under
        * SEMOD_JPLHORA_3 after 1962 */
-      { 2378495.0, 0, 0, "0,9,1,0,0,0,0,0" },
-      { 2524595.0, 1, 0, "0,9,1,0,0,0,0,0" },
-      { 2524595.0, 1, 0, "0,9,6,0,0,0,0,0" },
-      { -287830.0, 0, 0, "0,9,8,0,0,0,0,0" },
-      { 5190920.0, 1, 0, "0,9,8,0,0,0,0,0" },
-      { 2378495.0, 0, 0, "0,8,1,0,0,0,0,0" },
-      { 2524595.0, 1, SEFLG_JPLHOR_APPROX, "0,9,1,0,0,0,0,0" },
+      { 2378495.0, 0, 0, "0,9,1,0,0,0,0,0", 1e-8 },
+      { 2524595.0, 1, 0, "0,9,1,0,0,0,0,0", 1e-8 },
+      { 2524595.0, 1, 0, "0,9,6,0,0,0,0,0", 1e-8 },
+      { -287830.0, 0, 0, "0,9,8,0,0,0,0,0", 1e-8 },
+      { 5190920.0, 1, 0, "0,9,8,0,0,0,0,0", 1e-8 },
+      { 2378495.0, 0, 0, "0,8,1,0,0,0,0,0", 1e-8 },
+      { 2524595.0, 1, SEFLG_JPLHOR_APPROX, "0,9,1,0,0,0,0,0", 1e-8 },
+      /* Owen 1990's pieces, the later piece's at their joins: chosen as
+       * the long-term model ("0,10") at all four, and SEFLG_JPLHOR's
+       * outside 1799-2202 at the three where it steps; within 1e-9, as
+       * the residuals they had sit about the 1e-8 floor (9.8e-9 to 2.6e-8)
+       * and the rates come within 1e-11 */
+      { -1931455.5, 0, 0, "0,10,0,0,0,0,0,0", 1e-9 },
+      { 990544.5, 0, 0, "0,10,0,0,0,0,0,0", 1e-9 },
+      { 3912544.5, 0, 0, "0,10,0,0,0,0,0,0", 1e-9 },
+      { 6834544.5, 0, 0, "0,10,0,0,0,0,0,0", 1e-9 },
+      { -1931455.5, 0, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0", 1e-9 },
+      { 3912544.5, 0, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0", 1e-9 },
+      { 6834544.5, 0, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0", 1e-9 },
     };
     static const char *gn[2] = { "precession", "obliquity" };
     int g;
@@ -420,10 +449,10 @@ int main(int argc, char **argv)
         printf("    %-16s      %.2e  %.2e  %.2e\n", gn[g], w[0], w[1], w[2]);
         for (k = 0; k < 3; k++) {
           n++;
-          if (!(w[k] <= 1e-8)) {
+          if (!(w[k] <= SB[m].lim)) {
             bad++;
-            printf("    FAIL flags 0x%x, models %s, %s, %s: %.2e > 1e-8\n",
-                   (unsigned) SB[m].fl, SB[m].mod, gn[g], RN[k], w[k]);
+            printf("    FAIL flags 0x%x, models %s, %s, %s: %.2e > %.0e\n",
+                   (unsigned) SB[m].fl, SB[m].mod, gn[g], RN[k], w[k], SB[m].lim);
           }
         }
       }

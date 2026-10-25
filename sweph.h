@@ -1360,6 +1360,12 @@ struct epsilon {
  *     (UPSTREAM-BUGS 173, G141)
  *   - the same for its obliquity table: the mean obliquity jumping up to
  *     0.44 mas at every year from 1963 to 2011 (UPSTREAM-BUGS 182, G141)
+ *   - the speeds of date across the joins of Owen 1990's pieces (-10000,
+ *     +6000, +14000), with Owen 1990 chosen and under SEFLG_JPLHOR's
+ *     models outside 1799-2202, taking this fork's rates that difference
+ *     two pieces across them: the obliquity's 2.6e-8 deg/day the day
+ *     before -10000, the precession's 9.8e-9 and 1.1e-8 either side of
+ *     +6000 and +14000, SEFLG_SPEED3 1.1e-4 (UPSTREAM-BUGS 183, G139)
  *   - the path setter and swe_close() reading the kept JPL file again only
  *     when its DE number had been read, not when swe_set_jpl_file() had
  *     named it and failed along the path then set: after a path without

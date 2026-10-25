@@ -211,6 +211,7 @@ worst were in code that had never executed even once.
 | 180 | `swe_nod_aps()` on Moshier builds the Earth-Moon barycentre as Moshier's Earth plus Moshier's Moon, where that Earth is the EMB less the short lunar series' Moon (0.24 deg away at 2000): the EMB 1.3e-7 AU off the series', the Earth's and the Sun's osculating apsides wobbling 8.0e-3 deg (4.1e-2 at -3000), their speeds 4.7e-8 deg/day off their positions' rate at every epoch | Correctness | `swecl.c` |
 | 175 | With neither file for J2000 (semo_18.se1, sepl_18.se1) and other spans' along the path, no DE number was read, so the first delta t took the default tidal term until a Swiss Moon opened another span's moon file: in AD 1500 291.693033 s, then 294.255183, the first UT Moon 158.4001317882 deg and the second 158.4005084277 (3.8e-4); with the planet files alone and no sepl_18.se1 the default throughout, the heliocentric Mars there 1.56e-5 deg off -- on every thread and context | Correctness (behaviour) | `sweph.c` |
 | 177 | On Moshier the barycentric Sun's slot keeps what the files or JPL last left in it, and five Moshier paths read it as their Sun -- the light deflection, the heliocentric Moon, an asteroid's frame, the fictitious bodies' and `swe_calc_orbel()`'s Sun: a Swiss request fallen to Moshier after a Swiss call at another instant, at 1500, the heliocentric Moon 0.41 deg off the same call in a fresh process, Ceres heliocentric 0.14, `swe_calc_orbel()`'s orbit about the Sun 0.071 and Cupido 9.1e-3 under SEFLG_TRUEPOS, the deflection 1.66e-7 on Mercury and 1.7e-9 on Mars, `swe_nod_aps()`'s Venus 1.5e-7 | Correctness (behaviour) | `swemplan.c` |
+| 183 | Owen 1990's precession and obliquity are pieces 80 centuries long that do not meet at their joins (0.095 mas in the mean obliquity at -10000, 0.086 and 0.091 mas in the precession at +6000 and +14000), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across, with Owen 1990 chosen and under SEFLG_JPLHOR's models outside 1799-2202: the rates 2.6e-8, 9.8e-9 and 1.1e-8 deg/day off within a day of them, Mars's speeds 1.1e-8, SEFLG_SPEED3 1.1e-4 | Correctness | `swephlib.c` |
 
 ---
 
@@ -12345,6 +12346,81 @@ request fallen to Moshier, places the site by the files' delta t, not
 Moshier's (as bug 168 found for `swe_nod_aps()`): Aldebaran at 1500 2.0e-8
 deg in longitude and 1.35e-7 deg/day in its speed off the Moshier request,
 0 with a user delta t.
+
+## 183. Owen 1990's pieces step at their joins, and the frame's rates difference them across: the obliquity's 2.6e-8 deg/day off the day before -10000, the precession's 9.8e-9 and 1.1e-8 deg/day either side of +6000 and +14000, SEFLG_SPEED3 1.1e-4
+
+**Severity: Correctness (with Owen 1990 the long-term precession model, and under SEFLG_JPLHOR's models outside 1799-2202: within a day of the joins at -10000, +6000 and +14000 the rates 2.6e-8, 9.8e-9 and 1.1e-8 deg/day off, Mars's speeds 1.1e-8, the Moon's latitude 2.1e-8; SEFLG_SPEED3 1.1e-4 within 1e-4 day)**
+**Where:** `swephlib.c`: `swi_frame_step_side()`'s models, new `frame_owen_piece()`
+
+Entry 159's noticed item. Owen 1990's precession angles (`owen_pre_matrix()`)
+and mean obliquity (`epsiln_owen_1986()`) are Chebyshev fits in five
+pieces of 80 centuries, centred on -14000, -6000, 2000, 10000 and 18000,
+each taken from the midpoint before its centre to the one after it
+(`get_owen_t0_icof()`, the midpoint's own instant the later piece's): JD
+-1931455.5, 990544.5, 3912544.5 and 6834544.5, about -10000, -2000, +6000
+and +14000. The pieces do not meet. Measured as the second difference
+over 2^-20 day at each join: the mean obliquity 0.0945 mas (2.63e-8 deg)
+at -10000, the precession matrix 0.0860 mas (2.39e-8 deg, a unit vector's
+largest displacement) at +6000 and 0.0908 mas (2.52e-8) at +14000, and
+nothing else (both continuous to 1e-14 deg at -2000, the obliquity at
++6000 and +14000, the precession at -10000); the same under SEFLG_JPLHOR,
+whose Owen 1990 differs by a constant. Owen 1990 is taken as the
+long-term model ("0,10") and by SEFLG_JPLHOR's models outside 1799 Jan 1
+.. 2202 Jan 1 (and with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3`
+before 1799). The rates entry 153 made keep to one side were told of no
+such step: the precession's (P(t + 1) - P(t - 1)) / 2 (entry 49) and the
+site's, the obliquity's eps(t + 1) - eps(t), and SEFLG_SPEED3's three
+places over 1e-4 day. Against five-point differences of `swi_precess()`
+and `swi_epsiln()` over 2^-6 day on the instant's side (G139's check (b)),
+the worst over the day before the join and the day after: the obliquity's
+rate 2.63e-8 deg/day the day before -10000, the precession's 9.80e-9
+either side of +6000 and 1.09e-8 either side of +14000, alike under
+SEFLG_JPLHOR. On the Swiss files with "0,10", against five-point
+differences of the positions over 2^-6 day on the instant's side: Mars
+1.11e-8 deg/day at +6000 and 8.4e-9 at +14000, the Sun 9.9e-9 at +6000
+and 5.9e-9 the day before -10000 (its latitude), the Moon's ecliptic
+speeds 2.06e-8 the day before -10000; SEFLG_SPEED3 on Mars 1.11e-4 at
++6000 and 1.30e-5 at -10000.
+
+**Fix, as done here:** `swi_frame_step_side()` (entries 153, 159, 160)
+takes each Owen piece as a model of its own (`frame_owen_piece()`, by
+`get_owen_t0_icof()` itself), wherever its models name Owen 1990:
+SEFLG_JPLHOR's precession and obliquity outside 1799-2202 and the chosen
+long-term model. So each join is a step with the later piece's inclusive
+side, and entry 153's one-sided differences take each piece's own rate.
+The test reaches the models when the long-term model is Owen 1990 too;
+the default models and flags read one more model number. Behind
+`#ifndef SWE_UPSTREAM_COMPAT`, as entry 153's.
+- After: the rates within 1.9e-11 deg/day of the five-point differences
+  at every join, both settings (the precession's three-point difference
+  over a day on one side; 4e-12 to 1e-11 elsewhere). On the Swiss files
+  with "0,10" the Sun and Mars within 7.7e-11 deg/day, the Moon 5.5e-9
+  (the one-sided reference's own on the files' Moon so far out: its
+  equatorial speeds, which take no obliquity, were 4.5e-9 before too;
+  1.6e-9 centred), SEFLG_SPEED3 1.2e-6, its own everywhere.
+- No hot path: one more model number read in the test.
+
+G139 `tests/framestep.c`, extended: check (b) takes the rates at the four
+joins with "0,10" and at the three that step under SEFLG_JPLHOR, the
+later piece's at its join, within 1e-9 deg/day (the residuals sat about
+the 1e-8 floor): 42 checks, 264 in all. Before the fix 10 of the 42 fail
+(the obliquity's 2.63e-8 the day before -10000, the precession's 9.80e-9
+and 1.09e-8 on both days at +6000 and +14000, under both settings);
+measured after within 1.89e-11. Check (b) is fork-only; the upstream
+build fails 160 of (a)'s 168 as before. G24 `owen_join_speed_off`: Mars's
+ecliptic speeds on the Swiss files with "0,10" at the join near +6000 -+
+0.5 day and -+ 2^-14 day against the five-point difference on its side,
+the largest: 1.64e-11 deg/day shipped (1.11e-8 before the fix), 9.39e-6
+compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. The positions themselves step at the joins, by Owen's own
+  pieces, above the 1e-9 deg floor: with "0,10" on the Swiss files Mars's
+  ecliptic latitude jumps by 2.21e-8 deg at +6000, 1.68e-8 at +14000 and
+  2.60e-9 at -10000, its right ascension by 4.9e-9 at +6000 (the second
+  difference over 2^-20 day; nothing at -2000). The model as published;
+  joining the pieces smoothly (a blend over the overlap each fit covers)
+  would change Owen 1990's values, a choice of model, not a rate's fix.
 
 ## How these were found
 
