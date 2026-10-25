@@ -56,6 +56,8 @@ static void cfg_defaults(struct swe_config *c)
   strcpy(c->jplfnam, SE_FNAME_DFT);
   c->tid_acc = SE_TIDAL_DEFAULT;
   c->const_lapse_rate = SE_LAPSE_RATE;
+  /* bug 122: a fresh context's fallback setting is the variable's */
+  c->ephe_fallback = swi_env_ephe_fallback();
 }
 
 /* Validity is "generation != 0" rather than a separate flag: the generation
@@ -106,6 +108,7 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
   c->is_tid_acc_manual      = ctx->is_tid_acc_manual;
   c->delta_t_userdef_is_set = ctx->delta_t_userdef_is_set;
   c->do_interpolate_nut     = ctx->do_interpolate_nut;
+  c->ephe_fallback          = ctx->ephe_fallback;
   /* generation is owned by the master, not captured from the context */
 }
 
@@ -126,6 +129,8 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  *   do_interpolate_nut-> reset interpol
  *                        (matches swe_set_interpolate_nut)
  *   const_lapse_rate  -> nothing; read directly at its use sites
+ *   ephe_fallback     -> nothing; read at each calculation's end, as
+ *                        swe_set_ephe_fallback() itself invalidates nothing
  *====================================================================*/
 
 /* Everything a change to delta t makes stale on the thread that made it.
@@ -213,6 +218,7 @@ void swi_invalidate_models(swe_ctx *ctx)
 AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 {
   AS_BOOL path_changed, geo_changed, model_changed, dt_changed, nut_changed;
+  AS_BOOL fb_changed;
 #ifndef SWE_UPSTREAM_COMPAT
   AS_BOOL jpl_only;
 #endif
@@ -270,9 +276,11 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
                     || ctx->delta_t_userdef_is_set != c->delta_t_userdef_is_set));
   nut_changed   = (groups & SWI_CFG_NUT)
                   && (ctx->do_interpolate_nut != c->do_interpolate_nut);
+  fb_changed    = (groups & SWI_CFG_FALLBACK)
+                  && ctx->ephe_fallback != c->ephe_fallback;
 
   any = (path_changed || geo_changed || model_changed || dt_changed
-         || nut_changed
+         || nut_changed || fb_changed
          || ((groups & SWI_CFG_LAPSE)
              && ctx->const_lapse_rate != c->const_lapse_rate));
   if (!any)
@@ -332,6 +340,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     ctx->const_lapse_rate = c->const_lapse_rate;
   if (groups & SWI_CFG_NUT)
     ctx->do_interpolate_nut = c->do_interpolate_nut;
+  if (groups & SWI_CFG_FALLBACK)
+    ctx->ephe_fallback = c->ephe_fallback;
 
   /* --- invalidate what that made stale ------------------------------ */
 #ifndef SWE_UPSTREAM_COMPAT
@@ -461,6 +471,8 @@ static void cfg_merge(struct swe_config *dst, const struct swe_config *src,
     dst->const_lapse_rate = src->const_lapse_rate;
   if (groups & SWI_CFG_NUT)
     dst->do_interpolate_nut = src->do_interpolate_nut;
+  if (groups & SWI_CFG_FALLBACK)
+    dst->ephe_fallback = src->ephe_fallback;
 }
 
 /*======================================================================

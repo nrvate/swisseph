@@ -148,6 +148,7 @@ worst were in code that had never executed even once.
 | 114 | A seorbel.txt element term reads a power "T5" to "T9" as nothing, "T0" as T, "T 2" as T2 times 2, a number ".0" as 1 and "1.2.3" as 1.2, all without an error | Correctness | `swemplan.c` |
 | 116 | `swe_set_astro_models()` of a version before 2.01 sets the tidal acceleration but publishes only the SID group, so the default context's next sync puts the automatic term back (this fork's) | Correctness | `swephlib.c` |
 | 118 | The path setter (this fork's code): a context's first tidal term opens the default path's moon file and the setter overwrites that FILE (106 descriptors after 100 contexts); the setters resolve the automatic tidal term before their new state, so `swe_get_tid_acc()` reports a dropped JPL file's; the same path again never sees a moon file installed since; the first-call warning probe opens the planet file the calculation then opens again | Correctness / Resources | `sweph.c`, `sweph.h` |
+| 122 | `swe_set_ephe_fallback()` belongs to no configuration group: another thread on the default context, and a context made after it, keep `SE_EPHE_FALLBACK`'s value, refusing where the setting allows Moshier or the reverse; a first `swe_get_ephe_fallback()` on a thread reads 0 with the variable set (this fork's) | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweconfig.h` |
 | 109 | Moshier's fictitious bodies, fixed stars and apparent light time stay heliocentric, and its heliocentric Moon's speed is off its positions | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 | 117 | `swe_calc()`'s mean node and mean apogee speeds divide by 0.001 a step that is not 0.001 | Correctness | `sweph.c` |
 | 121 | A sefstars.txt that failed to load is reread and reparsed by every later star call, a missing one searched for on every call | Performance / files | `sweph.c`, `sweph.h` |
@@ -7463,6 +7464,63 @@ configuration, bug 101's -25.80 until the next delta t, bug 103's reopening
 path), none by these. G24 `path_setter_118`: the 100 contexts' descriptors
 and the late moon file's delta t, 0 in both builds, 2 before the fix.
 G2, G24, G91, G97, G100, G102, G106 and G109 pass.
+
+## 122. `swe_set_ephe_fallback()` belongs to no configuration group, so another thread never sees it (this fork's)
+
+**Severity: Correctness (behaviour: a Swiss request without its file refused where the setting allows Moshier, or answered from Moshier where it refuses)**
+**Where:** `sweph.c`: `swe_set_ephe_fallback_r()`, `swe_get_ephe_fallback_r()`, `swe_close()`; `sweconfig.c`, `sweconfig.h`
+
+Every other setter publishes its group to the shared configuration, which
+the other threads on the default context adopt at their next sync and a
+new context inherits. `swe_set_ephe_fallback_r()` wrote the context's
+field and published nothing, so the setting stayed on the thread that made
+it. With `SE_EPHE_FALLBACK` unset, the main thread read 1 after
+`swe_set_ephe_fallback(1)` and a second thread 0, and the second thread's
+Swiss Mars at J2000 without `sepl_18.se1` returned -1 where the main
+thread's returned 4 (Moshier). With the variable set, `swe_set_ephe_fallback(0)`
+left the second thread answering from Moshier. A context made by
+`swe_ctx_new()` after the setting took the variable's value as well. And
+`swe_get_ephe_fallback()` as a thread's first call read the context before
+anything had initialised it: 0 with the variable set (bug 101's shape, for
+`swe_get_tid_acc()`).
+
+**Fix, as done here** (not behind `SWE_UPSTREAM_COMPAT`: the setting, the
+strict refusal it switches off and the configuration layer that shares it
+are all this fork's, active in both builds, and upstream has no such call
+-- the `#else` would restore this fork's defect, not upstream's behaviour,
+as with entry 83): the setting is the configuration group
+SWI_CFG_FALLBACK, captured, merged, adopted and inherited like the others;
+the master's default for it, armed at the first publish, is the
+variable's, as a fresh context's is, so a setter of another group does not
+turn a thread strict. Adopting it invalidates nothing, as the setter
+itself does not: the policy is read at the end of each calculation. The
+getter initialises and syncs first. `swe_close()` drops the master and
+the groups a context owns, but keeps the setting's value in the context
+(`ctx_release()` does not reset it), so it keeps owning that group: without
+this, a 1 set before `swe_close()` was read back 0 after the next
+`swe_set_ephe_path()` or `swe_set_topo()`, a setting lost that the
+unpublished field never lost.
+
+G119 `tests/fbshare.c`: 28 forked scenarios with a second thread: the
+variable unset and set, the setting 0 and 1, set before and after the
+thread starts and before `swe_close()`; explicit contexts made before and
+after the setting and set to their own value. Each reads the setting back
+and asks for a Swiss Mars in a directory of links without `sepl_18.se1`:
+refused or answered from Moshier by it. 28 pass. Before the fix 9 fail, the
+compat build 9; with the publish but without `swe_close()` keeping the
+group, 2. No compat difference, so no G24 case. G109, G113, G102, G2,
+check-ctx and G24 pass.
+
+Noticed, not fixed: `swi_config_reset()` (`swe_close()`) zeroes the master's
+generation, so a thread that had synced at generation N misses the Nth
+publish after the close: `swe_set_delta_t_userdef(0.001)`, a second thread
+computes, `swe_close()`, `swe_set_delta_t_userdef(0.002)`, and the second
+thread still answers 0.001. And a setting `swe_close()` keeps in the
+context is reverted to the default by the next sync after any other
+setter: `swe_set_delta_t_userdef(0.001)`, `swe_close()`, delta t at J2000
+0.001 days, then after a `swe_set_topo()` 0.000739 (computed). The lapse
+rate and nutation interpolation, which `ctx_release()` keeps too, take the
+same path through `swi_config_apply()` (read, not measured).
 
 ## How these were found
 

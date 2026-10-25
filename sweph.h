@@ -1108,6 +1108,10 @@ struct epsilon {
  *     blind to a moon file installed since, and the first-call probe's
  *     second open are all in this fork's code (bugs 101, 103, 107, 110) and
  *     absent under the switch; G24 asserts both builds clean, G115)
+ *   - (nothing for UPSTREAM-BUGS 122: swe_set_ephe_fallback() published as
+ *     a configuration group, so another thread on the default context and
+ *     a new context see it, is in both builds; the setting is this fork's
+ *     and upstream has no such call; G119)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

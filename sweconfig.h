@@ -119,6 +119,7 @@ struct swe_config {
   AS_BOOL is_tid_acc_manual;
   AS_BOOL delta_t_userdef_is_set;
   AS_BOOL do_interpolate_nut;
+  AS_BOOL ephe_fallback;          /* swe_set_ephe_fallback() (bug 122) */
 
   /* Bumped on every published change. Compared with != only, so wrapping
    * after 2^32 configuration changes is harmless. Never written by a
@@ -155,7 +156,8 @@ struct swe_config {
 #define SWI_CFG_DELTAT   0x10   /* delta_t_userdef*                      */
 #define SWI_CFG_NUT      0x20   /* do_interpolate_nut                    */
 #define SWI_CFG_LAPSE    0x40   /* const_lapse_rate                      */
-#define SWI_CFG_ALL      0x7f
+#define SWI_CFG_FALLBACK 0x80   /* ephe_fallback                         */
+#define SWI_CFG_ALL      0xff
 
 /* Copy this thread's live configuration out of swed into *c.
  * Does not touch the cache half of topd. */

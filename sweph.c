@@ -2166,8 +2166,14 @@ void CALL_CONV swe_close_r(swe_ctx *ctx)
 void CALL_CONV swe_close(void)
 {
   swe_ctx *ctx = swi_default_ctx();
+  /* bug 122: the fallback setting outlives the close (ctx_release() keeps
+   * it), so this context keeps owning it; dropped with the rest, the next
+   * sync after any other setter took the variable's value: 1 set, then
+   * swe_close() and swe_set_topo(), read 0. */
+  int32 own_fallback = ctx->cfg_local & SWI_CFG_FALLBACK;
   swe_close_r(ctx);
   swi_config_reset(ctx);
+  ctx->cfg_local |= own_fallback;
 }
 
 /* sets ephemeris file path. 
@@ -2658,6 +2664,16 @@ void CALL_CONV swe_set_ephe_fallback_r(swe_ctx *ctx, int allow)
    * same reason. */
   swi_init_swed_if_start(ctx);
   ctx->ephe_fallback = allow ? TRUE : FALSE;
+  /* Upstream bug 122 (this fork's, as the setting is, so not behind
+   * SWE_UPSTREAM_COMPAT): the setting belonged to no configuration group
+   * and was never published. With SE_EPHE_FALLBACK unset the main thread
+   * read 1 after swe_set_ephe_fallback(1) and a second thread 0, its Swiss
+   * Mars at J2000 without sepl_18.se1 refused (-1) where the main thread's
+   * answered from Moshier (4); with the variable set, a setting of 0 left
+   * the second thread on Moshier; a context made after the setting took
+   * the variable's value, not the setting. It is the FALLBACK group now,
+   * published as every other setter's, its default the variable's. */
+  swi_config_publish(ctx, SWI_CFG_FALLBACK);
 }
 
 void CALL_CONV swe_set_ephe_fallback(int allow)
@@ -2667,6 +2683,11 @@ void CALL_CONV swe_set_ephe_fallback(int allow)
 
 int CALL_CONV swe_get_ephe_fallback_r(swe_ctx *ctx)
 {
+  /* Bug 122, as bug 101 for swe_get_tid_acc_r(): as a first call on a
+   * thread this read the context before anything had initialised it, 0
+   * with SE_EPHE_FALLBACK=1, and before the sync that brings another
+   * thread's setting in. It initialises and syncs first now. */
+  swi_init_swed_if_start(ctx);
   return ctx->ephe_fallback ? 1 : 0;
 }
 
