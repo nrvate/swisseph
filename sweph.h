@@ -1329,6 +1329,11 @@ struct epsilon {
  *     instant, so a place over its light time after the step without
  *     them (Mars 1.23e-5 deg), the true Sun, given 0, at every date after
  *     it (UPSTREAM-BUGS 161, G141)
+ *   - SEFLG_JPLHOR_APPROX's offset in right ascension turning the position
+ *     about the pole and not the velocity, so the speeds were off their
+ *     places' rate by the offset times the transverse velocity: the Moon's
+ *     latitude 1.46e-6 deg/day, Mars's right ascension 1.25e-7, Mars's
+ *     distance 7.2e-9 AU/day (UPSTREAM-BUGS 162, G141)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

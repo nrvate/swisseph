@@ -1352,7 +1352,10 @@ check-pctredge: pctredge
 # SEMOD_JPLHORA_1 after the step, within the light time too, and the place
 # at the step its left side's, for the Sun, the Moon, Mars, Saturn,
 # Polaris, the true Sun and Mars, the topocentric Moon and heliocentric
-# Mars, and SEFLG_SPEED3 at the step (UPSTREAM-BUGS 161).
+# Mars, and SEFLG_SPEED3 at the step (UPSTREAM-BUGS 161). And their speeds
+# are their places' rate, the velocity turned by the offset as the
+# position is, against five-point differences at binary instants under
+# SEMOD_JPLHORA_1 and _3 (UPSTREAM-BUGS 162).
 check-jplhorbias: jplhorbias
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./jplhorbias $(EPHE)
 

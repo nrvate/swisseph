@@ -194,6 +194,7 @@ worst were in code that had never executed even once.
 | 171 | An eop_finals.txt that breaks off (a day missing after those it adds) makes `load_dpsi_deps()` set -3, which `plaus_iflag()` takes as no IERS corrections at all: a complete eop_1962_today.txt is thrown away with it, against upstream's own comment ("no error, as we do have data"), and SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX, dpsi 4.20e-2" off on G134's fixtures | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 172 | A failed allocation of the IERS corrections' tables sets ERR, eop_1962_today.txt's "not found", so SEFLG_JPLHOR's warning names a missing file that had just been opened | Robustness (message) | `sweph.c`, `sweph.h` |
 | 161 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, on a JPL file of DE 403 or later, `swi_bias()` puts the frame bias (23 mas) and the Horizons offset in right ascension (-51.26 mas) in from tjd >= 1962 Jan 20, where the precession and nutation change after it, and is given the instant the body was read at, the true Sun 0: over the light time after the step every body 1.1e-5 deg off (the true Sun at every date after it), at the step Polaris 4.95e-5 deg in right ascension, SEFLG_SPEED3 0.162 deg/day | Correctness | `sweph.c`, `swephlib.c` |
+| 162 | Under SEFLG_JPLHOR_APPROX (`SEMOD_JPLHORA_1`, and `_3` after 1962 Jan 20), on a JPL file of DE 403 or later, `swi_approx_jplhor()` turns the position about the pole by the Horizons offset in right ascension (-51 to -53 mas) and not the velocity: speeds off their places' rate, the Moon's latitude 1.46e-6 deg/day, its right ascension 5.6e-7, Mars's 1.25e-7, the Sun's latitude 1.02e-7; distance rates 7.2e-9 AU/day on Mars | Correctness | `swephlib.c` |
 
 ---
 
@@ -9712,7 +9713,8 @@ Noticed, not fixed:
   by the offset times rho'/rho, estimated 1.4e-7 deg/day on Mars near
   quadrature (2.5e-7 rad times 0.01/day), 6e-8 on the Moon; after 1962
   under mode 3, and always under `SEMOD_JPLHORA_1`, with DE >= 403. Not
-  measured here.
+  measured here. Measured and fixed as entry 162 (the table's rate, 3.8e-10
+  deg/day at most, left out).
 
 ## 140. The topocentric site is placed by UT1 = TT - delta t rounded to a double: a staircase in delta t, whose rate leaves out delta t's that the velocity carries, 1.8e-8 to 4.7e-8 deg/day on an orbit 0.01 AU from the Earth
 
@@ -10967,6 +10969,90 @@ files the fallback reaches, against `SEMOD_JPLHORA_1`, 0 deg shipped
 (1.23e-5 before the fix), 1.23e-5 compat; barycentric Polaris on de200
 at the step against 2^-20 day before it less its motion, 8.2e-14 shipped
 (4.92e-5 before), 4.92e-5 compat.
+
+## 162. `swi_approx_jplhor()` turns the position by the Horizons offset in right ascension and not the velocity: the Moon's latitude speed 1.46e-6 deg/day off its places' rate, Mars's right ascension 1.25e-7
+
+**Severity: Correctness (with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_1` at every date and under `SEMOD_JPLHORA_3`, the default, after 1962 Jan 20, on a JPL file of DE 403 or later: speeds off their places' rate by the offset times the transverse velocity, the Moon's latitude 1.46e-6 deg/day and its right ascension 5.6e-7, Mars's right ascension 1.25e-7, the Sun's latitude 1.02e-7; distance rates 7.2e-9 AU/day on Mars, 4.1e-9 on the Sun)**
+**Where:** `swephlib.c`: `swi_approx_jplhor()`
+
+Entry 153's second noticed item (estimated there at 1.4e-7 deg/day on
+Mars, 6e-8 on the Moon). `swi_bias()` turns the position and the velocity
+by the frame bias's matrix, and `swi_approx_jplhor()` then (before it,
+backward) turns the position about the pole by the Horizons offset in
+right ascension -- -51.257 mas before 1962 Jul 1 (`DCOR_RA_JPL_TJD0`), a
+yearly table to 2012, -52.255 mas after it -- by `swi_cartpol()`, the
+longitude plus the offset, and `swi_polcart()`, which convert the
+position alone. The velocity stayed unturned, off by the offset (2.5e-7
+rad) times z x v: in right ascension the offset times rho'/rho (rho the
+distance from the pole's axis), in declination and the ecliptic latitude
+about the offset times the right ascension's motion, in the distance rate
+the offset times rho^2 alpha' / r. Reached as entry 161: on a JPL file of
+DE 403 or later, or the Swiss files through the fallback, by the Sun, the
+Moon, the planets, the fixed stars (too slow to show: Polaris within
+1.84e-9) and the topocentric site's velocity (`swi_get_observer()`,
+backward); not under `SEMOD_JPLHORA_2`, which has no offset.
+
+Measured on de200 read as DE 431 (as entry 161) and on the Swiss files
+through the fallback, alike, the default models, against five-point
+differences of the places over 2^-6 day centred at binary-fraction
+instants on seven dates 1950-2024 (the topocentric Moon nine-point over
+2^-7, delta t 2^-11 day), under `SEMOD_JPLHORA_1` and after the step
+`_3`: the Moon's ecliptic latitude speed 1.46e-6 deg/day off, its right
+ascension 5.6e-7 (the topocentric Moon's alike), Mars's longitude 1.17e-7
+and right ascension 1.25e-7, the Sun's latitude 1.02e-7, Saturn's right
+ascension 2.6e-8, heliocentric Mars's latitude 5.8e-8; the distance rates
+7.2e-9 AU/day on Mars, 5.1e-9 on Saturn, 4.1e-9 on the Sun, 1.5e-10 on
+the Moon. With the bias alone (SEFLG_JPLHOR_APPROX off) the same within
+1.1e-9 deg/day (the Moon on the Swiss files) and 4e-13 AU/day.
+
+**Fix, as done here:** with SEFLG_SPEED the velocity is turned about the
+pole by the position's angle, (cos a v_x - sin a v_y, sin a v_x + cos a
+v_y), a the offset (negative backward); the position's path is
+upstream's. The table's own rate is left out: its slope is at most 0.496
+mas a year, 3.8e-10 deg/day, under the residual floor. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, an addition (upstream's code is unchanged).
+- After: within 3.6e-10 deg/day (the topocentric Moon 8.5e-10, its
+  reference's own), the distance rates within 1.7e-13 AU/day. What is
+  left, 2.6e-10 to 3.0e-10 deg/day in longitude and right ascension on
+  every body, is the table's rate.
+- No hot path: a sine, a cosine and four products under
+  SEFLG_JPLHOR_APPROX with SEFLG_SPEED. `perf stat` instructions, as
+  entry 161's: 15887299279 on the tip, 15888745518 with both fixes.
+
+G141 `tests/jplhorbias.c`, extended with 36 checks: the nine bodies'
+speeds, ecliptic and equatorial, against five-point differences over
+2^-6 day (the topocentric Moon nine-point over 2^-7) centred at
+binary-fraction instants on the seven dates under `SEMOD_JPLHORA_1` and
+the six after the step under `_3`, none within a day of a year of the
+offset's table; the worst of the two angles within 1e-8 deg/day, of the
+distance within 1e-11 AU/day (not Polaris's). 73 checks. Measured as
+above. Before the fix 32 of the 36 fail, Polaris passing; the upstream
+build fails all 36, by these and its own speed defects that earlier
+entries fixed (ecliptic speeds 1.5e-5 to 5.3e-5 deg/day, the topocentric
+Moon 4.4e-3, Saturn's distance rate 1.9e-5 AU/day), 61 of 73 in all.
+G24 `jplhora_vel_off`: true Mars, J2000 equatorial cartesian (no frame
+rate in it), on the Swiss files the fallback reaches, at 2000 Jan 1.797,
+the velocity against the five-point difference over 2^-6 day: 1.08e-12
+AU/day shipped (4.57e-9 before the fix), 4.57e-9 compat. With entries
+161 and 162 G141 (73), G24 (both builds), G139 (check-framestep), G122
+(check-nutintp) 350, G134 (check-eopfollow) 100, G19 (check-eopload), G75
+(check-staraberr) and G40 (check-moonspeed) pass.
+
+Noticed, not fixed:
+- The offset table is interpolated backwards: (t - t0) (dcor[t0] -
+  dcor[t1]) + dcor[t0] runs away from the next year's value, and the
+  offset jumps by 2 (dcor[t1] - dcor[t0]) at every year of the table
+  (`DCOR_RA_JPL_TJD0` + 365.25 k, 1963-2012): up to 0.99 mas, 2.8e-7 deg
+  in right ascension (Polaris's measured 1.03 mas at JD 2453917.5), its
+  slope between the wrong way. Both builds.
+- Its rate, the slope as interpolated, is left out of the speeds: at most
+  3.8e-10 deg/day, under the floor (above).
+- A JPL request that falls to the Swiss files keeps SEFLG_JPLHOR_APPROX,
+  and their DE 431 takes the bias and the offset, where `plaus_iflag()`
+  drops the flag from a Swiss request: the same Swiss place 52.9 mas
+  apart in right ascension (Mars at J2000) as asked of SEFLG_JPLEPH with
+  the fallback or of SEFLG_SWIEPH, the return flag naming the
+  approximation in the first.
 
 ## How these were found
 

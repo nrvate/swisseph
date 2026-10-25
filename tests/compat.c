@@ -3509,6 +3509,42 @@ out:
   return r;
 }
 
+/* UPSTREAM-BUGS 162: SEFLG_JPLHOR_APPROX's offset in right ascension turns
+ * the position about the pole and not the velocity. True Mars, J2000
+ * equatorial cartesian (no frame rate in it), on the Swiss files (DE 431)
+ * that SEFLG_JPLEPH falls to with the JPL file missing and the fallback
+ * allowed, at a binary instant in 2000: the velocity against a five-point
+ * difference of the positions over 2^-6 day, the largest component,
+ * AU/day; upstream 4.57e-9. -1 if a call fails. */
+static double jplhora_vel_off(void)
+{
+  const double t = floor(2451545.3 * 256) / 256, h = 1.0 / 64;
+  const int32 fl = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX | SEFLG_TRUEPOS | SEFLG_J2000
+                   | SEFLG_EQUATORIAL | SEFLG_XYZ;
+  double x[6], f[5][6], r = -1;
+  char serr[256];
+  int32 rf;
+  int i, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_ephe_fallback_r(c, 1);
+  swe_set_jpl_file_r(c, "de-none.eph");
+  rf = swe_calc_r(c, t, SE_MARS, fl | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5 && rf >= 0; k++)
+    if (k != 2 && swe_calc_r(c, t + (k - 2) * h, SE_MARS, fl, f[k], serr) < 0)
+      rf = -1;
+  if (rf >= 0 && (rf & SEFLG_JPLHOR_APPROX))
+    for (i = 0, r = 0; i < 3; i++) {
+      double d = (8 * (f[3][i] - f[1][i]) - (f[4][i] - f[0][i])) / (12 * h);
+      if (fabs(x[3 + i] - d) > r)
+        r = fabs(x[3 + i] - d);
+    }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3911,7 +3947,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4045,6 +4081,7 @@ int main(int argc, char **argv)
   eopjpl = eop_jpl_kept_off();
   biaslt = jplhora_bias_side_off(0);
   biasstep = jplhora_bias_side_off(1);
+  biasvel = jplhora_vel_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -5104,6 +5141,14 @@ int main(int argc, char **argv)
   else {
     printf("  bias at the step       %.2e deg FAIL: expected %s\n",
            biasstep, WANT_DEFECT ? "> 1e-6" : "< 1e-9");
+    bad++;
+  }
+
+  if (biasvel >= 0 && (WANT_DEFECT ? (biasvel > 1e-9) : (biasvel < 1e-11)))
+    printf("  Horizons offset rate   %.2e AU/day OK\n", biasvel);
+  else {
+    printf("  Horizons offset rate   %.2e AU/day FAIL: expected %s\n",
+           biasvel, WANT_DEFECT ? "> 1e-9" : "< 1e-11");
     bad++;
   }
 

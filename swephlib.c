@@ -2937,6 +2937,20 @@ static void swi_approx_jplhor(swe_ctx *ctx, double *x, double tjd, int32 iflag, 
   else
     x[0] += dofs * DEGTORAD;
   swi_polcart(x, x);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 162: the position was turned about the pole by the
+   * offset and the velocity was not, so the speeds were not the rate of
+   * the places: off by the offset (2.5e-7 rad) times the transverse
+   * velocity, the Moon's latitude speed 1.46e-6 deg/day, its right
+   * ascension 5.6e-7, Mars's 1.25e-7, the Sun's latitude 1.0e-7, Mars's
+   * distance 7.2e-9 AU/day. The velocity is turned by the same angle.
+   * (The table's own rate, at most 3.8e-10 deg/day, is left out.) */
+  if (iflag & SEFLG_SPEED) {
+    double a = (backward ? -dofs : dofs) * DEGTORAD, ca = cos(a), sa = sin(a), vx = x[3];
+    x[3] = ca * vx - sa * x[4];
+    x[4] = sa * vx + ca * x[4];
+  }
+#endif
 }
 
 /* GCRS to J2000 */

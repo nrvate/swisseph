@@ -1,7 +1,7 @@
 /* jplhorbias.c -- G141: SEFLG_JPLHOR_APPROX's frame bias and Horizons
  * offset in right ascension, on a JPL file of DE 403 or later, take the
  * side of SEMOD_JPLHORA_3's step at 1962 Jan 20 that the precession and
- * nutation take.
+ * nutation take, and the speeds are their places' rates.
  *
  * The defect (UPSTREAM-BUGS 161): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), swi_precess(), swi_epsiln() and
@@ -28,7 +28,8 @@
  * the place against its extrapolation from the left, a five-point one over
  * 2^-12 day. Both within 1e-9 deg; 36 checks. And SEFLG_SPEED3 at the
  * step, true Mars's longitude speed against the five-point difference
- * backward over 2^-8 day, within 1e-5 deg/day: 37 checks.
+ * backward over 2^-8 day, within 1e-5 deg/day: 37 checks. Delta t is set
+ * to 2^-11 day, so that the topocentric site's UT1 is exact.
  *
  * Measured after the fix: SEMOD_JPLHORA_3 is SEMOD_JPLHORA_1 bit for bit
  * after the step; at the step within 3.0e-11 deg (the Moon); SPEED3
@@ -39,7 +40,29 @@
  * the topocentric Moon 1.7e-7 (its site's frame); SPEED3 0.162 deg/day.
  * The upstream build fails 25: those, and at the step Mars and
  * heliocentric Mars by 1.3e-9 and the topocentric Moon by 1.1e-6, its own
- * defects that earlier entries fixed. Run as
+ * defects that earlier entries fixed.
+ *
+ * And the speeds (UPSTREAM-BUGS 162): swi_approx_jplhor() turned the
+ * position about the pole by the offset and not the velocity, so a speed
+ * was off its places' rate by the offset (2.5e-7 rad) times the
+ * transverse velocity, under SEMOD_JPLHORA_1 at every date and under
+ * SEMOD_JPLHORA_3 after the step. The check: the nine's speeds against
+ * five-point differences of their places over 2^-6 day (the topocentric
+ * Moon nine-point over 2^-7, its diurnal parallax's curvature), centred at
+ * binary-fraction instants on seven dates 1950-2024 under SEMOD_JPLHORA_1
+ * and the six after the step under SEMOD_JPLHORA_3, none within a day of
+ * a year of the offset's table; the worst of the two angles within 1e-8
+ * deg/day and of the distance within 1e-11 AU/day (not Polaris's): 36
+ * checks, 73 in all. Measured after the fix within 8.5e-10 deg/day (the
+ * topocentric Moon; the others 3.6e-10, nearly all of it the table's own
+ * rate, left out, at most 3.8e-10), 1.7e-13 AU/day. Before it 32 of the
+ * 36 fail, Polaris passing: the Moon's latitude speed 1.46e-6 deg/day,
+ * Mars's right ascension 1.25e-7, the Sun's latitude 1.02e-7, Saturn's
+ * 2.6e-8, heliocentric Mars's 5.8e-8; the distances' 7.2e-9 AU/day
+ * (Mars), 4.1e-9 (the Sun). The upstream build fails all 36, by these and
+ * its own speed defects that earlier entries fixed (ecliptic speeds
+ * 1.5e-5 to 5.3e-5 deg/day, the topocentric Moon 4.4e-3, Saturn's
+ * distance 1.9e-5 AU/day). Run as
  *   jplhorbias EPHEDIR
  */
 #include <math.h>
@@ -97,6 +120,7 @@ static swe_ctx *open_ctx(const char *ephe, const char *models)
   swe_set_jpl_file_r(c, "de200.eph");
   swe_set_topo_r(c, 8.55, 47.37, 400);
   swe_set_astro_models_r(c, mod, 0);
+  swe_set_delta_t_userdef_r(c, ldexp(1, -11));	/* the site's UT1 exact */
   if (swe_calc_r(c, 2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr) < 0 || c->jpldenum != 200) {
     printf("  ERROR de200.eph: DE %d %s\n", (int) c->jpldenum, serr);
     swe_ctx_free(c);
@@ -192,6 +216,60 @@ static int side(swe_ctx *c3, swe_ctx *c1)
   return 0;
 }
 
+/* the speeds against five-point differences of the places over 2^-6 day
+ * (the topocentric Moon nine-point over 2^-7, its diurnal parallax's
+ * curvature), centred at binary-fraction instants: SEMOD_JPLHORA_1 at all
+ * seven dates, SEMOD_JPLHORA_3 at the six after the step; none within a
+ * day of a year of the offset's table */
+static int speeds(swe_ctx *c3, swe_ctx *c1)
+{
+  static const double dates[7] = { 2433282.8, 2437700.3, 2444239.8, 2447000.3,
+    2451545.3, 2455000.6, 2460400.3 };
+  static const double c5[2] = { 2.0 / 3, -1.0 / 12 };
+  static const double c9[4] = { 4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280 };
+  int m, b, f, i, k, j;
+  printf("  162: |speed - reference|, worst over the dates: longitude/latitude deg/day, distance AU/day\n");
+  for (m = 0; m < 2; m++) {
+    swe_ctx *c = m ? c3 : c1;
+    printf("   %s\n", m ? "SEMOD_JPLHORA_3, after the step" : "SEMOD_JPLHORA_1");
+    for (b = 0; b < NB; b++)
+      for (f = 0; f < 2; f++) {
+        int32 xf = f ? SEFLG_EQUATORIAL : 0;
+        int nh = (b == B_TOPOMOON) ? 4 : 2;
+        double h = (b == B_TOPOMOON) ? 1.0 / 128 : 1.0 / 64, wa = 0, wd = 0, x[6], fk[9][6];
+        for (i = 0; i < 7; i++) {
+          double t = floor(dates[i] * 256) / 256;
+          if (m == 1 && t <= TS)
+            continue;
+          if (place(c, b, t, xf, x) < 0)
+            return -1;
+          for (k = 0; k <= 2 * nh; k++)
+            if (place(c, b, t + (k - nh) * h, xf, fk[k]) < 0)
+              return -1;
+          for (j = 0; j < 3; j++) {
+            double d = 0;
+            for (k = 1; k <= nh; k++)
+              d += (nh == 2 ? c5 : c9)[k - 1]
+                   * (j == 0 ? dang(fk[nh + k][0], fk[nh - k][0]) : fk[nh + k][j] - fk[nh - k][j]);
+            d = fabs(x[3 + j] - d / h);
+            if (j < 2 && d > wa)
+              wa = d;
+            if (j == 2 && b != B_POLARIS && d > wd)
+              wd = d;
+          }
+        }
+        printf("    %-17s %s  %.2e  %.2e\n", BN[b], f ? "equ" : "ecl", wa, wd);
+        n++;
+        if (!(wa <= 1e-8) || !(wd <= 1e-11)) {
+          bad++;
+          printf("    FAIL %s %s %s: %.2e deg/day, %.2e AU/day > 1e-8, 1e-11\n",
+                 m ? "JPLHORA_3" : "JPLHORA_1", BN[b], f ? "equatorial" : "ecliptic", wa, wd);
+        }
+      }
+  }
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   swe_ctx *c3, *c1;
@@ -200,10 +278,12 @@ int main(int argc, char **argv)
     fprintf(stderr, "usage: jplhorbias EPHEDIR\n");
     return 2;
   }
-  printf("G141: SEFLG_JPLHOR_APPROX's bias and Horizons offset on DE 431 take their frame's side and instant\n");
+  printf("G141: SEFLG_JPLHOR_APPROX's bias and Horizons offset on DE 431: their frame's side and instant, the speeds' rate\n");
   c3 = open_ctx(argv[1], "0,0,0,0,0,0,0,0");
   c1 = open_ctx(argv[1], "0,0,0,0,0,0,1,0");
   r = (c3 == NULL || c1 == NULL) ? -1 : side(c3, c1);
+  if (r == 0)
+    r = speeds(c3, c1);
   if (c3 != NULL)
     swe_ctx_free(c3);
   if (c1 != NULL)
