@@ -111,6 +111,7 @@ worst were in code that had never executed even once.
 | 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, and its aberration rate is the centre's whole velocity change over the light time | Correctness | `sweph.c` |
 | 75 | The true node's and osculating apogee's speeds divide by the step asked for, not the step taken | Correctness | `sweph.c` |
 | 71 | Every other cache emptied by an instant of 0 answers for JD 0, and sweph()'s forced EMB is the Earth there | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
+| 81 | A fictitious body's light-time position is read at the rounded instant | Correctness | `sweph.c` |
 
 ---
 
@@ -2483,9 +2484,11 @@ but Vulcan, Waldemath and Mercury within 4e-10), most of it the
 reference's own noise: Vulcan's mean anomaly reaches 3e6 degrees at T =
 5, rounded to 5e-10 degree, which moves each position along the orbit.
 Apparent positions are the body at t - tau, not a binary instant, and
-their differences carry ~1e-7 deg/day of the instant's rounding on
-Vulcan, 3e-7 on Waldemath; ecliptic-of-date output keeps the ~5e-8
-deg/day latitude-speed residual every planet has there.
+their differences carried the instant's rounding: over 2^-7 day 3.4e-7
+deg/day on Vulcan heliocentric and 1e-6 to 5.5e-6 on Waldemath (an
+earlier draft said 3e-7; measured with too few dates), fixed as entry 81;
+ecliptic-of-date output keeps the ~5e-8 deg/day latitude-speed residual
+every planet has there.
 
 G48 `tests/orbelspeed.c`: Vulcan, Waldemath, Selena, Mercury of date,
 Proserpina, Harrington and a set with T terms on everything but the
@@ -3840,6 +3843,59 @@ plus 2e-8 deg (largest residual 7.6e-11), speeds within 2e-7 deg/day
 The upstream build fails 3342 rows; ts20 before this fix failed 4176. G24
 `nodaps_jd0_off`: Mars's heliocentric osculating node at 0 against 1e-9,
 0 deg shipped, 2.5e-2 compat. G24, G42, G47, G57 and G66 pass.
+
+## 81. A fictitious body's light-time position is read at the rounded instant
+
+**Severity: Correctness (3.9e-8 deg on Waldemath's apparent position, a jitter that a five-point difference over 2^-7 day turns into 1e-6 to 5.5e-6 deg/day; 3.4e-7 deg/day on Vulcan heliocentric, 6.7e-8 on Selena under Moshier)**
+**Where:** `sweph.c`: `app_pos_etc_plan_osc()`
+
+Entry 63's defect on the fictitious bodies' path. The light time is solved
+on the orbit (entry 26, G27), the elements read at t = teval - dt rounded to
+a double, up to half an ulp of the date (4.7e-10 day at the present) from
+the emission instant. An Earth-centred set's focus is the Earth at t, which
+moves 0.0172 AU/day while the observer stays at teval: one ulp is 8e-12 AU,
+7e-8 deg seen at Waldemath's 0.0065 AU. Its apparent place is a sawtooth
+whose period is the time its light time takes to change by one ulp (0.0015
+day at a radial speed of 5.5e-5 AU/day). Found surveying bodies 40..58 while
+chasing Zeus's 3.3e-7 / 1.3e-6 deg/day at year 0 (that one is the
+reference: Zeus 0.18 deg from the Sun's centre, behind the disc, where
+`meff()`'s table makes the deflection piecewise linear; over 2^-9..2^-15 day
+the residual is 5e-9 to 8e-9, entry 74's one-sided deflection rate).
+Measured on ts20, 61 dates 1700..2300 and -300..+300, five-point
+differences at the best of 2^-6, 2^-7 and 2^-8 day: Waldemath 1.9e-6 deg/day
+(Swiss, JPL), 1.3e-6 (Moshier), Selena 1.3e-7 (Moshier), Vulcan heliocentric
+3.4e-7, against their true positions' 1.1e-8, 2.6e-10 and 5.2e-8. Selena's
+light time hardly changes (a circle about the Earth), so its rounding is
+nearly the same at every instant; it shows on Moshier at year 40.
+
+**Fix, as done here:** after the loop, as for a planet, the body is moved
+along its barycentric velocity at teval (`pdp->x`, there with or without
+SEFLG_SPEED) by the rounding, (teval - t) - dt, heliocentric and
+Earth-centred sets alike. Positions move by <= 3.9e-8 deg (Waldemath),
+4.3e-9 (Selena), 6.6e-10 (Vulcan), <= 1.3e-12 on the other sets (200
+dates 1700..2300); with and without SEFLG_SPEED they stay identical. Three
+multiply-adds per fictitious call; the planets never reach this path.
+After: Waldemath at 1980, 5.5e-6 -> 1.1e-9 deg/day over 2^-7 day. The rest
+is entry 48's floor, the elements' own rounding, which the true positions
+share: Vulcan heliocentric 1.4e-7 deg/day apparent against 5.2e-8 true
+(fourth differences 4.0e-9 and 3.1e-9 deg), and before 1 CE more (Vulcan's
+mean anomaly at -200 is 1.6e7 deg; its true positions are 3.4e-7 off their
+own differences over 2^-9 day). Zeus's behind-disc residual is not this
+defect and is unchanged.
+
+G80 `tests/fictltround.c`: Vulcan heliocentric and geocentric, Selena and
+Waldemath, apparent, Swiss and Moshier, thirteen dates 1700..2300: speeds
+against five-point differences over 2^-7 and 2^-9 day within 5e-7
+(Vulcan heliocentric; measured 1.4e-7), 1e-7 (Vulcan geocentric, Waldemath;
+2.2e-8) and 5e-9 (Selena; 2.8e-9) deg/day, and fourth differences of the
+positions at eight instants 2^-9 day apart within 1e-8 (Vulcan
+heliocentric; 4.0e-9) and 2e-9 deg (4.7e-10). The build before the fix
+fails 14 checks on all eight rows (Waldemath 1.5e-5 deg/day and 2.3e-7 deg,
+Vulcan heliocentric 2.3e-6 and 3.7e-8, Selena 8.5e-9 deg/day Swiss and 6.7e-8 Moshier); the
+upstream build fails all eight rows by bug 48's speeds. G24
+`waldemath_lt_round_off`: Waldemath's geocentric longitude speed over 2^-8
+day at nine dates, 1.65e-8 deg/day shipped (5.3e-6 before the fix), 1.2e-2
+compat. G48, G59, G62, G64 pass.
 
 ## How these were found
 

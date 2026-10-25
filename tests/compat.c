@@ -1036,6 +1036,24 @@ static double mercury_lt_round_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 81: Waldemath's geocentric longitude speed, default
+ * flags, against a five-point difference over 2^-8 day at nine dates
+ * 1800-2335, deg/day. The elements were read at the rounded emission
+ * instant, so the Earth-centred orbit's focus jittered by the Earth's
+ * motion over an ulp of the date. Compat also has bug 48's speed. */
+static double waldemath_lt_round_off(void)
+{
+  double w = 0, d;
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 9; k++)
+    if ((d = lon_speed_off(SE_FICT_OFFSET + 18, SEFLG_SWIEPH,
+                           2378496.5 + k * 24413.7 + 0.137)) > w)
+      w = d;
+  return w;
+}
+
 /* UPSTREAM-BUGS 77: swe_calc_pctr()'s distance rate of Mercury seen from
  * Mars, default flags, against a five-point difference of its distance
  * over 2^-8 day, nine dates 1800-2335, AU/day. The aberration rate added
@@ -1303,7 +1321,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, oscspd, oscj2k, moshlt, nodjd0, staraccm;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1366,6 +1384,7 @@ int main(int argc, char **argv)
   merclr = mercury_lt_round_off();
   kronos = kronos_builtin_off();
   pctrdd = pctr_dist_rate_off();
+  waldlr = waldemath_lt_round_off();
   moshlt = mosh_lt_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
@@ -1824,6 +1843,14 @@ int main(int argc, char **argv)
   else {
     printf("  pctr distance rate     %.2e AU/day  FAIL: expected %s\n",
            pctrdd, WANT_DEFECT ? "> 1e-7" : "< 5e-10");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (waldlr > 1e-5) : (waldlr < 5e-8))
+    printf("  fict. light time, round %.2e deg/day OK\n", waldlr);
+  else {
+    printf("  fict. light time, round %.2e deg/day FAIL: expected %s\n",
+           waldlr, WANT_DEFECT ? "> 1e-5" : "< 5e-8");
     bad++;
   }
 

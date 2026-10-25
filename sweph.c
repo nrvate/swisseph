@@ -4491,6 +4491,19 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	break;
       dt = dtNew;
     }
+    /* Upstream bug 81: as a planet's (bug 63), the body was read at t =
+     * teval - dt rounded to a double, up to half an ulp of the date from
+     * the emission instant. An Earth-centred set's focus is the Earth at t,
+     * which moves 0.0172 AU/day while the observer stays at teval: one ulp
+     * (4.7e-10 day) is 8e-12 AU, 7e-8 deg on Waldemath at 0.0065 AU, a
+     * sawtooth in its apparent place that a five-point difference over
+     * 2^-7 day made 1e-6 to 5.5e-6 deg/day. Moved along the barycentric
+     * velocity at teval by the rounding, (teval - t) - dt. */
+    {
+      double eps = (pdp->teval - t) - dt;
+      for (i = 0; i <= 2; i++)
+        xx[i] += eps * pdp->x[i+3];
+    }
     dtsave_for_defl = dt;
     if (iflag & SEFLG_SPEED) {
 #else

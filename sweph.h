@@ -879,6 +879,11 @@ struct epsilon {
  *     64.81690 (0.0086 deg at 1700, 0.0169 deg at 2300 without the file),
  *     and swi_osc_el_plan()'s Kepler guess for e > 0.975 used pow(x, 1/3)
  *     = 1 and 180 for pi (rounding only; UPSTREAM-BUGS 65, G64)
+ *   - app_pos_etc_plan_osc() read a fictitious body's elements at teval -
+ *     dt rounded to a double, so an Earth-centred set's focus jittered by
+ *     the Earth's motion over an ulp of the date (3.9e-8 deg on Waldemath,
+ *     5.5e-6 deg/day on a five-point difference of its places, 3.4e-7 on
+ *     Vulcan heliocentric; UPSTREAM-BUGS 81, G80)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
