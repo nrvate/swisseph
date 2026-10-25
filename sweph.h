@@ -1803,6 +1803,13 @@ struct epsilon {
  *   - the houses of those planes without get_aya_correction(), which their
  *     sidereal places take: 3.62e-5 deg off the places under Lahiri,
  *     2.30e-4 under Krishnamurti (UPSTREAM-BUGS 272, G172, G24)
+ *   - swe_gauquelin_sector()'s methods 0 and 1 with SEFLG_TOPOCTR seeing
+ *     the place from swe_set_topo()'s observer, not geopos: the Moon at
+ *     1950, geopos Zurich, 0.126 sector off with the observer at 70 W 30
+ *     S, refused with none set (UPSTREAM-BUGS 273, G175, G24)
+ *   - swe_gauquelin_sector() answering the Earth, the sector of its
+ *     geocentric zero vector, in every method (UPSTREAM-BUGS 274, G175,
+ *     G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

@@ -293,6 +293,9 @@ worst were in code that had never executed even once.
 | 270 | `swe_house_pos()` in Sripati ('S') is Porphyry's position plus 0.5 cut by "if (hpos > 12) hpos = 1": all of house 12 and the first half of house 1 answer 1.0, tropically too (cusp 12 + 1e-4 of the house 1.000000 for 12.000003, house 12's middle 1 for 12.5) | Correctness | `swehouse.c` |
 | 271 | `swe_house_pos()` in Polich/Page ('T') stops its binary search for the place's position line at 1e-6 deg of altitude: 7.2e-8 house (2.1e-6 deg) off the line at Zurich, 1.8e-7 (5.4e-6 deg) at 60N; no closed form, Newton's steps after it take it to 1.2e-14 | Correctness | `swehouse.c` |
 | 272 | On the ecliptic of t0 and the solar system plane the sidereal places take `get_aya_correction()` (a mode's own precession model) and the houses do not: a place and a cusp at one point 3.62e-5 deg apart under Lahiri, 1.15e-4 Fagan/Bradley, 2.30e-4 Krishnamurti, Raman and Lahiri 1940 | Correctness | `swehouse.c`, `sweph.c` |
+| 273 | `swe_gauquelin_sector()` methods 0 and 1 with SEFLG_TOPOCTR see the place from `swe_set_topo()`'s observer, not from geopos: the Moon at 1950, geopos Zurich, method 0, 13.8513 with the observer at Zurich, 13.7248 at 70W 30S (0.126 sector), ERR with none set; methods 2 to 5 observe from geopos | Correctness (behaviour) | `swecl.c` |
+| 274 | `swe_gauquelin_sector()` answers the Earth OK, the sector of `swe_calc()`'s geocentric zero vector: 20.8625 at 1950, Zurich, in methods 0 and 1 (with SEFLG_HELCTR too), 17.6567 from its rise and set in methods 2 to 5; swetest's house position of the Earth with -hel likewise | Correctness (behaviour) | `swecl.c`, `swetest.c` |
+| 275 | swetest's meridian and zenith distances (-fm, -fz) are those of the place printed with SEFLG_EQUATORIAL, so the frame and centre options move them (Mars at 1.1.1950 0h UT, Zurich, MD 74.4031 plain, 75.0440 with -j2000, 40.6078 with -hel), the diff modes' those of the RA's difference; the cusps' and axes' RA, declination, MD, ZD, azimuth and altitudes those of the printed cusp in xobl[0]'s frame (-sid1: the Ascendant's ZD 69.0860, RA 171.39, altitude 20.91 for 90, 192.69, 0), the MD and ZD without a format letter of the equator the last body's, the ARMC's azimuth of its RA taken for a longitude; -fz overwrote the azimuth and altitude printed after it with the geocentric place's | Correctness (behaviour, program) | `swetest.c` |
 
 ---
 
@@ -18144,11 +18147,12 @@ Noticed, not fixed:
   `swe_set_topo()`, not geopos, where methods 2 to 5 set geopos for the
   call: the Moon at UT 2433282.5, geopos Zurich, 13.8513 with
   `swe_set_topo()` at Zurich, 13.7248 with it at 70W 30S (0.126 sector),
-  ERR "geographic position has not been set" with none.
+  ERR "geographic position has not been set" with none. Fixed as entry
+  273.
 - BEHAVIOUR. SE_EARTH, geocentric, answers OK with the sector of the zero
   vector's longitude and latitude 0 (20.8625 at 1950, as the
   heliocentric Sun's); with SEFLG_HELCTR now that, where it was the
-  heliocentric Earth's direction (10.5925).
+  heliocentric Earth's direction (10.5925). Fixed as entry 274.
 
 ## 253. swetest's house positions are `swe_house_pos()` of the place it printed: with -sid the sidereal place in the tropical frame, Mars at 1.1.1950 0h UT, Zurich, 'G', 5.3075773 for 2.6855985; the diff modes' the position of the difference
 
@@ -18233,6 +18237,228 @@ Noticed, not fixed:
   79.0773. The cusps' are taken from the printed cusp with xobl[0]: with
   -sid1 the Ascendant's ZD 69.0860 for 90.0000 and its RA 171.39 for
   192.69, where a planet's RA with -sid1 is the mean equator's (183.03).
+  Fixed as entry 275.
+
+## 273. `swe_gauquelin_sector()` methods 0 and 1 with SEFLG_TOPOCTR see the place from `swe_set_topo()`'s observer, not from geopos: the Moon at 1950, geopos Zurich, 13.8513 with the observer set at Zurich, 13.7248 at 70 W 30 S, refused with none
+
+**Severity: Correctness (behaviour: the sector of another site than the one asked, or a refusal, as the caller's `swe_set_topo()` falls; methods 0 and 1 with SEFLG_TOPOCTR, every body and star, every ephemeris)**
+**Where:** `swecl.c`: `swe_gauquelin_sector_r_body()`
+
+Entry 252's noticed item. Methods 0 and 1 compute the place with
+SEFLG_TOPOCTR by `swe_calc()` or `swe_fixstar()`, which see it from the
+context's observer, the one `swe_set_topo()` set; geopos gave only the
+latitude and the ARMC's longitude. Measured, the Moon at UT 2433282.5,
+Swiss files, geopos Zurich (8.55E, 47.37N, 400 m): method 0 13.8512698
+with `swe_set_topo()` at Zurich, 13.7248334 with it at 70W 30S (0.126
+sector), ERR "geographic position has not been set" with none; method 1
+13.9502677 and 13.8502666. Over G175's sample (the Moon, Mars and Spica
+at six dates 1800..2100, geopos and the observer at the two sites both
+ways, three ephemerides) up to 0.202 sector in method 0, 0.138 in method
+1. Methods 2 to 5 pass geopos to `swe_rise_trans()`, which makes it the
+observer of its call (`set_topo_for_this_call()`), and answer the same
+whatever is set.
+
+What the manual says: geopos holds the "geograph. long., lat., height of
+observer", and iflag is "flag for ephemeris and SEFLG_TOPOCTR" (swephprg
+16.1, 18.5.6): the sector is the one seen from geopos, in every method.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, methods 0
+and 1 with SEFLG_TOPOCTR take a copy of the context's configuration
+(`swi_config_capture()`), set geopos as the observer of the place's call
+as the eclipse and rise searches do (`set_topo_for_this_call()`, which
+publishes nothing), and after the call put the caller's observer back
+(`swi_config_apply()` of the observer group, under SWI_CFG_LOCAL), which
+drops the cached site and positions only where it moved. So:
+- the sector is geopos's whatever the caller set, or nothing: bit for bit
+  the same with the observer unset, at geopos and elsewhere, and with it
+  at geopos bit for bit ts20's tip (108 sectors: the sample's, methods 0
+  and 1, de200, Swiss files, Moshier);
+- the caller's observer after the call is the one before it: its
+  topocentric places and speeds bit for bit a fresh context's with the
+  same setting, the refusal and its message with none; on the default
+  context the published observer is untouched (a context made after the
+  call inherits the caller's, not geopos);
+- without SEFLG_TOPOCTR nothing changes.
+- Cost: none without SEFLG_TOPOCTR; with it one configuration copy and
+  two observer settings per call (no hot path).
+
+G175 `tests/localsky.c` (a): methods 0 and 1 with SEFLG_TOPOCTR, the
+Moon, Mars and Spica at six dates, geopos at either site, the sector the
+same bit for bit with the observer unset, at geopos and at the other
+site, and within 1e-11 of the place's `swe_house_pos()` seen from geopos:
+6 checks; (b): after those calls the caller's observer, unset or at 70W
+30S, on the default and on explicit contexts, each ephemeris, as before
+them and as a fresh context's, bit for bit: 9 checks. Before the fix the
+6 of (a) and 3 of (b) fail (no sector answering with none set), after 0;
+the upstream build fails the same 9. G24 `gauq_topo_site_off`: the Moon
+at UT 2433282.5, method 0 and 1, the sector with the observer at 70W 30S
+less with it at geopos: 0 shipped, 0.126 sector compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_rise_trans()`, so methods 2 to 5, and the eclipse
+  searches by `set_topo_for_this_call()` (`swe_sol_eclipse_how()`,
+  `swe_sol_eclipse_when_loc()`, `swe_lun_eclipse_how()` measured) leave
+  geopos as the context's observer after the call: with `swe_set_topo()`
+  at 70W 30S, after any of them at Zurich the topocentric Moon at UT
+  2433282.5 is Zurich's, 60.8485787 deg for 61.9355771 (1.087 deg), and
+  with none set it answers where a fresh context refuses.
+
+## 274. `swe_gauquelin_sector()` answers the Earth: the sector of `swe_calc()`'s geocentric zero vector, 20.8625 at 1950, Zurich, in methods 0 and 1 (SEFLG_HELCTR too), 17.6567 from its rise and set in methods 2 to 5
+
+**Severity: Correctness (behaviour: OK and a sector for the observer's own body, which has no direction from it; every method, every flag, every ephemeris; swetest's house position of the Earth with -hel and -bary)**
+**Where:** `swecl.c`: `swe_gauquelin_sector_r_body()`; `swetest.c`: `house_pos_body()`
+
+Entry 252's noticed item. `swe_calc()` returns the geocentric Earth as
+zero ("The geocentric position for the Earth (SE_EARTH) is returned as
+zero", swephprg 3.3.5), the topocentric too. Methods 0 and 1 took that
+for longitude and latitude 0, the vernal point's sector: 20.8624889 at UT
+2433282.5, Zurich, Swiss files, both methods, with SEFLG_HELCTR the same
+since entry 252 (before it the heliocentric Earth's direction set on the
+observer's circle, 10.5925); methods 2 to 5 the rise and set of that
+vector, 17.6567178 in each. swetest, which prints the Earth with -hel and
+-bary, gave it the house position of the zero vector ('G' 20.8624889).
+
+What the manual says: nothing of the Earth in 16.1; a sector is a body's
+place on its diurnal circle as the observer sees it, and the observer is
+on the Earth.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, SE_EARTH
+(not a star asked with that number) is refused in every method, before
+any calculation: ERR, the sector 0, "the Earth has no Gauquelin sector:
+it is the observer's own body". swetest's house position of the Earth
+answers 0, as a refused place's (entry 253), and its meridian and zenith
+distances, azimuth and altitudes likewise (entry 275). No other answer
+changes.
+
+G175 (c): the Earth in each method with no flag, SEFLG_HELCTR, BARYCTR,
+TOPOCTR and SIDEREAL on each ephemeris refused with the sector 0 and a
+message, 6 checks; Spica asked with ipl SE_EARTH the star, methods 0, 2
+and 4, 3 checks. Before the fix the 6 fail, after 0; the upstream build
+fails the 6. G24 `gauq_earth_answered`: of methods 0 to 5 for the Earth,
+how many answer: 0/6 shipped, 6/6 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_rise_trans()` answers the Earth too: its rise at UT
+  2433282.5, Zurich, 2433282.5833332, its upper transit 2433283.1963576,
+  those of the zero vector (RA 0, declination 0).
+- BEHAVIOUR. `swe_gauquelin_sector()` answers SE_ECL_NUT (-1), which
+  `swe_pheno()` refuses as no body: methods 0 and 1 16.6929 and 17.8208,
+  the obliquities taken for a longitude and latitude; methods 4 and 5,
+  the disc's edge, read `pla_diam[-1]` in `swe_rise_trans()`'s rise and
+  set (`swecl.c`, "dd = pla_diam[ipl]" for ipl < NDIAM), out of bounds:
+  16.542019 on ts20's tip and 16.490590 here for the same call.
+
+## 275. swetest's meridian and zenith distances are those of the place printed, set against the ARMC and the horizon of date: Mars at 1.1.1950 0h UT, Zurich, MD 75.0440 with -j2000 for 74.4031; the cusps' those of the printed cusp in xobl[0]'s frame, the -sid1 Ascendant's ZD 69.0860 and RA 171.39 for 90 and 192.69
+
+**Severity: Correctness (behaviour, the shipped program: -fm and -fz of every body and star with -sid, -j2000, -nonut, -icrs, -hel, -bary and -i's forms, of the diff modes always; the cusps' and axes' -fm, -fz, -fa/-fA, -fd/-fD, -fQ, azimuth and altitudes with -sid, -j2000 and -nonut, their -fm and -fz without a format letter of the equator always; the altitude and azimuth after -fz always)**
+**Where:** `swetest.c`: `main()`'s equator, azimuth and house-cusp blocks, `print_line()`'s 'm' and 'z'
+
+Entry 253's noticed item. swetest's meridian distance (-fm) was
+|RA - ARMC| and its zenith distance (-fz) 90 less `swe_azalt()`'s
+altitude, both of xequ, the place printed with iflag | SEFLG_EQUATORIAL,
+set against the ARMC of date (apparent sidereal time) and the horizon
+of the true equator of date. Measured at 1.1.1950 0h UT, Zurich
+(8.55E, 47.37N, 0 m), Placidus:
+- Mars MD 74.4030704 and ZD 78.4430387 plain; -j2000 75.0439714 and
+  79.0773030, -sid1 and -nonut (the mean equator) 74.4038542 and
+  78.4437414, -hel 40.6077893 and 47.0289767, -bary likewise, -icrs
+  4.0e-6 off; -i's radians and cartesian forms up to 179 deg (G175's
+  sample);
+- the diff modes: the MD and ZD of the RA's difference or midpoint, even
+  plain: Mars - Moon MD 15.9512879 for 24.2299639, ZD 71.5559860 for
+  32.6166586; Mars/Moon MD 12.1149820 for 62.2880884;
+- -fz wrote `swe_azalt()`'s horizon of xequ over xaz, so the azimuth and
+  altitudes printed after it were the geocentric place's: -fPzh the
+  Moon's altitude 44.1736198 for the topocentric 43.5120663;
+- the cusps and axes: their RA and declination were `swe_cotrans()` of
+  the printed cusp with xobl[0] (the mean obliquity under -sid, -nonut and
+  -j2000), and the MD and ZD of that, or, with no format letter of the
+  equator (a A d D Q), of the last body's xequ: -sid1, the Ascendant MD
+  62.7646349, ZD 69.0859791, RA 171.3895238, declination 3.7150026 for
+  84.0607549, 90, 192.6856438, -5.4409576; -j2000 ZD 89.9997688 and RA
+  192.6858587; -nonut ZD 90.0005645; plain -fPhz house 1's ZD 45.8263802,
+  the Moon's;
+- their azimuth and altitudes were `swe_azalt()` of the printed cusp on
+  the true ecliptic: -sid1, the Ascendant at altitude 20.9141900 and
+  azimuth 288.2230865 for 0 and 278.0481351; the ARMC's of its right
+  ascension taken for an ecliptic longitude, plain: altitude 64.7521718,
+  azimuth 356.6409109 for 42.63 and 0 (the meridian's point on the
+  equator);
+- the diff modes' azimuth with -i8192 was a difference of degrees in
+  radians: Mars - Moon 1.8800479 for -157.0580223;
+- the Earth (-hel, -bary): MD 7.7401291, the heliocentric Earth's RA set
+  against the ARMC, and the azimuth and altitude of the zero vector
+  (-12.49 and 103.93).
+Azimuths and altitudes of bodies take the ephemeris and SEFLG_TOPOCTR
+alone and no option moved them; a body's RA and declination are the
+frame's the options name (-j2000 J2000's, -sid the mean equinox of
+date's, swephprg 3.3.4), which is what they are for.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT` (a program:
+no G24 case; G175 built with the switch fails as upstream):
+- each body's and star's MD and ZD are those of its own place by entry
+  252's flags (`hpos_flags()`, as its house position, entry 253: the
+  ephemeris and its Horizons corrections, -topo, -true, -noaberr,
+  -nodefl, -cob) with SEFLG_EQUATORIAL, the true equator of date,
+  apparent, against swetest's ARMC and the observer's horizon
+  (`local_sky_body()`); the pseudo-bodies' as before;
+- the diff modes difference and take the midpoint of the two bodies'
+  MD and ZD, as of their altitudes; the azimuths' difference and
+  midpoint in degrees whatever -i;
+- -fz prints its own number and leaves xaz alone;
+- every cusp's and axis's RA, declination, MD, ZD, azimuth and altitudes
+  are those of its point, the tropical houses' without the frame flags as
+  their house positions (entry 253), on the true equator of date with
+  SE_ECL_NUT's true obliquity; the ARMC's on the equator; the sidereal
+  whole signs' and 0 Aries' cusps (entry 254's systems) the printed cusp
+  plus the offset of the tropical Ascendant from the sidereal, exact in
+  the traditional sidereal method (the ayanamsa the houses subtract),
+  the Ascendant's offset on the ecliptic of t0 and the solar system
+  plane (-sidt, -sidsp), whose cusps are points of another plane;
+- the Earth, with no direction from its observer, answers 0, as a
+  refused place.
+So no frame or centre option moves a local-sky quantity, and a cusp's
+equatorial place is that of the point whose MD and ZD are printed with
+it, whatever the options (with -nonut the true point's on the true
+equator now, where it was the mean cusp's on the mean equator, 1.0e-3
+deg off it for the Ascendant).
+- After: against ts20's tip, 702 runs (13 option sets: none, -sid1,
+  -j2000, -nonut, -hel, -bary, -topo, -true, Moshier, de200, -icrs,
+  -speed3, -i2050; the Sun to Pluto, the nodes, the apogees, the Earth
+  and Spica, Mars less and Jupiter about the Moon; P, G and W; six formats;
+  1800, 1950 and 2100): -fPLBRS bit for bit everywhere; -fPlbrsgj but the
+  Earth's house position with -hel and -bary (6 runs); -fPlbRaAdD but the
+  cusps' RA and declination with -sid1, -j2000 and -nonut (27); -fPhikl
+  in the ARMC's azimuth and altitude, the cusps' with -sid1 and -nonut and
+  the Earth's; -fPmz and -fPmzadhik everywhere (the cusps' were the last
+  body's, the diff modes' the RA's difference).
+- Cost: none in the library.
+
+G175 (d): the built swetest, -fPmzadhik, the Moon, Mars, Jupiter and
+Spica, the diff modes and the cusps and axes in P W G K N ('W', 'N' not
+with -sid), with 21 option sets on six bases, the run without: a body's
+MD, ZD, azimuth and altitudes, a cusp's all seven: 68 checks; (e):
+swetest's numbers the library's from each point's place, plain, -sid1
+and -j2000, in P K G W N, the diff modes in P and G, within 1e-7: 15
+checks. Before the fix 58 of (d) (-sid1 46.56 deg, -j2000 4.57, -nonut
+6.5e-3, -icrs 6.4e-6, -hel 110.4, -bary 110.2, -i8194 179, -i4098 177.3;
+-speed3, -i2050 and -hel on -topo pass) and the 15 of (e) (plain 0.915
+deg, the Moon's altitude after -fz, 168 in the diff modes; -sid1 47.1,
+-j2000 4.57) fail, after 0. The upstream build fails 66 of (d), 8 more
+from its library (-i2050 23.45 deg, its SE_ECL_NUT with SEFLG_EQUATORIAL
+for the cusps' obliquity; -speed3 2.1e-5, its SEFLG_SPEED3 places), and
+the 15 of (e).
+
+Noticed, not fixed:
+- BEHAVIOUR. The cusps' and axes' azimuths and altitudes are taken at
+  0 m (`gpos[2] = 0`), the bodies' at the observer's height: at 1950,
+  Zurich, -house -topo8.55,47.37,400 -at0,15 (the pressure from the
+  height), the Ascendant's apparent altitude 0.4721439 for 0.4514987.
+- BEHAVIOUR. The cusps' and axes' RA and declination speeds (-fS after
+  a, A, d or D) are those the last body left in xequ[3..5], as
+  `swe_cotrans()` moves the position alone: at 1950, Zurich, -fPaS every
+  cusp's RA speed 0.3444271 deg/day after Mars, 12.8863778 after the
+  Moon.
 
 ## 250. Across a join of the Swiss files a speed takes the two files' step for motion where its reads straddle the join
 

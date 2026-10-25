@@ -8340,6 +8340,22 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
    * are treated as calls for Pluto as main body SE_PLUTO */
   if (ipl == SE_AST_OFFSET + 134340)
     ipl = SE_PLUTO;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 274: the Earth answered OK, at 1950 Zurich methods 0 and
+   * 1 20.8625, the sector of swe_calc()'s geocentric zero vector ("the
+   * geocentric position for the Earth is returned as zero", swephprg
+   * 3.3.5), methods 2 to 5 17.6567 from the rise and set of that vector;
+   * with SEFLG_HELCTR methods 0 and 1 had the heliocentric Earth's 10.5925
+   * (bug 252 dropped the centre). The observer's own body has no
+   * direction from it, nor any rise and set: refused, in every method,
+   * the sector 0. */
+  if (!do_fixstar && ipl == SE_EARTH) {
+    *dgsect = 0;
+    if (serr != NULL)
+      strcpy(serr, "the Earth has no Gauquelin sector: it is the observer's own body");
+    return ERR;
+  }
+#endif
   /* 
    * geometrically from ecl. longitude and latitude 
    */
@@ -8347,6 +8363,7 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
     int32 iflag_nut;
 #ifndef SWE_UPSTREAM_COMPAT
     int32 retflag, iflag_pl = iflag;
+    struct swe_config topo_caller;	/* bug 273 */
 #endif
     t_et = t_ut + swe_deltat_ex_r(ctx, t_ut, iflag, serr);
 #ifndef SWE_UPSTREAM_COMPAT
@@ -8398,10 +8415,25 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
                 | SEFLG_NOGDEFL | SEFLG_CENTER_BODY | SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX;
     if (iflag & SEFLG_SIDEREAL)
       iflag_pl &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+    /* Upstream bug 273: with SEFLG_TOPOCTR the place was seen from the
+     * observer of swe_set_topo(), not from geopos, the sector's: the Moon
+     * at 1950, method 0, geopos Zurich, 13.8513 with swe_set_topo() at
+     * Zurich, 13.7248 with it at 70 W 30 S (0.126 sector), refused
+     * without it ("geographic position has not been set"); methods 2 to 5
+     * observe from geopos. The place is seen from geopos now, set for
+     * this call alone (it publishes nothing, as the eclipse searches'),
+     * and the caller's observer, set or not, is the context's again after
+     * it, its cached site dropped if it moved. */
+    if (iflag_pl & SEFLG_TOPOCTR) {
+      swi_config_capture(ctx, &topo_caller);
+      set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
+    }
     if (do_fixstar)
       retflag = swe_fixstar_r(ctx, starname, t_et, iflag_pl, x0, serr);
     else
       retflag = swe_calc_r(ctx, t_et, ipl, iflag_pl, x0, serr);
+    if (iflag_pl & SEFLG_TOPOCTR)
+      SWI_CFG_LOCAL(ctx, swi_config_apply(ctx, &topo_caller, SWI_CFG_TOPO));
     if (retflag == ERR)
       return ERR;
     iflag_nut = (iflag_pl & ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))

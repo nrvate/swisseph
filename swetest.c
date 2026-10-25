@@ -747,6 +747,9 @@ static int32 call_swe_fixstar(char *star, double te, int32 iflag, double *x, cha
 static int32 hpos_flags(int32 iflg);
 static AS_BOOL hpos_keeps_place(int hsys);
 static double house_pos_body(int32 ipl_h, int hsys);
+static void local_sky_place(double *xe, double *md, double *zd);
+static void local_sky_body(int32 ipl_h, double *md, double *zd);
+static double mdist, zdist;	/* bug 275: the meridian and zenith distances */
 #endif
 static void jd_to_time_string(double jut, char *stimeout);
 static char *our_strcpy(char *to, char *from);
@@ -1838,6 +1841,12 @@ int main(int argc, char *argv[])
 	   * If the altitude of the observer is given (in geopos[2])
 	   * pressure is estimated according to that */
           swe_azalt(tut, SE_EQU2HOR, geopos, datm[0], datm[1], xt, xaz);
+#ifndef SWE_UPSTREAM_COMPAT
+	  /* bug 275: the Earth (-hel, -bary) has no direction from its
+	   * observer: 0, not the horizon of swe_calc()'s zero vector */
+	  if (ipl == SE_EARTH)
+	    xaz[0] = xaz[1] = xaz[2] = 0;
+#endif
           if (diff_mode) {
             iflgret = swe_calc(te, ipldiff, iflgt, xt, serr);
             swe_azalt(tut, SE_EQU2HOR, geopos, datm[0], datm[1], xt, x2);
@@ -1846,19 +1855,37 @@ int main(int argc, char *argv[])
 		iflgret = swe_calc(te, ipldiff, iflgt|SEFLG_HELCTR, xt, serr);
 		swe_azalt(tut, SE_EQU2HOR, geopos, datm[0], datm[1], xt, x2);
 	      }
+#ifndef SWE_UPSTREAM_COMPAT
+	      if (ipldiff == SE_EARTH)
+		x2[0] = x2[1] = x2[2] = 0;
+#endif
 	      for (i = 1; i < 3; i++) 
 		xaz[i] -= x2[i];
+#ifndef SWE_UPSTREAM_COMPAT
+	      /* bug 275: the azimuths are degrees, -i8192's radians or not
+	       * (Mars - Moon 1.880 for -157.058) */
+	      xaz[0] = swe_difdeg2n(xaz[0], x2[0]);
+#else
 	      if ((iflag & SEFLG_RADIANS) == 0) 
 		xaz[0] = swe_difdeg2n(xaz[0], x2[0]);
 	      else
 		xaz[0] = swe_difrad2n(xaz[0], x2[0]);
+#endif
 	    } else {	/* DIFF_MIDP */
+#ifndef SWE_UPSTREAM_COMPAT
+	      if (ipldiff == SE_EARTH)
+		x2[0] = x2[1] = x2[2] = 0;
+#endif
 	      for (i = 1; i < 3; i++) 
 		xaz[i] = (xaz[i] + x2[i]) / 2;
+#ifndef SWE_UPSTREAM_COMPAT
+	      xaz[0] = swe_deg_midp(xaz[0], x2[0]);	/* bug 275, as above */
+#else
 	      if ((iflag & SEFLG_RADIANS) == 0) 
 		xaz[0] = swe_deg_midp(xaz[0], x2[0]);
 	      else
 		xaz[0] = swe_rad_midp(xaz[0], x2[0]);
+#endif
 	    }
 	  }
 	}
@@ -1994,6 +2021,39 @@ int main(int argc, char *argv[])
 	  }
 #endif
         }
+#ifndef SWE_UPSTREAM_COMPAT
+	/* Upstream bug 275: the meridian and zenith distances (-fm, -fz)
+	 * were those of the place printed with SEFLG_EQUATORIAL, set against
+	 * the ARMC of date and the observer's horizon: Mars at 1.1.1950 0h
+	 * UT, Zurich, MD 74.4031 plain, 75.0440 with -j2000, 74.4039 with
+	 * -sid1 and -nonut (the mean equator), 40.6078 with -hel, ZD 78.4430,
+	 * 79.0773, 78.4437, 47.0290; in the diff modes those of the RA's
+	 * difference or midpoint (Mars - Moon MD 15.951 for 24.230); and -fz
+	 * wrote its horizon over the azimuth and altitude, so that -fzh
+	 * printed the Moon's geocentric altitude, 44.1736 for the topocentric
+	 * 43.5121. Now each body's own place by the flags of its house
+	 * position (bug 253), on the true equator of date, apparent; the diff
+	 * modes difference the two bodies' distances, as their altitudes;
+	 * the Earth, without a direction, and a refused place 0. */
+	if (strpbrk(fmt, "mz") != NULL) {
+	  if (ipl != SE_ECL_NUT) {
+	    local_sky_body(ipl, &mdist, &zdist);
+	    if (diff_mode) {
+	      double md2, zd2;
+	      local_sky_body(ipldiff, &md2, &zd2);
+	      if (diff_mode == DIFF_DIFF || diff_mode == DIFF_GEOHEL) {
+		mdist -= md2;
+		zdist -= zd2;
+	      } else {	/* DIFF_MIDP */
+		mdist = (mdist + md2) / 2;
+		zdist = (zdist + zd2) / 2;
+	      }
+	    }
+	  } else {	/* the pseudo-bodies, as they were */
+	    local_sky_place(xequ, &mdist, &zdist);
+	  }
+	}
+#endif
         strcpy(spnam, se_pname);
 	print_line(0, is_first, 0);
 	is_first = FALSE;
@@ -2019,7 +2079,7 @@ int main(int argc, char *argv[])
 	int iofs; 
 #ifndef SWE_UPSTREAM_COMPAT
 	double hcusp[37], hascmc[10], hxobl[6];	/* bug 253 */
-	AS_BOOL hpos_own;
+	AS_BOOL hpos_own, hloc_own;
 #endif
 	if (toupper(ihsy) == 'G') // Gauquelin has 36 cusps
 	  nhouses = 36;
@@ -2048,7 +2108,22 @@ int main(int argc, char *argv[])
 	 * tropical places, the houses without the frame flags: each cusp
 	 * its own number. 'W' and 'N' sidereal as the planets above. */
 	hpos_own = strpbrk(fmt, "gGj") != NULL && !hpos_keeps_place(ihsy);
-	if (hpos_own) {
+	/* Upstream bug 275: their right ascensions, declinations, meridian
+	 * and zenith distances were the printed cusp's set in the frame of
+	 * xobl[0], the mean obliquity under -sid, -nonut and -j2000, and the
+	 * distances with no format letter of the equator those of the last
+	 * body's place; their azimuths and altitudes the printed cusp's on
+	 * the true ecliptic, the ARMC's taken for a longitude: with -sid1 at
+	 * 1.1.1950 0h UT, Zurich, Placidus, the Ascendant's RA 171.39 for
+	 * 192.69, ZD 69.0860 and altitude 20.914 for 90 and 0, with -j2000 ZD
+	 * 89.99977; plain, -fz the Moon's 45.826, the ARMC's altitude 64.75
+	 * for 42.63. Now every row's are those of its point, the tropical
+	 * houses' as the house positions above (the sidereal whole signs' and
+	 * 0 Aries' cusps the printed ones moved by the Ascendant's offset
+	 * from the tropical), on the true equator of date; the ARMC's on the
+	 * equator. */
+	hloc_own = strpbrk(fmt, "aADdQmzIiHhKk") != NULL;
+	if (hpos_own || hloc_own) {
 	  char serr_h[AS_MAXCH];
 	  int32 hflag = hpos_flags(iflag);
 	  swe_houses_ex2(t, hflag, top_lat, top_long, ihsy, hcusp, hascmc, NULL, NULL, serr_h);
@@ -2067,6 +2142,38 @@ int main(int argc, char *argv[])
 	  }
 	  x[1] = 0;	/* latitude */
 	  x[2] = 1.0;	/* pseudo radius vector */
+#ifndef SWE_UPSTREAM_COMPAT
+	  if (hloc_own) {	/* bug 275 */
+	    double xh[6], xe[6], gpos[3];
+	    if (ipl >= iofs)
+	      xh[0] = hascmc[ipl - iofs];
+	    else if (hpos_keeps_place(ihsy))
+	      xh[0] = swe_degnorm(cusp[ipl] + swe_difdeg2n(hascmc[0], ascmc[0]));
+	    else
+	      xh[0] = hcusp[ipl];
+	    xh[1] = 0;
+	    xh[2] = 1.0;
+	    if (ipl == iofs + 2) {
+	      xe[0] = xh[0];
+	      xe[1] = 0;
+	      xe[2] = 1.0;
+	    } else {
+	      swe_cotrans(xh, xe, -hxobl[0]);
+	    }
+	    for (i = 0; i < 3; i++)
+	      xequ[i] = xe[i];
+	    if (strpbrk(fmt, "IiHhKk") != NULL) {
+	      gpos[0] = top_long;
+	      gpos[1] = top_lat;
+	      gpos[2] = 0;
+	      if (ipl == iofs + 2)
+		swe_azalt(t, SE_EQU2HOR, gpos, datm[0], datm[1], xe, xaz);
+	      else
+		swe_azalt(t, SE_ECL2HOR, gpos, datm[0], datm[1], xh, xaz);
+	    }
+	    local_sky_place(xe, &mdist, &zdist);
+	  }
+#else
 	  if (ipl == iofs+2) { /* armc is already equatorial! */
 	    xequ[0] = x[0];
 	    xequ[1] = x[1];
@@ -2081,6 +2188,7 @@ int main(int argc, char *argv[])
 	    gpos[2] = 0;
 	    swe_azalt(t, SE_ECL2HOR, gpos, datm[0], datm[1], x, xaz);
 	  }
+#endif
 	  if (strpbrk(fmt, "gGj") != NULL) {
 #ifndef SWE_UPSTREAM_COMPAT
 	    if (hpos_own) {
@@ -2161,12 +2269,15 @@ static AS_BOOL hpos_keeps_place(int hsys)
  * if SE_FIXSTAR, at te: for 'G' by the rise and set methods
  * swe_gauquelin_sector()'s, else swe_house_pos() of the place by
  * hpos_flags(), its latitude 0 with method 1, in the frame of that
- * place's true obliquity; 0 if the place is refused */
+ * place's true obliquity; 0 if the place is refused or the Earth's,
+ * which has no direction (bug 274's, as swe_gauquelin_sector()) */
 static double house_pos_body(int32 ipl_h, int hsys)
 {
   double xp[6], xo[6], cusp[100], h;
   char sname[AS_MAXCH], serr_h[AS_MAXCH];
   int32 hflag = hpos_flags(iflag), ret;
+  if (ipl_h == SE_EARTH)
+    return 0;
   *sname = '\0';
   if (ipl_h == SE_FIXSTAR)
     strcpy(sname, star);
@@ -2185,6 +2296,38 @@ static double house_pos_body(int32 ipl_h, int hsys)
   if (hsys == 'i' || hsys == 'I')
     swe_houses_ex(t, hflag, geopos[1], geopos[0], hsys, cusp, cusp + 13);
   return swe_house_pos(armc, geopos[1], xo[0], hsys, xp, serr);
+}
+
+/* Upstream bug 275: the meridian distance of the place xe, right
+ * ascension and declination on the true equator of date, from the ARMC,
+ * and its zenith distance at the observer */
+static void local_sky_place(double *xe, double *md, double *zd)
+{
+  double xa[3];
+  *md = fabs(swe_difdeg2n(xe[0], armc));
+  swe_azalt(tut, SE_EQU2HOR, geopos, datm[0], datm[1], xe, xa);
+  *zd = 90 - xa[1];
+}
+
+/* the meridian and zenith distances of body ipl_h, the star if
+ * SE_FIXSTAR, at te: of its place by hpos_flags() on the true equator of
+ * date; 0 if the place is refused or the Earth's, which has no direction */
+static void local_sky_body(int32 ipl_h, double *md, double *zd)
+{
+  double xp[6];
+  char sname[AS_MAXCH], serr_h[AS_MAXCH];
+  int32 hflag = hpos_flags(iflag) | SEFLG_EQUATORIAL, ret;
+  *md = *zd = 0;
+  if (ipl_h == SE_EARTH)
+    return;
+  if (ipl_h == SE_FIXSTAR) {
+    strcpy(sname, star);
+    ret = call_swe_fixstar(sname, te, hflag, xp, serr_h);
+  } else {
+    ret = swe_calc(te, ipl_h, hflag, xp, serr_h);
+  }
+  if (ret != ERR)
+    local_sky_place(xp, md, zd);
 }
 #endif
 
@@ -2779,8 +2922,12 @@ static int print_line(int mode, AS_BOOL is_first, int sid_mode)
       }
     case 'm': {	// Meridian distance
 	if (is_label) { printf("MD      "); break; }
+#ifndef SWE_UPSTREAM_COMPAT
+	double md = mdist;	/* bug 275: the point's own, main() */
+#else
 	double md = swe_difdeg2n(xequ[0], armc);
 	if (md < 0) md = -md;
+#endif
 	if (output_extra_prec)
 	  printf("%# 11.11f", md);
 	else
@@ -2789,8 +2936,12 @@ static int print_line(int mode, AS_BOOL is_first, int sid_mode)
       }
     case 'z': {	// Zenith distance
 	if (is_label) { printf("ZD      "); break; }
+#ifndef SWE_UPSTREAM_COMPAT
+	double zd = zdist;	/* bug 275: the point's own, main(); xaz kept */
+#else
 	swe_azalt(tut, SE_EQU2HOR, geopos, datm[0], datm[1], xequ, xaz);
 	double zd = 90 - xaz[1];
+#endif
 	if (output_extra_prec)
 	  printf("%# 11.11f", zd);
 	else
