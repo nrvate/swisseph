@@ -96,6 +96,7 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
   c->jpldenum_cfg           = ctx->jpldenum_cfg;
   c->denum_unread           = ctx->denum_unread;	/* bug 131 */
   c->path_closed            = ctx->path_closed;
+  c->jpl_named              = ctx->jpl_named;	/* bug 164 */
   c->sidd = ctx->sidd;
   memcpy(c->astro_models, ctx->astro_models, sizeof(c->astro_models));
   c->geolon                 = ctx->topd.geolon;
@@ -299,7 +300,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
                    || (!(keep & SWI_DENUM_MOON)
                        && ctx->sweph_denum_moon != c->sweph_denum_moon)
                    || (!(keep & SWI_DENUM_JPL)
-                       && ctx->jpldenum_cfg != c->jpldenum_cfg));
+                       && ctx->jpldenum_cfg != c->jpldenum_cfg)
+                   || ctx->jpl_named != c->jpl_named);	/* bug 164 */
   geo_changed   = (groups & SWI_CFG_TOPO)
                   && (ctx->topd.geolon != c->geolon
                    || ctx->topd.geolat != c->geolat
@@ -369,6 +371,7 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
       ctx->sweph_denum_moon = c->sweph_denum_moon;
     if (!(keep & SWI_DENUM_JPL))
       ctx->jpldenum_cfg   = c->jpldenum_cfg;
+    ctx->jpl_named = c->jpl_named;	/* bug 164 */
 #ifndef SWE_UPSTREAM_COMPAT
     if (path_changed) {	/* bug 131: a close adopted, the ones it forgot */
       ctx->denum_unread = (ctx->denum_unread & keep) | (c->denum_unread & ~keep);
@@ -550,6 +553,7 @@ static void cfg_merge(struct swe_config *dst, const struct swe_config *src,
     dst->jpldenum_cfg     = src->jpldenum_cfg;
     dst->denum_unread     = src->denum_unread;	/* bug 131 */
     dst->path_closed      = src->path_closed;
+    dst->jpl_named        = src->jpl_named;	/* bug 164 */
   }
   if (groups & SWI_CFG_SID) {
     dst->sidd = src->sidd;
@@ -843,7 +847,7 @@ void swi_config_reset(swe_ctx *ctx)
     /* bug 131: as ctx_release(), the two it forgets owed to the threads */
     if (cfg_master.ephe_path_is_set)
       cfg_master.denum_unread |= SWI_DENUM_MOON;
-    if (cfg_master.jpldenum_cfg != 0)
+    if (cfg_master.jpl_named)	/* bug 164: named, read or not */
       cfg_master.denum_unread |= SWI_DENUM_JPL;
 #endif
     cfg_master.sweph_denum_moon = 0;	/* as ctx_release() */

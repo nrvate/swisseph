@@ -101,6 +101,9 @@ struct swe_config {
    * the master's zeros are not compared with what it read. */
   int32 denum_unread;
   swi_gen_t path_closed;
+  /* Upstream bug 164: swe_set_jpl_file() named the JPL file, found or
+   * not, so that the path setters and swe_close() read it again */
+  AS_BOOL jpl_named;
 
   /* --- sidereal ----------------------------------------------------- */
   struct sid_data sidd;           /* swe_set_sid_mode(); pure config    */

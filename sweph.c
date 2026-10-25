@@ -2235,7 +2235,7 @@ static void ctx_release(swe_ctx *ctx)
    * opens nothing. */
   if (ctx->ephe_path_is_set)
     ctx->denum_unread |= SWI_DENUM_MOON;
-  if (ctx->jpldenum_cfg != 0)
+  if (ctx->jpl_named)	/* bug 164: named, as the setter reads it */
     ctx->denum_unread |= SWI_DENUM_JPL;
 #endif
   ctx->sweph_denum_moon = 0;
@@ -2636,9 +2636,8 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
    * files, so their DE numbers go with them. */
 #ifndef SWE_UPSTREAM_COMPAT
   ctx->path_naming_off = TRUE;	/* bug 118: this setter names it */
-  /* bug 148: a JPL file set and read, or owed since swe_close() */
-  jpl_kept = ctx->swed_is_initialised
-             && (ctx->jpldenum_cfg != 0 || (ctx->denum_unread & SWI_DENUM_JPL));
+  /* bug 148: a JPL file named by swe_set_jpl_file(), read or not (bug 164) */
+  jpl_kept = ctx->swed_is_initialised && ctx->jpl_named;
 #endif
   swi_close_keep_topo_etc(ctx, FORGET_DENUM);
   swi_init_swed_if_start(ctx);
@@ -2688,7 +2687,15 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
    * there and as swi_denum_reread() reads it after swe_close() (bug 131),
    * and its DE number is published with the path; 0 where it is not found
    * (F4's case). One open of the file, which stays open for the next JPL
-   * calculation, only when a JPL file had been set and read. */
+   * calculation, only when a JPL file has been named.
+   * Upstream bug 164: and only when one had been read (jpldenum_cfg, or
+   * owed since swe_close()), so after a path without de200.eph,
+   * swe_set_jpl_file("de200.eph"), which failed there, and a path with it,
+   * the first UT JPL Moon in AD 1700 was 40.0057507520 deg again and the
+   * second 40.0039614086, swe_deltat() 15.091463 s, where a fresh process
+   * given that path and de200.eph answers 40.0039614086 twice and 3.012003
+   * s. The condition is the file named (jpl_named), as a fresh process's
+   * swe_set_jpl_file() reads it whether or not an earlier one found it. */
   if (jpl_kept) {
     ctx->denum_unread = SWI_DENUM_JPL;
     swi_denum_reread(ctx);
@@ -3153,6 +3160,11 @@ void CALL_CONV swe_set_jpl_file_r(swe_ctx *ctx, const char *fname)
   if (strlen(sp) >= AS_MAXCH)
     sp[AS_MAXCH - 1] = '\0';
   strcpy(ctx->jplfnam, sp);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 164: named, found or not: the path setters and
+   * swe_close() read it again along the path, as this setter reads it */
+  ctx->jpl_named = TRUE;
+#endif
   /* open ephemeris */
   retc = open_jpl_file(ctx, ss, ctx->jplfnam, ctx->ephepath, NULL);
   /* The setter is what publishes the JPL DE number -- configuration, read

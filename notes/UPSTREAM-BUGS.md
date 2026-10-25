@@ -196,6 +196,7 @@ worst were in code that had never executed even once.
 | 173 | `swi_approx_jplhor()` interpolates the Horizons offset's yearly table backwards, (t - t0) (v[t0] - v[t1]) + v[t0]: the offset in right ascension jumps by 2 (v[t1] - v[t0]) at every year from 1963 to 2011, up to 0.99 mas (Polaris 2.87e-7 deg at 2006 Jul 1), its slope reversed between | Correctness | `swephlib.c` |
 | 161 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, on a JPL file of DE 403 or later, `swi_bias()` puts the frame bias (23 mas) and the Horizons offset in right ascension (-51.26 mas) in from tjd >= 1962 Jan 20, where the precession and nutation change after it, and is given the instant the body was read at, the true Sun 0: over the light time after the step every body 1.1e-5 deg off (the true Sun at every date after it), at the step Polaris 4.95e-5 deg in right ascension, SEFLG_SPEED3 0.162 deg/day | Correctness | `sweph.c`, `swephlib.c` |
 | 162 | Under SEFLG_JPLHOR_APPROX (`SEMOD_JPLHORA_1`, and `_3` after 1962 Jan 20), on a JPL file of DE 403 or later, `swi_approx_jplhor()` turns the position about the pole by the Horizons offset in right ascension (-51 to -53 mas) and not the velocity: speeds off their places' rate, the Moon's latitude 1.46e-6 deg/day, its right ascension 5.6e-7, Mars's 1.25e-7, the Sun's latitude 1.02e-7; distance rates 7.2e-9 AU/day on Mars | Correctness | `swephlib.c` |
+| 164 | A JPL file whose `swe_set_jpl_file()` failed along the path then set, and a path where it is (or the file installed there and `swe_close()`): no DE number was read, so the path setter and the close read none, and the first UT JPL Moon in AD 1700 is 40.0057507520 deg and the second 40.0039614086, `swe_deltat()` 15.091463 s, where a fresh process given that path and the file answers 40.0039614086 twice and 3.012003 s -- on every thread and context | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 
 ---
 
@@ -11092,6 +11093,72 @@ less 2^-9 day of their mean speed, the worst within 1e-9 deg. 75 checks.
 Before the fix both fail (2.87e-7 and 2.76e-7 at 2006 Jul 1), and so in
 the compat build. G24 `jplhora_table_jump`: barycentric Polaris on
 de200, across 2006 Jul 1: 1.5e-11 deg shipped, 2.90e-7 compat.
+
+## 164. A JPL file whose `swe_set_jpl_file()` failed along the path then set, and a path where it is: no DE number was read, so the path setter reads none, and the first JPLEPH delta t takes the default tidal term until a calculation opens the file
+
+**Severity: Correctness (behaviour: call order -- the first UT JPL Moon in AD 1700 1.79e-3 deg off the second, the first JPLEPH delta t 11.27 s off, `swe_deltat()` 12.08 s off and its guess Swiss for a configuration naming de200.eph -- on every thread and context)**
+**Where:** `sweph.c`: `swe_set_jpl_file_r()`, `swe_set_ephe_path_r()` (bug 148's condition), `ctx_release()` (bug 131's); `sweconfig.c`: `swi_config_capture()`, `swi_config_apply()`, `cfg_merge()`, `swi_config_reset()`; `sweph.h`, `sweconfig.h`
+
+Entry 148's noticed item. Bug 148 has `swe_set_ephe_path()` read the kept
+JPL file again along the new path, and bug 131 has the first entry after
+`swe_close()` read it, when a DE number had been read for it
+(`jpldenum_cfg`, or owed since a close). A `swe_set_jpl_file()` that
+failed along the path in effect read none, so neither fired. After a path
+without de200.eph (a /tmp directory of links to EPHEDIR's other files),
+`swe_set_jpl_file("de200.eph")` and the path to EPHEDIR: `swe_calc_ut()`'s
+JPL Moon in AD 1700 40.0057507520 deg on the first call and 40.0039614086
+on the second, which the first had opened the file for; `swe_deltat_ex()`
+there with SEFLG_JPLEPH 14.286718 s (the default term) and `swe_deltat()`
+15.091463 s (its guess Swiss, the moon file's -25.936); after a TT JPL Sun
+the getter -25.936 and `swe_deltat()` in AD 1800 18.902020 s. A fresh
+process given EPHEDIR and de200.eph answers 40.0039614086 twice, 3.012003
+s for both delta t, -23.8946 and 14.438958 s. The same on the setting
+thread, a thread running across the path, a thread started and a context
+made after it, and an explicit context. And with `swe_close()` for the
+path: the directory without de200.eph, the failed setter, de200.eph then
+linked into it and `swe_close()`: the same values, where a fresh process
+given that directory and de200.eph answers as above. The configuration did
+not record that a file had been named: the name alone cannot say so -- it
+starts as `SE_FNAME_DFT`, and a calculation's fallback to de406.eph
+rewrites it. The compat build the same (40.0057510966, then
+40.0039617599), as entry 148's.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`; the compat
+build keeps upstream's first and second answers):
+- `swe_set_jpl_file()` marks the file named (`jpl_named`), found or not.
+  The flag is in the configuration's path group with the name: captured,
+  merged, compared and adopted as the name is, so a thread adopting the
+  setter or a later path and a context made after carry it; the compat
+  build never sets it.
+- Bug 148's condition in the path setter, and bug 131's in `swe_close()`
+  (`ctx_release()`, and `swi_config_reset()` for the master), is that
+  flag: the named file is read again along the new path, or owed to the
+  next entry after the close, as a fresh process's `swe_set_jpl_file()`
+  reads it whether or not an earlier one found it.
+- The opens, `fopen()` interposed, 100 rounds after the setters and a
+  warm-up, before and after: a path alternating between EPHEDIR and
+  EPHEDIR/. and a JPL Moon each round, 200 calls and 100 opens of
+  de200.eph both (the setter's open replaces the calculation's); with a
+  Swiss Moon each round 300 calls and no open before, 400 calls and 100
+  opens after, as a process given EPHEDIR and de200.eph from the start
+  makes (400 and 100); with the named file nowhere along the path, 300
+  calls before and 400 after, one failed attempt per path change, which a
+  fresh process's setter makes there too. No hot path.
+
+G132 (`tests/jpldenum.c`, entry 137) gains two settings: the first path a
+directory without de200.eph and the last setter the path to EPHEDIR, and a
+second such directory, de200.eph linked into it and the last setter
+`swe_close()`, each against a fresh process given the final path and
+de200.eph: 7 settings x 5 readers x 5 observations and one check, 176
+pass. Before the fix 30 fail, 15 in each setting, on all 5 readers alike:
+the JPLEPH delta t, the getter after the JPL Sun with `swe_deltat()` in
+1800, and the first Moon, as above. The compat build fails 85 of 176 with
+the fix and without: entry 148's 55 of 126, and in the two settings 30 by
+the upstream behaviour it restores, the first JPLEPH delta t and the first
+Moon (bug 148's, 10 each) and the flag-0 delta t (bug 145's, 10). G24
+`jpl_named_moon_off`, the first UT JPL Moon in AD 1700 after the
+directory without the file, de200.eph and EPHEDIR against the second: 0
+shipped, 1.79e-3 deg compat (and shipped before the fix).
 
 ## How these were found
 

@@ -1337,6 +1337,11 @@ struct epsilon {
  *   - SEFLG_JPLHOR_APPROX's yearly offset table interpolated backwards:
  *     the offset jumping up to 0.99 mas at every year from 1963 to 2011
  *     (UPSTREAM-BUGS 173, G141)
+ *   - the path setter and swe_close() reading the kept JPL file again only
+ *     when its DE number had been read, not when swe_set_jpl_file() had
+ *     named it and failed along the path then set: after a path without
+ *     de200.eph, de200.eph and a path with it, the first UT JPL Moon in AD
+ *     1700 1.79e-3 deg off the second (UPSTREAM-BUGS 164, G132)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1959,6 +1964,11 @@ struct swe_ctx {
    * not taken back to it at every sync after its own reading */
   int32 denum_unread;
   swi_gen_t path_closed;
+  /* bug 164: swe_set_jpl_file() has named jplfnam, found or not -- the
+   * name alone does not say so: it starts as the default, and a
+   * calculation's fallback to de406.eph rewrites it. Published with
+   * SWI_CFG_PATH; never set under SWE_UPSTREAM_COMPAT. */
+  AS_BOOL jpl_named;
   int32 last_epheflag;
   AS_BOOL geopos_is_set;
   AS_BOOL ayana_is_set;
