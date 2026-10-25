@@ -1656,6 +1656,18 @@ struct epsilon {
  *     mean obliquity 1.6e51 deg at 1e12 under Laskar 1986, -3.0e9 at 1e8
  *     under Owen 1990, and the houses and the ayanamsa with them
  *     (UPSTREAM-BUGS 217, G161, G24)
+ *   - the true node and the osculating apogee with SEFLG_SPEED near a JPL
+ *     file's or the Swiss Moon files' edge answered from Moshier, or
+ *     refused (strict), where without the flag they answer from the
+ *     ephemeris asked, a speed epoch having left the span: on de200.eph
+ *     2^-15 day inside its end the node 260 for 1 (the compat build's
+ *     epochs are upstream's, 1e-4 day apart) (UPSTREAM-BUGS 225, G158,
+ *     G24)
+ *   - swe_nod_aps() with SEFLG_SPEED near a span's start reading the
+ *     ellipse's epochs and the observer at the light-time instant from
+ *     Moshier, silently, or refused (strict): Pluto's points with the files
+ *     of 1800-2400 at JD 2378496.625 the node's speed 1.2e-5 deg/day off,
+ *     strict -1 for 0 (UPSTREAM-BUGS 226, G158, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

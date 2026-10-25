@@ -5870,6 +5870,63 @@ static double fict_lt_edge_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 225: the true node by swe_calc() with SEFLG_JPLEPH |
+ * SEFLG_SPEED on de200.eph 2^-15 day before its end, the fallback allowed,
+ * its return: the speed's reads of the Moon after tjd (+-1e-4 day
+ * upstream, +-2^-5 here) left the file, and the whole call fell to
+ * Moshier, 260, 2.2e-3 deg off the place without the flag, which answers 1;
+ * 257 now, the speed taken from before tjd. */
+static double tnode_span_edge_ret(void)
+{
+  double x[6];
+  char serr[AS_MAXCH];
+  swe_ctx *c;
+  int32 r = -2;
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "de200.eph");
+    swe_set_ephe_fallback_r(c, 1);
+    r = swe_calc_r(c, 2513392.5 - 1.0 / 32768, SE_TRUE_NODE, SEFLG_JPLEPH | SEFLG_SPEED, x, serr);
+    swe_ctx_free(c);
+  }
+  return r;
+}
+
+/* UPSTREAM-BUGS 226: Pluto's osculating points by swe_nod_aps() with
+ * SEFLG_SWIEPH | SEFLG_SPEED at JD 2378496.625 with the files of
+ * 1800-2400 alone (links to sepl_18, semo_18, seas_18), strict, its
+ * return: the aberration's rate read the Earth 0.23 day earlier, before
+ * sepl_18's start, and the call was refused, -1 ("not available for jd
+ * 2378496.3944"), where it answers without the flag; 0 now, the rate
+ * taken after tjd. */
+static double nodaps_span_edge_ret(void)
+{
+  static const char *const f[3] = {"sepl_18.se1", "semo_18.se1", "seas_18.se1"};
+  char dir[] = "/tmp/compatneXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double x[4][6];
+  char serr[AS_MAXCH];
+  swe_ctx *c;
+  int32 r = -2;
+  int k;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL)
+    return -2;
+  for (k = 0; k < 3; k++) {
+    snprintf(p, sizeof p, "%s/%s", ephe, f[k]);
+    snprintf(q, sizeof q, "%s/%s", dir, f[k]);
+    if (symlink(p, q) != 0)
+      break;
+  }
+  if (k == 3 && (c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, dir);
+    swe_set_ephe_fallback_r(c, 0);
+    r = swe_nod_aps_r(c, 2378496.625, SE_PLUTO, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_OSCU,
+                      x[0], x[1], x[2], x[3], serr);
+    swe_ctx_free(c);
+  }
+  rm_dir(dir);
+  return r;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 with no JPL file set, the first call
  * against the second, deg, the larger of: a path whose de431.eph (the
  * default name) is de200.eph, and, after swe_close(), a path without
@@ -6300,7 +6357,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6443,6 +6500,8 @@ int main(int argc, char **argv)
   mosheml = earth_mosh_moon_off();
   starspan = star_span_edge_ret();
   fictedge = fict_lt_edge_off();
+  tnodespan = tnode_span_edge_ret();
+  nodapsspan = nodaps_span_edge_ret();
   nodframe = nodaps_frame_off();
   mmhitnote = moshmoon_hit_note(0);
   mmslotnote = moshmoon_hit_note(1);
@@ -6735,6 +6794,22 @@ int main(int argc, char **argv)
   else {
     printf("  Cupido, files' start lt %.2e deg FAIL: expected %s\n",
            fictedge, WANT_DEFECT ? "> 1e-3" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (tnodespan == (SEFLG_MOSEPH | SEFLG_SPEED)) : (tnodespan == (SEFLG_JPLEPH | SEFLG_SPEED)))
+    printf("  true node, de200 end - 2^-15 %.0f OK\n", tnodespan);
+  else {
+    printf("  true node, de200 end - 2^-15 %.0f FAIL: expected %s\n",
+           tnodespan, WANT_DEFECT ? "260" : "257");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodapsspan == -1) : (nodapsspan == 0))
+    printf("  Pluto's points, files' start %.0f OK\n", nodapsspan);
+  else {
+    printf("  Pluto's points, files' start %.0f FAIL: expected %s\n",
+           nodapsspan, WANT_DEFECT ? "-1" : "0");
     bad++;
   }
 

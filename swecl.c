@@ -5625,6 +5625,64 @@ static int32 nodaps_refuse(double *xnasc, double *xndsc, double *xperi, double *
   }
   return ERR;
 }
+
+/* Upstream bug 226: swe_nod_aps() with SEFLG_SPEED reads instants the call
+ * without it does not: the osculating ellipse at tjd + k h, |k| <= 2 (h =
+ * 2^-5 day, the Moon's 2^-6), and the observer at tjd less each point's
+ * light time for the aberration's rate. Near a span's edge such a read
+ * fell from the ephemeris that answered at tjd to Moshier, silently with
+ * the fallback allowed (Pluto's points with the files of 1800-2400 at JD
+ * 2378496.625: the ascending node's speed -2.48353e-2 deg/day for
+ * -2.48232e-2; Mars's heliocentric osculating node 2^-7 day after their
+ * start -5.11e-3 for 2.20e-5; the Sun's mean perigee on de200.eph 2^-9
+ * day after its start 3.71e-4 for 3.44e-5), or was refused (strict: "not
+ * available for jd 2378496.3944"), and a barycentric ellipse
+ * (SE_NODBIT_OSCU_BAR) 2^-7 day after the files' start refused either
+ * way ("barycentric Moshier positions are not supported."), where the
+ * call without the flag answers. A read for a rate alone is made with the
+ * substitution allowed, so that one past the span answers, from another
+ * ephemeris, and the caller sees where, not a refusal (swe_nod_aps()
+ * holds the configuration, bug 115, so no read in between takes another
+ * setting). rate FALSE: an ordinary read. */
+static int32 nodaps_calc(swe_ctx *ctx, double t, int32 ipl, int32 fl, AS_BOOL rate,
+                         double *x, char *serr)
+{
+  AS_BOOL fb = ctx->ephe_fallback;
+  int32 r;
+  if (!rate)
+    return swe_calc_r(ctx, t, ipl, fl, x, serr);
+  ctx->ephe_fallback = TRUE;
+  r = swe_calc_r(ctx, t, ipl, fl, x, serr);
+  ctx->ephe_fallback = fb;
+  return r;
+}
+
+/* the read of the ellipse at t for its rate: 1 answered by another
+ * ephemeris than eph (tjd's), 0 by eph, -1 an error (serr); *ret the flag */
+static int nodaps_osc_read(swe_ctx *ctx, double t, int32 ipl, int32 fl, int32 eph,
+                           double *x, int32 *ret, char *serr)
+{
+  double y[6];
+  int32 r = nodaps_calc(ctx, t, ipl, fl, TRUE, x, serr), r2;
+  *ret = r;
+  if (r != ERR)
+    return (r & SEFLG_EPHMASK) != eph;
+  /* bug 139: a barycentric read fallen to Moshier is refused even so; the
+   * heliocentric one says where it fell */
+  if (!(fl & SEFLG_BARYCTR))
+    return -1;
+  r2 = nodaps_calc(ctx, t, ipl, (fl & ~SEFLG_BARYCTR) | SEFLG_HELCTR, TRUE, y, NULL);
+  return (r2 != ERR && (r2 & SEFLG_EPHMASK) != eph) ? 1 : -1;
+}
+
+/* the one-sided five-point difference from the side within, k = 0 .. 4
+ * steps of in in the slots sl[], (-25, 48, -36, 16, -3) / 12, less the
+ * division by in x 12 h */
+static double nodaps_side_diff(const double (*a)[6], const int *sl, int i)
+{
+  return -25 * a[sl[0]][i] + 48 * a[sl[1]][i] - 36 * a[sl[2]][i] + 16 * a[sl[3]][i]
+         - 3 * a[sl[4]][i];
+}
 #endif
 
 /* ephret, if not NULL, gets the ephemeris that answered (bug 170) */
@@ -5664,6 +5722,12 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   AS_BOOL hold = FALSE, holdi, moshm;	/* bugs 199, 229 */
   int32 held[2];
   double teps = 0, tnut = 0;
+  /* bug 226: the epochs tjd + koff[i] h in the order sl[] (from slot 5 on
+   * the extra ones), the sides past a span (oscout 1 before tjd, 2 after),
+   * and for the one-sided difference the side within and its slots */
+  double koff[NODAPS_NOSC] = {-2, -1, 0, 1, 2};
+  int sl[7] = {0, 1, 2, 3, 4}, nsl = 1, kk, oscout = 0, oscin = 0, slo[5] = {2, 2, 2, 2, 2}, o;
+  AS_BOOL holdx = FALSE;
 #endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *psbdp = &ctx->pldat[SEI_SUNBARY];
@@ -6144,7 +6208,13 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
       hold = FALSE;
 # endif
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+    nsl = iend - istart + 1;
+    for (kk = 0; kk < nsl; kk++) {
+      i = sl[kk];
+#else
     for (i = istart, t = tjd_et - dt; i <= iend; i++, t += dt) {
+#endif
       if (istart == iend)
         t = tjd_et;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -6152,12 +6222,24 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
        * without SEFLG_SPEED; bugs 80 and 201: the others tjd + k h, and
        * rosc[i] what rounding took from them, exact (two-sum) */
       if (istart != iend) {
-        double bb, kh = (i - 2) * dtosc;
+        double bb, kh = koff[i] * dtosc;
         t = tjd_et + kh;
         bb = t - tjd_et;
         rosc[i] = (tjd_et - (t - bb)) + (kh - bb);
       }
-      if ((retx = swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr)) == ERR)
+      if (istart != iend && i != 2) {
+        /* bug 226: a read for the speed alone, skipped past the span of
+         * tjd's ephemeris (an extra one past it too: no span is so short) */
+        if ((o = nodaps_osc_read(ctx, t, ipli, iflJ2000, retc0 & SEFLG_EPHMASK, xpos[i], &retx,
+                                 serr)) < 0)
+          return ERR;
+        if (o > 0) {
+          if (kk >= 5)
+            return ERR;
+          oscout |= koff[i] < 0 ? 1 : 2;
+          goto osc_next;
+        }
+      } else if ((retx = swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr)) == ERR)
         return ERR;
 #else
       if (swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr) == ERR)
@@ -6174,10 +6256,19 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
             && ctx->pldat[SEI_MOON].teval == t && ctx->pldat[SEI_MOON].iephe == SEFLG_MOSEPH) {
           for (j = 0; j <= 5; j++)
             xposm[j] = ctx->pldat[SEI_MOON].x[j];
-        } else
-#endif
+        } else if ((o = nodaps_calc(ctx, t, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR),
+                                    istart != iend && i != 2, xposm, serr)) == ERR) {
+          return ERR;
+        } else if (istart != iend && i != 2 && (o & SEFLG_EPHMASK) != (retc0 & SEFLG_EPHMASK)) {
+          if (kk >= 5)	/* bug 226, as above */
+            return ERR;
+          oscout |= koff[i] < 0 ? 1 : 2;
+          goto osc_next;
+        }
+#else
         if (swe_calc_r(ctx, t, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR), xposm, serr) == ERR)
           return ERR;
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
         /* Upstream bug 180: on Moshier the Earth is its series' EMB less
          * the short lunar series' Moon (embofs_mosh()), 0.24 deg from
@@ -6232,7 +6323,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
        * central difference, its saves of the unheld one bypassed), but at
        * tjd, whose Moon's turning is its side's already. */
       moshm = ipli == SE_MOON && (retx & SEFLG_EPHMASK) == SEFLG_MOSEPH;
-      holdi = hold && (!moshm || t != tjd_et);
+      holdi = (kk >= 5 ? holdx : hold) && (!moshm || t != tjd_et);
       if (holdi) {
         /* the obliquity and nutation memos swe_calc() left at another
          * epoch are its own side's model's: computed afresh under the held
@@ -6264,6 +6355,30 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
         swi_frame_model_release(ctx, held);
         ctx->oec.teps = teps;
         ctx->nut.tnut = tnut;
+      }
+      osc_next:
+      /* bug 226: one side skipped, its slots take the epochs 3 and 4 steps
+       * the other side, and the speed is the one-sided difference */
+      if (kk == 4 && oscout != 0) {
+        if (oscout == 3) {
+          if (serr != NULL)
+            sprintf(serr, "jd %.8f: the osculating speed's epochs leave the ephemeris's span both sides", tjd_et);
+          return ERR;
+        }
+        oscin = oscout == 1 ? 1 : -1;
+        slo[1] = 2 + oscin;
+        slo[2] = 2 + 2 * oscin;
+        sl[5] = slo[3] = 2 - oscin;
+        sl[6] = slo[4] = 2 - 2 * oscin;
+        koff[slo[3]] = 3 * oscin;
+        koff[slo[4]] = 4 * oscin;
+        nsl = 7;
+        /* bug 199's hold for that reach, twice the central one's */
+        holdx = swi_frame_step_side(ctx, tjd_et, 4 * dtosc, iflag, SWI_FRAME_PREC | SWI_FRAME_EPS) != 0;
+# ifdef SID_TNODE_FROM_ECL_T0
+        if (iflag & SEFLG_SIDEREAL)
+          holdx = FALSE;
+# endif
       }
 #else
       swi_plan_for_osc_elem(ctx, iflg0, t, xpos[i]);
@@ -6373,6 +6488,21 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
          * instants' rounding: x(tk - r) = x(tk) - v r (bug 75) */
         double f = (1 + (8 * (rosc[3] - rosc[1]) - (rosc[4] - rosc[0])) / (12 * dtosc))
                    / (12 * dtosc);
+        if (oscin != 0) {
+          /* bug 226: from the side within */
+          double den = oscin * 12 * dtosc;
+          f = (1 + (-25 * rosc[slo[0]] + 48 * rosc[slo[1]] - 36 * rosc[slo[2]]
+                    + 16 * rosc[slo[3]] - 3 * rosc[slo[4]]) / den) / den;
+          xpe[i] = xq[2][i];
+          xpe[i+3] = nodaps_side_diff((const double (*)[6]) xq, slo, i) * f;
+          xap[i] = xa[2][i];
+          xap[i+3] = nodaps_side_diff((const double (*)[6]) xa, slo, i) * f;
+          xna[i] = xn[2][i];
+          xna[i+3] = nodaps_side_diff((const double (*)[6]) xn, slo, i) * f;
+          xnd[i] = xs[2][i];
+          xnd[i+3] = nodaps_side_diff((const double (*)[6]) xs, slo, i) * f;
+          continue;
+        }
         xpe[i] = xq[2][i];
         xpe[i+3] = (8 * (xq[3][i] - xq[1][i]) - (xq[4][i] - xq[0][i])) * f;
         xap[i] = xa[2][i];
@@ -6762,10 +6892,24 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
          * again after it. */
         double xe1[6];
         AS_BOOL rate34 = !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)) && ipl != SE_SUN;
+        /* bug 226: the Earth at tjd, its ephemeris and Moon */
+        int32 e0 = pedp->iephe;
+        AS_BOOL mm0 = pedp->teval == tjd_et && ctx->moshmoon_earth_t == tjd_et, lt_out;
 #endif
         /* get barycentric sun and earth for t-dt into save area */
+#ifndef SWE_UPSTREAM_COMPAT
+        /* bug 226: a read for the rate alone; past the span of the
+         * ephemeris whose Earth answered at tjd (for a planet's points,
+         * with its Moon, bug 120), the rate is taken from after tjd. (The
+         * Earth's topocentric read, of the Sun's points, reads nothing.) */
+        if (nodaps_calc(ctx, tjd_et - dt, ipli, iflg0 | (iflag & SEFLG_TOPOCTR), TRUE, x2, serr) == ERR)
+          return ERR;
+        lt_out = pedp->teval == tjd_et - dt
+                 && (pedp->iephe != e0 || (rate34 && (ctx->moshmoon_earth_t == pedp->teval) != mm0));
+#else
         if (swe_calc_r(ctx, tjd_et - dt, ipli, iflg0 | (iflag & SEFLG_TOPOCTR), x2, serr) == ERR)
           return ERR;
+#endif
         if (iflag & SEFLG_TOPOCTR) {
           /* geocentric position of observer */
           /* if (swi_get_observer(ctx, tjd_et - dt, iflag, FALSE, xobs, serr) != OK)
@@ -6857,7 +7001,12 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
           const double hab = 1.0 / 64;
           double acc[3], xa[2][6], oa[6], d[2][3];
           int sg;
-          if (rate34) {
+          if (lt_out) {
+            /* bug 226 */
+            if (swi_observer_accel_fwd(ctx, tjd_et, e0, iflag_ctr, rate34 ? (int) mm0 : -1, !rate34,
+                                       rate34 ? xear : xsun, acc, serr) != OK)
+              return ERR;
+          } else if (rate34) {
             if (swi_observer_accel_lt(ctx, tjd_et, tjd_et - dt, iflag_ctr, xear, xsun, xe1, acc, serr) != OK)
               return ERR;
           } else {

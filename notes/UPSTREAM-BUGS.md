@@ -259,6 +259,8 @@ worst were in code that had never executed even once.
 | 213 | The houses take the obliquity and nutation at a TT that SE_ECL_NUT refuses, from UT 8.13e11 where delta t takes TT past 1e12: Placidus at UT 9e11 ERR "within polar circle" with its cusps filled; under a polynomial precession model at any date; sidereal, the ayanamsa past its range | Correctness (behaviour) | `swehouse.c`, `swephlib.c` |
 | 215 | Delta t takes any date: `swe_deltat_ex()` 0 at NaN with no message, inf or NaN at -+1e300 and -+inf, Stephenson's parabola past 1e12 days; and the UT functions compute at a NaN TT, the mean node, the eclipse functions, the meridian transit and the time equation crashing | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `swecl.c`, `swehel.c` |
 | 217 | Every precession model but Vondrak 2011 is a polynomial taken at any date within SE_ECL_NUT's bound: the mean obliquity 1.6e51 deg at 1e12 under Laskar 1986, -3.0e9 at 1e8 under Owen 1990, 2.67e10 at -1e8 under SEFLG_JPLHOR_APPROX, the houses and the ayanamsa with it | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `swehouse.c` |
+| 225 | The true node and the osculating apogee with SEFLG_SPEED read the Moon at tjd -+ k 2^-6 day, and a speed epoch past a JPL file's or the Swiss Moon files' span sent the whole call to the next ephemeris, where the call without the flag reads tjd alone: on de200.eph 2^-10 day inside its end the node 260, 2.2e-3 deg off, the apogee 0.0167 deg, strict refused, for 257 and 1; at semo_18's edges with the files of 1800-2400 alike (260, 1.7e-3 deg) | Correctness (behaviour) | `sweph.c` |
+| 226 | `swe_nod_aps()` with SEFLG_SPEED reads the osculating ellipse at tjd -+ k h and the observer at tjd less the light time, and near a span's edge took Moshier's for either silently, or was refused: Pluto's points with the files of 1800-2400 at JD 2378496.625 the node's speed 1.2e-5 deg/day off, nothing noted, strict -1 for 0; Mars's heliocentric node 2^-7 day after the start 5.1e-3 deg/day off; a barycentric ellipse refused under either setting | Correctness (behaviour) | `swecl.c`, `sweph.c` |
 
 ---
 
@@ -16343,6 +16345,198 @@ Noticed, not fixed:
   area) and at NaN hangs.
 - BEHAVIOUR. `swe_jdut1_to_utc()` and `swe_jdet_to_utc()` answer the year
   INT_MIN far out (entry 216's area).
+
+## 225. Near a JPL file's or the Swiss Moon files' edge the true node and the osculating apogee with SEFLG_SPEED answer from Moshier, or are refused, where they answer from the ephemeris asked without the flag
+
+**Severity: Correctness (behaviour: the whole answer from another ephemeris, 2.2e-3 deg off on the node, 0.0167 deg on the apogee, or a refusal, where the same call without SEFLG_SPEED answers)**
+**Where:** `sweph.c`: `lunar_osc_elem()`, new `osc_span_init()`, `osc_span_save()`, `osc_span_out()`, `osc_span_hold()`, `osc_span_extend()`
+
+Noticed by entry 206's work. SE_TRUE_NODE and SE_OSCU_APOG take their
+speeds from the Moon's osculating elements at tjd + k 2^-6 day, |k| <= 2
+on JPL and the Swiss files (entry 75), each read with its light time.
+The call without SEFLG_SPEED reads tjd alone. A speed epoch past the
+span gave the read's BEYOND_EPH_LIMITS (JPL) or NOT_AVAILABLE (the Moon
+files), and `lunar_osc_elem()` took that for the instant's and did the
+whole call again on the next ephemeris (allowed) or refused it (strict):
+- de200.eph 2^-10 day inside its end: SE_TRUE_NODE 260, 88.4083557483
+  deg, speed 1.89110e-2 deg/day, for 257 and 88.4061486781 (1 without
+  the flag); SE_OSCU_APOG 308.7951857 for 308.7784839; strict -1, "JPL
+  ephemeris is not available for jd 2513392.4990; ...", for 257.
+- The files of 1800-2400 alone, semo_18 from JD 2378487.555 to
+  2597656.457: 7.1e-3 day inside its start the node 260, 35.2684673 deg,
+  for 258 and 35.2667919 (2 without the flag), its speed -1.44114e-2 for
+  -1.42015e-2, serr "SwissEph file 'semo_12.se1' not found ... using
+  Moshier eph."; 4.3e-3 day inside its end 307.3241657 for 307.3249124;
+  strict the downgrade's refusal ("Swiss (.se1) ephemeris is not
+  available for jd 2378487.5625; ...") where the call without the flag
+  answers 2.
+
+The interpolated apsides (SE_INTP_APOG, SE_INTP_PERG) read no file and
+answer the same with and without the flag at these edges; the mean node
+and apogee read none either.
+
+**Fix, as done here:**
+- A speed epoch whose read leaves the span is skipped (its message
+  dropped, serr restored to what it was before the read), and once tjd's
+  own read, taken last as before, has answered, the side it lay on is
+  replaced by epochs on the other side: k = 3 and 4 times the inward
+  sign, read into the skipped slots (k = 2 for three points), under
+  entry 186's frame hold for the longer reach. The speed is then the
+  one-sided five-point difference (-25, 48, -36, 16, -3) / 12 over the
+  same step from the side within (three points: (-3, 4, -1) / 2), with
+  entry 75's rounding correction for each epoch. Both sides past the
+  span, which no span longer than 2^-4 day gives, returns ERR "the
+  Moon's speed epochs leave the ephemeris's span both sides".
+- tjd's read alone decides the fallback, as without the flag: now at
+  every edge above the call with SEFLG_SPEED answers with the flag of
+  the call without it plus SEFLG_SPEED, the place bit for bit, the same
+  serr, under either setting, and where tjd's own read leaves the span
+  (de200.eph 2^-20 day inside its start, its light time) it falls back
+  or is refused as without the flag.
+- The one-sided difference is as good as the central one: against
+  nine-point central differences of the places over 2^-3 day at 150
+  dates on de200, its 95th percentile 3.0e-10 deg/day on the node for
+  the central's 2.8e-10, 1.3e-8 on the apogee for 1.2e-8. At the de200
+  edge the node's speed is 1.80947479e-2 deg/day, the apogee's
+  3.07690499.
+- Elsewhere unchanged: 12000 answers (the true node, the osculating and
+  interpolated apsides, the mean node; JPL, Swiss, Moshier; ten flag
+  sets with SEFLG_SPEED3, topocentric, XYZ; 40 dates 1311-2433, both
+  settings) bit for bit before and after with the complete directory and
+  with the files of 1800-2400 alone, but for serr in 336 of them: a JPL
+  request outside de200's span with SEFLG_SPEED, the fallback allowed,
+  named its first speed epoch's instant ("jd 2199999.984375 outside JPL
+  eph. range"), and now tjd's, as without the flag. Not a hot path: 20000
+  true nodes with SEFLG_SPEED take 1.63167e10 instructions for
+  1.63106e10.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: the compat build's epochs are
+  upstream's, 1e-4 day apart, and it falls back the same way within them.
+
+G158 `tests/spanedge.c` (c): SE_TRUE_NODE and SE_OSCU_APOG, geocentric,
+equatorial, J2000, sidereal and SEFLG_TRUEPOS, both settings, on de200.eph
+at its end, 2^-10 and 2^-5 + 2^-10 day inside it, 2^-10 and 2^-20 day
+inside its start, at semo_18's edges with the files of 1800-2400 and at
+2000 on both: the call with the flag against the call without, the speeds
+within 2e-8 (node) and 5e-7 (apogee) deg/day of nine-point one-sided
+differences of the places over 2^-4 day, the last call of each process
+against a pristine one's. 198 rows pass, the speeds within 4.75e-9 and
+2.21e-7 (the reference's own noise: 1.4e-7 on the apogee at 2000); before
+the fix 112 fail, the upstream build 170 (its speeds upstream's).
+G24 `tnode_span_edge_ret`: SE_TRUE_NODE with SEFLG_JPLEPH | SEFLG_SPEED on
+de200.eph 2^-15 day inside its end, the fallback allowed, its return: 257
+shipped, 260 compat (and shipped before the fix).
+
+Noticed, not fixed:
+- SEFLG_SPEED3 at a span's edge, every body: `swe_calc_r()`'s three
+  calls at tjd and tjd -+ its step each fall back on their own, and the
+  speed differences places from two ephemerides, answered with the
+  instant's flag and Moshier noted, no strict refusal: de200.eph 2^-16
+  day inside its end Mars 0.72180 deg/day for SEFLG_SPEED's 0.76100, the
+  Moon 3.3725 for 14.0460, the Sun 1.0239 for 0.9719; the true node 2^-10
+  day inside 0.5835 for 0.0181, the apogee 7.34 for 3.08, both 129.
+- With the complete directory the true node's speed differences the
+  Earth across the sepl_12 / sepl_18 join (JD 2378496.5), where the
+  files' places step: 2^-7 day after it 4.5e-6 deg/day off its places'
+  one-sided rate (within 1e-9 four days later).
+
+## 226. Near a span's edge `swe_nod_aps()` with SEFLG_SPEED takes Moshier's ellipse or observer for its speeds, silently, or is refused, where it answers without the flag
+
+**Severity: Correctness (behaviour: a speed off by up to 5.1e-3 deg/day with nothing noted, or a refusal, where the same call without SEFLG_SPEED answers)**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, new `nodaps_calc()`, `nodaps_osc_read()`, `nodaps_side_diff()`; `sweph.c`: new `swi_observer_accel_fwd()`
+
+Noticed by entry 206's work. With SEFLG_SPEED `swe_nod_aps()` reads two
+kinds of instant the call without it does not: the body at tjd + k h,
+|k| <= 2 (h = 2^-5 day, the Moon's 2^-6; entry 201's five points) for
+the osculating points' rate, and the observer (the Earth, or the site)
+at tjd less each point's light time for the aberration's rate (entries
+70 and 93, by `swe_calc_r()` and `swi_observer_accel_lt()`). Near a
+span's edge either read fell to Moshier on its own:
+- The files of 1800-2400 alone, Pluto's osculating points at JD
+  2378496.625 (0.23 day of light time after sepl_18's start), the
+  fallback allowed: the places bit for bit the complete directory's, the
+  ascending node's speed -2.48353e-2 deg/day for -2.48232e-2 (1.2e-5
+  off; the perihelion's 1.1e-5), nothing noted; strict -1, "Swiss (.se1)
+  ephemeris is not available for jd 2378496.3944; ...", for 0 without
+  the flag. On de200.eph at JD 2305424.625 alike.
+- Mars's heliocentric osculating node 2^-7 day after sepl_18's start, the
+  ellipse's epochs at tjd - 2h and - h outside: -5.11e-3 deg/day for
+  2.20e-5, nothing noted; on de200.eph 2^-7 day after its start
+  -4.79e-3 for -1.35e-5, strict refused ("JPL ephemeris is not available
+  for jd 2305424.4453; ...").
+- The Sun's mean perigee on de200.eph 2^-9 day after its start (the
+  Earth's light-time read before it): 3.71e-4 deg/day for 3.44e-5.
+- A barycentric ellipse (SE_NODBIT_OSCU_BAR, Pluto) 2^-7 day after
+  sepl_18's start: -1 under either setting, "barycentric Moshier
+  positions are not supported." (entry 139), for 0.
+
+**Fix, as done here:**
+- Entry 206's rule. A read for a rate alone is made with the
+  substitution allowed (inside the configuration hold of entry 115, so
+  nothing else sees it), and taken only when it answers from the
+  ephemeris that answered at tjd (for a barycentric read on Moshier,
+  refused, its heliocentric probe tells); its messages go nowhere.
+- The ellipse: a speed epoch past the span is skipped, and once the
+  stencil's five are read the side outside is replaced by epochs at 3h
+  and 4h on the side within, read into the skipped slots (entry 199's
+  frame hold for their reach). The four points' speeds are then the
+  one-sided five-point difference of their positions over h, with entry
+  201's rounding correction. Both sides outside returns ERR "the
+  osculating speed's epochs leave the ephemeris's span both sides".
+- The observer: when the light-time read answers from another ephemeris
+  than tjd's (or from Moshier's Moon where tjd's Earth had none, entry
+  120), its acceleration is the one-sided second-order difference forward
+  from tjd, (4 v(tjd + h) - 3 v(tjd) - v(tjd + 2h)) / 2h with h = 2^-9
+  day (`swi_observer_accel_fwd()`, the site's own acceleration added as
+  `swi_observer_accel_lt()` does), so a start's light time is taken from
+  within. tjd itself outside: the call falls back or is refused as
+  without the flag.
+- Now at every edge below the call with SEFLG_SPEED answers with the
+  return and serr of the call without it, the four places bit for bit,
+  under either setting: Pluto's node -2.48232277e-2 deg/day (within 6e-12
+  of its places' five-point rate over 2^-5 day), Mars's heliocentric
+  node at de200's start + 2^-7 within 1.5e-12 (the geocentric too).
+- Elsewhere unchanged: 42240 answers (the Sun, the Moon, Mercury, Mars,
+  Jupiter, Neptune, Pluto and the Earth; mean, osculating,
+  SE_NODBIT_OSCU_BAR and SE_NODBIT_FOPOINT; JPL, Swiss and Moshier;
+  eleven flag sets, the four centres; 20 dates; both settings) bit for
+  bit before and after, with the complete directory and with the files
+  of 1800-2400 alone. 20000 calls of Mars's osculating points with
+  SEFLG_SPEED take 2.64316e10 instructions for 2.64259e10.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; the compat build's reads are
+  upstream's and fall back or refuse the same way.
+
+G158 `tests/spanedge.c` (d): `swe_nod_aps()` for the Sun, the Moon, Mars,
+Saturn and Pluto, the four methods, geocentric, topocentric, heliocentric
+and barycentric, both settings, on de200.eph 2^-20, 2^-7 and 2^-3 day
+inside its start, at its end and 2^-7 day inside it, with the files of
+1800-2400 2^-7 and 2^-3 day inside sepl_18's start and 7.6e-3 inside its
+end, 4.3e-3 inside semo_18's end, and at 2000: the return, places and serr
+of the call without the flag, the speeds within 2e-8 deg/day (the Moon's
+3e-7) of nine-point one-sided differences of the places, the last call of
+each process against a pristine one's. 1782 rows pass, the speeds within
+1.53e-7 (the Moon; the Sun's 5.9e-9, Mars's 1.4e-9, Saturn's 1.8e-9,
+Pluto's 1.25e-9); before the fix 850 fail, the upstream build 1760 (its
+speeds upstream's). G158 2951 rows; 962 fail before these two fixes, the
+upstream build 2694.
+G24 `nodaps_span_edge_ret`: Pluto's osculating points with SEFLG_SPEED
+at JD 2378496.625 with the files of 1800-2400, strict, the return: 0
+shipped, -1 compat (and shipped before the fix).
+
+Noticed, not fixed:
+- Below the floor: with the complete directory Pluto's points at JD
+  2378496.625 are 2.9e-9 deg/day off their places' rate, the light-time
+  read crossing the sepl_12 / sepl_18 join.
+- With the complete directory the osculating points' stencil differences
+  the body across a file join, where the files' places step: Mars's
+  heliocentric node jumps 4.2e-6 deg at the sepl_12 / sepl_18 join (JD
+  2378496.5; Mars itself 6.3e-8 deg), and 2^-7 day after it its speed is
+  7.84e-5 deg/day off its places' one-sided rate over 2^-5 or 2^-7 day
+  (1.8e-10 four days later).
+- The Sun's geocentric mean perigee 0.018 deg from the Sun (JD
+  2597651.35, behind its disk): its speed 2.9e-7 deg/day off a nine-point
+  central difference of its places over 2^-5 day with the complete
+  directory, no edge involved; under SEFLG_NOGDEFL 7e-12 (one-sided, the
+  files alone). The light deflection's rate inside the disk.
 
 ## How these were found
 

@@ -7796,6 +7796,62 @@ int swi_observer_accel_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
   return OK;
 }
 
+/* Upstream bug 226: swe_nod_aps()'s aberration rate takes the observer's
+ * acceleration from the Earth at tjd less the points' light time
+ * (swi_observer_accel_lt()), or the Sun's for the Sun's points, a read
+ * the call without SEFLG_SPEED does not make: within that light time of a
+ * span's start it fell to Moshier (fallback allowed, its heliocentric
+ * Earth taken for the barycentric one: Pluto's points with the files of
+ * 1800-2400 at JD 2378496.625 1.2e-5 deg/day off) or was refused
+ * (strict). There it is now the acceleration at teval of the Earth (sun
+ * FALSE) or of the barycentric Sun (TRUE), the one-sided second-order
+ * difference (4 v(t + h) - 3 v(t) - v(t + 2h)) / 2h of velocities read
+ * after it (h = 2^-9 day, as bug 206's; truncation h^2/3 a'', 1e-9 of a),
+ * x0 the body at teval (velocity x0[3..5]), the reads by epheflag, the
+ * ephemeris that answered at teval, with its Moon (mm: Moshier's, bug 120,
+ * or -1 for either); with SEFLG_TOPOCTR the site's added, as
+ * swi_observer_accel_lt() adds it. A read not so answered is an ERR: no
+ * span is that short. */
+int swi_observer_accel_fwd(swe_ctx *ctx, double teval, int32 epheflag, int32 iflag,
+                           int mm, AS_BOOL sun, const double *x0, double *acc, char *serr)
+{
+  const double h = 1.0 / 512;
+  double xe[2][6], xs[2][6], as[3];
+  AS_BOOL was = ctx->moshmoon_used;
+  char s[AS_MAXCH], *sp = (serr != NULL) ? s : NULL;
+  int i, k, retc;
+  int32 fl = (iflag & ~SEFLG_EPHMASK) | epheflag | SEFLG_SPEED;
+  for (k = 0; k < 2; k++) {
+    int32 used = epheflag;
+    *s = '\0';
+    ctx->moshmoon_used = FALSE;
+    retc = main_planet_bary(ctx, teval + (k + 1) * h, SEI_EARTH, epheflag, fl, NO_SAVE,
+                            &used, xe[k], xe[k], xs[k], NULL, sp);
+    if (retc == OK && (used != epheflag || (mm >= 0 && ctx->moshmoon_used != (AS_BOOL) mm)))
+      retc = NOT_AVAILABLE;
+    ctx->moshmoon_used = was;
+    if (retc != OK) {
+      if (serr != NULL) {
+        if (*s == '\0')
+          sprintf(s, "jd %.8f: the observer's rate leaves the ephemeris's span", teval + (k + 1) * h);
+        strcpy(serr, s);
+      }
+      return ERR;
+    }
+  }
+  for (i = 0; i <= 2; i++) {
+    const double *v1 = sun ? xs[0] : xe[0], *v2 = sun ? xs[1] : xe[1];
+    acc[i] = (4 * v1[i+3] - 3 * x0[i+3] - v2[i+3]) / (2 * h);
+  }
+  if (!sun && (iflag & SEFLG_TOPOCTR)) {
+    if (observer_accel(ctx, teval, iflag, as, serr) != OK)
+      return ERR;
+    for (i = 0; i <= 2; i++)
+      acc[i] += as[i];
+  }
+  return OK;
+}
+
 /* Upstream bug 35: the light time's rate was taken as the change, over a
  * day, of the light-time displacement of a body moved linearly along its
  * velocity (xxsp), which is off by the curvature of that day's motion:
@@ -10480,6 +10536,104 @@ static AS_BOOL osc_frame_hold(swe_ctx *ctx, double tjd, int32 iflag, double intv
   return swi_frame_step_side(ctx, tjd, (npt == 5 ? 2 : 1) * intv, iflag,
                              SWI_FRAME_PREC | SWI_FRAME_EPS) != 0;
 }
+
+/* Upstream bug 225: the speeds read the Moon at tjd + k step, |k| <= 2
+ * (step 2^-6 day), each less its light time, and the first of those reads
+ * past the span of a JPL file or of the Swiss Moon files sent the whole
+ * call to the next ephemeris, where the call without SEFLG_SPEED reads tjd
+ * alone:
+ * at de200.eph's end - 2^-10 day the true node 260 from Moshier, 2.2e-3
+ * deg off its JPL place, the apogee 0.0167 deg, strict refused, against 1
+ * from JPL without the flag. Now a speed epoch past the span is skipped,
+ * and once tjd's own read has answered, the side of tjd it lay on is
+ * replaced by epochs on the other side, k = 3 and 4 (k = 2 for three
+ * points) times its sign, in the skipped slots, and the speed is the
+ * one-sided difference from the side within; tjd's read alone decides the
+ * fallback, as without the flag, and serr is the one without it. */
+struct osc_span {
+  double off[5];	/* the slots' epochs, tjd + off[i] x step */
+  int ord[7], nl, nmain;	/* the slots in reading order; the extra ones from nmain */
+  int out;		/* 1 an epoch before tjd past the span, 2 after */
+  int in;		/* 0 the central difference, else the side within, +-1 */
+  int sl[5];		/* one-sided: the slots of k = 0, 1, 2, 3, 4 times in */
+  AS_BOOL holdx;	/* bug 186's hold for the extra epochs' reach */
+  char se[AS_MAXCH];	/* serr before a speed epoch's read */
+};
+
+static void osc_span_init(struct osc_span *o, const double *off, const int *ord, int npt)
+{
+  int i;
+  for (i = 0; i < 5; i++)
+    o->off[i] = off[i];
+  for (i = 0; i < npt; i++)
+    o->ord[i] = ord[i];
+  o->nl = o->nmain = npt;
+  o->out = o->in = 0;
+  o->holdx = FALSE;
+}
+
+/* before the read of the k-th slot i: the serr to put back if it is skipped */
+static void osc_span_save(struct osc_span *o, int i, const char *serr)
+{
+  if (i != 2 && serr != NULL)
+    strcpy(o->se, serr);
+}
+
+/* the read of the k-th slot i is past the span: 1 skip it (serr as before
+ * the read), 0 not a speed epoch (tjd: the fallback as without the flag),
+ * -1 an extra epoch past it too, which no span longer than 2^-4 day gives
+ * (ERR, the read's message) */
+static int osc_span_out(struct osc_span *o, int k, int i, char *serr)
+{
+  if (i == 2)
+    return 0;
+  if (k >= o->nmain)
+    return -1;
+  o->out |= o->off[i] < 0 ? 1 : 2;
+  if (serr != NULL)
+    strcpy(serr, o->se);
+  return 1;
+}
+
+/* bug 186's hold for the k-th read */
+static AS_BOOL osc_span_hold(const struct osc_span *o, int k, AS_BOOL hold)
+{
+  return k >= o->nmain ? o->holdx : hold;
+}
+
+/* after tjd's read, which answered: with one side skipped, the extra epochs
+ * on the other side appended in its slots */
+static int osc_span_extend(swe_ctx *ctx, struct osc_span *o, double tjd, int32 iflag,
+                           double intv, int npt, char *serr)
+{
+  int s;
+  if (o->out == 0)
+    return OK;
+  if (o->out == 3) {
+    if (serr != NULL)
+      sprintf(serr, "jd %.8f: the Moon's speed epochs leave the ephemeris's span both sides", tjd);
+    return ERR;
+  }
+  s = o->in = (o->out == 1) ? 1 : -1;
+  o->sl[0] = 2;
+  o->sl[1] = s > 0 ? 1 : 0;		/* +-1 */
+  if (npt == 5) {
+    o->sl[2] = s > 0 ? 4 : 3;		/* +-2 */
+    o->sl[3] = s > 0 ? 0 : 1;		/* the skipped -+1: +-3 */
+    o->sl[4] = s > 0 ? 3 : 4;		/* the skipped -+2: +-4 */
+    o->off[o->sl[3]] = 3 * s;
+    o->off[o->sl[4]] = 4 * s;
+    o->ord[o->nl++] = o->sl[3];
+    o->ord[o->nl++] = o->sl[4];
+  } else {
+    o->sl[2] = s > 0 ? 0 : 1;		/* the skipped -+1: +-2 */
+    o->off[o->sl[2]] = 2 * s;
+    o->ord[o->nl++] = o->sl[2];
+  }
+  /* bug 186: the reach of the one-sided stencil, twice the central's */
+  o->holdx = osc_frame_hold(ctx, tjd, iflag, 2 * intv, npt);
+  return OK;
+}
 #endif
 
 /* lunar osculating elements, i.e.
@@ -10584,6 +10738,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   double rr[5] = {0, 0, 0, 0, 0};
   AS_BOOL hold = FALSE;		/* bug 186 */
   int32 held[2];
+  struct osc_span osp;		/* bug 225 */
 #endif
 #ifdef SID_TNODE_FROM_ECL_T0
   struct sid_data *sip = &ctx->sidd;
@@ -10652,6 +10807,9 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   if (serr != NULL)
     *serr = '\0';
   three_positions:
+#ifndef SWE_UPSTREAM_COMPAT
+  osp.in = 0;			/* bug 225: central, unless a span's edge is near */
+#endif
   switch(epheflag) {
     case SEFLG_JPLEPH:
 #ifndef SWE_UPSTREAM_COMPAT
@@ -10663,11 +10821,17 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 #endif
       ord = (npt == 5) ? ord5 : ord3;
       kstart = (iflag & SEFLG_SPEED) ? 0 : npt - 1;
+#ifndef SWE_UPSTREAM_COMPAT
+      osc_span_init(&osp, osc_off, ord, npt);	/* bug 225 */
+      for (k = kstart; k < osp.nl; k++) {
+	i = osp.ord[k];
+	t = tjd + osp.off[i] * speed_intv;
+	rr[i] = osc_round_err(tjd, osp.off[i] * speed_intv, t);	/* bug 75 */
+	osc_span_save(&osp, i, serr);
+#else
       for (k = kstart; k < npt; k++) {
 	i = ord[k];
 	t = tjd + osc_off[i] * speed_intv;
-#ifndef SWE_UPSTREAM_COMPAT
-	rr[i] = osc_round_err(tjd, osc_off[i] * speed_intv, t);	/* bug 75 */
 #endif
 	xp = xpos[i];
 	retc = jplplan(ctx, t, ipli, iflag, NO_SAVE, xp, NULL, NULL, serr);
@@ -10690,6 +10854,15 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	  if (retc == ERR)
 	    return(ERR);
         }
+#ifndef SWE_UPSTREAM_COMPAT
+	/* bug 225: a speed epoch past the file's span */
+	if (retc == BEYOND_EPH_LIMITS && (j = osc_span_out(&osp, k, i, serr)) != 0) {
+	  if (j < 0)
+	    return ERR;
+	  retc = OK;
+	  continue;
+	}
+#endif
 	/* jpl ephemeris not on disk, or date beyond ephemeris range */
 	if (retc == NOT_AVAILABLE) {
 	  iflag = (iflag & ~SEFLG_JPLEPH) | SEFLG_SWIEPH;
@@ -10709,13 +10882,15 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	}
 	/* precession and nutation etc. */
 #ifndef SWE_UPSTREAM_COMPAT
-	if (hold)
+	if (osc_span_hold(&osp, k, hold))
 	  swi_frame_model_hold(ctx, tjd, held);
 #endif
 	retc = swi_plan_for_osc_elem(ctx, iflag|SEFLG_SPEED, t, xpos[i]); /* retc is always ok */
 #ifndef SWE_UPSTREAM_COMPAT
-	if (hold)
+	if (osc_span_hold(&osp, k, hold))
 	  swi_frame_model_release(ctx, held);
+	if (i == 2 && osc_span_extend(ctx, &osp, tjd, iflag, speed_intv, npt, serr) != OK)
+	  return ERR;
 #endif
       }
       break;
@@ -10729,11 +10904,17 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 #endif
       ord = (npt == 5) ? ord5 : ord3;
       kstart = (iflag & SEFLG_SPEED) ? 0 : npt - 1;
+#ifndef SWE_UPSTREAM_COMPAT
+      osc_span_init(&osp, osc_off, ord, npt);	/* bug 225 */
+      for (k = kstart; k < osp.nl; k++) {
+	i = osp.ord[k];
+	t = tjd + osp.off[i] * speed_intv;
+	rr[i] = osc_round_err(tjd, osp.off[i] * speed_intv, t);	/* bug 75 */
+	osc_span_save(&osp, i, serr);
+#else
       for (k = kstart; k < npt; k++) {
 	i = ord[k];
 	t = tjd + osc_off[i] * speed_intv;
-#ifndef SWE_UPSTREAM_COMPAT
-	rr[i] = osc_round_err(tjd, osc_off[i] * speed_intv, t);	/* bug 75 */
 #endif
 	retc = swemoon(ctx, t, iflag | SEFLG_SPEED, NO_SAVE, xpos[i], serr);/**/
 	if (retc == ERR)
@@ -10748,6 +10929,15 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	  if (retc == ERR)
 	    return(ERR);
         }
+#ifndef SWE_UPSTREAM_COMPAT
+	/* bug 225: a speed epoch past the Moon files' span */
+	if (retc == NOT_AVAILABLE && (j = osc_span_out(&osp, k, i, serr)) != 0) {
+	  if (j < 0)
+	    return ERR;
+	  retc = OK;
+	  continue;
+	}
+#endif
 	if (retc == NOT_AVAILABLE) {
 	  if (tjd > MOSHPLEPH_START && tjd < MOSHPLEPH_END) {
 	    iflag = (iflag & ~SEFLG_SWIEPH) | SEFLG_MOSEPH;
@@ -10760,13 +10950,15 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	}
 	/* precession and nutation etc. */
 #ifndef SWE_UPSTREAM_COMPAT
-	if (hold)
+	if (osc_span_hold(&osp, k, hold))
 	  swi_frame_model_hold(ctx, tjd, held);
 #endif
 	retc = swi_plan_for_osc_elem(ctx, iflag|SEFLG_SPEED, t, xpos[i]); /* retc is always ok */
 #ifndef SWE_UPSTREAM_COMPAT
-	if (hold)
+	if (osc_span_hold(&osp, k, hold))
 	  swi_frame_model_release(ctx, held);
+	if (i == 2 && osc_span_extend(ctx, &osp, tjd, iflag, speed_intv, npt, serr) != OK)
+	  return ERR;
 #endif
       }
       break;
@@ -10980,7 +11172,27 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   ndap->iephe = epheflag;
   if (iflag & SEFLG_SPEED) {
     double fr;
-    if (npt == 5) {
+    if (osp.in != 0) {
+      /* bug 225: one side past the span, the one-sided difference from
+       * the other, k = 0 .. npt - 1 steps of osp.in: (-25, 48, -36, 16, -3)
+       * / 12 (truncation h^4 / 5 of the fifth derivative), (-3, 4, -1) / 2 */
+      static const double c5[5] = {-25, 48, -36, 16, -3}, c3[3] = {-3, 4, -1};
+      const double *c = (npt == 5) ? c5 : c3;
+      double den = osp.in * (npt == 5 ? 12 : 2) * speed_intv, sa, sn;
+      fr = 0;
+      for (k = 0; k < npt; k++)
+        fr += c[k] * rr[osp.sl[k]];
+      fr = 1 + fr / den;
+      for (i = 0; i <= 2; i++) {
+        sa = sn = 0;
+        for (k = 0; k < npt; k++) {
+          sa += c[k] * xxa[osp.sl[k]][i];
+          sn += c[k] * xx[osp.sl[k]][i];
+        }
+        ndap->x[i+3] = sa / den * fr;
+        ndnp->x[i+3] = sn / den * fr;
+      }
+    } else if (npt == 5) {
       fr = 1 + (rr[3] - 8 * rr[0] + 8 * rr[1] - rr[4]) / (12 * speed_intv);
       for (i = 0; i <= 2; i++) {
         ndap->x[i+3] = (xxa[3][i] - 8 * xxa[0][i] + 8 * xxa[1][i] - xxa[4][i])

@@ -1,5 +1,6 @@
-/* spanedge.c -- G158: at the edge of an ephemeris's span a star with
- * SEFLG_SPEED answers as without it, and a fictitious body or an orbit of
+/* spanedge.c -- G158: at the edge of an ephemeris's span a star, the true
+ * node, the osculating apogee and swe_nod_aps()'s points with SEFLG_SPEED
+ * answer as without it, and a fictitious body or an orbit of
  * swe_calc_orbel() whose light time leaves the span falls back or is
  * refused as swe_calc()'s planets are.
  *
@@ -20,7 +21,18 @@
  * own: with the files of 1800-2400 alone Cupido at JD 2378496.6 (0.23 day
  * of light time after sepl_18's start) took Moshier's Sun, 0, for the
  * files' barycentric one, 258 under either setting and 4.33e-3 deg off both
- * the complete directory's and the Moshier request's.
+ * the complete directory's and the Moshier request's. UPSTREAM-BUGS 225:
+ * the true node and the osculating apogee with SEFLG_SPEED read the Moon at
+ * tjd +- k 2^-6 day, k <= 2 (lunar_osc_elem()), and within 2^-5 day of a
+ * span's edge the whole answer fell to Moshier: on de200.eph 2^-10 day
+ * inside its end the node 260, 88.4083557 deg, for 257, 88.4061487
+ * without the flag (its speed 1.89110e-2 deg/day for 1.80947e-2), the
+ * apogee 308.7951857 for 308.7784839; strict refused. UPSTREAM-BUGS 226:
+ * swe_nod_aps() with SEFLG_SPEED reads the osculating ellipse at tjd +- k
+ * h and the observer at tjd less the light time, and near a start fell to
+ * Moshier the same way: Pluto's points with the files of 1800-2400 at JD
+ * 2378496.625 the node's speed -2.48353e-2 deg/day for -2.48232e-2, strict
+ * refused ("jd 2378496.3944"), the barycentric ellipse refused either way.
  *
  * The check, the files of 1800-2400 alone (sepl_18, semo_18, seas_18) and
  * with sepl_24 and seas_24 (the Moon file's end alone) linked in /tmp,
@@ -48,12 +60,41 @@
  *      light time) and at JD 2378497.5 the complete directory's answer bit
  *      for bit, both settings; and in one process Cupido at 2378496.6,
  *      2378497.5 and 2378496.6 again, each as a pristine process.
- * Measured: 971 rows, none fail; (a)'s speeds within 6.4e-11 deg/day of
- * the places' rate. Before the fixes 640 fail: (a)'s 560 rows at the edges
- * (refused, or the speed 5.9e-4 to 6.6e-4 deg/day off, 2.4e-9 at the Moon
- * file's end, serr noting Moshier) and (b)'s 80 rows with the files at
- * 2378496.6 and 2378496.625 (258 under either setting). The upstream build
- * fails 764: (a) 664, its stars' speeds upstream's (bug 49 and on), (b) 100.
+ *  (c) SE_TRUE_NODE and SE_OSCU_APOG by swe_calc(), geocentric,
+ *      equatorial, J2000, sidereal and SEFLG_TRUEPOS, the fallback allowed
+ *      and strict, on de200.eph at its end, 2^-10 and 2^-5 + 2^-10 day
+ *      inside it, 2^-10 and 2^-20 day inside its start (tjd's own reads
+ *      leave the span there: the call with the flag falls back or is
+ *      refused as the one without), 7.1e-3 day inside semo_18's start and
+ *      4.3e-3 inside its end, and at 2000 Jan 1.5 on de200 and the files:
+ *      the flag, place and serr the call's without SEFLG_SPEED, the place
+ *      from the ephemeris asked, the speeds within 2e-8 (node) and 5e-7
+ *      (apogee) deg/day of nine-point one-sided differences (inward, 2^-4
+ *      day) of the places, and the last call of each process a pristine
+ *      process's.
+ *  (d) swe_nod_aps() for the Sun, the Moon, Mars, Saturn and Pluto, mean,
+ *      osculating, SE_NODBIT_OSCU_BAR and SE_NODBIT_FOPOINT, geocentric,
+ *      topocentric, heliocentric and barycentric, both settings, on
+ *      de200.eph 2^-20, 2^-7 and 2^-3 day inside its start, at its end and
+ *      2^-7 day inside it, 2^-7 and 2^-3 day inside sepl_18's start, 7.6e-3
+ *      inside its end, 4.3e-3 inside semo_18's, and at 2000 Jan 1.5: the
+ *      return, the four places and serr the call's without SEFLG_SPEED, the
+ *      speeds within 2e-8 deg/day (the Moon's 3e-7) of nine-point one-sided
+ *      differences of the places (2^-5 day, topocentric 2^-6, the Moon's
+ *      2^-7; the Sun's points under SEFLG_NOGDEFL, their perigee behind the
+ *      Sun's disk at sepl_18's end), and the last call a pristine
+ *      process's.
+ * Measured: 2951 rows, none fail; (a)'s speeds within 6.4e-11 deg/day of
+ * the places' rate, (c)'s within 4.8e-9 (node) and 2.2e-7 (apogee, the
+ * reference's own noise: 1.4e-7 at 2000), (d)'s within 1.5e-7 (the Moon;
+ * the Sun's 5.9e-9, the planets' 1.8e-9). Before the fixes of 206 and 208
+ * 640 fail: (a)'s 560 rows at the edges (refused, or the speed 5.9e-4 to
+ * 6.6e-4 deg/day off, 2.4e-9 at the Moon file's end, serr noting Moshier)
+ * and (b)'s 80 rows with the files at 2378496.6 and 2378496.625 (258 under
+ * either setting); before those of 225 and 226 962 fail, (c) 112 and (d)
+ * 850 (Moshier's answer or a refusal; the 2000 rows pass). The upstream
+ * build fails 2694: (a) 664, its stars' speeds upstream's (bug 49 and on),
+ * (b) 100, (c) 170, (d) 1760.
  *
  * Run as
  *   spanedge EPHEDIR
@@ -260,9 +301,228 @@ static void warm_proc(struct ans *out)
   body_call(&cup, 2378496.6, SEFLG_SWIEPH | SEFLG_SPEED, &out[2]);
 }
 
+/* (c) and (d): the edges, inward the side the places' rate is taken on;
+ * mayfall: tjd's own light time leaves the span (the call without
+ * SEFLG_SPEED falls back or is refused there, and the one with it must do
+ * the same) */
+struct sedge { const char *sz; int dir; int32 eph; double jd; int inward, mayfall; };
+/* nine-point one-sided first derivative, k = 0 .. 8 steps */
+static const double A9[9] = {-761.0 / 280, 8, -14, 56.0 / 3, -35.0 / 2, 56.0 / 5, -14.0 / 3, 8.0 / 7, -1.0 / 8};
+
+/* (c) the true node and the osculating apogee by swe_calc() */
+static const int NODB[2] = {SE_TRUE_NODE, SE_OSCU_APOG};
+static const char *const NODSZ[2] = {"SE_TRUE_NODE", "SE_OSCU_APOG"};
+static const int32 NFL[] = {0, SEFLG_EQUATORIAL, SEFLG_J2000 | SEFLG_NONUT, SEFLG_SIDEREAL, SEFLG_TRUEPOS};
+#define NNFL ((int) (sizeof NFL / sizeof NFL[0]))
+static const struct sedge CEDGES[] = {
+  {"de200.eph's end - 2^-10", 0, SEFLG_JPLEPH, 2513392.5 - 1.0 / 1024, -1, 0},
+  {"de200.eph's end", 0, SEFLG_JPLEPH, 2513392.5, -1, 0},
+  {"de200.eph's end - 2^-5 - 2^-10", 0, SEFLG_JPLEPH, 2513392.5 - 1.0 / 32 - 1.0 / 1024, -1, 0},
+  {"de200.eph's start + 2^-10", 0, SEFLG_JPLEPH, 2305424.5 + 1.0 / 1024, 1, 0},
+  {"de200.eph's start + 2^-20", 0, SEFLG_JPLEPH, 2305424.5 + 1.0 / 1048576, 1, 1},
+  {"semo_18's start + 7.1e-3", 1, SEFLG_SWIEPH, 2378487.5625, 1, 0},
+  {"semo_18's end - 4.3e-3", 1, SEFLG_SWIEPH, 2597656.453125, -1, 0},
+  {"2000, de200.eph", 0, SEFLG_JPLEPH, 2451545.0, 1, 0},
+  {"2000, the files", 0, SEFLG_SWIEPH, 2451545.0, -1, 0},
+};
+#define NCEDGE ((int) (sizeof CEDGES / sizeof CEDGES[0]))
+#define CH (1.0 / 16)		/* the places' step */
+static const double CLIM[2] = {2e-8, 5e-7};	/* deg/day, the node's and the apogee's */
+static double cerr[2];
+
+static void node_call(int ib, double jd, int32 fl, struct ans *a)
+{
+  memset(a, 0, sizeof *a);
+  a->r = swe_calc(jd, NODB[ib], fl, a->x, a->serr);
+  a->ran = 1;
+}
+
+/* (c): the node and the apogee at one edge, one setting, in one process */
+struct cres { int bad, rows; double err[2]; struct ans last; char first[200]; int ran; };
+static void nodes_proc(const struct sedge *e, int fb, struct cres *out)
+{
+  int ib, jf, k, c;
+  memset(out, 0, sizeof *out);
+  setup(dirof(e->dir), fb);
+  for (ib = 0; ib < 2; ib++)
+    for (jf = 0; jf < NNFL; jf++) {
+      int32 fl = NFL[jf] | e->eph;
+      struct ans s, z, p;
+      const char *why = NULL;
+      double y[9][2];
+      node_call(ib, e->jd, fl | SEFLG_SPEED, &s);
+      node_call(ib, e->jd, fl, &z);
+      out->rows++;
+      if ((z.r < 0 || (z.r & EPHMASK) != e->eph) && !e->mayfall)
+        why = "not answered from the ephemeris asked without SEFLG_SPEED";
+      else if (s.r != (z.r < 0 ? z.r : (z.r | SEFLG_SPEED)))
+        why = "flag not the one without SEFLG_SPEED, with it";
+      else if (memcmp(s.x, z.x, 3 * sizeof(double)) != 0)
+        why = "place not the one without SEFLG_SPEED";
+      else if (strcmp(s.serr, z.serr) != 0)
+        why = "serr not the one without SEFLG_SPEED";
+      if (why == NULL && z.r >= 0 && (z.r & EPHMASK) == e->eph) {
+        for (k = 0; why == NULL && k < 9; k++) {
+          if (k == 0)
+            p = z;
+          else
+            node_call(ib, e->jd + e->inward * k * CH, fl, &p);
+          if (p.r != z.r)
+            why = "a stencil instant answered otherwise";
+          y[k][0] = p.x[0];
+          y[k][1] = p.x[1];
+        }
+        for (c = 0; why == NULL && c < 2; c++) {
+          double d = 0, err;
+          for (k = 1; k < 9; k++)
+            d += A9[k] * swe_difdeg2n(y[k][c], y[0][c]);
+          d *= e->inward / CH;
+          err = fabs(s.x[3 + c] - d) * (c ? 1 : cos(s.x[1] * M_PI / 180));
+          if (err > out->err[ib])
+            out->err[ib] = err;
+          if (!(err <= CLIM[ib]))
+            why = c ? "latitude speed off the places' rate" : "longitude speed off the places' rate";
+        }
+      }
+      if (why != NULL) {
+        out->bad++;
+        if (*out->first == '\0')
+          snprintf(out->first, sizeof out->first, "%s fl %d: %s; ret %d/%d serr '%.60s'",
+                   NODSZ[ib], (int) fl, why, s.r, z.r, s.serr);
+      }
+      out->last = s;
+    }
+  out->ran = 1;
+}
+
+/* the last call of nodes_proc(), alone */
+static void nodes_fresh(const struct sedge *e, int fb, struct cres *out)
+{
+  memset(out, 0, sizeof *out);
+  setup(dirof(e->dir), fb);
+  node_call(1, e->jd, NFL[NNFL - 1] | e->eph | SEFLG_SPEED, &out->last);
+  out->ran = 1;
+}
+
+/* (d) swe_nod_aps(): the places' step and the limit; the Sun's points'
+ * rate is taken under SEFLG_NOGDEFL, their perigee being behind the Sun's
+ * disk at sepl_18's end, where the deflection's rate is not its places'
+ * (2.9e-7 deg/day, with or without the files' edge) */
+static const struct { const char *sz; int ipl; double h, lim; int32 xfl; } NPL[] = {
+  {"Sun", SE_SUN, 1.0 / 32, 2e-8, SEFLG_NOGDEFL}, {"Moon", SE_MOON, 1.0 / 128, 3e-7, 0},
+  {"Mars", SE_MARS, 1.0 / 32, 2e-8, 0}, {"Saturn", SE_SATURN, 1.0 / 32, 2e-8, 0},
+  {"Pluto", SE_PLUTO, 1.0 / 32, 2e-8, 0},
+};
+#define NNPL ((int) (sizeof NPL / sizeof NPL[0]))
+static const int32 NMETH[] = {SE_NODBIT_MEAN, SE_NODBIT_OSCU, SE_NODBIT_OSCU_BAR,
+                              SE_NODBIT_OSCU | SE_NODBIT_FOPOINT};
+#define NNMETH ((int) (sizeof NMETH / sizeof NMETH[0]))
+static const int32 NCTR[] = {0, SEFLG_TOPOCTR, SEFLG_HELCTR, SEFLG_BARYCTR};
+#define NNCTR ((int) (sizeof NCTR / sizeof NCTR[0]))
+static const struct sedge DEDGES[] = {
+  {"de200.eph's start + 2^-20", 0, SEFLG_JPLEPH, 2305424.5 + 1.0 / 1048576, 1, 0},
+  {"de200.eph's start + 2^-7", 0, SEFLG_JPLEPH, 2305424.5 + 1.0 / 128, 1, 0},
+  {"de200.eph's start + 2^-3", 0, SEFLG_JPLEPH, 2305424.5 + 1.0 / 8, 1, 0},
+  {"de200.eph's end - 2^-7", 0, SEFLG_JPLEPH, 2513392.5 - 1.0 / 128, -1, 0},
+  {"de200.eph's end", 0, SEFLG_JPLEPH, 2513392.5, -1, 0},
+  {"sepl_18's start + 2^-7", 1, SEFLG_SWIEPH, 2378496.5 + 1.0 / 128, 1, 0},
+  {"sepl_18's start + 2^-3", 1, SEFLG_SWIEPH, 2378496.5 + 1.0 / 8, 1, 0},
+  {"sepl_18's end - 7.6e-3", 1, SEFLG_SWIEPH, 2597651.3515625, -1, 0},
+  {"semo_18's end - 4.3e-3", 2, SEFLG_SWIEPH, 2597656.453125, -1, 0},
+  {"2000, de200.eph", 0, SEFLG_JPLEPH, 2451545.0, 1, 0},
+  {"2000, the files", 0, SEFLG_SWIEPH, 2451545.0, -1, 0},
+};
+#define NDEDGE ((int) (sizeof DEDGES / sizeof DEDGES[0]))
+static double derr;
+
+struct nans { int32 r; double x[4][6]; char serr[AS_MAXCH]; int ran; };
+static void nodaps_call(int ib, double jd, int32 fl, int32 m, struct nans *a)
+{
+  memset(a, 0, sizeof *a);
+  a->r = swe_nod_aps(jd, NPL[ib].ipl, fl, m, a->x[0], a->x[1], a->x[2], a->x[3], a->serr);
+  a->ran = 1;
+}
+
+/* (d): the points at one edge, one setting, in one process */
+struct dres { int bad, rows; double err; struct nans last; char first[200]; int ran; };
+static void nodaps_proc(const struct sedge *e, int fb, struct dres *out)
+{
+  int ib, im, ic, k, j, c;
+  memset(out, 0, sizeof *out);
+  setup(dirof(e->dir), fb);
+  for (ib = 0; ib < NNPL; ib++)
+    for (im = 0; im < NNMETH; im++)
+      for (ic = 0; ic < NNCTR; ic++) {
+        int32 fl = NCTR[ic] | e->eph, m = NMETH[im];
+        /* the site turns: a shorter step */
+        double h = (ic == 1 && NPL[ib].ipl != SE_MOON) ? NPL[ib].h / 2 : NPL[ib].h;
+        struct nans s, z;
+        static struct nans p[9];
+        const char *why = NULL;
+        nodaps_call(ib, e->jd, fl | SEFLG_SPEED, m, &s);
+        nodaps_call(ib, e->jd, fl, m, &z);
+        out->rows++;
+        if (z.r < 0)
+          why = "refused without SEFLG_SPEED";
+        else if (s.r != z.r)
+          why = "the return not the one without SEFLG_SPEED";
+        else if (strcmp(s.serr, z.serr) != 0)
+          why = "serr not the one without SEFLG_SPEED";
+        for (j = 0; why == NULL && j < 4; j++)
+          if (memcmp(s.x[j], z.x[j], 3 * sizeof(double)) != 0)
+            why = "a place not the one without SEFLG_SPEED";
+        if (why == NULL && NPL[ib].xfl != 0) {
+          fl |= NPL[ib].xfl;
+          nodaps_call(ib, e->jd, fl | SEFLG_SPEED, m, &s);
+          nodaps_call(ib, e->jd, fl, m, &z);
+          if (z.r < 0 || s.r != z.r || strcmp(s.serr, z.serr) != 0)
+            why = "under SEFLG_NOGDEFL not answered as without SEFLG_SPEED";
+        }
+        for (k = 0; why == NULL && k < 9; k++) {
+          if (k == 0)
+            p[0] = z;
+          else
+            nodaps_call(ib, e->jd + e->inward * k * h, fl, m, &p[k]);
+          if (p[k].r != z.r)
+            why = "a stencil instant answered otherwise";
+        }
+        for (j = 0; why == NULL && j < 4; j++)
+          for (c = 0; why == NULL && c < 2; c++) {
+            double d = 0, err;
+            if (z.x[j][2] == 0)	/* no point (the Earth's nodes) */
+              continue;
+            for (k = 1; k < 9; k++)
+              d += A9[k] * swe_difdeg2n(p[k].x[j][c], p[0].x[j][c]);
+            d *= e->inward / h;
+            err = fabs(s.x[j][3 + c] - d) * (c ? 1 : cos(s.x[j][1] * M_PI / 180));
+            if (err > out->err)
+              out->err = err;
+            if (!(err <= NPL[ib].lim))
+              why = c ? "a latitude speed off the places' rate" : "a longitude speed off the places' rate";
+          }
+        if (why != NULL) {
+          out->bad++;
+          if (*out->first == '\0')
+            snprintf(out->first, sizeof out->first, "%s method %d fl %d: %s; ret %d/%d serr '%.60s'",
+                     NPL[ib].sz, (int) m, (int) fl, why, s.r, z.r, s.serr);
+        }
+        out->last = s;
+      }
+  out->ran = 1;
+}
+
+/* the last call of nodaps_proc(), alone */
+static void nodaps_fresh(const struct sedge *e, int fb, struct dres *out)
+{
+  memset(out, 0, sizeof *out);
+  setup(dirof(e->dir), fb);
+  nodaps_call(NNPL - 1, e->jd, NCTR[NNCTR - 1] | e->eph | SEFLG_SPEED, NMETH[NNMETH - 1], &out->last);
+  out->ran = 1;
+}
+
 /* run fn in a forked, pristine process; its result comes back by a pipe */
-enum { P_STARS, P_FRESH, P_BODY, P_WARM };
-struct job { int what; const struct edge *e; int fb, kind; struct bq q; };
+enum { P_STARS, P_FRESH, P_BODY, P_WARM, P_NODES, P_NODES_FRESH, P_NODAPS, P_NODAPS_FRESH };
+struct job { int what; const struct edge *e; int fb, kind; struct bq q; const struct sedge *se; };
 static int run(const struct job *j, void *out, size_t n)
 {
   int fd[2];
@@ -287,6 +547,10 @@ static int run(const struct job *j, void *out, size_t n)
         setup(j->q.dir, j->q.fb);
         body_call(j->q.b, j->q.jd, j->q.fl, buf);
         break;
+      case P_NODES: nodes_proc(j->se, j->fb, buf); break;
+      case P_NODES_FRESH: nodes_fresh(j->se, j->fb, buf); break;
+      case P_NODAPS: nodaps_proc(j->se, j->fb, buf); break;
+      case P_NODAPS_FRESH: nodaps_fresh(j->se, j->fb, buf); break;
       default: warm_proc(buf); break;
     }
     _exit(write(fd[1], buf, n) == (ssize_t) n ? 0 : 3);
@@ -390,7 +654,7 @@ static void unbuild(const char *dir)
 
 int main(int argc, char **argv)
 {
-  int ie, fb, kind, ib, jf, k, nstar = 0, nbad_a, nrow_a;
+  int ie, fb, kind, ib, jf, k, nstar = 0, nbad_a, nrow_a, nbad_b, nrow_b, nbad_c, nrow_c;
   if (argc != 2 || realpath(argv[1], EPHE) == NULL) {
     fprintf(stderr, "usage: spanedge EPHEDIR\n");
     return 2;
@@ -401,8 +665,9 @@ int main(int argc, char **argv)
     unbuild(DIRMO);
     return 1;
   }
-  printf("G158: at a span's edge a star with SEFLG_SPEED answers as without it, a\n"
-         "      fictitious body or orbit falls back as swe_calc()'s planets\n");
+  printf("G158: at a span's edge a star, the true node, the osculating apogee and\n"
+         "      swe_nod_aps() with SEFLG_SPEED answer as without it, a fictitious body\n"
+         "      or orbit falls back as swe_calc()'s planets\n");
   /* (a) */
   for (ie = 0; ie < NEDGE; ie++)
     for (fb = 0; fb < 2; fb++)
@@ -463,11 +728,81 @@ int main(int argc, char **argv)
                    : "the call at 2378496.6 not a pristine process's", &w[k]);
     }
   }
+  nbad_b = nbad;
+  nrow_b = nrow;
+  /* (c) */
+  for (ie = 0; ie < NCEDGE; ie++)
+    for (fb = 0; fb < 2; fb++) {
+      struct job j;
+      struct cres w, f;
+      char sz[200];
+      memset(&j, 0, sizeof j);
+      j.se = &CEDGES[ie];
+      j.fb = fb;
+      j.what = P_NODES;
+      snprintf(sz, sizeof sz, "%s, %s", CEDGES[ie].sz, fb ? "fallback" : "strict");
+      nrow++;
+      if (run(&j, &w, sizeof w) != 0 || !w.ran) {
+        report("c", sz, "the process gave no answer", &w.last);
+        continue;
+      }
+      nrow += w.rows - 1;
+      for (k = 0; k < 2; k++)
+        if (w.err[k] > cerr[k])
+          cerr[k] = w.err[k];
+      if (w.bad) {
+        nbad += w.bad - 1;
+        report("c", sz, w.first, &w.last);
+      }
+      j.what = P_NODES_FRESH;
+      nrow++;
+      if (run(&j, &f, sizeof f) != 0 || !same(&w.last, &f.last)
+          || strcmp(w.last.serr, f.last.serr) != 0)
+        report("c", sz, "the last call not a pristine process's", &f.last);
+    }
+  nbad_c = nbad;
+  nrow_c = nrow;
+  /* (d) */
+  for (ie = 0; ie < NDEDGE; ie++)
+    for (fb = 0; fb < 2; fb++) {
+      struct job j;
+      static struct dres w, f;
+      struct ans a;
+      char sz[200];
+      memset(&j, 0, sizeof j);
+      j.se = &DEDGES[ie];
+      j.fb = fb;
+      j.what = P_NODAPS;
+      snprintf(sz, sizeof sz, "%s, %s", DEDGES[ie].sz, fb ? "fallback" : "strict");
+      memset(&a, 0, sizeof a);
+      nrow++;
+      if (run(&j, &w, sizeof w) != 0 || !w.ran) {
+        report("d", sz, "the process gave no answer", &a);
+        continue;
+      }
+      nrow += w.rows - 1;
+      if (w.err > derr)
+        derr = w.err;
+      a.r = w.last.r;
+      memcpy(a.serr, w.last.serr, sizeof a.serr);
+      if (w.bad) {
+        nbad += w.bad - 1;
+        report("d", sz, w.first, &a);
+      }
+      j.what = P_NODAPS_FRESH;
+      nrow++;
+      if (run(&j, &f, sizeof f) != 0 || !f.ran || w.last.r != f.last.r
+          || memcmp(w.last.x, f.last.x, sizeof w.last.x) != 0 || strcmp(w.last.serr, f.last.serr) != 0)
+        report("d", sz, "the last call not a pristine process's", &a);
+    }
   unbuild(DIR18);
   unbuild(DIRMO);
   printf("  rows %d, failed %d: (a) %d (%d star calls), failed %d, the stars' speeds within %.2e deg/day\n"
-         "  of their places' rate; (b) %d, failed %d\n",
-         nrow, nbad, nrow_a, nstar, nbad_a, maxerr, nrow - nrow_a, nbad - nbad_a);
+         "  of their places' rate; (b) %d, failed %d; (c) %d, failed %d, the node's and the apogee's\n"
+         "  speeds within %.2e and %.2e of their places' rate; (d) %d, failed %d, swe_nod_aps()'s\n"
+         "  within %.2e\n",
+         nrow, nbad, nrow_a, nstar, nbad_a, maxerr, nrow_b - nrow_a, nbad_b - nbad_a,
+         nrow_c - nrow_b, nbad_c - nbad_b, cerr[0], cerr[1], nrow - nrow_c, nbad - nbad_c, derr);
   printf(nbad ? "G158 FAIL: %d\n" : "G158 PASS\n", nbad);
   return nbad ? 1 : 0;
 }

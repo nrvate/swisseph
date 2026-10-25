@@ -199,6 +199,11 @@ extern void swi_ecl_frame_speed(double *xx, double edot);
 extern int swi_observer_accel_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
                                  const double *xeteval, const double *xsun, const double *xe,
                                  double *acc, char *serr);
+/* the Earth's (or the barycentric Sun's) acceleration at teval from
+ * reads after it, by teval's ephemeris (UPSTREAM-BUGS 226) */
+extern int swi_observer_accel_fwd(swe_ctx *ctx, double teval, int32 epheflag, int32 iflag,
+                                  int mm, AS_BOOL sun, const double *x0, double *acc,
+                                  char *serr);
 #endif
 
 extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 
