@@ -1547,6 +1547,9 @@ ctx->moon.Sa += (( 4.475946e-8*ctx->moon.T - 6.874806E-5 ) * ctx->moon.T + 7.561
 /* the step, arcsec of mean anomaly, below which the apsis iteration takes
  * its Newton step from five points this far apart (bug 45) */
 #define INTP_APS_DD_FIVE 180.0
+/* the step, arcsec, below which the secant's ratio q is damped toward 0
+ * (bug 56): 100 times the Newton step's noise, ~1e-6" */
+#define INTP_APS_Q_DAMP 1e-4
 /* the lunar distance with the arguments shifted by off along the
  * iteration's line: m the mean anomaly, the Moon's argument of latitude,
  * elongation and longitude at its centre, sp the Sun's mean anomaly and the
@@ -1608,6 +1611,8 @@ double dMP, mLP, mNF, mD, mMP;
 int ii, iii, niter = 4;	/* niter: silence compiler warning */
 #ifndef SWE_UPSTREAM_COMPAT
 double m4[4], sp[6], f[9];
+double d2 = 0, nstep, nprev = 0, q;
+int npar = 3, have_d2 = 0;
 #else
 int i;
 #endif
@@ -1643,6 +1648,12 @@ sLP = swi_mods3600(ctx->moon.SWELP);
 sMP = swi_mods3600(ctx->moon.MP);
 if (ipli == SEI_INTP_PERG) {ctx->moon.MP = 0.0; niter = 5;}
 if (ipli == SEI_INTP_APOG) {ctx->moon.MP = 648000.0; niter = 4;}
+#ifndef SWE_UPSTREAM_COMPAT
+/* bug 56: three parabolas and three Newton passes (perigee), two and two
+ * (apogee) */
+if (ipli == SEI_INTP_PERG) {niter = 6; npar = 3;}
+if (ipli == SEI_INTP_APOG) {niter = 4; npar = 2;}
+#endif
 cMP = 0;
 dd = 18000.0;
 for (iii= 0; iii<=niter; iii++) {/**/
@@ -1672,23 +1683,61 @@ for (iii= 0; iii<=niter; iii++) {/**/
  sp[0] = sM; sp[1] = sVe; sp[2] = sEa; sp[3] = sMa; sp[4] = sJu; sp[5] = sSa;
  f[0] = fNF; f[1] = fD; f[2] = fLP; f[3] = fM; f[4] = fVe; f[5] = fEa;
  f[6] = fMa; f[7] = fJu; f[8] = fSa;
+ /* Upstream bug 56: the iteration converges only linearly. Each pass's
+  * step is the distance's along the line, but the next pass's line goes
+  * through the new centre with the Moon's four arguments all moved by the
+  * step and the Sun's and planets' back at J, not along the line: the
+  * fixed point, where the slope along the line is zero, comes a fraction
+  * 1 - q nearer each pass, q = -0.04..+0.15 (perigee), -0.013..+0.024
+  * (apogee). Stopped after five passes (perigee) or four (apogee), the
+  * position was up to 1.21" (perigee) and 2.5 mas (apogee) from it over
+  * -10000..+12000, 1.16" and 2.3 mas over the -3000..+3000 served. The
+  * Newton steps are now scaled by 1 / (1 - q), q from the last two (a
+  * secant on the slope): N_k the plain step at the k-th centre, D_k the
+  * step taken to it, q = 1 - (N_{k-1} - N_k) / D_k, damped toward 0
+  * where D_k is under 1e-4" (the point is already there). The perigee
+  * takes three parabolas (5 deg, 0.5 deg, 180") and three such passes,
+  * the apogee two and two; a Newton pass needs only the four outer
+  * points, the curvature coming from the 180" parabola (perigee) or a
+  * fifth, centre point on the first pass (apogee). The result is within
+  * 0.004 mas of the fixed point (a reference with fourteen more plain
+  * passes, itself noisy at that level), for 22 lunar evaluations on the
+  * perigee (20 before) and 16 on the apogee (15). */
  if (iii == niter || iii == npass) {
    intp_aps_eval(ctx, m4, sp, f, 0, pol);
    break;
  }
- if (dd >= INTP_APS_DD_FIVE) {
+ if (iii < npar) {
    for (ii = 0; ii <= 2; ii++)
      rsv[ii] = intp_aps_eval(ctx, m4, sp, f, (ii-1)*dd, NULL);
    cMP = (1.5*rsv[0] - 2*rsv[1] + 0.5*rsv[2]) / (rsv[0] + rsv[2] - 2*rsv[1]);
    cMP *= dd;
    cMP = cMP - dd;
+   if (dd == INTP_APS_DD_FIVE) {
+     d2 = rsv[0] + rsv[2] - 2*rsv[1];	/* r'' h^2 */
+     have_d2 = 1;
+   }
  } else {
-   double r5[5], d1, d2;
-   for (ii = 0; ii <= 4; ii++)
+   double r5[5], d1;
+   for (ii = 0; ii <= 4; ii++) {
+     if (ii == 2 && have_d2)
+       continue;
      r5[ii] = intp_aps_eval(ctx, m4, sp, f, (ii-2)*INTP_APS_DD_FIVE, NULL);
+   }
+   if (!have_d2) {
+     d2 = r5[1] + r5[3] - 2 * r5[2];
+     have_d2 = 1;
+   }
    d1 = (8 * (r5[3] - r5[1]) - (r5[4] - r5[0])) / 12;	/* r' h */
-   d2 = r5[1] + r5[3] - 2 * r5[2];			/* r'' h^2 */
-   cMP = -d1 / d2 * INTP_APS_DD_FIVE;
+   nstep = -d1 / d2 * INTP_APS_DD_FIVE;
+   if (iii == npar) {
+     q = 0;
+   } else {
+     double t = cMP - nprev + nstep;	/* cMP: the step to here */
+     q = t * cMP / (cMP * cMP + INTP_APS_Q_DAMP * INTP_APS_Q_DAMP);
+   }
+   nprev = nstep;
+   cMP = nstep / (1 - q);
  }
 #else
  for (ii = 0; ii <=2; ii++) {/**/

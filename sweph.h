@@ -812,6 +812,10 @@ struct epsilon {
  *     radial part, first order in v/c, a site's acceleration stripped of
  *     its radial part (3e-8 deg/day on topocentric speeds, +5e-9
  *     geocentric; UPSTREAM-BUGS 52, G51)
+ *   - swi_intp_apsides() stopped after five passes (perigee) or four
+ *     (apogee) of an iteration that converges only linearly, up to 1.21"
+ *     (perigee) and 2.5 mas (apogee) short of its fixed point
+ *     (UPSTREAM-BUGS 56, G55)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

@@ -37,9 +37,8 @@
  * default, EQUATORIAL, TRUEPOS, Lahiri; SEFLG_SPEED and SEFLG_SPEED3)
  * against a five-point difference over 2^-4 day of the positions at
  * multiples of 2^-8 day, within 1e-6 deg/day (measured <= 2.1e-7) and
- * 1e-11 AU/day (<= 9e-13). SEFLG_J2000 is not checked for (d): its
- * latitude speed carries ~5e-7 deg/day of the J2000 conversion's own, as
- * the mean apogee's does. The upstream build fails (a) by 140 mas
+ * 1e-11 AU/day (<= 9e-13). SEFLG_J2000's latitude speed is checked in
+ * G55 (intpconv.c). The upstream build fails (a) by 140 mas
  * (perigee; 15 the apogee), (b) by 120 (13), (c) by 1.3 (0.023) and (d)
  * by 1.8e-3 deg/day (1.1e-4) and 6e-11 AU/day. Run as
  *   intpaps EPHEDIR

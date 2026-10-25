@@ -98,6 +98,7 @@ worst were in code that had never executed even once.
 | 64 | The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms | Correctness | `swecl.c` |
 | 67 | The star functions return the caller's flags, and an emptied nutation cache answers for JD 0 | Correctness | `sweph.c`, `sweconfig.c` |
 | 52 | The aberration rate term is first order in v/c | Correctness | `sweph.c` |
+| 56 | The interpolated apsides stop short of their iteration's fixed point | Correctness | `swemmoon.c` |
 
 ---
 
@@ -2275,7 +2276,7 @@ passes, not at its fixed point, which lies up to 1.08" away for the
 perigee (2.4 mas the apogee) over -10000..+12000; converging would move
 the positions by that much. SEFLG_J2000's latitude speed is off by up to
 4.6e-7 deg/day (-3000), from the J2000 conversion shared with the mean
-apogee (7e-7 at 12000).
+apogee (7e-7 at 12000). Both since: entry 56.
 
 G46 `tests/intpaps.c` (c), (d): 64 consecutive JDs on a line within 0.01
 mas (1.8e-3; upstream 1.3), the speeds within 1e-6 deg/day of a
@@ -3136,6 +3137,66 @@ ephemeris' own speed noise cancels. Angles within 5e-9 deg/day (measured
 `topo_aberr_second_order_off`: the aberration's part of the topocentric
 Sun's longitude speed on the equator in 1990, 5.4e-10 deg/day shipped
 (3.1e-8 before), 3.0e-6 compat.
+
+## 56. The interpolated apsides stop short of their iteration's fixed point
+
+**Severity: Correctness (the perigee up to 1.21" from the point its iteration converges to, the apogee 2.5 mas)**
+**Where:** `swemmoon.c`: `swi_intp_apsides()`
+
+The iteration (entry 45) steps along a line in the lunar arguments, the
+mean anomaly moving by `off` and the others by `off / f`, f their periods
+in anomalistic months. But each pass starts its line from a centre where
+the Moon's four arguments have all moved by the whole step and the Sun's
+and planets' are back at J, so the centre moves along another line than
+the one the step was taken on. The fixed point, where the distance's
+slope along the line is zero, comes only a fraction 1 - q nearer each
+pass: q = -0.04..+0.15 on the perigee, -0.013..+0.024 on the apogee
+(100000 dates). Five passes (perigee) and four (apogee) left the
+position up to 1.21" and 2.46 mas from it (20000 dates -10000..+12000;
+rms 0.12" and 0.43 mas), 1.16" and 2.34 mas over the -3000..+3000 that
+`swe_calc()` serves (entry 45's 1.08" was another sample of dates).
+
+**Fix, as done here:** the Newton steps (entry 45's, from five points
+180" apart) are scaled by 1 / (1 - q), q a secant on the last two: N_k
+the plain step at the k-th centre, D_k the step taken to it, q = 1 -
+(N_{k-1} - N_k) / D_k, damped by D_k^2 / (D_k^2 + (1e-4")^2) so that
+where the point is already within the step's noise (~1e-6") q is not
+noise over noise. The perigee keeps its three parabolas (5 deg, 0.5 deg,
+180") and takes three such passes, its curvature from the 180" parabola,
+so a pass costs four lunar evaluations; the apogee takes two parabolas
+and two passes, the first with a centre point for the curvature (its
+180" parabola dropped: the Newton pass from the 0.5 deg one converges as
+well). The light-time estimate's passes (entry 44) are the first
+parabolas, unchanged. Against a reference with fourteen more plain
+Newton passes, max over the same 20000 dates: 0.0036 mas (perigee),
+0.0024 (apogee), rms 4.5e-4 mas, the reference's own noise. Positions
+are still identical with and without SEFLG_SPEED and as smooth (64
+consecutive JDs at 200 epochs: rms 2.4e-4 -> 2.6e-4 mas on the perigee,
+2.1e-4 the apogee; worst 2.6e-3..3.2e-3 mas before and after). Lunar
+evaluations: 22 for the perigee (20 before), 16 for the apogee (15);
+instructions per `swe_calc()` +5.7% (perigee, 1.47e6 -> 1.55e6), +3.3%
+(apogee), +8% and +5% with SEFLG_SPEED. The positions move by up to 1.2"
+(perigee) and 2.5 mas (apogee), the perigee's speed by up to 2e-4
+deg/day (the rate of what moved).
+
+SEFLG_J2000's latitude speed, the other half of entry 45's note: 4.6e-7
+deg/day on the interpolated apogee at -3000 and 7.1e-7 on the mean
+apogee at 12000 when measured, from `swi_precess_speed()`'s rate of the
+precession. Entry 49's fix of that rate already made it <= 2.7e-9
+(interpolated apsides, -3000..+3000) and 2.1e-8 (mean apogee,
+-10000..+12000) against five-point differences; nothing changed here.
+
+G55 `tests/intpconv.c`: (a) the perigee and apogee at the eight dates in
+-3000..+3000 where the old iteration stopped farthest from its fixed
+point, and two modern ones, TRUEPOS and NONUT, against the fixed point
+within 0.01 mas (2.0e-3 perigee, 1.2e-3 apogee; before 1163 and 2.3,
+upstream 1164 and 2.4); (b) the J2000 latitude speeds of the interpolated
+apsides and the mean apogee against five-point differences within 1e-7
+deg/day (2.4e-9, 2.7e-9, 2.1e-8; upstream 3.4e-7, 4.5e-7, 7.6e-7).
+The upstream build fails 63 of 68. G24 `intp_fixpoint_off`: the perigee's
+longitude at JD 687314.573 from its fixed point, 3.4e-4 mas shipped,
+1.17e3 compat. Baselines: interpolated-perigee positions move by up to
+1.2", the apogee's by 2.5 mas.
 
 ## How these were found
 

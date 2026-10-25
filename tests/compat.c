@@ -479,6 +479,21 @@ static double intp_rough_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 56: the interpolated perigee at JD 687314.573 (-2832),
+ * where its iteration stopped farthest from its fixed point, TRUEPOS and
+ * NONUT (the iteration's own place), its longitude from the fixed point,
+ * 73.311264799172 deg (fourteen more Newton passes), mas: five passes left
+ * it 1.17e3 mas off */
+static double intp_fixpoint_off(void)
+{
+  double x[6];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(687314.573, SE_INTP_PERG, SEFLG_SWIEPH | SEFLG_TRUEPOS | SEFLG_NONUT, x, serr);
+  return fabs(swe_difdeg2n(x[0], 73.311264799172)) * 3600000.0;
+}
+
 /* A fixed star's distance rate: Spica's, geocentric apparent, against a
  * five-point difference of its distance over 2^-8 day, AU/day. Upstream
  * takes the deflection's and the aberration's rates as differences of two
@@ -1030,7 +1045,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1059,6 +1074,7 @@ int main(int argc, char **argv)
   nodj2k = nodaps_j2000_off();
   intpsf = intp_speedflag_off();
   intprough = intp_rough_off();
+  intpfix = intp_fixpoint_off();
   stardd = star_dist_rate_off();
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
@@ -1265,6 +1281,14 @@ int main(int argc, char **argv)
   else {
     printf("  intp perigee rough     %.2e mas     FAIL: expected %s\n",
            intprough, WANT_DEFECT ? "> 0.3" : "< 0.01");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (intpfix > 500) : (intpfix < 0.01))
+    printf("  intp perigee fixed pt  %.2e mas     OK\n", intpfix);
+  else {
+    printf("  intp perigee fixed pt  %.2e mas     FAIL: expected %s\n",
+           intpfix, WANT_DEFECT ? "> 500" : "< 0.01");
     bad++;
   }
 
