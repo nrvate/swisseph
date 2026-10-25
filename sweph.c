@@ -9707,6 +9707,13 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
 	  sprintf(serr, "ipl and iplctr (= %d) must not be identical\n", ipl);
 	return ERR;
   }
+  /* SE_ECL_NUT is swe_calc()'s obliquity and nutation, no body or centre;
+   * swe_calc() refuses every other negative number */
+  if (ipl < SE_SUN || iplctr < SE_SUN) {
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "illegal planet number %d.", ipl < SE_SUN ? ipl : iplctr);
+    return ERR;
+  }
   iflag = plaus_iflag(ctx, iflag, ipl, tjd, serr);
   epheflag = iflag & SEFLG_EPHMASK;
   // this fills in obliquity and nutation values in swed
@@ -10342,6 +10349,7 @@ static int32 swe_helio_cross_r_body(swe_ctx *ctx, int ipl, double x2cross, doubl
     || ipl == SE_MOON 
     || (ipl >= SE_MEAN_NODE && ipl <= SE_OSCU_APOG)
     || (ipl >= SE_INTP_APOG && ipl < SE_NPLANETS)
+    || ipl < SE_SUN	/* SE_ECL_NUT: its speeds are no body's, the search would not end */
   ) {
     char snam[AS_MAXCH];
     swe_get_planet_name_r(ctx, ipl, snam);
@@ -10404,6 +10412,7 @@ static int32 swe_helio_cross_ut_r_body(swe_ctx *ctx, int ipl, double x2cross, do
     || ipl == SE_MOON 
     || (ipl >= SE_MEAN_NODE && ipl <= SE_OSCU_APOG)
     || (ipl >= SE_INTP_APOG && ipl < SE_NPLANETS)
+    || ipl < SE_SUN	/* SE_ECL_NUT: its speeds are no body's, the search would not end */
   ) {
     char snam[AS_MAXCH];
     swe_get_planet_name_r(ctx, ipl, snam);

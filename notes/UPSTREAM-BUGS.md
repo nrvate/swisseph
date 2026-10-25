@@ -78,6 +78,7 @@ worst were in code that had never executed even once.
 | 40 | A heliocentric light time is measured from the barycentre on its second pass, not from the Sun: up to 0.84" on Mercury, 2.6" on a fictitious body inside its orbit | Correctness | `sweph.c` |
 | 41 | `swe_get_ayanamsa_ex()`, the sidereal houses and `swe_gauquelin_sector()` with SEFLG_JPLHOR and no IERS corrections loaded read the corrections' table, NULL, and crash | Crash | `swephlib.c`, `swecl.c` |
 | 42 | The refusals of a date outside a range write its digits in full into 256 bytes: from \|J\| about 1e188 days the message overruns its buffer or the caller's serr | Memory | `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swedate.c`, `swecl.c`, `swephlib.c` |
+| 43 | `swe_sidtime()` reads a nutation `calc_nutation()` left unwritten; SE_ECL_NUT is taken for a body by the rise and set, the Gauquelin sectors, the occultations, `swe_calc_pctr()` and `swe_helio_cross()`, and reads `pla_diam[-1]` | Memory / Correctness | `swephlib.c`, `swecl.c`, `sweph.c` |
 
 ---
 
@@ -2331,6 +2332,49 @@ those seconds, each in a child process: ERR, a message from "jd " (or
 "invalid time") of under 100 characters that names the range and the date
 as "e+", the bytes past AS_MAXCH untouched; and four dates a little outside a
 range, printed as before: 104 checks. Before the fix 100 fail, after it none.
+
+## 43. `swe_sidtime()` reads a nutation `calc_nutation()` left unwritten, and SE_ECL_NUT is taken for a body: the rise and set, the Gauquelin sectors, the occultations, `swe_calc_pctr()` and `swe_helio_cross()` answer it, two of them from `pla_diam[-1]`, and the crossing does not end
+
+**Severity: Memory (an uninitialised read; an out-of-bounds read, `pla_diam[-1]`); Correctness (an answer for a number that is no body, a hang)**
+**Where:** `swephlib.c`: `swe_sidtime_r_body()`; `swecl.c`: `swe_rise_trans_true_hor_r_body()`, `swe_gauquelin_sector_r_body()`, `swe_lun_occult_where_r_body()`, `swe_lun_occult_when_glob_r_body()`, `swe_lun_occult_when_loc_r_body()`; `sweph.c`: `swe_calc_pctr_r_body()`, `swe_helio_cross_r_body()`, `swe_helio_cross_ut_r_body()`
+
+`calc_nutation()` writes nothing for a nutation model it does not know (the
+caller keeps what it passed in), and `swe_sidtime()` passed it an
+uninitialised local pair and used both elements: its sidereal time was
+whatever the stack held. gcc -O3 with -Wall -Wextra -Werror rejects the read
+as maybe-uninitialized; at -O0 the slot held the bits of a pointer, a
+denormal, and the answer was right by luck.
+
+SE_ECL_NUT (-1) is a `swe_calc()` number, the obliquities and the nutation,
+not a body; `swe_pheno()`, `swe_nod_aps()`, `swe_get_orbital_elements()`
+and `swe_orbit_max_min_true_distance()` refuse it, and `swe_calc()` refuses
+every other negative number. The functions that take a body to a horizon or
+a centre did not. At UT 2433282.5, Zurich, Swiss files: `swe_rise_trans()`
+and `_true_hor()` answered a rise, a set and transits of the angles taken
+for a right ascension and declination, and a rise of the disc's edge read
+`pla_diam[-1]`; `swe_gauquelin_sector()` 16.6929 (method 0) and 17.8208 (1),
+methods 2 to 5 through the same rise; `swe_calc_pctr()` answered it as the
+body or the centre; the three occultation functions set every negative
+number without a star to the Sun and answered its eclipses
+(`swe_lun_occult_when_glob()` 10 at 2433359.147); `swe_helio_cross()` and its
+`_ut` form took the obliquity and its 0.0023 deg/day for a longitude and its
+speed, and the search, with no bound on its steps, did not end in 5 s.
+
+**Fix, as done here:** a negative number with no star is refused before any
+calculation by the rise and set, the Gauquelin sectors (every method), the
+three occultation functions (a star's ipl is not read, and still maps to 0),
+`swe_calc_pctr()` (as the body or the centre) and the two crossings: ERR,
+"illegal planet number -1." (the crossings: "not possible for object -1").
+The sidereal time's pair starts at zero, no nutation, for a model without
+one. The `pla_diam[]` reads of the eclipse and rise code are reached by
+non-negative numbers only. G52 `tests/eclnutbody.c`: -1, -2 and -100 in the
+twelve calls above (the crossings and `swe_calc_pctr()` in child processes,
+the crossings with a 5 s alarm): 36 checks; a star with ipl -1 the star as
+with ipl 0, and the Sun in the occultations still the eclipse of 1999 Aug
+11: 3; the sidereal time under an unknown nutation model the same after two
+dirtyings of the stack and that of no nutation: 2; and `make` compiles
+`swephlib.c` at -O3 with -Werror. Before the fix 18 of the 41 fail and the
+-O3 compile, after it none.
 
 ## How these were found
 

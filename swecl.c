@@ -109,6 +109,20 @@ static int32 calc_mer_trans(swe_ctx *ctx,
                char *serr); 
 static int32 calc_planet_star(swe_ctx *ctx, double tjd_et, int32 ipl, char *starname, int32 iflag, double *x, char *serr);
 
+/* A negative planet number is no body seen from the Earth: SE_ECL_NUT (-1)
+ * is swe_calc()'s obliquity and nutation, and swe_calc() refuses every other
+ * negative number. The rise and set, the Gauquelin sectors and the
+ * occultations would take them for a place, or index pla_diam[] below its
+ * start. With a star the number is not read. */
+static AS_BOOL ipl_is_no_body(int32 ipl, const char *starname, char *serr)
+{
+  if (ipl >= 0 || (starname != NULL && *starname != '\0'))
+    return FALSE;
+  if (serr != NULL)
+    snprintf(serr, AS_MAXCH, "illegal planet number %d.", ipl);
+  return TRUE;
+}
+
 struct saros_data {int series_no; double tstart;};
 
 // Saros cycle numbers of solar eclipses with date of initial 
@@ -642,7 +656,9 @@ static int32 swe_lun_occult_where_r_body(swe_ctx *ctx, double tjd_ut,
 {
   int32 retflag, retflag2;
   double dcore[10];
-  if (ipl < 0) ipl = 0;
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
+  if (ipl < 0) ipl = 0;	/* a star: ipl is not read */
   ifl &= SEFLG_EPHMASK; 
   swi_set_tid_acc(ctx, tjd_ut, ifl, 0, serr);
   /* function calls for Pluto with asteroid number 134340
@@ -1715,7 +1731,9 @@ static int32 swe_lun_occult_when_glob_r_body(swe_ctx *ctx, double tjd_start, int
   int32 iflag, iflagcart;
   AS_BOOL dont_times = FALSE;
   int32 one_try = backward & SE_ECL_ONE_TRY;
-  if (ipl < 0) ipl = 0;
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
+  if (ipl < 0) ipl = 0;	/* a star: ipl is not read */
 /*if (backward & SEI_OCC_FAST)
     dont_times = TRUE; */
   /* function calls for Pluto with asteroid number 134340
@@ -2241,7 +2259,9 @@ static int32 swe_lun_occult_when_loc_r_body(swe_ctx *ctx, double tjd_start, int3
       sprintf(serr, "location for occultations must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
   }
-  if (ipl < 0) ipl = 0;
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
+  if (ipl < 0) ipl = 0;	/* a star: ipl is not read */
   if (ipl == SE_AST_OFFSET + 134340)
     ipl = SE_PLUTO;
   ifl &= SEFLG_EPHMASK; 
@@ -4773,6 +4793,8 @@ static int32 swe_rise_trans_true_hor_r_body(swe_ctx *ctx, double tjd_ut, int32 i
    * are treated as calls for Pluto as main body SE_PLUTO */
   if (ipl == SE_AST_OFFSET + 134340)
     ipl = SE_PLUTO;
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
   xh[0][0] = 0; /* to shut up mint */
   /* allowing SEFLG_NONUT and SEFLG_TRUEPOS speeds it up */
   iflag &= (SEFLG_EPHMASK | SEFLG_NONUT | SEFLG_TRUEPOS);
@@ -6820,6 +6842,8 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
           sprintf(serr, "invalid method: %d", imeth);
     return ERR;
   }
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */
   if (ipl == SE_AST_OFFSET + 134340)
