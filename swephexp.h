@@ -1046,6 +1046,12 @@ ext_def( int ) swe_houses_armc_ex2(
         double armc, double geolat, double eps, int hsys, 
 	double *cusps, double *ascmc, double *cusp_speed, double *ascmc_speed, char *serr);
 
+/* swe_house_pos() takes the TROPICAL place (swephprg 16) and no date or
+ * ayanamsa: in a sidereal chart its whole-sign ('W') and 0-Aries ('N')
+ * positions are the tropical houses, the ayanamsa / 30 deg off (less
+ * whole houses); there the sidereal one is
+ * swe_degnorm(sid_lon - cusp[1]) / 30 + 1, cusp[1] from swe_houses_ex()
+ * with SEFLG_SIDEREAL. See swehouse.c (UPSTREAM-BUGS 254). */
 ext_def(double) swe_house_pos(
 	double armc, double geolat, double eps, int hsys, double *xpin, char *serr);
 

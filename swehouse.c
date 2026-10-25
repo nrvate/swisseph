@@ -3115,6 +3115,31 @@ static double fix_asc_polar(double asc, double armc, double eps, double geolat)
  *   is dependent on the ecliptic, such as: 
  *   equal, Porphyry, Alcabitius, Koch, Krusinski (all others should work).
  * The Swiss Ephemeris currently does not handle these cases.
+ *
+ * UPSTREAM-BUGS 254, a documented limitation (nothing changed). The
+ * manual (swephprg 16) counts every system as working with the
+ * traditional method; whole signs ('W') and equal from 0 Aries ('N') do
+ * not. Their houses are signs, a sidereal sign starts the ayanamsa from a
+ * tropical one, and this function is given no date, flag or ayanamsa (the
+ * _r form's context holds a sidereal mode, not the date its ayanamsa
+ * needs, nor whether the chart is sidereal). Given the tropical place,
+ * 'W' and 'N' answer the tropical house: Lahiri at Zurich, 1800-2100, the
+ * tropical place of a sidereal cusp 0.298 house off the cusp's number in
+ * 'W', up to 0.842 (the ayanamsa / 30 deg) in 'N'; Mars at UT 2433282.5
+ * 'W' 1.0737 for 1.3018, 'N' 7.0737 for 6.3018. The sidereal longitude
+ * instead gives 'N''s but puts 'W' a house off. In a sidereal chart of the
+ * traditional method their house position is
+ *   hpos = swe_degnorm(sid_lon - cusp[1]) / 30 + 1
+ * with cusp[1] of swe_houses_ex(SEFLG_SIDEREAL) in the same system (the
+ * start of the sidereal Ascendant's sign, or 0). Every other system puts
+ * the sidereal cusps' tropical places at their numbers (G168, within 1e-7
+ * house). With the ecliptic of t0 or the solar system plane, given the
+ * ARMC of the date (15 swe_sidtime() plus the geographic longitude, or
+ * ascmc[2] of the tropical houses), the systems whose house circles do
+ * not depend on the ecliptic work: P R C H X G T I (the manual names
+ * C R P H X). "All others" above do not: K O E A D V W N B M U F Y S L Q,
+ * by 1.1e-4 house (D, the ecliptic of 1900) to 4 (Koch) at Zurich,
+ * 1800-2100.
  */
 double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, double eps, int hsys, double *xpin, char *serr)
 {

@@ -274,6 +274,7 @@ worst were in code that had never executed even once.
 | 243 | A refused date past about 1e188 days is its message: "jd %f outside ..." cut at 255 characters, the range lost, from 1e237 the text, `swe_utc_to_jd()`'s seconds likewise; and this fork's "%.10g" prints the double next past -+7.8e11 or -+1e12 as the bound | Correctness (error reporting) | `swephlib.c`, `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swecl.c`, `sweph.c`, `swehouse.c`, `swedate.c` |
 | 255 | Moshier's planets and Moon take 0.3 and 0.2 day past MOSHPLEPH's and MOSHLUEPH's ends (the margin for the light time and speed reads), and their refusals name the ends: Mars and Spica answer at 2818000.79, and 2818000.81 is refused "outside Moshier planet range 625000.50 .. 2818000.50"; the Moon at 2818000.69 and 2818000.71 likewise | Correctness (error reporting) | `swemplan.c`, `swemmoon.c` |
 | 249 | `swe_calc()` with SEFLG_SPEED3 reads the body at tjd - dt, tjd + dt and tjd, each read falling back on its own: within dt of a span's edge the speed differenced two ephemerides, on de200.eph 2^-16 day before its end Mars 0.72180 deg/day for 0.76100, the Moon 3.3725 for 14.0460, Pluto 45.98 for 0.0144, flag 129 (JPL), Moshier noted where the call without a flag says nothing, strict answering; the Swiss files' and Moon files' edges alike; a read past Moshier's range refused the call, -1 for 4 | Correctness (behaviour) | `sweph.c` |
+| 254 | `swe_house_pos()` of a tropical place answers the tropical house in whole signs ('W') and 0 Aries ('N'), where the manual counts every system as giving the sidereal house with the traditional method: Lahiri at Zurich, 1800-2100, a sidereal cusp's tropical place 0.298 house off its number in 'W', up to 0.842 in 'N'; the function takes no date or ayanamsa, so a documented limitation | Correctness (documented limitation) | `swehouse.c`, `swephexp.h` |
 
 ---
 
@@ -17665,6 +17666,154 @@ Noticed, not fixed:
   apart, every such speed 1.7e-6 of itself high: the Moon's 2.15e-5
   deg/day at 1500, Mars's 8.4e-7, the mean node's 9e-8. Above the floor;
   the one-sided form takes the instants' own intervals.
+
+## 254. `swe_house_pos()` of a tropical place answers the tropical house in whole signs ('W') and 0 Aries ('N'), where the manual counts every system as giving the sidereal house with the traditional method: Lahiri at Zurich, 1800-2100, a sidereal cusp's tropical place 0.298 house off its number in 'W', up to 0.842 in 'N' (a documented limitation)
+
+**Severity: Correctness (documented limitation: the manual's claim for two house systems, which nothing within the API can make true; no behaviour changed)**
+**Where:** `swehouse.c`: `swe_house_pos_r()` (its comment); `swephexp.h`: `swe_house_pos()`; the manual, swephprg 16
+
+Entry 236's noticed item. What the documentation says:
+- swephprg 16: "This function requires TROPICAL positions in xpin.
+  SIDEREAL house positions are identical to tropical ones in the
+  following cases: If the traditional method is used to compute sidereal
+  planets (sid_pos = trop_pos - ayanamsha). Here the function
+  swe_house_pos() works for all house systems. If a non-traditional
+  method (projection to the ecliptic of t0 or to the solar system
+  rotation plane) is used and the definition of the house system does not
+  depend on the ecliptic. This is the case with Campanus, Regiomontanus,
+  Placidus, Azimuth houses, axial rotation houses. This is not the case
+  with equal houses, Porphyry and Koch houses."
+- upstream's comment on `swe_house_pos()`: with the traditional
+  definition the positions are "identical for most house systems"; it
+  "does NOT provide correct positions for Whole Sign houses"; with a
+  non-traditional method not in a system "dependent on the ecliptic,
+  such as: equal, Porphyry, Alcabitius, Koch, Krusinski (all others should
+  work)". swisseph 6.5 says nothing of sidereal house positions.
+
+Measured: `swe_house_pos()` of the tropical place of each sidereal cusp of
+`swe_houses_ex2()`, against the cusp's number, at Zurich (8.55E, 47.37N)
+at UT 2378496.5, 2433282.5, 2451545.0 and 2488069.5, with the ARMC of the
+date and SE_ECL_NUT's true obliquity. The tropical place: the cusp plus
+the ayanamsa (latitude 0); on the ecliptic of t0 and the solar system
+plane the cusp's point of the sidereal plane carried to the true ecliptic
+of date through the planets' own frame (the library's precession and
+nutation, as `swi_trop_ra2sid_lon()` and `_sosy()` take a place the other
+way; sidereal Mars and the Moon so carried are `swe_calc()`'s tropical ones
+within 1.1e-13 deg).
+- The traditional method (Lahiri, True Citra, Fagan/Bradley, Lahiri on
+  the ecliptic of date): 0 in P K O R C E A B M U T H X F Y S L Q D V I i,
+  'G' 2.78e-8 (the 0.001" its formula adds; cusps 13 to 36 miss the
+  exact-cusp test); 'W' 0.298 (Fagan/Bradley 0.268), 'N' 0.842 (True
+  Citra 0.841, Fagan/Bradley 0.871).
+- The user's ecliptic of 1900 (t0 2415020.0, 22.46 deg) and solar system
+  plane (J2000, 23.86 deg): P R C H I 9.26e-9 (the 0.001"), X 3.6e-14,
+  G 2.78e-8, T 5.96e-8 (noticed below); the others off, on the ecliptic of
+  1900 D 1.1e-4 to O 9.3e-4, W 1.3e-4, N 0.842, S 1, K 4; on the solar
+  system plane D 5.2e-4, M 0.020, Y 0.028, B 0.091 to U 0.156, W 0.88,
+  N 0.842, S 1, K 4.
+- Mars at UT 2433282.5, Lahiri: tropical 182.2112, sidereal 159.0534; 'W'
+  (cusp 1 180 tropically, 150 sidereally) `swe_house_pos()` 1.0737 for
+  the sidereal house 1.3018; 'N' 7.0737 for 6.3018.
+
+So the manual holds but for 'W' and 'N' with the traditional method; its
+non-traditional list holds (C R P H X), and G, T and Makransky's I work
+too; the comment's "(all others should work)" fails for M F Y S L Q D V W
+N besides the systems it names.
+
+Why: the 'W' and 'N' houses are signs. `swe_house_pos()` computes 'N' as
+xpin[0] / 30 + 1 and 'W' from the tropical Ascendant's sign, the tropical
+signs, and a sidereal sign starts the ayanamsa from a tropical one: the
+0-Aries house is off by the ayanamsa / 30 deg exactly, the whole-sign house
+by that less the whole houses between the tropical and the sidereal
+Ascendant's sign starts. In the other systems a house is a region of the
+sphere bounded by circles of the horizon, the meridian or the diurnal arcs,
+which no zodiac moves; with the traditional method the ecliptic is the
+same, only relabelled, so the region a tropical place lies in is the
+sidereal place's.
+
+No fix within the API. To answer 'W' and 'N' sidereally the function
+would need the ayanamsa of the date and to know that the chart is
+sidereal:
+- It takes the ARMC, the latitude, the obliquity, the system and the
+  place: no date, flag or ayanamsa. The obliquity is the caller's (a
+  composite chart's is a mean of two), not a date.
+- `swe_house_pos_r()`'s context holds a sidereal mode
+  (`swe_set_sid_mode_r()`), but sidereal is per call (SEFLG_SIDEREAL; a
+  context with a mode set computes tropical houses without the flag), and
+  its ayanamsa needs the date. Remembering the last sidereal houses' date
+  or cusps, as 'I' remembers the Sun's declination through ascmc[9] = 99,
+  would make the answer depend on the call before it, the kind of defect
+  this list removes elsewhere.
+- No input convention: the manual demands the tropical place. The
+  sidereal longitude instead happens to give 'N''s sidereal house (Mars
+  6.3018) but puts 'W' a house off (12.3018: the Ascendant is still the
+  tropical one).
+- No extended form: `swe_gauquelin_sector()` takes a date and flags but is
+  'G' alone, which answers the same in either zodiac (entry 236).
+The sidereal 'W' and 'N' house positions follow from what the sidereal
+houses already give: hpos = swe_degnorm(sid_lon - cusp[1]) / 30 + 1, with
+cusp[1] of `swe_houses_ex(SEFLG_SIDEREAL)` in that system (the start of
+the sidereal Ascendant's sign, or 0).
+
+**Fix, as done here:** none in the code; no behaviour changed, so nothing
+behind `SWE_UPSTREAM_COMPAT` and no G24 case. `swe_house_pos_r()`'s
+comment now gives the limitation with these numbers, the formula, and,
+for the ecliptic of t0 and the solar system plane, the systems measured to
+work given the ARMC of the date (P R C H X G T I) and those that do not,
+where it had "all others should work"; `swephexp.h` states the limitation
+and the formula at `swe_house_pos()`. The manual is upstream's, shipped in
+`doc/` only as built PDF and HTML (`doc/makefile` makes them from a
+`swephprg.md` that is not in the tree); not edited.
+
+G168 `tests/sidhpos.c`: (a) the traditional method in the four settings
+above, at the four dates: each sidereal cusp's tropical place at its
+number within 1e-7 house in the 23 systems but 'W' and 'N' (2.78e-8,
+'G'): 92 checks; (b) 'W' and 'N' in the same settings: the sidereal cusps
+sign starts, cusp 1 the sidereal Ascendant's sign's or 0 (exact), and
+`swe_house_pos()` of the tropical places of the Sun, the Moon, Mars,
+Jupiter, the mean node and the twelve cusps the tropical house
+(9.26e-9, the 0.001" 'W' adds) and off the formula's sidereal house by
+the ayanamsa / 30 deg less whole houses (9.26e-9), within 1e-7: 24 checks;
+(c) the ecliptic of 1900 and the solar system plane: the carried frame
+within 1e-11 deg (1.1e-13) and P R C H X G T I at the cusp's number with
+the tropical call's ARMC within 1e-7 house (5.96e-8, T): 18 checks. 134
+checks, all pass, in the shipped and the upstream (`SWE_UPSTREAM_COMPAT`)
+builds alike: they pin what the two share.
+
+Noticed, not fixed:
+- BEHAVIOUR. The houses of the ecliptic of t0 and the solar system plane
+  (`sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`) return in
+  ascmc[2] the auxiliary ARMC they computed in (armc - dvpx), not the
+  ARMC: at Zurich, 1800-2100, 0.0043 deg off on the ecliptic of 1900
+  (0.0066 on Lahiri's ecliptic of t0), 3.90 deg on the solar system plane;
+  the traditional method's is the ARMC. With the sidereal call's ascmc[2]
+  the systems the manual names put the sidereal cusps' places off their
+  numbers on the solar system plane by 0.13 (X) to 0.34 house (C), on the
+  ecliptic of 1900 by 1.4e-4 to 3.1e-4.
+- BEHAVIOUR. Sidereal whole signs on the ecliptic of t0 and the solar
+  system plane are the auxiliary frame's signs moved by dvpxe + ayan_t0,
+  not sidereal sign starts (the traditional method floors after taking
+  the ayanamsa off): at Zurich, 1800-2100, the cusps up to 8.94 deg off a
+  sign start on the ecliptic of 1900 and 12.5 deg on the solar system
+  plane, cusp 1 up to 20.3 deg off the start of the sidereal Ascendant's
+  sign.
+- BEHAVIOUR. `swe_house_pos()` in 'S' (Sripati) is Porphyry's position
+  plus 0.5, then "if (hpos > 12) hpos = 1": every place in house 12 and in
+  the first half of house 1 answers 1.0, tropically too (Zurich, UT
+  2433282.5: cusp 12 + 1e-4 deg 1.000000 for 12.000003, the middle of
+  house 12 1.0 for 12.5), up to a house off; the exact-cusp test hides it
+  at the cusps themselves. It wants hpos - 12.
+- RESIDUAL(1.8e-6 deg). `swe_house_pos()` in 'T' (Polich/Page) ends its
+  binary search for the place's position line at 1e-6 deg: the sidereal
+  cusps' places off the ecliptic of date 5.96e-8 house (1.8e-6 deg) off
+  their numbers; on the ecliptic at a cusp the exact-cusp test answers.
+- RESIDUAL(3.6e-5 deg). In a predefined mode whose ayanamsa has its own
+  precession model (Lahiri's IAU 1976), on the ecliptic of t0 or the solar
+  system plane, the sidereal places take `get_aya_correction()` and the
+  sidereal houses do not: sidereal Mars carried back with Lahiri's
+  ayan_t0 3.62e-5 deg off its tropical place at 1800-2100,
+  where the cusps are at their numbers within 9.3e-9 house; a place and a
+  cusp at one point of the sky so 3.62e-5 deg apart.
 
 ## How these were found
 
