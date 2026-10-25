@@ -15,6 +15,16 @@
  * F4), the same. The setting thread, whose swe_set_ephe_path() zeroes it
  * in swi_close_keep_topo_etc(), answered 14.286718.
  *
+ * The defect (UPSTREAM-BUGS 138): a JPL file a calculation opened set the
+ * automatic term for itself (open_jpl_file(), upstream's line), while
+ * swe_deltat()'s guess follows the JPL file the configuration sets (bug
+ * 103). After the path, de200.eph and the path again by another string,
+ * which forgets the JPL DE number by design (F4), a TT JPL Sun left
+ * de200's -23.8946 in swe_get_tid_acc(), and the next swe_deltat(),
+ * guessing the Swiss files, used the moon file's -25.936 (18.902020 s in
+ * AD 1800), the getter -25.936 after it: bug 101 has the getter answer
+ * the term the next delta t uses. So on every reader.
+ *
  * The check, each case in a forked, pristine process: the path and
  * swe_set_jpl_file("de200.eph"); the reader computes a JPL Sun at J2000,
  * which opens the file; then the last setter: none, the path again by
@@ -23,23 +33,33 @@
  * (de406.eph, the branch for a JPL file alone, as a control). The readers:
  * the setting thread, a thread that computed before the last setter and
  * adopts it, a thread started after it, and an explicit context given the
- * same calls. The observation: swe_deltat_ex() in AD 1700 with
+ * same calls. The observations: swe_deltat_ex() in AD 1700 with
  * SEFLG_JPLEPH (and its serr), swe_get_tid_acc(), swe_deltat() there and
- * swe_get_tid_acc() again, bit for bit as a fresh process given the same
- * setters on its main thread and nothing else. 4 settings x 4 readers =
- * 16 checks.
+ * swe_get_tid_acc() again (bug 137); and a TT JPL Sun at J2000, then
+ * swe_get_tid_acc(), swe_deltat() in AD 1800 and swe_get_tid_acc() again
+ * (bug 138). Each bit for bit as a fresh process given the same setters
+ * on its main thread and nothing else, no Sun: the guess follows the
+ * configuration, and a calculation does not choose for it (as G128's
+ * closecalc). 4 settings x 4 readers x 2 observations = 32 checks.
  *
- * Measured before the fix, 2 of 16 fail: the running thread after the path
- * again and after the path without the file, delta t 3.012003 s for
- * 14.286718. The fix is in both builds (the adoption is this fork's). The
- * compat build (SWE_UPSTREAM_COMPAT) fails 7, with the fix and without, by
- * the upstream behaviour it restores, none by this: its running thread's
- * first delta t reads the DE number before the call syncs (bugs 124, 128),
- * 3 cases, and a new thread warns on its first call (bug 110) and guesses
- * from the file it has open (bug 103), 4; with a swe_get_tid_acc() first,
- * which syncs, its running thread answers 14.286718 with the fix and
- * 3.012003 without. The upstream build (legacy-master) does not build
- * this: its threads share no configuration and adopt nothing. Run as
+ * Measured before the fixes, 6 of 32 fail. Bug 137's 2: the running
+ * thread after the path again and after the path without the file, delta
+ * t 3.012003 s for 14.286718. Bug 138's 4: every reader after the path
+ * again, the getter -23.8946 for -25.936 before the delta t. The fix of
+ * 137 is in both builds (the adoption is this fork's), 138's in the
+ * shipped build only. The compat build (SWE_UPSTREAM_COMPAT) fails 14,
+ * with the fixes and without, by the upstream behaviour it restores:
+ * bug 137's observation 7 -- its running thread's first delta t reads the
+ * DE number before the call syncs (bugs 124, 128), 3 cases, and a new
+ * thread warns on its first call (bug 110) and guesses from the file it
+ * has open (bug 103), 4; with a swe_get_tid_acc() first, which syncs, its
+ * running thread answers 14.286718 with the fix and 3.012003 without --
+ * and bug 138's 7: after the path again its getter and swe_deltat() both
+ * follow the open file (-23.8946, 14.438958 s), 4, and after the path
+ * without the file the refused JPL Sun's sync puts the master's -25.80
+ * over the moon file's -25.936 on the default context (bug 101's copy of
+ * an automatic value), 3. The upstream build (legacy-master) does not
+ * build this: its threads share no configuration and adopt nothing. Run as
  *   jpldenum EPHEDIR
  */
 #include <dirent.h>
@@ -54,6 +74,7 @@
 #include "swephexp.h"
 
 #define T_1700 2341972.5	/* AD 1700, inside de200.eph */
+#define T_1800 2378496.5	/* AD 1800 */
 #define T_WARM 2451545.0
 #define NV     4
 
@@ -66,12 +87,13 @@ static const char *KN[NK] = {
 enum { R_MAIN, R_RUN, R_NEW, R_CTX, NR };
 static const char *RN[NR] = { "setting thread", "running thread", "new thread",
                               "explicit context" };
-enum { O_DT, NO };
-static const char *ON[NO] = { "JPLEPH delta t, the tidal term, swe_deltat()" };
+enum { O_DT, O_TT, NO };
+static const char *ON[NO] = { "JPLEPH delta t, the tidal term, swe_deltat()",
+                              "a TT JPL Sun, the tidal term, swe_deltat()" };
 
 struct obs { double v[NV]; char err[AS_MAXCH]; };
 
-static int K, O;
+static int K, O, REF;
 static struct obs out;
 static pthread_barrier_t b1, b2;
 
@@ -168,11 +190,21 @@ static double dt(swe_ctx *c, double t)
 static void observe(swe_ctx *c, struct obs *a)
 {
   memset(a, 0, sizeof *a);
-  a->v[0] = (c != NULL ? swe_deltat_ex_r(c, T_1700, SEFLG_JPLEPH, a->err)
-                       : swe_deltat_ex(T_1700, SEFLG_JPLEPH, a->err)) * 86400;
-  a->v[1] = tid(c);
-  a->v[2] = dt(c, T_1700);
-  a->v[3] = tid(c);
+  if (O == O_DT) {
+    a->v[0] = (c != NULL ? swe_deltat_ex_r(c, T_1700, SEFLG_JPLEPH, a->err)
+                         : swe_deltat_ex(T_1700, SEFLG_JPLEPH, a->err)) * 86400;
+    a->v[1] = tid(c);
+    a->v[2] = dt(c, T_1700);
+    a->v[3] = tid(c);
+    return;
+  }
+  /* bug 138: a calculation that opens the file does not choose the term
+   * the getter and swe_deltat() take; the reference makes none */
+  if (!REF)
+    jpl_sun(c);
+  a->v[0] = tid(c);
+  a->v[1] = dt(c, T_1800);
+  a->v[2] = tid(c);
 }
 
 static void *runner(void *arg)
@@ -249,6 +281,7 @@ static int get(int r, struct obs *a)
   if (pid == 0) {
     close(p[0]);
     alarm(20);			/* a backstop: no case takes a second */
+    REF = r < 0;
     if (scenario(r) != 0)
       _exit(2);
     if (write(p[1], &out, sizeof out) != (ssize_t) sizeof out)
@@ -308,8 +341,12 @@ int main(int argc, char **argv)
         printf(" [%s]\n", ref.err);
         bad++;
       }
-      printf("  %-34s JPLEPH delta t %.6f s, swe_deltat() %.6f s, tidal term %.4f\n",
-             KN[K], ref.v[0], ref.v[2], ref.v[1]);
+      if (O == O_DT)
+        printf("  %-34s JPLEPH delta t %.6f s, swe_deltat() %.6f s, tidal term %.4f\n",
+               KN[K], ref.v[0], ref.v[2], ref.v[1]);
+      else
+        printf("  %-34s after a JPL Sun: tidal term %.4f, swe_deltat() in 1800 %.6f s\n",
+               KN[K], ref.v[0], ref.v[1]);
     }
   unlink_all(NOFILE);
   if (bad) {

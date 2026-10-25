@@ -1206,6 +1206,11 @@ struct epsilon {
  *     file does, so its JPLEPH delta t takes the term of the files it has
  *     now, is in both builds; the adoption is this fork's, and upstream's
  *     threads share no configuration; G132)
+ *   - a JPL file a calculation opens setting the automatic tidal term for
+ *     itself, not for swe_deltat()'s guess: after the path setter forgets
+ *     the JPL DE number, swe_get_tid_acc() de200's -23.8946 for the
+ *     -25.936 the next swe_deltat() takes, 2.04 arcsec/cty^2
+ *     (UPSTREAM-BUGS 138, G132)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

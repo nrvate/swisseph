@@ -3277,6 +3277,34 @@ static double close_tid_off(void)
   return fabs(dt - ref) * 86400;
 }
 
+/* swe_get_tid_acc() after the path, swe_set_jpl_file("de200.eph"), the
+ * path again by another string, which forgets the JPL DE number, and a TT
+ * JPL Sun, which opens the file, against a fresh context given that path.
+ * Upstream sets the term for the file a calculation opens (its guess
+ * follows the open file): de200's -23.8946 for the moon file's -25.936,
+ * 2.04 (UPSTREAM-BUGS 138). */
+static double jpl_open_tid_off(void)
+{
+  double x[6], g, ref;
+  char serr[256], p2[AS_MAXCH];
+  swe_ctx *c;
+  snprintf(p2, sizeof p2, "%s/.", EPHE);
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  swe_set_ephe_path(p2);
+  swe_calc(2451545.0, SE_SUN, SEFLG_JPLEPH, x, serr);
+  g = swe_get_tid_acc();
+  if ((c = swe_ctx_new()) == NULL)
+    return INFINITY;
+  swe_set_ephe_path_r(c, p2);
+  ref = swe_get_tid_acc_r(c);
+  swe_ctx_free(c);
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  return fabs(g - ref);
+}
+
 /* swe_set_topo(), swe_set_sid_mode(SE_SIDM_LAHIRI), a Swiss Sun and
  * swe_close(), then the topocentric Moon at J2000 by swe_calc_ut() and the
  * ayanamsa there by swe_get_ayanamsa_ex(), against a fresh context given
@@ -3319,7 +3347,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate, nutjplhor;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate, nutjplhor, jplopen;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3442,6 +3470,7 @@ int main(int argc, char **argv)
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
+  jplopen = jpl_open_tid_off();
   closekeep = close_keeps_off();	/* last: see the function */
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
@@ -4345,6 +4374,14 @@ int main(int argc, char **argv)
   else {
     printf("  delta t after close    %.2e s FAIL: expected %s\n",
            closetid, WANT_DEFECT ? "> 10" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jplopen > 1) : (jplopen == 0))
+    printf("  term of a JPL opened   %.2e OK\n", jplopen);
+  else {
+    printf("  term of a JPL opened   %.2e FAIL: expected %s\n",
+           jplopen, WANT_DEFECT ? "> 1" : "0");
     bad++;
   }
 

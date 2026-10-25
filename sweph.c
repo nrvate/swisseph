@@ -12766,7 +12766,20 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
   if (retc == OK) {
     ctx->jpldenum = swi_get_jpl_denum(ctx);
     ctx->jpl_file_is_open = TRUE;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 138: the automatic term was set for the file opened,
+     * and a calculation opens it lazily, while swe_deltat()'s guess follows
+     * the JPL file the configuration sets (bug 103): after the path,
+     * swe_set_jpl_file("de200.eph") and the path again by another string,
+     * which forgets the JPL DE number (F4), a JPL Sun left -23.8946 in
+     * swe_get_tid_acc() and the next swe_deltat() used the moon file's
+     * -25.936 (18.902020 s in 1800), the getter -25.936 after it. Resolved
+     * for the guess now, as the setters resolve it; where the
+     * configuration names this file it is the same term. */
+    swi_set_tid_acc(ctx, 0, swi_guess_ephe_flag(ctx), 0, serr);
+#else
     swi_set_tid_acc(ctx, 0, 0, ctx->jpldenum, serr);
+#endif
   }
   /* The DE number is published by swe_set_jpl_file_r(), not here: this
    * runs for lazy opens on the calculation paths too (F4). */

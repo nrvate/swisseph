@@ -1443,7 +1443,9 @@ check-sunmemo: sunmemo
 # another thread's path answers a JPLEPH delta t, swe_get_tid_acc() and
 # swe_deltat() bit for bit as a fresh process given the same setters -- on
 # the setting thread, that running thread, a new thread and an explicit
-# context (UPSTREAM-BUGS 137).
+# context (UPSTREAM-BUGS 137); and a JPL file a calculation opens leaves
+# the tidal term the guess takes, so swe_get_tid_acc() after a TT JPL Sun
+# answers the term the next swe_deltat() uses (UPSTREAM-BUGS 138).
 check-jpldenum: jpldenum
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./jpldenum $(EPHE)
 

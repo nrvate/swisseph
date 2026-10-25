@@ -170,6 +170,7 @@ worst were in code that had never executed even once.
 | 136 | `swe_calc_orbel()` (this fork's) with elements of the equinox of date holds that equinox at the observation instant through the light time and leaves its turning out of the speed: 1.9e-2 deg at a = 80000 AU, 6.9e-6 deg at 30 AU, 3.5e-7 deg at 1.2 AU off the same elements as a seorbel.txt JDATE body, the speeds 4.0e-5 to 8.8e-5 deg/day off them and off the positions' rate | Correctness | `sweph.c`, `swephexp.h` |
 | 134 | The interpolation's nodes are keyed on neither the JPL Horizons flags of the call nor the approximation's mode (`SE_MODEL_JPLHORA_MODE`), nor go with the IERS corrections `swe_close()` frees, and `swe_get_ayanamsa_ex()` takes the nutation kept at its instant whatever flags computed it: another setting's nutation answers there, 6.2e-2" after the flag per call, 0.104" after a change of mode, 0.131" across the corrections | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 137 | A thread that had the JPL file open and adopts another thread's `swe_set_ephe_path()` keeps the closed file's DE number, so its SEFLG_JPLEPH delta t takes that file's tidal term: 3.012003 s in AD 1700 for the 14.286718 of the setting thread and a fresh process, after a path without the file or the same path by another string (this fork's) | Correctness (behaviour) | `sweconfig.c` |
+| 138 | A JPL file a calculation opens sets the automatic tidal term for itself, not for `swe_deltat()`'s guess, which follows the configuration: after the path, de200.eph and the path again by another string, which forgets the JPL DE number, a TT JPL Sun left `swe_get_tid_acc()` at -23.8946 while the next `swe_deltat()` used -25.936 (18.902020 s in 1800) -- on every thread and context | Correctness | `sweph.c` |
 
 ---
 
@@ -9063,7 +9064,12 @@ Noticed, not fixed: a thread that had the JPL file open and adopts another
 thread's `swe_set_ephe_path()` to a directory without it kept the file's DE
 number, so its SEFLG_JPLEPH delta t in AD 1700 was 3.012003 s for the
 14.286718 a fresh process with that path gives (before this entry too).
-Fixed as entry 137.
+Fixed as entry 137. And with no close: the path, de200.eph, the path again
+by another string (which forgets the JPL DE number) and a JPL Sun left
+`swe_get_tid_acc()` at -23.8946 while the next `swe_deltat()` guessed the
+Swiss files and used -25.936 (18.902020 s in 1800), the getter -25.936
+after it; the compat build agrees with itself (14.438958 s). Fixed as
+entry 138.
 
 ## 137. A thread that had the JPL file open and adopts another thread's `swe_set_ephe_path()` keeps the file's DE number: its JPLEPH delta t takes the closed file's tidal term (this fork's)
 
@@ -9133,6 +9139,71 @@ adopting thread's `swe_deltat()` at 1990 Jan 1 stayed 79.987645 s after
 the other thread's path to EPHEDIR, where that thread and a fresh process
 answer 56.856191 (23.13 s). `leapsec_done`, cleared beside it, likewise
 (not measured).
+
+## 138. A JPL file a calculation opens sets the automatic tidal term for itself, not for the guess: after a path setter forgets the JPL DE number, `swe_get_tid_acc()` answers a term the next `swe_deltat()` does not use
+
+**Severity: Correctness (returned value: the tidal acceleration, 2.04 arcsec/cty^2 off the term the next delta t takes, 4.46 s of delta t in 1800 between them; on every thread and context)**
+**Where:** upstream `sweph.c` `open_jpl_file()` (the term set for the file opened); here the same, with `swi_guess_ephe_flag()` (`swephlib.c`, bug 103)
+
+Entry 131's noticed item, bug 101's promise broken by another door.
+`open_jpl_file()` sets the automatic tidal term for the file it opened,
+upstream's line, and a calculation opens the file lazily. Upstream's
+guess, which `swe_deltat()` takes for its ephemeris, followed the open
+file, so the two agreed there; entry 103 moved the guess onto the
+configuration (JPL when a JPL file has been set and read, `jpldenum_cfg`),
+and the path setter forgets that DE number by design (the 2026-09-16
+review's F4). So after `swe_set_ephe_path()`, `swe_set_jpl_file(
+"de200.eph")`, the path again by another string (EPHEDIR/.) and a TT JPL
+Sun, which opened de200.eph again by its kept name, `swe_get_tid_acc()`
+answered de200's -23.8946, the next `swe_deltat()` guessed the Swiss files
+and used the moon file's -25.936 (18.902020 s in AD 1800), and the getter
+answered -25.936 after it. The same on the setting thread, a thread that
+computed before the path, a thread started after it and an explicit
+context. A fresh process given the same setters answers -25.936 and
+18.902020 throughout. The compat build agrees with itself, its guess
+following the open file: -23.8946 and 14.438958 s.
+
+The reference. The configuration names no JPL DE number after the path
+setter, so the guess is Swiss, as entry 132 has it for every function
+without a flag: a calculation does not choose for it (G128's closecalc).
+The getter reads the term the context holds, which every delta t resolves
+afresh for its flag; the guess's is the one the next `swe_deltat()` takes.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`, upstream's
+line under `#else`): `open_jpl_file()` resolves the automatic term for
+the ephemeris `swi_guess_ephe_flag()` names, as the setters do (bug 118).
+Where the configuration names the file opened, the guess is JPL and the
+term the file's, as before. The setters' own opens resolve the term
+again when they are done (`setter_tid_acc_auto()`), and `swi_denum_reread()` keeps the term
+of the call under way, so neither changes. No hot path: a file's open.
+
+G132 (`tests/jpldenum.c`, entry 137) gains the observation: a TT JPL Sun at
+J2000, then the getter, `swe_deltat()` in AD 1800 and the getter, for the
+same 4 settings and 4 readers, against a fresh process given the setters
+alone, without the Sun. 32 pass; before this fix the 4 readers after the
+path again fail, the getter -23.8946 for -25.936 (before 137's fix too, 6
+in all). The compat build fails 14 of 32, with the fixes and without, by
+the upstream behaviour it restores: entry 137's 7, and here after the path
+again its getter and delta t following the open file (4), after the path
+without the file the refused Sun's sync copying the master's -25.80 over
+the moon file's -25.936 (bug 101's, 3). G24 `jpl_open_tid_off`, the getter
+after that sequence against a fresh context given the second path: 0
+shipped, 2.04 compat (2.04 shipped before the fix).
+
+Noticed, not fixed: in the same state (the JPL file's name kept, its DE
+number forgotten by the path setter) the first JPLEPH delta t before a
+calculation has opened the file takes the default term, and the next the
+file's: `swe_calc_ut()`'s JPL Moon in AD 1700 was 40.0057507520 deg on the
+first call and 40.0039614086 on the second (1.79e-3 deg), where a fresh
+process given the path and then de200.eph answers 40.0039614086 both
+times; the compat build the same (40.0057510966, then 40.0039617599).
+Reading the kept JPL file again along the new path in the path setter, as
+entry 131 does after `swe_close()`, would remove it and make this entry's
+guess JPL (de200's -23.8946, 14.438958 s in 1800) -- F4's choice, to be
+made there. And the getter after a delta t asked with a flag still
+answers that delta t's term (upstream's, and bug 101's "the one the last
+delta t resolved"): after a second UT JPL Moon in this state it is
+-23.8946, and the next `swe_deltat()` takes -25.936.
 
 ## How these were found
 
