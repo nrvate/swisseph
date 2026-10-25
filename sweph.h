@@ -1397,6 +1397,11 @@ struct epsilon {
  *     and the Earth's light deflection, which swe_calc() gives neither
  *     place: Jupiter's heliocentric mean descending node at J2000 9.6e-4
  *     deg off (UPSTREAM-BUGS 178, G146, G24)
+ *   - swe_nod_aps()'s Earth-Moon barycentre on Moshier as its Earth plus
+ *     its Moon, not the short series' Moon the Earth was made with: the
+ *     Earth's and the Sun's osculating apsides 8.0e-3 deg off at 2000, their
+ *     speeds 4.7e-8 deg/day off their positions' rate (UPSTREAM-BUGS 180,
+ *     G143, G104, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

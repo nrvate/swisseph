@@ -5956,6 +5956,24 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
         if (swe_calc_r(ctx, t, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR), xposm, serr) == ERR)
           return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
+        /* Upstream bug 180: on Moshier the Earth is its series' EMB less
+         * the short lunar series' Moon (embofs_mosh()), 0.24 deg from
+         * Moshier's own Moon at 2000, 1.55 deg at -3000; adding that one's
+         * share back made the EMB 1.3e-7 AU and 3.2e-8 AU/day off the
+         * series' (7.9e-7 and 2.0e-7 at -3000), in the Moon's inequalities
+         * of 9 to 35 days. The ellipse turned that into a wobble of the
+         * perihelion, 8.0e-3 deg at 2000, 4.6e-2 at -2700, whose third
+         * derivative, 1.6e-3 deg/day^3, put the speed over +-2^-6 day
+         * 4.7e-8 deg/day off the positions' rate (the distance's 2.5e-11
+         * AU/day), at every epoch: the Earth's heliocentric points, the
+         * Sun's geocentric ones. Now the Moon the Earth was made with, the
+         * one its computation keeps (ctx->earth_moon), so the EMB is the
+         * series' own. */
+        if ((retx & SEFLG_EPHMASK) == SEFLG_MOSEPH && ctx->earth_moon.t == t
+            && ctx->earth_moon.iephe == SEFLG_MOSEPH
+            && ctx->pldat[SEI_EARTH].teval == t && ctx->pldat[SEI_EARTH].iephe == SEFLG_MOSEPH)
+          for (j = 0; j <= 5; j++)
+            xposm[j] = ctx->earth_moon.x[j];
         /* Upstream bug 108: with the EMB's mass ratio the Earth was made
          * from (swi_emb_mrat(): a JPL file's EMRAT, not the AA's) */
         for (j = 0; j <= 5; j++)

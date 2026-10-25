@@ -208,6 +208,7 @@ worst were in code that had never executed even once.
 | 163 | `swi_nutation_rate()` (this fork's, entry 58's) takes every nutation model but the default's grid as a central difference over -+1e-4 day, which divides the series' rounding by 2e-4 day: under IAU 1980 to 2000B set explicitly the nutation's part of every speed of date 5.2e-10 deg/day off at 2.5e6 to 5.4e6 days from J2000, 1e-10 near it; the rate itself 1.2e-9 at 1e6 to 5.5e6 days, 3.2e-8 at 2.5e7 to 1e8, 5.1e-7 at 1e8 to 4e8 | Correctness | `swephlib.c` |
 | 176 | `swe_nod_aps()` turns the osculating ellipse of a request fallen to Moshier by the frame bias of the DE number asked: SEFLG_JPLEPH on de200 outside its years leaves Moshier's state in DE200's frame, unbiased, where `swe_calc()` takes the ephemeris that answered: Mars's node at 1500 1.58e-4 deg off the Moshier request's, the Moon's 6.5e-5 | Correctness (behaviour) | `swecl.c` |
 | 178 | `swe_nod_aps()` gives its heliocentric and barycentric points aberration (the Sun's barycentric velocity) and `swi_deflect_light()`'s deflection, whose observer is the Earth whatever the centre, where `swe_calc()` gives those places neither: Jupiter's heliocentric mean descending node at J2000, in line with the Sun from the Earth, 9.6e-4 deg off, its barycentric speeds 3.4e-2 deg/day, Mars's points 4.1e-6 deg | Correctness (behaviour) | `swecl.c` |
+| 180 | `swe_nod_aps()` on Moshier builds the Earth-Moon barycentre as Moshier's Earth plus Moshier's Moon, where that Earth is the EMB less the short lunar series' Moon (0.24 deg away at 2000): the EMB 1.3e-7 AU off the series', the Earth's and the Sun's osculating apsides wobbling 8.0e-3 deg (4.1e-2 at -3000), their speeds 4.7e-8 deg/day off their positions' rate at every epoch | Correctness | `swecl.c` |
 
 ---
 
@@ -12063,6 +12064,100 @@ G24 `nodaps_hel_defl_off`: Jupiter's heliocentric mean descending node at
 J2000, the files, the default flags against SEFLG_NOABERR |
 SEFLG_NOGDEFL: 0 shipped, 8.22e-4 deg compat (9.62e-4 in the default
 build before the fix).
+
+## 180. `swe_nod_aps()` on Moshier builds the Earth-Moon barycentre from a Moon other than the one Moshier's Earth was made with: the Earth's and the Sun's osculating points wobble 8.0e-3 deg with the Moon's inequalities, their speeds 4.7e-8 deg/day off their positions' rate
+
+**Severity: Correctness (Moshier's Earth's and Sun's osculating apsides 8.0e-3 deg off the ellipse of Moshier's own EMB at 2000, 4.1e-2 at -3000, 4.6e-2 at -2700; their longitude speeds 4.7e-8 deg/day off five-point differences of their positions, the distance's 2.5e-11 AU/day), both builds**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Found by entries 167-169's work, as a speed residual whose epoch it did
+not pin down: there is none, it is at every epoch. The ellipse of the
+Earth (and so the Sun's geocentric points) is the Earth-Moon barycentre's,
+built as the Earth plus the geocentric Moon over 1 + EMRAT. On the files
+and JPL the Earth is the EMB less that same Moon's share, and the sum is
+the file's EMB. Moshier's Earth is its series' EMB less the short lunar
+series' Moon (`embofs_mosh()`, six terms in longitude), and the Moon added
+back was Moshier's own, 0.24 deg away at 2000, 1.55 deg at -3000: the EMB
+came out 1.3e-7 AU and 3.2e-8 AU/day off the series' at 2000 (7.9e-7 AU,
+2.0e-7 AU/day at -3000), in the terms the short series leaves out, 9 to 35
+days long. The osculating ellipse amplifies the velocity by about 2 / (v
+e): the perihelion wobbled 8.0e-3 deg about the series' EMB's at 2000
+(its largest term semi-monthly, 5e-3 deg), 4.1e-2 at -3000, the distance
+3.8e-6 and 3.8e-5 AU. The speeds are central differences over +-2^-6 day of those
+points (entry 80), and the wobble's third derivative, 1.6e-3 deg/day^3
+(the files' 1.0e-5 to 2.2e-5), puts such a difference off the rate by h^2
+/ 6 of it: 5e-9 to 6.8e-8 deg/day at every epoch, by where the instant
+falls in the lunar terms, not by the year; 4.7e-8 at 3000 on G143's
+instants, the latitude's 4.0e-10, the distance's 2.5e-11 AU/day. The
+Earth's heliocentric points and the Sun's geocentric and topocentric ones
+alike; the files' 3.2e-10 deg/day. Moshier's points against the files',
+before and after (60 days from each date, the largest):
+
+| Moshier's Earth, osculating perihelion | before | after |
+|---|---|---|
+| 2000 | 8.04e-3 deg, 4.0e-6 AU | 9.8e-4 deg, 3.4e-7 AU |
+| 0 | 1.20e-2, 6.3e-6 | 5.2e-4, 2.0e-7 |
+| -2000 | 3.09e-2, 2.6e-5 | 4.2e-3, 3.5e-6 |
+| -3000 | 6.16e-2, 5.3e-5 | 2.99e-2, 1.5e-5 |
+
+What remains is Moshier's EMB series against the files'.
+
+**Fix, as done here:**
+- On Moshier the Moon added to the Earth is the one the Earth was made
+  with: the short series' geocentric Moon the Earth's computation keeps
+  (`ctx->earth_moon`, entry 66's, for the light time's tau a), when it is
+  that Earth's (the instant and Moshier); the EMB is then the series' own
+  to its last bits.
+- Now Moshier's speeds are their positions' rates as the files' are,
+  3.2e-10 deg/day and 1.2e-13 AU/day over -3000..3000 (the files'
+  3.2e-10); the positions move by the wobble, 8.0e-3 deg at 2000, 4.6e-2
+  at -2700. The files and JPL, and a Moon from Moshier on the files'
+  Earth (the Moon files alone missing, entry 120: that Earth is made with
+  Moshier's Moon), as before.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+Below the floor, recorded and not fixed: the files' topocentric Sun's
+osculating apsides, 3.9e-9 deg/day off their positions' rate at 1500
+(3.6e-9 at its finder's instant; the geocentric ones 3.2e-10), through
+the deflection's site.
+
+Noticed, not fixed (not this entry's):
+- `swe_get_orbital_elements()` builds the Earth's EMB the same way: on
+  Moshier its longitude of perihelion wobbles with the same difference,
+  -8.0e-3 to +8.0e-3 deg against the files' over 60 days from 2000 Jan
+  1.5, -3.1e-2 to +1.8e-2 from -2000.
+- The Sun's topocentric nodes and apsides are its geocentric ones: the
+  observer of the Sun's points is the Sun (entry 167), and the site, set
+  first, is overwritten, so they carry no diurnal parallax (Moshier's
+  bit for bit, the files' through the deflection's site, 1e-9 deg), where
+  `swe_calc()`'s topocentric Sun at J2000 is 2.3e-3 deg from its
+  geocentric one in latitude. Both builds.
+- Moshier's Earth itself is made with the short series' Moon, so it is
+  1.3e-7 AU (2000) to 7.9e-7 AU (-3000) from its EMB less its own Moon's
+  share; every Moshier geocentric place carries that.
+
+G143 `tests/nodcentre.c` (e): Moshier and the Swiss files, 13 instants
+-3000..3000, the osculating apsides and focal point of the Earth,
+heliocentric, and of the Sun, geocentric and topocentric, their speeds
+against five-point differences of their positions over 2^-6 day at
+binary instants, within 2e-9 deg/day (the files' topocentric Sun 1e-8,
+the floor) and 1e-12 AU/day: 156 rows pass (3.2e-10 deg/day, 1.2e-13
+AU/day); before the fix the 78 Moshier rows fail (4.7e-8, 2.5e-11), the
+upstream build all 156. G143 1609 rows pass; the upstream build fails
+1311. G104 `tests/nodapsgm.c` built Moshier's EMB the old way for its
+eccentricity-vector reference, which agreed with the defect: it now
+takes the Moon the Earth was made with (the context's, ICRS, biased and
+turned into the J2000 ecliptic of its places), and its Moshier Earth row
+is 7.8e-16 AU and 8.7e-13 deg from it (before the fix 5.1e-6 AU and
+2.6e-2 deg, failing; the upstream build fails its 31 as before). G146
+(3520 rows), G133 (1120), G79, G47, G69, G92, G78, G42, G53, G46 and G38
+pass.
+
+G24 `nodaps_mosh_emb_rate_off`: the Earth's heliocentric osculating
+perihelion on Moshier at 2000 Jan 30.5, its longitude speed less the
+five-point difference of its positions: 7.2e-11 deg/day shipped (3.18e-8
+before the fix), 1.23e-3 compat (with upstream's rougher speeds, entry
+80).
 
 ## How these were found
 

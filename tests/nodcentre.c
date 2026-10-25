@@ -28,7 +28,12 @@
  * turned by the frame bias of the DE number asked, swi_get_denum() of the
  * caller's bit: SEFLG_JPLEPH on de200 outside its years left Moshier's
  * state in DE200's frame, unbiased, Mars's node at 1500 Jan 1 1.58e-4 deg
- * off the Moshier request's.
+ * off the Moshier request's. UPSTREAM-BUGS 180: on Moshier the Earth-Moon
+ * barycentre of the Earth's and the Sun's ellipses was Moshier's Earth
+ * plus Moshier's Moon, where the Earth is made from the EMB with the short
+ * lunar series' Moon (0.24 deg away at 2000): the EMB 1.3e-7 AU off, the
+ * perihelion wobbling 8e-3 deg with the Moon's inequalities, its speed
+ * 4.7e-8 deg/day off its positions' rate, the distance's 2.5e-11 AU/day.
  *
  * The check, the complete directory:
  *  (a) the Swiss files and Moshier, seven instants -3000..3000: the Sun's
@@ -63,17 +68,25 @@
  *      mean, osculating, SE_NODBIT_OSCU_BAR and osculating with
  *      SE_NODBIT_FOPOINT, the four centres, each pair from a closed
  *      context; the return and points bit for bit (both refusing the
- *      barycentric points and Saturn's barycentric ellipse).
+ *      barycentric points and Saturn's barycentric ellipse);
+ *  (e) Moshier and the files, 13 instants -3000..3000: the osculating
+ *      apsides (and the focal point) of the Earth, heliocentric, and of
+ *      the Sun, geocentric and topocentric, their speeds against
+ *      five-point differences of their positions over 2^-6 day at binary
+ *      instants, within 2e-9 deg/day (the files' topocentric Sun 1e-8, at
+ *      the residual floor: 3.9e-9 there, not this check's) and 1e-12
+ *      AU/day.
  * Measured: (a) distance 4.4e-16 AU, direction 7.6e-7 deg (the focal
  * point, 0.03 AU out), Moshier's mean points 2.9e-6 deg and 2.2e-16 AU off
  * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b), (c),
- * (d) 0. 1453 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
+ * (d) 0; (e) 3.2e-10 deg/day, 1.2e-13 AU/day. 1609 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
  * first check fail (143 deg, 0.97 AU), the 14 of its second and 7 of the
  * third's 14 (the topocentric); before bug 168's, 340 of (b)'s 480 (12
  * deg); before bug 169's, 448 of (c)'s 456 (180 deg: the Sun's
  * topocentric points heliocentric, the Earth's orbit's); before bug 176's,
- * 84 of (d)'s 160, every osculating row that answers (1.75e-4 deg). The
- * upstream build (SWE_UPSTREAM_COMPAT) fails 1155. Run as
+ * 84 of (d)'s 160, every osculating row that answers (1.75e-4 deg); before
+ * bug 180's, (e)'s 78 Moshier rows (4.7e-8 deg/day, 2.5e-11 AU/day). The
+ * upstream build (SWE_UPSTREAM_COMPAT) fails 1311. Run as
  *   nodcentre EPHEDIR
  */
 #include <math.h>
@@ -336,6 +349,54 @@ static void part_d(const char *ephe)
   printf("  (d) de200 fallen to Moshier against Moshier: %.2e deg\n", w);
 }
 
+/* (e) Moshier's Earth-Moon barycentre is its series', bug 180: the
+ * osculating points of the Earth (heliocentric) and the Sun (geocentric,
+ * topocentric), their speeds the rates of their positions, five-point
+ * differences over 2^-6 day at binary instants, on Moshier as on the files */
+static void part_e(void)
+{
+  static const int32 E[2] = {SEFLG_MOSEPH, SEFLG_SWIEPH};
+  static const int32 M[2] = {SE_NODBIT_OSCU, SE_NODBIT_OSCU | SE_NODBIT_FOPOINT};
+  static const struct { int ipl; int32 ctr; } B[3] = {
+    {SE_EARTH, SEFLG_HELCTR}, {SE_SUN, 0}, {SE_SUN, SEFLG_TOPOCTR}};
+  const double H = 1.0 / 64;
+  double wa = 0, wr = 0, wt = 0;
+  char w[200];
+  int ie, ib, im, y, j, k, c;
+  for (ie = 0; ie < 2; ie++)
+    for (ib = 0; ib < 3; ib++)
+      for (im = 0; im < 2; im++)
+        for (y = -3000; y <= 3000; y += 500) {
+          double x[24], f[5][24], jd = jd_of(y), sa = 0, sr = 0;
+          int32 fl = E[ie] | B[ib].ctr;
+          /* the files' topocentric Sun at the floor: 3.9e-9 deg/day, not
+           * this entry's */
+          double lim = (E[ie] == SEFLG_SWIEPH && B[ib].ctr == SEFLG_TOPOCTR) ? 1e-8 : 2e-9;
+          int32 r = nodaps(jd, B[ib].ipl, fl | SEFLG_SPEED, M[im], x);
+          for (j = 0; j < 5; j++)
+            nodaps(jd + (j - 2) * H, B[ib].ipl, fl, M[im], f[j]);
+          for (k = 2; k < 4; k++)
+            for (c = 0; c < 3; c++) {
+              double d1 = c ? f[3][6 * k + c] - f[1][6 * k + c] : swe_difdeg2n(f[3][6 * k], f[1][6 * k]);
+              double d2 = c ? f[4][6 * k + c] - f[0][6 * k + c] : swe_difdeg2n(f[4][6 * k], f[0][6 * k]);
+              double e = fabs(x[6 * k + 3 + c] - (8 * d1 - d2) / (12 * H));
+              if (c < 2 && e > sa) sa = e;
+              if (c == 2 && e > sr) sr = e;
+            }
+          if (lim > 2e-9) {
+            if (sa > wt) wt = sa;
+          } else if (sa > wa) {
+            wa = sa;
+          }
+          if (sr > wr) wr = sr;
+          snprintf(w, sizeof w, "%s body %d centre %d method %d %d, the osculating apsides' speeds: dist %.2e AU/day, deg/day",
+                   E[ie] == SEFLG_MOSEPH ? "Moshier" : "Swiss", B[ib].ipl, (int) B[ib].ctr, (int) M[im], y, sr);
+          check(r == 0 && sr <= 1e-12 && sa <= lim, "e", w, sa, lim);
+        }
+  printf("  (e) the Earth's and the Sun's osculating apsides' speeds against their positions' rates:\n"
+         "      %.2e deg/day (the files' topocentric Sun %.2e), %.2e AU/day\n", wa, wt, wr);
+}
+
 int main(int argc, char **argv)
 {
   if (argc != 2) {
@@ -350,6 +411,7 @@ int main(int argc, char **argv)
   part_b();
   part_c();
   part_d(argv[1]);
+  part_e();
   printf("  rows %d, failed %d\n", nrow, nbad);
   printf(nbad ? "G143 FAIL: %d\n" : "G143 PASS\n", nbad);
   return nbad ? 1 : 0;

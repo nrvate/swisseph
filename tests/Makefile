@@ -988,9 +988,10 @@ check-oscsmooth: oscsmooth
 
 # G104: swe_nod_aps()'s osculating ellipses take the ephemeris's GM, frame
 # and EMRAT: the Moon's apogee against SE_OSCU_APOG, the planets' perihelia
-# against their own eccentricity vectors with the JPL header's GMS + GMi, on
-# the Swiss files, de200 and Moshier, and on a DE >= 403 JPL file if
-# SE_TEST_DE4 names one (UPSTREAM-BUGS 105, 108).
+# against their own eccentricity vectors with the JPL header's GMS + GMi
+# (the EMB's from the Moon its Earth was made with, on Moshier the short
+# lunar series'), on the Swiss files, de200 and Moshier, and on a DE >= 403
+# JPL file if SE_TEST_DE4 names one (UPSTREAM-BUGS 105, 108, 180).
 check-nodapsgm: nodapsgm
 	@env -u SE_EPHE_PATH ./nodapsgm $(EPHE) "$${SE_TEST_DE4:-}"
 
@@ -1392,7 +1393,9 @@ check-moonlesstid: moonlesstid
 # their positions (UPSTREAM-BUGS 167); mixed ephemeris bits answered as the
 # ephemeris they resolve to (168), combined centre bits as the centre
 # swe_calc() takes (169) and de200 fallen to Moshier with Moshier's frame
-# bias on its ellipses (176), bit for bit.
+# bias on its ellipses (176), bit for bit; on Moshier the Earth's and the
+# Sun's osculating apsides' speeds the rates of their positions, the EMB
+# the series' own (180).
 check-nodcentre: nodcentre
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodcentre $(EPHE)
 
