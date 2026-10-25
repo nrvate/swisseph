@@ -1244,6 +1244,12 @@ struct epsilon {
  *     thread's swe_set_jpl_file() loading the IERS corrections its setter
  *     loaded, where its SEFLG_JPLHOR fell to SEFLG_JPLHOR_APPROX (4.2e-2"
  *     in dpsi), is in both builds: that adoption is this fork's code; G134)
+ *   - swe_set_ephe_path() keeping the IERS corrections read from the old
+ *     directory, which load_dpsi_deps() loads once: after path A, the JPL
+ *     file, path B and the JPL file again, SEFLG_JPLHOR answered A's dpsi
+ *     for B's (0.131"), after path B alone A's for SEFLG_JPLHOR_APPROX's
+ *     (UPSTREAM-BUGS 144, G134). A thread adopting the path drops them in
+ *     both builds, as above
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

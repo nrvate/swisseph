@@ -256,6 +256,7 @@ static void ephe_path_read_moon(swe_ctx *ctx);
 static void file_close_open(swe_ctx *ctx, int ifno);
 #endif
 static void ctx_release(swe_ctx *ctx);
+static void dpsi_deps_free(swe_ctx *ctx);
 
 #ifdef TRACE
 static void trace_swe_calc(int param, double tjd, int ipl, int32 iflag, double *xx, char *serr);
@@ -2617,6 +2618,13 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
   ctx->jpldenum_cfg = 0;
 #ifndef SWE_UPSTREAM_COMPAT
   ctx->denum_unread = 0;	/* bug 131: read here, or not owed */
+  /* Upstream bug 144: the IERS corrections stayed, and load_dpsi_deps()
+   * loads once: after path A, the DE431 fixture, path B and the fixture,
+   * SEFLG_JPLHOR answered A's dpsi -13.530688" for B's -13.399987" (G134,
+   * 0.131"), and after path B alone A's for none (SEFLG_JPLHOR_APPROX's,
+   * 4.20e-2"). They are the old directory's, and go with the DE number;
+   * the next swe_set_jpl_file() reads the new one's. */
+  dpsi_deps_free(ctx);
 #endif
   /* environment variable SE_EPHE_PATH has priority. The length tests are
    * upstream's: a path with no room left for a file name is dropped for the
@@ -2805,6 +2813,21 @@ static void dpsi_deps_forget(swe_ctx *ctx)
   ctx->interpol.tjd_nut2 = 0;
 }
 
+/* The IERS corrections dropped, and what was computed from them, so that
+ * the next load reads them again (load_dpsi_deps() loads once): another
+ * path's or JPL file's are not these (bug 144) */
+static void dpsi_deps_free(swe_ctx *ctx)
+{
+  AS_BOOL had = ctx->eop_dpsi_loaded > 0;
+  free(ctx->dpsi);
+  free(ctx->deps);
+  ctx->dpsi = NULL;
+  ctx->deps = NULL;
+  ctx->eop_dpsi_loaded = 0;
+  if (had)
+    dpsi_deps_forget(ctx);
+}
+
 /* Upstream bug 143 (this fork's): a context adopting another's JPL file
  * -- a thread on the default context at its sync, a thread's first start,
  * swe_ctx_new() -- never loaded the IERS corrections, which only
@@ -2813,12 +2836,17 @@ static void dpsi_deps_forget(swe_ctx *ctx)
  * dpsi on G134's DE431 fixture at 2000 Jan 7.37 -13.488712" for
  * -13.530688" (4.20e-2"), the ayanamsa and the sidereal houses with it.
  * Loaded now as the setter loads them, for a JPL file of DE 403 or later,
- * along the adopted path, and what was computed without them goes. Called
- * by swi_config_apply() for an adopted path or JPL file, in both builds:
- * the adoption is this fork's. */
+ * along the adopted path, and what was computed without them goes.
+ * Upstream bug 144, for the adoption: the old path's or JPL file's, loaded
+ * once, stayed, A's dpsi -13.530688" for B's -13.399987" after another
+ * thread's path B and the fixture (0.131"), A's after B alone for none.
+ * They go first now, as the setter drops them. Called by
+ * swi_config_apply() for an adopted path or JPL file, in both builds: the
+ * adoption is this fork's. */
 void swi_dpsi_deps_adopt(swe_ctx *ctx)
 {
-  if (ctx->jpldenum_cfg < 403 || ctx->eop_dpsi_loaded > 0)
+  dpsi_deps_free(ctx);
+  if (ctx->jpldenum_cfg < 403)
     return;
   load_dpsi_deps(ctx);
   if (ctx->eop_dpsi_loaded > 0)

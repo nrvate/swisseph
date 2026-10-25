@@ -52,7 +52,28 @@
  * SEFLG_JPLHOR_APPROX's, the ayanamsa and the cusps 4.20e-2" with it. The
  * upstream build failed 11, the interpolated houses passing there on entry
  * 134's unkeyed nodes; the adoption is this fork's, fixed in both builds,
- * and both pass. Run as
+ * and both pass.
+ *
+ * And across a path change (UPSTREAM-BUGS 144): load_dpsi_deps() loads
+ * once, and swe_set_ephe_path() and its adoption kept the corrections read
+ * from the old directory. Path A and the fixture, SE_ECL_NUT and
+ * swe_get_ayanamsa_ex() with SEFLG_JPLHOR at 2000 Jan 7 (A's corrections
+ * in use), then path B (other corrections) and the fixture, path B alone,
+ * or swe_close(), path B and the fixture; the probe at Jan 7 and 7.37
+ * after it. On the setter's thread (B and the fixture interpolated too), an
+ * explicit context, and a second thread on the default context that
+ * adopts both settings (interpolated too). Against a fresh process that
+ * set the final state: B and the fixture, or for B alone the fixture and
+ * then B, which loads nothing. 18 checks, 78 in all.
+ *
+ * Measured before the fix, 16 of the 18 fail, all but swe_close() on the
+ * setter's thread (G122's case): after B and the fixture A's dpsi
+ * -13.530688" for B's -13.399987" (0.131"; interpolated -13.531351" for
+ * -13.400650"), after B alone A's for SEFLG_JPLHOR_APPROX's -13.488712"
+ * (4.20e-2", the return SEFLG_JPLHOR's), the ayanamsa the same. The
+ * upstream build fails the 8 of the setter's thread and the explicit
+ * context, whose path setter is upstream's (16 before); the adoption is
+ * this fork's, fixed in both builds. Run as
  *   eopfollow EPHEDIR
  */
 #include <math.h>
@@ -292,6 +313,127 @@ static void run2(int a, int p, int fresh, struct obs *o)
   }
 }
 
+/* The corrections across a path change (UPSTREAM-BUGS 144): path A and
+ * the fixture, the probe at 2000 Jan 7 under A's corrections, then path B
+ * (other corrections) and the fixture again, or path B alone, or
+ * swe_close() and both; the probe at Jan 7 and 7.37 after it. On the
+ * setter's thread, a thread on the default context that adopts each, and
+ * an explicit context; against a fresh process that set the final state
+ * (B and the fixture; or the fixture and then B, which loads nothing). */
+enum { W_MAIN, W_THREAD, W_CTX };
+enum { CH_BF, CH_B, CH_CLOSE };
+struct scen3 {
+  int who, change, intp;
+};
+static const struct scen3 SC3[] = {
+  { W_MAIN, CH_BF, 0 }, { W_MAIN, CH_BF, 1 }, { W_MAIN, CH_B, 0 },
+  { W_CTX, CH_BF, 0 }, { W_MAIN, CH_CLOSE, 0 },
+  { W_THREAD, CH_BF, 0 }, { W_THREAD, CH_BF, 1 }, { W_THREAD, CH_B, 0 },
+  { W_THREAD, CH_CLOSE, 0 },
+};
+#define NSC3 ((int) (sizeof SC3 / sizeof SC3[0]))
+static const char *WN[] = { "the setter's thread", "a second thread",
+  "an explicit context" };
+static const char *CN[] = { "path B and the fixture", "path B alone",
+  "swe_close(), path B and the fixture" };
+
+static void setup3(swe_ctx *c, int d, int intp)
+{
+  char jf[64];
+  strcpy(jf, JPL_FIXTURE);
+  if (c) {
+    swe_set_ephe_path_r(c, DIRS[d]);
+    swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+    swe_set_interpolate_nut_r(c, intp);
+    swe_set_jpl_file_r(c, jf);
+  } else {
+    swe_set_ephe_path(DIRS[d]);
+    swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+    swe_set_interpolate_nut(intp);
+    swe_set_jpl_file(jf);
+  }
+}
+
+static void change3(swe_ctx *c, int ch)
+{
+  char jf[64];
+  strcpy(jf, JPL_FIXTURE);
+  if (ch == CH_CLOSE) {
+    swe_close();
+    swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);	/* the compat build resets it */
+  }
+  if (c)
+    swe_set_ephe_path_r(c, DIRS[D_B]);
+  else
+    swe_set_ephe_path(DIRS[D_B]);
+  if (ch != CH_B) {
+    if (c)
+      swe_set_jpl_file_r(c, jf);
+    else
+      swe_set_jpl_file(jf);
+  }
+}
+
+static void *second3(void *arg)
+{
+  struct obs o;
+  (void) arg;
+  probe2(NULL, th_p, T0F, &o);	/* started */
+  pthread_barrier_wait(&bar);
+  pthread_barrier_wait(&bar);
+  probe2(NULL, th_p, T0F, &o);	/* A's corrections, adopted */
+  pthread_barrier_wait(&bar);
+  pthread_barrier_wait(&bar);
+  probe2x(NULL, th_p, &th_o);
+  return NULL;
+}
+
+static void run3(int k, int p, int fresh, struct obs *o)
+{
+  const struct scen3 *s = &SC3[k];
+  swe_ctx *c = NULL;
+  struct obs junk;
+  if (s->who == W_CTX && (c = swe_ctx_new()) == NULL)
+    exit(3);
+  if (fresh) {
+    if (s->change == CH_B) {	/* the fixture, then B: nothing loaded */
+      char jf[64];
+      strcpy(jf, JPL_FIXTURE);
+      swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+      swe_set_interpolate_nut(s->intp);
+      swe_set_jpl_file(jf);
+      swe_set_ephe_path(DIRS[D_B]);
+    } else
+      setup3(c, D_B, s->intp);
+    probe2x(c, p, o);
+  } else if (s->who == W_THREAD) {
+    pthread_t th;
+    char jf[64];
+    strcpy(jf, JPL_FIXTURE);
+    swe_set_ephe_path(DIRS[D_A]);
+    swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+    swe_set_interpolate_nut(s->intp);
+    th_p = p;
+    pthread_barrier_init(&bar, NULL, 2);
+    if (pthread_create(&th, NULL, second3, NULL) != 0)
+      exit(3);
+    pthread_barrier_wait(&bar);
+    swe_set_jpl_file(jf);
+    pthread_barrier_wait(&bar);
+    pthread_barrier_wait(&bar);
+    change3(NULL, s->change);
+    pthread_barrier_wait(&bar);
+    pthread_join(th, NULL);
+    *o = th_o;
+  } else {
+    setup3(c, D_A, s->intp);
+    probe2(c, p, T0F, &junk);
+    change3(c, s->change);
+    probe2x(c, p, o);
+  }
+  swe_ctx_free(c);
+}
+
 /* run(k, p, fresh) in a forked process: 0, -1 if it failed, or the signal
  * that ended it */
 static int in_child(void (*run)(int, int, int, struct obs *), int k, int p,
@@ -502,6 +644,24 @@ int main(int argc, char **argv)
       if (differ(&ot, &of, &d)) {
         printf("    %s, %s: %.3e off the setter's (%.6f\" for %.6f\", return %d, %d) FAIL\n",
                AN[x], PN[q], d, ot.v[PV[q]] * 3600, of.v[PV[q]] * 3600, ot.ret, of.ret);
+        nfail++;
+      }
+    }
+  for (x = 0; x < NSC3; x++)
+    for (q = 0; q < P_HOUSE; q++) {	/* SE_ECL_NUT, the ayanamsa */
+      struct obs ot, of;
+      double d;
+      n++;
+      if (in_child(run3, x, q, 0, &ot) != 0 || in_child(run3, x, q, 1, &of) != 0) {
+        printf("    %s, %s%s, %s: child failed\n", WN[SC3[x].who], CN[SC3[x].change],
+               SC3[x].intp ? ", interpolated" : "", PN[q]);
+        nfail++;
+        continue;
+      }
+      if (differ(&ot, &of, &d)) {
+        printf("    %s, %s%s, %s: %.3e off a fresh process's (%.6f\" for %.6f\", return %d, %d) FAIL\n",
+               WN[SC3[x].who], CN[SC3[x].change], SC3[x].intp ? ", interpolated" : "", PN[q],
+               d, ot.v[PV[q]] * 3600, of.v[PV[q]] * 3600, ot.ret, of.ret);
         nfail++;
       }
     }

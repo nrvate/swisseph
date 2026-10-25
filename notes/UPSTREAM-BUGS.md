@@ -178,6 +178,7 @@ worst were in code that had never executed even once.
 | 141 | `swe_calc_orbel()` (this fork's) returns SEFLG_SWIEPH where no ephemeris was named (18178 for `swe_calc()`'s 18176 with SEFLG_BARYCTR and SEFLG_SPEED) and drops SEFLG_RADIANS with SEFLG_XYZ (4354 for 12546): not `swe_calc()`'s return flag for the same flags, the answer the same | Correctness (behaviour) | `sweph.c` |
 | 142 | `swe_get_ayanamsa_ex()`, its `_ut` form, the sidereal houses and `swe_gauquelin_sector()`'s methods 0 and 1 with SEFLG_JPLHOR and no IERS corrections loaded -- de200, a thread or context that never loaded them, eop_1962_today.txt missing or broken off -- read the corrections' table, NULL, and crash (SIGSEGV), where `swe_calc()` takes the flag as SEFLG_JPLHOR_APPROX | Crash | `swephlib.c`, `swephlib.h`, `sweph.c`, `swecl.c` |
 | 143 | A thread or context that adopts another thread's `swe_set_jpl_file()` (this fork's) -- a thread running across it, one started after it, a context made after it -- never loads the IERS corrections, so its SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX where the setter's does not: dpsi, the ayanamsa and the sidereal houses 4.2e-2" off the setter's on G134's fixtures | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h` |
+| 144 | `swe_set_ephe_path()` keeps the IERS corrections read from the old directory (`load_dpsi_deps()` loads once), and so does a thread adopting the path: after path A, the JPL file, path B and the JPL file again, SEFLG_JPLHOR answers A's dpsi, 0.131" off B's on G134's fixtures, and after path B alone A's for SEFLG_JPLHOR_APPROX's, 4.2e-2" | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -8584,7 +8585,7 @@ Noticed, not fixed:
 - `swe_set_ephe_path()` keeps the corrections of the old directory
   (only `swe_close()` frees them, and the loader loads once): after A,
   B and `swe_set_jpl_file()`, `SEFLG_JPLHOR` answered A's -13.479309"
-  for B's -13.348539" (0.131").
+  for B's -13.348539" (0.131"). Entry 144.
 - `swe_deltat_ex()` with no ephemeris flag (0, which the houses pass)
   answers 28.927550 s at 1950 on the thread that set de200 and 28.931886
   s on a second thread until it opens the JPL file (4.3e-3 s). Fixed as
@@ -9769,6 +9770,74 @@ started after it and a context made after it. 60 checks in all; before the
 fix the 12 fail (4.20e-2"), the compat build 11 of them (the interpolated
 houses passing there on entry 134's unkeyed nodes); after it both builds
 pass 60.
+
+## 144. `swe_set_ephe_path()` keeps the IERS corrections read from the old directory, and so does its adoption: SEFLG_JPLHOR answers with them after another path and `swe_set_jpl_file()`, or after the path alone
+
+**Severity: Correctness (behaviour: a setting without effect; dpsi, the ayanamsa and every place of date under SEFLG_JPLHOR 0.131" off the new directory's on G134's fixtures, 4.2e-2" off SEFLG_JPLHOR_APPROX's after the path alone)**
+**Where:** `sweph.c`: `swe_set_ephe_path_r()`, `load_dpsi_deps()`'s load-once guard; `swi_dpsi_deps_adopt()` (entry 143) for the adoption
+
+Entry 134's noticed item. `load_dpsi_deps()` opens with "if
+(eop_dpsi_loaded > 0) return", and only `swe_close()` (`ctx_release()`)
+frees the corrections and resets the flag. `swe_set_ephe_path()` closes
+the files and zeroes the published JPL DE number, as the JPL file is found
+along the path (2026-09-16 review, F4), and kept them: the next
+`swe_set_jpl_file()` of a DE 403 or later loaded nothing, and without one
+`plaus_iflag()` still saw them loaded. Measured on G19's synthetic DE431
+header in two directories with G122's corrections A and B, Lahiri: path A,
+the fixture and `SE_ECL_NUT` with SEFLG_JPLEPH | SEFLG_JPLHOR at 2000 Jan
+7, then path B and the fixture, and dpsi at Jan 7.37 was A's -13.530688"
+for B's -13.399987" (0.131"; interpolated -13.531351" for -13.400650");
+after path B alone, A's under SEFLG_JPLHOR for SEFLG_JPLHOR_APPROX's
+-13.488712" (4.20e-2"), the return SEFLG_JPLHOR's; `swe_get_ayanamsa_ex()`
+the same, and an explicit context's `swe_set_ephe_path_r()` the same. And
+since entry 143, a thread on the default context adopting the path did
+too, the same numbers, across `swe_close()` with B and the fixture as
+well. `swe_close()` on the setter's thread already passes: it frees them
+and, since entry 134, the nodes built from them. Both builds; the
+adoption's is this fork's code.
+
+**Fix, as done here:** `swe_set_ephe_path_r()` drops the corrections where
+it zeroes the DE number (`dpsi_deps_free()`): the tables freed, the flag
+back to 0 so that the next `swe_set_jpl_file()` reads the new directory's,
+and with them what was computed from them -- the nutation kept at an
+instant, the topocentric observer and the interpolation's nodes built
+under SEFLG_JPLHOR. The same path again (entry 103's early return) keeps
+them: it is the same directory. Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+`swi_dpsi_deps_adopt()` drops them first for every adopted path or JPL
+file and then loads the adopted setting's, in both builds, as the
+adoption is this fork's (in the compat build the nodes all go, being
+keyed on the instant alone). No hot path.
+
+G134 `tests/eopfollow.c`, extended with 18 checks, each in a forked
+process, bit for bit with its return flag against a fresh process that
+set the final state (B and the fixture; for B alone, the fixture and then
+B, which loads nothing): `SE_ECL_NUT` and `swe_get_ayanamsa_ex()` with
+SEFLG_JPLHOR at 2000 Jan 7 and 7.37 after path B and the fixture, path B
+alone, or `swe_close()`, B and the fixture, on the setter's thread (B and
+the fixture interpolated too), an explicit context and a second thread
+adopting each (interpolated too). 78 checks in all; before the fix 16 of
+the 18 fail, all but `swe_close()` on the setter's thread; the compat
+build fails the 8 of the setter's thread and the explicit context (16
+before). G24 `eop_path_kept_off`: dpsi at Jan 7.37 after A, the fixture,
+B and the fixture against a fresh context's: 0 shipped (1.31e-1" before
+the fix), 1.31e-1" compat. With the three fixes (entries 142-144) G19,
+G103, G116, G122, G127, G24, G2 (check-threads) and check-ctx pass; G25
+(check-jplhor) skips, no DE >= 403 file here.
+
+Noticed, not fixed:
+- `swe_set_jpl_file()` to a file of DE below 403 keeps the corrections a
+  DE 403 file loaded from the same directory: after path A (with
+  de200.eph linked in), the fixture and de200.eph, `SE_ECL_NUT` with
+  SEFLG_JPLEPH | SEFLG_JPLHOR at 2000 Jan 7.37 keeps SEFLG_JPLHOR with A's
+  -13.530688" (return 393217) where a fresh process with A and de200.eph
+  falls to SEFLG_JPLHOR_APPROX's -13.488712" (524289), 4.20e-2". A thread
+  adopting it drops them, as a fresh process has none. Both builds.
+- `load_dpsi_deps()` loads again over tables it left allocated: after a
+  file it gave up on (`eop_dpsi_loaded` -2, a day missing; by reading, -3
+  for eop_finals.txt) the next load, by `swe_set_jpl_file()` of another
+  file and the fixture again, allocates both anew: 589824 bytes more
+  mapped each time (two 292200-byte tables). It does not close the file
+  when an allocation fails (by reading). Both builds.
 
 ## How these were found
 

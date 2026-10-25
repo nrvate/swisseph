@@ -1296,7 +1296,9 @@ check-fbbary: fbbary
 # sidereal houses and the Gauquelin sectors, which read the missing table
 # and crashed (UPSTREAM-BUGS 142); and a thread or context that adopts
 # another's swe_set_jpl_file() loads the corrections the setter loaded
-# (UPSTREAM-BUGS 143). On G19's synthetic DE431 header, with corrections
+# (UPSTREAM-BUGS 143); and a path change, set or adopted, drops the old
+# directory's, the next swe_set_jpl_file() reading the new one's
+# (UPSTREAM-BUGS 144). On G19's synthetic DE431 header, with corrections
 # the test writes in $TMPDIR or /tmp.
 check-eopfollow: eopfollow
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./eopfollow $(EPHE)
