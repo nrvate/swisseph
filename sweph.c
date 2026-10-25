@@ -4812,10 +4812,34 @@ void swi_precess_speed(swe_ctx *ctx, double *xx, double t, int32 iflag, int dire
    * precessed from, as (P(t + 1) x0 - P(t - 1) x0) / 2, for any model
    * swi_precess() has, the series being smooth over centuries. Central,
    * because P^T P is not I to the last bits: a one-sided difference
-   * against x itself picks that up, 5e-12 / h of the rate. */
+   * against x itself picks that up, 5e-12 / h of the rate.
+   * For the Vondrak series, the default, M and dM/dt come from the series
+   * and their derivatives in one pass (swi_precess_matrix_rate()), the
+   * matrix M being swi_precess()'s to the bit: no dearer than upstream's
+   * rotation plus its two swi_ldp_peps() calls, where the differences cost
+   * three more precessions (+7% on a planet). x(t) = M x0 into the date,
+   * x0 = M^T x out of it. */
   int i;
-  double x0[3], a[3];
+  double x0[3], a[3], m[9], dm[9];
   int back = (direction == J2000_TO_J) ? J_TO_J2000 : J2000_TO_J;
+  if (swi_precess_matrix_rate(ctx, t, iflag, m, dm)) {
+    if (direction == J2000_TO_J) {
+      for (i = 0; i <= 2; i++)	/* x0 = M^T x */
+        x0[i] = xx[0] * m[i] + xx[1] * m[i + 3] + xx[2] * m[i + 6];
+      for (i = 0; i <= 2; i++)
+        a[i] = xx[3] * m[3 * i] + xx[4] * m[3 * i + 1] + xx[5] * m[3 * i + 2]
+          + x0[0] * dm[3 * i] + x0[1] * dm[3 * i + 1] + x0[2] * dm[3 * i + 2];
+    } else {
+      for (i = 0; i <= 2; i++)	/* the date's x = M x */
+        x0[i] = xx[0] * m[3 * i] + xx[1] * m[3 * i + 1] + xx[2] * m[3 * i + 2];
+      for (i = 0; i <= 2; i++)
+        a[i] = xx[3] * m[i] + xx[4] * m[i + 3] + xx[5] * m[i + 6]
+          + x0[0] * dm[i] + x0[1] * dm[i + 3] + x0[2] * dm[i + 6];
+    }
+    for (i = 0; i <= 2; i++)
+      xx[i+3] = a[i];
+    return;
+  }
   for (i = 0; i <= 2; i++)
     x0[i] = xx[i];
   swi_precess(ctx, x0, t, iflag, back);

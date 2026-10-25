@@ -741,6 +741,166 @@ static void pre_pmat(double tjd, double *rp)
 //  } /**/
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* pre_pecl(), pre_pequ() and pre_pmat() with their rates per day, for
+ * swi_precess_speed() (UPSTREAM-BUGS 49). The values are formed by the same
+ * operations in the same order as there, so the matrix is pre_pmat()'s to
+ * the bit; the rates are the series' derivatives, term by term, carried
+ * through the pole vectors' normalisation and the cross products. */
+static void pre_pecl_d(double tjd, double *vec, double *dvec)
+{
+  int i;
+  double t, p, q, dp, dq, w, dw, a, s, c, z, dz, f;
+  t = (tjd - J2000) / 36525.0;
+  p = q = dp = dq = 0;
+  for (i = 0; i < NPER_PECL; i++) {
+    w = D2PI * t;
+    a = w / pqper[0][i];
+    s = sin(a);
+    c = cos(a);
+    p += c * pqper[1][i] + s * pqper[3][i];
+    q += c * pqper[2][i] + s * pqper[4][i];
+    f = D2PI / pqper[0][i];
+    dp += f * (c * pqper[3][i] - s * pqper[1][i]);
+    dq += f * (c * pqper[4][i] - s * pqper[2][i]);
+  }
+  w = 1;
+  dw = 0;
+  for (i = 0; i < NPOL_PECL; i++) {
+    p += pqpol[i][0] * w;
+    q += pqpol[i][1] * w;
+    dp += pqpol[i][0] * dw;
+    dq += pqpol[i][1] * dw;
+    dw = dw * t + w;
+    w *= t;
+  }
+  p *= AS2R;
+  q *= AS2R;
+  dp *= AS2R / 36525.0;
+  dq *= AS2R / 36525.0;
+  z = 1 - p * p - q * q;
+  if (z < 0) {
+    z = 0;
+    dz = 0;
+  } else {
+    z = sqrt(z);
+    dz = -(p * dp + q * dq) / z;
+  }
+  s = sin(EPS0);
+  c = cos(EPS0);
+  vec[0] = p;
+  vec[1] = - q * c - z * s;
+  vec[2] = - q * s + z * c;
+  dvec[0] = dp;
+  dvec[1] = - dq * c - dz * s;
+  dvec[2] = - dq * s + dz * c;
+}
+
+static void pre_pequ_d(double tjd, double *veq, double *dveq)
+{
+  int i;
+  double t, x, y, dx, dy, w, dw, a, s, c, f;
+  t = (tjd - J2000) / 36525.0;
+  x = y = dx = dy = 0;
+  for (i = 0; i < NPER_PEQU; i++) {
+    w = D2PI * t;
+    a = w / xyper[0][i];
+    s = sin(a);
+    c = cos(a);
+    x += c * xyper[1][i] + s * xyper[3][i];
+    y += c * xyper[2][i] + s * xyper[4][i];
+    f = D2PI / xyper[0][i];
+    dx += f * (c * xyper[3][i] - s * xyper[1][i]);
+    dy += f * (c * xyper[4][i] - s * xyper[2][i]);
+  }
+  w = 1;
+  dw = 0;
+  for (i = 0; i < NPOL_PEQU; i++) {
+    x += xypol[i][0] * w;
+    y += xypol[i][1] * w;
+    dx += xypol[i][0] * dw;
+    dy += xypol[i][1] * dw;
+    dw = dw * t + w;
+    w *= t;
+  }
+  x *= AS2R;
+  y *= AS2R;
+  dx *= AS2R / 36525.0;
+  dy *= AS2R / 36525.0;
+  veq[0] = x;
+  veq[1] = y;
+  dveq[0] = dx;
+  dveq[1] = dy;
+  w = x * x + y * y;
+  if (w < 1) {
+    veq[2] = sqrt(1 - w);
+    dveq[2] = -(x * dx + y * dy) / veq[2];
+  } else {
+    veq[2] = 0;
+    dveq[2] = 0;
+  }
+}
+
+static void pre_pmat_d(double tjd, double *rp, double *drp)
+{
+  double peqr[3], pecl[3], dpeqr[3], dpecl[3], v[3], dv[3], a[3], w, ev, eqx[3], deqx[3];
+  int i;
+  pre_pequ_d(tjd, peqr, dpeqr);
+  pre_pecl_d(tjd, pecl, dpecl);
+  swi_cross_prod(peqr, pecl, v);
+  swi_cross_prod(dpeqr, pecl, dv);
+  swi_cross_prod(peqr, dpecl, a);
+  for (i = 0; i <= 2; i++)
+    dv[i] += a[i];
+  w = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  eqx[0] = v[0] / w;
+  eqx[1] = v[1] / w;
+  eqx[2] = v[2] / w;
+  ev = eqx[0] * dv[0] + eqx[1] * dv[1] + eqx[2] * dv[2];
+  for (i = 0; i <= 2; i++)
+    deqx[i] = (dv[i] - eqx[i] * ev) / w;
+  swi_cross_prod(peqr, eqx, v);
+  swi_cross_prod(dpeqr, eqx, dv);
+  swi_cross_prod(peqr, deqx, a);
+  for (i = 0; i <= 2; i++) {
+    rp[i] = eqx[i];
+    rp[i+3] = v[i];
+    rp[i+6] = peqr[i];
+    drp[i] = deqx[i];
+    drp[i+3] = dv[i] + a[i];
+    drp[i+6] = dpeqr[i];
+  }
+}
+
+/* The precession matrix of swi_precess() at J and its rate per day, if
+ * swi_precess() takes the Vondrak 2011 series there (the default, short-
+ * and long-term): x(J) = M x(J2000), row-major. Returns FALSE for any other
+ * model, which the caller then differences. */
+int swi_precess_matrix_rate(swe_ctx *ctx, double J, int32 iflag, double *m, double *dm)
+{
+  double T = (J - J2000) / 36525.0;
+  int prec_model = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
+  int prec_model_short = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+  if (prec_model == 0) prec_model = SEMOD_PREC_DEFAULT;
+  if (prec_model_short == 0) prec_model_short = SEMOD_PREC_DEFAULT_SHORT;
+  if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
+  /* the branches swi_precess() takes before its Vondrak one */
+  if ((iflag & SEFLG_JPLHOR)
+      || ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3
+          && J <= HORIZONS_TJD0_DPSI_DEPS_IAU1980))
+    return FALSE;
+  if ((prec_model_short == SEMOD_PREC_IAU_1976 && fabs(T) <= PREC_IAU_1976_CTIES)
+      || (prec_model_short == SEMOD_PREC_IAU_2000 && fabs(T) <= PREC_IAU_2000_CTIES)
+      || (prec_model_short == SEMOD_PREC_IAU_2006 && fabs(T) <= PREC_IAU_2006_CTIES))
+    return FALSE;
+  if (prec_model != SEMOD_PREC_VONDRAK_2011 || J == J2000)
+    return FALSE;
+  pre_pmat_d(J, m, dm);
+  return TRUE;
+}
+#endif
+
 /* precession according to Owen 1990:
  * Owen, William M., Jr., (JPL) "A Theory of the Earth's Precession
  * Relative to the Invariable Plane of the Solar System", Ph.D.

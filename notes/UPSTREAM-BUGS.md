@@ -2371,12 +2371,19 @@ shift A(x) - x as ((b_1 - 1 - f1) x + f2 ru v) / (1 + f1), b_1 - 1 =
 -v^2 / (1 + b_1) (`aberr_shift()`); the nutation's rate from the angles'
 own, w = deps' e1 + dpsi' (0, -sin eps_t, cos eps_t) in the true frame and
 the velocity gains w x x (backward, -(N^T w) x x). Positions are
-unchanged bit for bit. (2) dP/dt x0 itself, (P(t + 1) x0 - P(t - 1) x0) /
-2, x0 the position back in the frame precessed from: any model
-`swi_precess()` has. Central, because P^T P is not I to the last bits and
-a one-sided difference against x picks that up (5e-12 / h of the rate).
-Three precessions more a call: `bench` calc-swieph 0.71 -> 0.76 s (+7%),
-calc-moseph +2%. (3) for stars, `aberr_light_central()`: the shift's
+unchanged bit for bit. (2) dP/dt x0 itself, x0 the position back in the
+frame precessed from. For the Vondrak 2011 series, the default for short
+and long terms, the matrix and its rate come from the series and their
+term-by-term derivatives in one pass (`swi_precess_matrix_rate()`): the
+matrix is `swi_precess()`'s to the bit, the rate within 1.6e-16 rad/day of
+a five-point difference over 4 days (-13000..+17000, that difference's
+own rounding). That is cheaper than upstream's rotation plus its two
+`swi_ldp_peps()` calls: `bench` calc-swieph 0.74 -> 0.70 s, calc-moseph
+1.22 -> 1.20. Any other model takes (P(t + 1) x0 - P(t - 1) x0) / 2.
+Central, because P^T P is not I to the last bits and a one-sided
+difference against x picks that up (5e-12 / h of the rate). A first
+version differenced for every model, three precessions more a call: +7%
+on calc-swieph. (3) for stars, `aberr_light_central()`: the shift's
 change from t - dm to t + dp, dm and dp the exact differences of the
 instants, the observer's velocity at t + dp the Earth's carried on
 linearly from t - dm, t and the site read there. (4) the ayanamsa's rate
