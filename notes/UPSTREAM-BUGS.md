@@ -112,6 +112,7 @@ worst were in code that had never executed even once.
 | 71 | Every other cache emptied by an instant of 0 answers for JD 0, and sweph()'s forced EMB is the Earth there | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 81 | A fictitious body's light-time position is read at the rounded instant | Correctness | `sweph.c` |
 | 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, its aberration rate is the centre's whole velocity change over the light time, it deflects as seen from the Earth, and its light time stops short of its fixed point | Correctness | `sweph.c` |
+| 85 | The Moshier Earth-Moon offset's rate is a difference of rounded arguments | Correctness | `swemplan.c` |
 
 ---
 
@@ -3521,7 +3522,8 @@ Polaris 5.2e-12, Polaris Australis 1.2e-11, delta Dor 1.05e-11, 42 Dra
 Polaris 7.0e-12. Topocentric on Moshier is now Swiss's (over 2^-8 day,
 4.8e-10 against 1.59e-8, the rest being the diurnal term's truncation
 there). Positions bit for bit unchanged, both functions, seven stars,
-nine flag sets.
+nine flag sets. (Entry 85 made the Moshier Earth's velocity smooth at its
+source; the star side then took the files' form on Moshier too.)
 
 Cost: the two reads at t +- h skip the barycentric Sun (they want only
 the Earth's velocity; `main_planet_bary()` now takes a NULL Sun on
@@ -3950,6 +3952,83 @@ upstream build fails all eight rows by bug 48's speeds. G24
 `waldemath_lt_round_off`: Waldemath's geocentric longitude speed over 2^-8
 day at nine dates, 1.65e-8 deg/day shipped (5.3e-6 before the fix), 1.2e-2
 compat. G48, G59, G62, G64 pass.
+
+## 85. The Moshier Earth-Moon offset's rate is a difference of rounded arguments
+
+**Severity: Correctness (2e-14 AU/day of roughness in every Moshier Earth velocity, 2.1e-6 of the Earth's acceleration from velocities 1e-5 day apart at 2000, 3.8e-5 at -3000; ~1e-12 AU/day of bias)**
+**Where:** `swemplan.c`: `embofs_mosh_rate()`, `embofs_mosh()`
+
+The Moshier Earth is the EMB series less the Moon's share of a short
+lunar series, `embofs_mosh()`. Entry 51 gave the EMB the series'
+derivative and the offset a central difference over +-2^-8 day. The
+series' arguments are degrees of 481267.88 T and the like, which round at
+1e-12 rad once T is near 1 (5e-11 at -3000, T = -49): the offset's place
+is rough at a few 1e-17 AU, and divided by 2^-7 day that is ~2e-14 AU/day
+from one instant to the next. Measured, heliocentric J2000 Earth at
+instants that are multiples of 2^-8 day, its acceleration from the
+velocities at t +- 1e-5 day against the five-point second difference of
+its positions over 2^-3 day: 3.8e-5 of itself at -3000, 4.3e-9 in 1900
+(T ~ 0), 2.1e-6 in 2000, 2.1e-7 in 2100, 1.7e-5 in 2970; at +-2^-9 day
+still 1.7e-8 in 2000. The difference's truncation, h^2/6 of the offset's
+third derivative, left a bias besides: the velocity against the
+five-point difference of the positions over 2^-4 day, 7.9e-13 to 1.6e-12
+AU/day. Entry 76 met it in a star's aberration rate (1.56e-8 deg/day in
+Polaris's right ascension) and worked round it on the star side.
+
+**Fix, as done here:** `moon_short()` evaluates the series once, with
+the place's arithmetic unchanged to the bit, and with a velocity pointer
+also its derivative term by term: each argument's rate from its
+polynomial, the sines' and cosines' by the chain rule, the distance's
+from the parallax's, through `swi_polcart_sp()`, the obliquity held as
+the place holds ctx->oec, and the precession's turning with
+`swi_precess_speed()`. `embofs_mosh()` is its place;
+`embofs_mosh_rate()` its velocity, and bug 66's geocentric Moon
+(ctx->earth_moon) is now the series' place and velocity at t, not the
+mean and difference of two samples (a parabola's 1e-10 AU). A wider span
+or a five-point form does not get there, measured as below: the central
+difference over 2^-7..2^-3 day leaves 1e-7..2.6e-5 of the acceleration
+at -3000 and 2970 (the arguments' rounding is 50 times larger there) and
+a bias growing as h^2 to 1e-9 AU/day; the five-point one over 2^-4..2^-2
+day 1.5e-7..2.8e-6 at the range's ends, and costs four series reads. The
+derivative costs less than the two reads it replaces: calc-moseph 24.94e9 -> 24.90e9 instructions (-0.14%; `bench`
+1.063 -> 1.048 s, min of 3x7).
+
+After: the acceleration 2.9e-8 at -3000 (what is left is the EMB series'
+own roughness, ~2e-16 AU/day), 2.7e-9, 5.2e-9, 1.3e-9, 9.4e-9; the
+velocity's bias <= 1.9e-13 AU/day, the obliquity's turning, which the
+places have (each rotated with its own date's ctx->oec) and the rate
+does not: taking it with `swi_obliquity_rate()` gives <= 8.6e-14 but
+costs 1.8% on calc-moseph (a `swi_epsiln()` a call), not kept. Positions:
+the heliocentric Earth bit for bit; geocentric planets up to 2e-6 mas,
+the aberration's change, the old bias over c; the Moon 8e-6 mas, one ulp
+of its heliocentric intermediate (1e-16 AU); the heliocentric Moon 8e-15
+AU, the light time times the old bias. The compat build is bit for bit
+unchanged. `swi_mosh_earth_accel()` (bug 66 part 3) differences places,
+not this rate, and `mosh_moon_earth_acc()` (bug 53) is the pair's
+gravity, taking the Earth's velocity as it is: both unchanged in form.
+G65's Moshier speeds move within 5e-11 deg/day either way, all within
+its limits; G52's Mars without aberration 1.30e-10 -> 2.8e-11 deg/day,
+Mercury 1.37e-10 -> 5.6e-11; G50 within its noise.
+
+Entry 76's star side no longer needs its Moshier form: with the
+velocity smooth, the files' central difference over 2^-9 day serves
+Moshier too, and G75's Moshier stars go to <= 1.41e-11 deg/day
+(1.82e-11 with 2B - A over 2^-3 day). The cost there is the third Earth
+read, not the form: a Moshier `swe_fixstar2()` with SEFLG_SPEED is 291.6k
+instructions against 292.6k, still +18% on the two reads before entry 76
+(why three reads, see there).
+
+Not done: the EMB series' velocity is itself rough at ~2e-16 AU/day at
+-3000 (the 2.9e-8 above), and the offset's rate leaves out the
+obliquity's turning (1.5e-13 AU/day, 1e-11 of the Earth's speed).
+
+G84 `tests/moshvel.c`: the Moshier heliocentric J2000 Earth at -3000,
+1900, 2000, 2100 and 2970 (the range ends in 2973): the acceleration as
+above within 1e-7 of itself, the velocity within 5e-13 AU/day: 10
+checks. The build before the fix fails 9 (all but 1900's acceleration);
+the upstream build fails all 10 (its backward difference, entry 51). G24
+`mosh_earth_rough_off`: the acceleration in 2000, 5.2e-9 shipped, 2.6e-3
+compat.
 
 ## How these were found
 

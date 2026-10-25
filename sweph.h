@@ -844,6 +844,11 @@ struct epsilon {
  *     back: 8e-12 deg/day on the sky, 1.03e-9 in Polaris's right ascension;
  *     on Moshier the velocities 1e-5 day apart are rough, 1.56e-8
  *     (UPSTREAM-BUGS 76, G75)
+ *   - embofs_mosh_rate() took the Moshier Earth-Moon offset's rate as a
+ *     difference of the short lunar series over +-2^-8 day, whose rounded
+ *     arguments made every Moshier Earth velocity rough at 2e-14 AU/day
+ *     (2.1e-6 of the acceleration from velocities 1e-5 day apart;
+ *     UPSTREAM-BUGS 85, G84)
  *   - swe_calc_pctr() read both bodies at tjd - dt rounded to a double,
  *     and added the centre's velocity change over the light time as its
  *     aberration rate, radial part and all (9.8e-8 deg/day on a five-point

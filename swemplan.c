@@ -664,15 +664,22 @@ static void sscc (swe_ctx *ctx, int k, double arg, int n)
  * J = Julian day number
  * xemb = rectangular equatorial coordinates of Earth
  */
-/* reads ctx->oec */
-static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb) 
+/* The geocentric Moon of the short series below, J2000 equatorial, AU; with
+ * v != NULL also its velocity, AU/day: the series' derivative, term by term
+ * (UPSTREAM-BUGS 85). The position's arithmetic is the series' own, to the
+ * bit, with or without v. Reads ctx->oec, held over the call. */
+static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
 {
   double T, M, a, L, B, p;
   double smp, cmp, s2mp, c2mp, s2d, c2d, sf, cf;
-  double s2f, sx, cx, xyz[6];
+  double s2f, sx, cx;
   double seps = ctx->oec.seps;
   double ceps = ctx->oec.ceps;
-  int i;
+  /* rates, per day: arguments in radians, L B p in degrees */
+  double dmp = 0, d2d = 0, df = 0, dM = 0, dL = 0, dB = 0, dp = 0;
+  double dsmp = 0, dcmp = 0, ds2mp = 0, dc2mp = 0, ds2d = 0, dc2d = 0;
+  double dsf = 0, dcf = 0, ds2f = 0, dsx = 0, dcx = 0, da, dsx2;
+  const double tc = 1.0 / 36525.0;
   /* Short series for position of the Moon
    */
   T = (tjd-J1900)/36525.0;
@@ -683,11 +690,23 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
   cmp = cos(a);
   s2mp = 2.0*smp*cmp;		/* sin(2MP) */
   c2mp = cmp*cmp - smp*smp;	/* cos(2MP) */
+  if (v) {
+    dmp = ((3 * 1.44e-5*T + 2 * 0.009192)*T + 477198.8491) * DEGTORAD * tc;
+    dsmp = cmp * dmp;
+    dcmp = -smp * dmp;
+    ds2mp = 2 * c2mp * dmp;
+    dc2mp = -2 * s2mp * dmp;
+  }
   /* Mean elongation of moon (D) */
   a = swe_degnorm(((1.9e-6*T - 0.001436)*T + 445267.1142)*T + 350.737486);
   a  = 2.0 * DEGTORAD * a;
   s2d = sin(a);
   c2d = cos(a);
+  if (v) {
+    d2d = 2.0 * ((3 * 1.9e-6*T - 2 * 0.001436)*T + 445267.1142) * DEGTORAD * tc;
+    ds2d = c2d * d2d;
+    dc2d = -s2d * d2d;
+  }
   /* Mean distance of moon from its ascending node (F) */
   a = swe_degnorm((( -3.e-7*T - 0.003211)*T + 483202.0251)*T + 11.250889);
   a  *= DEGTORAD;
@@ -696,10 +715,28 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
   s2f = 2.0*sf*cf;	/* sin(2F) */
   sx = s2d*cmp - c2d*smp;	/* sin(2D - MP) */
   cx = c2d*cmp + s2d*smp;	/* cos(2D - MP) */
+  if (v) {
+    df = (( -3 * 3.e-7*T - 2 * 0.003211)*T + 483202.0251) * DEGTORAD * tc;
+    dsf = cf * df;
+    dcf = -sf * df;
+    ds2f = 2.0 * (cf*cf - sf*sf) * df;
+    dsx = cx * (d2d - dmp);
+    dcx = -sx * (d2d - dmp);
+  }
   /* Mean longitude of moon (LP) */
   L = ((1.9e-6*T - 0.001133)*T + 481267.8831)*T + 270.434164;
   /* Mean anomaly of sun (M) */
   M = swe_degnorm((( -3.3e-6*T - 1.50e-4)*T + 35999.0498)*T + 358.475833);
+  if (v) {
+    dM = (( -3 * 3.3e-6*T - 2 * 1.50e-4)*T + 35999.0498) * DEGTORAD * tc;
+    dL = ((3 * 1.9e-6*T - 2 * 0.001133)*T + 481267.8831) * tc
+      + 6.288750*dsmp
+      + 1.274018*dsx
+      + 0.658309*ds2d
+      + 0.213616*ds2mp
+      - 0.185596*cos( DEGTORAD * M ) * dM
+      - 0.114336*ds2f;
+  }
   /* Ecliptic longitude of the moon */
   L =	L
 	+ 6.288750*smp
@@ -716,6 +753,18 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
 	+ 0.277693*(a-sx)		/* sin(MP-F) */
 	+ 0.173238*(s2d*cf - c2d*sf);	/* sin(2D-F) */
   B *= DEGTORAD;
+  if (v) {
+    da = dsmp*cf + smp*dcf;
+    dsx2 = dcmp*sf + cmp*dsf;
+    dB = (5.128189*dsf
+	+ 0.280606*(da+dsx2)
+	+ 0.277693*(da-dsx2)
+	+ 0.173238*(ds2d*cf + s2d*dcf - dc2d*sf - c2d*dsf)) * DEGTORAD;
+    dp = (0.051818*dcmp
+	+ 0.009531*dcx
+	+ 0.007843*dc2d
+	+ 0.002824*dc2mp) * DEGTORAD;
+  }
   /* Parallax of the moon */
   p =	 0.950724
 	+0.051818*cmp
@@ -733,11 +782,48 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
   xyz[0] = L;
   xyz[1] = B;
   xyz[2] = a;
+  if (v) {
+    double x6[6];
+    x6[0] = L;
+    x6[1] = B;
+    x6[2] = a;
+    x6[3] = dL * DEGTORAD;
+    x6[4] = dB;
+    x6[5] = -a * cos(p) / sin(p) * dp;
+    swi_polcart_sp(x6, x6);
+    swi_coortrf2(x6 + 3, x6 + 3, -seps, ceps);
+    for (int i = 0; i <= 2; i++)
+      v[i] = x6[i+3];
+  }
   swi_polcart(xyz, xyz);
   /* Convert to equatorial */
   swi_coortrf2(xyz, xyz, -seps, ceps);
   /* Precess to equinox of J2000.0 */
   swi_precess(ctx, xyz, tjd, 0, J_TO_J2000);/**/
+  if (v) {
+    /* the precession's own turning, dP/dt x0 */
+    double x6[6];
+    for (int i = 0; i <= 2; i++) {
+      x6[i] = xyz[i];
+      x6[i+3] = v[i];
+    }
+    swi_precess_speed(ctx, x6, tjd, 0, J_TO_J2000);
+    for (int i = 0; i <= 2; i++)
+      v[i] = x6[i+3];
+  }
+}
+
+/* Adjust position from Earth-Moon barycenter to Earth
+ *
+ * J = Julian day number
+ * xemb = rectangular equatorial coordinates of Earth
+ */
+/* reads ctx->oec */
+static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb) 
+{
+  double xyz[6];
+  int i;
+  moon_short(ctx, tjd, xyz, NULL);
   /* now emb -> earth */
   for (i = 0; i <= 2; i++)
     xemb[i] -= xyz[i] / (EARTH_MOON_MRAT + 1.0);
@@ -772,27 +858,27 @@ void swi_mosh_earth_accel(swe_ctx *ctx, double tjd, const double *x0, double *ac
     acc[i] = (xp[i] - 2 * x0[i] + xm[i]) / (h * h);
 }
 
-/* Subtracts the Earth-Moon offset's rate from vemb: a central difference
- * over +-2^-8 day, exact instants for any JD below 2^44, divided by
- * their actual distance. Over that step the short lunar series above is
- * a parabola to 1.4e-12 AU/day (1e-10 of the Earth's speed). */
+/* Subtracts the Earth-Moon offset's rate from vemb. Upstream bug 85: it was
+ * a central difference of the offset over +-2^-8 day, and the series'
+ * arguments, degrees of 481267.88 T, round at 1e-12 rad once T is near 1
+ * (at -3000, T = -49, 5e-11): 2e-14 AU/day of roughness from one instant
+ * to the next in every Moshier Earth velocity, 2e-6 of the Earth's
+ * acceleration from velocities 1e-5 day apart at 2000, 4e-5 at -3000. Now
+ * the series' derivative, term by term, with the precession's turning;
+ * the obliquity held, as the positions hold ctx->oec. */
 static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb, double *moon)
 {
-  double x1[3] = {0, 0, 0}, x2[3] = {0, 0, 0};
-  double t1 = tjd + 1.0 / 256, t2 = tjd - 1.0 / 256;
+  double xyz[3], v[3];
   int i;
-  embofs_mosh(ctx, t1, x1);
-  embofs_mosh(ctx, t2, x2);
+  moon_short(ctx, tjd, xyz, v);
   for (i = 0; i <= 2; i++)
-    vemb[i] += (x1[i] - x2[i]) / (t1 - t2);
-  /* UPSTREAM-BUGS 66: the offsets are -Moon/(1+EMRAT), so the two reads
-   * above are the geocentric Moon at tjd +-2^-8 day: its velocity is their
-   * difference, its place their mean (a parabola's error, 1e-10 AU). The
-   * aberration rate's Earth wants it (acceleration, 0.6%). */
+    vemb[i] -= v[i] / (EARTH_MOON_MRAT + 1.0);
+  /* UPSTREAM-BUGS 66: the geocentric Moon of this series, place and
+   * velocity. The aberration rate's Earth wants it (acceleration, 0.6%). */
   if (moon != NULL)
     for (i = 0; i <= 2; i++) {
-      moon[i] = -(x1[i] + x2[i]) / 2 * (EARTH_MOON_MRAT + 1.0);
-      moon[i+3] = -(x1[i] - x2[i]) / (t1 - t2) * (EARTH_MOON_MRAT + 1.0);
+      moon[i] = xyz[i];
+      moon[i+3] = v[i];
     }
 }
 #endif

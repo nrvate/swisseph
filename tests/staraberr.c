@@ -7,10 +7,10 @@
  * took the acceleration at t - dm/2, short by dm/2 (5e-6 day) of its rate
  * of change: 8.6e-8 of the aberration's rate, 8e-12 deg/day on the sky,
  * 1/cos(declination) of that in a right ascension near the pole, the same
- * at every step. On Moshier the Earth's velocity is rough from instant to
- * instant (2e-14 AU/day, the Earth-Moon offset's rate), and a difference
- * 1e-5 day long made that up to 2e-6 of the acceleration, 1.56e-8 deg/day
- * in Polaris's right ascension (UPSTREAM-BUGS 76).
+ * at every step. On Moshier the Earth's velocity was rough from instant to
+ * instant (2e-14 AU/day, the Earth-Moon offset's rate, UPSTREAM-BUGS 85),
+ * and a difference 1e-5 day long made that up to 2e-6 of the acceleration,
+ * 1.56e-8 deg/day in Polaris's right ascension (UPSTREAM-BUGS 76).
  *
  * The check: Polaris and Polaris Australis (near the equator's poles) in
  * right ascension, delta Dor and 42 Dra (near the ecliptic's) in ecliptic
@@ -21,8 +21,9 @@
  * deg/day. Before the fix: Swiss Polaris 1.03e-9, Polaris Australis
  * 7.4e-10, delta Dor 2.2e-10, 42 Dra 1.9e-10; Moshier 5.1e-8, 1.9e-8,
  * 2.0e-8, 1.1e-8 (1.57e-8, 4.1e-9, 6.7e-9, 2.4e-9 with the fix's first
- * version, which read the Earth at t + dp). Now Swiss <= 1.21e-11, Moshier <= 1.82e-11: the
- * five-point reference's own rounding (it scales as 1/step, and is the
+ * version, which read the Earth at t + dp). Now Swiss <= 1.21e-11,
+ * Moshier <= 1.41e-11 (1.82e-11 while Moshier, before bug 85, took 2B - A
+ * over 2^-3 day): the five-point reference's own rounding (it scales as 1/step, and is the
  * same with SEFLG_TRUEPOS, which has no aberration). The upstream build
  * fails all 16 (2.6e-6 to 5.7e-3 deg/day, bugs 49 and 58 besides). Run as
  *   staraberr EPHEDIR

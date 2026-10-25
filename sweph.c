@@ -5665,26 +5665,20 @@ static void aberr_light_central(double *xx, const double *xe, const double *xe_m
  * velocity at t + dp was carried on linearly from its velocities at t - dm
  * and t, the acceleration at t - dm/2, short by dm/2 of its rate of change:
  * 8.6e-8 of the aberration's rate, 8e-12 deg/day on the sky, 1.03e-9 in
- * Polaris's right ascension speed at any step. And on Moshier the Earth's
- * velocity is rough at 2e-14 AU/day from instant to instant (the
- * Earth-Moon offset's rate, a difference of the short lunar series over
- * +-2^-8 day), which a difference over 1e-5 day made 2e-6 of the
- * acceleration, 1.56e-8 deg/day in Polaris's right ascension. Now the
- * acceleration at t from reads at t +- h, exact instants: on the files a
- * central difference of the velocities, h = 2^-9 (truncation h^2/6 a'',
- * <= 5e-10 of a, the Moon's month); on Moshier 2 B - A, B the positions'
- * second difference and A the velocities' central one, h = 2^-3, which
- * cancels the h^2 terms (h^4/360 of the fourth derivative is 1e-11) and
- * divides the velocities' roughness by 2h. */
+ * Polaris's right ascension speed at any step. Now the acceleration at t
+ * from reads at t +- h, exact instants: the velocities' central
+ * difference, h = 2^-9 (truncation h^2/6 a'', <= 5e-10 of a, the Moon's
+ * month), on every ephemeris since the Moshier Earth's velocity is smooth
+ * (UPSTREAM-BUGS 85; before, its roughness took 2 B - A over 2^-3 day, B
+ * the positions' second difference, A the velocities' central one). */
 static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int32 epheflag,
-                            int32 ephe_used, int32 iflag, const double *xe, double *xo_m,
-                            double *xo_p, char *serr)
+                            int32 iflag, const double *xe, double *xo_m, double *xo_p,
+                            char *serr)
 {
   int i, k;
   int32 iephe_used;
-  /* the ephemeris the read at t used: Moshier also when substituted */
-  AS_BOOL mosh = (ephe_used & SEFLG_MOSEPH) != 0;
-  double h = mosh ? 1.0 / 8 : 1.0 / 512, xa[2][6], xs[6], ae[3];
+  const double h = 1.0 / 512;
+  double xa[2][6], xs[6], ae[3];
   for (k = 0; k < 2; k++) {
     iephe_used = epheflag;
     /* no Sun: these reads are for the Earth's velocity only */
@@ -5694,13 +5688,8 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
   }
-  for (i = 0; i <= 2; i++) {
-    double va = (xa[0][i+3] - xa[1][i+3]) / (2 * h);
-    if (mosh)
-      ae[i] = 2 * ((xa[0][i] - xe[i]) + (xa[1][i] - xe[i])) / (h * h) - va;
-    else
-      ae[i] = va;
-  }
+  for (i = 0; i <= 2; i++)
+    ae[i] = (xa[0][i+3] - xa[1][i+3]) / (2 * h);
   for (i = 0; i <= 2; i++) {
     xo_m[i] = xe[i] - dm * xe[i+3];
     xo_p[i] = xe[i] + dp * xe[i+3];
@@ -9208,7 +9197,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     /* the observer at t - dm and t + dp (xpo is xobs here, xpo_dt xobs_dt),
      * read only for a speed the caller asked for */
     int32 spf = iflgsave & SEFLG_SPEED;
-    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, ephe_used, iflag,
+    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag,
                               ctx->sp.fx_struct.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
     aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, spf);
@@ -10677,7 +10666,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     /* the observer at t - dm and t + dp (xpo is xobs here, xpo_dt xobs_dt),
      * read only for a speed the caller asked for */
     int32 spf = iflgsave & SEFLG_SPEED;
-    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, ephe_used, iflag,
+    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag,
                               ctx->sp.fx_record.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
     aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, spf);
