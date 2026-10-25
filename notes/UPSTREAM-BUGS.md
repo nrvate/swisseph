@@ -79,6 +79,7 @@ worst were in code that had never executed even once.
 | 41 | `swe_get_ayanamsa_ex()`, the sidereal houses and `swe_gauquelin_sector()` with SEFLG_JPLHOR and no IERS corrections loaded read the corrections' table, NULL, and crash | Crash | `swephlib.c`, `swecl.c` |
 | 42 | The refusals of a date outside a range write its digits in full into 256 bytes: from \|J\| about 1e188 days the message overruns its buffer or the caller's serr | Memory | `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swedate.c`, `swecl.c`, `swephlib.c` |
 | 43 | `swe_sidtime()` reads a nutation `calc_nutation()` left unwritten; SE_ECL_NUT is taken for a body by the rise and set, the Gauquelin sectors, the occultations, `swe_calc_pctr()` and `swe_helio_cross()`, and reads `pla_diam[-1]` | Memory / Correctness | `swephlib.c`, `swecl.c`, `sweph.c` |
+| 44 | The default sidereal time steps 1.908" at 2050 and 0.097" at 1850, and outside 1850-2050 it follows delta t: +328" at year 0, +2379" at -3000 | Correctness | `swephlib.c` |
 
 ---
 
@@ -2375,6 +2376,95 @@ with ipl 0, and the Sun in the occultations still the eclipse of 1999 Aug
 dirtyings of the stack and that of no nutation: 2; and `make` compiles
 `swephlib.c` at -O3 with -Werror. Before the fix 18 of the 41 fail and the
 -O3 compile, after it none.
+
+## 44. The default sidereal time steps 1.908" at 2050 and 0.097" at 1850, and outside 1850-2050 it follows delta t: +328" at year 0, +2379" at -3000
+
+**Severity: Correctness (every sidereal time, house cusp and topocentric place before 1850 and after 2050: against the IERS 2010 expression +37" at 1000, +328" at year 0, +795" at -999, +2379" (0.66 deg of RAMC) at -3000, +92" at 3000; a -1.908" step at 2050-01-01 0h UT and -0.097" at 1850-01-01, every cusp with it)**
+**Where:** `swephlib.c`: `sidtime_long_term()` (removed), `swe_sidtime0_r()`, its IERS 2010 rotation angle
+
+`SEMOD_SIDT_LONGTERM`, the default, is the IERS Conventions 2010 sidereal
+time between 1850 and 2050 and `sidtime_long_term()` outside. That took
+sidereal time as the hour angle of the mean Sun plus the mean Earth's
+longitude (Simon et al. 1994) evaluated at TT for the UT instant, so every
+second of delta t moved it by the Sun's mean motion: 4.10" per 100 s at
+every epoch from -50000 to +50000. Sidereal time at a UT1 instant is the
+Earth rotation angle plus the equinox's accumulated precession in right
+ascension, which delta t moves only at the precession rate, 0.00015" per
+100 s (IERS Conventions 2010, eq. 5.30-5.32). With delta t at hours in
+antiquity the default stood off the IERS 2010 expression by the figures
+above. And the two formulas were spliced by constants fitted under the
+delta t of their day: under Espenak-Meeus 2006 they met to 0.0007" at 1850,
+but under Stephenson et al. 2016, the default since 2.06, sidereal time
+stepped by -0.097" across 1850-01-01 0h UT and -1.908" across 2050-01-01,
+and a high-latitude cusp by twice that.
+
+**Fix, as done here:** outside 1850-2050 the default is ERA(UT1) +
+0.014506" + c T + A(T), the IERS 2010 construction with the IAU 2006
+polynomial for the precession in right ascension A replaced by its integral
+from the context's own precession matrices, so it holds as far as the
+precession model does (Vondrak 2011 by default):
+- A is the integral from J2000 of the mean equinox's rotation rate about
+  the mean pole of date, -(dM/dt M^T)[1][0] for M = J2000 -> mean of date;
+  c = -0.003874"/cy is the secular rate of the CIO locator s, which no
+  precession matrix carries. On the IAU 2006 matrices the result is the
+  IAU 2006 polynomial within 0.08 mas over 1500-2500.
+- A is tabulated per context at nodes a century apart to 400 centuries
+  either side, built outward from J2000 as far as asked (struct
+  `sidt_pra_memo`, 26 KB, keyed by value on the two precession models),
+  integrated on each call from the table's end to 2000 centuries (Vondrak
+  2011's published range; at most 160 panels), and past 2000 centuries of
+  TT continued at the rate there, continuous in value and rate. So a call
+  costs a bounded time at any date: integrating on to the date would take
+  1.1 s at J 1e10 and some 140 s at 1e12, and crash at -1e300 and -inf,
+  where TT is NaN, if that were cast to a table index. No float is cast to
+  an int there; a NaN date answers NaN.
+- The 1850 and 2050 offsets are the two formulas' difference at each
+  boundary under the context's models, a few mas, so the splice is
+  continuous under any precession, nutation or delta t model.
+- The Earth rotation angle, which the IERS 2010 sidereal time shares, is
+  formed as the Conventions write it (eq. 5.15): the fraction of the day
+  from the JD itself plus 0.7790572732640 + 0.00273781191135448 (JD -
+  J2000), reduced to a turn before the multiplication by 360. Formed as
+  1.00273781191135448 (JD - J2000) it is 1.1e6 turns at -999, rounded at
+  0.3 mas and to another last bit where the multiply-add fuses (arm64 does
+  by default); with the rotation angle the default at every date, the
+  topocentric Moon's three-point speed made that 1.86e-5 deg/day between a
+  `clang -O2 -mfma -ffp-contract=on` build and the -O0 one at -999, past
+  G1b's 1e-5 (4.7e-6 now, as before the fix).
+- `swe_sidtime0()` with eps = 0 takes the equation of the equinoxes as
+  nut * cos(0) outside 1850-2050 too, as the IERS 2010 branch does; the old
+  formula computed a nutation of its own there.
+
+The new default against the IERS 2010 expression: -1.17" at -999, -0.29" at
+year 1, -0.019" at 1300, -10.1" at -3000, +0.030" at 3000, within 0.001"
+over 1800-2200 (Vondrak 2011 against the IAU 2006 polynomial, which is meant
+for near J2000). In the golden transcript 1,175 rows move: sidereal time by
+-796.10" at -999, -327.89" at year 1, -15.74" at 1300, +1.908" at
+2050-01-01, +1.793" at 2100 and -91.88" at 3000, and every house,
+topocentric and sidereal-time row at those dates with it (993 rows); within
+1850-2050, away from J2000, 182 rows by the rotation angle's rounding alone,
+up to 2.4e-6" of sidereal time, 1.3e-9 deg on a cusp, 1.2e-7 deg/day on a
+topocentric Moon's speed, an ulp of an eclipse time.
+
+G53 `tests/sidtimeera.c`, Moshier: (a) across 1850 and 2050 the step within
+0.001" under the default and four other model sets in turn on one context
+(0.000008" measured); (b) delta t + 100 s moves sidereal time by under
+0.001" at nine epochs from -50000 to +50000 (0.00014 .. 0.00015"); (c) on
+the IAU 2006 precession it is the IERS 2010 expression within 0.2 mas over
+1500-2500 (0.077 mas); (d) no step where the table ends within 0.01"
+(0.000008"); (e) at TT -+2000 centuries no step in the precession part within
+0.5" and its rate over a century either side within 20"/cy (2.7"/cy); (f) at
+J -+1e8, 1e10, 1e12, 1e13, 1e20, 1e300, -+inf and NaN, in a child under a
+10 s alarm, a fresh context's first call within 10 times one that builds the
+table plus 0.05 s (0.030 s against 0.021 at -+1e12), each next call within
+10 times one in the table plus 0.1 ms, and the houses with speeds,
+`swe_azalt()`, `swe_azalt_rev()` and `swe_gauquelin_sector()` returning;
+(g) over 64 consecutive JDs at -999, -13000 and 12000 sidereal time on a
+straight line within 0.01 mas (0.0033 mas). Before the fix 25 checks fail:
+10 of 12 in (a), all of (b) (4.10") and (c) (up to 18.8"). The fix without
+the 2000-century bound fails (f) at 10 of 15 dates: 6 hung, -1e300 and -inf
+crashed, -+1e8 took 0.012 s a call; without the rotation angle's form it
+fails (g) at all three (0.33, 1.03, 0.78 mas).
 
 ## How these were found
 

@@ -915,6 +915,34 @@ struct sidt_memo {
   AS_BOOL valid;
 };
 
+/* The precession in right ascension accumulated since J2000, the part of
+ * the long-term sidereal time that is not Earth rotation (swephlib.c,
+ * sidt_pra()): the integral of the mean-of-date frame's rotation about its
+ * pole, from the context's own precession model, at nodes
+ * SWI_SIDT_PRA_STEP centuries apart on each side of J2000, with the rate at
+ * each node, for a cubic Hermite polynomial between two; and, per side, the
+ * integral to SIDT_PRA_TFAR and the rate there, which carry it past that.
+ * Built outward from J2000 as far as asked, once per precession model.
+ * Keyed by value on the two precession models swi_precess() reads (the only
+ * inputs the integral has), two slots: get_aya_correction() overrides
+ * astro_models[] mid-calculation without a configuration change (see
+ * struct nut_memo), so no generation could key it. */
+#define SWI_SIDT_PRA_STEP   1.0	/* centuries */
+#define SWI_SIDT_PRA_NODES  400	/* per side: +-400 centuries */
+struct sidt_pra_table {
+  int32 prec_long, prec_short;
+  int nnode[2];		/* nodes computed, [0] before J2000, [1] after */
+  double a[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec */
+  double w[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec per century */
+  double a_far[2], w_far[2];	/* at SIDT_PRA_TFAR, each side */
+  AS_BOOL far_valid[2];
+  AS_BOOL valid;
+};
+struct sidt_pra_memo {
+  struct sidt_pra_table slot[2];
+  int next;
+};
+
 /* Vondrak's ten periodic terms in swi_ldp_peps() (swephlib.c).
  *
  * SEMOD_PREC_DEFAULT is SEMOD_PREC_VONDRAK_2011, so swi_epsiln() lands on
@@ -1212,6 +1240,7 @@ struct swe_ctx {
   AS_BOOL do_interpolate_nut;
   struct interpol interpol;
   struct sidt_memo sidt_np;	/* see struct sidt_memo */
+  struct sidt_pra_memo sidt_pra;	/* see struct sidt_pra_memo */
   struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
   struct nut_memo nut_np;	/* see struct nut_memo */
   struct nut_grid_slot nut_grid[SWI_NUT_GRID_SLOTS];

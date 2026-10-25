@@ -3724,63 +3724,6 @@ int32 swi_set_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 denum, cha
   return retc;
 }
 
-/*
- * The time range of DE431 requires a new calculation of sidereal time that 
- * gives sensible results for the remote past and future.
- * The algorithm is based on the formula of the mean earth by Simon & alii,
- * "Precession formulae and mean elements for the Moon and the Planets",
- * A&A 282 (1994), p. 675/678.
- * The longitude of the mean earth relative to the mean equinox J2000
- * is calculated and then precessed to the equinox of date, using the
- * default precession model of the Swiss Ephmeris. Afte that,
- * sidereal time is derived.
- * The algoritm provides exact agreement for epoch 1 Jan. 2003 with the 
- * definition of sidereal time as given in the IERS Convention 2010.
- */
-/*#define SIDT_LTERM   TRUE
-#if SIDT_LTERM*/
-static double sidtime_long_term(swe_ctx *ctx, double tjd_ut, double eps, double nut)
-{
-  double tsid = 0, tjd_et;
-  double dlon, xs[6], xobl[6], dhour, nutlo[2];
-  double dlt = AUNIT / CLIGHT / 86400.0;
-  double t, t2, t3;
-  tjd_et = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
-  t = (tjd_et - J2000) / 365250.0;
-  t2 = t * t; t3 = t * t2;
-  /* mean longitude of earth J2000 */
-  dlon = 100.46645683 + (1295977422.83429 * t - 2.04411 * t2 - 0.00523 * t3) / 3600.0;
-  /* light time sun-earth */
-  dlon = swe_degnorm(dlon - dlt * 360.0 / 365.2425);
-  xs[0] = dlon * DEGTORAD; xs[1] = 0; xs[2] = 1;
-  /* to mean equator J2000, cartesian */
-  xobl[0] = 23.45; xobl[1] = 23.45;
-  xobl[1] = swi_epsiln(ctx, J2000 + swe_deltat_ex_r(ctx, J2000, -1, NULL), 0) * RADTODEG;
-  swi_polcart(xs, xs);
-  swi_coortrf(xs, xs, -xobl[1] * DEGTORAD);
-  /* precess to mean equinox of date */
-  swi_precess(ctx, xs, tjd_et, 0, -1);
-  /* to mean equinox of date */
-  xobl[1] = swi_epsiln(ctx, tjd_et, 0) * RADTODEG;
-  swi_nutation(ctx, tjd_et, 0, nutlo);
-  xobl[0] = xobl[1] + nutlo[1] * RADTODEG;
-  xobl[2] = nutlo[0] * RADTODEG;
-  swi_coortrf(xs, xs, xobl[1] * DEGTORAD);
-  swi_cartpol(xs, xs);
-  xs[0] *= RADTODEG;
-  dhour = fmod(tjd_ut - 0.5, 1) * 360;
-  /* mean to true (if nut != 0) */ 
-  if (eps == 0)
-    xs[0] += xobl[2] * cos(xobl[0] * DEGTORAD);
-  else
-    xs[0] += nut * cos(eps * DEGTORAD);
-  /* add hour */
-  xs[0] = swe_degnorm(xs[0] + dhour);
-  tsid = xs[0] / 15;
-  return tsid;
-}
-/*#endif*/
-
 /* Apparent Sidereal Time at Greenwich with equation of the equinoxes
  *  ERA-based expression for for Greenwich Sidereal Time (GST) based 
  *  on the IAU 2006 precession and IAU 2000A_R06 nutation 
@@ -3920,34 +3863,226 @@ static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
  * This is a "short" term model, that can be combined with other models
  */
 /*#define SIDT_IERS_CONV_2010 TRUE*/
-/* sidtime_long_term(ctx) is not used between the following two dates */
+
+/* SEMOD_SIDT_LONGTERM, the default, is the IERS 2010 sidereal time between
+ * these two dates and the long-term one outside them */
 #define SIDT_LTERM_T0  2396758.5  /* 1 Jan 1850  */
 #define SIDT_LTERM_T1  2469807.5  /* 1 Jan 2050  */
-#define SIDT_LTERM_OFS0   (0.000378172 / 15.0)
-#define SIDT_LTERM_OFS1   (0.001385646 / 15.0)
+
+/* The long-term sidereal time.
+ *
+ * Sidereal time at a UT1 instant is the Earth rotation angle, a linear
+ * function of UT1, plus the equinox's accumulated precession in right
+ * ascension, a function of TT (IERS Conventions 2010, eq. 5.30-5.32), so
+ * delta t reaches it only through the precession, 0.00015" per 100 s. The
+ * IERS 2010 expression takes that precession from the IAU 2006 polynomial,
+ * which is meant for near J2000. The long-term sidereal time takes it from
+ * the context's own precession matrices (Vondrak 2011 by default), so it
+ * holds as far as the precession model does: ERA(UT1) + 0.014506" +
+ * SIDT_PRA_NUTC * T + sidt_pra(T), with the IERS 2010 complementary terms.
+ *
+ * sidt_pra() is the integral, from J2000, of the rotation rate of the mean
+ * equinox about the mean pole of date, -(dM/dt M^T)[1][0] for M = J2000 ->
+ * mean of date, by central difference over SIDT_PRA_DH days: the equinox's
+ * motion against a non-rotating origin. On the IAU 2006 matrices that rate
+ * at J2000 is zeta_A' + z_A' = 4612.160408"/cy, where the IAU 2006
+ * sidereal time has 4612.156534: the 0.003874"/cy between them is the
+ * secular part of the CIO locator s, from precession-nutation coupling
+ * (Capitaine et al. 2003), which no precession matrix carries.
+ * SIDT_PRA_NUTC puts it back. So corrected, the integral on the IAU 2006
+ * matrices reproduces the IAU 2006 polynomial within 0.08 mas over 1500-2500.
+ *
+ * The integral is tabulated per context at nodes SWI_SIDT_PRA_STEP apart,
+ * SWI_SIDT_PRA_NODES on each side of J2000 (struct sidt_pra_memo), and from
+ * the last node to SIDT_PRA_TFAR integrated on each call, at most 160
+ * panels. Beyond SIDT_PRA_TFAR, Vondrak 2011's published range of -+200000
+ * years and the longest of the models', the accumulated precession goes on
+ * at the model's rate there: integrating further would cost a panel per 10
+ * centuries on every call (1.1 s at J 1e10, some 140 s at 1e12), of a
+ * series past its fit (Vondrak's matrices are no longer rotations from 1e4
+ * centuries, so their "rate" is no precession's). The continuation meets
+ * the integral at SIDT_PRA_TFAR in value and in rate, and it takes any TT:
+ * no float is cast to an int there, so a NaN TT answers NaN. */
+#define SIDT_PRA_NUTC  (-0.003874)	/* arcsec per century, see above */
+#define SIDT_PRA_DH    50.0		/* days */
+#define SIDT_PRA_TFAR  2000.0		/* centuries, -+200000 years */
+
+/* the mean-of-date frame at tjd (TT), columns the J2000 axes */
+static void sidt_pra_matrix(swe_ctx *ctx, double tjd, double m[3][3])
+{
+  int i, k;
+  for (k = 0; k <= 2; k++) {
+    double x[6] = {0, 0, 0, 0, 0, 0};
+    x[k] = 1;
+    swi_precess(ctx, x, tjd, 0, J2000_TO_J);
+    for (i = 0; i <= 2; i++)
+      m[i][k] = x[i];
+  }
+}
+
+/* the rate, arcsec per century, at tc centuries after J2000 */
+static double sidt_pra_rate(swe_ctx *ctx, double tc)
+{
+  double tjd = J2000 + tc * 36525.0, mp[3][3], mm[3][3], m[3][3], w = 0;
+  int k;
+  sidt_pra_matrix(ctx, tjd + SIDT_PRA_DH, mp);
+  sidt_pra_matrix(ctx, tjd - SIDT_PRA_DH, mm);
+  sidt_pra_matrix(ctx, tjd, m);
+  for (k = 0; k <= 2; k++)
+    w += (mp[1][k] - mm[1][k]) / (2 * SIDT_PRA_DH) * m[0][k];
+  return w * RADTODEG * 3600.0 * 36525.0;
+}
+
+/* its integral from a to b (centuries, |b - a| at most SIDT_PRA_TFAR),
+ * eight-point Gauss-Legendre on panels of at most 10 centuries: the
+ * integrand's shortest period under Vondrak 2011 is 203 centuries, and 10
+ * against 1 agree to 1e-7" */
+static double sidt_pra_integral(swe_ctx *ctx, double a, double b)
+{
+  static const double gx[4] = {0.1834346424956498, 0.5255324099163290,
+                               0.7966664774136267, 0.9602898564975363};
+  static const double gw[4] = {0.3626837833783620, 0.3137066458778873,
+                               0.2223810344533745, 0.1012285362903763};
+  int n = (int) ceil(fabs(b - a) / 10.0), p, i;
+  double h, sum = 0;
+  if (n < 1) n = 1;
+  h = (b - a) / n;
+  for (p = 0; p < n; p++) {
+    double c = a + (p + 0.5) * h;
+    for (i = 0; i < 4; i++)
+      sum += gw[i] * (sidt_pra_rate(ctx, c - gx[i] * h / 2)
+                      + sidt_pra_rate(ctx, c + gx[i] * h / 2));
+  }
+  return sum * h / 2;
+}
+
+/* the accumulated precession in right ascension since J2000, arcsec, at
+ * tc centuries after J2000 (TT); see struct sidt_pra_memo */
+static double sidt_pra(swe_ctx *ctx, double tc)
+{
+  int32 pl = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
+  int32 ps = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
+  struct sidt_pra_table *pt = NULL;
+  int side = tc >= 0, k, n, j;
+  double sg = side ? 1 : -1, x = fabs(tc) / SWI_SIDT_PRA_STEP, s, h, d0, d1;
+  for (j = 0; j < 2; j++)
+    if (ctx->sidt_pra.slot[j].valid && ctx->sidt_pra.slot[j].prec_long == pl
+        && ctx->sidt_pra.slot[j].prec_short == ps)
+      pt = &ctx->sidt_pra.slot[j];
+  if (pt == NULL) {
+    pt = &ctx->sidt_pra.slot[ctx->sidt_pra.next];
+    ctx->sidt_pra.next = !ctx->sidt_pra.next;
+    pt->prec_long = pl;
+    pt->prec_short = ps;
+    pt->a[0][0] = pt->a[1][0] = 0;
+    pt->w[0][0] = pt->w[1][0] = sidt_pra_rate(ctx, 0);
+    pt->nnode[0] = pt->nnode[1] = 1;
+    pt->far_valid[0] = pt->far_valid[1] = FALSE;
+    pt->valid = TRUE;
+  }
+  /* the interval [k, k + 1] holding x; past the table, and for a NaN x,
+   * its last one */
+  k = x < SWI_SIDT_PRA_NODES ? (int) floor(x) : SWI_SIDT_PRA_NODES - 1;
+  /* nodes 0 .. k + 1 */
+  for (n = pt->nnode[side]; n <= k + 1; n++) {
+    double ta = sg * (n - 1) * SWI_SIDT_PRA_STEP, tb = sg * n * SWI_SIDT_PRA_STEP;
+    pt->a[side][n] = pt->a[side][n - 1] + sidt_pra_integral(ctx, ta, tb);
+    pt->w[side][n] = sidt_pra_rate(ctx, tb);
+    pt->nnode[side] = n + 1;
+  }
+  if (!(x < SWI_SIDT_PRA_NODES)) {
+    double tn = sg * SWI_SIDT_PRA_NODES * SWI_SIDT_PRA_STEP, tf = sg * SIDT_PRA_TFAR;
+    if (fabs(tc) <= SIDT_PRA_TFAR)
+      return pt->a[side][SWI_SIDT_PRA_NODES] + sidt_pra_integral(ctx, tn, tc);
+    /* past SIDT_PRA_TFAR, continued at the rate there */
+    if (!pt->far_valid[side]) {
+      pt->a_far[side] = pt->a[side][SWI_SIDT_PRA_NODES] + sidt_pra_integral(ctx, tn, tf);
+      pt->w_far[side] = sidt_pra_rate(ctx, tf);
+      pt->far_valid[side] = TRUE;
+    }
+    return pt->a_far[side] + pt->w_far[side] * (tc - tf);
+  }
+  /* cubic Hermite between nodes k and k + 1, in the direction away from
+   * J2000: s from 0 to 1, rates times the signed step */
+  s = x - k;
+  h = sg * SWI_SIDT_PRA_STEP;
+  d0 = pt->w[side][k] * h;
+  d1 = pt->w[side][k + 1] * h;
+  return pt->a[side][k] * (2 * s * s * s - 3 * s * s + 1)
+       + d0 * (s * s * s - 2 * s * s + s)
+       + pt->a[side][k + 1] * (-2 * s * s * s + 3 * s * s)
+       + d1 * (s * s * s - s * s);
+}
+
+/* The accumulated precession in right ascension of the mean sidereal time
+ * with its constant, arcsec, at tt centuries after J2000 (TT): the IERS
+ * 2010 expression's IAU 2006 polynomial (eq. 5.32), or the long-term one */
+static double sidt_pra_iers2010(double tt)
+{
+  return 0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))));
+}
+
+static double sidt_pra_long(swe_ctx *ctx, double tt)
+{
+  return 0.014506 + SIDT_PRA_NUTC * tt + sidt_pra(ctx, tt);
+}
+
+/* The Earth rotation angle, IERS Conventions 2010 eq. 5.15, in degrees,
+ * for tjd = JD(UT1), written as the Conventions write it: the fraction of
+ * the day, taken from tjd itself (J2000 is a whole day), which is exact for
+ * any double, plus 0.7790572732640 + 0.00273781191135448 * (tjd - J2000),
+ * reduced to one turn before the multiplication by 360. Only that small
+ * product rounds, 4.5e-13 of a turn (0.6 uas) at year -999. Formed as
+ * 1.00273781191135448 * (tjd - J2000) it is 1.1e6 turns there, which a
+ * double holds to 0.3 mas, rounded to a different last bit wherever the
+ * compiler fuses the multiply-add (arm64 does by default); since the
+ * long-term sidereal time takes the rotation angle at every date, the
+ * topocentric Moon's three-point speed turned that into 1.9e-5 deg/day
+ * between platforms. And below JD 1225772 (-1357) tjd - J2000 outgrows
+ * tjd, so consecutive JDs shared one value in pairs. */
+static double sidt_era_deg(double tjd)
+{
+  double era = (tjd - floor(tjd)) + 0.7790572732640 + 0.00273781191135448 * (tjd - J2000);
+  return (era - floor(era)) * 360;
+}
+
+/* Mean sidereal time, ERA-based, in degrees: the Earth rotation angle at
+ * tjd (UT1) and the precession in right ascension at its TT, IERS 2010's
+ * (SEMOD_SIDT_IERS_CONV_2010) or the long-term one, with the IERS 2010
+ * complementary terms, without the equation of the equinoxes */
+static double sidtime_era_deg(swe_ctx *ctx, double tjd, AS_BOOL long_term)
+{
+  double gmst, dadd;
+  double tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
+  gmst = sidt_era_deg(tjd);
+  gmst += (long_term ? sidt_pra_long(ctx, tt) : sidt_pra_iers2010(tt)) / 3600.0;
+  dadd = sidtime_non_polynomial_part(ctx, tt);
+  return swe_degnorm(gmst + dadd);
+}
+
+/* The long-term mean sidereal time less the IERS 2010 one at tb, one of the
+ * two dates the default changes formula, in degrees. They differ there in
+ * the precession in right ascension alone, by a few mas (Vondrak 2011
+ * against the IAU 2006 polynomial), and the long-term formula outside
+ * 1850-2050 takes this off, so the default is continuous at both dates under
+ * any precession, nutation or delta t model. */
+static double sidt_lterm_offset(swe_ctx *ctx, double tb)
+{
+  double tt = (tb + swe_deltat_ex_r(ctx, tb, -1, NULL) - J2000) / 36525.0;
+  return (sidt_pra_long(ctx, tt) - sidt_pra_iers2010(tt)) / 3600.0;
+}
+
 static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double nut)
 {
   double jd0;    	/* Julian day at midnight Universal Time */
   double secs;   	/* Time of day, UT seconds since UT midnight */
-  double eqeq, jd, tu, tt, msday, jdrel;
-  double gmst, dadd;
+  double eqeq, jd, tu, tt, msday;
+  double gmst;
   int prec_model_short = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
   int sidt_model = ctx->astro_models[SE_MODEL_SIDT];
   if (prec_model_short == 0) prec_model_short = SEMOD_PREC_DEFAULT_SHORT;
   if (sidt_model == 0) sidt_model = SEMOD_SIDT_DEFAULT;
   swi_init_swed_if_start(ctx);
-  if (sidt_model == SEMOD_SIDT_LONGTERM) {
-    if (tjd <= SIDT_LTERM_T0 || tjd >= SIDT_LTERM_T1) {
-      gmst = sidtime_long_term(ctx, tjd, eps, nut);
-      if (tjd <= SIDT_LTERM_T0)
-	gmst -= SIDT_LTERM_OFS0;
-      else if (tjd >= SIDT_LTERM_T1)
-	gmst -= SIDT_LTERM_OFS1;
-      if (gmst >= 24) gmst -= 24;
-      if (gmst < 0) gmst += 24;
-      goto sidtime_done;
-    }
-  }
   /* Julian day at given UT */
   jd = tjd;
   jd0 = floor(jd);
@@ -3961,16 +4096,14 @@ static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double n
   }
   secs *= 86400.0;
   tu = (jd0 - J2000)/36525.0; /* UT1 in centuries after J2000 */
-  if (sidt_model == SEMOD_SIDT_IERS_CONV_2010 || sidt_model == SEMOD_SIDT_LONGTERM) {
+  if (sidt_model == SEMOD_SIDT_LONGTERM && (tjd <= SIDT_LTERM_T0 || tjd >= SIDT_LTERM_T1)) {
+    /* the long-term formula, spliced onto IERS 2010 at 1850 and 2050 */
+    double tb = tjd >= SIDT_LTERM_T1 ? SIDT_LTERM_T1 : SIDT_LTERM_T0;
+    gmst = (sidtime_era_deg(ctx, tjd, TRUE) - sidt_lterm_offset(ctx, tb)) / 15.0 * 3600.0;
+  } else if (sidt_model == SEMOD_SIDT_IERS_CONV_2010 || sidt_model == SEMOD_SIDT_LONGTERM) {
     /*  ERA-based expression for Greenwich Sidereal Time (GST) based 
      *  on the IAU 2006 precession */
-    jdrel = tjd - J2000;
-    tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
-    gmst = swe_degnorm((0.7790572732640 + 1.00273781191135448 * jdrel) * 360);
-    gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
-    dadd = sidtime_non_polynomial_part(ctx, tt);
-    gmst = swe_degnorm(gmst + dadd);
-    /*printf("gmst iers=%f \n", gmst);*/
+    gmst = sidtime_era_deg(ctx, tjd, FALSE);
     gmst = gmst / 15.0 * 3600.0;
   /* sidt_model == SEMOD_SIDT_IAU_2006, older standards according to precession model */
   } else if (sidt_model == SEMOD_SIDT_IAU_2006) {
