@@ -6464,12 +6464,15 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   double fac, sgn, rxy, rxyz, c2, cosnode, sinnode;
   double incl, node, parg, peri, mlon;
   double csid, ctro, csyn, dmot, pa;
-  double ytrop, ysid, T, T2, T3, T4, T5;
+  double T, T2, T3, T4, T5;
   double sinincl, cosincl, cosu, sinu, uu, eanom, tanom, manom;
-  double v2, sema, pp, ecce, cosE, sinE, ny, ny2, rn, rn2, ro, ro2, cosE2;
-  double r, ecce2;
+  double v2, sema, ecce, cosE, ny, ny2, rn, rn2, ro, ro2, cosE2;
+  double r;
 #ifndef SWE_UPSTREAM_COMPAT
   int32 retc0;
+  double ev[3], evr[3], rv;
+#else
+  double pp, sinE, ecce2, ytrop, ysid;
 #endif
   if (ipl <= 0 || ipl == SE_MEAN_NODE || ipl == SE_TRUE_NODE || ipl == SE_MEAN_APOG || ipl == SE_OSCU_APOG || ipl == SE_INTP_APOG || ipl == SE_INTP_PERG) {
     if (serr != NULL)
@@ -6540,6 +6543,26 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   rxyz = sqrt(square_sum(xpos));
   v2 = square_sum((xpos+3));
   sema = 1.0 / (2.0 / rxyz - v2 / Gmsm);	
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 111: e was sqrt(1 - p / a), which loses half the digits
+   * of a small e (Neptune's 3.6e-14, its q 1.1e-12 AU), and the true
+   * anomaly 2 atan(k sin E / (1 + cos E)), where 1 + cos E cancels near
+   * aphelion (Venus's perihelion 4.4e-9 deg at E 178 deg). Now e is the
+   * length of the eccentricity vector, ((v^2 - GM / r) r - (r.v) v) / GM,
+   * as in swe_nod_aps(), the true anomaly the angle from it to r about h
+   * (atan2 of (ev x r).h / |h| and ev.r), and E = atan2(sqrt(1 - e^2)
+   * sin v, e + cos v): each well conditioned at every anomaly, and the
+   * same half-turn without the quadrant fix-ups. */
+  rv = dot_prod(xpos, (xpos+3));
+  for (j = 0; j <= 2; j++)
+    ev[j] = ((v2 - Gmsm / rxyz) * xpos[j] - rv * xpos[j+3]) / Gmsm;
+  ecce = sqrt(square_sum(ev));
+  swi_cross_prod(ev, xpos, evr);
+  ny = atan2(dot_prod(evr, xnorm) / sqrt(c2), dot_prod(ev, xpos));
+  eanom = atan2(sqrt(ecce < 1 ? 1 - ecce * ecce : 0) * sin(ny), ecce + cos(ny));
+  eanom = swe_degnorm(eanom * RADTODEG);
+  tanom = swe_degnorm(ny * RADTODEG);
+#else
   /* eccentricity */
   pp = c2 / Gmsm;
   ecce = pp / sema;
@@ -6561,6 +6584,7 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
     tanom += 180;
   if (eanom < 180 && tanom > 180) 
     tanom -= 180;
+#endif
 //  tanom = acos((sema * (1 - ecce * ecce) / rxyz - 1.0) / ecce2);
   /* mean anomaly */
   manom = swe_degnorm(eanom - ecce * RADTODEG * sin(eanom * DEGTORAD)); // mean anomaly
@@ -6607,6 +6631,20 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   node = xn[0] * RADTODEG;
   peri = swe_degnorm(node + parg);
   mlon = swe_degnorm(manom + peri);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 111: the period was a^1.5 sidereal years (the Moon's
+   * scaled to 27.32166 days at a = 383397772.5 m), Kepler's third law
+   * without the body's mass, though the elements are the two-body
+   * ellipse's with GM = Gmsm (swephprg 7.2): Jupiter's 2.1 days long,
+   * Saturn's 1.5, and the time of perihelion passage with it; and the
+   * sidereal period (365.25636 days a year) and the daily motion (k,
+   * 365.25690 days) disagreed by 1.5e-6. Now the
+   * ellipse's own mean motion, sqrt(GM / a^3), with the GM the elements
+   * were fitted with (SEFLG_ORBEL_AA's sum included); the tropical and
+   * synodic periods and dret[14] follow from it as before. */
+  dmot = sqrt(Gmsm / (sema * sema * sema)) * RADTODEG; // daily motion
+  csid = 360.0 / dmot / 365.242189; // sidereal period in tropical years J2000
+#else
   csid = sema * sqrt(sema);   // sidereal period in sidereal years
   if (ipl == SE_MOON) {
     double semam = sema * AUNIT / 383397772.5;
@@ -6615,10 +6653,25 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   }
   dmot = 0.9856076686 / csid; // daily motion
   csid *= 365.25636 / 365.242189; // sidereal period in tropical years J2000
+#endif
   // daily motion due to precession (Simon et alii 1994)
   T = (tjd_et - J2000) / 365250.0;
   T2 = T * T; T3 = T2 * T; T4 = T3 * T; T5 = T4 * T;
   pa = (50288.200 + 222.4045 * T + 0.2095 * T2 - 0.9408 * T3 - 0.0090 * T4 + 0.0010 * T5) / 3600.0 / 365250.0;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 111: the tropical period, 360 / (n + p) days, in tropical
+   * years J2000 was multiplied by ysid / ytrop as well, 3.9e-5 long (a body
+   * on the Earth's mean motion 1.0000388 years where it is 1, Pluto's 3.5
+   * days); and the
+   * synodic period took the Earth's mean motion as 0.9856076686 deg/day,
+   * k in degrees, the motion of a massless body at 1 AU, not the
+   * sidereal year 365.25636 days the sidereal period is measured in. */
+  ctro = 360.0 / (dmot + pa) / 365.242189; // tropical period in tropical years J2000
+  if (ipl == SE_EARTH)
+    csyn = 0;
+  else
+    csyn = 360.0 / (360.0 / 365.25636 - dmot); // synodic period in days
+#else
   // sidereal and tropical year length (Simon et alii 1994)
   ysid = (1295977422.83429 - 2 * 2.0441 * T  - 3 * 0.00523 * T * T) / 3600.0 / 365250.0;
   ysid = 360.0 / ysid;
@@ -6630,6 +6683,7 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
     csyn = 0;
   else 
     csyn = 360.0 / (0.9856076686 - dmot); // synodic period in days 
+#endif
   dret[0] = sema;  // semimajor axis
   dret[1] = ecce;  // eccentricity
   dret[2] = incl;  // inclination

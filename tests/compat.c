@@ -744,6 +744,54 @@ static double orbel_pluto_off(void)
   return fabs(d[0] - a) / a;
 }
 
+/* Jupiter's sidereal period from swe_get_orbital_elements() on Moshier
+ * against 2 pi sqrt(a^3 / (GMS + GM5)) with its own a and DE403's GMs,
+ * relative. Upstream takes a^1.5 sidereal years, without Jupiter's mass
+ * (UPSTREAM-BUGS 111). */
+static double orbel_period_off(void)
+{
+  double t = floor(2460000.3 * 256) / 256, d[50], p;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_get_orbital_elements(t, SE_JUPITER, SEFLG_MOSEPH, d, serr);
+  p = 2 * M_PI * sqrt(d[0] * d[0] * d[0] / (2.959122082855911e-4 + 2.825345909524227e-07));
+  return fabs(d[10] * 365.242189 - p) / p;
+}
+
+/* Venus's true anomaly from swe_get_orbital_elements() on Moshier near
+ * aphelion (E 178 deg, 1700), against the angle from the eccentricity
+ * vector of the same state to r, deg. Upstream's 2 atan(k sin E / (1 +
+ * cos E)) cancels there (UPSTREAM-BUGS 111): 4.8e-9 deg with the
+ * ephemeris's GMs, 5.6e-8 with upstream's own (108). */
+static double orbel_anom_off(void)
+{
+  double t = floor((2451545.0 - 300 * 365.25 + 0.37) * 256) / 256, x[6], d[50];
+  double mu = 2.959122082855911e-4 + 7.243452486162703e-10, r, v2, rv, ev[3], h[3], c[3], nu;
+  char serr[256];
+  int j;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_VENUS, SEFLG_MOSEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_TRUEPOS
+           | SEFLG_NONUT | SEFLG_XYZ | SEFLG_SPEED, x, serr);
+  swe_get_orbital_elements(t, SE_VENUS, SEFLG_MOSEPH, d, serr);
+  r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+  v2 = x[3] * x[3] + x[4] * x[4] + x[5] * x[5];
+  rv = x[0] * x[3] + x[1] * x[4] + x[2] * x[5];
+  for (j = 0; j < 3; j++)
+    ev[j] = ((v2 - mu / r) * x[j] - rv * x[j+3]) / mu;
+  h[0] = x[1] * x[5] - x[2] * x[4];
+  h[1] = x[2] * x[3] - x[0] * x[5];
+  h[2] = x[0] * x[4] - x[1] * x[3];
+  c[0] = ev[1] * x[2] - ev[2] * x[1];
+  c[1] = ev[2] * x[0] - ev[0] * x[2];
+  c[2] = ev[0] * x[1] - ev[1] * x[0];
+  nu = atan2((c[0] * h[0] + c[1] * h[1] + c[2] * h[2])
+             / sqrt(h[0] * h[0] + h[1] * h[1] + h[2] * h[2]),
+             ev[0] * x[0] + ev[1] * x[1] + ev[2] * x[2]) * RADTODEG;
+  return fabs(swe_difdeg2n(d[7], nu));
+}
+
 /* The flags swe_fixstar2() returns against swe_calc()'s for Mars, sidereal
  * and heliocentric Moshier: the bits that differ, counted. Upstream returns
  * the caller's iflag, without NONUT (1) and NOABERR|NOGDEFL (2)
@@ -2273,7 +2321,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2316,6 +2364,8 @@ int main(int argc, char **argv)
   nodapsgm = nodaps_gm_off();
   nodapsbias = nodaps_bias_off();
   orbelpluto = orbel_pluto_off();
+  orbelper = orbel_period_off();
+  orbelanom = orbel_anom_off();
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
   nodjd0 = nodaps_jd0_off();
@@ -3125,6 +3175,22 @@ int main(int argc, char **argv)
   else {
     printf("  orbel Pluto GM a       %.2e FAIL: expected %s\n",
            orbelpluto, WANT_DEFECT ? "> 1e-8" : "< 1e-12");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbelper > 1e-4) : (orbelper < 1e-12))
+    printf("  orbel Jupiter period   %.2e OK\n", orbelper);
+  else {
+    printf("  orbel Jupiter period   %.2e FAIL: expected %s\n",
+           orbelper, WANT_DEFECT ? "> 1e-4" : "< 1e-12");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbelanom > 1e-9) : (orbelanom < 1e-11))
+    printf("  orbel Venus anomaly    %.2e deg OK\n", orbelanom);
+  else {
+    printf("  orbel Venus anomaly    %.2e deg FAIL: expected %s\n",
+           orbelanom, WANT_DEFECT ? "> 1e-9" : "< 1e-11");
     bad++;
   }
 

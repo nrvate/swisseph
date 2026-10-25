@@ -1060,6 +1060,11 @@ struct epsilon {
  *     hold in both builds. They refuse only files no valid ephemeris is;
  *     every distributed file reads bit for bit as before, so no G24 case;
  *     G103)
+ *   - swe_get_orbital_elements()'s e as sqrt(1 - p / a) and true anomaly
+ *     as 2 atan(k sin E / (1 + cos E)) (4.8e-9 deg near aphelion), its
+ *     periods a^1.5 sidereal years without the body's mass (Jupiter's 2.1
+ *     days long), the tropical period times ysid / ytrop, the synodic
+ *     against k (UPSTREAM-BUGS 111, G107)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

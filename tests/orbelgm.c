@@ -1,6 +1,7 @@
-/* orbelgm.c -- G107: swe_get_orbital_elements() takes the ephemeris's GM.
+/* orbelgm.c -- G107: swe_get_orbital_elements() takes the ephemeris's GM,
+ * and its anomalies and periods are the ellipse's.
  *
- * The defect (UPSTREAM-BUGS 108): get_gmsm() gave the osculating elements
+ * The defects. UPSTREAM-BUGS 108: get_gmsm() gave the osculating elements
  * the Astronomical Almanac's constants, not the ephemeris's, as
  * swe_nod_aps() had (bug 105): the Moon's G M_earth (1 + 1 /
  * EARTH_MOON_MRAT), 3.3e-8 above DE431's GMB, the Sun's HELGRAVCONST /
@@ -9,9 +10,16 @@
  * the Sun's plus Mercury's, and SEFLG_ORBEL_AA's sum of the masses inside
  * the orbit counted Mercury twice and Pluto never. The Earth's orbit (the
  * Earth-Moon barycentre's) was built with EARTH_MOON_MRAT on a JPL file
- * too, whose Earth comes from its own EMRAT. Pluto's a was 2.5e-7 off
- * (relative), its perihelion 2e-5 deg; DE200's Neptune's perihelion 1.4e-3
- * deg; every planet's a about 2e-10.
+ * too, whose Earth comes from its own EMRAT. Pluto's a was 2.6e-7 off
+ * (relative), its perihelion 3.7e-5 deg; DE200's Neptune's perihelion
+ * 2.5e-3 deg; every planet's a about 2e-10. UPSTREAM-BUGS 111: the true
+ * anomaly was 2 atan(k sin E / (1 + cos E)), which cancels near aphelion
+ * (Venus's anomaly and perihelion 4.8e-9 deg off at E 178 deg), e was
+ * sqrt(1 - p / a) (3.6e-14 off, Neptune's q 1.1e-12 AU), the sidereal
+ * period a^1.5 sidereal years, without the body's mass (Jupiter's 4.8e-4,
+ * 2.1 days, long; the time of perihelion passage 1.6 days off), the
+ * tropical period 3.9e-5 long and the synodic one against k, not the
+ * sidereal year.
  *
  * The check: the Swiss files, de200 and Moshier, and a DE4xx JPL file if
  * one is named, eight dates (-2500..2800; JPL 1700..2100), Mercury..Pluto,
@@ -20,18 +28,23 @@
  * geocentric) J2000 state, with the header's GMS + GMi (the Moon GMB) or,
  * for SEFLG_ORBEL_AA, GMS and the GMs of every planet out to this one (the
  * Earth's EMB counts as one, GMB), the Swiss files' header by their DE
- * number: the semi-axis and the perihelion distance (dret[15]) within
- * 1e-12 relative, the eccentricity within 1e-12, the longitude of
- * perihelion (dret[5], node + argument) within 1e-8 deg (measured 0 (the
- * same expression), 3.7e-14, 3.6e-14 and 4.8e-9 deg). The 4.8e-9 deg is
- * not this defect: near aphelion the true anomaly's half-angle formula,
- * tan(E / 2) as sin E / (1 + cos E), loses digits on a near-circular orbit
- * (Venus, Neptune; UPSTREAM-BUGS 108's notes); 1e-8 still sees Pluto's
- * 2e-5 deg.
+ * number:
+ *   - a and the perihelion distance (dret[15]) within 1e-12 relative, e
+ *     within 1e-14 (measured 0, 0, 0);
+ *   - the longitude of perihelion (dret[5], node + argument) within 1e-11
+ *     deg (measured 1e-13), the true anomaly (the angle from ev to r about
+ *     h) and the mean anomaly from it within 1e-9 deg (measured 0);
+ *   - n = sqrt(mu / a^3): the sidereal period (dret[10], tropical years
+ *     of 365.242189 days), the daily motion (dret[11]), the tropical
+ *     period 360 / (n + p) (dret[12], p the precession rate as the library
+ *     takes it, Simon et al. 1994), the synodic one against the sidereal
+ *     year 365.25636 days (dret[13]), within 1e-12 relative (measured
+ *     2e-16); the time of perihelion passage t - M / n (dret[14]) within
+ *     1e-6 day (measured 0).
  *
- * 20 rows an ephemeris, 60 without a DE4xx file. The build before the fix
- * and the upstream build (SWE_UPSTREAM_COMPAT) fail all 60 (the Moon's too:
- * its AA GM is 3.3e-8 above GMB). Run as
+ * 20 rows an ephemeris, 60 without a DE4xx file. The build before bug 108,
+ * the build before bug 111 (the periods) and the upstream build
+ * (SWE_UPSTREAM_COMPAT) fail all 60. Run as
  *   orbelgm EPHEDIR [DE4XX_FILE]
  * DE4XX_FILE a path to a JPL file of DE number 403 or above (SE_TEST_DE4 in
  * the Makefile); without one that leg is skipped and says so.
@@ -111,7 +124,7 @@ static int leg(swe_ctx *c, int32 eph, const char *name, const double *gm,
   char serr[AS_MAXCH];
   int iy, ip, aa, j, nrow = 0;
   for (ip = 0; ip < 10; ip++) for (aa = 0; aa < 2; aa++) {
-    double mu = gm[0], wa = 0, we = 0, wq = 0, wp = 0;
+    double mu = gm[0], wa = 0, we = 0, wq = 0, wp = 0, wv = 0, wt = 0, wn = 0;
     int bad;
     if (rgPl[ip] == SE_MOON)
       mu = gm[3];
@@ -123,7 +136,7 @@ static int leg(swe_ctx *c, int32 eph, const char *name, const double *gm,
       double y = jpl ? rgYearJ[iy] : rgYear[iy];
       double t = floor((2451545.0 + (y - 2000) * 365.25 + 0.37) * 256) / 256;
       double x[6], xm[6], d[50], h[3], ev[3];
-      double r, v2, rv, e, a, q, om, w, nx, ny, peri;
+      double r, v2, rv, e, a, q, om, w, nx, ny, peri, nu, ea, ma, n, pd;
       int32 fl = eph | SEFLG_J2000 | SEFLG_XYZ | SEFLG_TRUEPOS | SEFLG_NONUT | SEFLG_SPEED;
       int32 rf = swe_calc_r(c, t, rgPl[ip], fl | (rgPl[ip] == SE_MOON ? 0 : SEFLG_HELCTR), x, serr);
       if ((rf & EPHBITS) != eph
@@ -162,10 +175,47 @@ static int leg(swe_ctx *c, int32 eph, const char *name, const double *gm,
       if (fabs(d[1] - e) > we) we = fabs(d[1] - e);
       if (fabs(d[15] - q) / q > wq) wq = fabs(d[15] - q) / q;
       if (fabs(swe_difdeg2n(d[5], peri)) > wp) wp = fabs(swe_difdeg2n(d[5], peri));
+      {	/* the true anomaly, the angle from ev to r about h; the mean
+         * anomaly from it; the mean motion of this ellipse */
+        double c[3], hn = sqrt(h[0] * h[0] + h[1] * h[1] + h[2] * h[2]);
+        c[0] = ev[1] * x[2] - ev[2] * x[1];
+        c[1] = ev[2] * x[0] - ev[0] * x[2];
+        c[2] = ev[0] * x[1] - ev[1] * x[0];
+        nu = atan2((c[0] * h[0] + c[1] * h[1] + c[2] * h[2]) / hn,
+                   ev[0] * x[0] + ev[1] * x[1] + ev[2] * x[2]);
+        ea = atan2(sqrt(1 - e * e) * sin(nu), e + cos(nu));
+        ma = swe_degnorm((ea - e * sin(ea)) * RADTODEG);
+        n = sqrt(mu / (a * a * a)) * RADTODEG;	/* deg/day */
+        pd = 360 / n;			/* days */
+      }
+      if (fabs(swe_difdeg2n(d[7], nu * RADTODEG)) > wv) wv = fabs(swe_difdeg2n(d[7], nu * RADTODEG));
+      if (fabs(swe_difdeg2n(d[6], ma)) > wv) wv = fabs(swe_difdeg2n(d[6], ma));
+      /* the periods, relative: sidereal in tropical years J2000 (365.242189
+       * days), the daily motion, the tropical, 360 / (n + p) days with p
+       * the general precession's rate (Simon et al. 1994, as the library
+       * takes it), the synodic against the sidereal year 365.25636 days
+       * (0 for the Earth); the time of perihelion passage, days */
+      if (fabs(d[10] * 365.242189 - pd) / pd > wn) wn = fabs(d[10] * 365.242189 - pd) / pd;
+      if (fabs(d[11] - n) / n > wn) wn = fabs(d[11] - n) / n;
+      {
+        double tm = (t - 2451545.0) / 365250.0, tro;
+        double pr = (50288.200 + 222.4045 * tm + 0.2095 * tm * tm - 0.9408 * tm * tm * tm
+                     - 0.0090 * pow(tm, 4) + 0.0010 * pow(tm, 5)) / 3600.0 / 365250.0;
+        tro = 360 / (n + pr) / 365.242189;
+        if (fabs(d[12] - tro) / tro > wn) wn = fabs(d[12] - tro) / tro;
+      }
+      if (rgPl[ip] != SE_EARTH) {
+        double syn = 360 / (360 / 365.25636 - n);
+        if (fabs(d[13] - syn) / fabs(syn) > wn) wn = fabs(d[13] - syn) / fabs(syn);
+      }
+      if (fabs(d[14] - (t - ma / n)) > wt) wt = fabs(d[14] - (t - ma / n));
     }
-    bad = wa > 1e-12 || we > 1e-12 || wq > 1e-12 || wp > 1e-8;
-    printf("  %-8s %-12s %-3s da/a %.1e, de %.1e, dq/q %.1e, dperi %.1e deg%s\n",
-           name, rgPlName[ip], aa ? "AA" : "2b", wa, we, wq, wp, bad ? "  FAIL" : "");
+    bad = wa > 1e-12 || we > 1e-14 || wq > 1e-12 || wp > 1e-11 || wv > 1e-9
+          || wn > 1e-12 || wt > 1e-6;
+    printf("  %-8s %-12s %-3s da/a %.0e de %.0e dq/q %.0e dperi %.0e anom %.0e deg"
+           " dP/P %.0e dtperi %.0e d%s\n",
+           name, rgPlName[ip], aa ? "AA" : "2b", wa, we, wq, wp, wv, wn, wt,
+           bad ? "  FAIL" : "");
     *pbad += bad;
     nrow++;
   }

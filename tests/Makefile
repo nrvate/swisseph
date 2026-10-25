@@ -902,7 +902,8 @@ check-nodapsgm: nodapsgm
 # G107: swe_get_orbital_elements() takes the ephemeris's GM: a, e, the
 # perihelion distance and longitude, two-body and SEFLG_ORBEL_AA, against the
 # eccentricity vector of swe_calc()'s state with the JPL header's GMs,
-# Pluto's own among them; SE_TEST_DE4 as G104 (UPSTREAM-BUGS 108).
+# Pluto's own among them, and the anomalies, periods and time of perihelion
+# that ellipse gives; SE_TEST_DE4 as G104 (UPSTREAM-BUGS 108, 111).
 check-orbelgm: orbelgm
 	@env -u SE_EPHE_PATH ./orbelgm $(EPHE) "$${SE_TEST_DE4:-}"
 

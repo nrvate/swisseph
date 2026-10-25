@@ -143,6 +143,7 @@ worst were in code that had never executed even once.
 | 110 | A first call warns "Please call swe_set_ephe_path()" whenever it initialises the context, with a path in effect too: `swe_deltat_ex()` and `swe_get_ayanamsa_ex_ut()` answer correctly with the warning in serr, and `swe_calc_orbel()` refuses on it (that refusal this fork's) | Correctness (error reporting) | `sweph.c`, `swephlib.c`, `sweph.h` |
 | 106 | Values read from an ephemeris file's header, and from the delta-psi and fixed-star tables, index and size arrays unchecked: a crafted file writes past `pldat[]`, `rot_back()`'s stack array, `sastnam[]` and `dpsi[]`, or reads past the JPL record | Memory | `sweph.c`, `swejpl.c` |
 | 112 | `swe_calc_orbel()` (this fork's) refuses on the "Please call swe_set_ephe_path()" warning with no path at all, ignores the strict fallback setting, and never names the path from `SE_EPHE_PATH` itself | Correctness (behaviour) | `sweph.c` |
+| 111 | `swe_get_orbital_elements()`: the true anomaly cancels near aphelion, e loses digits, and the periods leave out the body's mass (the tropical one 3.9e-5 long, the synodic against k) | Correctness | `swecl.c` |
 
 ---
 
@@ -6740,6 +6741,100 @@ serr as `swe_calc()`/`swe_calc_ut()`: 24 pass, 108 in all. Before the fix
 12 fail; the compat build passes part 2 (its 12 failures are part 1's,
 entries 98, 107 and 110 restored); the upstream build, which has no
 `swe_calc_orbel()`, 24, all part 1's. G87, G106 and G24 pass.
+
+## 111. `swe_get_orbital_elements()`: the true anomaly cancels near aphelion, e loses digits, and the periods leave out the body's mass
+
+**Severity: Correctness (the periods: Jupiter's sidereal 2.1 days long, Saturn's 1.5, Neptune's 1.5, SEFLG_ORBEL_AA's Pluto 61 days; the time of perihelion passage 1.6 days off on Jupiter, 34 on SEFLG_ORBEL_AA's Neptune; the tropical period 3.9e-5 long everywhere; the Moon's 0.14 day. Precision: the true and mean anomaly and the perihelion longitude 4.8e-9 deg off near aphelion; e 3.6e-14)**
+**Where:** `swecl.c`: `swe_get_orbital_elements_r()`
+
+Three defects in what the function makes of the ellipse once it has a and
+GM (108 fixed the GM).
+
+(a) The true anomaly was 2 atan(sqrt((1 + e) / (1 - e)) sin E / (1 +
+cos E)), with cos E = (1 - r / a) / e and sin E = r.v / (e sqrt(a GM)).
+Near aphelion, E near 180 deg, 1 + cos E cancels, and on a near-circular
+orbit cos E itself comes from 1 - r / a divided by a small e: the true
+anomaly (dret[7]), the mean anomaly from E (dret[6]), and through the
+argument of perihelion (u - v) the longitude of perihelion (dret[5]) were
+off by up to 4.8e-9 deg (Venus at 1700, E 178 deg; Neptune 1.6e-9),
+against the angle from the eccentricity vector to r. Above the floor.
+
+(b) e was sqrt(1 - p / a), which keeps only half the digits of a small e:
+3.6e-14 off the length of the eccentricity vector, Neptune's q 1.1e-12 AU
+(3.7e-14 relative). At the floor; fixed because it sits in the same
+lines.
+
+(c) The periods. The function's documentation (swephprg 7.2) says the
+elements "define the orbital ellipse under the premise that it is a
+two-body system" and lists dret[10] as the "sidereal orbital period in
+tropical years", dret[11] "mean daily motion", dret[12] "tropical period
+in years", dret[13] "synodic period in days"; neither it nor
+`doc/swisseph.htm` defines the period as Kepler's third law without mass
+or as a^1.5. The code took the sidereal period as a^1.5 sidereal years
+(the Moon's scaled to 27.32166 days at a = 383397772.5 m), and the daily
+motion as 0.9856076686 / a^1.5 deg/day: k in degrees, a massless body's,
+whose year is 365.25690 days, while the sidereal period's year was
+365.25636 (the two disagreed by 1.5e-6). Neither is the two-body
+ellipse's mean motion sqrt(GM / a^3) with the GM its elements were
+fitted with: Jupiter's sidereal period was 4.8e-4 (2.1 days) long,
+Saturn's 1.4e-4 (1.5 days), Neptune's 1.5 days, Uranus's 0.6; with
+SEFLG_ORBEL_AA, whose GM sums the inner planets, Saturn's 6.7 days,
+Neptune's 40, Pluto's 61. The time of perihelion passage, t - M / n
+(dret[14]), moved with n: 1.6 days on Jupiter, 1.4 on Saturn, 34 on
+SEFLG_ORBEL_AA's Neptune. And dret[12], 360 / (n + p) days in tropical
+years of 365.242189 days, was multiplied by ysid / ytrop as well, 3.9e-5
+long: a body on the Earth's mean motion came out 1.0000388 tropical years
+where it is 1, Pluto's period 3.5 days long. dret[13] took the Earth's
+mean motion as k, 1.5e-6 slow.
+
+**Fix, as done here:** (a) the true anomaly is the angle from the
+eccentricity vector to r about h, atan2((ev x r).h / |h|, ev.r), and E =
+atan2(sqrt(1 - e^2) sin v, e + cos v): each well conditioned at every
+anomaly, and in the same half-turn, so upstream's quadrant fix-ups go.
+(b) e is the length of the eccentricity vector, ((v^2 - GM / r) r -
+(r.v) v) / GM, as in `swe_nod_aps()`. (c) the daily motion is the
+ellipse's, sqrt(GM / a^3), with the GM `get_gmsm()` gave (SEFLG_ORBEL_AA's
+sum included, documented and kept by 108); the sidereal period 360 / n
+days in tropical years of 365.242189 days; the tropical period 360 / (n +
+p) days in the same years, without ysid / ytrop; the synodic period
+against the sidereal year, 360 / (360 / 365.25636 - n); dret[14] follows
+from n as before. After (G107): a, e and q the same expressions as the
+eccentricity vector's (0), the perihelion longitude 1e-13 deg, the
+anomalies 0, the periods 2e-16 relative, dret[14] 0. The upstream build's
+output is byte-identical to the build before (SWE_UPSTREAM_COMPAT).
+
+The Moon's period changes most and by design: the a^1.5 scaling to
+27.32166 days at its mean distance made the osculating Moon's period
+look like the real sidereal month, but it was not the ellipse's, whose
+elements the documentation calls "particularly bad for the Moon". At
+J2000 the Moon's sidereal period goes from 27.159 to 27.016 days, its
+synodic from 29.341 to 29.174 (the real months, perturbed by the Sun,
+are 27.322 and 29.531), dret[14] by 0.058 day. Keeping the old scaling
+for the Moon alone would be a one-line exception; it is not taken, so
+that dret[10], [11] and [14] describe the same ellipse for every body.
+
+Left, recorded, not this defect:
+- The Swiss files' and Moshier's Earth is made from the EMB with the AA's
+  ratio though the files were fitted with DE441's EMRAT: the Earth 3.2e-12
+  AU off DE441's, geocentric places about 2e-10 deg. Below the floor
+  (108's notes).
+- The node's distance (`rn`, the ellipse's radius at the node) still uses
+  2 atan(tan(v / 2) / k), which is ill conditioned near v = 180 deg, but
+  only its direction, the node's longitude, reaches dret[3]; no output
+  carries the distance.
+
+G107 extended: the true anomaly against the angle from the eccentricity
+vector to r, the mean anomaly from it, within 1e-9 deg; the sidereal,
+tropical and synodic periods and the daily motion against n = sqrt(mu /
+a^3) within 1e-12 relative; the time of perihelion passage within 1e-6
+day; the perihelion longitude's limit from 1e-8 to 1e-11 deg; e's from
+1e-12 to 1e-14. 60 rows (80 with DE441); the build before this fix fails
+all 60 on the periods, the upstream build all 60. G24
+`orbel_period_off`: Jupiter's sidereal period on Moshier against 2 pi
+sqrt(a^3 / (GMS + GM5)), 0 shipped, 4.76e-4 compat;
+`orbel_anom_off`: Venus's true anomaly on Moshier at 1700 against the
+eccentricity vector's, 0 shipped, 5.6e-8 deg compat (4.8e-9 with the
+ephemeris's GMs). G104, G38 pass.
 
 ## How these were found
 
