@@ -1947,6 +1947,31 @@ static double orbel_mosh_bary_ret(void)
                         SEFLG_MOSEPH | SEFLG_SPEED | SEFLG_BARYCTR, x, serr);
 }
 
+/* UPSTREAM-BUGS 139: a Swiss barycentric Mars at 2000 Jul 1.5 in an empty
+ * directory with the fallback allowed: the return. It fell to Moshier past
+ * swecalc()'s refusal of a barycentric Moshier request and was answered
+ * with Moshier's heliocentric place under SEFLG_BARYCTR | SEFLG_MOSEPH
+ * (18180), 7.2e-3 AU off the files' barycentric Mars; refused now as that
+ * request is, -1. */
+static double fallback_mosh_bary_ret(void)
+{
+  char dir[] = "/tmp/compatfbXXXXXX", serr[256];
+  double x[6], r;
+  int fb;
+  if (mkdtemp(dir) == NULL)
+    return 1e9;
+  swe_close();
+  swe_set_ephe_path(dir);
+  fb = swe_get_ephe_fallback();
+  swe_set_ephe_fallback(1);
+  r = swe_calc(2451727.0, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_BARYCTR, x, serr);
+  swe_set_ephe_fallback(fb);
+  swe_close();
+  rmdir(dir);
+  swe_set_ephe_path(EPHE);
+  return r;
+}
+
 /* UPSTREAM-BUGS 136: swe_calc_orbel() of an orbit with a = 1.2 AU whose
  * elements are of the equinox of date (SE_ORBEL_EQ_DATE), heliocentric,
  * geometric, J2000 equatorial XYZ, Swiss files: the velocity against a
@@ -3365,7 +3390,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate, nutjplhor, jplopen, dtflag0;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate, nutjplhor, jplopen, dtflag0, fbmb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3484,6 +3509,7 @@ int main(int argc, char **argv)
   moshfarlt = mosh_far_lt_off();
   orbelbias = orbel_bias_off();
   orbelmb = orbel_mosh_bary_ret();
+  fbmb = fallback_mosh_bary_ret();
   orbeldate = orbel_date_rate_off();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
@@ -4337,6 +4363,14 @@ int main(int argc, char **argv)
   else {
     printf("  orbel Moshier barycentre %.0f FAIL: expected %s\n",
            orbelmb, WANT_DEFECT ? "18180" : "< 0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (fbmb == 18180) : (fbmb < 0))
+    printf("  fallback to Moshier, barycentric %.0f OK\n", fbmb);
+  else {
+    printf("  fallback to Moshier, barycentric %.0f FAIL: expected %s\n",
+           fbmb, WANT_DEFECT ? "18180" : "< 0");
     bad++;
   }
 

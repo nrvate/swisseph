@@ -172,6 +172,7 @@ worst were in code that had never executed even once.
 | 137 | A thread that had the JPL file open and adopts another thread's `swe_set_ephe_path()` keeps the closed file's DE number, so its SEFLG_JPLEPH delta t takes that file's tidal term: 3.012003 s in AD 1700 for the 14.286718 of the setting thread and a fresh process, after a path without the file or the same path by another string (this fork's) | Correctness (behaviour) | `sweconfig.c` |
 | 138 | A JPL file a calculation opens sets the automatic tidal term for itself, not for `swe_deltat()`'s guess, which follows the configuration: after the path, de200.eph and the path again by another string, which forgets the JPL DE number, a TT JPL Sun left `swe_get_tid_acc()` at -23.8946 while the next `swe_deltat()` used -25.936 (18.902020 s in 1800) -- on every thread and context | Correctness | `sweph.c` |
 | 145 | `swe_deltat_ex()` with no ephemeris bit in the flag takes the tidal term of the JPL file the context has open, else the default, not the Swiss files' that a 0 flag means to `swe_calc()` and every UT function: at 1950 28.927550 s on the thread that set de200.eph, 28.931886 on a second thread until it opens the file, for 28.932196; 169.4 s in AD 1000; a flag-0 eclipse search 11.3 s off | Correctness | `swephlib.c` |
+| 139 | With the fallback allowed, a Swiss or JPL barycentric request whose files are missing is answered from Moshier, which refuses it asked for itself: Moshier's heliocentric place under SEFLG_BARYCTR and SEFLG_MOSEPH, Mars 0.24 deg and 7.2e-3 AU off the files' barycentric one, the Moon 0.37 deg; `swe_calc_orbel()`, `swe_calc_pctr()` and `swe_nod_aps()`'s barycentric ellipse alike | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -8966,7 +8967,7 @@ itself with Moshier's heliocentric place under SEFLG_BARYCTR | SEFLG_MOSEPH
 (Mars at 2000 Jul 1.5: 7.2e-3 AU, 0.24 deg off the files' barycentric Mars,
 0 from Moshier's heliocentric one), and `swe_calc_orbel()` answers as it
 does, bit for bit in flag and message. A defect of `swe_calc()`'s
-fallback, measured here and not fixed.
+fallback, measured here and not fixed. Fixed as entry 139, both now refusing it.
 
 G126 `tests/orbelbias.c` (entry 130's gate) now checks that centre:
 - check 1, Moshier's barycentre, 60 rows an orbit, is refused by both with
@@ -9253,6 +9254,128 @@ the reader has de200.eph open, 28.931886 elsewhere, for 28.932196); the
 compat build the same 16, 30 of 48 in all. G24 `dt_flag0_off`, a flag of
 0 in AD 1000 against SEFLG_SWIEPH with de200.eph open: 0 shipped, 169.4 s
 compat (and shipped before the fix). The golden transcript is unchanged.
+
+## 139. With the fallback allowed, a Swiss or JPL barycentric request whose files are missing is answered from Moshier, which serves no barycentric place
+
+**Severity: Correctness (behaviour: a wrong answer labelled as the centre asked for, Moshier's heliocentric place under SEFLG_BARYCTR, Mars 0.24 deg and 7.2e-3 AU off)**
+**Where:** `sweph.c`: `swe_calc_r()`, `swe_calc_orbel_r()`; through them `swe_calc_ut()`, `swe_calc_orbel_ut()`, `swe_calc_pctr()`, `swe_nod_aps()`
+
+Found by entry 135's work. `swecalc()` refuses a barycentric Moshier
+request before it computes anything: -1, "barycentric Moshier positions
+are not supported.". A Swiss or JPL request passes that test, and when its
+files are missing falls to Moshier further down (`main_planet()`, the
+Moon's branch, the fictitious bodies' Earth). Moshier's origin is the Sun,
+so the barycentric place came out heliocentric, under a return flag with
+SEFLG_BARYCTR and SEFLG_MOSEPH set (18180 with SEFLG_SPEED). Upstream's
+substitution is unconditional, so upstream answers so wherever the files
+are missing; here `swe_set_ephe_fallback(1)` (or `SE_EPHE_FALLBACK=1`)
+restores it, and the strict default refuses the request for its files.
+
+Measured at 2000 Jul 1.5 in a directory without the files, the fallback
+allowed, Swiss and JPL (de200.eph named and missing) alike, each in a
+fresh process:
+
+| request | answered | off the files' barycentric place |
+|---|---|---|
+| Mars (also `swe_calc_ut()`, SEFLG_SPEED3, J2000 XYZ) | 18180, Moshier's heliocentric Mars bit for bit | 0.24 deg, 7.2e-3 AU |
+| the Earth, the Moon | 18180 | 0.37 deg |
+| Jupiter, Pluto | 18180 | 0.027, 8.5e-3 deg |
+| Cupido (seorbel.txt) | 18180 | 5.1e-3 deg |
+| `swe_calc_orbel()`, a = 1.2 AU about the Sun | 18180 | 0.18 deg |
+| `swe_calc_pctr()` Mars from Jupiter, SEFLG_BARYCTR | 1794 (SEFLG_SWIEPH), from the two heliocentric places | 1.6e-4 deg |
+| `swe_nod_aps()` Uranus, SE_NODBIT_OSCU_BAR | 0, the heliocentric ellipse | 0.025 deg (node, geocentric) |
+
+The Moshier request of each is refused, by `swecalc()` or by the inner
+barycentric `swe_calc()` of `swe_calc_pctr()` and of the barycentric
+ellipse. `swe_calc_pctr()` without SEFLG_BARYCTR was refused already, by
+its deflection's barycentric Sun, for that file.
+
+**The right answer.** A refusal, with the Moshier request's message. The
+manual (swephprg, SEFLG_BARYCTR): "It works only with the JPL and the
+Swiss Ephemeris, not with the Moshier ephemeris"; swisseph.htm: "Moshier
+provides heliocentric positions". Nothing in the library says Moshier
+answers a barycentric request. The fallback exists so that a caller gets
+Moshier's answer where the files are missing, and `swephexp.h` has the
+return flag say which ephemeris answered. A fallback cannot then answer
+what the ephemeris it falls to refuses, under a flag the library never
+returns for that ephemeris. Serving the place from `swi_mosh_sun_bary()`
+(the barycentric Sun Moshier's light time has carried since entries 102,
+109 and 125) would leave a direct Moshier request refused, the same
+disagreement the other way, and would make that internal model a public
+barycentric ephemeris. Not done.
+
+Checked and unchanged, both settings:
+- the barycentric Sun: the Swiss branch has no fallback; refused for its
+  file;
+- the asteroids (Ceres, Chiron; a numbered one) and the planetary centres:
+  no Moshier; refused for their files;
+- the nodes and apsides, barycentric: zero vectors under the flag asked,
+  as with the files; there is no barycentric node (the manual: "only with
+  physical bodies"), and no file is read;
+- SE_ECL_NUT, and Aldebaran barycentric (`swe_fixstar2()`, `swe_fixstar()`):
+  no ephemeris read, the complete directory's answer bit for bit. A
+  Moshier barycentric star is answered too (18180), the same place: not a
+  wrong answer;
+- with only the Moon files missing, the barycentric Moon is Moshier's
+  geocentric Moon on the files' Earth, a barycentric place, 2.0e-7 deg
+  off the files' (5.2e-7 deg in 1900), flagged SEFLG_MOSEPH by entry 120.
+  It stays answered;
+- strict: every request above refused with the downgrade's message, as
+  before.
+
+**Fix, as done here:** `swi_refuse_mosh_bary()`: an answer whose flag has
+SEFLG_BARYCTR and SEFLG_MOSEPH is refused. Under the strict setting it is
+refused as any substitution is, with `swi_refuse_downgrade()`'s message
+(the same text as before); with the fallback allowed, with `swecalc()`'s.
+- `swe_calc_r()` tests `swecalc()`'s own return flag, right after it,
+  before entry 120 relabels the Moon of a missing Moon file SEFLG_MOSEPH:
+  tested after that, the barycentric place above would be refused too. A
+  refused answer stays in the save area as before; it cannot answer
+  later, its flag being no request's (a request naming Moshier changes the
+  ephemeris, which forgets the save areas).
+- `swe_calc_orbel_r()` tests its answer's flag after its strict check: a
+  two-line call, as `swe_calc_r()` refuses it.
+- `swe_calc_ut()`, `swe_calc_orbel_ut()`, `swe_calc_pctr()` and the
+  barycentric ellipse of `swe_nod_aps()` inherit it through those calls.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. The compat
+  build's `swe_calc_orbel()` (this fork's) keeps answering as its
+  `swe_calc()` does, as for entry 135.
+- Cost: instructions +0.0003% on calc-swieph, +0.0004% on calc-moseph.
+
+Left as it is, not this entry's:
+- `swe_nod_aps()` with barycentric output on Moshier, asked for or fallen
+  to, answers the heliocentric points: Mars's osculating ascending node
+  49.5626 deg at 2000 Jul 1.5, Moshier's heliocentric node to the last
+  digit, where the files' barycentric one is 49.6398 (0.077 deg); the
+  Moon's mean node 0.37 deg. Nothing in it refuses SEFLG_MOSEPH with
+  SEFLG_BARYCTR; only its SE_NODBIT_OSCU_BAR ellipse goes through
+  `swe_calc()`'s refusal. The fallback answers as the Moshier request
+  does. A defect of its own, measured, not fixed.
+- `swe_calc_pctr()` returns the caller's flags: with the fallback allowed
+  and only the JPL file missing, Mars from Jupiter returns 257
+  (SEFLG_JPLEPH) with the Swiss answer bit for bit. Measured, not fixed.
+
+G133 `tests/fbbary.c`: links to sefstars.txt and seorbel.txt alone, each
+case in a forked process, 2000 Jul 1.5 and 1900 Jan 0.75, Swiss and JPL:
+the calls of the table, with `swe_calc_orbel_ut()`, `swe_calc_pctr()`
+without SEFLG_BARYCTR and the ellipse's barycentric output, refused with
+the fallback with the Moshier request's return and message, and strict
+with the downgrade's; every one answered
+from the complete directory; the unchanged classes above as they were; the
+Moon files alone missing, the barycentric Moon answered within 1e-6 deg;
+and in one warm process the refusals repeated, Moshier asked with the
+substituted answer's flags (18180) refused, and heliocentric Mars around
+them answered alike. 368 checks pass. Before the fix 72 fail: the 60
+fallback calls and 12 warm. The compat build fails 82: those 72, its
+`swe_calc_orbel()` answering the 8 Moshier requests (entry 135 restored),
+and the Moon files' Moon twice (SEFLG_SWIEPH, entry 120 restored).
+
+G126 check 3 now has 400 of its 720 calls refused by both (320 before:
+the 80 fallback barycentric calls, refused by both now). It passes before
+and after. G99, G117, G119, G109, G87, G2, check-ctx and G24 pass.
+
+G24 `fallback_mosh_bary_ret`: a Swiss barycentric Mars at 2000 Jul 1.5,
+an empty directory, the fallback allowed: -1 shipped, 18180 compat.
 
 ## How these were found
 

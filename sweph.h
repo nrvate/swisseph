@@ -1216,6 +1216,12 @@ struct epsilon {
  *     files' a 0 flag means everywhere else: with de200.eph open 169.4 s
  *     off in AD 1000, a second thread 4.3 ms from the first in 1950
  *     (UPSTREAM-BUGS 145, G132)
+ *   - with the fallback allowed, a Swiss or JPL barycentric request whose
+ *     files are missing answered from Moshier, which swecalc() refuses
+ *     asked for itself: its heliocentric place under SEFLG_BARYCTR |
+ *     SEFLG_MOSEPH, Mars 0.24 deg, 7.2e-3 AU off the files' barycentric
+ *     one; swe_calc_orbel(), swe_calc_pctr() and swe_nod_aps()'s
+ *     barycentric ellipse alike (UPSTREAM-BUGS 139, G133)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

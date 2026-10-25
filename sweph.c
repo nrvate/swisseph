@@ -217,6 +217,7 @@ extern int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *
 static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, double tjd, char *serr);
 #ifndef SWE_UPSTREAM_COMPAT
 static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr);
+static AS_BOOL swi_refuse_mosh_bary(swe_ctx *ctx, int32 wanted, int32 got_iflag, double tjd, char *serr);
 #endif
 static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum);
 static int app_pos_etc_mean(swe_ctx *ctx, int ipl, int32 iflag, char *serr);
@@ -625,6 +626,19 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     calc_speed(x0, sd->xsaves, x2, dt);
   }
 #ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 139: with the fallback allowed, a Swiss or JPL barycentric
+   * request whose files are missing fell to Moshier past swecalc()'s
+   * refusal of a barycentric Moshier one, and was answered with Moshier's
+   * heliocentric place (its origin is the Sun) under SEFLG_BARYCTR |
+   * SEFLG_MOSEPH: Mars at 2000 Jul 1.5 0.24 deg, 7.2e-3 AU off the files'
+   * barycentric Mars, the Moon 0.37 deg. Refused now as that request is,
+   * with its message; under the strict setting with the downgrade's, as
+   * before. On swecalc()'s flag, before bug 120's below: a Moon from
+   * Moshier with the files' Earth is a barycentric place. The save area
+   * cannot answer it later: its flag is no request's (a request naming
+   * Moshier changes the ephemeris, which forgets the save areas). */
+  if (swi_refuse_mosh_bary(ctx, epheflag, sd->iflgsave, tjd, serr))
+    goto return_error;
   /* Upstream bug 120: the Moon, or the Earth through it, from Moshier for
    * want of the semo file. Refused under the strict setting when the
    * answer depends on it: the Moon and the Earth themselves, and any body
@@ -965,6 +979,10 @@ static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el
   if (swi_refuse_downgrade(ctx, epheflag_asked, epheflag, tjd_et, serr))
     goto return_error;
 #ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 139: and a barycentric request fallen to Moshier, as
+   * swe_calc_r() refuses it */
+  if (swi_refuse_mosh_bary(ctx, epheflag_asked, iflag, tjd_et, serr))
+    goto return_error;
   /* Upstream bug 120: an Earth made from Moshier's Moon, the semo file
    * missing, refused where the answer depends on it: an orbit about the
    * Earth, or one seen from it */
@@ -2829,6 +2847,21 @@ static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr)
       "the Earth made from it, would come from Moshier with lower precision. "
       "Install the data files, or call swe_set_ephe_fallback(1) to allow the "
       "substitution.", tjd);
+  return TRUE;
+}
+
+/* Upstream bug 139: Moshier serves no barycentric place (its origin is the
+ * Sun, and swecalc() refuses SEFLG_MOSEPH | SEFLG_BARYCTR), so a fallback
+ * to it serves none either. got_iflag is the answer's flag as the
+ * ephemeris that answered left it. Under the strict setting the
+ * substitution is refused as any other is, with swi_refuse_downgrade()'s
+ * message; with the fallback allowed, with swecalc()'s. */
+static AS_BOOL swi_refuse_mosh_bary(swe_ctx *ctx, int32 wanted, int32 got_iflag, double tjd, char *serr)
+{
+  if (!(got_iflag & SEFLG_BARYCTR) || !(got_iflag & SEFLG_MOSEPH))
+    return FALSE;
+  if (!swi_refuse_downgrade(ctx, wanted, SEFLG_MOSEPH, tjd, serr) && serr != NULL)
+    strcpy(serr, "barycentric Moshier positions are not supported.");
   return TRUE;
 }
 

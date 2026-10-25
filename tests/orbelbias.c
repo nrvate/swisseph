@@ -60,9 +60,9 @@
  *      elements, and where both answer the same place (the limits of 1).
  *      Strict, Swiss and JPL are refused by both for the missing files and
  *      Moshier's barycentre for itself; with the fallback both answer from
- *      Moshier, barycentric requests included (the heliocentric place
- *      under SEFLG_BARYCTR, swe_calc()'s own answer there), and refuse
- *      only Moshier's barycentre asked for as such.
+ *      Moshier and refuse every barycentric request, Swiss and JPL ones
+ *      fallen to Moshier as Moshier's (UPSTREAM-BUGS 139; before it, both
+ *      answered those with the heliocentric place under SEFLG_BARYCTR).
  *   4. the orbits of date: the speed against a five-point difference of
  *      the positions over 2^-7 day (2^-10 about the Earth) at a
  *      binary-fraction instant near each date, the mean anomaly moved along
@@ -99,7 +99,8 @@
  * by 4.0e-5 to 8.8e-5 deg/day in speed, the same in check 4, on every
  * ephemeris, and check 3 by those places: 25 failures. After: check 1
  * within 7.1e-13 deg and 1.0e-11 deg/day, Moshier's barycentre refused by
- * both; check 3's 720 calls agree with swe_calc() (320 refused by both),
+ * both; check 3's 720 calls agree with swe_calc() (320 refused by both,
+ * 400 since bug 139's fix),
  * places within 5.1e-13 deg and 1.0e-11 deg/day; check 4 within 4.6e-9
  * deg/day (the 1.2 AU orbit topocentric; 2.4e-9 about the Earth). The
  * upstream build, whose swe_calc_orbel() keeps answering Moshier's
@@ -368,7 +369,7 @@ static void Leg(int32 eph, const char *name, int *bad)
 /* check 3: the files missing (the element file's directory alone), strict
  * and with the fallback allowed: swe_calc_orbel() answers or refuses as
  * swe_calc() does for the same flags, with the same return flag, message
- * and place (bugs 112, 120 and 135) */
+ * and place (bugs 112, 120, 135 and 139) */
 static void MissLeg(const char *dir, int *bad)
 {
   static const int32 ephs[] = {SEFLG_MOSEPH, SEFLG_SWIEPH, SEFLG_JPLEPH};
