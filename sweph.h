@@ -1673,6 +1673,9 @@ struct epsilon {
  *     instant's nutation depends on the calls before it: SE_ECL_NUT fresh
  *     against after a call 0.6 to 1.3 day earlier up to 7.9e-7 deg
  *     (UPSTREAM-BUGS 231, G122, G24)
+ *   - Woolard's nutation's arguments evaluated in double past 4e8 days:
+ *     dpsi 8.2e-10 deg off its formula at 1e9 to 1e10 days, 2.1e-7 to 1e11
+ *     and 3.2e-4 to 1e12 (UPSTREAM-BUGS 232, G162, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

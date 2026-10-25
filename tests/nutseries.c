@@ -22,6 +22,12 @@
  * terms, dpsi -0.135 mas and deps +0.388 mas; they were left out, 3.75e-8
  * and 1.08e-7 deg at every date.
  *
+ * The defect (UPSTREAM-BUGS 232): Woolard's series evaluated its
+ * arguments, revolutions times t less their whole revolutions, in double:
+ * against its formula in mpmath dpsi 8.2e-10 deg off at |J - J2000| 1e9
+ * to 1e10 days, 2.1e-7 to 1e11 and 3.2e-4 to 1e12. Now in double-double
+ * past 4e8 days, as the other series'.
+ *
  * Check (a): SE_ECL_NUT with SEFLG_NONUT; SEFLG_NONUT | SEFLG_SPEED;
  * SEFLG_NONUT | SEFLG_RADIANS; SEFLG_NONUT | SEFLG_EQUATORIAL;
  * SEFLG_SIDEREAL; SEFLG_J2000; SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX |
@@ -57,6 +63,13 @@
  * rate the places' derivative past 4e8 too. 4 checks; it calls the fork's
  * own functions and is left out of the upstream build.
  *
+ * Check (e): SE_ECL_NUT's dpsi and deps under Woolard at 32 instants with
+ * |J - J2000| log-uniform over 4e8..1e12 days, either sign, against its
+ * formula evaluated in mpmath at 300 bits at the same double J (the table
+ * above): per decade within 1e-12 deg. 4 checks.
+ *
+ * Check (f): (d) under Woolard. 2 checks, left out of the upstream build.
+ *
  * Measured: (a) 0 of 63 differ; (b) IAU 1980 and 1987 within 6.9e-17,
  * 5.6e-16, 6.7e-15 and 8.5e-14 deg per decade, the Horizons approximation
  * 1.8e-14 at most; (c) 1.6e-14 deg, and 1.02e-11 rad off SOFA's; (d)
@@ -65,7 +78,13 @@
  * 7.6e-8, 2.4e-3 and 8.7 deg; (c) 1.08e-7 deg and 1.88e-9 rad; (d) 8.2e-9
  * and 6.3e-9 deg/day (the places' jitter). The upstream build fails 77 of
  * its 77, (a)'s SEFLG_EQUATORIAL cases answering zeros besides (UPSTREAM-BUGS
- * 90). Run as
+ * 90).
+ *
+ * Measured after bug 232: (e) within 4.9e-17, 2.5e-16, 4.0e-15 and
+ * 1.6e-14 deg per decade; (f) 9.9e-15 and 1.7e-15 deg/day. 87 checks.
+ * Before it 6 of 87 fail: (e) 6.2e-12, 1.1e-9, 2.5e-7 and 1.1e-4 deg; (f)
+ * 6.6e-10 and 3.2e-10 deg/day, the places' jitter. The upstream build
+ * fails 81 of its 81. Run as
  *   nutseries EPHEDIR
  */
 #include <math.h>
@@ -131,6 +150,45 @@ static const double REF00B[8][3] = {
   {2460000.5, -0.0025762925589874869, 0.0021506353929542001},
   {2488069.5, 0.00091368469256131873, 0.0023788520771171502},
   {3000000.5, 0.0046238098459064712, -0.001128480166981362},
+};
+
+/* check (e)'s reference: J, dpsi, deps, deg, Woolard's series
+ * (calc_nutation_woolard() transcribed: its arguments as revolutions times
+ * t less their whole revolutions, its amplitudes' t terms) in mpmath at 300
+ * bits at the same double J */
+static const double REFWOOL[32][3] = {
+  {-410632664.34375, -0.044695434246503386, -0.00065776594575732992},
+  {463135410.69140625, 0.058697021589589025, 0.0030583764653485997},
+  {-505179852.49609375, -0.058640243933445975, -0.0002573400941990637},
+  {624517924.4296875, -0.011448709473087577, -0.0056458460800567992},
+  {-650003481.52734375, 0.046719082083106128, 0.00087554554651436429},
+  {734829910.12890625, 0.097956849772465812, 0.00031133752762884076},
+  {-883439184.0703125, 0.082877411227849043, -0.00096835784593648903},
+  {938013960.625, 0.057040427444344996, 0.0063114862360210315},
+  {-1152396917.1757812, 0.015278549170445634, -0.0066449386356150497},
+  {1383708670.7109375, 0.18136759875140113, 0.00073928053311621018},
+  {-1919684531.3203125, -0.047255783057831902, 0.01397755611531231},
+  {2633924091.3710938, -0.078065494300186153, 0.025282303773823869},
+  {-3227100708.6640625, -0.16750011409114918, -0.017792106039023772},
+  {4509738392.7695312, 0.59703625637204105, -0.014671511685547851},
+  {-6390250918.75, 0.18071753586542111, -0.033825857579398183},
+  {9460832111.4179688, -0.58505017959896122, 0.078774713677116096},
+  {-12064941947.199219, -0.33267747066031506, 0.10229521370202255},
+  {14019624047.253906, 1.3261972820603343, 0.04250619119953495},
+  {-21235538286.292969, 1.0048887675186207, -0.088439961626330166},
+  {31497088417.050781, 4.2408593571454807, -0.032190305275584814},
+  {-38553561334.789062, -4.7175081294497136, -0.022988733454832107},
+  {50082916287.132812, 6.5412546339123443, 0.0071141361757885236},
+  {-57341163216.386719, 7.3442018374722098, 0.056600010440006142},
+  {76602324303.132812, 3.3407208587231136, -0.66950881463563205},
+  {-105102837910.98047, 8.8535720333911474, -0.32580792820671722},
+  {152395591006.03516, 0.37913413397224632, 0.85755316766249712},
+  {-197158760685.47266, -18.49633070384029, 1.1609098224449059},
+  {312447484779.32031, -12.03489026334757, 2.2736812419368606},
+  {-331024267247.55469, 28.493924260331827, 1.9923441024422439},
+  {494878817991.75, -66.979018027596268, 0.16964478255916737},
+  {-605908533254.87109, -68.923408543220674, 1.5079734684259194},
+  {795844060279.78125, 95.26861951077791, -2.0244343713988977},
 };
 
 static swe_ctx *ctx_model(const char *ephe, const char *model)
@@ -300,14 +358,48 @@ int main(int argc, char **argv)
     }
   }
 
-#ifndef SWE_UPSTREAM_COMPAT
-  /* check (d) */
+  /* check (e) */
   {
-    static const char *dm[2] = { "0,0,0,1", "0,0,0,2" };
+    double w[4] = { 0, 0, 0, 0 }, x[6];
+    swe_ctx *c = ctx_model(argv[1], "0,0,0,5");
+    if (c == NULL) {
+      printf("  ERROR: no context\nG162 FAIL: ERROR\n");
+      return 1;
+    }
+    for (i = 0; i < 32; i++) {
+      if (swe_calc_r(c, REFWOOL[i][0], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0) {
+        printf("  ERROR SE_ECL_NUT at %.8f: %s\nG162 FAIL: ERROR\n", REFWOOL[i][0], serr);
+        return 1;
+      }
+      for (j = 0; j < 2; j++) {
+        double e = fabs(x[2 + j] - REFWOOL[i][1 + j]);
+        if (!(e <= w[i / 8]))
+          w[i / 8] = e;
+      }
+    }
+    swe_ctx_free(c);
+    printf("  (e) Woolard past 4e8 days against its formula in mpmath: worst |dpsi, deps - ref|, deg,"
+           " |J - J2000| 4e8..1e9, ..1e10, ..1e11, ..1e12\n    %-14s %.2e  %.2e  %.2e  %.2e\n",
+           "Woolard", w[0], w[1], w[2], w[3]);
+    for (k = 0; k < 4; k++) {
+      n++;
+      if (!(w[k] <= 1e-12)) {
+        bad++;
+        printf("    FAIL Woolard, |J - J2000| %.0e..%.0e: %.2e > 1e-12\n", k ? pow(10, 8 + k) : 4e8,
+               pow(10, 9 + k), w[k]);
+      }
+    }
+  }
+
+#ifndef SWE_UPSTREAM_COMPAT
+  /* check (d), and (f) */
+  {
+    static const char *dm[3] = { "0,0,0,1", "0,0,0,2", "0,0,0,5" };
+    static const char *dn[3] = { "IAU 1980", "IAU 1987", "Woolard" };
     const double h = 1.0 / 64;
-    printf("  (d) swi_nutation_rate() past 4e8 days: worst |rate - five-point difference|,"
+    printf("  (d), (f) swi_nutation_rate() past 4e8 days: worst |rate - five-point difference|,"
            " deg/day, dpsi / deps\n");
-    for (m = 0; m < 2; m++) {
+    for (m = 0; m < 3; m++) {
       double w[2] = { 0, 0 };
       swe_ctx *c = ctx_model(argv[1], dm[m]);
       if (c == NULL) {
@@ -328,12 +420,12 @@ int main(int argc, char **argv)
         }
       }
       swe_ctx_free(c);
-      printf("    %-14s %.2e  %.2e\n", m ? "IAU 1987" : "IAU 1980", w[0], w[1]);
+      printf("    %-14s %.2e  %.2e\n", dn[m], w[0], w[1]);
       for (j = 0; j < 2; j++) {
         n++;
         if (!(w[j] <= 1e-12)) {
           bad++;
-          printf("    FAIL %s, %s: %.2e > 1e-12\n", m ? "IAU 1987" : "IAU 1980", j ? "deps" : "dpsi", w[j]);
+          printf("    FAIL %s, %s: %.2e > 1e-12\n", dn[m], j ? "deps" : "dpsi", w[j]);
         }
       }
     }

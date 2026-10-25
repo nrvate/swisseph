@@ -4330,6 +4330,38 @@ static double nan_search_named(void)
   return n;
 }
 
+/* UPSTREAM-BUGS 232: Woolard's arguments past 4e8 days. SE_ECL_NUT's dpsi
+ * and deps under Woolard (SEMOD_NUT_WOOLARD) on Moshier at four instants
+ * 1.2e10 to 3.1e10 days either side of J2000 against its formula in mpmath
+ * (G162's table), the largest difference, deg. Shipped 8.9e-16; the
+ * arguments in double 5.4e-9 off before the fix, upstream (with bug 151's
+ * anomaly besides) 5.5e-5. -1 if a call fails. */
+static double wool_args_far_off(void)
+{
+  static const double ref[4][3] = {
+    {-12064941947.199219, -0.33267747066031506, 0.10229521370202255},
+    {14019624047.253906, 1.3261972820603343, 0.04250619119953495},
+    {-21235538286.292969, 1.0048887675186207, -0.088439961626330166},
+    {31497088417.050781, 4.2408593571454807, -0.032190305275584814},
+  };
+  double x[6], r = 0;
+  char serr[AS_MAXCH], mod[] = "0,0,0,5";
+  int i, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_astro_models_r(c, mod, 0);
+  for (i = 0; i < 4 && r >= 0; i++) {
+    if (swe_calc_r(c, ref[i][0], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0)
+      r = -1;
+    for (k = 0; k < 2 && r >= 0; k++)
+      if (fabs(x[2 + k] - ref[i][1 + k]) > r)
+        r = fabs(x[2 + k] - ref[i][1 + k]);
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 231: the interpolation's nodes placed by the call that
  * found none. The interpolation on, the default model, Moshier: SE_ECL_NUT
  * at four instants on a fresh context against one that asked 0.9 day
@@ -6389,7 +6421,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, nutorder;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6580,6 +6612,7 @@ int main(int argc, char **argv)
   makrcusp = makransky_cusp_off();
   nandate = nan_date_answered();
   nansearch = nan_search_named();
+  woolfar = wool_args_far_off();
   nutorder = nut_intp_order_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
@@ -8089,6 +8122,14 @@ int main(int argc, char **argv)
   else {
     printf("  2000B against SOFA     %.2e rad FAIL: expected %s\n",
            nut00b, WANT_DEFECT ? "> 1e-9" : "< 3e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (woolfar > 1e-8) : (woolfar >= 0 && woolfar < 1e-13))
+    printf("  Woolard past 4e8       %.2e deg OK\n", woolfar);
+  else {
+    printf("  Woolard past 4e8       %.2e deg FAIL: expected %s\n",
+           woolfar, WANT_DEFECT ? "> 1e-8" : "< 1e-13");
     bad++;
   }
 

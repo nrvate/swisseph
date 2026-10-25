@@ -2222,6 +2222,32 @@ static void nut_80_args_exact(double J, double *arg)
   for (k = 0; k < 5; k++)
     arg[k] = nut_arg_exact(nut_80_dd[k], 3, th, tl);
 }
+/* Upstream bug 232: Woolard's (calc_nutation_woolard()) the same way: the
+ * Sun's and the Moon's mean longitudes, the Sun's and the Moon's mean
+ * anomalies and the node, 360 deg times their revolutions a century and
+ * their constant and T^2 terms, arcsec, t from J1900 */
+static const double nut_wool_dd[5][3][2] = {	/* arcsec: the double, the rest */
+  {{1006909.2, 4.656612873077393e-11}, {129602767.9968, -5.435943603515625e-09},
+   {1.0908, 8.171241461241152e-18}},
+  {{973562.4, -2.3283064365386964e-11}, {1732564379.376, 7.2479248046875e-08},
+   {-4.0788, 2.0321522242738866e-16}},
+  {{1290513.6, -9.313225746154786e-11}, {129596579.28576034, -6.114798583984375e-09},
+   {-0.54, 3.552713678800501e-17}},
+  {{1065978.0, 0.0}, {1717915857.264, 6.103515625e-08}, {33.0912, -6.139089236967266e-16}},
+  {{933058.8, -4.656612873077393e-11}, {-6962911.200432, -2.4956464767456053e-10},
+   {7.4808, -3.382183422218077e-16}},
+};
+/* ls, ld, ms, md and nm at J, radians in [0, 2 pi] */
+static void nut_wool_args_exact(double J, double *arg)
+{
+  double th, tl, e;
+  int k;
+  nut_t_exact(J, &th, &tl);	/* t = T + 1 exactly: J1900 is J2000 - 36525 */
+  nut_two_sum(th, 1.0, &th, &e);
+  nut_two_sum(th, tl + e, &th, &tl);
+  for (k = 0; k < 5; k++)
+    arg[k] = nut_arg_exact(nut_wool_dd[k], 2, th, tl);
+}
 #endif
 
 static int calc_nutation_iau2000ab(swe_ctx *ctx, double J, double *nutlo) 
@@ -2435,6 +2461,28 @@ static int calc_nutation_woolard(double J, double *nutlo)
   ms = ms * DEGTORAD;
   tld = 2*ld * DEGTORAD;
   md = md * DEGTORAD;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 232: bugs 188's and 219's, in Woolard's series: the
+   * arguments, revolutions times t in double and their fractions taken,
+   * carry t's rounding times some 1e3 revolutions a century (the Moon's
+   * mean longitude 1336.86, its anomaly 1325.55): against the series in
+   * mpmath, 24 instants a decade, dpsi 7.1e-12 deg off at |J - J2000| 1e8
+   * to 1e9 days, 8.2e-10 to 1e10, 2.1e-7 to 1e11 and 3.2e-4 to 1e12 (deps
+   * 2.4e-12, 4.2e-10, 9.1e-8, 9.9e-6). Past 4e8 days (188's bound) the
+   * five are evaluated in double-double, t from J exactly, and reduced
+   * modulo 1296000" exactly. Within the bound nothing changes, bit for
+   * bit. */
+  if (fabs(J) >= SWI_NUT_ARGS_JMIN) {
+    double ax[5];
+    nut_wool_args_exact(J, ax);
+    tls = 2 * ax[0];
+    tld = 2 * ax[1];
+    ms = ax[2];
+    md = ax[3];
+    nm = ax[4];
+    tnm = 2 * nm;
+  }
+#endif
   /* find delta psi and eps, in arcseconds.
    */
   dpsi = (-17.2327-.01737*t)*sin(nm)+(-1.2729-.00013*t)*sin(tls)
@@ -3588,6 +3636,16 @@ static void calc_nutation_woolard_rate(double J, double *rate)
   dtld = 2 * dld * DEGTORAD;
   md = md * DEGTORAD;
   dmd = dmd * DEGTORAD;
+  if (fabs(J) >= SWI_NUT_ARGS_JMIN) {	/* past 4e8 days exactly, bug 232 */
+    double ax[5];
+    nut_wool_args_exact(J, ax);
+    tls = 2 * ax[0];
+    tld = 2 * ax[1];
+    ms = ax[2];
+    md = ax[3];
+    nm = ax[4];
+    tnm = 2 * nm;
+  }
   /* d/dt of (a + bt) sin x is b sin x + (a + bt) cos x x', arcsec per century */
   dpsi = -.01737 * sin(nm) + (-17.2327 - .01737 * t) * cos(nm) * dnm
        - .00013 * sin(tls) + (-1.2729 - .00013 * t) * cos(tls) * dtls

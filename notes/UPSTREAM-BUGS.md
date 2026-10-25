@@ -262,6 +262,7 @@ worst were in code that had never executed even once.
 | 225 | The true node and the osculating apogee with SEFLG_SPEED read the Moon at tjd -+ k 2^-6 day, and a speed epoch past a JPL file's or the Swiss Moon files' span sent the whole call to the next ephemeris, where the call without the flag reads tjd alone: on de200.eph 2^-10 day inside its end the node 260, 2.2e-3 deg off, the apogee 0.0167 deg, strict refused, for 257 and 1; at semo_18's edges with the files of 1800-2400 alike (260, 1.7e-3 deg) | Correctness (behaviour) | `sweph.c` |
 | 226 | `swe_nod_aps()` with SEFLG_SPEED reads the osculating ellipse at tjd -+ k h and the observer at tjd less the light time, and near a span's edge took Moshier's for either silently, or was refused: Pluto's points with the files of 1800-2400 at JD 2378496.625 the node's speed 1.2e-5 deg/day off, nothing noted, strict -1 for 0; Mars's heliocentric node 2^-7 day after the start 5.1e-3 deg/day off; a barycentric ellipse refused under either setting | Correctness (behaviour) | `swecl.c`, `sweph.c` |
 | 231 | With `swe_set_interpolate_nut(TRUE)` the nutation is a quadratic through nodes placed by whichever call found none about it, so an instant's answer depends on the calls before it: SE_ECL_NUT fresh against after a call 0.6 to 1.3 day earlier up to 7.9e-7 deg (2.8 mas), Mars's speed 4.2e-6 deg/day | Correctness (behaviour) | `swephlib.c` |
+| 232 | Woolard's nutation evaluates its arguments, revolutions times t, in double: against its formula in mpmath dpsi 8.2e-10 deg off at 1e9 to 1e10 days, 2.1e-7 to 1e11, 3.2e-4 to 1e12 | Correctness | `swephlib.c` |
 
 ---
 
@@ -15028,7 +15029,7 @@ Noticed, not fixed:
   (`calc_nutation_woolard()`) arguments are revolutions times t in double
   too, `360 * (a - (long) a)`: against its formula in mpmath, 24 instants
   a decade, dpsi 7.1e-12 at 1e8 to 1e9, 8.2e-10, 2.1e-7 and 3.2e-4 deg
-  beyond, deps 2.4e-12, 4.2e-10, 9.1e-8, 9.9e-6.
+  beyond, deps 2.4e-12, 4.2e-10, 9.1e-8, 9.9e-6. Fixed as entry 232.
 
 ## 220. IAU 2000B leaves out its published fixed offsets for the planetary terms: 3.75e-8 deg in dpsi and 1.08e-7 in deps at every date
 
@@ -16638,6 +16639,62 @@ holds the shipped build within 1e-4": its query at the step - 0.3 after a
 call at + 0.5 is its day's own cubic, nodes on its side, 7.0e-6" (0 by
 146's rule, the series there); compat 1.97e-2". G162, G140, G152, G29,
 G138, G89, G57, G68, G70, G141 and G139 pass.
+
+## 232. Woolard's nutation evaluates its arguments in double: dpsi 8.2e-10 deg off its formula at 1e9 to 1e10 days, 2.1e-7 to 1e11, 3.2e-4 to 1e12
+
+**Severity: Correctness (residual: SEMOD_NUT_WOOLARD, set or by SE_SIDBIT_PREC_ORIG with Newcomb's precession, above the floor from about 1e10 days; both builds)**
+**Where:** `swephlib.c`: `calc_nutation_woolard()`, `calc_nutation_woolard_rate()`, new `nut_wool_args_exact()`
+
+Entry 219's noticed item. Woolard's arguments are revolutions a century
+times t less their whole revolutions, `360 * (a - (long) a)`, in double:
+t's rounding and the product's, times some 1e3 revolutions a century (the
+Moon's mean longitude 1336.86, its anomaly 1325.55), on every term's
+angle. Measured on Moshier, SE_ECL_NUT under "0,0,0,5" against its
+formula in mpmath at 300 bits at the same double J (the arguments as
+written, revolutions times t less their whole revolutions, the
+amplitudes' t terms), 24 instants a decade of |J - J2000|, either sign,
+dpsi and deps, deg:
+
+| | 1e7..1e8 | 1e8..1e9 | 1e9..1e10 | 1e10..1e11 | 1e11..1e12 |
+|---|---|---|---|---|---|
+| before | 1.6e-13, 6.7e-14 | 7.1e-12, 2.4e-12 | 8.2e-10, 4.2e-10 | 2.1e-7, 9.1e-8 | 3.2e-4, 9.9e-6 |
+| after | the same | 4.8e-13, 5.5e-13 | 7.8e-16, 1.9e-17 | 2.0e-15, 2.6e-16 | 1.1e-13, 2.8e-15 |
+
+(the 1e8..1e9 band's after is its instants within 4e8, in double as
+before). The rate (`calc_nutation_woolard_rate()`, the series' own
+derivative, entry 163) against five-point differences of `swi_nutation()`
+over 2^-6 day at 4.1e8 to 1e9: 6.6e-10 and 3.2e-10 deg/day, the places'
+jitter. Both builds (the compat build with entry 151's anomaly besides).
+
+**Fix, as done here:** entries 188's and 219's, past |J| = 4e8 days
+(`SWI_NUT_ARGS_JMIN`): `nut_wool_args_exact()` evaluates the five (the
+Sun's and the Moon's mean longitudes and anomalies, the node) as
+polynomials in arcsec, 360 deg times the revolutions a century with the
+constant and t^2 terms (`nut_wool_dd[]`, each the double and the rest of
+its decimal value, from mpmath), in double-double at t = T + 1 from
+`nut_t_exact()` exactly (J1900 is J2000 - 36525 days), reduced modulo
+1296000" exactly by `nut_arg_exact()`: the angles upstream's fractions
+of revolutions give, modulo 360 deg. `calc_nutation_woolard_rate()` takes
+them too, so the rate stays the places' derivative. Within 4e8 days
+nothing changes, bit for bit (Woolard at some 2000 instants 1e2..4e8
+days, the places and the rates, entry 231's comparison); the double evaluation
+there is within 7.1e-12 deg of the formula, the step where the two meet.
+Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+- After: within 1.1e-13 deg of the formula out to 1e12 days (the table);
+  the rate within 9.9e-15 and 1.7e-15 deg/day of the places' five-point
+  differences at 4.1e8 to 1e9.
+
+G162 `tests/nutseries.c`, check (e): SE_ECL_NUT under Woolard at 32
+instants with |J - J2000| log-uniform over 4e8..1e12, either sign, against
+its formula in mpmath (a table in the test): per decade within 1e-12 deg,
+4 checks, measured 4.9e-17, 2.5e-16, 4.0e-15 and 1.6e-14; before the fix
+6.2e-12, 1.1e-9, 2.5e-7 and 1.1e-4, the compat build 1.8e-5 to 1.1e-4.
+Check (f): (d)'s rate under Woolard, 2 checks, within 1e-12 deg/day: 9.9e-15 and 1.7e-15 (6.6e-10 and 3.2e-10
+before; not built upstream). G24 `wool_args_far_off`: SE_ECL_NUT under
+Woolard at four instants 1.2e10 to 3.1e10 days either side of J2000
+against the formula in mpmath, the larger: 8.9e-16 deg shipped (5.4e-9
+before the fix), 5.5e-5 compat. G162 passes 87 of 87 with this fix (6
+fail before it), the upstream build 0 of its 81.
 
 ## How these were found
 
