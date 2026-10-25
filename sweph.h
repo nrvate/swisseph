@@ -1509,6 +1509,12 @@ struct epsilon {
  *     the full series' Moon swe_calc() gives: 1.3e-7 AU off at 2000, 7.9e-7
  *     at -3000, the Sun's monthly error against the files 5.9e-6 deg at 2000
  *     (UPSTREAM-BUGS 191, G150, G24)
+ *   - the sidereal houses' speeds within 1/64 day of SEMOD_JPLHORA_3's step
+ *     at 1962 Jan 20 with SEFLG_JPLHOR_APPROX taking the ayanamsa's rate,
+ *     this fork's, as a difference across the step of its nutation: 6.38e-4
+ *     deg/day on de200 (the compat build's speeds are upstream's, at ARMCS
+ *     without the ayanamsa's rate: 5.4e-5 on Lahiri equal houses there)
+ *     (UPSTREAM-BUGS 203, G156, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

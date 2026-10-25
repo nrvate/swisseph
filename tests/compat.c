@@ -4081,6 +4081,63 @@ static double house_window_speed_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 203: the sidereal house speeds across SEMOD_JPLHORA_3's
+ * step at 1962 Jan 20 (JD 2437684.5, the left side's), where the
+ * ayanamsa's nutation steps under SEFLG_JPLHOR_APPROX. Sidereal (Lahiri)
+ * equal houses' Ascendant speed at Zurich on de200 with SEFLG_JPLEPH |
+ * SEFLG_JPLHOR_APPROX, delta t 2^-11 day, at the step -+ 2^-8 and -+ 2^-14
+ * day (TT), against a five-point difference over 2^-12 day of the same
+ * call's Ascendant on the instant's side (central at -+ 2^-8, one-sided at
+ * -+ 2^-14), the largest, deg/day. The shipped build differenced the
+ * ayanamsa 1/64 day either side, across the step (6.38e-4); upstream's
+ * speeds are at ARMCS without the ayanamsa's rate (UPSTREAM-BUGS 42, 43).
+ * -1 if a call fails. */
+static double house_jplhora_speed_off(void)
+{
+  static const double o5[5] = { -25.0 / 12, 4, -3, 4.0 / 3, -1.0 / 4 };
+  const double ts = 2437684.5, h = ldexp(1, -12), dts = ldexp(1, -11);
+  const double dt[4] = { -1.0 / 256, -1.0 / 16384, 1.0 / 16384, 1.0 / 256 };
+  const int32 fl = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX | SEFLG_SIDEREAL;
+  double cusp[13], ascmc[10], cs[13], as[10], r = 0;
+  swe_ctx *c = swe_ctx_new();
+  int i, k;
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_jpl_file_r(c, "de200.eph");
+  swe_set_delta_t_userdef_r(c, dts);
+  swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+  for (i = 0; i < 4 && r >= 0; i++) {
+    double t = ts + dt[i] - dts, q[5], d = 0;
+    int centred = fabs(dt[i]) > 2 * h, dir = dt[i] < 0 ? -1 : 1;
+    if (swe_houses_ex2_r(c, t, fl, 47.37, 8.55, 'E', cusp, ascmc, cs, as, NULL) < 0) {
+      r = -1;
+      break;
+    }
+    for (k = 0; k < 5; k++) {
+      double cu[13], am[10], tk = centred ? t + (k - 2) * h : t + dir * k * h;
+      if (swe_houses_ex2_r(c, tk, fl, 47.37, 8.55, 'E', cu, am, NULL, NULL, NULL) < 0) {
+        r = -1;
+        break;
+      }
+      q[k] = swe_difdeg2n(am[0], ascmc[0]);
+    }
+    if (r < 0)
+      break;
+    if (centred) {
+      d = (8 * (q[3] - q[1]) - (q[4] - q[0])) / (12 * h);
+    } else {
+      for (k = 0; k < 5; k++)
+        d += o5[k] * q[k];
+      d = d / h * dir;
+    }
+    if (fabs(as[0] - d) > r)
+      r = fabs(as[0] - d);
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 154: the IERS corrections across swe_set_jpl_file() of a
  * file below DE 403. G134's directory A (its corrections, de200.eph linked
  * in): path A, the DE431 fixture, SE_ECL_NUT with SEFLG_JPLHOR at 2000 Jan
@@ -5258,7 +5315,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5420,6 +5477,7 @@ int main(int argc, char **argv)
   housewin = house_window_speed_off();
   nodewin = node_window_speed_off();
   eclnutfar = ecl_nut_far_answered();
+  househora = house_jplhora_speed_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -6775,6 +6833,14 @@ int main(int argc, char **argv)
   else {
     printf("  SE_ECL_NUT past 1e12   %.0f/7 answered FAIL: expected %s\n",
            eclnutfar, WANT_DEFECT ? "7" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (househora > 1e-5) : (househora >= 0 && househora < 1e-7))
+    printf("  sidereal houses across 1962 %.2e deg/day OK\n", househora);
+  else {
+    printf("  sidereal houses across 1962 %.2e deg/day FAIL: expected %s\n",
+           househora, WANT_DEFECT ? "> 1e-5" : "< 1e-7");
     bad++;
   }
 

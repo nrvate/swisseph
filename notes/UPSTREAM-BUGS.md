@@ -231,6 +231,7 @@ worst were in code that had never executed even once.
 | 189 | `swe_get_orbital_elements()` on Moshier builds the Earth-Moon barycentre as entry 180's did, Moshier's Earth plus Moshier's Moon, where that Earth is the EMB less the short lunar series' Moon: the Earth's longitude of perihelion wobbles 8.0e-3 deg about the series' EMB's at 2000 (4.1e-2 at -3000), a 9.7e-6 and q 5.3e-6 relative, and `swe_orbit_max_min_true_distance()` with them | Correctness | `swecl.c` |
 | 190 | `swe_nod_aps()` of the Sun with SEFLG_TOPOCTR answers its geocentric points: the site, set as the observer, is overwritten by the Sun, the observer of the Earth's orbit, so they carry no parallax (the perigee 2.3e-3 deg off in latitude at J2000, Zurich; the focal point 6.8e-2), where `swe_calc()`'s topocentric Sun is 2.3e-3 deg from its geocentric one | Correctness (behaviour) | `swecl.c` |
 | 191 | Moshier's Earth is the series' Earth-Moon barycentre less the short lunar series' Moon, six terms in longitude, not the full series' Moon `swe_calc()` gives: 1.3e-7 AU off its EMB less its own Moon's share at 2000 (7.9e-7 at -3000), and every geocentric place with it, the Sun's monthly error against the files 5.9e-6 deg at 2000 | Correctness | `swemplan.c`, `swemmoon.c` |
+| 203 | The sidereal houses' ayanamsa takes its nutation with the caller's flags, and with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` (SEFLG_JPLHOR fallen to it too) that nutation steps at 1962 Jan 20 (entry 153), while the houses' side test (entry 187) looked at the precession's and obliquity's models alone: the ayanamsa's difference 1/64 day either side reached across, every sidereal cusp and ascmc speed 6.38e-4 deg/day off its cusps' rate within 1/64 day of the step, every house system, Lahiri, True Citra, the ecliptic of date, de200 and the Swiss files alike | Correctness | `swehouse.c` |
 
 ---
 
@@ -13423,13 +13424,139 @@ Noticed, not fixed:
   SEFLG_JPLHOR_APPROX on de200, 6.38e-4 deg/day off within 1/64 day after
   it (against the composite's own one-sided five-point references over
   2^-12 day; 3.7e-8 without the flag). The same treatment with the
-  caller's flags and SWI_FRAME_NUT in the side test would take it.
+  caller's flags and SWI_FRAME_NUT in the side test would take it. Fixed
+  as entry 203.
 - RESIDUAL. Sunshine cusp 9 at Zurich jumps by some 7e-9 deg within 2^-16
   day of JD 2378496.5 - 2^-11 (UT, 1800 Jan 2), under any precession model
   ("0,1,1" and "0,9,9" alike): a five-point difference over h there is
   7.4e-6, 3.0e-5, 1.2e-4 and 4.8e-4 deg/day off the speed at h = 2^-10,
   2^-12, 2^-14 and 2^-16, growing as 1/h. Not this item's (likely the
   Sun's file segment joining there, as entry 75's Moon); left out of G139.
+  Measured since: not a defect, the files' own discontinuity. The UT is
+  the check's TT 2378496.5 less its delta t of 2^-11 day, so the jump is
+  at TT 1800 Jan 1.0 exactly, where sepl_18.se1 begins and the Earth's
+  read moves to it from sepl_12.se1 (which runs on to 2378575.7), each
+  read from the file of its own instant (entry 89). There the two files'
+  barycentric Earth is 1.58e-9 AU (236 m) apart, and the apparent Sun
+  steps by +8.33e-8 deg in longitude, -2.82e-8 in latitude and -2.16e-8
+  in declination, the same to four digits as the full directory's Sun at
+  that instant less the Sun from sepl_12.se1 alone; cusp 9, whose partial
+  in the declination is 0.576, by -1.244e-8 deg (the other Sunshine cusps
+  by theirs; the ARMC and the obliquity are smooth there, second
+  differences 3e-14). A step J at a five-point stencil's centre
+  gives 7 J / (12 h): 7.4e-6 deg/day at h = 2^-10, as above. The Sun's
+  own read crosses the join a light time later, at TT + 0.0056786 day,
+  where the files' barycentric Sun is 2.56e-9 AU (383 m) apart: the
+  declination steps by +6.70e-8 deg, cusp 9 by +3.88e-8, both as the
+  files' difference projects. A context warm from either side 1.5 days
+  away answers as a fresh one there, bit for bit (no Sun kept from the
+  other side), and delta t is the check's constant. Data, recorded here.
+
+## 203. The sidereal houses' ayanamsa steps with its nutation at 1962 Jan 20 under SEFLG_JPLHOR_APPROX, and its rate was differenced across: every sidereal cusp and ascmc speed 6.38e-4 deg/day off within 1/64 day of it
+
+**Severity: Correctness (with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3`, the default mode, or SEFLG_JPLHOR without the IERS corrections, which falls to it: `swe_houses_ex2()`'s sidereal cusp and ascmc speeds within 1/64 day of JD 2437684.5 off their cusps' rate by the ayanamsa's nutation step over 1/32 day, 6.38e-4 deg/day, in every house system and every sidereal mode of the traditional method, whatever the ephemeris)**
+**Where:** `swehouse.c`: `swe_houses_ex2_r()`
+
+Entry 187's noticed item. The house frames (`house_frame_at()`) take no
+flags, but the sidereal houses of the traditional method
+(`sidereal_houses_trad()`) subtract the ayanamsa of
+`swe_get_ayanamsa_ex()`, which takes its nutation with the caller's
+flags (through `swi_jplhor_plaus()` alone, entry 142), and their speeds
+subtract its rate, a difference of it at the house frames' TT 1/64 day of
+UT either side (entry 43), or entry 187's three-point slope on the
+instant's side where the precession's or the obliquity's model changes
+within them. With SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` the
+nutation is IAU 1980 plus a fixed offset up to and including 1962 Jan 20
+and the chosen model after it, 7.17e-2" in dpsi on the default models
+(entry 153); entry 187's side test asked of the precession's and
+obliquity's models only, with no flags, and the difference reached
+across that step. Measured on de200 at Zurich, delta t 2^-11 day, at the
+105 instants about the step (TT, its own instant the left side's)
+against five-point differences over 2^-12 day of the same call's cusps on
+the instant's side (central where the stencil keeps to it, one-sided
+where it would cross: G139 check (a)'s), the worst of the 12 cusps and 8
+ascmc:
+- 6.38e-4 deg/day within 1/64 day of the step in every one of 25 house
+  systems, Lahiri, True Citra and Lahiri on the ecliptic of date alike,
+  with SEFLG_JPLHOR_APPROX and with SEFLG_JPLHOR fallen to it; on the
+  Swiss files and Moshier with SEFLG_JPLHOR_APPROX the same (the
+  ayanamsa keeps the flag there; see below);
+- without the flag 5.0e-8 (the one-sided reference's noise); beyond 1/64
+  day 1.2e-8 either way;
+- not affected: the tropical houses, the sidereal ones on the ecliptic of
+  t0 and the solar system plane (their auxiliary frames take no flags),
+  and SEFLG_NONUT's (the ayanamsa without nutation): with the flag as
+  without, bit for bit.
+
+**Fix, as done here:** where entry 187's side test finds no step, the
+sidereal houses of the traditional method that take the nutation
+(SEFLG_SIDEREAL with neither SE_SIDBIT_ECL_T0 nor SE_SIDBIT_SSY_PLANE,
+and no SEFLG_NONUT) ask `swi_frame_step_side()` with the caller's flags
+whether the nutation's model (SWI_FRAME_NUT, through
+`swi_jplhor_plaus()` as the ayanamsa's nutation) changes within the same
+half-width; where it does, the house frames are taken on the instant's
+side and every rate the houses take is entry 187's three-point slope, the
+ayanamsa's its own side's. The ARMC's and obliquity's rates, smooth
+there, are then that slope too, within 4e-10 deg/day of the central
+difference (entry 187). Behind `#ifndef SWE_UPSTREAM_COMPAT`, with
+entries 42, 43 and 187's speeds; the compat build keeps upstream's at
+ARMCS.
+- After: within 1/64 day of the step 5.06e-8 deg/day at worst, as
+  without the flag (5.03e-8), beyond it 1.24e-8.
+- Elsewhere bit for bit, on a sample: every cusp and ascmc and their
+  speeds of 26 house systems, tropical and sidereal (Lahiri, True Citra,
+  Fagan/Bradley, Lahiri on the ecliptic of t0, the solar system plane
+  and the ecliptic of date, Lahiri with SEFLG_NONUT), on de200 (without
+  the flag, with SEFLG_JPLHOR_APPROX, SEFLG_JPLHOR, and SEFLG_JPLHOR_APPROX
+  with SEFLG_RADIANS), the Swiss files and Moshier (each without and with
+  SEFLG_JPLHOR_APPROX), under the default models, "0,9,1" and "0,9,8", at
+  60 dates 1600..2160, at the step and 18 instants about it (-+ 1, 1/2,
+  1/16, 1/32, 1/64 + 1/256, 1/64, 1/128, 1/1024 and 2^-20 day) and at 4
+  about IAU 1976's window edges, with delta t 2^-11 and the default,
+  414336 calls with each, against the tip's. Of each 12480 differ, in
+  the speeds alone (no cusp or ascmc), all within (step - 1/64, step +
+  1/64] in TT, all sidereal of the traditional method with a Horizons
+  flag.
+- Cost: `perf stat -e instructions:u`, 20000 sidereal Placidus
+  `swe_houses_ex2()` with speeds 1452..2400 on the Swiss files,
+  18099413681 before, 18100273753 after (+0.005%: the side test's early
+  return).
+
+G156 `tests/housejplhora.c`: (a) on de200, at the 105 instants,
+tropical, Lahiri, True Citra and Lahiri on the ecliptic of date, without
+the flag, with SEFLG_JPLHOR_APPROX and with SEFLG_JPLHOR, and on the
+Swiss files with SEFLG_JPLHOR_APPROX; Placidus, Koch, Porphyry,
+Regiomontanus, Campanus, equal, Alcabitius, Morinus, azimuthal and
+Sunshine: the 12 cusps' and 8 ascmc's speeds against the references
+above, the worst within 1/64 day and the rest, 320 checks within 1e-7
+deg/day; (b) the tropical houses, the ecliptic of t0's, the solar system
+plane's and SEFLG_NONUT's with SEFLG_JPLHOR_APPROX and with SEFLG_JPLHOR
+equal those without at the 105 instants, bit for bit, 80 checks. 400
+checks; before the fix 90 fail, all within 1/64 day (6.38e-4); after
+within 5.1e-8. The upstream build fails 320 of 400, all of (a) (its
+speeds at ARMCS, entry 42: equal houses 5.4e-5 to 6.6e-5 deg/day, Koch
+199, Porphyry 395); its (b) holds. G24 `house_jplhora_speed_off`: Lahiri
+equal houses' Ascendant speed on de200 with SEFLG_JPLHOR_APPROX at the
+step -+ 2^-8 and -+ 2^-14 day against the references above, the
+largest: 5.98e-10 deg/day shipped (6.38e-4 before the fix), 5.40e-5
+compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_get_ayanamsa_ex()`, and with it the sidereal houses,
+  takes SEFLG_JPLHOR_APPROX's nutation from the caller's flags, where
+  `plaus_iflag()` drops the Horizons flags from every sidereal place (and
+  from any request without SEFLG_JPLEPH): before 1962 Jan 20 the ayanamsa
+  with the flag is 1.72e-5 deg off the one without (Lahiri at 1950, on
+  de200, the Swiss files and Moshier alike), the sidereal houses' cusps
+  -1.72e-5, while sidereal Mars is the same with the flag as without.
+- RESIDUAL. Makransky's Sunshine ('i') cusp 9 speed at TT 2437683.0 at
+  Zurich is 1.6e-7 deg/day off five-point differences of its cusps,
+  steady over 2^-10 to 2^-14 day (-1.61e-7, -1.64e-7, -1.81e-7), with
+  the flag or without, tropical or sidereal, on de200 (4.2e-7 on
+  Moshier); its partials in the declination and the obliquity converge
+  to 1e-9, which leaves the ARMC's difference over entry 41's 4 x 2^-8
+  deg of cusps rough at 2e-10 deg (not measured further). Left out of
+  G156.
 
 ## 197. A save-area answer skips entry 120's strict test: after `swe_set_ephe_fallback(0)` the same request in the same context answers from the Moon of Moshier, where a fresh strict context refuses it
 

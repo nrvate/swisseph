@@ -524,6 +524,19 @@ static int swe_houses_ex2_r_body(swe_ctx *ctx, double tjd_ut,
     double hd = fmax(tp + swe_deltat_ex_r(ctx, tp, iflag, NULL) - tjde,
                      tjde - (tm + swe_deltat_ex_r(ctx, tm, iflag, NULL)));
     hr.side = swi_frame_step_side(ctx, tjde, hd, 0, SWI_FRAME_PREC | SWI_FRAME_EPS);
+    /* Upstream bug 203: the sidereal houses' ayanamsa (sidereal_houses_trad())
+     * takes its nutation with the caller's flags, so with SEFLG_JPLHOR_APPROX
+     * under SEMOD_JPLHORA_3 (and SEFLG_JPLHOR fallen to it) it steps at 1962
+     * Jan 20, 7.17e-2" in dpsi (UPSTREAM-BUGS 153), and its difference
+     * reached across: on de200 every sidereal cusp and ascmc speed 6.38e-4
+     * deg/day off its cusps' rate within 1/64 day of the step (Lahiri, True
+     * Citra, the ecliptic of date). Now that step chooses the side too. The
+     * house frames and the auxiliary frames of the ecliptic of t0 and the
+     * solar system plane take no flags, and with SEFLG_NONUT the ayanamsa
+     * no nutation: no step there. */
+    if (hr.side == 0 && (iflag & SEFLG_SIDEREAL) && !(iflag & SEFLG_NONUT)
+        && !(sip->sid_mode & (SE_SIDBIT_ECL_T0 | SE_SIDBIT_SSY_PLANE)))
+      hr.side = swi_frame_step_side(ctx, tjde, hd, iflag, SWI_FRAME_NUT);
     if (hr.side != 0) {
       tm = tjd_ut + hr.side * HOUSE_SPEED_DT;
       tp = tjd_ut + 2 * hr.side * HOUSE_SPEED_DT;
