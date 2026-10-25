@@ -7878,8 +7878,9 @@ void swi_aberr_light(double *xx, double *xe, int32 iflag) {
  * dt		dt of light-time
  */
 /* The deflection seen from xobs, barycentric with its velocity, the Sun
- * at the instant of observation xsb (barycentric, or unused under
- * Moshier, whose xobs is heliocentric already): deflect_light_site()'s
+ * at the instant of observation xsb (barycentric; under Moshier, whose
+ * xobs is heliocentric already, the Sun of its frame, zero, which its
+ * slot holds since bug 177, q and its rate read it): deflect_light_site()'s
  * for the Earth or a site on it, swe_calc_pctr()'s for its centre body
  * (Upstream bug 77). */
 static void deflect_light_from(double *xx, double dt, int32 iflag, const double *xobs,

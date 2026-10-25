@@ -548,9 +548,28 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       embofs_mosh(ctx, tjd, xe);
       embofs_mosh_rate(ctx, tjd, xe + 3, do_save ? ctx->earth_moon.x : NULL);
       if (do_save) {
+	/* Upstream bug 177: the barycentric Sun's slot, which the files and
+	 * JPL fill with the Earth's, kept whatever they last left in it
+	 * where Moshier filled the Earth's: zero in a fresh context, another
+	 * instant's Swiss Sun after a warm fallback, and the Moshier paths
+	 * that read it took that for their Sun -- the light deflection
+	 * (Mercury at 1500 1.66e-7 deg off the fresh fallback's after a
+	 * Swiss call at 2000, Mars 1.7e-9, swe_nod_aps()'s Venus 1.5e-7),
+	 * the heliocentric Moon (0.40 deg), an asteroid's frame from the
+	 * slot's ephemeris (Ceres heliocentric 0.14 deg), the fictitious
+	 * bodies' and swe_calc_orbel()'s Sun at teval (Cupido 9.1e-3 deg,
+	 * the orbit about the Sun 0.071 deg, both SEFLG_TRUEPOS). It holds
+	 * Moshier's Sun now, the origin of its heliocentric frame at this
+	 * instant, as it holds the files' Sun with their Earth. */
+	struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
+	for (i = 0; i <= 5; i++)
+	  psdp->x[i] = 0;
+	psdp->teval = tjd;
+	psdp->xflgs = -1;
+	psdp->iephe = SEFLG_MOSEPH;
 	ctx->earth_moon.t = tjd;
 	ctx->earth_moon.iephe = SEFLG_MOSEPH;
-	pedp->teval = tjd;		  
+	pedp->teval = tjd;
 	pedp->xflgs = -1;
 	pedp->iephe = SEFLG_MOSEPH;
       }

@@ -1312,7 +1312,10 @@ check-closetid: closetid
 # from Moshier on the files' Earth answering as before (UPSTREAM-BUGS 139).
 # swe_nod_aps() with barycentric output on Moshier, asked for or fallen to,
 # refused alike, every method and body class (UPSTREAM-BUGS 149), and
-# swe_calc_pctr()'s return flag the ephemeris that answered (150).
+# swe_calc_pctr()'s return flag the ephemeris that answered (150). And a
+# request fallen to Moshier in a warm process answers as the Moshier request
+# in a fresh one, its Sun Moshier's, not the Swiss Sun an earlier call left
+# in the barycentric Sun's slot (UPSTREAM-BUGS 168, 177).
 # Its directories are links in /tmp; each case in a forked process.
 check-fbbary: fbbary
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./fbbary $(EPHE)

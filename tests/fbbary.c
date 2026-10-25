@@ -68,18 +68,29 @@
  *      alike, swe_nod_aps() of Mars barycentric refused twice with
  *      heliocentric calls around them answering alike, then strict again
  *      (the downgrade's message); and a process with the planet and Moon
- *      files of 1800-2400 alone, the fallback allowed: swe_nod_aps() of
- *      Mars barycentric answered at the instant, refused at 1500, where it
- *      falls to Moshier (it answered Moshier's heliocentric points plus the
- *      files' Sun of the call before), and at the instant again bit for bit;
- *      after the first, at 1500, Mars geocentric and topocentric under
- *      SEFLG_NOGDEFL and the Moon's heliocentric mean points bit for bit the
- *      Moshier request's in a fresh process, Mars geocentric within 1e-7
- *      deg of it (UPSTREAM-BUGS 168: they added the files' Sun of the call
- *      before, 0.13 deg on Mars's node and 0.40 on the Moon's, and placed
- *      the site by the files' delta t, 2.9e-4 deg on the Moon's perigee;
- *      with the deflection 3.0e-8 deg remain, the deflection's own reading
- *      of the save area's Sun);
+ *      files of 1800-2400 alone (and seas_12.se1), the fallback allowed:
+ *      swe_nod_aps() of Mars barycentric answered at the instant, refused
+ *      at 1500, where it falls to Moshier (it answered Moshier's
+ *      heliocentric points plus the files' Sun of the call before), and at
+ *      the instant again bit for bit; after the first, at 1500, Mars
+ *      geocentric and topocentric under SEFLG_NOGDEFL, the Moon's
+ *      heliocentric mean points and Mars geocentric bit for bit the
+ *      Moshier request's in a fresh process (UPSTREAM-BUGS 168: they added
+ *      the files' Sun of the call before, 0.13 deg on Mars's node and 0.40
+ *      on the Moon's, and placed the site by the files' delta t, 2.9e-4 deg
+ *      on the Moon's perigee; UPSTREAM-BUGS 177: with the deflection
+ *      within 1e-7 deg, the deflection's own reading of the save area's
+ *      Sun);
+ *      and so, bit for bit, swe_calc()'s geocentric Mars and Mercury, the
+ *      heliocentric Moon and Ceres, Cupido and swe_calc_orbel()'s orbit
+ *      about the Sun under SEFLG_TRUEPOS, swe_nod_aps()'s Venus and
+ *      Aldebaran (UPSTREAM-BUGS 177: the deflection, the heliocentric
+ *      Moon, the asteroid's frame and the fictitious bodies' and the
+ *      orbit's Sun read the Swiss Sun the call at the instant left in the
+ *      barycentric Sun's slot, which Moshier did not fill; after a Swiss
+ *      Mars and Sun at 2000 Jul 1.5 Mercury 1.66e-7 deg off, the Moon 0.41,
+ *      Ceres 0.14, Cupido 9.1e-3, the orbit 0.071, Venus's points 1.5e-7,
+ *      Aldebaran's speed 2.6e-18 deg/day);
  *  (g) swe_nod_aps() and swe_nod_aps_ut() barycentric, every method and
  *      body class: the Sun, the Moon, Mercury, Mars, Saturn, Pluto and the
  *      Earth, mean, osculating, SE_NODBIT_OSCU_BAR, SE_NODBIT_FOPOINT and
@@ -107,7 +118,7 @@
  *      Moon SEFLG_MOSEPH within 1e-6 deg of the complete directory's, Mars
  *      from Jupiter its answer bit for bit, strict bug 120's refusal of
  *      the two and the complete directory's answer for the rest.
- * Measured: 1120 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ * Measured: 1136 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
  * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
  * (osculating), swe_calc_pctr()'s Moon 2.1e-7 deg.
  * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
@@ -133,7 +144,10 @@
  * upstream build 304 in all). UPSTREAM-BUGS 169 moves SEFLG_TOPOCTR |
  * SEFLG_BARYCTR from (g) to (h) (16 rows of (g) and 16 of (h) out, 64 of
  * (h) in) and has Moshier refuse SEFLG_HELCTR | SEFLG_BARYCTR: before its
- * fix those 60 rows of (h) fail.
+ * fix those 60 rows of (h) fail. UPSTREAM-BUGS 177 adds 8 to each (f) of
+ * the files of 1800-2400 and holds its Mars geocentric bit for bit:
+ * before its fix those 18 fail, and in the upstream build the 16 added
+ * (406 in all, 390 without them).
  * Run as
  *   fbbary EPHEDIR
  */
@@ -247,7 +261,7 @@ static char DIR_[] = "/tmp/fbbary-XXXXXX";	/* sefstars.txt, seorbel.txt */
 static char DIRM[] = "/tmp/fbbarym-XXXXXX";	/* all but the Moon files */
 static char DIRA[] = "/tmp/fbbarya-XXXXXX";	/* DIR_'s and the asteroid files */
 static char DIRJ[] = "/tmp/fbbaryj-XXXXXX";	/* all but the JPL file */
-static char DIR18[] = "/tmp/fbbary18-XXXXXX";	/* the planet and Moon files of 1800-2400 */
+static char DIR18[] = "/tmp/fbbary18-XXXXXX";	/* the planet and Moon files of 1800-2400, seas_12 */
 static char EPHE[PATH_MAX];
 static int nbad, nrow;
 
@@ -417,16 +431,28 @@ static int warm(int32 eph, double jd)
  * points plus the files' Sun of the call before), and at jd again the
  * first answer bit for bit (bug 149); after the first, W18's calls at
  * 1500, fallen to Moshier, answered as the Moshier request in a fresh
- * process (W18REF): bit for bit without the deflection, within 1e-7 deg
- * with it (bug 168: they added the files' Sun the call at jd left, and
- * placed the site by the files' delta t); returns the failures */
-#define NW18 4
+ * process (W18REF), bit for bit (bug 168: they added the files' Sun the
+ * call at jd left, and placed the site by the files' delta t; bug 177:
+ * the deflection, the heliocentric Moon, an asteroid's frame and the
+ * fictitious bodies' and swe_calc_orbel()'s Sun read that Sun from its
+ * slot, the nod_aps Mars within 1e-7 deg before it); returns the
+ * failures */
+#define NW18 12
 static const struct cs W18[NW18] = {
   {"nod_aps Mars, NOGDEFL", NODAPS, SE_MARS, SE_NODBIT_OSCU, SEFLG_SPEED | SEFLG_NOGDEFL},
   {"nod_aps Mars, topo., NOGDEFL", NODAPS, SE_MARS, SE_NODBIT_OSCU,
    SEFLG_SPEED | SEFLG_NOGDEFL | SEFLG_TOPOCTR},
   {"nod_aps Moon mean, hel.", NODAPS, SE_MOON, SE_NODBIT_MEAN, SEFLG_SPEED | SEFLG_HELCTR},
   {"nod_aps Mars", NODAPS, SE_MARS, SE_NODBIT_OSCU, SEFLG_SPEED},
+  /* bug 177 */
+  {"Mars", CALC, SE_MARS, 0, SEFLG_SPEED},
+  {"Mercury", CALC, SE_MERCURY, 0, SEFLG_SPEED},
+  {"Moon, hel.", CALC, SE_MOON, 0, SEFLG_SPEED | SEFLG_HELCTR},
+  {"Ceres, hel.", CALC, SE_CERES, 0, SEFLG_SPEED | SEFLG_HELCTR},
+  {"Cupido, TRUEPOS", CALC, SE_CUPIDO, 0, SEFLG_SPEED | SEFLG_TRUEPOS},
+  {"swe_calc_orbel(), TRUEPOS", ORBEL, 0, SE_SUN, SEFLG_SPEED | SEFLG_TRUEPOS},
+  {"nod_aps Venus", NODAPS, SE_VENUS, SE_NODBIT_OSCU, SEFLG_SPEED},
+  {"Aldebaran, swe_fixstar2()", STAR2, 0, 0, SEFLG_SPEED},
 };
 static struct ans W18REF[NW18];
 static int warm18(double jd)
@@ -440,8 +466,7 @@ static int warm18(double jd)
   bad += !(a.r == 0);
   for (k = 0; k < NW18; k++) {
     ask(&W18[k], W18[k].fl | SEFLG_SWIEPH, 2268923.5, &b);
-    bad += !(W18REF[k].ran && b.r == W18REF[k].r
-             && (k < NW18 - 1 ? same(&b, &W18REF[k]) : nodaps_off(&b, &W18REF[k]) <= 1e-7));
+    bad += !(W18REF[k].ran && b.r == W18REF[k].r && same(&b, &W18REF[k]));
   }
   ask(&nb, nb.fl | SEFLG_SWIEPH, 2268923.5, &b);
   bad += !(b.r < 0 && strcmp(b.serr, BARYMSG) == 0);
@@ -485,7 +510,8 @@ static int build(char *dir, int which)
       case ASTEROIDS: take = stars || strncmp(e->d_name, "seas_", 5) == 0; break;
       case NO_JPL: take = strstr(e->d_name, ".eph") == NULL; break;
       case FILES_18: take = stars || strcmp(e->d_name, "sepl_18.se1") == 0
-                            || strcmp(e->d_name, "semo_18.se1") == 0; break;
+                            || strcmp(e->d_name, "semo_18.se1") == 0
+                            || strcmp(e->d_name, "seas_12.se1") == 0; break;	/* bug 177's Ceres */
       default: take = stars; break;
     }
     if (!take)

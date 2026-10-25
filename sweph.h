@@ -1407,6 +1407,11 @@ struct epsilon {
  *     term until a Swiss Moon opens another span's moon file, in AD 1500
  *     2.56 s off and the first UT Moon there 3.8e-4 deg off the second
  *     (UPSTREAM-BUGS 175, G142, G24)
+ *   - the barycentric Sun's slot left as the files or JPL last filled it
+ *     where Moshier fills the Earth's, so a request fallen to Moshier after
+ *     a Swiss call takes that Sun for Moshier's: the heliocentric Moon 0.41
+ *     deg off, Ceres 0.14, the deflection 1.66e-7 on Mercury
+ *     (UPSTREAM-BUGS 177, G133, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

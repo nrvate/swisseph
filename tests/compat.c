@@ -4366,6 +4366,48 @@ static double noj2000_tid_off(void)
   return fabs(a - b) * 86400;
 }
 
+/* The heliocentric Moon at AD 1500 along a directory with the planet and
+ * Moon files of 1800-2400 alone (links to EPHE's), the fallback allowed:
+ * on a context that computed a Swiss Sun at 2000 first, against a fresh
+ * context, deg. Upstream's Moshier paths read the barycentric Sun's slot,
+ * which Moshier does not fill: the Swiss Sun of 2000 taken from the
+ * heliocentric Moon, 0.41 deg (UPSTREAM-BUGS 177). */
+static double mosh_sun_slot_off(void)
+{
+  char dir[] = "/tmp/compat18XXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  static const char *const f[2] = {"sepl_18.se1", "semo_18.se1"};
+  double x[6], y[6], r = 1e9;
+  char serr[AS_MAXCH];
+  swe_ctx *a, *b;
+  int i;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL)
+    return -1;
+  for (i = 0; i < 2; i++) {
+    snprintf(p, sizeof p, "%s/%s", ephe, f[i]);
+    snprintf(q, sizeof q, "%s/%s", dir, f[i]);
+    if (symlink(p, q) != 0)
+      break;
+  }
+  a = swe_ctx_new();
+  b = swe_ctx_new();
+  if (a != NULL && b != NULL) {
+    swe_set_ephe_path_r(a, dir);
+    swe_set_ephe_path_r(b, dir);
+    swe_set_ephe_fallback_r(a, 1);
+    swe_set_ephe_fallback_r(b, 1);
+    if (swe_calc_r(a, 2451545.0, SE_SUN, SEFLG_SWIEPH | SEFLG_SPEED, x, serr) >= 0
+        && swe_calc_r(a, 2268923.5, SE_MOON, SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_HELCTR, x, serr) >= 0
+        && swe_calc_r(b, 2268923.5, SE_MOON, SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_HELCTR, y, serr) >= 0)
+      r = fabs(swe_difdeg2n(x[0], y[0])) + fabs(x[1] - y[1]);
+  }
+  if (a != NULL)
+    swe_ctx_free(a);
+  if (b != NULL)
+    swe_ctx_free(b);
+  rm_dir(dir);
+  return r;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 after the path,
  * swe_set_jpl_file("de200.eph") and the path again by another string, the
  * first call against the second, deg. Upstream's path setter forgets the
@@ -4495,7 +4537,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4648,6 +4690,7 @@ int main(int argc, char **argv)
   jplnamed = jpl_named_moon_off();
   moonless = moonless_tid_off();
   noj2000 = noj2000_tid_off();
+  moshslot = mosh_sun_slot_off();
   dtflag0 = dt_flag0_off();
   closekeep = close_keeps_off();	/* last: see the function */
 
@@ -5696,6 +5739,14 @@ int main(int argc, char **argv)
   else {
     printf("  delta t, no J2000 file %.2e s FAIL: expected %s\n",
            noj2000, WANT_DEFECT ? "> 2" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshslot > 0.1 && moshslot < 1) : (moshslot == 0))
+    printf("  Moshier Sun slot       %.2e deg OK\n", moshslot);
+  else {
+    printf("  Moshier Sun slot       %.2e deg FAIL: expected %s\n",
+           moshslot, WANT_DEFECT ? "> 0.1, < 1" : "0");
     bad++;
   }
 

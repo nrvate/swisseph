@@ -210,6 +210,7 @@ worst were in code that had never executed even once.
 | 178 | `swe_nod_aps()` gives its heliocentric and barycentric points aberration (the Sun's barycentric velocity) and `swi_deflect_light()`'s deflection, whose observer is the Earth whatever the centre, where `swe_calc()` gives those places neither: Jupiter's heliocentric mean descending node at J2000, in line with the Sun from the Earth, 9.6e-4 deg off, its barycentric speeds 3.4e-2 deg/day, Mars's points 4.1e-6 deg | Correctness (behaviour) | `swecl.c` |
 | 180 | `swe_nod_aps()` on Moshier builds the Earth-Moon barycentre as Moshier's Earth plus Moshier's Moon, where that Earth is the EMB less the short lunar series' Moon (0.24 deg away at 2000): the EMB 1.3e-7 AU off the series', the Earth's and the Sun's osculating apsides wobbling 8.0e-3 deg (4.1e-2 at -3000), their speeds 4.7e-8 deg/day off their positions' rate at every epoch | Correctness | `swecl.c` |
 | 175 | With neither file for J2000 (semo_18.se1, sepl_18.se1) and other spans' along the path, no DE number was read, so the first delta t took the default tidal term until a Swiss Moon opened another span's moon file: in AD 1500 291.693033 s, then 294.255183, the first UT Moon 158.4001317882 deg and the second 158.4005084277 (3.8e-4); with the planet files alone and no sepl_18.se1 the default throughout, the heliocentric Mars there 1.56e-5 deg off -- on every thread and context | Correctness (behaviour) | `sweph.c` |
+| 177 | On Moshier the barycentric Sun's slot keeps what the files or JPL last left in it, and five Moshier paths read it as their Sun -- the light deflection, the heliocentric Moon, an asteroid's frame, the fictitious bodies' and `swe_calc_orbel()`'s Sun: a Swiss request fallen to Moshier after a Swiss call at another instant, at 1500, the heliocentric Moon 0.41 deg off the same call in a fresh process, Ceres heliocentric 0.14, `swe_calc_orbel()`'s orbit about the Sun 0.071 and Cupido 9.1e-3 under SEFLG_TRUEPOS, the deflection 1.66e-7 on Mercury and 1.7e-9 on Mars, `swe_nod_aps()`'s Venus 1.5e-7 | Correctness (behaviour) | `swemplan.c` |
 
 ---
 
@@ -12250,6 +12251,100 @@ files match EPHEDIR's, which takes the default term first there too: bugs
 the directory without the J2000 files against EPHEDIR, each on a context
 made and given its path: 0 shipped, 2.56 s compat (and shipped before the
 fix).
+
+## 177. On Moshier the barycentric Sun's slot keeps what the files or JPL last left in it, and the Moshier paths that read it take that for their Sun: after a warm fallback the heliocentric Moon 0.41 deg off, Ceres 0.14, the deflection 1.66e-7 on Mercury
+
+**Severity: Correctness (behaviour: call order -- a Swiss request fallen to Moshier, the fallback allowed, after a Swiss call at another instant: the heliocentric Moon 0.41 deg off the same request in a fresh process, Ceres heliocentric 0.14, `swe_calc_orbel()`'s orbit about the Sun and Cupido under SEFLG_TRUEPOS 0.071 and 9.1e-3, the deflection 1.66e-7 on Mercury and 1.7e-9 on Mars -- on every thread and context)**
+**Where:** upstream `swemplan.c` `swi_moshplan()` (the Earth saved, the barycentric Sun's slot not) and its readers in `sweph.c`: `deflect_light_site()` and `deflect_light_from()`, `app_pos_etc_moon()`, `sweph()` (an asteroid's ephemeris from the slot's), `swecalc()` (the fictitious bodies' Sun), `app_pos_etc_orbel()`; here `swemplan.c`: `swi_moshplan()`
+
+Found by entry 168's work (the deflection's 1.7e-9 deg on `swe_calc()`'s
+Mars, 3e-8 on `swe_nod_aps()`'s points). The files and JPL fill the
+barycentric Sun's slot, `pldat[SEI_SUNBARY]`, with the Earth's; Moshier
+fills the Earth's alone, its places heliocentric, the Sun the origin of
+its frame (bug 109's note). The slot is zero in a fresh context, and an
+explicit Moshier request after a Swiss one finds it emptied with the other
+save areas by the ephemeris switch; but a Swiss request fallen to Moshier
+keeps the Swiss Sun an earlier call left there, of its instant, and five
+Moshier paths read the slot as their Sun:
+- the light deflection (`deflect_light_site()`, for the planets, the
+  asteroids, the fictitious bodies, `swe_calc_orbel()` and the stars): the
+  planet's place from the Sun at t - tau, and its rate;
+- the heliocentric Moon (`app_pos_etc_moon()`), its observer and centre;
+- an asteroid read from its file takes the slot's ephemeris for its own
+  (`sweph()`), so a heliocentric one had the slot's Sun taken off it as if
+  barycentric (`app_pos_etc_plan()`);
+- the fictitious bodies' heliocentric elements were made barycentric with
+  it (`swecalc()`, `swi_osc_el_plan()`), and so `swe_calc_orbel()`'s orbit
+  about the Sun (`app_pos_etc_orbel()`): the light time reads them again
+  at t, SEFLG_TRUEPOS keeps the first.
+
+Measured with a directory of links to sepl_18.se1, semo_18.se1,
+seas_18.se1, seas_12.se1, sefstars.txt and seorbel.txt, the fallback
+allowed, at 1500 (JD 2268923.5) after a Swiss Mars and Sun at 2000 Jul 1.5,
+against the same call in a fresh process (which answers as the Moshier
+request, bit for bit):
+
+| call | off the fresh call |
+|---|---|
+| the Moon heliocentric | 0.41 deg (0.403 in longitude), with SEFLG_TRUEPOS too |
+| Ceres heliocentric | 0.14 deg; geocentric 6.1e-8 |
+| Chiron heliocentric | 0.027 deg |
+| `swe_calc_orbel()` about the Sun, geocentric, SEFLG_TRUEPOS | 0.071 deg; with the light time 2.9e-9 |
+| Cupido geocentric, SEFLG_TRUEPOS | 9.1e-3 deg; with the light time 1.4e-8 |
+| Mercury geocentric, and topocentric | 1.66e-7 deg, the longitude speed 1.85e-8 deg/day |
+| Vulcan geocentric | 2.7e-8 deg |
+| Mars geocentric | 1.7e-9 deg |
+| `swe_nod_aps()`, osculating: Venus, Mercury, the Sun, Mars | 1.5e-7, 1.1e-7, 3.0e-8, 1.7e-8 deg |
+| Aldebaran | 2.6e-18 deg/day in speed |
+
+The geocentric Sun and Moon, the heliocentric Earth and planets and every
+call under SEFLG_NOGDEFL but these were bit for bit: their paths take the
+Sun of Moshier's frame themselves. The compat build the same.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`; the compat
+build keeps upstream's slot):
+- `swi_moshplan()`, where it saves the Earth, saves the barycentric Sun's
+  slot with it: Moshier's Sun, the origin of its heliocentric frame, zero,
+  at that instant and under `SEFLG_MOSEPH`, so that the files' and JPL's
+  reuse tests, which ask for their own ephemeris, never take it. Each
+  reader on a Moshier path reads what it reads in a fresh context; the
+  readers are unchanged.
+- Now, after any earlier call, a request fallen to Moshier answers bit for
+  bit as in a fresh process: the 44 calls of the probe above (planets, the
+  Moon, the Earth, asteroids, fictitious bodies, mean and osculating
+  points, `swe_nod_aps()`, `swe_calc_orbel()`, Aldebaran; geocentric,
+  topocentric, heliocentric, SEFLG_TRUEPOS, SEFLG_NOGDEFL). In a sequence
+  of 832 Moshier or fallback calls (20 bodies x 8 flag sets x 4 instants,
+  `swe_nod_aps()` of 10 bodies, Aldebaran and `swe_calc_orbel()`) every
+  answer is as before where no Swiss call came first, and after the files'
+  instant as without it, but the Sun's topocentric points (below).
+- One slot written with each Moshier Earth computed: calc-moseph
+  23334779275 instructions before and 23334671714 after, calc-swieph
+  12268144755 and 12268144730.
+
+G133 `tests/fbbary.c` (f), with the files of 1800-2400 (and seas_12.se1
+now): after the warm call at the instant, at 1500, the fallen
+`swe_nod_aps()` of Mars with the deflection now bit for bit the Moshier
+request's in a fresh process (within 1e-7 deg before), and eight more the
+same: `swe_calc()`'s Mars and Mercury, the heliocentric Moon and Ceres,
+Cupido and `swe_calc_orbel()`'s orbit about the Sun under SEFLG_TRUEPOS,
+`swe_nod_aps()`'s Venus and Aldebaran by `swe_fixstar2()`, each at the two
+warm instants: 1136 rows pass. Before the fix 18 fail (the 16 added and
+the Mars held bit for bit); the upstream build fails the 16 added (406 in
+all, 390 without them). G24 `mosh_sun_slot_off`: the heliocentric Moon at
+1500 along a directory of sepl_18.se1 and semo_18.se1, the fallback
+allowed, on a context that computed a Swiss Sun at J2000 first, against a
+fresh context: 0 shipped, 0.457 deg compat (and shipped before the fix).
+
+Noticed, not fixed: in that sequence `swe_nod_aps()`'s topocentric
+osculating points of the Sun at JD 1800000.25 after a topocentric call at
+another instant, 1.9e-10 deg/day in speed and 2e-11 deg in place off a
+fresh process's, before the fix and after (the topocentric site's cache;
+below the residual floor). And `swe_fixstar2()` topocentric, a Swiss
+request fallen to Moshier, places the site by the files' delta t, not
+Moshier's (as bug 168 found for `swe_nod_aps()`): Aldebaran at 1500 2.0e-8
+deg in longitude and 1.35e-7 deg/day in its speed off the Moshier request,
+0 with a user delta t.
 
 ## How these were found
 
