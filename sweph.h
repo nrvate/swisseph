@@ -1179,6 +1179,13 @@ struct epsilon {
  *     first start, kept across that start's memset, and 99 left there
  *     when none was set, is in both builds; Phase 3c moved upstream's
  *     static, which nothing resets, into the context; G129)
+ *   - after swe_close() without the path again, the first delta t taking
+ *     the default tidal term until a file opened, the path and the JPL
+ *     file kept and their DE numbers forgotten: 1463.43 s in AD 1000 for
+ *     1474.72, the first UT Moon there 1.6e-3 deg off the second, with
+ *     de200.eph 14.29 s in AD 1700 for 3.01 (UPSTREAM-BUGS 131, G127).
+ *     The threads and contexts adopting the close read them again in the
+ *     shipped build only, as the closing one does
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1785,6 +1792,13 @@ struct swe_ctx {
    * honest answer for every call, first or fiftieth. */
   int32 sweph_denum_moon;
   int32 jpldenum_cfg;
+  /* bug 131: the DE numbers swe_close() forgot that the kept path and JPL
+   * file give (SWI_DENUM_MOON, SWI_DENUM_JPL), read again at the next
+   * entry as a fresh process's setters read them; and the close they are
+   * owed to, the master's generation, so that a context adopting it is
+   * not taken back to it at every sync after its own reading */
+  int32 denum_unread;
+  swi_gen_t path_closed;
   int32 last_epheflag;
   AS_BOOL geopos_is_set;
   AS_BOOL ayana_is_set;
@@ -1983,7 +1997,13 @@ extern void swi_ephe_path_name_first_use(swe_ctx *ctx);
  * the default path -- when a first call's "Please call
  * swe_set_ephe_path()" warning is due (UPSTREAM-BUGS 110). */
 extern AS_BOOL swi_ephe_path_none(swe_ctx *ctx);
+/* The DE numbers swe_close() forgot, read again along the kept path, as
+ * the setters read them (UPSTREAM-BUGS 131). */
+extern void swi_denum_reread(swe_ctx *ctx);
 #endif
+/* What denum_unread names (bug 131; never set under SWE_UPSTREAM_COMPAT) */
+#define SWI_DENUM_MOON 1	/* the moon file's header, along the path */
+#define SWI_DENUM_JPL  2	/* the JPL file swe_set_jpl_file() read */
 
 /* Shared configuration layer. Included here, after struct sid_data and
  * SEI_NMODELS, because struct swe_config embeds both. */

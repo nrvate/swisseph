@@ -94,6 +94,8 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
   memcpy(c->jplfnam,  ctx->jplfnam,  sizeof(c->jplfnam));
   c->sweph_denum_moon       = ctx->sweph_denum_moon;
   c->jpldenum_cfg           = ctx->jpldenum_cfg;
+  c->denum_unread           = ctx->denum_unread;	/* bug 131 */
+  c->path_closed            = ctx->path_closed;
   c->sidd = ctx->sidd;
   memcpy(c->astro_models, ctx->astro_models, sizeof(c->astro_models));
   c->geolon                 = ctx->topd.geolon;
@@ -266,6 +268,7 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
   AS_BOOL jpl_only;
 #endif
   AS_BOOL any;
+  int32 keep = 0;
 
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 103 (this fork's): a master that names no path -- nobody
@@ -277,6 +280,13 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
    * "none" means here, and it is kept. */
   if ((groups & SWI_CFG_PATH) && !c->ephe_path_is_set && ctx->ephe_path_implicit)
     groups &= ~SWI_CFG_PATH;
+  /* Upstream bug 131: the DE numbers a swe_close() forgot and this context,
+   * having adopted that close, has read again itself (or will at its next
+   * entry): the master's zeros say nothing of them until a setter
+   * publishes them, and compared they took the context back to the close
+   * at every sync after its reading -- every file closed and read again */
+  if (c->denum_unread != 0 && ctx->path_closed == c->path_closed)
+    keep = c->denum_unread;
 #endif
   path_changed  = (groups & SWI_CFG_PATH)
                   && (strcmp(ctx->ephepath, c->ephepath) != 0
@@ -286,8 +296,10 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
                     * different moon file than when a thread last synced,
                     * and a worker kept the old tidal term (2026-09-16
                     * review, F3). */
-                   || ctx->sweph_denum_moon != c->sweph_denum_moon
-                   || ctx->jpldenum_cfg != c->jpldenum_cfg);
+                   || (!(keep & SWI_DENUM_MOON)
+                       && ctx->sweph_denum_moon != c->sweph_denum_moon)
+                   || (!(keep & SWI_DENUM_JPL)
+                       && ctx->jpldenum_cfg != c->jpldenum_cfg));
   geo_changed   = (groups & SWI_CFG_TOPO)
                   && (ctx->topd.geolon != c->geolon
                    || ctx->topd.geolat != c->geolat
@@ -335,7 +347,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
   jpl_only = path_changed
              && strcmp(ctx->ephepath, c->ephepath) == 0
              && ctx->ephe_path_is_set == c->ephe_path_is_set
-             && ctx->sweph_denum_moon == c->sweph_denum_moon;
+             && ((keep & SWI_DENUM_MOON)
+                 || ctx->sweph_denum_moon == c->sweph_denum_moon);
 #endif
   /* --- copy the values in, group by group ---------------------------- */
   if (groups & SWI_CFG_PATH) {
@@ -348,8 +361,16 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     memcpy(ctx->ephepath, c->ephepath, sizeof(ctx->ephepath));
     memcpy(ctx->jplfnam,  c->jplfnam,  sizeof(ctx->jplfnam));
     ctx->ephe_path_is_set = c->ephe_path_is_set;
-    ctx->sweph_denum_moon = c->sweph_denum_moon;
-    ctx->jpldenum_cfg     = c->jpldenum_cfg;
+    if (!(keep & SWI_DENUM_MOON))
+      ctx->sweph_denum_moon = c->sweph_denum_moon;
+    if (!(keep & SWI_DENUM_JPL))
+      ctx->jpldenum_cfg   = c->jpldenum_cfg;
+#ifndef SWE_UPSTREAM_COMPAT
+    if (path_changed) {	/* bug 131: a close adopted, the ones it forgot */
+      ctx->denum_unread = (ctx->denum_unread & keep) | (c->denum_unread & ~keep);
+      ctx->path_closed  = c->path_closed;
+    }
+#endif
   }
   if (groups & SWI_CFG_SID) {
     ctx->sidd = c->sidd;
@@ -491,6 +512,8 @@ static void cfg_merge(struct swe_config *dst, const struct swe_config *src,
     dst->ephe_path_is_set = src->ephe_path_is_set;
     dst->sweph_denum_moon = src->sweph_denum_moon;
     dst->jpldenum_cfg     = src->jpldenum_cfg;
+    dst->denum_unread     = src->denum_unread;	/* bug 131 */
+    dst->path_closed      = src->path_closed;
   }
   if (groups & SWI_CFG_SID) {
     dst->sidd = src->sidd;
@@ -758,6 +781,11 @@ void swi_config_inherit(swe_ctx *ctx)
  * mode, as the manual says, so the master keeps them too, the mode with
  * the models it set; of the SID group only the models go. Under
  * SWE_UPSTREAM_COMPAT ctx_release() resets both, and so does the master.
+ *
+ * Upstream bug 131: and the DE numbers it zeroes, which the kept path and
+ * JPL file give, are marked owed with the close's generation, so that a
+ * thread adopting the close, as the closing context, reads them again at
+ * its next entry, and is not taken back to the close at later syncs.
  *====================================================================*/
 #ifndef SWE_UPSTREAM_COMPAT
 #define SWI_CFG_CLOSED SWI_CFG_TIDACC
@@ -776,10 +804,20 @@ void swi_config_reset(swe_ctx *ctx)
 #ifndef SWE_UPSTREAM_COMPAT
     memcpy(cfg_master.astro_models, d.astro_models, sizeof(d.astro_models));
     swi_sid_mode_models(&cfg_master.sidd, cfg_master.astro_models);
+    /* bug 131: as ctx_release(), the two it forgets owed to the threads */
+    if (cfg_master.ephe_path_is_set)
+      cfg_master.denum_unread |= SWI_DENUM_MOON;
+    if (cfg_master.jpldenum_cfg != 0)
+      cfg_master.denum_unread |= SWI_DENUM_JPL;
 #endif
     cfg_master.sweph_denum_moon = 0;	/* as ctx_release() */
     cfg_master.jpldenum_cfg = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+    cfg_master.path_closed = swi_gen_bump(&cfg_master.generation);
+    ctx->path_closed = cfg_master.path_closed;	/* its own close */
+#else
     swi_gen_bump(&cfg_master.generation);
+#endif
   }
   swi_mutex_unlock(&cfg_mutex);
   ctx->cfg_seen = 0;

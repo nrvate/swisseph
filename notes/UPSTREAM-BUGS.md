@@ -165,6 +165,7 @@ worst were in code that had never executed even once.
 | 130 | `swe_calc_orbel()` (this fork's) never pairs the frame bias, entry 20's defect on its copy of the fictitious path: its geocentric places are seen from the ICRS Earth, 3.2e-8 to 1.1e-7 AU off its heliocentric ones less the Earth (1.4e-5 deg at a = 1.2 AU), and with SEFLG_ICRS the body stays unturned, 23 mas off the same elements in seorbel.txt | Correctness | `sweph.c` |
 | 132 | `swe_time_equ()`, `swe_lmt_to_lat()` and `swe_lat_to_lmt()` take the JPL Sun only when this context has the JPL file open: after `swe_set_jpl_file()` a new thread, a thread that computed before it and a context made after it answer from the Swiss files, E 1.19e-8 day (1.03 ms) off at J2000, 1.17e-7 day in 1800, and after `swe_close()` a JPLEPH calculation moves them to the JPL file while `swe_deltat()` stays Swiss | Correctness (behaviour) | `sweph.c` |
 | 133 | The Sunshine houses' remembered declination, set by `swe_houses_armc()` before a context's first start, is wiped by the start's memset, which leaves 0 for 99, "none yet" (this fork's): a recall with 99 after the first calculation answers with declination 0, cusp 3 6.71 deg off | Correctness (behaviour) | `sweph.c`, `sweph.h` |
+| 131 | After `swe_close()` without the path again, the kept path's first delta t takes the default tidal term (-25.80) until a file opens: 1463.43 s in AD 1000 for 1474.72, the first UT Moon there 1.6e-3 deg off the second, with de200.eph 14.29 s in AD 1700 for 3.01 -- on the closing thread, every thread and context adopting the close and an explicit context closed by `swe_close_r()` | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 
 ---
 
@@ -8235,7 +8236,8 @@ Noticed, not fixed:
   (1.6e-3 deg); the call itself opens the file, and the same call again
   answers right. Upstream the same; the manual says to set the path again,
   which answers right at once. G123 observes in TT for this reason (a UT
-  ayanamsa in AD 1000 moves by 5e-9 deg).
+  ayanamsa in AD 1000 moves by 5e-9 deg). Fixed as entry 131, which adds
+  a UT ayanamsa to G123 (3.3e-9 deg off before it).
 - The manual has "Once the function swe_set_tid_acc() has been used, the
   automatic setting of tidal acceleration is blocked. In order to unblock
   it again, call swe_set_tid_acc(SE_TIDAL_AUTOMATIC)", and
@@ -8683,6 +8685,95 @@ both builds fail all six, 6.71 deg, 6.71 deg, 0.0435 of a house, 9.53
 deg/day, 6.71 deg and 0 for 99. No G24 case: the two builds agree before
 the fix and after it. G20, G24, G45, G58, G67, G82, G124 and the context
 test pass.
+
+## 131. After `swe_close()` the kept path's first delta t takes the default tidal term until a file opens: the same call answers differently first and second
+
+**Severity: Correctness (behaviour: call order -- the first delta t after `swe_close()` 11.29 s off in AD 1000, the first UT Moon there 1.6e-3 deg off the second; with a JPL file 11.27 s in AD 1700 -- on every thread and context)**
+**Where:** upstream `sweph.c:1233` (`swe_close()`), `swephlib.c:3198` (`swi_get_tid_acc()`, the moon file's DE number from the open file only); here `sweph.c`: `ctx_release()` (`swe_close()`, `swe_close_r()`), `swi_init_swed_if_start()`, `swe_set_ephe_path_r()`, `swe_set_jpl_file_r()`, new `swi_denum_reread()`; `sweconfig.c`: `swi_config_capture()`, `cfg_merge()`, `swi_config_apply()`, `swi_config_reset()`; `sweph.h`, `sweconfig.h`
+
+Entry 127's noticed item. `swe_close()` keeps the path and the JPL file's
+name, as upstream's does (its reset of the path is commented out), and
+forgets what the setters read from them: upstream closes the moon file
+whose header `swi_get_tid_acc()` takes the DE number from, and this fork's
+`ctx_release()`, and since bug 123 the shared configuration's reset after
+it, zero the two published DE numbers too (the 2026-09-16 review's F2). So
+the first delta t after the close, before any file is open, took the
+default tidal term: after the path, a Swiss Moon and `swe_close()`,
+`swe_deltat_ex()` in AD 1000 answered 1463.43 s for 1474.72,
+`swe_get_tid_acc()` -25.80 for the moon file's -25.936, and
+`swe_calc_ut()`'s Moon there 197.3747177 deg on the first call and
+197.3763253 on the second, which the first had opened the file for. With
+`swe_set_jpl_file("de200.eph")` set too, delta t in AD 1700 14.29 s for
+3.01, the JPL Moon 40.0057508 deg for 40.0039614, `swe_get_tid_acc()`
+-25.80 for -23.8946. Where a TT calculation came first the getter and
+the next delta t disagreed, which bug 101 has agree (found in bug 132's
+work): after a JPL Sun `swe_get_tid_acc()` answered de200's -23.8946 and
+the next `swe_deltat()`, whose guess was Swiss with the JPL DE number
+forgotten, used -25.80, 18.604686 s in AD 1800 for 14.438958, the getter
+-25.80 after it; after a Swiss Sun, which opens the moon file for the
+Earth, the getter -25.80 and the delta t -25.936. So on the closing
+thread, on a thread that had computed before the close and adopted it,
+on a thread started and a context made after it, and on an explicit
+context closed by `swe_close_r()`; with the files named by `SE_EPHE_PATH` alone on the
+closing thread and the explicit context. A UT search converges past its
+first delta t and is not moved, and with no path at all the default term
+is the right one either way. The upstream build (legacy-master), a
+main-thread program: 1463.43 s, -25.80, the Moon 197.3747175 then
+197.3763252 deg; with de200.eph 14.29 s, 40.0057511 then 40.0039618 deg.
+Setting the path again after the close, as the manual advises, answers
+right at once.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`; the compat
+build keeps upstream's default term after the close, on the threads too):
+- `ctx_release()` notes what it forgets that the kept settings give
+  (`denum_unread`: the moon file's DE number when a path is in effect, the
+  JPL file's when one was read), and opens nothing.
+- The first entry after it that is not a setter (`swi_init_swed_if_start()`
+  outside a setter's apply) reads them again along the kept path as the
+  setters read them (`swi_denum_reread()`: the moon file's header at J2000
+  by `ephe_path_read_moon()`, the JPL file opened, with the IERS
+  corrections of a DE 403 or later) and resolves the automatic tidal term
+  as a first use does (bug 118's block, which now runs for this too). No
+  new probe: the setters' own reads. `swe_set_ephe_path()` clears both,
+  `swe_set_jpl_file()` the JPL one.
+- The shared configuration (this fork's): `swi_config_reset()` marks the
+  same two in the master with the close's generation (`path_closed`),
+  published and merged with the path group, so a thread adopting the
+  close and a context made after it read them again themselves. Until a
+  setter publishes them, the master's zeros are not compared with what a
+  context that adopted that close has read: compared, every sync after its
+  reading took it back to the close, every file closed and reopened (3
+  opens for the next Moon after an unrelated `swe_set_topo()`, 2 with
+  de200.eph). A later close has another generation and is adopted again.
+- The cost: the first entry after a close opens `semo_18.se1` for its
+  header, as the path setter did; nothing else. `swi_init_swed_if_start()`
+  is on the hot path: one load and test, calc-swieph 12262522596
+  instructions before and 12262762642 after, calc-moseph 23329084923 and
+  23329324913 (0.002%).
+
+G127 `tests/closetid.c`, each scenario in a forked process: the setting, a
+Moon by `swe_calc_ut()`, `swe_close()`, then the observation twice, on the
+main thread, a thread that had computed before the close, a thread started
+and a context made by `swe_ctx_new()` after it, and an explicit context
+given the same calls with `swe_close_r()`, each bit for bit (values, flag,
+serr) as in a process given the same calls without the close. Settings: the
+path; the path and de200.eph (SEFLG_JPLEPH, AD 1700); `SE_EPHE_PATH` alone;
+no path at all. Observations: `swe_deltat_ex()`, `swe_deltat()`,
+`swe_get_tid_acc()`, the Moon and its speed, `swe_mooncross_ut()`, and a
+TT Sun followed by the getter, `swe_deltat()` in AD 1800 and the getter.
+120 checks, and 2 more: the thread that adopted the close and read the
+files again opens nothing at its next sync after another thread's
+`swe_set_topo()`. All 122 pass. Before the fix 59 fail (25 with the path,
+23 with de200.eph, 10 with `SE_EPHE_PATH`, and the second part's running
+thread on its first Moon); the compat build 44 (its JPL Sun's getter and
+delta t agree, its guess following the open JPL file); the fix without
+the master's generation fails 2 (3 and 2 fopen() calls). G24
+`close_tid_off`, the first delta t in AD 1000 after the close against a fresh context given the
+path: 0 shipped, 11.29 s compat. G123 (`tests/closesurvive.c`), which
+observed in TT for this, now takes the sidereal readers' ayanamsa in AD
+1000 by `swe_get_ayanamsa_ex_ut()` first, before any file opens: 84 pass;
+48 fail before this fix (3.3e-9 deg), 78 compat. G120, G115, G106, G82,
+G100, the delta-t memo, G119, cfgleak, G2 and check-ctx pass.
 
 ## How these were found
 

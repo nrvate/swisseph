@@ -95,6 +95,12 @@ struct swe_config {
    * comment on the fields in struct swe_ctx. Zero = unknown. */
   int32 sweph_denum_moon;
   int32 jpldenum_cfg;
+  /* Upstream bug 131: the two swe_close() forgot, which the path and the
+   * JPL file kept give, and the generation of that close. A context
+   * adopting it reads them again itself; until a setter publishes them
+   * the master's zeros are not compared with what it read. */
+  int32 denum_unread;
+  swi_gen_t path_closed;
 
   /* --- sidereal ----------------------------------------------------- */
   struct sid_data sidd;           /* swe_set_sid_mode(); pure config    */

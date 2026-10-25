@@ -1974,13 +1974,24 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
 #endif
   swi_config_sync(ctx);
 #ifndef SWE_UPSTREAM_COMPAT
-  /* bug 118: the automatic term of the path now in effect, adopted or, if
-   * none, the default one named on this first use (bugs 101, 107); not
-   * published -- nothing was set */
-  if (started && !ctx->is_tid_acc_manual && !ctx->path_naming_off) {
-    AS_BOOL was = swi_config_begin_apply(ctx);
-    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
-    swi_config_end_apply(ctx, was);
+  /* Upstream bug 131: after swe_close(), the DE numbers it forgot, read
+   * again along the kept path as the setters read them, at the first entry
+   * that is not a setter -- this context's own close, or one it adopted
+   * just now -- and the automatic term resolved as on a first use */
+  {
+    AS_BOOL reread = FALSE;
+    if (ctx->denum_unread != 0 && !ctx->cfg_applying && !ctx->path_naming_off) {
+      swi_denum_reread(ctx);
+      reread = TRUE;
+    }
+    /* bug 118: the automatic term of the path now in effect, adopted or,
+     * if none, the default one named on this first use (bugs 101, 107);
+     * not published -- nothing was set */
+    if ((started || reread) && !ctx->is_tid_acc_manual && !ctx->path_naming_off) {
+      AS_BOOL was = swi_config_begin_apply(ctx);
+      swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+      swi_config_end_apply(ctx, was);
+    }
   }
   /* bug 128: the start swi_config_hold() made, answered here as if made
    * here (the warnings on a context's first call key on it) */
@@ -2138,6 +2149,21 @@ static void ctx_release(swe_ctx *ctx)
    * what upstream's swe_close() leaves. Kept, a Mercury after swe_close()
    * took the moon file's term where upstream takes the default, and G8
    * (check-setest) failed four setest cases (2026-09-16 review, F2). */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 131: and the path and the JPL file's name stay, so the
+   * first delta t after the close, before any file was open, took the
+   * default tidal term (-25.80) for the path's moon file's (-25.936):
+   * 1463.43 s in AD 1000 for 1474.72, swe_calc_ut()'s Moon there
+   * 197.37472 deg for 197.37633 and right on the second call; with
+   * de200.eph set, 14.29 s in AD 1700 for 3.01. What the two setters read
+   * is read again, along the kept path, at the next entry
+   * (swi_init_swed_if_start(), swi_denum_reread()); the close itself still
+   * opens nothing. */
+  if (ctx->ephe_path_is_set)
+    ctx->denum_unread |= SWI_DENUM_MOON;
+  if (ctx->jpldenum_cfg != 0)
+    ctx->denum_unread |= SWI_DENUM_JPL;
+#endif
   ctx->sweph_denum_moon = 0;
   ctx->jpldenum_cfg = 0;
   swi_close_ephe_files(ctx, FORGET_DENUM);
@@ -2533,6 +2559,9 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
    * file still used the old file's term, where upstream uses the
    * default. swe_set_jpl_file() publishes it again. */
   ctx->jpldenum_cfg = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->denum_unread = 0;	/* bug 131: read here, or not owed */
+#endif
   /* environment variable SE_EPHE_PATH has priority. The length tests are
    * upstream's: a path with no room left for a file name is dropped for the
    * default rather than silently truncated. They do not bound the file name
@@ -2908,6 +2937,9 @@ void CALL_CONV swe_set_jpl_file_r(swe_ctx *ctx, const char *fname)
    * opens on the calculation paths included, so a context's config
    * changed because it had computed something (2026-09-16 review, F4). */
   ctx->jpldenum_cfg = (retc == OK) ? ctx->jpldenum : 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->denum_unread &= ~SWI_DENUM_JPL;	/* bug 131: read here */
+#endif
   if (retc == OK) {
     if (ctx->jpldenum >= 403) {
       /*if (INCLUDE_CODE_FOR_DPSI_DEPS_IAU1980) */
@@ -2951,6 +2983,36 @@ void CALL_CONV swe_set_jpl_file(const char *fname)
 {
   swe_set_jpl_file_r(swi_default_ctx(), fname);
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 131: what swe_set_ephe_path() and swe_set_jpl_file() read
+ * and swe_close() forgot, read again along the kept path as the setters
+ * read it: the moon file's header at J2000 for its DE number, the JPL file
+ * opened for its own (with the IERS corrections of a DE 403 or later). A
+ * file the context has opened since is taken as it is. The tidal term of
+ * the call under way is left as it was; the caller resolves it. */
+void swi_denum_reread(swe_ctx *ctx)
+{
+  int32 unread = ctx->denum_unread;
+  double tid_acc = ctx->tid_acc;
+  double ss[3];
+  ctx->denum_unread = 0;
+  if ((unread & SWI_DENUM_MOON) && ctx->ephe_path_is_set) {
+    if (ctx->fidat[SEI_FILE_MOON].fptr != NULL)
+      ctx->sweph_denum_moon = ctx->fidat[SEI_FILE_MOON].sweph_denum;
+    else
+      ephe_path_read_moon(ctx);
+  }
+  if ((unread & SWI_DENUM_JPL)
+      && (ctx->jpl_file_is_open
+          || open_jpl_file(ctx, ss, ctx->jplfnam, ctx->ephepath, NULL) == OK)) {
+    ctx->jpldenum_cfg = ctx->jpldenum;
+    if (ctx->jpldenum >= 403)
+      load_dpsi_deps(ctx);
+  }
+  ctx->tid_acc = tid_acc;
+}
+#endif
 
 /* calculates obliquity of ecliptic and stores it together
  * with its date, sine, and cosine

@@ -26,18 +26,19 @@
  *   - the observer: the topocentric Moon at J2000 by swe_calc_ut(), with
  *     its speed;
  *   - Lahiri; a user t0 and ayan_t0; Lahiri with SE_SIDBIT_PREC_ORIG,
- *     whose models the mode keeps; SE_SIDM_J2000: swe_get_ayanamsa_ex()
- *     at J2000 and in AD 1000, the sidereal Sun at J2000 and the sidereal
- *     Moon in AD 1000 by swe_calc(), the nutation at J2000 + 0.25;
+ *     whose models the mode keeps; SE_SIDM_J2000: swe_get_ayanamsa_ex_ut()
+ *     in AD 1000, swe_get_ayanamsa_ex() at J2000 and in AD 1000, the
+ *     sidereal Sun at J2000 and the sidereal Moon in AD 1000 by
+ *     swe_calc(), the nutation at J2000 + 0.25;
  *   - and two the close still resets, the models of
  *     swe_set_astro_models() (nutation IAU 1980) against a process that
  *     never set them, and Lahiri with the bit and then the models
  *     "0,0,0,4" against Lahiri with the bit alone, the same observations.
- * The sidereal ones are in TT: after swe_close() without a path the tidal
- * term is the default's until a file opens (the path's DE numbers go with
- * the files, bug F2's choice), which moves a UT ayanamsa in AD 1000 by
- * 5e-9 deg against the process that never closed. 7 settings x 3 x 4
- * readers = 84 checks.
+ * The sidereal ones are in TT but the first, the UT ayanamsa, taken before
+ * any file opens: until bug 131 the tidal term after swe_close() without
+ * the path again was the default's until a file opened (the path's DE
+ * numbers went with the files), 3.3e-9 deg off the process that never
+ * closed. 7 settings x 3 x 4 readers = 84 checks.
  *
  * Measured before the fix, 72 of 84 fail: the five settings the manual
  * keeps and PREC_ORIG with the models after it, in every case and reader
@@ -52,7 +53,11 @@
  * The upstream build (legacy-master) has no contexts and no shared
  * configuration and does not build this; its swe_close() resets both on
  * the closing thread, as the compat build's does (measured with a
- * main-thread program: the Moon refused, the ayanamsa 24.736). Run as
+ * main-thread program: the Moon refused, the ayanamsa 24.736). Those
+ * counts are of the TT observations alone; the UT ayanamsa, added with
+ * bug 131's fix, fails 48 before that fix (bug 127's in place: every
+ * reader with nothing or another setter after the close, 3.3e-9 deg), and
+ * makes the compat build's count 78. Run as
  *   closesurvive EPHEDIR
  */
 #include <math.h>
@@ -155,8 +160,13 @@ static void observe(swe_ctx *c, int s, struct obs *o)
            : swe_calc_ut(T_OBS, SE_MOON, fl, x, serr);
     put(o, x[0]); put(o, x[1]); put(o, x[2]); put(o, x[3]);
   } else {
-    rf = c ? swe_get_ayanamsa_ex_r(c, T_OBS, SEFLG_SWIEPH, &aya, serr)
-           : swe_get_ayanamsa_ex(T_OBS, SEFLG_SWIEPH, &aya, serr);
+    /* first, before any file opens: in UT, the tidal term (bug 131) */
+    rf = c ? swe_get_ayanamsa_ex_ut_r(c, T_1000, SEFLG_SWIEPH, &aya, serr)
+           : swe_get_ayanamsa_ex_ut(T_1000, SEFLG_SWIEPH, &aya, serr);
+    put(o, aya);
+    if (rf >= 0)
+      rf = c ? swe_get_ayanamsa_ex_r(c, T_OBS, SEFLG_SWIEPH, &aya, serr)
+             : swe_get_ayanamsa_ex(T_OBS, SEFLG_SWIEPH, &aya, serr);
     put(o, aya);
     if (rf >= 0)
       rf = c ? swe_get_ayanamsa_ex_r(c, T_1000, SEFLG_SWIEPH, &aya, serr)

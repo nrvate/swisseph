@@ -3156,6 +3156,31 @@ static double mosh_geo_lt_jitter(void)
   return w;
 }
 
+/* The path, a Swiss Moon and swe_close(), then delta t in AD 1000 by
+ * swe_deltat_ex(), against a fresh context given the path, s. Upstream's
+ * close forgets the moon file's DE number and keeps the path, so this
+ * first delta t, before any file opens, takes the default tidal term:
+ * 1463.43 s for 1474.72 (UPSTREAM-BUGS 131). */
+static double close_tid_off(void)
+{
+  double x[6], dt, ref;
+  char serr[256];
+  swe_ctx *c;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc_ut(2451600.0, SE_MOON, SEFLG_SWIEPH, x, serr);
+  swe_close();
+  dt = swe_deltat_ex(2086308.0, SEFLG_SWIEPH, serr);
+  if ((c = swe_ctx_new()) == NULL)
+    return INFINITY;
+  swe_set_ephe_path_r(c, EPHE);
+  ref = swe_deltat_ex_r(c, 2086308.0, SEFLG_SWIEPH, serr);
+  swe_ctx_free(c);
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  return fabs(dt - ref) * 86400;
+}
+
 /* swe_set_topo(), swe_set_sid_mode(SE_SIDM_LAHIRI), a Swiss Sun and
  * swe_close(), then the topocentric Moon at J2000 by swe_calc_ut() and the
  * ayanamsa there by swe_get_ayanamsa_ex(), against a fresh context given
@@ -3198,7 +3223,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep, holdstart, nutmodel, orbelbias, teqthr;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3317,6 +3342,7 @@ int main(int argc, char **argv)
   orbelbias = orbel_bias_off();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
+  closetid = close_tid_off();
   closekeep = close_keeps_off();	/* last: see the function */
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
@@ -4196,6 +4222,14 @@ int main(int argc, char **argv)
   else {
     printf("  interpolation unset    %.2e arcsec FAIL: expected %s\n",
            nutintp, WANT_DEFECT ? "> 5e-5" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (closetid > 10) : (closetid == 0))
+    printf("  delta t after close    %.2e s OK\n", closetid);
+  else {
+    printf("  delta t after close    %.2e s FAIL: expected %s\n",
+           closetid, WANT_DEFECT ? "> 10" : "0");
     bad++;
   }
 
