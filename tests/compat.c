@@ -619,11 +619,50 @@ static double era_scatter(void)
   return worst * 54000 * 1e3;
 }
 
+/* swe_houses_ex2()'s cusp speeds against a five-point difference of
+ * swe_houses_ex()'s cusps over 2^-12 day, at 47N on 2026-07-02 (a
+ * multiple of 2^-8 day), deg/day: Koch's cusp 11 (the rate of the MC's
+ * ascensional difference left out, UPSTREAM-BUGS 41, ~200 upstream) and
+ * whole signs' cusp 1 (the Asc's speed on a cusp that stands still, bug
+ * 40, ~400) when sidereal is 0; with sidereal 1, the equal houses' Asc
+ * under Lahiri, which upstream moves at ARMCS without the equation of the
+ * equinoxes' and the ayanamsa's rates (bugs 42, 43, ~5e-5). */
+static double house_speed_off(int sidereal)
+{
+  const double jd = 2461223.5 + 0.3125, h = 1.0 / 4096;
+  static const int hs[2] = {'K', 'W'};
+  static const int ic[2] = {11, 1};
+  double cusp[13], ascmc[10], cs[13], as[10], f[4], worst = 0;
+  int32 fl = sidereal ? SEFLG_SIDEREAL : 0;
+  int i, k, n = sidereal ? 1 : 2;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  if (sidereal)
+    swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  for (i = 0; i < n; i++) {
+    int sys = sidereal ? 'E' : hs[i], c = sidereal ? 1 : ic[i];
+    double ref, d1, d2;
+    for (k = 0; k < 4; k++) {
+      static const int off[4] = {-2, -1, 1, 2};
+      swe_houses_ex(jd + off[k] * h, fl, 47.37, 8.55, sys, cusp, ascmc);
+      f[k] = cusp[c];
+    }
+    swe_houses_ex2(jd, fl, 47.37, 8.55, sys, cusp, ascmc, cs, as, NULL);
+    d1 = swe_difdeg2n(f[2], f[1]);
+    d2 = swe_difdeg2n(f[3], f[0]);
+    ref = (8 * d1 - d2) / (12 * h);
+    if (fabs(cs[c] - ref) > worst)
+      worst = fabs(cs[c] - ref);
+  }
+  swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+  return worst;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, hspd, hsid;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -656,6 +695,8 @@ int main(int argc, char **argv)
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
   orbel = orbel_speed_off();
+  hspd = house_speed_off(0);
+  hsid = house_speed_off(1);
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -881,6 +922,22 @@ int main(int argc, char **argv)
   else {
     printf("  orbital elements' rate %.2e deg/day FAIL: expected %s\n",
            orbel, WANT_DEFECT ? "> 1e-3" : "< 1e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (hspd > 1) : (hspd < 1e-5))
+    printf("  house cusp speeds      %.2e deg/day OK\n", hspd);
+  else {
+    printf("  house cusp speeds      %.2e deg/day FAIL: expected %s\n",
+           hspd, WANT_DEFECT ? "> 1" : "< 1e-5");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (hsid > 2e-5) : (hsid < 1e-6))
+    printf("  sidereal house speeds  %.2e deg/day OK\n", hsid);
+  else {
+    printf("  sidereal house speeds  %.2e deg/day FAIL: expected %s\n",
+           hsid, WANT_DEFECT ? "> 2e-5" : "< 1e-6");
     bad++;
   }
 

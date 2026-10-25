@@ -68,11 +68,33 @@ house and (simple) aspect calculation
 #define MILLIARCSEC 	(1.0 / 3600000.0)
 #define SOLAR_YEAR   365.24219893
 #define ARMCS ((SOLAR_YEAR+1) / SOLAR_YEAR * 360)
+#ifndef SWE_UPSTREAM_COMPAT
+#define HOUSE_SPEED_DARMC (1.0 / 256)	/* deg: the step of a cusp's difference in ARMC */
+#endif
 
 static double Asc1(double, double, double, double);
 static double AscDash(double, double, double, double);
 static double Asc2(double, double, double, double);
+#ifndef SWE_UPSTREAM_COMPAT
+static double AscDer(double, double, double, double);
+static double PlacDer(double, double, double, double, double, double, double);
+#endif
 static int CalcH(double th, double fi, double ekl, char hsy, struct houses *hsp);
+/* The frame of swe_houses_ex2_r() a little before and after the instant,
+ * for the rates of the quantities the houses are computed from; NULL
+ * where no speed is asked for (and always in the upstream build). */
+struct house_frame {
+  double tjde;		/* TT */
+  double eps;		/* true obliquity, degrees */
+  double nutlo[2];	/* nutation in longitude and obliquity, degrees */
+  double armc;		/* degrees */
+};
+struct house_rates {
+  struct house_frame m, p;	/* at t - HOUSE_SPEED_DT and t + HOUSE_SPEED_DT */
+  double dt;			/* p - m in UT, days */
+  double armc, eps;		/* rates, degrees per day of UT */
+  double decl;			/* the Sun's declination's, for Sunshine houses */
+};
 static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
@@ -83,7 +105,8 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
                            double *ascmc,
 			   double *cusp_speed,
 			   double *ascmc_speed,
-			   char *serr);
+			   char *serr,
+			   const struct house_rates *hr);
 static int sidereal_houses_trad(swe_ctx *ctx, double tjde, 
 			   int32 iflag,
                            double armc, 
@@ -95,7 +118,8 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
                            double *ascmc,
 			   double *cusp_speed,
 			   double *ascmc_speed,
-			   char *serr);
+			   char *serr,
+			   const struct house_rates *hr);
 static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
                            double armc, 
                            double eps, 
@@ -106,7 +130,8 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
                            double *ascmc,
 			   double *cusp_speed,
 			   double *ascmc_speed,
-			   char *serr);
+			   char *serr,
+			   const struct house_rates *hr);
 static int sunshine_solution_makransky(double ramc, double lat, double ecl, struct houses *hsp);
 static int sunshine_solution_treindl(double ramc, double lat, double ecl, struct houses *hsp);
 
@@ -210,6 +235,156 @@ int CALL_CONV swe_houses_ex(double tjd_ut,
   return swe_houses_ex_r(swi_default_ctx(), tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc);
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 42: swe_houses_ex2_r() took every speed as the cusp's
+ * rate in ARMC times ARMCS, 360.9856473350 deg/day at every epoch (the
+ * sidereal days of a fixed solar year), and held the obliquity, and for
+ * Sunshine houses the Sun's declination, still. The ARMC the cusps come
+ * from is the library's apparent sidereal time: the equation of the
+ * equinoxes moves it at -3.9e-5..+6.2e-5 deg/day about the mean, which
+ * itself is off ARMCS by 3e-8 at 2000, -9e-7 at -3000, +1.3e-6 at
+ * 12000; a cusp n times as fast as the ARMC carries n times that (the
+ * Asc 1.5e-4 deg/day at 70N, R 4.8e-4). The obliquity's rate, nutation's
+ * 1.3e-5 deg/day, enters every cusp by its partial; the declination's,
+ * up to 0.4 deg/day, moved Sunshine cusps by 2.4 deg/day at 70S. Now the
+ * rates of the ARMC and true obliquity are differences of the library's
+ * own values HOUSE_SPEED_DT of UT, the time argument, either side (the
+ * step exact as p - m; three points at 2^-6 day leave 2e-10 deg/day of
+ * nutation's fortnightly term, and the ARMC's rounding, 5e-10 deg at
+ * -13000, 2e-8), the declination's from swe_calc_ut() turned from per
+ * TT to per UT day, and the partials in obliquity and declination
+ * differences of the cusps over HOUSE_SPEED_DEPS. Speeds are per day of
+ * UT, as the cusps' differences over the time argument are.
+ * swe_houses_armc_ex2_r(), which has no date, still gives them at ARMCS. */
+#define HOUSE_SPEED_DT    (1.0 / 64)	/* day */
+#define HOUSE_SPEED_DEPS  (1.0 / 1024)	/* deg of obliquity or declination */
+
+/* the quantities swe_houses_ex2_r() computes the houses from, at tjd_ut */
+static void house_frame_at(swe_ctx *ctx, double tjd_ut, int32 iflag, double geolon,
+                           struct house_frame *f)
+{
+  int i;
+  double eps_mean;
+  f->tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL);
+  eps_mean = swi_epsiln(ctx, f->tjde, 0) * RADTODEG;
+  swi_nutation(ctx, f->tjde, 0, f->nutlo);
+  for (i = 0; i < 2; i++)
+    f->nutlo[i] *= RADTODEG;
+  if (iflag & SEFLG_NONUT) {
+    for (i = 0; i < 2; i++)
+      f->nutlo[i] = 0;
+  }
+  f->eps = eps_mean + f->nutlo[1];
+  f->armc = swe_degnorm(swe_sidtime0_r(ctx, tjd_ut, f->eps, f->nutlo[0]) * 15 + geolon);
+}
+
+/* a value's partial from its neighbours step either side of the
+ * argument; a side that jumps (the Asc changing hemisphere, a sign
+ * boundary) or answered differently (Porphyry instead) is dropped */
+static double house_partial(double c, double cp, double cm, AS_BOOL okp, AS_BOOL okm,
+                            double step)
+{
+  double dp = swe_difdeg2n(cp, c), dm = swe_difdeg2n(c, cm);
+  okp = okp && fabs(dp) < 10;
+  okm = okm && fabs(dm) < 10;
+  if (okp && okm)
+    return (dp + dm) / (2 * step);
+  if (okp)
+    return dp / step;
+  if (okm)
+    return dm / step;
+  return 0;
+}
+
+/* adds partial x rate to the speeds, the partial in the obliquity or
+ * (by_decl) in the Sun's declination of Sunshine houses, ascmc[9] */
+static void houses_add_rate(swe_ctx *ctx, double armc, double lat, double eps, int hsys,
+                            int retc, int ito, AS_BOOL by_decl, double rate,
+                            const double *cusp, const double *ascmc,
+                            double *cusp_speed, double *ascmc_speed)
+{
+  double cp[37], cm[37], ap[10], am[10], ep = eps, em = eps;
+  double step = HOUSE_SPEED_DEPS, saved = ctx->saved_sundec;
+  char serr[AS_MAXCH];
+  int i, rp, rm;
+  AS_BOOL okp, okm;
+  if (rate == 0)
+    return;
+  ap[9] = am[9] = ascmc[9];
+  if (by_decl) {
+    ap[9] += step;
+    am[9] -= step;
+  } else {
+    ep += step;
+    em -= step;
+  }
+  rp = swe_houses_armc_ex2_r(ctx, armc, lat, ep, hsys, cp, ap, NULL, NULL, serr);
+  rm = swe_houses_armc_ex2_r(ctx, armc, lat, em, hsys, cm, am, NULL, NULL, serr);
+  ctx->saved_sundec = saved;	/* the caller's declination, not ours */
+  okp = (rp < 0) == (retc < 0);
+  okm = (rm < 0) == (retc < 0);
+  if (cusp_speed != NULL) {
+    for (i = 1; i <= ito; i++)
+      cusp_speed[i] += house_partial(cusp[i], cp[i], cm[i], okp, okm, step) * rate;
+  }
+  if (ascmc_speed != NULL) {
+    for (i = 0; i < SE_NASCMC; i++) {
+      if (i != 2)	/* armc */
+        ascmc_speed[i] += house_partial(ascmc[i], ap[i], am[i], okp, okm, step) * rate;
+    }
+  }
+}
+
+/* swe_houses_armc_ex2_r() with the speeds of an ARMC and obliquity that
+ * move at armc_rate and eps_rate; hr NULL: as it is (at ARMCS) */
+static int houses_armc_dt(swe_ctx *ctx, double armc, double lat, double eps, int hsys,
+                          const struct house_rates *hr, double armc_rate, double eps_rate,
+                          double *cusp, double *ascmc, double *cusp_speed,
+                          double *ascmc_speed, char *serr)
+{
+  int i, retc, ito = toupper(hsys) == 'G' ? 36 : 12;
+  double scale;
+  retc = swe_houses_armc_ex2_r(ctx, armc, lat, eps, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+  if (hr == NULL || (cusp_speed == NULL && ascmc_speed == NULL))
+    return retc;
+  if (retc < 0)
+    ito = 12;
+  scale = armc_rate / ARMCS;
+  if (cusp_speed != NULL) {
+    for (i = 1; i <= ito; i++)
+      cusp_speed[i] *= scale;
+  }
+  if (ascmc_speed != NULL) {
+    for (i = 0; i < SE_NASCMC; i++)
+      ascmc_speed[i] *= scale;
+    ascmc_speed[2] = armc_rate;
+  }
+  houses_add_rate(ctx, armc, lat, eps, hsys, retc, ito, FALSE, eps_rate,
+                  cusp, ascmc, cusp_speed, ascmc_speed);
+  if (toupper(hsys) == 'I')
+    houses_add_rate(ctx, armc, lat, eps, hsys, retc, ito, TRUE, hr->decl,
+                    cusp, ascmc, cusp_speed, ascmc_speed);
+  return retc;
+}
+
+/* the sidereal functions' speeds: less the rate of what they subtract */
+static void houses_less_rate(int hsys, int retc, double rate, double *cusp_speed,
+                             double *ascmc_speed)
+{
+  int i, ito = (toupper(hsys) == 'G' && retc >= 0) ? 36 : 12;
+  if (cusp_speed != NULL) {
+    for (i = 1; i <= ito; i++)
+      cusp_speed[i] -= rate;
+  }
+  if (ascmc_speed != NULL) {
+    for (i = 0; i < SE_NASCMC; i++) {
+      if (i != 2)	/* armc */
+        ascmc_speed[i] -= rate;
+    }
+  }
+}
+#endif
+
 /* 
  * Function returns OK or ERR.
  * cusps are returned in double cusp[13],
@@ -246,6 +421,11 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
   double xp[6];
   int retc_makr = 0;
   int ito;
+#ifndef SWE_UPSTREAM_COMPAT
+  struct house_rates hr, *phr = NULL;
+#else
+  const struct house_rates *phr = NULL;
+#endif
   if (toupper(hsys) == 'G')
     ito = 36;
   else
@@ -283,6 +463,18 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
     /*houses_to_sidereal(tjde, geolat, hsys, eps, cusp, ascmc, iflag);*/
   armc = swe_degnorm(swe_sidtime0_r(ctx, tjd_ut, eps_mean + nutlo[1], nutlo[0]) * 15 + geolon);
 //fprintf(stderr, "armc=%f, iflag=%d\n", armc, iflag);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (cusp_speed != NULL || ascmc_speed != NULL) {
+    double tp = tjd_ut + HOUSE_SPEED_DT, tm = tjd_ut - HOUSE_SPEED_DT;
+    house_frame_at(ctx, tp, iflag, geolon, &hr.p);
+    house_frame_at(ctx, tm, iflag, geolon, &hr.m);
+    hr.dt = tp - tm;
+    hr.armc = swe_difdeg2n(hr.p.armc, hr.m.armc) / hr.dt;
+    hr.eps = (hr.p.eps - hr.m.eps) / hr.dt;
+    hr.decl = 0;
+    phr = &hr;
+  }
+#endif
   if (toupper(hsys) ==  'I') {	// compute sun declination for sunshine houses
     int flags = SEFLG_SPEED| SEFLG_EQUATORIAL;
     retc_makr = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, flags, xp, NULL);
@@ -291,16 +483,27 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
       hsys = (int) 'O';
     }
     ascmc[9] = xp[1];	// declination in ascmc[9];
+#ifndef SWE_UPSTREAM_COMPAT
+    /* per day of TT, from swe_calc_ut(); per day of UT */
+    if (phr != NULL && retc_makr >= 0)
+      hr.decl = xp[4] * (hr.p.tjde - hr.m.tjde) / hr.dt;
+#endif
   }
   if (iflag & SEFLG_SIDEREAL) { 
     if (sip->sid_mode & SE_SIDBIT_ECL_T0)
-      retc = sidereal_houses_ecl_t0(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+      retc = sidereal_houses_ecl_t0(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr, phr);
     else if (sip->sid_mode & SE_SIDBIT_SSY_PLANE)
-      retc = sidereal_houses_ssypl(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+      retc = sidereal_houses_ssypl(ctx, tjde, armc, eps_mean + nutlo[1], nutlo, geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr, phr);
     else
-      retc = sidereal_houses_trad(ctx, tjde, iflag, armc, eps_mean + nutlo[1], nutlo[0], geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+      retc = sidereal_houses_trad(ctx, tjde, iflag, armc, eps_mean + nutlo[1], nutlo[0], geolat, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr, phr);
   } else {
+#ifndef SWE_UPSTREAM_COMPAT
+    retc = houses_armc_dt(ctx, armc, geolat, eps_mean + nutlo[1], hsys, phr,
+                          phr ? phr->armc : ARMCS, phr ? phr->eps : 0,
+                          cusp, ascmc, cusp_speed, ascmc_speed, serr);
+#else
     retc = swe_houses_armc_ex2_r(ctx, armc, geolat, eps_mean + nutlo[1], hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+#endif
     if (toupper(hsys) ==  'I') 	
       ascmc[9] = xp[1];	// declination in ascmc[9];
   }
@@ -357,28 +560,16 @@ int CALL_CONV swe_houses_ex2(double tjd_ut,
  * 6. subtract this distance from all house cusps.
  * 7. subtract ayanamsa_t0 from all house cusps.
  */
-static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
-                           double armc, 
-                           double eps, 
-                           double *nutlo, 
-                           double lat, 
-			   int hsys, 
-                           double *cusp, 
-                           double *ascmc,
-			   double *cusp_speed,
-			   double *ascmc_speed,
-			   char *serr)
+/* steps 1, 2 and 5 of sidereal_houses_ecl_t0(): the auxiliary
+ * obliquity, and the auxiliary vernal point's distances from the vernal
+ * point of tjde (on the equator) and of t0 (on the sidereal plane) */
+static void ecl_t0_aux(swe_ctx *ctx, double tjde, double eps, const double *nutlo,
+                       double *epsx, double *dvpx, double *dvpxe)
 {
-  int i, j, retc = OK;
+  int j;
   double x[6], xvpx[6], x2[6], epst0, xnorm[6];
-  double rxy, rxyz, c2, epsx, sgn, fac, dvpx, dvpxe;
-  double armcx;
+  double rxy, rxyz, c2, sgn, fac;
   struct sid_data *sip = &ctx->sidd;
-  int ito;
-  if (toupper(hsys) == 'G')
-    ito = 36;
-  else
-    ito = 12;
   /* epsilon at t0 */
   epst0 = swi_epsiln(ctx, sip->t0, 0);
   /* cartesian coordinates of an imaginary moving body on the
@@ -408,7 +599,7 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
   c2 = (rxy + xnorm[2] * xnorm[2]);
   rxyz = sqrt(c2);
   rxy = sqrt(rxy);
-  epsx = asin(rxy / rxyz) * RADTODEG;           /* 1a */
+  *epsx = asin(rxy / rxyz) * RADTODEG;          /* 1a */
   /* auxiliary vernal point */
   if (fabs(x[5]) < 1e-15)
     x[5] = 1e-15;
@@ -419,16 +610,57 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
   /* distance of the auxiliary vernal point from 
    * the zero point at tjd_et (a section on the equator): */
   swi_cartpol(xvpx, x2);
-  dvpx = x2[0] * RADTODEG;                      /* 2 */
+  *dvpx = x2[0] * RADTODEG;                     /* 2 */
+  /* distance between auxiliary vernal point and
+   * vernal point of t0 (a section on the sidereal plane) */
+  *dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
+  if (tjde < sip->t0)
+    *dvpxe = -*dvpxe;
+}
+
+static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde, 
+                           double armc, 
+                           double eps, 
+                           double *nutlo, 
+                           double lat, 
+			   int hsys, 
+                           double *cusp, 
+                           double *ascmc,
+			   double *cusp_speed,
+			   double *ascmc_speed,
+			   char *serr,
+			   const struct house_rates *hr)
+{
+  int i, retc = OK;
+  double epsx, dvpx, dvpxe;
+  double armcx;
+  struct sid_data *sip = &ctx->sidd;
+  int ito;
+  if (toupper(hsys) == 'G')
+    ito = 36;
+  else
+    ito = 12;
+  ecl_t0_aux(ctx, tjde, eps, nutlo, &epsx, &dvpx, &dvpxe);	/* 1, 2, 5 */
   /* auxiliary armc */
   armcx = swe_degnorm(armc - dvpx);        /* 3 */
   /* compute axes and houses: */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 43: the speeds were those of the auxiliary houses as if
+   * the auxiliary ARMC, obliquity and vernal point stood still; their
+   * rates, from the auxiliary frame either side of tjde: */
+  if (hr != NULL) {
+    double ep, dp, dep, em, dm, dem;
+    ecl_t0_aux(ctx, hr->p.tjde, hr->p.eps, hr->p.nutlo, &ep, &dp, &dep);
+    ecl_t0_aux(ctx, hr->m.tjde, hr->m.eps, hr->m.nutlo, &em, &dm, &dem);
+    retc = houses_armc_dt(ctx, armcx, lat, epsx, hsys, hr,
+                          hr->armc - swe_difdeg2n(dp, dm) / hr->dt, (ep - em) / hr->dt,
+                          cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+    houses_less_rate(hsys, retc, (dep - dem) / hr->dt, cusp_speed, ascmc_speed);
+  } else
+#else
+  (void) hr;
+#endif
   retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
-  /* distance between auxiliary vernal point and
-   * vernal point of t0 (a section on the sidereal plane) */
-  dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
-  if (tjde < sip->t0)
-    dvpxe = -dvpxe;
   for (i = 1; i <= ito; i++)                     /* 6, 7 */
     cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0);
   for (i = 0; i <= SE_NASCMC; i++) {
@@ -439,6 +671,10 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
   if (hsys == 'N') { /* 1 = 0° Aries */
     for (i = 1; i <= ito; i++) {
       cusp[i] = (i - 1) * 30;
+#ifndef SWE_UPSTREAM_COMPAT
+      if (cusp_speed != NULL)
+        cusp_speed[i] = 0;
+#endif
     }
   }
   return retc;
@@ -464,28 +700,13 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
  * 8. subtract ayanamsa_t0 from all house cusps.
  * 9. subtract ayanamsa_2000 from all house cusps.
  */
-static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
-                           double armc, 
-                           double eps, 
-                           double *nutlo, 
-                           double lat, 
-			   int hsys, 
-                           double *cusp, 
-                           double *ascmc,
-			   double *cusp_speed,
-			   double *ascmc_speed,
-			   char *serr)
+/* steps 1, 2 and 5 of sidereal_houses_ssypl(), as ecl_t0_aux() */
+static void ssypl_aux(swe_ctx *ctx, double tjde, double eps, const double *nutlo,
+                      double *epsx, double *dvpx, double *dvpxe)
 {
-  int i, j, retc = OK;
-  double x[6], x0[6], xvpx[6], x2[6], xnorm[6];
-  double rxy, rxyz, c2, epsx, eps2000, sgn, fac, dvpx, dvpxe, x00;
-  double armcx;
-  struct sid_data *sip = &ctx->sidd;
-  int ito;
-  if (toupper(hsys) == 'G')
-    ito = 36;
-  else
-    ito = 12;
+  int j;
+  double x[6], xvpx[6], x2[6], xnorm[6];
+  double rxy, rxyz, c2, eps2000, sgn, fac;
   eps2000 = swi_epsiln(ctx, J2000, 0);
   /* cartesian coordinates of the zero point on the
    * the solar system rotation plane */
@@ -518,7 +739,7 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   c2 = (rxy + xnorm[2] * xnorm[2]);
   rxyz = sqrt(c2);
   rxy = sqrt(rxy);
-  epsx = asin(rxy / rxyz) * RADTODEG;           /* 1a */
+  *epsx = asin(rxy / rxyz) * RADTODEG;          /* 1a */
   /* auxiliary vernal point */
   if (fabs(x[5]) < 1e-15)
     x[5] = 1e-15;
@@ -529,18 +750,58 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   /* distance of the auxiliary vernal point from 
    * mean vernal point at tjd_et (a section on the equator): */
   swi_cartpol(xvpx, x2);
-  dvpx = x2[0] * RADTODEG;                      /* 2 */
-  /* auxiliary armc */
-  armcx = swe_degnorm(armc - dvpx);        /* 3 */
-  /* compute axes and houses: */
-  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  *dvpx = x2[0] * RADTODEG;                     /* 2 */
   /* distance between the auxiliary vernal point at t and
    * the sidereal zero point of 2000 at t
    * (a section on the sidereal plane).
    */ 
-  dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
+  *dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
                 /* (always positive for dates after 5400 bc) */
-  dvpxe -= SSY_PLANE_NODE * RADTODEG;
+  *dvpxe -= SSY_PLANE_NODE * RADTODEG;
+}
+
+static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde, 
+                           double armc, 
+                           double eps, 
+                           double *nutlo, 
+                           double lat,
+			   int hsys, 
+                           double *cusp, 
+                           double *ascmc,
+			   double *cusp_speed,
+			   double *ascmc_speed,
+			   char *serr,
+			   const struct house_rates *hr)
+{
+  int i, retc = OK;
+  double x0[6], epsx, eps2000, dvpx, dvpxe, x00;
+  double armcx;
+  struct sid_data *sip = &ctx->sidd;
+  int ito;
+  if (toupper(hsys) == 'G')
+    ito = 36;
+  else
+    ito = 12;
+  eps2000 = swi_epsiln(ctx, J2000, 0);
+  ssypl_aux(ctx, tjde, eps, nutlo, &epsx, &dvpx, &dvpxe);	/* 1, 2, 5 */
+  /* auxiliary armc */
+  armcx = swe_degnorm(armc - dvpx);        /* 3 */
+  /* compute axes and houses: */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 43, as in sidereal_houses_ecl_t0() */
+  if (hr != NULL) {
+    double ep, dp, dep, em, dm, dem;
+    ssypl_aux(ctx, hr->p.tjde, hr->p.eps, hr->p.nutlo, &ep, &dp, &dep);
+    ssypl_aux(ctx, hr->m.tjde, hr->m.eps, hr->m.nutlo, &em, &dm, &dem);
+    retc = houses_armc_dt(ctx, armcx, lat, epsx, hsys, hr,
+                          hr->armc - swe_difdeg2n(dp, dm) / hr->dt, (ep - em) / hr->dt,
+                          cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+    houses_less_rate(hsys, retc, (dep - dem) / hr->dt, cusp_speed, ascmc_speed);
+  } else
+#else
+  (void) hr;
+#endif
+  retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
   /* ayanamsa between t0 and J2000, measured on solar system plane: */
   /* position of zero point of t0 */
   x0[0] = 1; 
@@ -568,6 +829,10 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   if (hsys == 'N') { /* 1 = 0° Aries */
     for (i = 1; i <= ito; i++) {
       cusp[i] = (i - 1) * 30;
+#ifndef SWE_UPSTREAM_COMPAT
+      if (cusp_speed != NULL)
+        cusp_speed[i] = 0;
+#endif
     }
   }
   return retc;
@@ -585,7 +850,8 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
                            double *ascmc,
 			   double *cusp_speed,
 			   double *ascmc_speed,
-			   char *serr)
+			   char *serr,
+			   const struct house_rates *hr)
 {
   int i, retc = OK;
   double ay;
@@ -606,7 +872,13 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
     ihs2 = 'E';
 //fprintf(stderr, "armc=%f\n", armc);
 //if (hsys == 'P') fprintf(stderr, "ay=%f, t=%f %c", ay, tjde, (char) hsys);
+#ifndef SWE_UPSTREAM_COMPAT
+  retc = houses_armc_dt(ctx, armc, lat, eps, ihs2, hr, hr ? hr->armc : ARMCS,
+                        hr ? hr->eps : 0, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+#else
+  (void) hr;
   retc = swe_houses_armc_ex2_r(ctx, armc, lat, eps, ihs2, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+#endif
 //if (hsys == 'P') fprintf(stderr, "  h1=%f", cusp[1]);
   for (i = 1; i <= ito; i++) {
     //cusp[i] = swe_degnorm(cusp[i] - ay - nutl);
@@ -625,6 +897,23 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
     //ascmc[i] = swe_degnorm(ascmc[i] - ay - nutl);
     ascmc[i] = swe_degnorm(ascmc[i] - ay);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 43: the speeds were the tropical ones, without the
+   * ayanamsa's rate (3.8-4.7e-5 deg/day, precession and nutation); and
+   * whole signs, computed as 'E', kept the Asc's speed on every cusp
+   * (326-555 deg/day where they stand still). The rate is a difference
+   * of the ayanamsa over the frame's TT either side. */
+  if (hr != NULL) {
+    double ayp, aym;
+    swe_get_ayanamsa_ex_r(ctx, hr->p.tjde, iflag, &ayp, NULL);
+    swe_get_ayanamsa_ex_r(ctx, hr->m.tjde, iflag, &aym, NULL);
+    houses_less_rate(ihs2, retc, swe_difdeg2n(ayp, aym) / hr->dt, cusp_speed, ascmc_speed);
+  }
+  if ((ihs == 'W' || ihs == 'N') && cusp_speed != NULL) {
+    for (i = 1; i <= ito; i++)
+      cusp_speed[i] = 0;
+  }
+#endif
 //if (hsys == 'P') fprintf(stderr, " => %f\n", cusp[1]);
   return retc;
 }
@@ -684,8 +973,12 @@ int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
 				double *ascmc_speed,
 				char *serr)
 {
-  struct houses h, hm1, hp1;
-  int i, retc = 0, rm1, rp1;
+  struct houses h;
+#ifdef SWE_UPSTREAM_COMPAT
+  struct houses hm1, hp1;
+  int rm1, rp1;
+#endif
+  int i, retc = 0;
   int ito;
   /* Sunshine houses: remembers the last solar declination supplied by the
    * caller, so that a later call may pass the sentinel 99 to recall it.
@@ -753,6 +1046,50 @@ int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
     for (i = SE_NASCMC; i < 10; i++)
       ascmc_speed[i] = 0;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  if (h.do_interpol) {
+    /* Upstream bug 41: the cusps of these systems (B F I i L M Q S X Y,
+     * and U) were differenced over one second of time, darmc = 0.0042
+     * deg, by three points: the h^2 term of a cusp that turns fast is not
+     * small, 3.7e-7 of the rate at 70N (1e-4 deg/day; Q at 85N 0.1, Y
+     * at 70S 0.02, Sunshine 9e-3). Five points over HOUSE_SPEED_DARMC = 2^-8 deg
+     * cancel it and leave h^4 (Q at 85N 4e-8 of the rate, the worst) and
+     * each cusp's rounding over the step, 1e-12 deg / 2^-8 (Makransky's,
+     * rough by 2e-10 deg, over four times the step). A side that jumps
+     * (the Asc changing hemisphere within the polar circle, a fall back to
+     * Porphyry) is dropped for a one-sided three-point difference on the
+     * other. The step is ARMC's; per day at ARMCS, as above. */
+    static const double koff[4] = {-2, -1, 1, 2};
+    /* Makransky's cusps are rough at 2e-10 deg; four times the step */
+    double d = hsys == 'i' ? 4 * HOUSE_SPEED_DARMC : HOUSE_SPEED_DARMC;
+    struct houses hk[4];
+    int k, rk[4];
+    for (k = 0; k < 4; k++) {
+      hk[k].do_speed = FALSE;
+      hk[k].do_hspeed = FALSE;
+      if (toupper(hsys) ==  'I')
+        hk[k].sundec = h.sundec;
+      rk[k] = CalcH(swe_degnorm(armc + koff[k] * d), geolat, eps, (char)hsys, &hk[k]);
+    }
+    for (i = 1; i <= 12; i++) {
+      double v[4], s = 0;
+      AS_BOOL okm, okp;
+      for (k = 0; k < 4; k++)
+        v[k] = swe_difdeg2n(hk[k].cusp[i], h.cusp[i]);
+      okm = (rk[0] < 0) == (retc < 0) && (rk[1] < 0) == (retc < 0)
+            && fabs(v[0]) < 10 && fabs(v[1]) < 10;
+      okp = (rk[2] < 0) == (retc < 0) && (rk[3] < 0) == (retc < 0)
+            && fabs(v[2]) < 10 && fabs(v[3]) < 10;
+      if (okm && okp)
+        s = (8 * (v[2] - v[1]) - (v[3] - v[0])) / (12 * d);
+      else if (okp)
+        s = (4 * v[2] - v[3]) / (2 * d);
+      else if (okm)
+        s = (v[0] - 4 * v[1]) / (2 * d);
+      cusp_speed[i] = s * ARMCS;
+    }
+  }
+#else
   if (h.do_interpol) {	// must compute cusp_speed via interpolation
     double dt = 1.0 / 86400;
     double darmc = dt * ARMCS;
@@ -780,6 +1117,7 @@ int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
       }
     }
   }
+#endif
 #ifdef TRACE
   swi_open_trace(NULL);
   swi_trace_lock();
@@ -1316,10 +1654,31 @@ static int CalcH(
     hsp->cusp[2] = Asc1(th + 120 + ad3, fi, sine, cose);
     hsp->cusp[3] = Asc1(th + 150 + 2 * ad3, fi, sine, cose);
     if (hsp->do_hspeed) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 41: the cusps are Asc1(th + k 30 + j ad3), and ad3,
+       * a third of the MC's ascensional difference, moves with the MC;
+       * its rate was left out, 200 deg/day on cusps 11 and 5 at 47N
+       * (721 for 522). The chain through sin a = sin MC sin e / cos fi,
+       * cos a, c = atan(tan fi / cos a), sin(3 ad3) = sin c sin a, in
+       * radians per degree of ARMC: */
+      double dsina = 0, dcosa, dc, p, dp, dad3;
+      if (fabs(sina) < 1)
+        dsina = cosd(hsp->mc) * sine / cosd(fi) * AscDer(th, 0, sine, cose) * DEGTORAD;
+      dcosa = -sina / cosa * dsina;
+      dc = -tanfi / (cosa * cosa + tanfi * tanfi) * dcosa;
+      p = sind(c) * sina;
+      dp = cosd(c) * dc * sina + sind(c) * dsina;
+      dad3 = fabs(p) < 1 ? dp / sqrt(1 - p * p) / 3.0 * RADTODEG : 0;
+      hsp->cusp_speed[11] = AscDash(th + 30 - 2 * ad3, fi, sine, cose) * (1 - 2 * dad3);
+      hsp->cusp_speed[12] = AscDash(th + 60 - ad3, fi, sine, cose) * (1 - dad3);
+      hsp->cusp_speed[2] = AscDash(th + 120 + ad3, fi, sine, cose) * (1 + dad3);
+      hsp->cusp_speed[3] = AscDash(th + 150 + 2 * ad3, fi, sine, cose) * (1 + 2 * dad3);
+#else
       hsp->cusp_speed[11] = AscDash(th + 30 - 2 * ad3, fi, sine, cose);
       hsp->cusp_speed[12] = AscDash(th + 60 - ad3, fi, sine, cose);
       hsp->cusp_speed[2] = AscDash(th + 120 + ad3, fi, sine, cose);
       hsp->cusp_speed[3] = AscDash(th + 150 + 2 * ad3, fi, sine, cose);
+#endif
     }
     break;
   case 'L':	/* Pullen SD sinusoidal delta, ex Neo-Porphyry */
@@ -1356,8 +1715,16 @@ static int CalcH(
       /* within polar circle we swap AC/DC if AC is on wrong side */
       hsp->ac = swe_degnorm(hsp->ac + 180);
     }
-    for (i = 1; i <= 12; i++) 
+    for (i = 1; i <= 12; i++)
       hsp->cusp[i] = (i - 1) * 30.0;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 40: the cusps are fixed; 1 and 7, 4 and 10 kept the
+     * speeds of the Asc and MC set above, 326-1270 deg/day */
+    if (hsp->do_hspeed) {
+      for (i = 1; i <= 12; i++)
+        hsp->cusp_speed[i] = 0;
+    }
+#endif
     break;
   case 'O':	/* Porphyry houses */
 porphyry:
@@ -1381,8 +1748,18 @@ porphyry:
       hsp->cusp_speed[10] = hsp->mc_speed; // dito
       hsp->cusp_speed[2] = hsp->ac_speed  - q1_speed / 3;
       hsp->cusp_speed[3] = hsp->ac_speed  - q1_speed / 3 * 2;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 40: cusps 11 and 12 are MC + acmc / 3 and MC + 2 acmc
+       * / 3, but their speeds were built on the Asc's instead of the MC's,
+       * off by the difference of the two, hundreds of deg/day at any
+       * latitude (1600 at 70N); so were the Koch, Placidus and Gauquelin
+       * fallbacks within the polar circle */
+      hsp->cusp_speed[11] = hsp->mc_speed  + q1_speed / 3;
+      hsp->cusp_speed[12] = hsp->mc_speed  + q1_speed / 3 * 2;
+#else
       hsp->cusp_speed[11] = hsp->ac_speed  + q1_speed / 3;
       hsp->cusp_speed[12] = hsp->ac_speed  + q1_speed / 3 * 2;
+#endif
     }
     break;
   case 'Q':	/* Pullen sinusoidal ratio */
@@ -1533,6 +1910,15 @@ porphyry:
     hsp->cusp[1] = hsp->ac - fmod(hsp->ac, 30);
     for (i = 2; i <=12; i++)
       hsp->cusp[i] = swe_degnorm(hsp->cusp[1] + (i-1) * 30);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 40: the cusps stand still within a sign; 1 and 7, 4
+     * and 10 kept the speeds of the Asc and MC set above, 326-555
+     * deg/day at 47N, 1270 at 70N */
+    if (hsp->do_hspeed) {
+      for (i = 1; i <= 12; i++)
+        hsp->cusp_speed[i] = 0;
+    }
+#endif
     break;
   case 'X': {
     /*
@@ -1722,7 +2108,11 @@ porphyry:
 	  strcpy(hsp->serr, "very close to polar circle, switched to Porphyry"); 
 	  goto porphyry;
 	}
+#ifndef SWE_UPSTREAM_COMPAT
+	if (hsp->do_hspeed) hsp->cusp_speed[ih] = PlacDer(rectasc, f, hsp->cusp[ih], tanfi, ih2 / 9.0, sine, cose) * ARMCS;
+#else
 	if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDash(rectasc, f, sine, cose);
+#endif
       }
       hsp->cusp[ih+18] = swe_degnorm(hsp->cusp[ih] + 180);
       if (hsp->do_hspeed) hsp->cusp_speed[ih + 18] = hsp->cusp_speed[ih];
@@ -1764,7 +2154,11 @@ porphyry:
 	  strcpy(hsp->serr, "very close to polar circle, switched to Porphyry"); 
 	  goto porphyry;
 	}
+#ifndef SWE_UPSTREAM_COMPAT
+	if (hsp->do_hspeed) hsp->cusp_speed[ih] = PlacDer(rectasc, f, hsp->cusp[ih], tanfi, ih2 / 9.0, sine, cose) * ARMCS;
+#else
 	if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDash(rectasc, f, sine, cose);
+#endif
       }
       hsp->cusp[ih-18] = swe_degnorm(hsp->cusp[ih] + 180);
       if (hsp->do_hspeed) hsp->cusp_speed[ih - 18] = hsp->cusp_speed[ih];
@@ -1854,6 +2248,12 @@ porphyry:
       hsp->cusp[i+1] = swe_degnorm(hsp->cusp[i+1]);
       hsp->cusp[i+7] = swe_degnorm(hsp->cusp[i+1]+180);
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 40: no speed was ever taken; cusps 2, 3, 11, 12 and
+     * their opposites came back 0 (1500 deg/day at 70N), 1 and 10 the
+     * Asc's and MC's. Differenced in ARMC below, as for B, F, L, ... */
+    hsp->do_interpol = hsp->do_hspeed;
+#endif
     break;
   case 'Y':     /* APC houses */
     for (i = 1; i <= 12; i++) {
@@ -1919,7 +2319,11 @@ porphyry:
 	strcpy(hsp->serr, "very close to polar circle, switched to Porphyry"); 
 	goto porphyry;
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = PlacDer(rectasc, f, hsp->cusp[ih], tanfi, 1 / 3.0, sine, cose) * ARMCS;
+#else
       if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDash(rectasc, f, sine, cose);
+#endif
 #ifdef DEBUG_PLAC_ITER
   fprintf(stderr, "h=%d, niter=%d\n", ih, i);
 #endif
@@ -1955,7 +2359,11 @@ porphyry:
 	strcpy(hsp->serr, "very close to polar circle, switched to Porphyry"); 
 	goto porphyry;
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = PlacDer(rectasc, f, hsp->cusp[ih], tanfi, 2 / 3.0, sine, cose) * ARMCS;
+#else
       if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDash(rectasc, f, sine, cose);
+#endif
 #ifdef DEBUG_PLAC_ITER
   fprintf(stderr, "h=%d, niter=%d\n", ih, i);
 #endif
@@ -1991,7 +2399,11 @@ porphyry:
 	strcpy(hsp->serr, "very close to polar circle, switched to Porphyry"); 
 	goto porphyry;
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = PlacDer(rectasc, f, hsp->cusp[ih], tanfi, 2 / 3.0, sine, cose) * ARMCS;
+#else
       if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDash(rectasc, f, sine, cose);
+#endif
 #ifdef DEBUG_PLAC_ITER
   fprintf(stderr, "h=%d, niter=%d\n", ih, i);
 #endif
@@ -2027,7 +2439,11 @@ porphyry:
 	strcpy(hsp->serr, "very close to polar circle, switched to Porphyry"); 
 	goto porphyry;
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = PlacDer(rectasc, f, hsp->cusp[ih], tanfi, 1 / 3.0, sine, cose) * ARMCS;
+#else
       if (hsp->do_hspeed) hsp->cusp_speed[ih] = AscDash(rectasc, f, sine, cose);
+#endif
 #ifdef DEBUG_PLAC_ITER
   fprintf(stderr, "h=%d, niter=%d\n", ih, i);
 #endif
@@ -2197,6 +2613,64 @@ static double AscDash(double x, double f, double sine, double cose)
   }
   return dudt * ARMCS;	// 360.985647366;
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* d Asc1(x, f) / dx, degrees per degree: AscDash without the rate */
+static double AscDer(double x, double f, double sine, double cose)
+{
+  double cosx = cosd(x);
+  double sinx = sind(x);
+  double sinx2 = sinx * sinx;
+  double c = cose * cosx - tand(f) * sine;
+  double d = sinx2 + c * c;
+  if (d <= VERY_SMALL)
+    return 0;
+  return (cosx * c + cose * sinx2) / d;
+}
+
+/* d Asc1(x, f) / df, degrees per degree. tan Asc1 = sin x / D,
+ * D = cos e cos x - tan f sin e, so d Asc1 = -sin x dD / (sin^2 x + D^2)
+ * with dD/df = -sin e / cos^2 f. */
+static double AscDerF(double x, double f, double sine, double cose)
+{
+  double sinx = sind(x), cosf = cosd(f);
+  double c = cose * cosd(x) - tand(f) * sine;
+  double d = sinx * sinx + c * c;
+  if (d <= VERY_SMALL || fabs(cosf) < VERY_SMALL)
+    return 0;
+  return sinx * sine / (cosf * cosf) / d;
+}
+
+/* Upstream bug 41: a Placidus (or Gauquelin) cusp is the fixed point of
+ * C = Asc1(ra, f(C)), its pole height f = atan(sin(m asin(tan fi tan d))
+ * / tan d) set by the cusp's own declination d = asin(sin e sin C), m the
+ * cusp's fraction of the semi-arc (1/3, 2/3; ih/9 for the sectors). The
+ * cusp's rate in ARMC is A_x / (1 - A_f f'(C)), not A_x alone: the pole
+ * height moves with the cusp. Degrees per degree of ARMC. */
+static double PlacDer(double ra, double f, double cusp, double tanfi, double m,
+                      double sine, double cose)
+{
+  double ax = AscDer(ra, f, sine, cose);
+  double af = AscDerF(ra, f, sine, cose);
+  double sindec = sine * sind(cusp);
+  double cosdec = sqrt(1 - sindec * sindec);
+  double tant, g, q, dg, u, du, dtdc, dfdc, den;
+  tant = sindec / cosdec;
+  q = tanfi * tant;
+  if (fabs(tant) < VERY_SMALL || fabs(q) >= 1)
+    return ax;	/* f'(C) = 0 on the equator; no semi-arc past the circle */
+  g = asin(q);
+  dg = tanfi / sqrt(1 - q * q);				/* dg / d tan d */
+  u = sin(m * g) / tant;
+  du = (m * cos(m * g) * dg * tant - sin(m * g)) / (tant * tant);
+  dtdc = sine * cosd(cusp) / (cosdec * cosdec * cosdec) * DEGTORAD; /* per degree */
+  dfdc = du / (1 + u * u) * dtdc * RADTODEG;		/* deg of f per deg */
+  den = 1 - af * dfdc;
+  if (fabs(den) < VERY_SMALL)
+    return ax;
+  return ax / den;
+}
+#endif
 
 static double armc_to_mc(double armc, double eps)
 {

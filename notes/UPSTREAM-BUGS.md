@@ -81,6 +81,10 @@ worst were in code that had never executed even once.
 | 44 | The interpolated apsides depend on SEFLG_SPEED, and x has no light time | Correctness | `sweph.c` |
 | 45 | The interpolated apsides are rough at the JD's resolution, and so are their speeds | Correctness | `swemmoon.c`, `sweph.c` |
 | 49 | A fixed star's speeds are not the rates of its position | Correctness | `sweph.c` |
+| 40 | Whole-sign, 0-Aries, Porphyry and Krusinski cusp speeds are not the cusps' rate | Correctness | `swehouse.c` |
+| 41 | Koch, Placidus and Gauquelin cusp speeds leave out the moving semi-arc; differenced systems use one second | Correctness | `swehouse.c` |
+| 42 | House speeds turn the ARMC at a constant rate and hold the obliquity still | Correctness | `swehouse.c` |
+| 43 | Sidereal house speeds are the tropical ones | Correctness | `swehouse.c` |
 
 ---
 
@@ -2400,6 +2404,123 @@ deg/day, distance rate within 1e-12 of the distance per day, XYZ within
 Spica's distance rate 5.1e-7 AU/day shipped, 1.8e-3 compat. Baselines
 not regenerated here: G1 and G17 move on speeds (every speed of date, from
 (2), and the last bits of the others, from (1)); positions do not move.
+
+## 40. Whole-sign, 0-Aries, Porphyry and Krusinski cusp speeds are not the cusps' rate
+
+**Severity: Correctness (hundreds to 1600 deg/day on a returned cusp speed)**
+**Where:** `swehouse.c`: `CalcH()` cases `W`, `N`, `O`, `U`
+
+`swe_houses_ex2()` returns cusp speeds next to the cusps. `CalcH()` seeds
+cusps 1 and 10 with the Asc's and MC's speeds and each system overwrites
+what differs. Whole signs (`W`) and 0 Aries (`N`) never did: their cusps
+stand still within a sign, but 1 and 7 kept the Asc's speed and 4 and 10
+the MC's, 326-555 deg/day at 47N and 1270 at 70N where the truth is 0
+(sidereal whole signs, computed as `E`, got the Asc's speed on all 12;
+entry 43). Porphyry's cusps 11 and 12 are MC + acmc / 3 and MC + 2 acmc /
+3, but their speeds were built on the Asc's speed instead of the MC's, off
+by the difference of the two at every latitude, 1600 deg/day at 70N; the
+Koch, Placidus and Gauquelin fallbacks inside the polar circle share the
+code. Krusinski (`U`) never took a speed: cusps 2, 3, 11, 12 and their
+opposites came back 0 (1500 deg/day at 70N).
+
+**Fix, as done here:** `W` and `N` speeds 0; Porphyry's 11 and 12 from the
+MC's speed; Krusinski differenced in ARMC as the other non-analytic
+systems are (entry 41). Positions do not move.
+
+G45 `tests/housespeed.c` (with 41-43). G24 `house_speed_off(0)`: Koch
+cusp 11 and whole-sign cusp 1 at 47N against a five-point difference,
+2.0e-10 deg/day shipped, 265 compat.
+
+## 41. Koch, Placidus and Gauquelin cusp speeds leave out the moving semi-arc
+
+**Severity: Correctness (200 deg/day on Koch cusps, 3.2-32 on Placidus at 47-60N; 1e-4 to 0.1 on the differenced systems)**
+**Where:** `swehouse.c`: `CalcH()` cases `K`, `P` (default), `G`; the interpolation in `swe_houses_armc_ex2_r()`
+
+Each analytic speed is `AscDash()`, the rate of Asc1(x, f) in x with the
+pole height f held still. For Koch the cusps are Asc1(th + k 30 + j ad3,
+fi), and ad3, a third of the MC's ascensional difference, moves with the
+MC; its rate was left out: lib 721.4 against 521.7 deg/day on cusp 11 at
+47N, 1375 for 776 at 60N. A Placidus (or Gauquelin) cusp is the fixed
+point of C = Asc1(ra, f(C)), its pole height set by the cusp's own
+declination, so the pole height moves with the cusp: 3.2 deg/day at 47N,
+32 at 60N, 54 for Gauquelin sectors. The systems without an analytic
+speed (`B F I i L M Q S X Y`) were differenced over one second of time by
+three points: the h^2 term of a fast cusp is 3.7e-7 of its rate at 70N
+(1e-4 deg/day), Q at 85N 0.1 deg/day, APC at 70S 0.02, Sunshine 9e-3.
+
+**Fix, as done here:** Koch's speed carries d(ad3)/d(ARMC) by the chain
+through sin a = sin MC sin e / cos fi, c = atan(tan fi / cos a) and
+sin(3 ad3) = sin c sin a. Placidus and Gauquelin: dC = A_x / (1 - A_f
+f'(C)), A_x and A_f the partials of Asc1 in its arguments and f'(C) the
+pole height's rate in the cusp (`PlacDer()`). The differenced systems,
+and Krusinski, by five points over 2^-8 deg of ARMC (Makransky's
+Sunshine, whose cusps are rough by 2e-10 deg, 2^-6), a side that jumps or
+falls back to Porphyry dropped for a one-sided difference. In ARMC alone,
+against a ladder of differences: Koch 4e-11 of the rate, the differenced
+systems <= 2e-9 (Q at 85N 4e-8), Placidus and Gauquelin within 1e-9 of
+the converged cusp's rate. The Placidus iteration stops at 1/360000 deg
+and leaves the cusps 3.5e-8 deg off the fixed point; differences of the
+returned cusps carry that error's rate, 2e-8 of the speed at 60N (1.1e-5
+deg/day), which tightening the iteration removes (not done: it moves
+positions). Positions do not move.
+
+G45; G24 `house_speed_off(0)` (Koch cusp 11).
+
+## 42. House speeds turn the ARMC at a constant rate and hold the obliquity still
+
+**Severity: Correctness (6e-5 deg/day on the ARMC, 1.5e-4 on the Asc and 4.8e-4 on a Regiomontanus cusp at 70N; 2.4 deg/day on Sunshine cusps)**
+**Where:** `swehouse.c`: `swe_houses_ex2_r()`, `ARMCS`, `AscDash()`
+
+Every speed was the cusp's rate in ARMC times `ARMCS`, 360.9856473350
+deg/day at every epoch, the sidereal days of a fixed solar year. The ARMC
+`swe_houses_ex2()` computes the cusps from is the library's apparent
+sidereal time: the equation of the equinoxes moves it at -3.9e-5..+6.2e-5
+deg/day about the mean rate, and the mean is off `ARMCS` by 3e-8 deg/day
+at 2000, -9e-7 at -3000, +1.3e-6 at 12000; a cusp n times as fast as the
+ARMC carries n times that. The obliquity (nutation's 1.3e-5 deg/day) was
+held still, and so was the Sun's declination of Sunshine houses (up to 0.4
+deg/day, 2.4 deg/day on a cusp at 70S).
+
+**Fix, as done here:** the ARMC's and true obliquity's rates are
+differences of the library's own values 2^-6 day of UT, the time
+argument, either side (three points; nutation's fortnightly term leaves
+2e-10 deg/day, the ARMC's rounding 2e-8 at -13000); the cusp speeds in
+ARMC are scaled to that rate, and the partials in obliquity and (Sunshine)
+declination, differences of the cusps over 2^-10 deg, times their rates
+are added. The declination's rate is swe_calc_ut()'s, per TT day, turned
+per UT day. Speeds are per day of UT, as differences of the cusps over
+the time argument are. `swe_houses_armc_ex2()` has no date and still gives
+its speeds at `ARMCS`. A call with speeds evaluates the frame twice more
+(deltat, nutation, sidereal time) and the houses two or four more times:
+17-31 us against 11-21 without speeds (-O2), upstream's speeds cost ~0.5
+us. Positions do not move.
+
+G45; G24 `house_speed_off(1)` (with 43): equal houses' Asc under Lahiri
+at 47N, 4.6e-11 deg/day shipped, 3.9e-5 compat.
+
+## 43. Sidereal house speeds are the tropical ones
+
+**Severity: Correctness (3.8-8.5e-5 deg/day on every sidereal cusp; whole signs 326-555 deg/day)**
+**Where:** `swehouse.c`: `sidereal_houses_trad()`, `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`
+
+The sidereal cusps are the tropical ones less the ayanamsa (or, on the
+ecliptic of t0 or the solar-system plane, houses of an auxiliary ARMC and
+obliquity less the auxiliary vernal point's distance), all moving; the
+speeds were passed through from the tropical computation without any of
+those rates. Sidereal whole signs, computed as equal houses, kept the
+Asc's speed on all 12 cusps.
+
+**Fix, as done here:** the ayanamsa's rate, a difference over the frame's
+TT either side, is subtracted from the cusp and ascmc speeds; on the
+ecliptic of t0 and the solar-system plane the auxiliary obliquity, ARMC
+offset and vernal-point distance (steps 1, 2 and 5, now `ecl_t0_aux()` and
+`ssypl_aux()`, the same arithmetic) are evaluated either side for their
+rates. Whole signs and 0 Aries 0. Positions do not move (checked bitwise,
+both builds). Near t0 itself (J2000 for `SE_SIDM_J2000`) the auxiliary
+vernal point's distance is an acos near 1 and rough at 1e-8 deg, in the
+positions as well.
+
+G45; G24 `house_speed_off(1)`.
 
 ## How these were found
 

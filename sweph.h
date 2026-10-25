@@ -750,6 +750,14 @@ struct epsilon {
  *     backward difference over a rounded step (1.5e-8 deg/day topocentric),
  *     and swe_fixstar() kept the tropical speed for a sidereal longitude
  *     (3.8e-5 deg/day) (UPSTREAM-BUGS 49, G49)
+ *   - swe_houses_ex2() returned house cusp speeds that were not the cusps'
+ *     rate: whole signs and 0 Aries with the Asc's and MC's speeds,
+ *     Porphyry's 11 and 12 built on the Asc's, Krusinski's none (up to
+ *     1600 deg/day); Koch, Placidus and Gauquelin without the moving
+ *     semi-arc (200 deg/day), the rest differenced over one second; the
+ *     ARMC at a constant rate, the obliquity held still (6e-5 deg/day on
+ *     the ARMC); sidereal speeds without the ayanamsa's rate
+ *     (UPSTREAM-BUGS 40-43, G45)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
