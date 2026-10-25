@@ -900,6 +900,9 @@ struct epsilon {
  *     and app_pos_etc_sun() and app_pos_etc_sbar() gave the heliocentric
  *     and barycentric Earth, the geocentric Sun and the barycentric Sun no
  *     light-time rate (1.7e-6 deg/day on the Earth; UPSTREAM-BUGS 78, G77)
+ *   - app_pos_etc_sun() subtracted the Sun read at t - tau from the Swiss
+ *     files' heliocentric Earth, not the Sun at t as de200 and the planets
+ *     do (3.0e-6 deg; UPSTREAM-BUGS 78 part 2, G77)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

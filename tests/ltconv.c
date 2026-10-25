@@ -27,11 +27,15 @@
  * the rounding of t - tau along its velocity), O the true body less its
  * true position from the observer; Moshier's positions are heliocentric,
  * so there X is SEFLG_HELCTR. 61 dates -3000..+3000 (de200: 1601..2168).
- * Within 1e-11 deg (measured <= 5.2e-13).
- * The build before the fix fails all 34 rows: the Earth's by 1.6e-6 to
+ * Within 1e-11 deg (measured <= 5.2e-13). The heliocentric Earth the same
+ * way on the Swiss files and de200, within 1e-11 (measured 3.8e-14): the
+ * Swiss files subtracted the Sun read at t - tau, 3.0e-6 deg off (part 2).
+ * The build before the fix fails 34 of the 36 rows (all but the two
+ * heliocentric Earth positions, which part 2 adds): the Earth's by 1.6e-6 to
  * 1.8e-6 deg/day, the Sun's by 6.8e-10 and 9.1e-10, the planets by 1.8e-11
- * (Mars heliocentric) to 7.2e-10 deg (Mercury geocentric). The upstream
- * build fails all 34 too.
+ * (Mars heliocentric) to 7.2e-10 deg (Mercury geocentric). The build before
+ * part 2 fails the Swiss heliocentric Earth's position by 3.0e-6 deg. The
+ * upstream build fails all 36.
  * Run as
  *   ltconv EPHEDIR
  */
@@ -159,6 +163,10 @@ int main(int argc, char **argv)
       snprintf(sz, sizeof sz, "Sun %s noaberr", rge[ie].sz);
       bad += body_rate(SE_SUN, rge[ie].fl, SEFLG_NOABERR, sz, 5e-10);
     }
+  }
+  for (ie = 0; ie < 2; ie++) {
+    snprintf(sz, sizeof sz, "Earth %s helio", rge[ie].sz);
+    bad += lt_fixed_point(rge[ie].fl, SE_EARTH, SEFLG_HELCTR, sz, 1e-11);
   }
   for (ie = 0; ie < 3; ie++)
     for (ib = 0; ib < 3; ib++)

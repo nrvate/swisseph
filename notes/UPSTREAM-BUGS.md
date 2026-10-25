@@ -3974,6 +3974,23 @@ by the least, 1.8e-11 deg); the upstream build fails all 34. G24
 2^-8 day at nine dates: 6.0e-10 shipped (1.7e-6 before the fix), 1.7e-6
 compat.
 
+**Part 2, the Swiss files' heliocentric Earth.** `app_pos_etc_sun()`
+read the heliocentric or barycentric Earth on the Swiss files through
+`sweplan()`, which handed back the Sun read at the same t - tau, and that
+Sun was subtracted: E(t - tau) - S(t - tau), where de200 and every
+planet's heliocentric light time (entry 26) take E(t - tau) - S(t), the
+Sun where the light arrives. 3.0e-6 deg between the two (v_Sun / c),
+121 dates -3000..+3000; the speed, whose rate was taken against that
+Sun, 6.8e-10 deg/day off its positions. Fixed: the Sun is not asked back
+from that read, so xsun stays the Sun at teval, in the light time's
+distance and in the subtraction. After: 3.4e-14 deg from the fixed point
+(de200 3.3e-14), the speed 3.4e-10 deg/day, its true positions' floor.
+Swiss heliocentric Earth positions move by 3.0e-6 deg. G77 gains the
+heliocentric Earth's position against the fixed point on the Swiss files
+and de200, within 1e-11 deg: 3.4e-14 and 3.8e-14 measured, 3.0e-6 on the
+Swiss files before (de200 2.3e-10 before part 1); the upstream build
+3.0e-6 and 2.3e-10.
+
 ## 81. A fictitious body's light-time position is read at the rounded instant
 
 **Severity: Correctness (3.9e-8 deg on Waldemath's apparent position, a jitter that a five-point difference over 2^-7 day turns into 1e-6 to 5.5e-6 deg/day; 3.4e-7 deg/day on Vulcan heliocentric, 6.7e-8 on Selena under Moshier)**

@@ -6133,7 +6133,16 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
 	      retc = sweph(ctx, t, SEI_SUN, SEI_FILE_PLANET, iflag, NULL, NO_SAVE, xearth, serr);
 	    */
 	    if ((iflag & SEFLG_HELCTR) || (iflag & SEFLG_BARYCTR)) {
+#ifndef SWE_UPSTREAM_COMPAT
+	      /* Upstream bug 78: the Sun came back read at t - dt as well and
+	       * was subtracted below, where de200 and every planet's
+	       * heliocentric light time (bug 26) take the Sun at teval, where
+	       * the light arrives: 3.0e-6 deg between the two. xsun keeps the
+	       * Sun at teval. */
+	      retc = sweplan(ctx, t, SEI_EARTH, SEI_FILE_PLANET, iflag, NO_SAVE, xearth, NULL, NULL, NULL, serr);
+#else
 	      retc = sweplan(ctx, t, SEI_EARTH, SEI_FILE_PLANET, iflag, NO_SAVE, xearth, NULL, xsun, NULL, serr);
+#endif
             } else {
 	      retc = sweph(ctx, t, SEI_SUNBARY, SEI_FILE_PLANET, iflag, NULL, NO_SAVE, xsun, serr);
 	    }
