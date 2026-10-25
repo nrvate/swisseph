@@ -761,12 +761,21 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
 {
   int ret;
 #ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
   if (houses_date_refused(tjd_ut, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr))	/* bug 209 */
     return ERR;
+  swi_serr_snap(serr, s0);
 #endif
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_houses_ex2_r_body(ctx, tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
   swi_config_release(ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 262: house_range() names the TT, "jd 1281959700055.5513
+   * outside the obliquity and nutation range" at UT 1e12; the caller's UT
+   * with it now (houses_date_refused() names the UT already). What this
+   * call wrote: an answer may leave serr as the caller had it (s0). */
+  swi_ut_named(tjd_ut, 0, s0, serr);
+#endif
   return ret;
 }
 

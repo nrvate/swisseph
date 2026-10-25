@@ -3,7 +3,8 @@
  * and names it; where there is no error to return, no answer; inside the
  * ranges nothing changes.
  *
- * The defects (UPSTREAM-BUGS 210, 211, 216, 237, 238, 243, 255):
+ * The defects (UPSTREAM-BUGS 210, 211, 216, 237, 238, 243, 255, 260, 261,
+ * 262, 263, 280, 282, 286):
  * - 210: the refusals of a date outside a range wrote "jd %f outside ..."
  *   with sprintf(), the date's digits in full, into 256 bytes: the Moshier
  *   planets', Moon's, mean node's and apogee's into a local buffer, the JPL
@@ -45,6 +46,35 @@
  *   ranges' ends, and their refusals named the ends: Mars at 2818000.79
  *   answered, at 2818000.81 "outside Moshier planet range 625000.50 ..
  *   2818000.50".
+ * - 260: swe_utc_to_jd() and swe_jdet_to_utc() formed the date as yyyymmdd
+ *   in int, iyear * 10000, which overflows (signed, UB) past the year
+ *   214748, from about 8.0e7 days; it wrapped on x86-64, unused there.
+ * - 261: swe_utc_time_zone() moved the date by one day at most and cast
+ *   the hour to int unranged: 12:00:30 at -100 h the next day 88:00:30,
+ *   at -36 h 24:00:30, at 1e300 the hour INT_MIN, the seconds -3.6e303.
+ * - 262: the UT functions passed on their TT call's refusal naming its TT:
+ *   at UT 1e12 "jd 1281959700055.5513 outside the range the Swiss
+ *   Ephemeris files are named for"; on Moshier at UT 2818000.78, inside
+ *   the range printed, "jd 2818000.818357 outside Moshier planet range".
+ * - 263: below 1e15 the fixed decimals printed the double next past a
+ *   range's end as the end: "jd 2305424.500000 outside JPL eph. range
+ *   2305424.50 .." for 2305424.4999999995, strict "not available for jd
+ *   2305424.5000", the seconds 60.999 "61.00" and -0.001 "-0.00", and the
+ *   Swiss files' first limit -3026605.471196445 "-3026605.471196". And
+ *   a date past a range was refused at a speed read's instant: on Moshier
+ *   with SEFLG_SPEED the true node and osculating apogee at 8000000.5 "jd
+ *   8000000.468750", swe_nod_aps()'s Earth at 2818000.75 "jd
+ *   2818000.718750"; this fork's mean node and apogee (bug 117's reads)
+ *   and swe_nod_aps()'s Moon's mean points at 8000016.6 "jd
+ *   8000016.568750" and "jd 8000016.631250".
+ * - 280: swecl.c's and swehel.c's UT functions as 262: at UT 1e12 "jd
+ *   1281959700055.5513 outside ..." from swe_sol_eclipse_where(),
+ *   swe_pheno_ut(), swe_vis_limit_mag(), swe_heliacal_pheno_ut(), ...;
+ *   swe_rise_trans_true_hor() its search's TT "jd 1281959700055.4211".
+ * - 282 (kept, documented): swe_date_conversion() of an illegal date
+ *   returns ERR with the date converted (2000 Feb 30 as Mar 1).
+ * - 286: swe_heliacal_ut() answered from a fallen ephemeris (de200.eph
+ *   missing, or past its end, the fallback allowed) with an empty serr.
  *
  * Check (a), 210: at |J| 1e200, 1e250, 1e300, 1e308 and DBL_MAX, either
  * sign, Mars, the Moon, the mean node, the mean apogee and Cupido on
@@ -112,8 +142,77 @@
  * inside at the start, its light time): the one inside answered, the
  * refusal's range holding it and not the other. 85 calls.
  *
+ * Check (h), 260: the binary is built with swedate.c under -ftrapv, so a
+ * signed overflow there aborts the child (no sanitizer build needed).
+ * swe_utc_to_jd() at 12:00 1 Jan of the years 214748, 214749, 3e5, 1e6,
+ * 1e8 and 2147483000: OK, UT1 and its TT, delta t answering past the
+ * leap seconds' table; swe_jdet_to_utc() and swe_jdut1_to_utc() at those
+ * dates: a time or the no answer. 18 calls.
+ *
+ * Check (i), 261: swe_utc_time_zone() of 2000 Jan 1 12:00:30 at the zones
+ * -+1, -+12, -+14, -+23.99, -+24 h (upstream's answer, bit for bit), and
+ * at those and -+36, -+48, -+100, -+1e4, -+1e6, -+1e9, -+1e12 and +1.8e13
+ * h, the hour in 0..23 and the date and time the zone's hours away (within
+ * the zone's own rounding); of 0:00:00 at -+1e-300 as upstream's; and at
+ * -+1.9e13, -+2.4e13, -+1e15, -+1e300 and -+DBL_MAX (the year no int
+ * holds, or past the bound) no answer. 37 calls.
+ *
+ * Check (j), 262: on the files at UT 7e11 and 1e12, on Moshier at UT
+ * 2818000.78 and on de200.eph, strict, at UT 2513392.499 -- TTs the
+ * ranges refuse -- swe_calc_ut() (Mars; the Moon or SE_ECL_NUT),
+ * swe_fixstar2_ut(), swe_fixstar_ut(), swe_calc_orbel_ut(),
+ * swe_get_ayanamsa_ex_ut(), the four crossings' _ut forms,
+ * swe_time_equ(), swe_lmt_to_lat() and swe_houses_ex2() where refused:
+ * "jd <UT> UT (TT <tt>)" with the caller's UT read back and the TT within
+ * a day of its own (a crossing's where its search got to), "outside" or
+ * "not available" kept; and swe_calc() at the files' TT naming its TT as
+ * before. 45 calls.
+ *
+ * Check (k), 263: the doubles next past Moshier's planet and Moon ranges'
+ * ends, de200.eph's (the fallback note and the strict refusal), the Swiss
+ * files' first limit (read back from a refusal), and swe_utc_to_jd()'s
+ * seconds 60.999 and -0.001 at 12:00 and 60.999 at 23:59 with no leap
+ * second: the date or seconds read back; four ordinary messages as before,
+ * byte for byte. 15 calls.
+ *
+ * Check (l), 280: on the files at UT 1e12, on Moshier at UT 1e7 and
+ * 2818000.78 and on de200.eph strict at UT 2513392.499, refused there,
+ * the eclipse and occultation functions (where, how, the six searches),
+ * swe_pheno_ut(), swe_nod_aps_ut(), swe_gauquelin_sector() (methods 0
+ * and 2), rise and set (and at the true horizon), swe_vis_limit_mag(),
+ * swe_heliacal_pheno_ut() and swe_heliacal_ut(): a single instant's
+ * message "jd <UT> UT (TT <tt>)", the TT within a day of its own; a
+ * search's every date the caller's UT (the start refused), "jd X TT
+ * (searching from UT <UT>)" or an inner UT call's "jd X UT (TT ...)";
+ * and past de200.eph's end, the fallback allowed, the notes of
+ * swe_sol_eclipse_when_glob(), swe_lun_eclipse_when() and swe_pheno_ut()
+ * so. 79 calls.
+ *
+ * Check (m), 263's speed reads: on Moshier with SEFLG_SPEED the true node
+ * and osculating apogee at 8000000.5 and 2818000.75, the mean node (the
+ * files) and the mean apogee at 8000016.6 and -3100015.6, swe_nod_aps()
+ * of the Moon's mean points at 8000016.6 and of the Earth's osculating
+ * ones at 2818000.75 and 625000.29: the refusal's date the caller's, read
+ * back. 11 calls.
+ *
+ * Check (n), 286: swe_heliacal_ut() with de200.eph missing, the fallback
+ * allowed, at J2000 from Zurich, Venus's morning first and Sirius's
+ * without the details, and from de200.eph's end Venus's: OK with the
+ * fallback's note ("not found", "outside JPL eph. range"); Venus's on
+ * de200.eph at J2000 with none. 4 calls.
+ *
+ * Check (o), 282: swe_date_conversion() of 2000 Feb 30 and 1993 Jan 32 at
+ * 12:00: ERR, *tjd swe_julday()'s of the same; of 2000 Feb 29 OK. 3
+ * calls.
+ *
  * Measured: (a) 100 of 100, (b) 267 of 267, (c) 194 of 194, (d) the same,
- * (e) 47 of 47, (f) 75 of 75, (g) 85 of 85. Before the fix of 237, 238,
+ * (e) 47 of 47, (f) 75 of 75, (g) 85 of 85, (h) 18 of 18, (i) 37 of 37,
+ * (j) 45 of 45, (k) 15 of 15, (l) 79 of 79, (m) 11 of 11, (n) 4 of 4,
+ * (o) 3 of 3. Before the fix of 260 to 263, 280 and 286 (ts20 cdf372b):
+ * (f) 65 of 75 and (h) 5 of 18 (the overflow aborted 10 and 13), (i) 13
+ * of 37, (j) 2 of 45, (k) 4 of 15, (l) 20 of 79 (the searches' starts
+ * refused at the caller's number), (m) 0 of 11, (n) 1 of 4 (the one
+ * without a fallback), (o) 3 of 3. Before the fix of 237, 238,
  * 243 and 255: (e) 15 of 47, (f) 30 of 75 (x86-64's casts of NaN to
  * INT_MIN pass most of the NaN cases by chance), (g) 3 of 85.
  * Before the fix (a) 2 of 100 (61 aborted, 37 overran serr), (b) 161 of
@@ -125,7 +224,13 @@
  * occultation searches and the crossings at NaN, three at -inf), (c) 164 of
  * 194, (d) the same; its swe_nod_aps() leaves the caller's points on a
  * refusal (entry 179), the rest of (a) and (c); (e) 8 of 47, (f) 22 of
- * 75, (g) 4 of 85 (216's message, in both builds, prints its date). Run as
+ * 75, (g) 4 of 85 (216's message, in both builds, prints its date); (h)
+ * 17 of 18 (260's fix is in both builds; 238's year INT_MIN with a month
+ * the one), (i) 13 of 37, (j) 2 of 45, (k) 4 of 15 (the strict refusal,
+ * this fork's in both builds, and three ordinary; the fourth names 255's
+ * range), (l) 6 of 79, (m) 5 of 11 (the mean node's, apogee's and
+ * swe_nod_aps()'s Moon's mean points, which read tjd first there), (n) 2
+ * of 4, (o) 3 of 3 (282 is kept in both builds). Run as
  *   absdate EPHEDIR
  */
 #include <float.h>
@@ -551,6 +656,322 @@ static int probe_g_margin(int k)
   return !(in[k] >= a && in[k] <= b && !(out[k] >= a && out[k] <= b));
 }
 
+/* ---- (h) 260: built with swedate.c under -ftrapv, a signed overflow
+ * there aborts the child; T the year ---- */
+#define NH 3
+static int probe_h(int k)
+{
+  swe_ctx *c = fresh();
+  int32 v[5] = { 7, 7, 7, 7, 7 }, r, y = (int32) T;
+  double s = 7, d[2] = { 7, 7 }, ut = swe_julday(y, 1, 1, 12, SE_GREG_CAL);
+  switch (k) {
+  case 0:	/* past the leap seconds' table delta t answers UT1 */
+    r = swe_utc_to_jd_r(c, y, 1, 1, 12, 0, 0, SE_GREG_CAL, d, SERR);
+    return !(r == OK && d[1] == ut && d[0] == ut + swe_deltat_ex_r(c, ut, -1, NULL));
+  case 1: swe_jdet_to_utc_r(c, ut, SE_GREG_CAL, &v[0], &v[1], &v[2], &v[3], &v[4], &s); break;
+  default: swe_jdut1_to_utc_r(c, ut, SE_GREG_CAL, &v[0], &v[1], &v[2], &v[3], &v[4], &s); break;
+  }
+  return !(none(v, s) || (v[0] != INT_MIN && v[1] >= 1 && v[1] <= 12 && v[2] >= 1 && v[2] <= 31
+                          && v[3] >= 0 && v[3] < 24 && v[4] >= 0 && v[4] < 60 && s >= 0 && s < 61));
+}
+
+/* ---- (i) 261: T the time zone ---- */
+/* upstream's swe_utc_time_zone() of 2000 Jan 1, for an hour after the
+ * zone in -24 .. 48 */
+static void tz_upstream(int32 ih, int32 im, double ds, double tz, int32 *v, double *s)
+{
+  double tjd = swe_julday(2000, 1, 1, 0, SE_GREG_CAL), d;
+  double dh = ((double) ih) + ((double) im) / 60.0 + ds / 3600.0 - tz;
+  if (dh < 0.0) {
+    tjd -= 1.0;
+    dh += 24.0;
+  }
+  if (dh >= 24.0) {
+    tjd += 1.0;
+    dh -= 24.0;
+  }
+  swe_revjul(tjd + 0.001, SE_GREG_CAL, &v[0], &v[1], &v[2], &d);
+  v[3] = (int) dh;
+  d = (dh - (double) v[3]) * 60;
+  v[4] = (int) d;
+  *s = (d - (double) v[4]) * 60;
+}
+#define NI 3
+static int probe_i(int k)
+{
+  int32 v[5] = { 7, 7, 7, 7, 7 }, u[5];
+  double s = 7, w, want, got;
+  int ih = k == 2 ? 0 : 12, is = k == 2 ? 0 : 30;	/* 2: 0:00:00 */
+  swe_utc_time_zone(2000, 1, 1, ih, 0, is, T, &v[0], &v[1], &v[2], &v[3], &v[4], &s);
+  if (k == 1)	/* the date past the bound or its year no int: no answer */
+    return !none(v, s);
+  if (fabs(T) <= 24) {	/* inside upstream's day: its answer, bit for bit */
+    tz_upstream(ih, 0, is, T, u, &w);
+    if (memcmp(u, v, sizeof u) != 0 || memcmp(&w, &s, sizeof s) != 0)
+      return 1;
+  }
+  /* any zone: the hour in 0..23, the date and time the zone's hours away */
+  want = swe_julday(2000, 1, 1, ih + is / 3600.0, SE_GREG_CAL) - T / 24;
+  got = swe_julday(v[0], v[1], v[2], v[3] + v[4] / 60.0 + s / 3600, SE_GREG_CAL);
+  return !(v[0] != INT_MIN && v[1] >= 1 && v[1] <= 12 && v[2] >= 1 && v[2] <= 31
+           && v[3] >= 0 && v[3] <= 23 && v[4] >= 0 && v[4] <= 59 && s >= 0 && s < 60
+           && fabs(got - want) <= 1e-9 + fabs(T) * 1e-16);
+}
+
+/* ---- (j) 262: T the UT ---- */
+static int JE;	/* 0 the files, 1 Moshier, 2 de200.eph strict */
+#define NJ 14
+static int probe_j(int k)
+{
+  static const int32 eph[3] = { SEFLG_SWIEPH, SEFLG_MOSEPH, SEFLG_JPLEPH };
+  swe_ctx *c = fresh();
+  double x[20], cu[13], a[10], dt = swe_deltat_ex_r(c, T, eph[JE], NULL), v, tt;
+  double el[6] = { 19.4, 1.5237, 0.0934, 286.5, 49.56, 1.85 };
+  char star[AS_MAXCH], *p, *e;
+  int32 fl = eph[JE] | SEFLG_SPEED;
+  int cross = 0;
+  strcpy(star, "Spica");
+  serr_arm();
+  switch (k) {
+  case 0: swe_calc_ut_r(c, T, SE_MARS, fl, x, SERR); break;
+  case 1: swe_calc_ut_r(c, T, JE == 1 ? SE_MOON : SE_ECL_NUT, JE == 1 ? fl : eph[JE], x, SERR); break;
+  case 2: swe_fixstar2_ut_r(c, star, T, fl, x, SERR); break;
+  case 3: swe_fixstar_ut_r(c, star, T, fl, x, SERR); break;
+  case 4: swe_calc_orbel_ut_r(c, T, el, SE_SUN, 0, 0, fl, x, SERR); break;
+  case 5: swe_get_ayanamsa_ex_ut_r(c, T, eph[JE], x, SERR); break;
+  case 6: swe_solcross_ut_r(c, 0, T, eph[JE], SERR); cross = 1; break;
+  case 7: swe_mooncross_ut_r(c, 0, T, eph[JE], SERR); cross = 1; break;
+  case 8: swe_mooncross_node_ut_r(c, T, eph[JE], &x[0], &x[1], SERR); cross = 1; break;
+  case 9: swe_helio_cross_ut_r(c, SE_MARS, 0, T, eph[JE], 0, x, SERR); cross = 1; break;
+  case 10: swe_time_equ_r(c, T, x, SERR); break;
+  case 11: swe_lmt_to_lat_r(c, T, 0, x, SERR); break;
+  case 12: swe_houses_ex2_r(c, T, eph[JE], 50, 10, 'P', cu, a, NULL, NULL, SERR); break;
+  default:	/* the TT function names its TT, as before */
+    swe_calc_r(c, T + dt, SE_MARS, fl, x, SERR);
+    return !((p = strstr(SERR, "jd ")) != NULL && strtod(p + 3, &e) == T + dt
+             && strncmp(e, " UT", 3) != 0);
+  }
+  /* "jd <UT> UT (TT <tt>)": the caller's UT, the TT within a day of its
+   * own (the light time's and speed reads' instants); a crossing's the
+   * UT and TT its search got to */
+  if ((p = strstr(SERR, "jd ")) == NULL)
+    return 1;
+  v = strtod(p + 3, &e);
+  if ((!cross && v != T) || strncmp(e, " UT (TT ", 8) != 0)
+    return 1;
+  tt = strtod(e + 8, &p);
+  return !(*p == ')' && (cross || fabs(tt - (T + dt)) < 1)
+           && (strstr(SERR, "outside") != NULL || strstr(SERR, "not available") != NULL));
+}
+
+/* ---- (k) 263: the doubles next past the ranges' ends below 1e15 ---- */
+#define NK 11
+static int probe_k(int k)
+{
+  swe_ctx *c = fresh();
+  double x[6], d[2], lim, t;
+  const char *key = "jd ", *p;
+  serr_arm();
+  switch (k) {
+  case 0: t = nextafter(2818000.5 + 0.3, HUGE_VAL); swe_calc_r(c, t, SE_MARS, SEFLG_MOSEPH, x, SERR); break;
+  case 1: t = nextafter(625000.5 - 0.3, -HUGE_VAL); swe_calc_r(c, t, SE_MARS, SEFLG_MOSEPH, x, SERR); break;
+  case 2: t = nextafter(2818000.5 + 0.2, HUGE_VAL); swe_calc_r(c, t, SE_MOON, SEFLG_MOSEPH, x, SERR); break;
+  case 3: t = nextafter(625000.5 - 0.2, -HUGE_VAL); swe_calc_r(c, t, SE_MOON, SEFLG_MOSEPH, x, SERR); break;
+  case 4: case 5:	/* de200.eph's ends, Moshier noted */
+    swe_set_ephe_fallback_r(c, 1);
+    t = k == 4 ? nextafter(2305424.5, -HUGE_VAL) : nextafter(2513392.5, HUGE_VAL);
+    swe_calc_r(c, t, SE_MARS, SEFLG_JPLEPH, x, SERR);
+    break;
+  case 6:	/* strict */
+    t = nextafter(2305424.5, -HUGE_VAL);
+    swe_calc_r(c, t, SE_MARS, SEFLG_JPLEPH, x, SERR);
+    key = "for jd ";
+    break;
+  case 7:	/* the Swiss files' first limit, read back, and the double before it */
+    swe_calc_r(c, -3100000.0, SE_MARS, SEFLG_SWIEPH, x, SERR);
+    if ((p = strstr(SERR, "lower limit ")) == NULL)
+      return 1;
+    lim = strtod(p + 12, NULL);
+    t = nextafter(lim, -HUGE_VAL);
+    serr_arm();
+    if (swe_calc_r(c, t, SE_MARS, SEFLG_SWIEPH, x, SERR) != ERR || !reads_back(SERR, "lower limit ", lim))
+      return 1;
+    break;
+  case 8: case 9:	/* the seconds 60.999 and -0.001 at 12:00 */
+    t = k == 8 ? 60.999 : -0.001;
+    swe_utc_to_jd_r(c, 2000, 1, 1, 12, 0, t, SE_GREG_CAL, d, SERR);
+    key = "invalid time: 12:0:";
+    break;
+  default:	/* a second 60 where the table has none */
+    t = 60.999;
+    swe_utc_to_jd_r(c, 2015, 12, 31, 23, 59, t, SE_GREG_CAL, d, SERR);
+    key = "invalid time (no leap second!): 23:59:";
+    break;
+  }
+  return !reads_back(SERR, key, t);
+}
+
+/* ordinary dates' and seconds' messages, byte for byte as before */
+#define NKO 4
+static int probe_k_same(int k)
+{
+  static const char *const want[NKO] = {
+    "jd 2818000.810000 outside Moshier planet range 625000.20 .. 2818000.80 ",
+    "jd 8000000.000000 > upper limit 7929133.500000;",
+    "not available for jd 2305000.2500;",
+    "invalid time (no leap second!): 23:59:60.50",
+  };
+  swe_ctx *c = fresh();
+  double x[6], d[2];
+  serr_arm();
+  switch (k) {
+  case 0: swe_calc_r(c, 2818000.81, SE_MARS, SEFLG_MOSEPH, x, SERR); break;
+  case 1: swe_calc_r(c, 8000000.0, SE_MARS, SEFLG_SWIEPH, x, SERR); break;
+  case 2: swe_calc_r(c, 2305000.25, SE_MARS, SEFLG_JPLEPH, x, SERR); break;
+  default: swe_utc_to_jd_r(c, 2015, 12, 31, 23, 59, 60.5, SE_GREG_CAL, d, SERR); break;
+  }
+  return k == 0 || k == 3 ? strcmp(SERR, want[k]) != 0 : strstr(SERR, want[k]) == NULL;
+}
+
+/* each "jd X" of s the caller's UT u: one (a single instant's) the first
+ * "jd u UT (TT y)", y within a day of tt; else a search's: its start
+ * refused at u, "jd X TT (searching from UT u)", or an inner UT call's
+ * "jd X UT (TT y)" */
+static int ut_named(const char *s, double u, double tt, int one)
+{
+  const char *p = s, *q;
+  char *e;
+  double v, y;
+  int n = 0;
+  while ((q = strstr(p, "jd ")) != NULL) {
+    v = strtod(q + 3, &e);
+    if (e == q + 3)
+      return 0;
+    if (strncmp(e, " UT (TT ", 8) == 0) {
+      y = strtod(e + 8, &e);
+      if (*e != ')' || (one && n == 0 && (v != u || !(fabs(y - tt) < 1))))
+        return 0;
+    } else if (one) {
+      return 0;
+    } else if (strncmp(e, " TT (searching from UT ", 23) == 0) {
+      if (strtod(e + 23, &e) != u || *e != ')')
+        return 0;
+    } else if (v != u) {
+      return 0;
+    }
+    n++;
+    p = e;
+  }
+  return n > 0;
+}
+
+/* ---- (l) 280: swecl.c's and swehel.c's UT functions, T the UT ---- */
+#define NL 19
+#define NL_ONE 8	/* 0 .. 7 a single instant's */
+static int probe_l(int k)
+{
+  static const int32 eph[3] = { SEFLG_SWIEPH, SEFLG_MOSEPH, SEFLG_JPLEPH };
+  swe_ctx *c = fresh();
+  double geo[3] = { 10, 50, 100 }, datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  double tr[10], at[20], x[50], b[6], p[6], q[6], dt = swe_deltat_ex_r(c, T, eph[JE], NULL);
+  char obj[AS_MAXCH];
+  int32 fl = eph[JE];
+  strcpy(obj, "Venus");
+  serr_arm();
+  switch (k) {
+  case 0: swe_sol_eclipse_where_r(c, T, fl, geo, at, SERR); break;
+  case 1: swe_lun_occult_where_r(c, T, SE_VENUS, NULL, fl, geo, at, SERR); break;
+  case 2: swe_sol_eclipse_how_r(c, T, fl, geo, at, SERR); break;
+  case 3: swe_lun_eclipse_how_r(c, T, fl, geo, at, SERR); break;
+  case 4: swe_pheno_ut_r(c, T, SE_MARS, fl, at, SERR); break;
+  case 5: swe_nod_aps_ut_r(c, T, SE_MARS, fl, SE_NODBIT_MEAN, x, b, p, q, SERR); break;
+  case 6: swe_gauquelin_sector_r(c, T, SE_SUN, NULL, fl, 0, geo, 1013.25, 10, x, SERR); break;
+  case 7: swe_vis_limit_mag_r(c, T, geo, datm, dobs, obj, fl, x, SERR); break;
+  case 8: swe_heliacal_pheno_ut_r(c, T, geo, datm, dobs, obj, SE_HELIACAL_RISING, fl, x, SERR); break;
+  case 9: swe_sol_eclipse_when_glob_r(c, T, fl, 0, tr, 0, SERR); break;
+  case 10: swe_sol_eclipse_when_loc_r(c, T, fl, geo, tr, at, 0, SERR); break;
+  case 11: swe_lun_eclipse_when_r(c, T, fl, 0, tr, 0, SERR); break;
+  case 12: swe_lun_eclipse_when_loc_r(c, T, fl, geo, tr, at, 0, SERR); break;
+  case 13: swe_lun_occult_when_glob_r(c, T, SE_VENUS, NULL, fl, 0, tr, 0, SERR); break;
+  case 14: swe_lun_occult_when_loc_r(c, T, SE_VENUS, NULL, fl, geo, tr, at, 0, SERR); break;
+  case 15: swe_heliacal_ut_r(c, T, geo, datm, dobs, obj, SE_HELIACAL_RISING, fl, x, SERR); break;
+  case 16: swe_rise_trans_r(c, T, SE_SUN, NULL, fl, SE_CALC_RISE, geo, 1013.25, 10, x, SERR); break;
+  case 17: swe_rise_trans_true_hor_r(c, T, SE_MOON, NULL, fl, SE_CALC_SET, geo, 1013.25, 10, 0, x, SERR); break;
+  default: swe_gauquelin_sector_r(c, T, SE_SUN, NULL, fl, 2, geo, 1013.25, 10, x, SERR); break;
+  }
+  return !ut_named(SERR, T, T + dt, k < NL_ONE);
+}
+
+/* the notes of an answer from the fallback, past de200.eph's end */
+#define NLN 3
+static int probe_l_note(int k)
+{
+  swe_ctx *c = fresh();
+  double tr[10], at[20], x[6];
+  swe_set_ephe_fallback_r(c, 1);
+  serr_arm();
+  switch (k) {
+  case 0: swe_sol_eclipse_when_glob_r(c, T, SEFLG_JPLEPH, 0, tr, 0, SERR); break;
+  case 1: swe_lun_eclipse_when_r(c, T, SEFLG_JPLEPH, 0, tr, 0, SERR); break;
+  default: swe_pheno_ut_r(c, T, SE_MARS, SEFLG_JPLEPH, at, SERR); (void) x; break;
+  }
+  return !(strstr(SERR, "outside JPL eph. range") != NULL && ut_named(SERR, T, T, 0));
+}
+
+/* ---- (m) 263: a date past a range refused as itself, not as a speed
+ * read's ---- */
+#define NM 11
+static int probe_m(int k)
+{
+  static const double tm[NM] = { 8000000.5, 2818000.75, 8000000.5, 2818000.75, 8000016.6, -3100015.6,
+                                 8000016.6, -3100015.6, 8000016.6, 2818000.75, 625000.29 };
+  swe_ctx *c = fresh();
+  double x[6], b[6], p[6], q[6], t = tm[k];
+  serr_arm();
+  switch (k) {
+  case 0: case 1: swe_calc_r(c, t, SE_TRUE_NODE, SEFLG_MOSEPH | SEFLG_SPEED, x, SERR); break;
+  case 2: case 3: swe_calc_r(c, t, SE_OSCU_APOG, SEFLG_MOSEPH | SEFLG_SPEED, x, SERR); break;
+  case 4: case 5: swe_calc_r(c, t, SE_MEAN_NODE, SEFLG_SWIEPH, x, SERR); break;
+  case 6: case 7: swe_calc_r(c, t, SE_MEAN_APOG, SEFLG_MOSEPH | SEFLG_SPEED, x, SERR); break;
+  case 8: swe_nod_aps_r(c, t, SE_MOON, SEFLG_SWIEPH, SE_NODBIT_MEAN, x, b, p, q, SERR); break;
+  default: swe_nod_aps_r(c, t, SE_EARTH, SEFLG_MOSEPH | SEFLG_SPEED, SE_NODBIT_OSCU, x, b, p, q, SERR); break;
+  }
+  return !reads_back(SERR, "jd ", t);
+}
+
+/* ---- (n) 286: swe_heliacal_ut()'s answer from the fallback, noted ---- */
+#define NN 4
+static int probe_n(int k)
+{
+  swe_ctx *c = fresh();
+  double geo[3] = { 8.55, 47.37, 400 }, datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  double dret[50];
+  char obj[AS_MAXCH];
+  int32 r;
+  const char *note = k < 2 ? "not found" : "outside JPL eph. range";
+  strcpy(obj, k == 1 ? "Sirius" : "Venus");
+  if (k < 2)
+    swe_set_jpl_file_r(c, "nonexistent.eph");
+  swe_set_ephe_fallback_r(c, 1);
+  serr_arm();
+  r = swe_heliacal_ut_r(c, k < 2 || k == 3 ? 2451545.0 : 2513392.0, geo, datm, dobs, obj, SE_HELIACAL_RISING,
+                        SEFLG_JPLEPH | (k == 1 ? SE_HELFLAG_NO_DETAILS : 0), dret, SERR);
+  if (k == 3)	/* de200.eph answering: no note */
+    return !(r == OK && *SERR == '\0');
+  return !(r == OK && strstr(SERR, note) != NULL);
+}
+
+/* ---- (o) 282: swe_date_conversion() of an illegal date, as documented:
+ * ERR, the date converted ---- */
+#define NO 3
+static int probe_o(int k)
+{
+  static const int ymd[NO][3] = { { 2000, 2, 30 }, { 1993, 1, 32 }, { 2000, 2, 29 } };
+  double tjd = 0;
+  int r = swe_date_conversion(ymd[k][0], ymd[k][1], ymd[k][2], 12, 'g', &tjd);
+  return !(r == (k < 2 ? ERR : OK) && tjd == swe_julday(ymd[k][0], ymd[k][1], ymd[k][2], 12, SE_GREG_CAL));
+}
+
 /* one probe in a child: 0 passed, 1 failed, 2 crashed, 3 hung */
 static int child(int part, int k, int warm, double t)
 {
@@ -572,7 +993,17 @@ static int child(int part, int k, int warm, double t)
     case 7: r = probe_g(k); break;
     case 8: r = probe_g_bound(k); break;
     case 9: r = probe_g_same(k); break;
-    default: r = probe_g_margin(k); break;
+    case 10: r = probe_g_margin(k); break;
+    case 11: r = probe_h(k); break;
+    case 12: r = probe_i(k); break;
+    case 13: r = probe_j(k); break;
+    case 14: r = probe_k(k); break;
+    case 15: r = probe_k_same(k); break;
+    case 16: r = probe_l(k); break;
+    case 17: r = probe_l_note(k); break;
+    case 18: r = probe_m(k); break;
+    case 19: r = probe_n(k); break;
+    default: r = probe_o(k); break;
     }
     _exit(r);
   }
@@ -589,7 +1020,8 @@ int main(int argc, char **argv)
   double db[3] = { NAN, INFINITY, -INFINITY };
   double dc[15];
   int i, k, s, w, res, na = 0, ta = 0, nb = 0, tb = 0, nc = 0, tc = 0, nd, crash = 0, hang = 0;
-  int ne = 0, te = 0, nf = 0, tf = 0, ng = 0, tg = 0;
+  int ne = 0, te = 0, nf = 0, tf = 0, ng = 0, tg = 0, nh = 0, th = 0, ni = 0, ti = 0;
+  int nj = 0, tj = 0, nk = 0, tk = 0, nl = 0, tl = 0, nm = 0, tm = 0, nn = 0, tn = 0, no = 0, to = 0;
   if (argc != 2) {
     fprintf(stderr, "usage: absdate EPHEDIR\n");
     return 2;
@@ -769,6 +1201,145 @@ int main(int argc, char **argv)
       }
     }
   }
+  /* (h) 260: swedate.c's leap-second dates of years past 214748, under
+   * -ftrapv */
+  {
+    static const double yh[6] = { 214748, 214749, 300000, 1e6, 1e8, 2147483000 };
+    for (i = 0; i < 6; i++)
+      for (k = 0; k < NH; k++) {
+        th++;
+        res = child(11, k, 0, yh[i]);
+        if (res == 0)
+          nh++;
+        else {
+          crash += res == 2; hang += res == 3;
+          printf("  (h) call %d at year %.0f: %s\n", k, yh[i], res == 2 ? "crashed" : res == 3 ? "hung" : "not answered as it should be");
+        }
+      }
+  }
+  /* (i) 261: swe_utc_time_zone() at zones inside upstream's day (its
+   * answer bit for bit), past it, and where the date lies past the bound
+   * or its year holds in no int (no answer); 0:00:00 at -+1e-300 */
+  {
+    static const double zt[13] = { 1, 14, 23.99, 24, 12, 36, 48, 100, 1e4, 1e6, 1e9, 1e12, 1.8e13 };
+    static const double zn[5] = { 2.4e13, 1.9e13, 1e15, 1e300, DBL_MAX };
+    double zv[38];
+    int zk[38], n = 0;
+    for (i = 0; i < 13; i++)
+      for (s = -1; s <= 1; s += 2)
+        if (i < 12 || s > 0) {	/* -1.8e13 h: the year past INT_MAX */
+          zv[n] = s * zt[i];
+          zk[n++] = 0;
+        }
+    for (i = 0; i < 5; i++)
+      for (s = -1; s <= 1; s += 2) {
+        zv[n] = s * zn[i];
+        zk[n++] = 1;
+      }
+    for (s = -1; s <= 1; s += 2) {
+      zv[n] = s * 1e-300;
+      zk[n++] = 2;
+    }
+    for (i = 0; i < n; i++) {
+      ti++;
+      res = child(12, zk[i], 0, zv[i]);
+      if (res == 0)
+        ni++;
+      else {
+        crash += res == 2; hang += res == 3;
+        printf("  (i) zone %.17g%s: %s\n", zv[i], zk[i] == 2 ? " at 0:00:00" : "",
+               res == 2 ? "crashed" : res == 3 ? "hung" : zk[i] == 1 ? "answered" : "not the time as it should be");
+      }
+    }
+  }
+  /* (j) 262: the UT functions' messages of their TT calls' refusals */
+  {
+    static const double tj_ut[4] = { 7e11, 1e12, 2818000.78, 2513392.499 };
+    static const int tj_eph[4] = { 0, 0, 1, 2 };
+    for (i = 0; i < 4; i++)
+      for (k = 0; k < NJ; k++) {
+        if ((i == 0 && (k == 1 || k == 12)) || (i == 2 && (k == 5 || k >= 10))
+            || (i == 3 && (k == 1 || k == 5 || k >= 12)))
+          continue;	/* answered there, or the TT's message not this fork's */
+        JE = tj_eph[i];
+        tj++;
+        res = child(13, k, 0, tj_ut[i]);
+        if (res == 0)
+          nj++;
+        else {
+          crash += res == 2; hang += res == 3;
+          printf("  (j) call %d at UT %.17g: %s\n", k, tj_ut[i], res == 2 ? "crashed" : res == 3 ? "hung" : "the caller's UT not named");
+        }
+      }
+  }
+  /* (k) 263: the doubles next past the ranges' ends below 1e15, and
+   * ordinary dates' messages as before */
+  for (k = 0; k < NK + NKO; k++) {
+    tk++;
+    res = child(k < NK ? 14 : 15, k < NK ? k : k - NK, 0, 0);
+    if (res == 0)
+      nk++;
+    else {
+      crash += res == 2; hang += res == 3;
+      printf("  (k) %s %d: %s\n", k < NK ? "bound call" : "ordinary message", k < NK ? k : k - NK,
+             res == 2 ? "crashed" : res == 3 ? "hung" : k < NK ? "the date not read back" : "changed");
+    }
+  }
+  /* (l) 280: swecl.c's and swehel.c's UT functions name the caller's UT */
+  {
+    static const double tl_ut[4] = { 1e12, 1e7, 2818000.78, 2513392.499 };
+    static const int tl_eph[4] = { 0, 1, 1, 2 };
+    for (i = 0; i < 4; i++)
+      for (k = 0; k < NL; k++) {
+        JE = tl_eph[i];
+        tl++;
+        res = child(16, k, 0, tl_ut[i]);
+        if (res == 0)
+          nl++;
+        else {
+          crash += res == 2; hang += res == 3;
+          printf("  (l) call %d at UT %.17g: %s\n", k, tl_ut[i], res == 2 ? "crashed" : res == 3 ? "hung" : "the caller's UT not named");
+        }
+      }
+    for (k = 0; k < NLN; k++) {
+      tl++;
+      res = child(17, k, 0, 2513400.0);
+      if (res == 0)
+        nl++;
+      else {
+        crash += res == 2; hang += res == 3;
+        printf("  (l) note %d: %s\n", k, res == 2 ? "crashed" : res == 3 ? "hung" : "the caller's UT not named");
+      }
+    }
+  }
+  /* (m) 263: refused as the caller's date */
+  for (k = 0; k < NM; k++) {
+    tm++;
+    res = child(18, k, 0, 0);
+    if (res == 0)
+      nm++;
+    else {
+      crash += res == 2; hang += res == 3;
+      printf("  (m) call %d: %s\n", k, res == 2 ? "crashed" : res == 3 ? "hung" : "a date not the caller's named");
+    }
+  }
+  /* (n) 286 and (o) 282 */
+  for (k = 0; k < NN + NO; k++) {
+    int o = k >= NN;
+    res = child(o ? 20 : 19, o ? k - NN : k, 0, 0);
+    if (o) {
+      to++;
+      no += res == 0;
+    } else {
+      tn++;
+      nn += res == 0;
+    }
+    if (res != 0) {
+      crash += res == 2; hang += res == 3;
+      printf("  (%c) call %d: %s\n", o ? 'o' : 'n', o ? k - NN : k, res == 2 ? "crashed" : res == 3 ? "hung"
+             : o ? "not ERR with the date converted" : "the note missing");
+    }
+  }
   printf("G160 (a) refusal messages within serr past 1e200: %d of %d\n", na, ta);
   printf("G160 (b) NaN and -+inf refused with ERR, outputs 0: %d of %d\n", nb, tb);
   printf("G160 (c) Swiss files past -+7.8e11, NaN, -+inf refused before a name: %d of %d\n", nc, tc);
@@ -777,9 +1348,18 @@ int main(int argc, char **argv)
   printf("G160 (e) the time equation's LMT and LAT past the bound refused, output 0: %d of %d\n", ne, te);
   printf("G160 (f) swedate.c at NaN, -+inf, past the bound, a year no int holds: %d of %d\n", nf, tf);
   printf("G160 (g) refusal messages readable, their date not the bound's: %d of %d\n", ng, tg);
+  printf("G160 (h) swedate.c past the year 214748 with no signed overflow: %d of %d\n", nh, th);
+  printf("G160 (i) swe_utc_time_zone() at any zone a time, or no answer: %d of %d\n", ni, ti);
+  printf("G160 (j) the UT functions' messages name the caller's UT: %d of %d\n", nj, tj);
+  printf("G160 (k) dates next to the ranges' ends below 1e15 read back: %d of %d\n", nk, tk);
+  printf("G160 (l) swecl.c's and swehel.c's UT functions name the caller's UT: %d of %d\n", nl, tl);
+  printf("G160 (m) a date past a range refused as itself, not a speed read's: %d of %d\n", nm, tm);
+  printf("G160 (n) swe_heliacal_ut() from the fallback with its note: %d of %d\n", nn, tn);
+  printf("G160 (o) swe_date_conversion() of an illegal date ERR, converted: %d of %d\n", no, to);
   if (crash || hang)
     printf("G160 %d crashed, %d hung\n", crash, hang);
-  k = (ta - na) + (tb - nb) + (tc - nc) + (nd != 0) + (te - ne) + (tf - nf) + (tg - ng);
+  k = (ta - na) + (tb - nb) + (tc - nc) + (nd != 0) + (te - ne) + (tf - nf) + (tg - ng)
+    + (th - nh) + (ti - ni) + (tj - nj) + (tk - nk) + (tl - nl) + (tm - nm) + (tn - nn) + (to - no);
   if (k)
     printf("G160 FAIL: %d\n", k);
   else

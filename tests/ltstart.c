@@ -104,6 +104,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "swephexp.h"
+#include "swephlib.h"	/* swi_jd_str() */
 
 static char EPHE[PATH_MAX];
 static char D18[] = "/tmp/ltstart18-XXXXXX";	/* sepl_18, semo_18, seas_18 */
@@ -386,8 +387,10 @@ static void part_a(void)
                 if (!fb) {
                   /* the refusal of the call before the start, at tjd */
                   snprintf(want, sizeof want, "%s", before.serr);
-                  snprintf(st, sizeof st, "%.4f", t0 - 1.0 / 64);
-                  snprintf(st2, sizeof st2, "%.4f", jd);
+                  /* its date as the refusal prints it (bug 263): "%.4f"
+                   * where that reads back */
+                  swi_jd_str(t0 - 1.0 / 64, 4, st);
+                  swi_jd_str(jd, 4, st2);
                   subst(want, st, st2);
                   if (a.r != ERR)
                     why = "answered where the fallback is refused";

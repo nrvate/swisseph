@@ -601,8 +601,23 @@ int32 CALL_CONV swe_sol_eclipse_where_r(swe_ctx *ctx, double tjd_ut,
 		char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_sol_eclipse_where_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bugs 262 and 280: a message from a TT call, a refusal or
+   * a fallback's note, named its TT as the date, "jd 1281959700055.5513
+   * outside ..." at UT 1e12; "jd 1e+12 UT (TT 1281959700055.5513)" now
+   * (swi_ut_named()), a search's and a rise's "jd X TT (searching from
+   * UT U)", X the date it reached; only what the call wrote (s0). So
+   * the other UT functions here. */
+  swi_ut_named(tjd_ut, 0, s0, serr);
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 239: a refusal (a date's, the strict setting's) left the
    * place and the attributes as the caller had them, or as far as they
@@ -686,8 +701,17 @@ int32 CALL_CONV swe_lun_occult_where_r(swe_ctx *ctx, double tjd_ut,
 		char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_lun_occult_where_r_body(ctx, tjd_ut, ipl, starname, ifl, geopos, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 0, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR) {	/* bug 239, as swe_sol_eclipse_where() */
     geopos[0] = geopos[1] = 0;
@@ -1082,8 +1106,17 @@ int32 CALL_CONV swe_sol_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
           char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_sol_eclipse_how_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 0, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
     memset(attr, 0, 20 * sizeof(double));
@@ -1687,8 +1720,17 @@ int32 CALL_CONV swe_sol_eclipse_when_glob_r(swe_ctx *ctx, double tjd_start, int3
      double *tret, int32 backward, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_sol_eclipse_when_glob_r_body(ctx, tjd_start, ifl, ifltype, tret, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_start, 1, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
     memset(tret, 0, 10 * sizeof(double));
@@ -2184,8 +2226,17 @@ int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32
      double *tret, int32 backward, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_lun_occult_when_glob_r_body(ctx, tjd_start, ipl, starname, ifl, ifltype, tret, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_start, 1, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
     memset(tret, 0, 10 * sizeof(double));
@@ -2274,8 +2325,17 @@ int32 CALL_CONV swe_sol_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32
      double *geopos, double *tret, double *attr, int32 backward, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_sol_eclipse_when_loc_r_body(ctx, tjd_start, ifl, geopos, tret, attr, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_start, 1, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR) {	/* bug 239, as swe_sol_eclipse_where() */
     memset(tret, 0, 10 * sizeof(double));
@@ -2361,8 +2421,17 @@ int32 CALL_CONV swe_lun_occult_when_loc_r(swe_ctx *ctx, double tjd_start, int32 
      double *geopos, double *tret, double *attr, int32 backward, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_lun_occult_when_loc_r_body(ctx, tjd_start, ipl, starname, ifl, geopos, tret, attr, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_start, 1, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR) {	/* bug 239, as swe_sol_eclipse_where() */
     memset(tret, 0, 10 * sizeof(double));
@@ -3635,8 +3704,17 @@ int32 CALL_CONV swe_lun_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
           char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_lun_eclipse_how_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 0, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
     memset(attr, 0, 20 * sizeof(double));
@@ -4051,8 +4129,17 @@ int32 CALL_CONV swe_lun_eclipse_when_r(swe_ctx *ctx, double tjd_start, int32 ifl
      double *tret, int32 backward, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_lun_eclipse_when_r_body(ctx, tjd_start, ifl, ifltype, tret, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_start, 1, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239, as swe_sol_eclipse_where() */
     memset(tret, 0, 10 * sizeof(double));
@@ -4206,8 +4293,17 @@ int32 CALL_CONV swe_lun_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32
      double *geopos, double *tret, double *attr, int32 backward, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_lun_eclipse_when_loc_r_body(ctx, tjd_start, ifl, geopos, tret, attr, backward, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_start, 1, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR) {	/* bug 239, as swe_sol_eclipse_where() */
     memset(tret, 0, 10 * sizeof(double));
@@ -4659,8 +4755,17 @@ static int32 swe_pheno_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 i
 int32 CALL_CONV swe_pheno_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, double *attr, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_pheno_ut_r_body(ctx, tjd_ut, ipl, iflag, attr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 0, s0, serr);	/* bug 262, 280 */
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -4931,8 +5036,17 @@ int32 CALL_CONV swe_rise_trans_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *s
                char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_rise_trans_r_body(ctx, tjd_ut, ipl, starname, epheflag, rsmi, geopos, atpress, attemp, tret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 1, s0, serr);	/* bug 262, 280: a search */
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -5268,8 +5382,17 @@ int32 CALL_CONV swe_rise_trans_true_hor_r(swe_ctx *ctx, double tjd_ut, int32 ipl
                char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_rise_trans_true_hor_r_body(ctx, tjd_ut, ipl, starname, epheflag, rsmi, geopos, atpress, attemp, horhgt, tret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 1, s0, serr);	/* bug 262, 280: a search */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239: the site's refusal left the time as the caller had it */
     *tret = 0;
@@ -6717,11 +6840,17 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * Upstream bug 210: sprintf() into serr, whose %f of the date overran
      * it from |tjd| about 1e193 (glibc's fortify aborted). */
     if (!(tm >= MOSHNDEPH_START && tp <= MOSHNDEPH_END)) {
-      /* Upstream bug 243: the date by swi_jd_str(), see swi_moshplan() */
+      /* Upstream bug 243: the date by swi_jd_str(), see swi_moshplan().
+       * UPSTREAM-BUGS 263, this test's: a date past the range named its
+       * speed read's, 1/32 day off ("jd 8000016.631250" for 8000016.6,
+       * where upstream's swe_calc() names the date); its own now, a
+       * read's only for a date inside */
       char sjd[SWI_JDSTR_LEN];
+      double tr = !(tjd_et >= MOSHNDEPH_START && tjd_et <= MOSHNDEPH_END) ? tjd_et
+                  : tm < MOSHNDEPH_START ? tm : tp;
       if (serr != NULL)
         snprintf(serr, AS_MAXCH, "jd %s outside mean node range %.2f .. %.2f ",
-                swi_jd_str(tm < MOSHNDEPH_START ? tm : tp, 6, sjd), MOSHNDEPH_START, MOSHNDEPH_END);
+                swi_jd_str(tr, 6, sjd), MOSHNDEPH_START, MOSHNDEPH_END);
       return ERR;
     }
     if ((retcs = swe_calc_r(ctx, tjd_et, SE_ECL_NUT, iflg0, x, serr)) == ERR)
@@ -7336,6 +7465,37 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   return OK;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+static int32 swe_nod_aps_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
+                      int32  method, double *xnasc, double *xndsc,
+                      double *xperi, double *xaphe, char *serr);
+
+/* Upstream bug 263: with SEFLG_SPEED a refusal can be a speed read's, at
+ * tjd + k h: the Earth's osculating points on Moshier at 2818000.75 "jd
+ * 2818000.718750 outside Moshier's Moon range", the call without the flag
+ * "jd 2818000.750000". Where that call is refused too its message is the
+ * one, naming the caller's date; else the speed read's stays. On a
+ * refusal only. */
+static void nodaps_speed_refusal(swe_ctx *ctx, double tjd, AS_BOOL ut, int32 ipl,
+                                 int32 iflag, int32 method, char *serr)
+{
+  double y[4][6];
+  char s[AS_MAXCH];
+  int32 r;
+  if (serr == NULL || !(iflag & SEFLG_SPEED))
+    return;
+  strcpy(s, serr);
+  *serr = '\0';
+  iflag &= ~SEFLG_SPEED;
+  if (ut)
+    r = swe_nod_aps_ut_r_body(ctx, tjd, ipl, iflag, method, y[0], y[1], y[2], y[3], serr);
+  else
+    r = swe_nod_aps_r_body(ctx, tjd, ipl, iflag, method, y[0], y[1], y[2], y[3], serr, NULL);
+  if (r != ERR)
+    strcpy(serr, s);
+}
+#endif
+
 int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag,
                       int32  method,
                       double *xnasc, double *xndsc,
@@ -7346,6 +7506,8 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   swi_config_hold(ctx);	/* bug 115 */
   ret = swe_nod_aps_r_body(ctx, tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr, NULL);
 #ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)
+    nodaps_speed_refusal(ctx, tjd_et, FALSE, ipl, iflag, method, serr);	/* bug 263 */
   nodaps_moshmoon_end(ctx);	/* bug 192 */
   /* Upstream bug 179: a refusal by a calculation inside (the strict
    * setting's, a file's, a range's) returned -1 and left the four points as
@@ -7423,8 +7585,19 @@ int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 i
                       char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 115 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_nod_aps_ut_r_body(ctx, tjd_ut, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)
+    nodaps_speed_refusal(ctx, tjd_ut, TRUE, ipl, iflag, method, serr);	/* bug 263 */
+  swi_ut_named(tjd_ut, 0, s0, serr);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   nodaps_moshmoon_end(ctx);	/* bug 192 */
   if (ret == ERR)	/* bug 179, as swe_nod_aps_r() */
@@ -8557,8 +8730,17 @@ int32 CALL_CONV swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut,  /* input time
   char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_gauquelin_sector_r_body(ctx, t_ut, ipl, starname, iflag, imeth, geopos, atpress, attemp, dgsect, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(t_ut, imeth >= 2, s0, serr);	/* bug 262, 280: 2..5 rise and set */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239: the sector as the caller had it, a date's, a method's refusal */
     *dgsect = 0;

@@ -464,8 +464,10 @@ nodbias: nodbias.c $(SWEOBJ_STD)
 sidhorflag: sidhorflag.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
-absdate: absdate.c $(SWEOBJ_STD)
-	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+# swedate.c under -ftrapv: a signed overflow there aborts G160's child
+# (UPSTREAM-BUGS 260), with no sanitizer build
+absdate: absdate.c ../swedate.c $(filter-out $(OBJ_STD)/swedate.o,$(SWEOBJ_STD))
+	$(CC) $(CFLAGS) -ftrapv $^ -o $@ $(LIBS)
 
 farrange: farrange.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
@@ -1646,7 +1648,14 @@ check-sidhorflag: sidhorflag
 # point: the refusals' "jd %f" no longer overruns past 1e200, a NaN no
 # longer passes the range tests (the mean node's SIGSEGV, NaN answered
 # with flags, the crossings' loops), and the Swiss files refuse past
-# -+7.8e11 before a file is named (UPSTREAM-BUGS 210, 211, 216).
+# -+7.8e11 before a file is named (UPSTREAM-BUGS 210, 211, 216); swedate.c
+# forms no int past the year 214748 that overflows, swe_utc_time_zone()
+# answers a time at any zone, the UT functions (swecl.c's and swehel.c's
+# too) name the caller's UT, a date next to a range's end reads back as
+# itself and one past it is refused as itself, not as a speed read's,
+# swe_heliacal_ut() keeps the fallback's note, and swe_date_conversion()
+# of an illegal date answers as documented (260, 261, 262, 263, 280, 286,
+# 282).
 check-absdate: absdate
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./absdate $(EPHE)
 

@@ -4314,6 +4314,223 @@ static double mosh_range_misnamed(void)
   return n;
 }
 
+/* UPSTREAM-BUGS 261: swe_utc_time_zone() of 2000 Jan 1 12:00:30 at the
+ * zones -100, +100, -36 and +48 h, the date and time not the zone's hours
+ * away with the hour in 0..23, and at -+1e300 not the no answer (every
+ * int INT_MIN, the seconds NaN): the number so. The shipped build none of
+ * 6; upstream all 6 (88:00:30, -63:-59:-30, 24:00:30, -11:-59:-30, hour
+ * INT_MIN). */
+static double utc_zone_far_off(void)
+{
+  static const double z[6] = { -100, 100, -36, 48, 1e300, -1e300 };
+  int i, n = 0;
+  for (i = 0; i < 6; i++) {
+    int32 v[5];
+    double sec, want, got;
+    swe_utc_time_zone(2000, 1, 1, 12, 0, 30, z[i], &v[0], &v[1], &v[2], &v[3], &v[4], &sec);
+    if (i >= 4) {
+      n += !(v[0] == INT_MIN && v[1] == INT_MIN && v[2] == INT_MIN && v[3] == INT_MIN
+             && v[4] == INT_MIN && isnan(sec));
+      continue;
+    }
+    want = swe_julday(2000, 1, 1, 12 + 30 / 3600.0, SE_GREG_CAL) - z[i] / 24;
+    got = swe_julday(v[0], v[1], v[2], v[3] + v[4] / 60.0 + sec / 3600, SE_GREG_CAL);
+    n += !(v[3] >= 0 && v[3] <= 23 && v[4] >= 0 && v[4] <= 59 && fabs(got - want) < 1e-9);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 262: on the files at UT 1e12 swe_calc_ut() of Mars,
+ * swe_fixstar2_ut() of Spica, swe_calc_orbel_ut(), swe_get_ayanamsa_ex_ut()
+ * and swe_houses_ex2(), and on Moshier swe_calc_ut() of Mars at UT
+ * 2818000.78, refused by their TT calls, a fresh context each: the number
+ * whose message does not name the caller's UT as "jd <UT> UT (TT ". The
+ * shipped build none of 6; upstream all 6 ("jd 1281959700055.5513 outside
+ * ...", "jd 2818000.818357 outside ...", the TT). */
+static double ut_msg_tt_named(void)
+{
+  double el[6] = { 19.4, 1.5237, 0.0934, 286.5, 49.56, 1.85 };
+  char serr[AS_MAXCH], star[AS_MAXCH], *p, *e;
+  int i, n = 0;
+  for (i = 0; i < 6; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double x[20], cu[13], a[10], t = i < 5 ? 1e12 : 2818000.78;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    *serr = '\0';
+    strcpy(star, "Spica");
+    switch (i) {
+    case 0: swe_calc_ut_r(c, t, SE_MARS, SEFLG_SWIEPH, x, serr); break;
+    case 1: swe_fixstar2_ut_r(c, star, t, SEFLG_SWIEPH, x, serr); break;
+    case 2: swe_calc_orbel_ut_r(c, t, el, SE_SUN, 0, 0, SEFLG_SWIEPH, x, serr); break;
+    case 3: swe_get_ayanamsa_ex_ut_r(c, t, SEFLG_SWIEPH, x, serr); break;
+    case 4: swe_houses_ex2_r(c, t, 0, 50, 10, 'P', cu, a, NULL, NULL, serr); break;
+    default: swe_calc_ut_r(c, t, SE_MARS, SEFLG_MOSEPH, x, serr); break;
+    }
+    p = strstr(serr, "jd ");
+    if (p == NULL || strtod(p + 3, &e) != t || strncmp(e, " UT (TT ", 8) != 0)
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 263: the double next past a range's end, refused: Mars
+ * and the Moon on Moshier past 2818000.80 and 2818000.70, Mars on
+ * de200.eph before 2305424.5 (the fallback allowed, Moshier noted), Mars
+ * on the files before seplm132.se1's start (the limit read back from a
+ * refusal at -3100000), and swe_utc_to_jd()'s seconds 60.999 at 12:00 and
+ * at 23:59 on 2015 Dec 31 (no leap second): the number whose message's
+ * date or seconds do not read back as given. A fresh context each. The
+ * shipped build none of 6; upstream all 6 ("jd 2818000.800000", "jd
+ * 2305424.500000", "12:0:61.00", the limit "-3026605.471196" and the
+ * double before it inside the file). */
+static double bound_msg_as_bound(void)
+{
+  char serr[AS_MAXCH], *p;
+  const char *key;
+  int i, n = 0;
+  for (i = 0; i < 6; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double x[6], t;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "de200.eph");
+    *serr = '\0';
+    key = "jd ";
+    switch (i) {
+    case 0: t = nextafter(2818000.5 + 0.3, HUGE_VAL); swe_calc_r(c, t, SE_MARS, SEFLG_MOSEPH, x, serr); break;
+    case 1: t = nextafter(2818000.5 + 0.2, HUGE_VAL); swe_calc_r(c, t, SE_MOON, SEFLG_MOSEPH, x, serr); break;
+    case 2:
+      swe_set_ephe_fallback_r(c, 1);
+      t = nextafter(2305424.5, -HUGE_VAL);
+      swe_calc_r(c, t, SE_MARS, SEFLG_JPLEPH, x, serr);
+      break;
+    case 3:
+      swe_calc_r(c, -3100000.0, SE_MARS, SEFLG_SWIEPH, x, serr);
+      p = strstr(serr, "lower limit ");
+      t = nextafter(p != NULL ? strtod(p + 12, NULL) : 0, -HUGE_VAL);
+      *serr = '\0';
+      swe_calc_r(c, t, SE_MARS, SEFLG_SWIEPH, x, serr);
+      break;
+    case 4:
+      t = 60.999;
+      swe_utc_to_jd_r(c, 2000, 1, 1, 12, 0, t, SE_GREG_CAL, x, serr);
+      key = "12:0:";
+      break;
+    default:
+      t = 60.999;
+      swe_utc_to_jd_r(c, 2015, 12, 31, 23, 59, t, SE_GREG_CAL, x, serr);
+      key = "23:59:";
+      break;
+    }
+    p = strstr(serr, key);
+    if (p == NULL || strtod(p + strlen(key), NULL) != t)
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 280 (entry 262's rule in swecl.c and swehel.c): on the
+ * files at UT 1e12 swe_sol_eclipse_where(), swe_sol_eclipse_how(),
+ * swe_pheno_ut(), swe_vis_limit_mag(), swe_heliacal_pheno_ut() and
+ * swe_rise_trans_true_hor(), refused by their TT calls, a fresh context
+ * each: the number whose message does not name the caller's UT ("jd
+ * 1e+12 UT (TT ", or a search's "(searching from UT 1e+12)"). The shipped
+ * build none of 6; upstream all 6 ("jd 1281959700055.5513 outside ...",
+ * the rise's "jd 1281959700055.4211"). */
+static double ecl_msg_ut_named(void)
+{
+  double geo[3] = { 10, 50, 100 }, datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  char serr[AS_MAXCH], obj[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 6; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double x[50], at[20], t = 1e12;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    *serr = '\0';
+    strcpy(obj, "Venus");
+    switch (i) {
+    case 0: swe_sol_eclipse_where_r(c, t, SEFLG_SWIEPH, geo, at, serr); break;
+    case 1: swe_sol_eclipse_how_r(c, t, SEFLG_SWIEPH, geo, at, serr); break;
+    case 2: swe_pheno_ut_r(c, t, SE_MARS, SEFLG_SWIEPH, at, serr); break;
+    case 3: swe_vis_limit_mag_r(c, t, geo, datm, dobs, obj, SEFLG_SWIEPH, x, serr); break;
+    case 4: swe_heliacal_pheno_ut_r(c, t, geo, datm, dobs, obj, SE_HELIACAL_RISING, SEFLG_SWIEPH, x, serr); break;
+    default: swe_rise_trans_true_hor_r(c, t, SE_MOON, NULL, SEFLG_SWIEPH, SE_CALC_SET, geo, 1013.25, 10, 0, x, serr); break;
+    }
+    if (strstr(serr, "jd 1e+12 UT (TT ") == NULL && strstr(serr, "(searching from UT 1e+12)") == NULL)
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 263, the speed reads': on Moshier with SEFLG_SPEED the
+ * true node and the osculating apogee at 8000000.5 and 2818000.75, past
+ * the Moon's range, and swe_nod_aps() of the Earth's osculating points
+ * at 2818000.75 and 625000.29, a fresh context each: the number whose
+ * refusal does not name the caller's date. The shipped build none of 6;
+ * upstream all 6 ("jd 8000000.468750", 1/32 day off; "jd 2818000.718750";
+ * the Earth's "jd 2818000.718750", "jd 625000.227500"). */
+static double stencil_msg_named(void)
+{
+  static const double t[6] = { 8000000.5, 2818000.75, 8000000.5, 2818000.75, 2818000.75, 625000.29 };
+  char serr[AS_MAXCH], *p;
+  int i, n = 0;
+  for (i = 0; i < 6; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double x[6], b[6], q[6], r[6];
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    *serr = '\0';
+    if (i < 4)
+      swe_calc_r(c, t[i], i < 2 ? SE_TRUE_NODE : SE_OSCU_APOG, SEFLG_MOSEPH | SEFLG_SPEED, x, serr);
+    else
+      swe_nod_aps_r(c, t[i], SE_EARTH, SEFLG_MOSEPH | SEFLG_SPEED, SE_NODBIT_OSCU, x, b, q, r, serr);
+    p = strstr(serr, "jd ");
+    if (p == NULL || strtod(p + 3, NULL) != t[i])
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 286: swe_heliacal_ut() with de200.eph missing, the
+ * fallback allowed, at J2000 from Zurich: Venus's morning first and
+ * evening last and Mars's morning first, with their details, a fresh
+ * context each: the number answered with an empty serr. The shipped
+ * build none of 3; upstream all 3 (the Swiss files answer, unnoted). */
+static double heliacal_fallen_unnoted(void)
+{
+  double geo[3] = { 8.55, 47.37, 400 }, datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  char serr[AS_MAXCH], obj[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 3; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double dret[50];
+    int32 r;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "nonexistent.eph");
+    swe_set_ephe_fallback_r(c, 1);
+    *serr = '\0';
+    strcpy(obj, i < 2 ? "Venus" : "Mars");
+    r = swe_heliacal_ut_r(c, 2451545.0, geo, datm, dobs, obj, i == 1 ? SE_HELIACAL_SETTING : SE_HELIACAL_RISING,
+                          SEFLG_JPLEPH, dret, serr);
+    if (r == OK && *serr == '\0')
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
 /* UPSTREAM-BUGS 249: Mars by swe_calc() with SEFLG_JPLEPH | SEFLG_SPEED3
  * on de200.eph 2^-16 day before its end, the fallback allowed, its
  * longitude speed against SEFLG_SPEED's, deg/day: the read at tjd + 1e-4
@@ -7464,7 +7681,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3, tzfar, utmsg, boundmsg, eclutmsg, stencilmsg, helnote;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -7661,6 +7878,12 @@ int main(int argc, char **argv)
   eclt0step = ecl_t0_step_off();
   sidascmc8 = sid_plane_ascmc8_off();
   horsouth = horizon_south_off();
+  tzfar = utc_zone_far_off();
+  utmsg = ut_msg_tt_named();
+  boundmsg = bound_msg_as_bound();
+  eclutmsg = ecl_msg_ut_named();
+  stencilmsg = stencil_msg_named();
+  helnote = heliacal_fallen_unnoted();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -9576,6 +9799,54 @@ int main(int argc, char **argv)
   else {
     printf("  de406 warning with SEFLG_SPEED3 at the end %.0f FAIL: expected %s\n",
            jplwarn3, WANT_DEFECT ? "0" : "1");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (tzfar == 6) : (tzfar == 0))
+    printf("  time zone past a day   %.0f/6 off OK\n", tzfar);
+  else {
+    printf("  time zone past a day   %.0f/6 off FAIL: expected %s\n",
+           tzfar, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (utmsg == 6) : (utmsg == 0))
+    printf("  UT refusal names TT    %.0f/6 OK\n", utmsg);
+  else {
+    printf("  UT refusal names TT    %.0f/6 FAIL: expected %s\n",
+           utmsg, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (boundmsg == 6) : (boundmsg == 0))
+    printf("  date next to a bound   %.0f/6 printed as it OK\n", boundmsg);
+  else {
+    printf("  date next to a bound   %.0f/6 printed as it FAIL: expected %s\n",
+           boundmsg, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (eclutmsg == 6) : (eclutmsg == 0))
+    printf("  eclipse UT names TT    %.0f/6 OK\n", eclutmsg);
+  else {
+    printf("  eclipse UT names TT    %.0f/6 FAIL: expected %s\n",
+           eclutmsg, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (stencilmsg == 6) : (stencilmsg == 0))
+    printf("  speed read's date named %.0f/6 OK\n", stencilmsg);
+  else {
+    printf("  speed read's date named %.0f/6 FAIL: expected %s\n",
+           stencilmsg, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (helnote == 3) : (helnote == 0))
+    printf("  heliacal fallback unnoted %.0f/3 OK\n", helnote);
+  else {
+    printf("  heliacal fallback unnoted %.0f/3 FAIL: expected %s\n",
+           helnote, WANT_DEFECT ? "3" : "0");
     bad++;
   }
 

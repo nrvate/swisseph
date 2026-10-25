@@ -304,6 +304,13 @@ worst were in code that had never executed even once.
 | 289 | `swe_house_pos()` in the horizon system ('H') turns the place by 90 - lat where `CalcH()` takes -90 - lat south of the equator and on it: there the houses count the other way from `swe_houses()`'s cusps, the middles of houses 1 .. 12 at 33.87S 12.50, 11.52 .. 1.48, on the equator 12.56 .. 1.37 | Correctness | `swehouse.c` |
 | 294 | swetest's cusps' and axes' azimuths and altitudes are taken at 0 m (`gpos[2] = 0`), the bodies' at the observer's height: with -topo8.55,47.37,400 -at0,15 at 1.1.1950 0h UT, Zurich, the Ascendant's apparent altitude 0.4721439 for 0.4514987 (1013.25 mbar's refraction for 966.1's); with the default atmosphere a point between the horizon and the 400 m dip left unrefracted, co-Asc Munkasey at 1800 -0.652 for -0.076 | Correctness (behaviour, program) | `swetest.c` |
 | 295 | swetest's cusps' and axes' speeds in right ascension and declination, latitude, distance and the cartesian ones (the speed list's a A d D b B r R x X u U) are those the last body left: at 1.1.1950 0h UT, Zurich, Placidus, every cusp's RA speed 0.3444271 deg/day after Mars, 12.8863778 after the Moon, for the Ascendant's 246.8839427; its latitude speed Mars's 0.0179844 for 0 | Correctness (behaviour, program) | `swetest.c` |
+| 260 | `swe_utc_to_jd()` and `swe_jdet_to_utc()` form the date as yyyymmdd in an int, and iyear * 10000 overflows (signed, UB) past the year 214748, inside the bound from 8.0e7 days; it wraps on x86-64, unused there | Robustness (undefined behaviour) | `swedate.c` |
+| 261 | `swe_utc_time_zone()` moves the date by one day at most and casts the hour to int unranged: 12:00:30 at -100 h the next day 88:00:30, at -36 h 24:00:30, at 1e300 the hour INT_MIN and the seconds -3.6e303 | Correctness (and undefined behaviour) | `swedate.c` |
+| 262 | The UT functions pass on their TT call's refusal naming its TT as the date: at UT 1e12 "jd 1281959700055.5513 outside the range the Swiss Ephemeris files are named for", on Moshier at UT 2818000.78, inside the range printed, "jd 2818000.818357 outside" | Correctness (error reporting) | `sweph.c`, `swehouse.c`, `swephlib.c` |
+| 263 | Below 1e15 days a refused date keeps its fixed decimals, and the double next past a range's end prints as the end: "jd 2305424.500000 outside JPL eph. range 2305424.50 .." for 2305424.4999999995, strict "not available for jd 2305424.5000", the seconds 60.999 "61.00"; and a date past a range is refused at a speed read's instant, the true node on Moshier at 8000000.5 "jd 8000000.468750" | Correctness (error reporting) | `swephlib.c`, `sweph.c`, `swecl.c`, `swedate.c` |
+| 280 | The eclipse, rise and set, and heliacal UT functions pass on their TT call's message naming its TT: at UT 1e12 "jd 1281959700055.5513 outside ...", on Moshier at UT 1e7 "jd 10000016.066403"; the true horizon's rise a TT before the UT asked | Correctness (error reporting) | `swecl.c`, `swehel.c`, `swephlib.c` |
+| 282 | `swe_date_conversion()` of an illegal date returns ERR and still sets `*tjd` (2000 Feb 30 as Mar 1): kept, as its own documentation says and swephgen4.c relies on | Documentation (behaviour kept) | `swedate.c`, `swephexp.h` |
+| 286 | `swe_heliacal_ut()` answers from a fallen ephemeris with an empty serr: de200.eph missing, 30 of 72 answers at J2000, 30 of 72 past its end | Correctness (error reporting) | `swehel.c` |
 
 ---
 
@@ -19312,6 +19319,361 @@ files under "0,9,1" at J2000 + 2 centuries + 2^-17 day against the
 one-sided five-point difference over 2^-9 day after it: 5.6e-10 deg/day
 shipped (8.33e-5 before the fix), 5.97e-5 compat. G60, G49, G66 and the
 gates of entry 258 pass.
+## 260. `swe_utc_to_jd()` and `swe_jdet_to_utc()` form the date as yyyymmdd in an int: past the year 214748 (about 8.0e7 days) iyear * 10000 overflows, signed (UB)
+
+**Severity: Robustness (undefined behaviour)**
+**Where:** `swedate.c`: `swe_utc_to_jd()`, `swe_jdet_to_utc()` (and `swe_jdut1_to_utc()` through it)
+
+Entry 238's noticed item. Both find the leap seconds before a date by
+`ndat = iyear * 10000 + imonth * 100 + iday`, an int, from 1972 on (before
+it neither forms it). For a year past 214748 the product passes INT_MAX:
+inside the bound from 8.0e7 days, and at the year INT_MIN `swe_revjul()`
+gives past 7.84e11 days (before entry 238's no answer, and in the compat
+build at NaN and past 1e12). Measured on ts20 2ce2cd4 with swedate.c under
+-ftrapv (gcc, -O0): `swe_utc_to_jd()` of 12:00 1 Jan of the years 214749,
+3e5, 1e6, 1e8 and 2147483000 aborts, `swe_jdet_to_utc()` and
+`swe_jdut1_to_utc()` at those dates from 3e5 on (at 214749 the TT's UT is
+in 214744), and so do 10 of G160 check (f)'s 75 (TT 9.2e11 and 1e12, UT
+7.9e11 and 1e12, either calendar; TT 9e11, UT 7.5e11 inside). x86-64 wraps
+it, and the leap-second count read from the wrapped date is not used:
+delta t's test past the table answers UT1 there; the outputs at those
+years are the same wrapped or not.
+
+**Fix, as done here:** ndat a double, which holds every int year's
+yyyymmdd exactly and compares with the table's ints as the int did. In
+both builds, as entry 216's casts: no answer changes (the sweep of entry
+261, and those years, bit for bit).
+
+G160 is now built with swedate.c under -ftrapv, so a signed overflow
+there aborts its child. Check (h): `swe_utc_to_jd()` at 12:00 1 Jan of the
+years 214748, 214749, 3e5, 1e6, 1e8 and 2147483000, OK with UT1 and its
+TT, and `swe_jdet_to_utc()` and `swe_jdut1_to_utc()` at those dates, a
+time or the no answer: 18 of 18; before the fix 5 of 18, and check (f) 65
+of 75; the upstream build 17 of 18 (the one entry 238's year INT_MIN with
+a month, from `swe_jdut1_to_utc()` at 7.84e11). No G24 case: a plain
+build shows nothing of the overflow, and the fix is in both builds.
+
+Noticed, not fixed:
+- RESIDUAL (time, far future only). `swe_jdut1_to_utc()` past the
+  leap-second table answers UT1 through `swe_jdet_to_utc()`'s two-step
+  inversion of delta t, which leaves about (d(dt)/dt)^2 dt: 12:00:00 UT1
+  of 1 Jan answers 12:00:00 to the microsecond to the year 20000, then
+  12:00:00.013 at 1e5, .282 at 214748, 12:00:01.09 at 3e5, 12:02:16.8 at
+  1e6, and at 1e8 "100000439 1 21 18:18:00.4", 1.39e10 s (439 years) late.
+
+## 261. `swe_utc_time_zone()` moves the date by one day at most and casts the hour to int unranged: 12:00:30 at a zone of -100 h answers the next day 88:00:30, at 1e300 the hour INT_MIN and the seconds -3.6e303
+
+**Severity: Correctness (and undefined behaviour)**
+**Where:** `swedate.c`: `swe_utc_time_zone()`
+
+Entry 238's noticed item. The hour after the zone is corrected by 24 once
+each way, so a sum outside -24 .. 48 keeps an hour outside 0..23, and
+`(int) dhour` has no range test (UB past INT_MAX). Measured on ts20
+2ce2cd4, 2000 Jan 1 12:00:30: at -36 h "2000 1 2 24:0:30", +48 h "1999 12
+31 -11:-59:-30", -100 h "2000 1 2 88:0:30", +100 h "1999 12 31
+-63:-59:-30", -1e6 h "2000 1 2 999988:0:30"; from 1e12 h the hour and
+minute INT_MIN (x86-64's conversion), the seconds -3.59e15 at 1e12 h,
+-3.6e303 at 1e300, -inf at DBL_MAX. An hour past 23 the same way (100:00:30
+at zone 0, "2000 1 2 76:0:30").
+
+**Fix, as done here:** a sum outside -24 .. 48 carries its whole days into
+the date, exactly (the double less 24 times the floor of its 24th, two
+numbers within a factor of 2), the two steps taking what rounding leaves;
+where the date's year holds in no int (past about 7.84e11 days either
+side, the bound with them) no answer: every int INT_MIN, the seconds NaN,
+as entry 238's. -100 h "2000 1 5 16:0:30", 1e12 h "-114077459 5 17
+20:0:29.88" (the zone's own rounding, 0.44 s at 1e12 h), from 1.9e13 h no
+answer. Inside -24 .. 48 nothing changes. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`. Against ts20 2ce2cd4 over 16059 lines (`swe_calc()`,
+`swe_calc_ut()`, `swe_fixstar2_ut()`, the houses, the ayanamsa's `_ut`
+form, `swe_time_equ()`, `swe_jdet_to_utc()`, `swe_jdut1_to_utc()` and this
+function on each ephemeris, strict and not, at 220 dates: log-uniform
+1e5..1e12 either sign, J2000 -+ 1.1e7, the ranges' ends, the doubles
+either side and 0.01 day off) every output is bit for bit but this
+function's 568, each at a zone (-72 .. -37 h) where the hour was 24 to 60.
+
+G160 check (i): the zones -+1, -+12, -+14, -+23.99, -+24 h upstream's
+answer bit for bit, they and -+36, -+48, -+100, -+1e4, -+1e6, -+1e9,
+-+1e12 and +1.8e13 h the hour in 0..23 and the time the zone's hours
+away, 0:00:00 at -+1e-300 as before, and -+1.9e13, -+2.4e13, -+1e15,
+-+1e300 and -+DBL_MAX no answer: 37 of 37; before the fix 13 of 37; the
+upstream build 13 of 37. G24 `utc_zone_far_off`: -100, +100, -36, +48 h
+off, -+1e300 not the no answer: 0 of 6 shipped, 6 of 6 compat.
+
+## 262. The UT functions pass on their TT call's refusal naming its TT as the date: at UT 1e12 "jd 1281959700055.5513 outside the range the Swiss Ephemeris files are named for"
+
+**Severity: Correctness (error reporting)**
+**Where:** `sweph.c`: `swe_calc_ut()`, `swe_calc_orbel_ut()`, `swe_fixstar2_ut()`, `swe_fixstar_ut()`, `swe_get_ayanamsa_ex_ut()`, and through `swe_calc_ut()` the crossings' `_ut` forms, `swe_time_equ()`, `swe_lmt_to_lat()`, `swe_lat_to_lmt()`; `swehouse.c`: `swe_houses_ex2()`; `swephlib.c`: new `swi_ut_named()`
+
+Entry 243's noticed item. A UT function adds delta t and calls its TT
+form, whose messages print the date refused, a TT; the caller gave a UT.
+Measured on ts20 2ce2cd4: at UT 1e12 (delta t 2.8e11 days) every one of
+them "jd 1281959700055.5513 outside the range the Swiss Ephemeris files
+are named for, -7.8e+11 .. 7.8e+11" (SE_ECL_NUT, the ayanamsa and the
+houses "outside the obliquity and nutation range"); at UT 7e11 "jd
+838159962707.2253 ..."; on Moshier at UT 2818000.78, inside the range
+printed, "jd 2818000.818357 outside Moshier planet range 625000.20 ..
+2818000.80"; on de200.eph at UT 2513392.499, inside its range, "jd
+2513392.500573 outside JPL eph. range ...; using Moshier Eph" and,
+strict, "JPL ephemeris is not available for jd 2513392.5006". The
+crossings name the TT their search reached.
+
+**Fix, as done here:** `swi_ut_named()`: each "jd X" in the message not
+naming a UT already becomes "jd U UT (TT X)", U the caller's UT by
+`swi_jd_str()`, X as printed (the date refused: the TT, or its light
+time's or a speed read's, within a day of it): "jd 1e+12 UT (TT
+1281959700055.5513) outside the range ...", "jd 2818000.78 UT (TT
+2818000.81835651) outside Moshier planet range ...", "JPL ephemeris is
+not available for jd 2513392.499 UT (TT 2513392.50057324); ..."; a
+crossing's the UT and TT its search got to ("jd 2513715.021416679 UT (TT
+2513715.0229980345) outside JPL eph. range"). Applied after the TT call in
+`swe_calc_ut()`, `swe_calc_orbel_ut()` and the stars' `_ut` forms, whose
+TT calls clear serr, so to their notes too; in
+`swe_get_ayanamsa_ex_ut()` and `swe_houses_ex2()`, whose answers can leave
+serr as the caller had it, to what the call wrote (serr against its copy
+as passed, `swi_serr_snap()`). A date named already ("jd X UT (TT ",
+"jd X TT (", an inner UT call's) and the caller's own number stay, as do
+delta t's own refusal and `houses_date_refused()`, which name the UT.
+Left as it was where it would not fit serr. Behind `#ifndef SWE_UPSTREAM_COMPAT`. Of
+entry 261's 16059 lines 4570 messages differ so (2746 with entry 263's
+digits too). `swe_calc()`, which the benches time, is not touched; a loop
+of 20000 `swe_calc_ut()` calls 0.045% more instructions.
+
+G160 check (j): on the files at UT 7e11 and 1e12, on Moshier at UT
+2818000.78 and on de200.eph strict at UT 2513392.499, the functions above
+where refused, "jd <UT> UT (TT <tt>)", the UT read back and the TT within
+a day of its own (a crossing's where its search got to), and `swe_calc()`
+at the files' TT naming its TT as before: 45 of 45; before the fix 2 of 45
+(the two `swe_calc()`); the upstream build 2 of 45. G24 `ut_msg_tt_named`:
+on the files at UT 1e12 `swe_calc_ut()`, `swe_fixstar2_ut()`,
+`swe_calc_orbel_ut()`, `swe_get_ayanamsa_ex_ut()` and `swe_houses_ex2()`,
+on Moshier `swe_calc_ut()` at 2818000.78, the caller's UT not named: 0 of
+6 shipped, 6 of 6 compat.
+
+swecl.c's and swehel.c's UT functions: entry 280.
+
+Noticed, not fixed:
+- BEHAVIOUR (message). The searches' start test (entries 240, 241) reads
+  the Sun and the Moon at the caller's UT number as a TT: at UT 7e11 on
+  the files the six eclipse and occultation searches and
+  `swe_heliacal_ut()` refuse with "SwissEph file 'sepl_19165296.se1' not
+  found in PATH", the file of the UT's year, where the TT 8.38e11 is past
+  the files' names ("outside the range the Swiss Ephemeris files are
+  named for"). The refusal itself is right.
+
+## 263. Below 1e15 days a refused date keeps its fixed decimals, and the double next past a range's end prints as the end: "jd 2305424.500000 outside JPL eph. range 2305424.50 .. 2513392.50" for 2305424.4999999995
+
+**Severity: Correctness (error reporting)**
+**Where:** `swephlib.c`: `swi_jd_str()`; `sweph.c`: `swi_refuse_downgrade()`, `swi_refuse_moshmoon()`, `sweph()`'s file limits, `lunar_osc_elem()`, the mean node's and apogee's reads; `swecl.c`: `swe_nod_aps()`; `swedate.c`: `swe_utc_to_jd()`'s leap second; through `swi_jd_str()` the Moshier planets', Moon's, mean node's and apogee's, the JPL file's, `swe_nod_aps()`'s mean points' and `swe_utc_to_jd()`'s "invalid time"
+
+Entry 243's noticed item. Entry 243 kept upstream's "%f" (and "%.2f" for
+the seconds) below 1e15 byte for byte, and six decimals are coarser than
+a double's spacing below 2^32 days. Measured on ts20 2ce2cd4, the double
+next past each end: Moshier Mars "jd 2818000.800000 outside Moshier planet
+range 625000.20 .. 2818000.80" for 2818000.8000000003, "jd 625000.200000"
+for 625000.19999999984, the Moon's at 2818000.70 and 625000.30 the same;
+de200.eph "jd 2305424.500000 outside JPL eph. range 2305424.50 ..
+2513392.50" (Moshier noted) and, strict, this fork's "%.4f", "JPL
+ephemeris is not available for jd 2305424.5000" (the Swiss Moon file's
+the same format); the Swiss files' "jd %f < lower limit %f", whose limit
+itself does not read back (seplm132.se1's start, -3026605.471196445, as
+-3026605.471196, so a date just before it reads as inside);
+`swe_utc_to_jd()`'s seconds 60.999 "invalid time: 12:0:61.00", -0.001
+"-0.00" (a valid second), and "invalid time (no leap second!):
+23:59:61.00" for 60.999. The ranges printed by "%.2f" (Moshier's, JPL's,
+the mean node's) and "%.10g" (the precession models') read back as the
+bounds tested; the "jd %.8f: ... leave the ephemeris's span" messages
+print no bound.
+
+And a date past a range was refused at a speed read's instant, not its
+own: on Moshier with SEFLG_SPEED the true node and the osculating apogee
+at 8000000.5 "jd 8000000.468750 outside Moshier's Moon range"
+(`lunar_osc_elem()` reads tjd last), at 2818000.75 "jd 2818000.718750";
+`swe_nod_aps()` of the Earth's osculating points on Moshier at 2818000.75
+"jd 2818000.718750", at 625000.29 "jd 625000.227500" (without the flag
+"jd 2818000.750000", "jd 625000.290000"). And this fork's own, since
+entry 117 reads the speed first: the mean node and apogee on every
+ephemeris at 8000016.6 "jd 8000016.568750 outside mean node range", with
+or without the flag; `swe_nod_aps()`'s Moon's mean points (entry 55's
+test) "jd 8000016.631250". Upstream's mean points read tjd first and name
+it.
+
+**Fix, as done here:** `swi_jd_str()` with decimals: "%.*f" where it
+reads back as the number, byte for byte as before, else "%.*g" with the
+fewest digits from 10 that do: "jd 2818000.8000000003", "jd
+2305424.4999999995", "12:0:60.999", "12:0:-0.001"; the strict refusals
+print their date by it with four decimals, in both builds as they are,
+the Swiss files' date and limit with six ("lower limit
+-3026605.471196445"), the leap second's seconds with two. The upstream
+formats behind `#ifndef SWE_UPSTREAM_COMPAT`. A date "%f" gives back
+prints as before ("jd 2818000.810000", "jd 8000000.000000 > upper limit
+7929133.500000"); one it does not prints its digits: of entry 261's 16059
+lines 639 TT functions' messages differ by them alone (and 2746 of entry
+262's).
+
+And where the date is itself past the range it is read alone, or first:
+`lunar_osc_elem()` on Moshier reads no speed epoch for a date past the
+Moon's range, the mean node and apogee (entry 117's block) refuse a date
+past theirs at it, `swe_nod_aps()`'s mean points name tjd where it is
+past, and with SEFLG_SPEED a refusal of `swe_nod_aps()` or its `_ut`
+form takes the message of the same call without the flag where that is
+refused too (`nodaps_speed_refusal()`, on a refusal only). A date inside
+whose speed read falls past (2818000.69 on Moshier) still names that
+read's instant. The upstream code behind `#ifndef SWE_UPSTREAM_COMPAT`,
+the mean points' as they were. Against ts20 cdf372b, of entry 261's 16059
+lines 270 messages (the mean node at the dates past its range) differ so
+alone; with entry 262's and the digits above 4570 and 503. A loop of
+56000 `swe_calc()` calls of the Sun to the osculating apogee on Moshier
+and the files, 0.011% more instructions.
+
+G160 check (k): the doubles next past Moshier's planet and Moon ranges'
+ends, de200.eph's (the fallback's note and the strict refusal), the Swiss
+files' first limit, and the seconds 60.999 and -0.001 at 12:00 and 60.999
+at 23:59 with no leap second, read back; four ordinary messages byte for
+byte: 15 of 15; before the fix 4 of 15 (the four ordinary); the upstream
+build 4 of 15 (the strict refusal, this fork's in both builds, and three
+ordinary; the fourth names entry 255's range). G24 `bound_msg_as_bound`:
+Mars and the Moon past Moshier's ends, Mars before de200.eph's, Mars
+before the files' first limit, the seconds 60.999 at 12:00 and on 2015
+Dec 31 23:59, not read back: 0 of 6 shipped, 6 of 6 compat.
+
+G160 check (m), the speed reads: on Moshier with SEFLG_SPEED the true node
+and osculating apogee at 8000000.5 and 2818000.75, the mean node (the
+files) and apogee at 8000016.6 and -3100015.6, `swe_nod_aps()` of the
+Moon's mean points at 8000016.6 and of the Earth's osculating ones at
+2818000.75 and 625000.29, the caller's date read back: 11 of 11; before
+the fix (ts20 cdf372b) 0 of 11; the upstream build 5 of 11 (the mean
+points'). G24 `stencil_msg_named`: the true node and osculating apogee at
+8000000.5 and 2818000.75, the Earth's osculating points at 2818000.75 and
+625000.29, the caller's date not named: 0 of 6 shipped (6 of 6 before
+the fix), 6 of 6 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR (this fork's, entry 117). `swe_calc()` of SE_MEAN_NODE and
+  SE_MEAN_APOG refuses the dates within 1/32 day inside either end of the
+  range it names, its speed's reads past it: 8000016.47, .49 and .5
+  refused "jd 8000016.501250" ("8000016.521250", "8000016.531250")
+  "outside mean node range -3100015.50 .. 8000016.50", -3100015.47 and
+  .49 the same, the range taken -3100015.46875 .. 8000016.46875; the
+  upstream build answers all of them (it refuses within 0.001 day of the
+  start only).
+- BEHAVIOUR. On Moshier with SEFLG_SPEED the true node, the osculating
+  apogee and `swe_nod_aps()`'s osculating points refuse a date inside the
+  range whose speed read falls past it (the true node at 2818000.69,
+  answered without the flag, "jd 2818000.721250 outside Moshier's Moon
+  range"; Mars's points at 2818000.79 "jd 2818000.821250 outside Moshier
+  planet range"), where the Swiss files answer such a date one-sided
+  (flag 258).
+
+## 280. The eclipse, rise and set, and heliacal UT functions pass on their TT call's message naming its TT: at UT 1e12 "jd 1281959700055.5513 outside ...", on Moshier at UT 1e7 "jd 10000016.066403"
+
+**Severity: Correctness (error reporting)**
+**Where:** `swecl.c`: `swe_sol_eclipse_where()`, `swe_lun_occult_where()`, `swe_sol_eclipse_how()`, `swe_lun_eclipse_how()`, the six eclipse and occultation searches, `swe_pheno_ut()`, `swe_rise_trans()`, `swe_rise_trans_true_hor()`, `swe_nod_aps_ut()`, `swe_gauquelin_sector()`; `swehel.c`: `swe_vis_limit_mag()`, `swe_heliacal_pheno_ut()`, `swe_heliacal_ut()`; `swephlib.c`: `swi_ut_named()`, new `swi_serr_snap()`
+
+Entry 262's defect in swecl.c and swehel.c, left to entries 239-248's
+work there. Measured on ts20 cdf372b: at UT 1e12 on the files
+`swe_sol_eclipse_where()`, `swe_lun_occult_where()`,
+`swe_sol_eclipse_how()`, `swe_pheno_ut()`, `swe_nod_aps_ut()`,
+`swe_gauquelin_sector()`, `swe_vis_limit_mag()` and
+`swe_heliacal_pheno_ut()` "jd 1281959700055.5513 outside the range the
+Swiss Ephemeris files are named for"; on Moshier at UT 1e7 "jd
+10000016.066403 outside Moshier planet range" and at UT 2818000.78 "jd
+2818000.81835651"; `swe_rise_trans_true_hor()` its search's TT, "jd
+1281959700055.4211", at UT 2818000.78 "jd 2818000.735023159" (a TT before
+the UT asked); the searches past de200.eph's end, strict, the TT they
+reached ("JPL ephemeris is not available for jd 2513441.5420808336"), and
+the fallback's notes the same ("jd 2513446.5176025624 outside JPL eph.
+range ...; using Moshier Eph;").
+
+**Fix, as done here:** each of these passes what it wrote into serr (serr
+against its copy as passed, `swi_serr_snap()`: none of them clears it)
+through `swi_ut_named()`: a single instant's -- where, how,
+`swe_pheno_ut()`, `swe_nod_aps_ut()`, the Gauquelin methods 0 and 1,
+`swe_vis_limit_mag()` -- "jd 1e+12 UT (TT 1281959700055.5513) outside
+...", "jd 10000000 UT (TT 10000016.066403296)"; a search's, a rise's or
+set's, `swe_heliacal_pheno_ut()`'s (it reads the day's twilight) and the
+Gauquelin methods 2 to 5 "jd X TT (searching from UT U)", X the date it
+reached ("JPL ephemeris is not available for jd 2513441.5420808336 TT
+(searching from UT 2513392.499)", "jd 1281959700055.4211 TT (searching
+from UT 1e+12)"). A search's start refused at the caller's number and an
+inner UT call's "jd U' UT (TT X)" stay. Refusals and notes alike. Behind
+`#ifndef SWE_UPSTREAM_COMPAT`. Each call copies and compares serr once;
+these functions make dozens to thousands of `swe_calc()` calls each.
+
+G160 check (l): on the files at UT 1e12, on Moshier at UT 1e7 and
+2818000.78, on de200.eph strict at UT 2513392.499, the 19 functions (the
+Gauquelin methods 0 and 2) refused there, a single instant's "jd <UT> UT
+(TT <tt>)" with the TT within a day of its own, a search's every date
+the caller's UT, "TT (searching from UT <UT>)" or an inner UT call's;
+and past de200.eph's end, the fallback allowed, the notes of
+`swe_sol_eclipse_when_glob()`, `swe_lun_eclipse_when()` and
+`swe_pheno_ut()` so: 79 of 79; before the fix 20 of 79 (the searches'
+starts refused at the caller's number); the upstream build 6 of 79. G24
+`ecl_msg_ut_named`: at UT 1e12 `swe_sol_eclipse_where()`,
+`swe_sol_eclipse_how()`, `swe_pheno_ut()`, `swe_vis_limit_mag()`,
+`swe_heliacal_pheno_ut()` and `swe_rise_trans_true_hor()`, the caller's
+UT not named: 0 of 6 shipped (6 of 6 before the fix), 6 of 6 compat.
+
+## 282. `swe_date_conversion()` of an illegal date returns ERR and still sets `*tjd`: kept, as its own documentation says
+
+**Severity: Documentation (behaviour kept)**
+**Where:** `swedate.c`: `swe_date_conversion()`; `swephexp.h`
+
+Entry 238 kept it; entry 239's rule is that a refusal is ERR with its
+outputs 0. Measured: 2000 Feb 30 12:00 Gregorian ERR, `*tjd` 2451605.0
+(2000 Mar 1 12:00, `swe_julday()`'s), 1993 Jan 32 ERR with Feb 1's. The
+manual says only that the function "checks in addition whether the date
+is legal. It returns OK or ERR."
+
+**Decision, as done here:** kept, in both builds, and documented.
+swedate.c's header has said from upstream on that "for illegal dates like
+32 January 1993 it returns ERR but still converts the date correctly,
+i.e. like 1 Feb 1993", and callers rely on it: swephgen4.c converts the
+date typed in and uses `*tjd` without the return, and the Android JNI
+wrapper (contrib/android/jni/swejni.c) hands `*tjd` to Java with the
+return beside it. So it is not entry 239's refusal: the date is answered,
+and ERR says it was not a legal one. A NaN or infinite hour stays entry
+238's refusal (ERR, `*tjd` 0). Comments at the function and at its
+declaration in swephexp.h. G160 check (o): 2000 Feb 30 and 1993 Jan 32 at
+12:00 ERR with `swe_julday()`'s date, 2000 Feb 29 OK: 3 of 3 in both
+builds and before. No G24 case: the builds do not differ.
+
+## 286. `swe_heliacal_ut()` answers from a fallen ephemeris with an empty serr
+
+**Severity: Correctness (error reporting)**
+**Where:** `swehel.c`: `swe_heliacal_ut()` (its body, new `heliacal_fallback_note()`)
+
+Measured on ts20 cdf372b from Zurich (8.55 E, 47.37 N, 400 m), the
+fallback allowed, Venus, Mars, the Moon, Sirius, Mercury and Jupiter,
+their event types 1 to 4 where they have them, with the details, without
+(SE_HELFLAG_NO_DETAILS), with SE_HELFLAG_AVKIND_VR and with
+SE_HELFLAG_HIGH_PRECISION: with de200.eph missing, at J2000, 30 of the 72
+answers came with an empty serr -- the planets' with their details and
+Sirius's with and without -- and 30 of 72 from de200.eph's end (UT
+2513392.0, the events past it), where `swe_rise_trans()`, the eclipse
+searches, `swe_vis_limit_mag()`, `swe_heliacal_pheno_ut()`,
+`swe_nod_aps()` and the orbital elements carry the note ("SwissEph file
+'nonexistent.eph' not found in PATH '...' trying Swiss Eph; ", "jd ...
+outside JPL eph. range ...; using Moshier Eph; "). The search empties its
+serr each synodic period, each inner search passes its own out only if
+not empty, and `time_limit_invisible()`, to drop `swe_vis_limit_mag()`'s
+"object is below local horizon", empties serr after its last read, the
+note with it. The upstream build 76 of 144.
+
+**Fix, as done here:** an answer without a message gets the note of the
+Sun's read at its date (`swe_calc_ut()`, the ephemeris asked) where
+another ephemeris answers there; one from the ephemeris asked none. The
+144 answers' dates and returns bit for bit as before, every one of them
+noted. Behind `#ifndef SWE_UPSTREAM_COMPAT`. One `swe_calc_ut()` more per
+answer, against the search's thousands.
+
+G160 check (n): with de200.eph missing at J2000 Venus's morning first and
+Sirius's without the details, and from de200.eph's end Venus's, OK with
+the note; Venus's on de200.eph at J2000 with none: 4 of 4; before the fix
+1 of 4 (the last); the upstream build 2 of 4. G24
+`heliacal_fallen_unnoted`: Venus's morning first and evening last and
+Mars's morning first with de200.eph missing, answered with an empty serr:
+0 of 3 shipped (3 of 3 before the fix), 3 of 3 compat.
 
 ## 287. On the ecliptic of t0 the houses' offset from the auxiliary vernal point is signed by the date, not by where the point lies: for some 130 days on one side of t0 every cusp and ascmc is off by twice it, a step of 2 dpsi at t0 (-9.64e-3 deg on the ecliptic of 1900, -7.74e-3 J2000's, -9.32e-3 Lahiri's of 1956), the speeds 0.25 to 0.31 deg/day off within 1/64 day of it
 

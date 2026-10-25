@@ -6556,13 +6556,20 @@ AS_BOOL swi_date_invalid(double tjd, char *serr)
  * fewest significant digits from 10 that read back as jd: no date's digits
  * cut its message at 255 characters (past 1e188 the range lost, from about
  * 1e237 the text), and no double next to a bound prints as the bound
- * ("%.10g" gave "7.8e+11" for the double past 7.8e11). */
+ * ("%.10g" gave "7.8e+11" for the double past 7.8e11).
+ * UPSTREAM-BUGS 263: below 1e15 the fixed decimals are coarser than a
+ * double's spacing below 2^32 days, and the double next to a range's end
+ * printed as the end: "jd 2305424.500000 outside JPL eph. range
+ * 2305424.50 .. 2513392.50" for 2305424.4999999995, the seconds 60.999
+ * "61.00", -0.001 "-0.00". Now "%.*f" where it reads back as jd, byte for
+ * byte as before, else the "%.*g" below. */
 char *swi_jd_str(double jd, int fdig, char *s)
 {
   int p;
   if (fdig >= 0 && fabs(jd) < 1e15) {
     snprintf(s, SWI_JDSTR_LEN, "%.*f", fdig, jd);
-    return s;
+    if (strtod(s, NULL) == jd)
+      return s;
   }
   for (p = 10; p < 17; p++) {
     snprintf(s, SWI_JDSTR_LEN, "%.*g", p, jd);
@@ -6603,6 +6610,76 @@ AS_BOOL swi_search_start_refused(swe_ctx *ctx, double tjd_ut, int32 epheflag, AS
   return TRUE;
 }
 #endif
+/* UPSTREAM-BUGS 262 (and 280): a UT function passes on the message of
+ * its TT call, whose dates are TTs: at UT 1e12 "jd 1281959700055.5513
+ * outside the range the Swiss Ephemeris files are named for", where the
+ * caller gave 1e12. Each "jd X" in serr becomes "jd U UT (TT X)", U the
+ * caller's UT (swi_jd_str()'s digits), X as it was printed: the date
+ * refused, the TT or its light time's or a speed read's near it; for a
+ * search (search != 0), whose X is a date it reached, "jd X TT (searching
+ * from UT U)". Left as they are: an X already named ("jd U' UT (TT X)",
+ * "jd X TT", as an inner UT call or a second pass leaves it), the
+ * caller's own number (a search's start refused at it), and delta t's
+ * refusals, which name UTs; and the whole message if it would not fit.
+ * s0: serr as the caller passed it (swi_serr_snap()), for a function that
+ * can answer without writing it: serr as it was is not the call's and
+ * stays; NULL where the call writes serr afresh (swe_calc() clears it). */
+void swi_ut_named(double tjd_ut, int search, const char *s0, char *serr)
+{
+  char s[AS_MAXCH], sut[SWI_JDSTR_LEN], *p, *q, *e;
+  size_t n = 0, k, nx;
+  if (serr == NULL)
+    return;
+  for (k = 0; k < AS_MAXCH && serr[k] != '\0'; k++)
+    ;
+  if (k == AS_MAXCH || (s0 != NULL && strcmp(serr, s0) == 0))
+    return;	/* not a message, or not this call's */
+  if (strstr(serr, "jd ") == NULL || strstr(serr, "delta t range") != NULL)
+    return;
+  swi_jd_str(tjd_ut, -1, sut);
+  for (p = serr; (q = strstr(p, "jd ")) != NULL; p = e) {
+    double x = strtod(q + 3, &e);
+    nx = (size_t) (e - q - 3);
+    k = (size_t) (q + 3 - p);
+    if (nx == 0 || x == tjd_ut || strncmp(e, " UT", 3) == 0 || strncmp(e, " TT", 3) == 0) {
+      e = q + 3;	/* no date, the caller's, or named already: as it is */
+      if (n + k >= sizeof s)
+        return;
+      memcpy(s + n, p, k);
+      n += k;
+      continue;
+    }
+    if (n + k + nx + strlen(sut) + 24 >= sizeof s)
+      return;
+    memcpy(s + n, p, k);
+    n += k;
+    if (search) {
+      memcpy(s + n, q + 3, nx);
+      n += nx;
+      n += (size_t) sprintf(s + n, " TT (searching from UT %s)", sut);
+    } else {
+      n += (size_t) sprintf(s + n, "%s UT (TT ", sut);
+      memcpy(s + n, q + 3, nx);
+      n += nx;
+      s[n++] = ')';
+    }
+  }
+  k = strlen(p);
+  if (n + k >= sizeof s)
+    return;
+  memcpy(s + n, p, k + 1);
+  strcpy(serr, s);
+}
+
+/* serr as a caller passed it, for swi_ut_named(): at most AS_MAXCH - 1
+ * of its chars, so an unset buffer is read no further */
+void swi_serr_snap(const char *serr, char *s0)
+{
+  size_t k;
+  for (k = 0; serr != NULL && k < AS_MAXCH - 1 && serr[k] != '\0'; k++)
+    s0[k] = serr[k];
+  s0[k] = '\0';
+}
 
 /**************************************************************
 cut the string s at any char in cutlist; put pointers to partial strings

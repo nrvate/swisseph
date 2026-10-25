@@ -245,6 +245,12 @@ extern char *swi_jd_str(double jd, int fdig, char *s);
 extern AS_BOOL swi_search_start_refused(swe_ctx *ctx, double tjd_ut, int32 epheflag, AS_BOOL moon,
                                         double reach, char *serr);
 #endif
+/* a UT function's message: its TT call's "jd X" as "jd UT UT (TT X)", a
+ * search's as "jd X TT (searching from UT U)"; s0 serr as the caller
+ * passed it (swi_serr_snap()), or NULL where the call writes it afresh
+ * (UPSTREAM-BUGS 262, 280) */
+extern void swi_ut_named(double tjd_ut, int search, const char *s0, char *serr);
+extern void swi_serr_snap(const char *serr, char *s0);
 
 /* cyclic redundancy checksum (CRC), 32 bit */
 extern uint32 swi_crc32(unsigned char *buf, int len);

@@ -1839,6 +1839,26 @@ struct epsilon {
  *   - swe_house_pos() in the horizon system ('H') counting the houses the
  *     other way from swe_houses()'s cusps south of the equator and on it
  *     (UPSTREAM-BUGS 289, G179, G24)
+ *   - swe_utc_time_zone() moving the date by one day at most and casting
+ *     the hour unranged: 12:00:30 at -100 h the next day 88:00:30, at
+ *     1e300 the hour INT_MIN (UPSTREAM-BUGS 261, G160, G24)
+ *   - the UT functions naming their TT call's TT as the date refused, "jd
+ *     1281959700055.5513 outside ..." at UT 1e12 (UPSTREAM-BUGS 262, G160,
+ *     G24)
+ *   - upstream's "%f" and "%.2f" of a refused date or seconds where they
+ *     do not read back, the double next past a range's end printed as the
+ *     end (UPSTREAM-BUGS 263, G160, G24); this fork's strict refusals
+ *     print it with the digits that give it back in both builds, and entry
+ *     260's int-free yyyymmdd is in both; and a date past a range refused
+ *     at a speed read's instant, the true node and osculating apogee on
+ *     Moshier at 8000000.5 "jd 8000000.468750", swe_nod_aps()'s Earth
+ *     (UPSTREAM-BUGS 263, G160, G24; the mean node's and apogee's, and
+ *     swe_nod_aps()'s Moon's mean points, read the date first there)
+ *   - the eclipse, rise and set, and heliacal UT functions naming their TT
+ *     call's TT, "jd 1281959700055.5513 outside ..." at UT 1e12, a search's
+ *     the TT it reached bare (UPSTREAM-BUGS 280, G160, G24)
+ *   - swe_heliacal_ut() answering from a fallen ephemeris with an empty
+ *     serr (UPSTREAM-BUGS 286, G160, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

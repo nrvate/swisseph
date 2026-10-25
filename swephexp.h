@@ -985,6 +985,10 @@ ext_def(const char *) swe_get_current_file_data(int ifno, double *tfstart, doubl
  * exports from swedate.c 
  ****************************/
 
+/* OK for a legal date; ERR for an illegal one (2000 Feb 30), *tjd still
+ * the date converted as swe_julday() does (2000 Mar 1), as swedate.c has
+ * always documented it and swephgen4.c reads it; ERR with *tjd 0 for a NaN
+ * or infinite hour (UPSTREAM-BUGS 238, 282) */
 ext_def( int ) swe_date_conversion(
         int y , int m , int d ,         /* year, month, day */
         double utime,   /* universal time in hours (decimal) */

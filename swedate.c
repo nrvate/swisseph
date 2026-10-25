@@ -114,6 +114,12 @@ int CALL_CONV swe_date_conversion(int y,
   rut = uttime;		/* hours UT */
   jd = swe_julday(y, m, d, rut, gregflag);
   swe_revjul(jd, gregflag, &ryear, &rmon, &rday, &rut);
+  /* UPSTREAM-BUGS 282: an illegal date returns ERR with *tjd set all the
+   * same, kept: the header above documents it ("returns ERR but still
+   * converts the date correctly"), swephgen4.c uses *tjd without the
+   * return, and the manual says only "OK or ERR". Not entry 239's
+   * refusal, whose outputs are 0: the date is answered, and ERR says it
+   * was not one. */
   *tjd = jd;
   if (rmon == m && rday == d && ryear == y) {
     return OK;
@@ -284,6 +290,20 @@ void CALL_CONV swe_utc_time_zone(
     *dsec_out = NAN;
     return;
   }
+  /* Upstream bug 261: the date moved by one day at most, so an hour after
+   * the time zone outside -24 .. 48 answered an hour outside 0..23 (12:00
+   * at -100 h: the next day 88:00:30, at -36 h 24:00:30, at +48 h
+   * -11:-59:-30), and the hour was cast to int with no range test: past
+   * about 2^31 hours INT_MIN, at 1e300 the seconds -3.6e303 (UB). Now the
+   * whole days are carried into the date (exactly: a double less 24 times
+   * the floor of its 24th), the two steps below taking what rounding
+   * leaves; and where the date's year holds in no int (past about 7.84e11
+   * days either side, the bound with them), no answer, as bug 238's. */
+  if (dhour < -24.0 || dhour >= 48.0) {
+    d = floor(dhour / 24.0);
+    tjd += d;
+    dhour -= d * 24.0;
+  }
 #endif
   if (dhour < 0.0) {
     tjd -= 1.0;
@@ -294,6 +314,13 @@ void CALL_CONV swe_utc_time_zone(
     dhour -= 24.0;
   }
   swe_revjul(tjd + 0.001, SE_GREG_CAL, iyear_out, imonth_out, iday_out, &d);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (*iyear_out == INT_MIN) {	/* bug 261 */
+    *imonth_out = *iday_out = *ihour_out = *imin_out = INT_MIN;
+    *dsec_out = NAN;
+    return;
+  }
+#endif
   *ihour_out = (int) dhour;
   d = (dhour - (double) *ihour_out) * 60;
   *imin_out = (int) d;
@@ -438,7 +465,15 @@ static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32
 {
   double tjd_ut1, tjd_et, tjd_et_1972, dhour, d;
   int iyear2, imonth2, iday2;
-  int i, j, ndat, nleap, tabsiz_nleap;
+  int i, j, nleap, tabsiz_nleap;
+  /* Upstream bug 260: the date as yyyymmdd, ndat, was an int, and iyear *
+   * 10000 overflowed it (signed, UB) for a year past 214748, inside the
+   * bound from 8.0e7 days; it wrapped on x86-64, and the leap-second count
+   * read from it went unused, delta t's test answering UT1 there. A double
+   * holds it exactly for every int year, and compares with the table's
+   * ints as the int did. In both builds, as bug 216's casts: no answer
+   * changes. */
+  double ndat;
   /* 
    * error handling: invalid iyear etc. 
    */
@@ -463,7 +498,8 @@ static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32
      * serr from dsec about 1e232 (1e215 with the hour and minute INT_MIN) */
 #ifndef SWE_UPSTREAM_COMPAT
     /* Upstream bug 243: past it the seconds' digits ran to the end of
-     * serr; by swi_jd_str() now, "%.2f" below 1e15 as before */
+     * serr; by swi_jd_str() now, "%.2f" below 1e15 as before (bug 263:
+     * where it reads back; 60.999 was "61.00", -0.001 "-0.00") */
     char ssec[SWI_JDSTR_LEN];
     if (!isfinite(dsec))
       dret[0] = dret[1] = 0;
@@ -502,7 +538,7 @@ static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32
    * somewhere else. */
   tabsiz_nleap = init_leapsec(ctx);
   nleap = NLEAP_INIT; /* initial difference between UTC and TAI in 1972 */
-  ndat = iyear * 10000 + imonth * 100 + iday;
+  ndat = iyear * 10000.0 + imonth * 100.0 + iday;
   for (i = 0; i < tabsiz_nleap; i++) {
     if (ndat <= ctx->leap_seconds[i])
       break;
@@ -532,8 +568,16 @@ static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32
       }
     }
     if (j != 1) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 263: "%.2f" printed 60.999 as "61.00", the bound; by
+       * swi_jd_str(), "%.2f" where it reads back, as "invalid time" */
+      char ssec[SWI_JDSTR_LEN];
+      if (serr != NULL)
+	snprintf(serr, AS_MAXCH, "invalid time (no leap second!): %d:%d:%s", ihour, imin, swi_jd_str(dsec, 2, ssec));
+#else
       if (serr != NULL)
 	sprintf(serr, "invalid time (no leap second!): %d:%d:%.2f", ihour, imin, dsec);
+#endif
       return ERR;
     }
   }
@@ -621,7 +665,8 @@ static void swe_jdet_to_utc_r_body(swe_ctx *ctx, double tjd_et, int32 gregflag, 
 {
   int i;
   int second_60 = 0;
-  int iyear2, imonth2, iday2, nleap, ndat, tabsiz_nleap;
+  int iyear2, imonth2, iday2, nleap, tabsiz_nleap;
+  double ndat;	/* bug 260, see swe_utc_to_jd_r_body() */
   double d, tjd, tjd_et_1972, tjd_ut, dret[10];
   /* 
    * if tjd_et is before 1 jan 1972 UTC, return UT1
@@ -649,7 +694,7 @@ static void swe_jdet_to_utc_r_body(swe_ctx *ctx, double tjd_et, int32 gregflag, 
    */
   tabsiz_nleap = init_leapsec(ctx);   /* see swe_utc_to_jd_r() above */
   swe_revjul(tjd_ut-1, SE_GREG_CAL, &iyear2, &imonth2, &iday2, &d);
-  ndat = iyear2 * 10000 + imonth2 * 100 + iday2;
+  ndat = iyear2 * 10000.0 + imonth2 * 100.0 + iday2;
   nleap = 0; 
   for (i = 0; i < tabsiz_nleap; i++) {
     if (ndat <= ctx->leap_seconds[i])

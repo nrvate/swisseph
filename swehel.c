@@ -1598,8 +1598,21 @@ static int32 swe_vis_limit_mag_r_body(swe_ctx *ctx, double tjdut, double *dgeo, 
 int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_vis_limit_mag_r_body(ctx, tjdut, dgeo, datm, dobs, ObjectName, helflag, dret, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bugs 262 and 280: a message from a TT call named its TT
+   * as the date, as swe_sol_eclipse_where()'s did; the caller's UT with
+   * it now, a search's the date it reached; so the other heliacal
+   * functions */
+  swi_ut_named(tjdut, 0, s0, serr);
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239, as swe_heliacal_ut() */
     memset(dret, 0, 7 * sizeof(double));
@@ -2225,8 +2238,17 @@ output_heliacal_pheno:
 int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr, s0);
+#endif
   ret = swe_heliacal_pheno_ut_r_body(ctx, JDNDaysUT, dgeo, datm, dobs, ObjectNameIn, TypeEvent, helflag, darr, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(JDNDaysUT, 1, s0, serr);	/* bug 262, 280: it reads the day's twilight */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   if (ret == ERR)	/* bug 239, as swe_heliacal_ut() */
     memset(darr, 0, SE_HELIACAL_DARR_SIZE * sizeof(double));
@@ -3353,6 +3375,21 @@ static int32 heliacal_ut(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, doub
 '                   dret[2]: end of visibility (Julian day number; 0 if SE_HELFLAG_AV)
 ' see http://www.iol.ie/~geniet/eng/atmoastroextinction.htm
 */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 286: serr gets the note of the Sun's read at tjd_ut where
+ * an ephemeris other than the one asked for answers it (the fallback) */
+static void heliacal_fallback_note(swe_ctx *ctx, double tjd_ut, int32 helflag, char *serr)
+{
+  double x[6];
+  char s[AS_MAXCH] = "";
+  int32 eph = (helflag & SEFLG_JPLEPH) ? SEFLG_JPLEPH : (helflag & SEFLG_SWIEPH) ? SEFLG_SWIEPH
+              : (helflag & SEFLG_MOSEPH) ? SEFLG_MOSEPH : SEFLG_SWIEPH;
+  int32 r = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, eph, x, s);
+  if (r != ERR && (r & (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)) != eph)
+    strcpy(serr, s);
+}
+#endif
+
 static int32 swe_heliacal_ut_r_body(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
 {
   int32 retval, Planet;
@@ -3500,6 +3537,21 @@ static int32 swe_heliacal_ut_r_body(swe_ctx *ctx, double JDNDaysUTStart, double 
     sprintf(serr, "no heliacal date found within %d synodic periods", MaxCountSynodicPeriod);
     retval = ERR;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 286: an answer from a fallen ephemeris (the JPL file
+   * missing, or the search past its end, with the fallback allowed) came
+   * with an empty serr, where swe_rise_trans(), the eclipse searches,
+   * swe_vis_limit_mag() and swe_heliacal_pheno_ut() carry the note: the
+   * search empties serr per period, and time_limit_invisible(), dropping
+   * the "below local horizon" warning, every note with it. Venus's,
+   * Mercury's, Mars's, Jupiter's and Sirius's events with the details,
+   * and Sirius's without, 30 of 72 answers at J2000 with de200.eph
+   * missing, 30 of 72 from its end on. An answer without a message has
+   * the note of the Sun's read at its date now, where another ephemeris
+   * answers there. */
+  if (retval == OK && *serr == '\0')
+    heliacal_fallback_note(ctx, dret[0], helflag, serr);
+#endif
   if (serr_ret != NULL && *serr != '\0')
     strcpy(serr_ret, serr);
   return retval;
@@ -3508,8 +3560,17 @@ static int32 swe_heliacal_ut_r_body(swe_ctx *ctx, double JDNDaysUTStart, double 
 int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
 {
   int32 ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262 */
+#endif
   swi_config_hold(ctx);	/* bug 124 */
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_serr_snap(serr_ret, s0);
+#endif
   ret = swe_heliacal_ut_r_body(ctx, JDNDaysUTStart, dgeo, datm, dobs, ObjectNameIn, TypeEvent, helflag, dret, serr_ret);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(JDNDaysUTStart, 1, s0, serr_ret);	/* bug 262, 280 */
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 239: a refusal (the site's, the object's, the event's,
    * a date's, the strict setting's) left the caller's results as they were,

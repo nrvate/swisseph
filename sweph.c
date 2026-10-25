@@ -989,6 +989,15 @@ static int32 swe_calc_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 if
   }
 #endif
   retval = swe_calc_r(ctx, tjd_ut + deltat, ipl, iflag, xx, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 262: the TT call's message named its TT as the date,
+   * "jd 1281959700055.5513 outside the range the Swiss Ephemeris files
+   * are named for" at UT 1e12, "jd 2818000.818357 outside Moshier planet
+   * range" at UT 2818000.78; the caller's UT now, with the TT:
+   * swi_ut_named(). The crossings, swe_time_equ() and LMT and LAT take
+   * it from here. */
+  swi_ut_named(tjd_ut, 0, NULL, serr);
+#endif
   /* if ephe required is not ephe returned, adjust delta t: */
   if ((retval & SEFLG_EPHMASK) != epheflag) {
     deltat = swe_deltat_ex_r(ctx, tjd_ut, retval, NULL);
@@ -1292,6 +1301,9 @@ static int32 swe_calc_orbel_ut_r_body(swe_ctx *ctx, double tjd_ut, const double 
   }
 #endif
   retval = swe_calc_orbel_r(ctx, tjd_ut + deltat, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 0, NULL, serr);	/* bug 262, see swe_calc_ut_r_body() */
+#endif
   /* if ephe required is not ephe returned, adjust delta t: */
   if ((retval & SEFLG_EPHMASK) != epheflag) {
     deltat = swe_deltat_ex_r(ctx, tjd_ut, retval, NULL);
@@ -1729,6 +1741,14 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
      * apogee's latitude. The position is read last, at tjd. */
     {
       double xm[6], tp = tjd + 1.0 / 32, tm = tjd - 1.0 / 32;
+      /* UPSTREAM-BUGS 263, this fork's: with the speed's reads first a
+       * date past the range was refused at the first, "jd 8000016.568750
+       * outside mean node range" for 8000016.6, 1/32 day off (upstream
+       * reads tjd first); refused as itself now */
+      if (!(tjd >= MOSHNDEPH_START && tjd <= MOSHNDEPH_END)) {
+        swi_mean_node(ctx, tjd, xp2, serr);
+        goto return_error;
+      }
       if (swi_mean_node(ctx, tm, xm, serr) == ERR
           || swi_mean_node(ctx, tp, xp2 + 3, serr) == ERR)
         goto return_error;
@@ -1782,6 +1802,10 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     /* Upstream bug 117: as the mean node's above */
     {
       double xm[6], tp = tjd + 1.0 / 32, tm = tjd - 1.0 / 32;
+      if (!(tjd >= MOSHNDEPH_START && tjd <= MOSHNDEPH_END)) {	/* bug 263 */
+        swi_mean_apog(ctx, tjd, xp2, serr);
+        goto return_error;
+      }
       if (swi_mean_apog(ctx, tm, xm, serr) == ERR
           || swi_mean_apog(ctx, tp, xp2 + 3, serr) == ERR)
         goto return_error;
@@ -3425,14 +3449,19 @@ void swi_close_ephe_files(swe_ctx *ctx, AS_BOOL forget_denum)
  * getting it is not a downgrade. */
 static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, double tjd, char *serr)
 {
+  /* Upstream bug 263: "%.4f" printed the double next to a range's end as
+   * the end, "not available for jd 2305424.5000" for 2305424.4999999995 on
+   * de200.eph; swi_jd_str(), "%.4f" where it reads back, in both builds as
+   * the refusal is */
+  char sjd[SWI_JDSTR_LEN];
   if (ctx->ephe_fallback || got == 0 || got == wanted)
     return FALSE;
   if (serr != NULL)
     snprintf(serr, AS_MAXCH,
-      "%s ephemeris is not available for jd %.4f; falling back to %s would "
+      "%s ephemeris is not available for jd %s; falling back to %s would "
       "answer with lower precision. Install the data files, or call "
       "swe_set_ephe_fallback(1) to allow the substitution.",
-      swi_ephe_name(wanted), tjd, swi_ephe_name(got));
+      swi_ephe_name(wanted), swi_jd_str(tjd, 4, sjd), swi_ephe_name(got));
   return TRUE;
 }
 
@@ -3447,15 +3476,16 @@ static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, doubl
  * took it. The caller decides whether its answer depends on it. */
 static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr)
 {
+  char sjd[SWI_JDSTR_LEN];	/* bug 263, see swi_refuse_downgrade() */
   if (ctx->ephe_fallback || !ctx->moshmoon_used
       || ctx->moshmoon_cancels)	/* bug 192: swe_nod_aps()'s, the Moon cancelling */
     return FALSE;
   if (serr != NULL)
     snprintf(serr, AS_MAXCH,
-      "Swiss (.se1) Moon file is not available for jd %.4f; the Moon, and "
+      "Swiss (.se1) Moon file is not available for jd %s; the Moon, and "
       "the Earth made from it, would come from Moshier with lower precision. "
       "Install the data files, or call swe_set_ephe_fallback(1) to allow the "
-      "substitution.", tjd);
+      "substitution.", swi_jd_str(tjd, 4, sjd));
   return TRUE;
 }
 
@@ -4887,6 +4917,21 @@ again:
       /* Upstream bug 210: sprintf(), whose %f of the date and of the
        * file's limits could overrun s (the date is bounded by bug 216's
        * test above now, the limits by the file's header) */
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 263: "%f" printed the double next to the file's
+       * limit as the limit, and a limit not round to six decimals rounded
+       * (seplm132.se1's -3026605.471196); both by swi_jd_str(), "%f" where
+       * it reads back, as the other ranges' */
+      {
+	char sjd[SWI_JDSTR_LEN], slim[SWI_JDSTR_LEN];
+	if (tjd < fdp->tfstart)
+	  snprintf(s + strlen(s), sizeof s - strlen(s), "jd %s < lower limit %s;",
+		    swi_jd_str(tjd, 6, sjd), swi_jd_str(fdp->tfstart, 6, slim));
+	else
+	  snprintf(s + strlen(s), sizeof s - strlen(s), "jd %s > upper limit %s;",
+		    swi_jd_str(tjd, 6, sjd), swi_jd_str(fdp->tfend, 6, slim));
+      }
+#else
       if (tjd < fdp->tfstart) {
 	snprintf(s + strlen(s), sizeof s - strlen(s), "jd %f < lower limit %f;",
 		  tjd, fdp->tfstart);
@@ -4894,6 +4939,7 @@ again:
 	snprintf(s + strlen(s), sizeof s - strlen(s), "jd %f > upper limit %f;",
 		  tjd, fdp->tfend);
       }
+#endif
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }
@@ -6444,6 +6490,10 @@ static int32 swe_get_ayanamsa_ex_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 if
   double deltat;
   int32 retflag = OK;
   int32 epheflag = iflag & SEFLG_EPHMASK;
+#ifndef SWE_UPSTREAM_COMPAT
+  char s0[AS_MAXCH];	/* bug 262: an answer can leave serr the caller's */
+  swi_serr_snap(serr, s0);
+#endif
   if (epheflag == 0) {
     epheflag = SEFLG_SWIEPH;
     iflag |= SEFLG_SWIEPH;
@@ -6460,14 +6510,19 @@ static int32 swe_get_ayanamsa_ex_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 if
   retflag = swe_get_ayanamsa_ex_r(ctx, tjd_ut + deltat, iflag, daya, serr);
 #ifndef SWE_UPSTREAM_COMPAT
   /* bug 247: refused, not an ephemeris to take delta t from */
-  if (retflag == ERR)
+  if (retflag == ERR) {
+    swi_ut_named(tjd_ut, 0, s0, serr);	/* bug 262, see swe_calc_ut_r_body() */
     return ERR;
+  }
 #endif
   /* if ephe required is not ephe returned, adjust delta t: */
   if ((retflag & SEFLG_EPHMASK) != epheflag) {
     deltat = swe_deltat_ex_r(ctx, tjd_ut, retflag, serr);
     retflag = swe_get_ayanamsa_ex_r(ctx, tjd_ut + deltat, iflag, daya, serr);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 0, s0, serr);	/* bug 262: what this call wrote */
+#endif
   return retflag;
 }
 
@@ -11551,6 +11606,15 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
       ord = (npt == 5) ? ord5 : ord3;
       kstart = (iflag & SEFLG_SPEED) ? 0 : npt - 1;
 #ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 263: with SEFLG_SPEED a date past Moshier's Moon
+       * range was refused at its first speed read's instant, "jd
+       * 8000000.468750 outside Moshier's Moon range" for 8000000.5, 1/32
+       * day off; such a date is read alone now, tjd being last in ord[],
+       * and refused as itself */
+      if (!(tjd >= MOSHLUEPH_START - 0.2 && tjd <= MOSHLUEPH_END + 0.2))
+	kstart = npt - 1;
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
       /* Upstream bug 265: bug 225's defect on Moshier: a speed epoch past
        * the Moon's range (0.2 day past MOSHLUEPH_START .. MOSHLUEPH_END,
        * bug 255) refused the call, within 2^-4 day inside either margin,
@@ -13762,6 +13826,9 @@ static int32 swe_fixstar2_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int
 #endif
   /* if ephe required is not ephe returned, adjust delta t: */
   retflag = swe_fixstar2_r(ctx, star, tjd_ut + deltat, iflag, xx, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 0, NULL, serr);	/* bug 262, see swe_calc_ut_r_body() */
+#endif
   if (retflag != ERR && (retflag & SEFLG_EPHMASK) != epheflag) {
     deltat = swe_deltat_ex_r(ctx, tjd_ut, retflag, NULL);
     retflag = swe_fixstar2_r(ctx, star, tjd_ut + deltat, iflag, xx, NULL);
@@ -15442,6 +15509,9 @@ static int32 swe_fixstar_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int3
 #endif
   /* if ephe required is not ephe returned, adjust delta t: */
   retflag = swe_fixstar_r(ctx, star, tjd_ut + deltat, iflag, xx, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_ut_named(tjd_ut, 0, NULL, serr);	/* bug 262, see swe_calc_ut_r_body() */
+#endif
   if (retflag != ERR && (retflag & SEFLG_EPHMASK) != epheflag) {
     deltat = swe_deltat_ex_r(ctx, tjd_ut, retflag, NULL);
     retflag = swe_fixstar_r(ctx, star, tjd_ut + deltat, iflag, xx, NULL);
