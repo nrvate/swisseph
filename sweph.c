@@ -10600,8 +10600,11 @@ int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
 
 int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
 {
-  double t = 0, dt, daya[2], dtsave_for_defl = 0;
+  double t = 0, dt = 0, daya[2], dtsave_for_defl = 0;
   double xx[6], xxctr[6], xxctr2[6], xx0[6], xxsv[24], xxsp[6], dx[6], xreturn[24];
+#ifndef SWE_UPSTREAM_COMPAT
+  double xctra[3] = {0, 0, 0};
+#endif
   double *xs;
   int i, j, niter;
   int32 iflag2, epheflag, retc;
@@ -10694,8 +10697,38 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
       for (i = 0; i <= 2; i++) 
         xxsp[i] = xx0[i] - xx[i] - xxsp[i];
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* the centre's acceleration at tjd for the aberration rate below, a
+     * central difference of its velocity over 2^-10 day either side; read
+     * before the reads at t, so the save area the deflection reads is
+     * still theirs */
+    if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_NOABERR)) {
+      double xm[6], xp[6], tm = tjd - 1.0 / 1024, tp = tjd + 1.0 / 1024;
+      if (swe_calc_r(ctx, tm, iplctr, iflag2, xm, serr) == ERR
+          || swe_calc_r(ctx, tp, iplctr, iflag2, xp, serr) == ERR)
+        return ERR;
+      for (i = 0; i <= 2; i++)
+        xctra[i] = (xp[i+3] - xm[i+3]) / (tp - tm);
+    }
+#endif
     retc = swe_calc_r(ctx, t, iplctr, iflag2, xxctr2, serr);
     retc = swe_calc_r(ctx, t, ipl, iflag2, xx, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 77: both bodies were read at t = tjd - dt rounded to a
+     * double, up to half an ulp of the date (2.3e-10 day) from the
+     * emission instant, so the position jumped by the body's motion over
+     * that from one date to the next: Mercury from Mars 9.8e-8 deg/day in
+     * a five-point difference over 2^-9 day, the Moon from Venus 1.8e-7,
+     * against 4e-10 for true positions. The body is moved along its
+     * velocity at tjd by the rounding, (tjd - t) - dt, as bug 63's; the
+     * centre at t gives only its velocity. (Moshier has no barycentric
+     * positions; this path refuses it.) */
+    {
+      double eps = (tjd - t) - dt;
+      for (i = 0; i <= 2; i++)
+        xx[i] += eps * xx0[i+3];
+    }
+#endif
   }
   /*******************************
    * conversion to planetocenter     * 
@@ -10739,10 +10772,32 @@ int32 CALL_CONV swe_calc_pctr_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iplct
      * the difference of speed of the earth between t and t-dt. 
      * Neglecting this would involve an error of several 0.1"
      */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 77: this added the centre's velocity at tjd less that
+     * at t whole, bug 34's first-order term with its radial part, which
+     * is the distance's own and second order (bug 52): the distance rate
+     * off by 1.5e-6 AU/day on Mercury from Mars, 5.5e-6 on the Moon from
+     * Venus, 1.3e-4 on Saturn from Mercury. And that difference is tau
+     * a(tjd - tau/2), not tau a(tjd): Saturn's longitude speed from
+     * Mercury was off by 2.1e-6 deg/day, 2.0e-6 of it this (5.6e-8 on
+     * Venus from the Moon). Now bug 52's exact term, add_aberr_rate(),
+     * with tau a(tjd), a the centre's acceleration above (over tau either
+     * side instead, 5.7e-9 on Saturn from Mercury). Only xobs2's velocity
+     * is read. */
+    if (iflag & SEFLG_SPEED) {
+      double xobs2[6];
+      for (i = 0; i <= 2; i++) {
+        xobs2[i] = xxctr2[i];
+        xobs2[i+3] = xxctr[i+3] - dt * xctra[i];
+      }
+      add_aberr_rate(xx, xxctr, xobs2);
+    }
+#else
     if (iflag & SEFLG_SPEED) {
       for (i = 3; i <= 5; i++) 
         xx[i] += xxctr[i] - xxctr2[i];
     }
+#endif
   }
   if (!(iflag & SEFLG_SPEED))
     for (i = 3; i <= 5; i++)

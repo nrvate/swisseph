@@ -838,6 +838,12 @@ struct epsilon {
  *     carried on linearly from t - dt and t, its acceleration half a step
  *     back: 8e-12 deg/day on the sky, 1.03e-9 in Polaris's right ascension
  *     (UPSTREAM-BUGS 76, G75)
+ *   - swe_calc_pctr() read both bodies at tjd - dt rounded to a double,
+ *     and added the centre's velocity change over the light time as its
+ *     aberration rate, radial part and all (9.8e-8 deg/day on a five-point
+ *     difference of Mercury's places from Mars, 1.5e-6 AU/day on its
+ *     distance rate, 2.1e-6 deg/day on Saturn's speed from Mercury;
+ *     UPSTREAM-BUGS 77, G76)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

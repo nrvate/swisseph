@@ -991,6 +991,30 @@ static double mercury_lt_round_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 77: swe_calc_pctr()'s distance rate of Mercury seen from
+ * Mars, default flags, against a five-point difference of its distance
+ * over 2^-8 day, nine dates 1800-2335, AU/day. The aberration rate added
+ * the centre's velocity change over the light time whole, radial part and
+ * all. */
+static double pctr_dist_rate_off(void)
+{
+  double w = 0, h = 1.0 / 256, x[6], f[5][6], d;
+  char serr[256];
+  int j, k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (j = 0; j < 9; j++) {
+    double t = floor((2378496.5 + j * 24413.7 + 0.137) * 256) / 256;
+    swe_calc_pctr(t, SE_MERCURY, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+    for (k = 0; k < 5; k++)
+      swe_calc_pctr(t + (k - 2) * h, SE_MERCURY, SE_MARS, SEFLG_SWIEPH, f[k], serr);
+    d = fabs(x[5] - (8 * (f[3][2] - f[1][2]) - (f[4][2] - f[0][2])) / (12 * h));
+    if (d > w)
+      w = d;
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 36: the topocentric Moon at -999, true positions, the
  * site turning per UT day instead of per TT day */
 static double topo_moon_ancient_off(void)
@@ -1215,7 +1239,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1273,6 +1297,7 @@ int main(int argc, char **argv)
   moonpulle = far_body_moon_pull_eph_off();
   merclr = mercury_lt_round_off();
   kronos = kronos_builtin_off();
+  pctrdd = pctr_dist_rate_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1690,6 +1715,14 @@ int main(int argc, char **argv)
   else {
     printf("  Kronos, built-in table   %.2e deg FAIL: expected %s\n",
            kronos, WANT_DEFECT ? "> 1e-3" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (pctrdd > 1e-7) : (pctrdd < 5e-10))
+    printf("  pctr distance rate     %.2e AU/day  OK\n", pctrdd);
+  else {
+    printf("  pctr distance rate     %.2e AU/day  FAIL: expected %s\n",
+           pctrdd, WANT_DEFECT ? "> 1e-7" : "< 5e-10");
     bad++;
   }
 

@@ -107,6 +107,7 @@ worst were in code that had never executed even once.
 | 66 | The aberration rate's Earth lacks the Moon on JPL and Moshier, and the planets everywhere | Correctness | `sweph.c` |
 | 76 | A fixed star's aberration rate takes the Earth's acceleration half a step back | Correctness | `sweph.c` |
 | 72 | The interpolated perigee's light-time estimate takes one pass, not two (this fork's) | Correctness | `sweph.c` |
+| 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, and its aberration rate is the centre's whole velocity change over the light time | Correctness | `sweph.c` |
 
 ---
 
@@ -3068,7 +3069,7 @@ day at nine dates: 1.8e-9 shipped (2.1e-7 before the fix), 1.5e-4 compat.
 
 Not fixed here, same rounding: `swe_calc_pctr()` reads both bodies at
 tjd - dt rounded (Mercury from Mars, 1.1e-7 deg/day at 2^-9 day, 4.9e-10
-true positions).
+true positions). Fixed as entry 77.
 
 ## 64. The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms
 
@@ -3457,6 +3458,74 @@ mas); the upstream build fails 68 of 73. G24 `intp_lighttime_off`: the
 same at JD 2486223.6015625, 4.5e-9 mas shipped, 91 compat (4.4e-3 with
 one pass). Baselines: interpolated-perigee positions move by up to
 0.005 mas, their speeds by 1.8e-7 deg/day.
+
+## 77. `swe_calc_pctr()` reads its bodies at the rounded instant, and its aberration rate is the centre's whole velocity change over the light time
+
+**Severity: Correctness (distance rate 1.5e-6 AU/day off on Mercury seen from Mars, 1.3e-4 on Saturn from Mercury; longitude speed 2.1e-6 deg/day off on Saturn from Mercury; position noise ~1e-9 deg, 1.8e-7 deg/day in a five-point difference over 2^-9 day of the Moon's places from Venus)**
+**Where:** `sweph.c`: `swe_calc_pctr_r()`
+
+Two residues that entries 52 and 63 fixed in `app_pos_etc_plan()` but not
+in the planet-centric path, which has its own copy of the light-time and
+aberration code. Scanned on ts20, Swiss files, Mercury from Mars, the Moon
+from Venus, Jupiter from Saturn, the Sun from Jupiter, Venus from the
+Moon, Mars from the Earth and Saturn from Mercury, thirteen dates
+-3000..+3000, steps 2^-6..2^-9 day, binary-fraction instants, against
+five-point differences of the positions. The first is entry 63's: both
+bodies were read at t = tjd - dt rounded to a double, up to half an ulp of
+the date (2.3e-10 day) from the emission instant, and the place jumped by
+the body's motion over that from one date to the next. It scales as 1/h:
+without aberration, Mercury from Mars 9.8e-8 deg/day, the Moon from Venus
+1.6e-7, Venus from the Moon 1.1e-7, Mars from the Earth 5.3e-8, Jupiter
+from Saturn 7.6e-9, against 4e-10 for true positions; distance rates
+<= 2.2e-9 AU/day. The second is steady with the step: the aberration
+rate added the centre's velocity at tjd less that at t, upstream's form
+of entry 34's term, and entry 52's exact one never reached this path. Its
+radial part is the distance's own (second order), and the difference is
+tau a(tjd - tau/2) where the rate wants tau a(tjd): the distance rate off
+by 1.55e-6 AU/day on Mercury from Mars, 5.5e-6 on the Moon from Venus,
+4.2e-6 on Venus from the Moon and Mars from the Earth, 2.9e-7 on Jupiter
+from Saturn, 3.5e-7 on the Sun from Jupiter, 1.3e-4 on Saturn from
+Mercury, whose longitude speed was off by 2.1e-6 deg/day (2.0e-6 of it
+the half light time's shift of a; 5.6e-8 on Venus from the Moon). Bug
+35's light-time rate (`lt_rate_exact()`) was already applied here, with
+the body at t and the centre at tjd, barycentric; the aberration used the
+centre's velocity at tjd; the frames (bias, precession, nutation, the
+ecliptic of date's turning) are `app_pos_rest()`'s and were right.
+
+**Fix, as done here:** after the read at t, the body is moved along its
+velocity at tjd by the rounding, (tjd - t) - dt, as entry 63's (the
+path refuses Moshier, which has no barycentric positions). The aberration
+rate is entry 52's `add_aberr_rate()`, with the centre's velocity change
+tau a(tjd): dt times the centre's acceleration, a central difference of
+its velocity over 2^-10 day either side of tjd (over tau either side
+instead, Saturn from Mercury was still 5.7e-9 deg/day off). The two extra
+reads come before the reads at t, so the save area the deflection reads
+is theirs, as before. After, same scan: longitude and latitude speeds
+<= 6.0e-10 deg/day (true positions 4.0e-10), distance rates <= 4.1e-11
+AU/day. Positions move by <= 4.7e-10 deg (the rounding), true positions
+not at all, and are the same with and without SEFLG_SPEED. A
+`swe_calc_pctr()` call with SEFLG_SPEED and aberration costs two more
+`swe_calc_r()` reads, 18.5 -> 23 us; `swe_calc()` is untouched.
+
+G76 `tests/pctrspeed.c`: Mercury from Mars, the Moon from Venus, Jupiter
+from Saturn, the Sun from Jupiter, Venus from the Moon, Saturn from
+Mercury; default flags, SEFLG_NOABERR, SEFLG_TRUEPOS, SEFLG_J2000,
+SEFLG_EQUATORIAL; thirteen dates, four steps; longitude and latitude
+speeds within 5e-9 deg/day, distance rates within 5e-10 AU/day (measured
+<= 6.0e-10 and <= 4.1e-11). The build before this fix fails 22 of the 30
+rows, by up to 2.1e-6 deg/day and 1.3e-4 AU/day; the upstream build fails
+all 30, by up to 2.3e-6 deg/day in longitude, 1.9e-5 in declination and
+1.3e-4 AU/day. G24 `pctr_dist_rate_off`: Mercury from Mars, distance rate
+over 2^-8 day at nine dates, 1.1e-11 AU/day shipped (1.52e-6 before the
+fix), 1.50e-6 compat.
+
+Not fixed here: the deflection in `swe_calc_pctr()` is
+`swi_deflect_light()`'s, which takes the observer and the Sun from the
+save area, the Earth and Sun at t left there by the reads above, not the
+centre: up to 0.28" on Saturn seen from Mercury and 0.135" on the Sun seen
+from Jupiter, which should not be deflected by itself at all (SEFLG_NOGDEFL
+against default, NOABERR, 200 dates from 2000). Its speed is the rate of
+that position (G76).
 
 ## How these were found
 
