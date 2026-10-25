@@ -1472,6 +1472,11 @@ struct epsilon {
  *     step over 100 days, +50.8" at 1776 under "0,9,1", is this fork's
  *     (entry 29); the compat build keeps upstream's sidtime_long_term(),
  *     which precesses at its instant and has no table; G139)
+ *   - the true node's and osculating apogee's speeds within 1/32 day of a
+ *     short-term precession window's edge differencing the Moon in the
+ *     frames of date of both sides: 2.9e-3 and 6.0e-3 deg/day with IAU 1976
+ *     under Vondrak (the compat build's are upstream's, over 1e-4 day:
+ *     0.375 there) (UPSTREAM-BUGS 186, G139, G24)
  *   - swe_houses_ex2()'s speeds within 1/64 day of a short-term precession
  *     window's edge taking this fork's rates of the ARMC, the obliquity and
  *     the sidereal houses' ayanamsa and auxiliary frames as differences

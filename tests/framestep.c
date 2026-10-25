@@ -3,7 +3,8 @@
  * 20, SEFLG_JPLHOR's at 1799 Jan 1 and 2202 Jan 1, the edges of a
  * short-term precession model's window, and the joins of Owen 1990's
  * pieces; and across a window's edges the long-term sidereal time is its
- * own side's model's, and the house speeds each side's own rate.
+ * own side's model's, and the house speeds and the true node's and
+ * osculating apogee's each side's own rate.
  *
  * The defect (UPSTREAM-BUGS 153): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), the precession, the mean obliquity
@@ -89,6 +90,14 @@
  * cusp and ascmc speed 2.1e-3 to 8.1e-3 deg/day off under "0,9,1", 4.65e-5
  * with the IERS 2010 sidereal time, the sidereal ones 3.9e-3 to 5.1e-3.
  *
+ * The defect (UPSTREAM-BUGS 186): the true node's and the osculating
+ * apogee's speeds difference the Moon's osculating elements at epochs 1/64
+ * day apart, each epoch's Moon put into the frame of date at that epoch,
+ * so within 1/32 day of an edge the difference took the frame's step: on
+ * de200 and the Swiss files under "0,9,1" the node's speed 2.90e-3
+ * deg/day off at J2000 - 2 centuries, 4.29e-3 at + 2, the apogee's 5.96e-3
+ * and 6.49e-3; under "0,9,8" at -+ 75 centuries 7.90 and 0.68.
+ *
  * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
  * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
  * difference after the step too), at 1799 Jan 1 the default models; and
@@ -165,6 +174,21 @@
  * (the rotation angle's rounding, 1e-11 deg at 2 centuries from J2000,
  * over 2^-12 day).
  *
+ * Check (f): the true node's and the osculating apogee's speeds across the
+ * windows' edges, "0,9,1" at J2000 - 2 centuries on de200 and the Swiss
+ * files and at + 2 on the Swiss files, "0,9,8" at -+ 75 on the Swiss
+ * files, ecliptic and equatorial of date: the longitude's, latitude's and
+ * distance's speeds against nine-point central differences over 2^-3 day
+ * of the positions of the instant's side's model alone, at the 49 of the
+ * 105 instants within 1/4 day of the edge (beyond, the reference's half
+ * day meets joints of the Swiss Moon's segments and files, whose kinks the
+ * node's rate takes: 4.1e-6 deg/day across JD 2378496.5), the worst within
+ * 1/32 day and from there to 1/4: 40 checks within 1e-9 deg/day for the
+ * node, 5e-8 for the apogee (G74's) and 4e-13 AU/day. Moshier's, whose
+ * Moon's frame has a step of its own there, is left out; so is the
+ * ecliptic of J2000, whose obliquity is the window's at J2000 on both
+ * sides and so not the outside model's alone.
+ *
  * Measured after the fix: (a) within 2.4e-9 (the Moon's one-sided
  * reference at J2000 - 2 centuries, 2.0e-9 at 1799; Polaris's right
  * ascension 1.45e-9 at 1962, the topocentric Moon 9.6e-10, the others
@@ -201,11 +225,16 @@
  * everywhere. Before the fix of bug 187, 15 of (e)'s 30 fail, every one
  * within 1/64 day of the edge (2.1e-3 to 8.1e-3 deg/day, 4.65e-5 with the
  * IERS 2010 sidereal time, sidereal 3.9e-3 to 5.1e-3); after, (e) within
- * 4.5e-8 everywhere. The upstream build fails 200 of (a)'s 210, the 66 of
+ * 4.5e-8 everywhere. Before the fix of bug 186, 20 of (f)'s 40 fail, every
+ * one within 1/32 day of the edge (2.80e-3 to 7.90 deg/day); after, (f)
+ * within 6.1e-10 for the node and 7.2e-9 for the apogee everywhere. The
+ * upstream build fails 200 of (a)'s 210, the 66 of
  * (c), 3 of (d)'s 12 (outside the IAU 1976 window by 4.6e-9 to 6.6e-9 deg:
  * its long-term formula takes the obliquity of J2000, inside the window,
- * at every date) and all 30 of (e) (its house speeds at ARMCS, entry 42:
- * equal houses 3.0e-5 to 8.6e-5 deg/day, Koch 199), 299 of its 318. Of
+ * at every date), all 30 of (e) (its house speeds at ARMCS, entry 42:
+ * equal houses 3.0e-5 to 8.6e-5 deg/day, Koch 199) and all 40 of (f) (its
+ * difference over 1e-4 day across the edge, 0.36 to 951 deg/day, and its
+ * interval's rounding beyond, entry 75), 339 of its 358. Of
  * (a)'s first 168 it fails 160: its nutation rate, a backward
  * difference, reaches across the 1962 step just after it (0.200 deg/day,
  * Polaris's right ascension 2.14), its ayanamsa rate, a backward
@@ -671,6 +700,118 @@ static int check_e(const char *ephe, int *n)
   return bad;
 }
 
+/* check (f): the true node's and the osculating apogee's speeds across the
+ * windows' edges: "0,9,1" at J2000 - 2 centuries on de200 and the Swiss
+ * files and at + 2 on the Swiss files, "0,9,8" at -+ 75 on the Swiss
+ * files; ecliptic and equatorial of date, the longitude's, latitude's and
+ * distance's speeds against a nine-point central difference over 2^-3 day
+ * of the positions of the instant's side's model alone, at the 49 of the
+ * 105 instants within 1/4 day of the edge (TT; the reference's half
+ * day either side then meets no joint of the Swiss Moon's segments or
+ * files, whose kinks the node's and apogee's rates take); the worst
+ * within 1/32 day of the edge (the speed's own stencil) and the rest,
+ * deg/day and AU/day; returns the failures, *n the checks. */
+static int check_f(const char *ephe, int *n)
+{
+  static const struct {
+    double ts;
+    int left;
+    int32 eph;
+    const char *mod, *in, *out;
+  } SE[] = {
+    { 2378495.0, 0, SEFLG_JPLEPH, "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { 2378495.0, 0, SEFLG_SWIEPH, "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { 2524595.0, 1, SEFLG_SWIEPH, "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { -287830.0, 0, SEFLG_SWIEPH, "0,9,8,0,0,0,0,0", "0,8,8,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { 5190920.0, 1, SEFLG_SWIEPH, "0,9,8,0,0,0,0,0", "0,8,8,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+  };
+  static const struct {
+    int ipl;
+    const char *name;
+    double lim;
+  } SB[] = { { SE_TRUE_NODE, "true node", 1e-9 }, { SE_OSCU_APOG, "osc. apogee", 5e-8 } };
+  static const struct {
+    int32 fl;
+    const char *name;
+  } SF[] = { { 0, "ecl" }, { SEFLG_EQUATORIAL, "equ" } };
+  /* the nine-point central difference's weights, eighth order */
+  static const double c9[4] = { 4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280 };
+  static const char *sn[2] = { "within 1/32 day", "1/32 to 1/4 day" };
+  const double h = ldexp(1, -3), dlim = 4e-13;
+  double tq[105];
+  int m, b, f, i, j, k, q, bad = 0, nq;
+  for (m = 0; m < (int) (sizeof SE / sizeof SE[0]); m++) {
+    swe_ctx *cc[3];
+    const char *ms[3] = { SE[m].mod, SE[m].in, SE[m].out };
+    for (k = 0; k < 3; k++) {
+      char mod[40];
+      cc[k] = swe_ctx_new();
+      strcpy(mod, ms[k]);
+      swe_set_ephe_path_r(cc[k], ephe);
+      swe_set_jpl_file_r(cc[k], "de200.eph");
+      swe_set_astro_models_r(cc[k], mod, 0);
+    }
+    TS = SE[m].ts;
+    LEFT = SE[m].left;
+    nq = instants(tq);
+    printf("  (f) %s, models %s, edge JD %.1f: worst |speed - reference|, deg/day"
+           " (distance AU/day), %s / %s\n", SE[m].eph == SEFLG_JPLEPH ? "de200" : "Swiss",
+           SE[m].mod, TS, sn[0], sn[1]);
+    for (b = 0; b < 2; b++)
+      for (f = 0; f < 2; f++) {
+        double w[2] = { 0, 0 }, wd[2] = { 0, 0 };
+        int32 fl = SE[m].eph | SF[f].fl;
+        for (i = 0; i < nq; i++) {
+          double x[6], p[9][6];
+          char serr[256];
+          int inside = (TS < 2451545.0) ? !left_of(tq[i]) : left_of(tq[i]);
+          int sp = fabs(tq[i] - TS) <= 1.0 / 32 ? 0 : 1;
+          swe_ctx *cr = cc[inside ? 1 : 2];
+          if (fabs(tq[i] - TS) > 0.25)
+            continue;
+          /* the ephemeris asked, not a fallback */
+          if ((swe_calc_r(cc[0], tq[i], SB[b].ipl, fl | SEFLG_SPEED, x, serr)
+               & (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)) != SE[m].eph) {
+            printf("    ERROR %s\n", serr);
+            bad++;
+            continue;
+          }
+          for (k = 0; k < 9; k++)
+            swe_calc_r(cr, tq[i] + (k - 4) * h, SB[b].ipl, fl, p[k], serr);
+          for (j = 0; j < 3; j++) {
+            double d = 0, e;
+            for (k = 1; k <= 4; k++) {
+              if (j == 0)
+                d += c9[k - 1] * swe_difdeg2n(p[4 + k][j], p[4 - k][j]);
+              else
+                d += c9[k - 1] * (p[4 + k][j] - p[4 - k][j]);
+            }
+            d /= h;
+            e = fabs(x[3 + j] - d);
+            if (j < 2 && !(e <= w[sp]))
+              w[sp] = e;
+            if (j == 2 && !(e <= wd[sp]))
+              wd[sp] = e;
+          }
+        }
+        printf("    %-12s %-9s  %.2e  %.2e  (distance %.1e  %.1e)\n", SB[b].name, SF[f].name,
+               w[0], w[1], wd[0], wd[1]);
+        for (q = 0; q < 2; q++) {
+          (*n)++;
+          if (!(w[q] <= SB[b].lim && wd[q] <= dlim)) {
+            bad++;
+            printf("    FAIL %s, models %s, %s %s, %s: %.2e > %.0e or %.1e > %.0e\n",
+                   SE[m].eph == SEFLG_JPLEPH ? "de200" : "Swiss", SE[m].mod, SB[b].name,
+                   SF[f].name, sn[q], w[q], SB[b].lim, wd[q], dlim);
+          }
+        }
+      }
+    for (k = 0; k < 3; k++)
+      swe_ctx_free(cc[k]);
+  }
+  return bad;
+}
+
 int main(int argc, char **argv)
 {
   double tq[105];
@@ -862,6 +1003,7 @@ int main(int argc, char **argv)
 #endif
   bad += check_d(&n);
   bad += check_e(argv[1], &n);
+  bad += check_f(argv[1], &n);
   if (bad) {
     printf("G139 FAIL: %d of %d\n", bad, n);
     return 1;

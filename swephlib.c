@@ -3062,6 +3062,30 @@ int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which
   return 0;
 }
 
+/* Upstream bug 186: holds the chosen precession and obliquity at the model
+ * swi_precess() and swi_epsiln() take at J (frame_chosen_model()), at
+ * every instant, a short-term model's window gone, as get_aya_correction()
+ * holds a model; the caller's two entries saved in saved[2], which
+ * swi_frame_model_release() puts back. For a difference whose places are
+ * of date at instants about J, across a window's edge: each then J's
+ * side's own frame. */
+void swi_frame_model_hold(swe_ctx *ctx, double J, int32 *saved)
+{
+  int m = frame_chosen_model(ctx, J);
+  if (m > SEMOD_NPREC)	/* a piece of Owen 1990 (bug 183): the model */
+    m = SEMOD_PREC_OWEN_1990;
+  saved[0] = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
+  saved[1] = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
+  ctx->astro_models[SE_MODEL_PREC_LONGTERM] = m;
+  ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = m;
+}
+
+void swi_frame_model_release(swe_ctx *ctx, const int32 *saved)
+{
+  ctx->astro_models[SE_MODEL_PREC_LONGTERM] = saved[0];
+  ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = saved[1];
+}
+
 /* Upstream bug 163: the rate of each nutation series as its own derivative
  * at J, rad/day, for swi_nutation_rate(): the same arguments, terms and
  * order as the series, each term's angle differentiated through the

@@ -177,6 +177,9 @@ extern void swi_nutation_rate(swe_ctx *ctx, double J, int32 iflag, double *rate)
 #define SWI_FRAME_NUT   4
 #define SWI_FRAME_ALL   (SWI_FRAME_PREC | SWI_FRAME_EPS | SWI_FRAME_NUT)
 extern int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which);
+/* the chosen precession and obliquity held at J's model, and put back */
+extern void swi_frame_model_hold(swe_ctx *ctx, double J, int32 *saved);
+extern void swi_frame_model_release(swe_ctx *ctx, const int32 *saved);
 #endif
 extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 #ifndef SWE_UPSTREAM_COMPAT

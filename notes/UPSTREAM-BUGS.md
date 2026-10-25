@@ -223,6 +223,7 @@ worst were in code that had never executed even once.
 | 192 | Under the strict setting without the moon files `swe_nod_aps()` refuses the Sun's points and the Earth's heliocentric and barycentric ones ("Swiss (.se1) Moon file is not available"), which the Moon does not reach: their reads of the Earth, and for the osculating ones of the Moon to rebuild the Earth-Moon barycentre, are refused by entry 120's test; with the fallback they answer 6.5e-15 deg off the complete directory's | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 | 193 | Under the strict setting without the moon files `swe_nod_aps()` answers a planet's geocentric and topocentric points from the Earth made from Moshier's Moon, its read being the heliocentric planet, which entry 120's test lets through, where `swe_calc()` of the planet refuses: Mars's at 1900 3.7e-9 deg off the complete directory's, Mercury's at 2000 8.7e-9 | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 | 181 | The long-term sidereal time (this fork's, entry 29) integrates the precession of each instant through a short-term model's window edges, where the table's nodes take the step over 100 days: with IAU 1976 and Vondrak ("0,9,1") +24.0" at every date before 1700, +50.8" at 1776 and -22.2" at 2215 against "0,9,9", whose model holds there; with IAU 2006 ("0,9,8") 1143" at -5550; the topocentric Moon's speed 1.9e-8 deg/day off | Correctness | `swephlib.c`, `sweph.h` |
+| 186 | `lunar_osc_elem()` puts the Moon at each epoch of the true node's and osculating apogee's five-point speed into the frame of date at that epoch, so within 1/32 day of a short-term precession window's edge the difference took the frame's step: with IAU 1976 under Vondrak ("0,9,1") on JPL and the Swiss files the node's speed 2.90e-3 deg/day off at J2000 - 2 centuries and 4.29e-3 at + 2, the apogee's 5.96e-3 and 6.49e-3; with IAU 2006 ("0,9,8") at -+ 75 centuries 7.90 and 0.68 | Correctness | `sweph.c`, `swephlib.c` |
 | 187 | `swe_houses_ex2()`'s cusp and ascmc speeds take the ARMC's, the obliquity's and the sidereal houses' ayanamsa's and auxiliary frames' rates as differences 1/64 day either side, across a short-term precession window's edge within 1/64 day of it: every speed 2.1e-3 to 8.1e-3 deg/day off with IAU 1976 under Vondrak (4.65e-5 with the IERS 2010 sidereal time, the obliquity's step alone), sidereal 3.9e-3 to 5.1e-3, 0.58 with IAU 2006 at 75 centuries | Correctness | `swehouse.c` |
 
 ---
@@ -13225,6 +13226,108 @@ the upstream build fails 1905.
 G24 `nodaps_mars_moonless_ret`: `swe_nod_aps()` of Mars's osculating
 points at 1900 Jan 0.75, Swiss, geocentric, without the moon files under
 the strict setting, its return: -1 shipped (0 before the fix), 0 compat.
+
+## 186. The true node's and osculating apogee's speeds difference the Moon in the frames of date across a short-term precession window's edge: 2.9e-3 and 6.0e-3 deg/day off within 1/32 day of it with IAU 1976 under Vondrak, 7.9 and 0.68 with IAU 2006 at 75 centuries
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()`, on JPL and the Swiss files: the speeds of `SE_TRUE_NODE` and `SE_OSCU_APOG` within 1/32 day of the window's edges off their places' rate, 2.90e-3 and 5.96e-3 deg/day at J2000 - 2 centuries with IAU 1976 under Vondrak, 4.29e-3 and 6.49e-3 at + 2, 7.90 and 0.68 with IAU 2006 at -+ 75 centuries; tropical, sidereal and of J2000 alike)**
+**Where:** `sweph.c`: `lunar_osc_elem()`, new `osc_frame_hold()`; `swephlib.c`: new `swi_frame_model_hold()`, `swi_frame_model_release()`
+
+Entry 160's noticed item. The true node and the osculating apogee come
+from the osculating elements of the Moon at tjd and, with SEFLG_SPEED, at
+four more epochs OSC_INTV_* = 1/64 day apart (entry 75), whose five-point
+difference is the speed; `swi_plan_for_osc_elem()` puts each epoch's Moon
+into the ecliptic and equator of date at that epoch. Within 1/32 day of a
+window's edge some epochs lie on the other side (entry 160: 0.53" of
+precession and 3.4 mas of mean obliquity at J2000 - 2 centuries with IAU
+1976 under Vondrak, 0.57" and 81.6 mas at + 2, 42" and 107" with IAU 2006
+at -+ 75), and the difference took the frame's step as a motion of the
+orbit, which the node's and apogee's longitudes amplify by the
+inclination and eccentricity. Measured against nine-point central
+differences over 2^-3 day of the positions of the instant's side's model
+alone ("0,1,1" or "0,8,8" inside, "0,9,9" outside), which has no step and
+whose places on that side are the models' (the positions are unchanged
+below), at G139's instants within 1/4 day of the edge (TT), the worst of
+the longitude's and latitude's speeds within 1/32 day, ecliptic and
+equatorial of date:
+- "0,9,1" at J2000 - 2 centuries, de200 and the Swiss files alike: the
+  node 2.90e-3 deg/day (2.80e-3 in right ascension), the apogee 5.96e-3
+  (5.99e-3); the distance's speeds 3.1e-9 and 2.3e-10 AU/day;
+- "0,9,1" at + 2, Swiss: 4.29e-3 (4.19e-3) and 6.49e-3 (6.44e-3);
+- "0,9,8" at - 75 centuries, Swiss: 7.28 (7.71) and 0.679 (0.611); at
+  + 75 7.90 (7.47) and 0.157 (0.163);
+- sidereal (Lahiri) and of J2000 the same as the ecliptic's, 2.90e-3 and
+  5.96e-3 at - 2 (against five-point differences over 2^-6 day).
+From 1/32 day on the speeds were their own: within 3.5e-10 deg/day for
+the node, 7.2e-9 for the apogee. Moshier's Moon needs none of it: it is
+of date already and taken to J2000 by the same frame at its epoch
+(`ecldat_equ2000()`), which `swi_plan_for_osc_elem()` undoes.
+
+**Fix, as done here:** `lunar_osc_elem()` asks `swi_frame_step_side()`
+(entries 153, 159, 160) whether the precession's or the obliquity's model
+changes within its speed's stencil (`osc_frame_hold()`; never without
+SEFLG_SPEED, nor sidereal under SID_TNODE_FROM_ECL_T0, whose frame is
+t0's at every epoch); where it does, on JPL and the Swiss files, each
+epoch's `swi_plan_for_osc_elem()` runs with both precession entries of
+`astro_models[]` held at the model `swi_precess()` and `swi_epsiln()`
+take at tjd (`swi_frame_model_hold()`, `frame_chosen_model()`'s value,
+as `get_aya_correction()` holds a model), put back after it
+(`swi_frame_model_release()`). Every epoch is then in tjd's side's own
+frame, and tjd's own place in the frame it had, so the positions are
+unchanged bit for bit at every instant. No memo takes the held model:
+the obliquity and nutation `swi_plan_for_osc_elem()` reads from the
+memos are tjd's, where the held model is the chosen one, and the other
+epochs' it computes into temporaries. Elsewhere nothing changes, bit for bit (positions and
+speeds of both, on de200, the Swiss files and Moshier, ecliptic,
+equatorial, of J2000, sidereal and without nutation, under the default
+models, "0,9,1", "0,9,8", "0,1,1" and "0,9,9", at 60 dates 1600..2040).
+Behind `#ifndef SWE_UPSTREAM_COMPAT`, with entry 75's stencil; the compat
+build keeps upstream's difference over 1e-4 day.
+- After: within 1/32 day of the edges as beyond, the node within 6.1e-10
+  deg/day, the apogee 7.2e-9 (de200 6.0e-9), the distances 4.9e-14
+  AU/day; sidereal 3.0e-9 and 6.4e-8, of J2000 the same as beyond
+  (2.0e-8 to 2.8e-8 and 4.0e-7 outside against "0,9,9", whose J2000
+  ecliptic takes its own obliquity of J2000, not the window's), against
+  five-point differences over 2^-6 day.
+- Cost: `perf stat -e instructions:u`, 20000 `SE_TRUE_NODE` and
+  `SE_OSCU_APOG` with speeds on the Swiss files 1452..2400 on the default
+  models, 16885617441 before, 16886765270 after (+0.007%: the side test
+  once a call with speeds).
+
+G139 `tests/framestep.c`, new check (f): the true node's and the
+osculating apogee's speeds, "0,9,1" at J2000 - 2 centuries on de200 and
+the Swiss files and at + 2 on the Swiss files, "0,9,8" at -+ 75 on the
+Swiss files, ecliptic and equatorial of date, the longitude's, latitude's
+and distance's against the side's model alone as above at the 49 of the
+105 instants within 1/4 day of the edge (the reference's half day either
+side then meets no joint of the Swiss Moon's segments or files, whose
+kinks the node's rate takes: at JD 2378496.5, - 2 centuries + 1.5 day,
+4.1e-6 deg/day off a reference reaching across it), the worst within
+1/32 day and from there to 1/4 day: 40 checks within 1e-9 deg/day for
+the node, 5e-8 for the apogee (G74's) and 4e-13 AU/day. 454 checks;
+before the fix 20 fail, every one within 1/32 day (2.80e-3 to 7.90 deg/day);
+after within 6.1e-10 and 7.2e-9. The upstream build fails all 40 of (f)
+(its difference over 1e-4 day across the edge, 0.36 to 951 deg/day, and
+its interval's rounding beyond, entry 75, 3.0e-9 to 1.1e-5), 339 of 358
+in all. G24 `node_window_speed_off`: the true node's longitude speed on
+the Swiss files under "0,9,1" at J2000 - 2 centuries -+ 2^-8 and -+ 2^-14
+day against the side's model alone, the largest: 1.99e-10 deg/day
+shipped (2.90e-3 before the fix), 0.375 compat.
+
+Noticed, not fixed:
+- RESIDUAL. `swe_nod_aps()`'s osculating nodes and apsides
+  (SE_NODBIT_OSCU) difference their body's places in the frames of date
+  the same way (`swecl.c`, its own `swi_plan_for_osc_elem()` calls):
+  under "0,9,1" on the Swiss files within 1/8 day of J2000 - 2 centuries
+  Mars's ascending node's speed 5.21e-3 deg/day off a nine-point
+  difference over 2^-3 day of the side's model alone, its aphelion's
+  5.16e-3, the Moon's nodes 7.96e-2 and its apsides 0.163 (2.2e-5, 7.7e-8,
+  5.0e-8 and 3.1e-7 against the same reference 305 days on; Mars's
+  ascending node's 2.2e-5 there is not looked into). The same hold would
+  take it.
+- Moshier's node and apogee near the edges move with the Moshier Moon's
+  own frame there (another item's): against the side's model alone the
+  node 1.6e-5 deg/day off within 2^-7 day and 5.6e-3 to 2 days, the apogee
+  up to 0.19; left out of G139.
 
 ## 187. The house speeds difference the frame 1/64 day either side across a short-term precession window's edge: every cusp and ascmc speed 2.1e-3 to 8.1e-3 deg/day off within 1/64 day of it, the sidereal ones 5.1e-3
 

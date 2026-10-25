@@ -3868,6 +3868,61 @@ static double nut_far_rate_off(void)
   return worst;
 }
 
+/* UPSTREAM-BUGS 186: the true node's speed across a short-term precession
+ * window's edge. Its longitude's speed on the Swiss files under IAU 1976
+ * and Vondrak ("0,9,1") at J2000 - 2 centuries -+ 2^-8 and -+ 2^-14 day
+ * (TT; the edge's instant is the window's), against a nine-point central
+ * difference over 2^-3 day of the node of the side's model alone ("0,1,1"
+ * inside, "0,9,9" outside), which has no step, the largest, deg/day. The
+ * shipped build differenced the Moon's places in the frames of date of
+ * both sides (2.9e-3); upstream's over 1e-4 day, across the edge at
+ * 2^-14 day. -1 if a call fails. */
+static double node_window_speed_off(void)
+{
+  const double ts = 2378495.0, h = ldexp(1, -3);
+  const double dt[4] = { -1.0 / 256, -1.0 / 16384, 1.0 / 16384, 1.0 / 256 };
+  const double c9[4] = { 4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280 };
+  const char *ms[3] = { "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" };
+  double r = 0;
+  swe_ctx *cc[3];
+  char serr[256];
+  int i, k;
+  for (k = 0; k < 3; k++) {
+    char mod[40];
+    cc[k] = swe_ctx_new();
+    if (cc[k] == NULL)
+      return -1;
+    strcpy(mod, ms[k]);
+    swe_set_ephe_path_r(cc[k], EPHE);
+    swe_set_astro_models_r(cc[k], mod, 0);
+  }
+  for (i = 0; i < 4 && r >= 0; i++) {
+    double t = ts + dt[i], x[6], d = 0;
+    swe_ctx *cr = cc[dt[i] < 0 ? 2 : 1];
+    if (swe_calc_r(cc[0], t, SE_TRUE_NODE, SEFLG_SWIEPH | SEFLG_SPEED, x, serr) < 0) {
+      r = -1;
+      break;
+    }
+    for (k = 1; k <= 4; k++) {
+      double xp[6], xm[6];
+      if (swe_calc_r(cr, t + k * h, SE_TRUE_NODE, SEFLG_SWIEPH, xp, serr) < 0
+          || swe_calc_r(cr, t - k * h, SE_TRUE_NODE, SEFLG_SWIEPH, xm, serr) < 0) {
+        r = -1;
+        break;
+      }
+      d += c9[k - 1] * swe_difdeg2n(xp[0], xm[0]);
+    }
+    if (r < 0)
+      break;
+    d /= h;
+    if (fabs(x[3] - d) > r)
+      r = fabs(x[3] - d);
+  }
+  for (k = 0; k < 3; k++)
+    swe_ctx_free(cc[k]);
+  return r;
+}
+
 /* UPSTREAM-BUGS 187: the house speeds across a short-term precession
  * window's edge. Equal houses' Ascendant speed at Zurich on the Swiss files
  * under IAU 1976 and Vondrak ("0,9,1"), delta t 2^-11 day, at J2000 - 2
@@ -5040,7 +5095,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5195,6 +5250,7 @@ int main(int argc, char **argv)
   jdatewin = jdate_window_off();
   nutjitter = nut_args_jitter();
   housewin = house_window_speed_off();
+  nodewin = node_window_speed_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -6494,6 +6550,14 @@ int main(int argc, char **argv)
   else {
     printf("  houses across a window %.2e deg/day FAIL: expected %s\n",
            housewin, WANT_DEFECT ? "> 1e-5" : "< 1e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodewin > 1e-5) : (nodewin >= 0 && nodewin < 1e-9))
+    printf("  true node across a window %.2e deg/day OK\n", nodewin);
+  else {
+    printf("  true node across a window %.2e deg/day FAIL: expected %s\n",
+           nodewin, WANT_DEFECT ? "> 1e-5" : "< 1e-9");
     bad++;
   }
 

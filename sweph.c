@@ -10069,6 +10069,32 @@ static double osc_round_err(double a, double b, double s)
 #  define OSC_NPT_MOSH  5
 #  define OSC_INTV_MOSH (1.0 / 32)
 # endif
+
+/* Upstream bug 186: the Moon's places at the speed's epochs are each put
+ * into the frame of date at its epoch (swi_plan_for_osc_elem()), and the
+ * node's and apogee's speeds difference them, so within the stencil of a
+ * short-term precession model's window edge (UPSTREAM-BUGS 160: 0.53" of
+ * precession and 3.4 mas of mean obliquity at J2000 - 2 centuries with IAU
+ * 1976 under Vondrak) the difference took the step: on de200 with "0,9,1"
+ * the node's speed 2.90e-3 deg/day off, the apogee's 5.96e-3, within 1/32
+ * day of it; on the Swiss files at + 2 centuries 4.29e-3 and 6.49e-3. Now
+ * the files' Moon (JPL, Swiss) is put into the frame of tjd's side's model
+ * at every epoch there (swi_frame_model_hold()), so the speeds are that
+ * side's own rate and the places at tjd those they were. Moshier's Moon
+ * needs none: it is of date already, taken to J2000 by the same frame at
+ * its epoch (ecldat_equ2000()), which this undoes. Whether to hold: */
+static AS_BOOL osc_frame_hold(swe_ctx *ctx, double tjd, int32 iflag, double intv, int npt)
+{
+  if (!(iflag & SEFLG_SPEED))
+    return FALSE;
+#ifdef SID_TNODE_FROM_ECL_T0
+  /* the frame is t0's at every epoch */
+  if (iflag & SEFLG_SIDEREAL)
+    return FALSE;
+#endif
+  return swi_frame_step_side(ctx, tjd, (npt == 5 ? 2 : 1) * intv, iflag,
+                             SWI_FRAME_PREC | SWI_FRAME_EPS) != 0;
+}
 #endif
 
 /* lunar osculating elements, i.e.
@@ -10171,6 +10197,8 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   int32 speedf1, speedf2;
 #ifndef SWE_UPSTREAM_COMPAT
   double rr[5] = {0, 0, 0, 0, 0};
+  AS_BOOL hold = FALSE;		/* bug 186 */
+  int32 held[2];
 #endif
 #ifdef SID_TNODE_FROM_ECL_T0
   struct sid_data *sip = &ctx->sidd;
@@ -10244,6 +10272,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 #ifndef SWE_UPSTREAM_COMPAT
       speed_intv = OSC_INTV_JPL;
       npt = OSC_NPT_JPL;
+      hold = osc_frame_hold(ctx, tjd, iflag, speed_intv, npt);	/* bug 186 */
 #else
       speed_intv = NODE_CALC_INTV;
 #endif
@@ -10294,13 +10323,22 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	    return ERR;
 	}
 	/* precession and nutation etc. */
+#ifndef SWE_UPSTREAM_COMPAT
+	if (hold)
+	  swi_frame_model_hold(ctx, tjd, held);
+#endif
 	retc = swi_plan_for_osc_elem(ctx, iflag|SEFLG_SPEED, t, xpos[i]); /* retc is always ok */
+#ifndef SWE_UPSTREAM_COMPAT
+	if (hold)
+	  swi_frame_model_release(ctx, held);
+#endif
       }
       break;
     case SEFLG_SWIEPH:
 #ifndef SWE_UPSTREAM_COMPAT
       speed_intv = OSC_INTV_SWI;
       npt = OSC_NPT_SWI;
+      hold = osc_frame_hold(ctx, tjd, iflag, speed_intv, npt);	/* bug 186 */
 #else
       speed_intv = NODE_CALC_INTV;
 #endif
@@ -10336,7 +10374,15 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	    return ERR;
 	}
 	/* precession and nutation etc. */
+#ifndef SWE_UPSTREAM_COMPAT
+	if (hold)
+	  swi_frame_model_hold(ctx, tjd, held);
+#endif
 	retc = swi_plan_for_osc_elem(ctx, iflag|SEFLG_SPEED, t, xpos[i]); /* retc is always ok */
+#ifndef SWE_UPSTREAM_COMPAT
+	if (hold)
+	  swi_frame_model_release(ctx, held);
+#endif
       }
       break;
     case SEFLG_MOSEPH:
