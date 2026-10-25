@@ -214,6 +214,7 @@ worst were in code that had never executed even once.
 | 183 | Owen 1990's precession and obliquity are pieces 80 centuries long that do not meet at their joins (0.095 mas in the mean obliquity at -10000, 0.086 and 0.091 mas in the precession at +6000 and +14000), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across, with Owen 1990 chosen and under SEFLG_JPLHOR's models outside 1799-2202: the rates 2.6e-8, 9.8e-9 and 1.1e-8 deg/day off within a day of them, Mars's speeds 1.1e-8, SEFLG_SPEED3 1.1e-4 | Correctness | `swephlib.c` |
 | 184 | The Moshier Moon's frame turning, (R(t + 1) x - R(t - 1) x) / 2 of the ecliptic of date to the J2000 equator (entry 95), reaches across a short-term precession model's window edges: with IAU 1976 short and Vondrak long its speed 8.0e-5 to 9.0e-5 deg/day off within a day of J2000 -+ 2 centuries, the topocentric Moon's alike, its apparent place 1.36e-9 deg through the light time | Correctness | `swemmoon.c` |
 | 185 | The equinox-of-date frame turning of the seorbel.txt JDATE bodies (entry 48) and of `swe_calc_orbel()`'s SE_ORBEL_EQ_DATE (entry 136), (R(t + 1) x - R(t - 1) x) / 2 at the elements' instant, reaches across a short-term precession model's window edges and Owen 1990's joins: with IAU 1976 short and Vondrak long, within a day of J2000 -+ 2 centuries Selena's speed 8.0e-5 to 9.5e-5 deg/day off, an Earth orbit of 0.053 AU 8.7e-5, Vulcan 1.6e-5 | Correctness | `swemplan.c`, `sweph.c` |
+| 188 | The IAU 2000A and 2000B series' Delaunay arguments, polynomials to T^4 in arcseconds, are evaluated in double, and past the default grid's 4e8 days (where the default is the direct 2000A) they are some 1e14": their rounding, T's own and the products', puts up to 1e-2" into every term's angle, dpsi 9.5e-9 deg off the series evaluated in long double at 8e8 to 1e9 days, 3.0e-9 at 6e8 to 8e8, a jitter of 4e-9 deg between instants 2^-12 day apart | Correctness | `swephlib.c` |
 
 ---
 
@@ -12552,6 +12553,87 @@ and the Earth orbit's ecliptic speeds, geometric, on the Swiss files with
 "0,9,1" at J2000 + 2 centuries -+ 0.5 day and -+ 2^-14 day against the
 five-point difference on their side, the largest: 1.73e-11 deg/day
 shipped (8.67e-5 before the fix), 4.48e-3 compat.
+
+## 188. The IAU 2000A and 2000B series' arguments are evaluated in double, some 1e14" past 4e8 days: dpsi 9.5e-9 deg off the series at 8e8 to 1e9 days, jittering by 4e-9 from one instant to the next
+
+**Severity: Correctness (the nutation, `swe_calc(SE_ECL_NUT)` and everything of date that takes it, past |J| 4e8 days, 1.1 million years: under the default, which is the direct IAU 2000A there (entry 152), and IAU 2000A or 2000B set explicitly, dpsi up to 9.5e-9 deg off a correctly rounded evaluation at 8e8 to 1e9 days, 3.0e-9 at 6e8 to 8e8, 4.9e-10 at 4e8 to 6e8; its rate 3.9e-9 deg/day, under the floor)**
+**Where:** `swephlib.c`: `calc_nutation_iau2000ab()`, `calc_nutation_2000a_derivs()`, `calc_nutation_2000b_rate()`, new `nut_ls_args_exact()`
+
+Entries 152's and 163's noticed item. The luni-solar series' Delaunay
+arguments (Simon et al. 1994) are polynomials in T to T^4, in arcseconds,
+evaluated in double and then reduced mod 360 deg. At |J - J2000| = 1e9
+days (T = 27400) they are some 1e14" (the T^4 term of the Moon's mean
+anomaly, 0.0002447 T^4, 1.4e14"): their last bit is 1.6e-2", and T itself,
+rounded to a double, carries 4 c4 T^4 dT/T into them, 0.06" in the Moon's
+mean anomaly, 0.015" in the node's; the constants as doubles and each
+product's rounding add their own. Each term's angle is off by that, and
+the main terms' amplitudes reach some 500" there through their T terms
+(-0.0174"/cy on the 18.6-year term), so dpsi takes some 1e-8". Measured on
+Moshier, `swe_calc(SE_ECL_NUT)` against the series transcribed in long
+double (the arguments from J exactly, the constants read as long double,
+every operation in it), 100 instants a band of |J - J2000|, either sign,
+dpsi and deps, deg:
+- IAU 2000A set explicitly: 4.9e-10 and 1.1e-10 at 4e8 to 6e8 days,
+  3.0e-9 and 2.5e-10 at 6e8 to 8e8, 9.5e-9 and 6.2e-10 at 8e8 to 1e9; 1e-12
+  at 1e7, 5.0e-11 at 2e8 to 4e8;
+- IAU 2000B alike: 4.7e-10, 3.0e-9, 7.0e-9 in dpsi;
+- the default: the grid's within 4e8 (9.2e-11), the direct 2000A's beyond
+  (2.3e-9 at 6e8 to 8e8, 7.7e-9 at 8e8 to 1e9).
+It is a jitter, not a bias: the places' fourth differences over 2^-12 day
+/ sqrt(70), where the terms' own curvature is 1e-16 deg, are 3.6e-10 at
+4e8 to 6e8, 1.8e-9 at 6e8 to 8e8 and 5.3e-9 to 7.8e-9 at 8e8 to 1e9. The
+rate (`swi_nutation_rate()`, the series' own derivative there, entry
+163) against five-point differences of the long double series over 2^-6
+day: 3.2e-9 to 3.9e-9 deg/day at 8e8 to 1e9 days, under the floor. Only
+the nutation reaches such dates (entry 152), and with it `SE_ECL_NUT`, the
+sidereal time and the houses.
+
+**Fix, as done here:** past |J| = 4e8 days (`SWI_NUT_ARGS_JMIN`, the
+grid's bound), `nut_ls_args_exact()` evaluates the five arguments in
+double-double: T from J exactly (J - J2000 by an exact sum, the quotient's
+remainder by `fma()`), each constant as its double and the remainder of
+its decimal value (`nut_ls_dd[]`), Horner's products by `fma()`, then
+reduced modulo 1296000" exactly (`fmod()` of the high part, the low part
+added) and made radians. `calc_nutation_iau2000ab()` takes them for M,
+SM, F, D and OM (the planetary arguments, linear and some 2e8 rad, are
+off by 3e-8 rad on terms of 3e-4", 1e-11"), and so do the rates,
+`calc_nutation_2000a_derivs()` (the grid's node function, the rate past
+4e8) and `calc_nutation_2000b_rate()`, so the rate stays the derivative of
+the places. Within 4e8 days nothing changes, bit for bit: the double
+evaluation there is within 1.2e-10 deg, and the step where the two meet
+at 4e8 is that. Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+- After: within 3.0e-12 deg of the long double series in every band past
+  4e8 days, under 2000A, 2000B and the default (3.5e-13 at 4e8 to 6e8;
+  the long double reference's own arguments are good to 5e-6" at 1e9,
+  3e-12 deg), fourth differences 4e-15 (2000A, the planetary terms'
+  arguments) and 1e-16 (2000B); the rate within 2.2e-10 to 4.2e-10
+  deg/day of the reference's five points over 2^-6 day at 8e8 to 1e9
+  (its own rounding over the step: over 2^-8, 5.8e-10 to 7.9e-10).
+- At absurd dates the answers are as finite or as NaN as before (1e72
+  deg at 1e82 days, NaN from about 1e84 either way).
+- Cost, `perf stat -e instructions:u`, bench's calc-moseph and
+  calc-swieph (one repetition), the default models, whose grid evaluates
+  its node function once a day: 23339446249 and 12271659405 before,
+  23340363721 and 12272577309 after (+0.004%, +0.007%).
+
+G140 `tests/nutderiv.c`, extended: check (c), SE_ECL_NUT under the
+default, IAU 2000A and IAU 2000B at 64 instants with |J - J2000|
+log-uniform over 4.1e8..1e9 days, either sign: the fourth differences
+over 2^-12 day / sqrt(70) within 1e-13 deg, and where long double has a
+64-bit mantissa, against the series transcribed in long double within
+1e-10 deg: 6 checks, 48 in all, measured 4.0e-15 and 1.93e-12. Before the
+fix all 6 fail (4.05e-9 and 3.79e-9); the upstream build fails them too,
+36 of its 36. G24 `nut_args_jitter`: SE_ECL_NUT under IAU 2000B at eight
+instants 8.1e8 to 9.9e8 days either side of J2000, the fourth differences
+over 2^-12 day / sqrt(70), the worst: 9.95e-17 deg shipped (4.85e-9
+before the fix), 4.85e-9 compat. G29's numbers are the tip's (0.5714 and
+0.2129 uas at |J| 1e7..1e13).
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_calc(SE_ECL_NUT)` takes any date and answers it with
+  its flags, no error: on Moshier dpsi 1.2e72 deg at J = 1e82, NaN dpsi
+  and deps from about 1e84 days (the arguments' T^4 overflows), under
+  every nutation model, both builds, before and after this fix.
 
 ## How these were found
 

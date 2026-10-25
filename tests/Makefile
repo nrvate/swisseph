@@ -1415,6 +1415,9 @@ check-nodcentre: nodcentre
 # (UPSTREAM-BUGS 163). The nutation's part of the Sun's, Mars's and the mean
 # node's speeds of date over 1e3..5.4e6 days from J2000 against five-point
 # differences, and swi_nutation_rate() against swi_nutation()'s out to 4e8.
+# And the direct IAU 2000A and 2000B series past 4e8 days, their arguments
+# reduced exactly: smooth to 1e-13 deg over 2^-12 day and within 1e-10 of
+# the series in long double (UPSTREAM-BUGS 188).
 check-nutderiv: nutderiv
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nutderiv $(EPHE)
 

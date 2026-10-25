@@ -1379,6 +1379,10 @@ struct epsilon {
  *     day of J2000 -+ 2 centuries with IAU 1976 and Vondrak, Vulcan's
  *     1.6e-5, and swe_calc_orbel()'s SE_ORBEL_EQ_DATE the same, 8.7e-5 on
  *     an Earth orbit of 0.053 AU (UPSTREAM-BUGS 185, G139)
+ *   - the IAU 2000A and 2000B series' Delaunay arguments evaluated in
+ *     double past 4e8 days, some 1e14" there: dpsi 9.5e-9 deg off the
+ *     series in long double at 8e8 to 1e9 days, jittering by 4e-9 deg
+ *     between instants 2^-12 day apart (UPSTREAM-BUGS 188, G140)
  *   - the path setter and swe_close() reading the kept JPL file again only
  *     when its DE number had been read, not when swe_set_jpl_file() had
  *     named it and failed along the path then set: after a path without

@@ -2073,6 +2073,73 @@ static int calc_nutation_iau1980(swe_ctx *ctx, double J, double *nutlo)
 
 #include "swenut2000a.h"
 #include "swenut2000a_sparse.h"
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 188: past the grid's bound (SWI_NUT_GRID_JMAX, below) the
+ * IAU 2000A and 2000B series are evaluated directly, and their Delaunay
+ * arguments (Simon et al. 1994) are polynomials in T to T^4 in arcseconds,
+ * some 1e14" at |J| = 1e9 days (T = 27400): evaluated in double, their
+ * last bit (1.6e-2") and the rounding of T itself, of the constants and of
+ * each product (the T^4 term's 4 c4 T^4 dT/T, 0.06" in the Moon's mean
+ * anomaly) turned every term's angle by up to some 1e-2", and the main
+ * terms' amplitudes, 500" there through their T terms, by that: dpsi
+ * 9.5e-9 deg off the series evaluated in long double at 8e8 to 1e9 days
+ * (2000A; 2000B 7.0e-9), 3.0e-9 at 6e8 to 8e8. Past the bound the
+ * arguments are evaluated in double-double -- T from J exactly, the
+ * constants split into the double and its decimal remainder, each product
+ * by fma() -- and reduced modulo 1296000" exactly (fmod() of the high
+ * part), then made radians: within a few 1e-12 deg of the long double
+ * series out to 1e9 days. Within the bound nothing changes. */
+#define SWI_NUT_ARGS_JMIN 4e8
+static const double nut_ls_dd[5][5][2] = {	/* arcsec: the double, the rest */
+  {{485868.249036, 6.2063336372375486e-12}, {1717915923.2178, 9.8037719726562502e-08},
+   {31.8792, -8.6970430857036259e-16}, {0.051635, -3.419486915845482e-19},
+   {-0.00024470, -1.5202422654070346e-20}},
+  {{1287104.79305, 2.16066837310791e-11}, {129596581.0481, 5.3405761718749999e-09},
+   {-0.5532, 2.5046631435543531e-17}, {0.000136, 1.0720591081536667e-21},
+   {-0.00001149, 1.0474260347947961e-22}},
+  {{335779.526232, 2.5302171707153321e-11}, {1739527262.8478, -1.64031982421875e-08},
+   {-12.7512, 7.5601747084874656e-16}, {-0.001037, -5.560829574591253e-20},
+   {0.00000417, 1.1458499080130302e-22}},
+  {{1072260.70369, -1.1123716831207276e-10}, {1602961601.2090, -1.1062622070312501e-07},
+   {-6.3706, -4.0358827391173693e-16}, {0.006593, 9.7810648469476285e-20},
+   {-0.00003169, 3.2140609618203087e-21}},
+  {{450160.398036, -2.7786940336227418e-11}, {-6962890.5431, 3.5911798477172851e-10},
+   {7.4722, 4.6895820560166612e-17}, {0.007702, 3.548827898214313e-19},
+   {-0.00005939, -1.1099107743994808e-21}},
+};
+/* a + b = s + e exactly */
+static void nut_two_sum(double a, double b, double *s, double *e)
+{
+  double x = a + b, bb = x - a;
+  *e = (a - (x - bb)) + (b - bb);
+  *s = x;
+}
+/* M, SM, F, D and OM at J, radians in [0, 2 pi] */
+static void nut_ls_args_exact(double J, double *arg)
+{
+  double dh, dl, th, tl;
+  int k, i;
+  nut_two_sum(J, -J2000, &dh, &dl);
+  th = dh / 36525.0;
+  tl = (fma(-th, 36525.0, dh) + dl) / 36525.0;
+  for (k = 0; k < 5; k++) {
+    double ph = nut_ls_dd[k][4][0], pl = nut_ls_dd[k][4][1], m, me, e, r;
+    for (i = 3; i >= 0; i--) {	/* p = p T + c[i] */
+      m = ph * th;
+      me = fma(ph, th, -m) + (ph * tl + pl * th);
+      nut_two_sum(m, me, &m, &me);
+      nut_two_sum(m, nut_ls_dd[k][i][0], &ph, &e);
+      e += me + nut_ls_dd[k][i][1];
+      nut_two_sum(ph, e, &ph, &pl);
+    }
+    r = fmod(fmod(ph, 1296000.0) + pl, 1296000.0);
+    if (r < 0)
+      r += 1296000.0;
+    arg[k] = r / 3600.0 * DEGTORAD;
+  }
+}
+#endif
+
 static int calc_nutation_iau2000ab(swe_ctx *ctx, double J, double *nutlo) 
 {
   int i, j, k, inls;
@@ -2116,6 +2183,18 @@ static int calc_nutation_iau2000ab(swe_ctx *ctx, double J, double *nutlo)
 	      T*(          7.4722 +
 	      T*(          0.007702 +
 	      T*(        - 0.00005939 ))))) / 3600.0) * DEGTORAD;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 188: past 4e8 days, exactly */
+  if (fabs(J) >= SWI_NUT_ARGS_JMIN) {
+    double a[5];
+    nut_ls_args_exact(J, a);
+    M = a[0];
+    SM = a[1];
+    F = a[2];
+    D = a[3];
+    OM = a[4];
+  }
+#endif
   /* luni-solar nutation series, in reverse order, starting with small terms */
   if (nut_model == SEMOD_NUT_IAU_2000B)
     inls = NLS_2000B;
@@ -2433,11 +2512,16 @@ static void calc_nutation_2000a_derivs(double J, double *out)
   double ppsi[4] = {0, 0, 0, 0}, peps[4] = {0, 0, 0, 0};
   double cpsi[4] = {0, 0, 0, 0}, ceps[4] = {0, 0, 0, 0};
   struct nut_term t;
-  int i, j;
-  /* luni-solar arguments and their first three derivatives in T */
+  int i, j, exact = (fabs(J) >= SWI_NUT_ARGS_JMIN);
+  double lx[5];
+  /* luni-solar arguments and their first three derivatives in T; past 4e8
+   * days the arguments as the direct series takes them (bug 188) */
+  if (exact)
+    nut_ls_args_exact(J, lx);
   for (j = 0; j < 5; j++) {
     const double *c = ls_c[j];
-    la[j] = swe_degnorm((c[0] + T * (c[1] + T * (c[2] + T * (c[3] + T * c[4])))) / 3600.0) * DEGTORAD;
+    la[j] = exact ? lx[j]
+            : swe_degnorm((c[0] + T * (c[1] + T * (c[2] + T * (c[3] + T * c[4])))) / 3600.0) * DEGTORAD;
     lr1[j] = (c[1] + T * (2 * c[2] + T * (3 * c[3] + T * 4 * c[4]))) / 3600.0 * DEGTORAD;
     lr2[j] = (2 * c[2] + T * (6 * c[3] + T * 12 * c[4])) / 3600.0 * DEGTORAD;
     lr3[j] = (6 * c[3] + T * 24 * c[4]) / 3600.0 * DEGTORAD;
@@ -3107,11 +3191,14 @@ static void calc_nutation_2000b_rate(double J, double *rate)
     {  450160.398036,   -6962890.5431,   7.4722,  0.007702, -0.00005939},
   };
   double a[5], da[5], T = (J - J2000) / 36525.0, dpsi = 0, deps = 0;
-  int i, j, k;
-  /* M, SM, F, D, OM as calc_nutation_iau2000ab() takes them, and their
-   * rates in T, radians per century */
+  int i, j, k, exact = (fabs(J) >= SWI_NUT_ARGS_JMIN);
+  /* M, SM, F, D, OM as calc_nutation_iau2000ab() takes them (past 4e8
+   * days exactly, bug 188), and their rates in T, radians per century */
+  if (exact)
+    nut_ls_args_exact(J, a);
   for (k = 0; k < 5; k++) {
-    a[k] = swe_degnorm((c[k][0] + T * (c[k][1] + T * (c[k][2] + T * (c[k][3] + T * c[k][4])))) / 3600.0) * DEGTORAD;
+    if (!exact)
+      a[k] = swe_degnorm((c[k][0] + T * (c[k][1] + T * (c[k][2] + T * (c[k][3] + T * c[k][4])))) / 3600.0) * DEGTORAD;
     da[k] = (c[k][1] + T * (2 * c[k][2] + T * (3 * c[k][3] + T * 4 * c[k][4]))) / 3600.0 * DEGTORAD;
   }
   for (i = NLS_2000B - 1; i >= 0; i--) {
