@@ -8958,10 +8958,14 @@ Moshier itself differed.
 **Fix, as done here:** `swecalc()`'s test and message in
 `swe_calc_orbel_r()`, on the flags as `plaus_iflag()` leaves them (the
 ephemeris bits' precedence, so SEFLG_SWIEPH | SEFLG_MOSEPH is a Swiss
-request; SEFLG_TOPOCTR clears SEFLG_BARYCTR). Behind `#ifndef
-SWE_UPSTREAM_COMPAT`, although the function is the fork's: its compat
-build keeps the answer its copy of the fictitious path gave, as for
-entries 88 and 130.
+request; SEFLG_TOPOCTR clears SEFLG_BARYCTR). Unguarded, in both builds,
+on entry 112's precedent: the function is the fork's, so it follows the
+fork's `swe_calc()` there, and the compat build's `swe_calc()` refuses
+the request too -- there is no upstream behaviour for
+`SWE_UPSTREAM_COMPAT` to restore. It was first made behind `#ifndef
+SWE_UPSTREAM_COMPAT`, as entries 88 and 130 are, which kept in the compat
+build an answer upstream never gave. Its `sweph.h` bullet now says it is
+in both builds, and there is no G24 case.
 
 Left as it is, not this entry's: with the fallback allowed, a Swiss or JPL
 barycentric request that falls to Moshier is answered by `swe_calc()`
@@ -8983,10 +8987,14 @@ G126 `tests/orbelbias.c` (entry 130's gate) now checks that centre:
 
 Before the fix G126 fails 5 (each orbit's Moshier barycentre, answered
 18180, and check 3 by its 40 such calls); after, it passes. The compat
-build fails 26, its 20 of entry 130 and these 6.
+build failed 26 with the fix guarded, its 20 of entry 130 and these 6;
+unguarded it passes these, Moshier's barycentre refused there too (53
+failures with entry 136's eight orbits, 62 with both guarded).
 
-G24 `orbel_mosh_bary_ret`: `swe_calc_orbel()` of the a = 1.2 AU orbit,
-Moshier, barycentric, at 2000 Jul 1.5: -1 shipped, 18180 compat.
+No G24 case: the guarded fix's `orbel_mosh_bary_ret` (`swe_calc_orbel()`
+of the a = 1.2 AU orbit, Moshier, barycentric, at 2000 Jul 1.5: -1
+shipped, 18180 compat) went with the guard; the compat build returns -1
+too.
 
 ## 136. `swe_calc_orbel()` holds an equinox of date at the observation instant through the light time, and its speed leaves out that frame's turning (this fork's)
 
@@ -9038,10 +9046,15 @@ SEFLG_SPEED, before or after.
 - `swephexp.h` now says so: "SE_ORBEL_EQ_DATE is the equinox of the
   instant evaluated, as seorbel.txt's JDATE: under light time the
   emission instant's, and the speed carries that frame's turning."
-- Behind `#ifndef SWE_UPSTREAM_COMPAT`. The compat build keeps its copy's
-  behaviour, as for entries 88, 130 and 135. Upstream's fictitious speed
-  has no turning (entry 48's defect). Its compat speed branch keeps the
-  equinox at tjd (upstream's own JDATE branch reads it at t).
+- Unguarded, in both builds, on entry 112's precedent, as entry 135: the
+  function is the fork's and follows the fork's `swe_calc()` there. The
+  compat build's speed branch (the straight light time, the orbit read at
+  t - dt for the speed only) takes the equinox at t as well, as upstream's
+  own JDATE branch reads it there; the guard had kept the equinox at tjd,
+  a defect upstream never had. (Upstream's fictitious speed has no
+  turning, entry 48's defect, which the compat build's fictitious path
+  keeps.) Its `sweph.h` bullet now says it is in both builds, and there
+  is no G24 case.
 
 After: within 7.1e-13 deg and 8.2e-12 deg/day of the JDATE body. The
 speeds are within 4.6e-9 deg/day of five-point differences (the 1.2 AU
@@ -9068,13 +9081,20 @@ positions:
 
 Before the fix 25 failures: checks 1 and 4 on each orbit of date on each
 ephemeris, and check 3's places, 1.8e-2 deg. After, it passes. The
-compat build fails 62 before and after, its output the same.
+compat build failed 62 before and after the guarded fix, its output the
+same. Unguarded, with entry 135's, it fails 53: check 1 on every orbit,
+check 2 on every orbit on the ephemerides with a bias, and check 4 on the
+orbits of date (9.3e-5 to 4.0e-4 deg/day, its copy's straight light
+time, G27's defect) as before, the a = 80000 AU orbit of date now 1.9e-2
+deg off the JDATE body in check 1 for 2.3e-2, and check 3's places by
+entry 88's infinity.
 
-G24 `orbel_date_rate_off`: the 1.2 AU orbit of date, heliocentric,
-geometric, J2000 equatorial XYZ, Swiss files: its velocity against a
-five-point difference of its positions over 2^-7 day, four dates in 2025.
-1.73e-14 AU/day shipped, 6.11e-7 AU/day compat (the frame's turning,
-omega x r); 6.11e-7 shipped before the fix.
+No G24 case: the guarded fix's `orbel_date_rate_off` (the 1.2 AU orbit of
+date, heliocentric, geometric, J2000 equatorial XYZ, Swiss files, its
+velocity against a five-point difference of its positions over 2^-7 day,
+four dates in 2025: 1.73e-14 AU/day shipped, 6.11e-7 AU/day compat, the
+frame's turning, omega x r; 6.11e-7 shipped before the fix) went with the
+guard; the compat build gives 3.48e-14 AU/day.
 
 ## 137. A thread that had the JPL file open and adopts another thread's `swe_set_ephe_path()` keeps the file's DE number: its JPLEPH delta t takes the closed file's tidal term (this fork's)
 

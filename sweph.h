@@ -1226,6 +1226,14 @@ struct epsilon {
  *     step at 1962 Jan 20 under SEFLG_JPLHOR_APPROX (7.17e-2" in dpsi):
  *     dpsi there 1.95e-2" off the exact, 6.93e-2" at worst
  *     (UPSTREAM-BUGS 146, G122)
+ *   - (nothing for UPSTREAM-BUGS 135: swe_calc_orbel() refusing a
+ *     barycentric Moshier request with swe_calc()'s message, as the compat
+ *     build's swe_calc() refuses it too, is this fork's function, active
+ *     in both builds; G126)
+ *   - (nothing for UPSTREAM-BUGS 136: swe_calc_orbel()'s elements of the
+ *     equinox of date at the emission instant under light time, as
+ *     upstream's JDATE branch reads them, and that frame's turning in the
+ *     speed, are this fork's function, active in both builds; G126)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

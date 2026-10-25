@@ -103,11 +103,14 @@
  * 400 since bug 139's fix),
  * places within 5.1e-13 deg and 1.0e-11 deg/day; check 4 within 4.6e-9
  * deg/day (the 1.2 AU orbit topocentric; 2.4e-9 about the Earth). The
- * upstream build, whose swe_calc_orbel() keeps answering Moshier's
- * barycentre and holds the equinox of date as its copy of the fictitious
- * path did, fails 62: checks 1 and 2 as above on all eight orbits,
- * Moshier's barycentre on each, check 4 on the orbits of date by 9.3e-5
- * to 4.3e-4 deg/day, and check 3 by it and bug 88's infinity.
+ * upstream build, whose swe_calc_orbel() refuses Moshier's barycentre and
+ * takes the equinox of date at the emission instant with its turning in
+ * the speed as the shipped one does (bugs 135 and 136 are in both builds,
+ * the function being this fork's), fails 53: checks 1 and 2 as above on
+ * all eight orbits, check 4 on the orbits of date by 9.3e-5 to 4.0e-4
+ * deg/day (its light time's defects, G27's), and check 3's places by bug
+ * 88's infinity; with those two fixes guarded it failed 62, Moshier's
+ * barycentre too on each orbit and in check 3's returns.
  * Run as
  *   orbelbias EPHEDIR [DE4XX_FILE]
  * DE4XX_FILE a path to a JPL file of DE number 403 or above (SE_TEST_DE4

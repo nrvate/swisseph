@@ -910,7 +910,6 @@ static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el
     SWI_CFG_LOCAL(ctx, swe_set_ephe_path_r(ctx, NULL));
 #endif
   iflag = plaus_iflag(ctx, iflag, -1, tjd_et, serr);
-#ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 135 (this fork's swe_calc_orbel()): swecalc() refuses
    * every barycentric Moshier request, and this function, which does not
    * pass through it, answered: the heliocentric place (Moshier's origin is
@@ -919,12 +918,15 @@ static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el
    * swecalc()'s message, on the same normalised flags (plaus_iflag(): the
    * ephemeris bits' precedence, SEFLG_TOPOCTR over SEFLG_BARYCTR). A
    * Swiss or JPL request that falls to Moshier is answered as swe_calc()
-   * answers it. G126. */
+   * answers it. Unguarded, as bug 112's: this function is not upstream's,
+   * and the compat build's swe_calc() refuses the request too, so there is
+   * no upstream behaviour to restore. G126. */
   if ((iflag & SEFLG_BARYCTR) && (iflag & SEFLG_MOSEPH)) {
     if (serr != NULL)
       strcpy(serr, "barycentric Moshier positions are not supported.");
     goto return_error;
   }
+#ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 88 (this fork's swe_calc_orbel()): the obliquity and
    * nutation caches of date were never brought to tjd here, as swecalc()
    * does for every body: app_pos_rest() took ctx->oec and ctx->nut as the
@@ -6081,12 +6083,8 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
     double mu, double tequ, AS_BOOL of_date, double *xp, char *serr)
 {
   double pqr[9], x[6];
-#ifndef SWE_UPSTREAM_COMPAT
   double xe[3], xr[3];
   int i;
-#else
-  (void) of_date;
-#endif
   double eps, K, fac, rho, cose, sine;
   double alpha, beta, zeta, sigma, M2, Msgn, M_180_or_0;
   double mano, sema, ecce, parg, node, incl;
@@ -6186,10 +6184,8 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
   xp[3] = pqr[0] * x[3] + pqr[1] * x[4];
   xp[4] = pqr[3] * x[3] + pqr[4] * x[4];
   xp[5] = pqr[6] * x[3] + pqr[7] * x[4];
-#ifndef SWE_UPSTREAM_COMPAT
   for (i = 0; i <= 2; i++)
     xe[i] = xp[i];
-#endif
   /* transformation to equator */
   eps = swi_epsiln(ctx, tequ, 0);
   swi_coortrf(xp, xp, -eps);
@@ -6199,7 +6195,6 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
     swi_precess(ctx, xp, tequ, 0, J_TO_J2000);
     swi_precess(ctx, xp+3, tequ, 0, J_TO_J2000);
   }
-#ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 136 (this fork's swe_calc_orbel()): elements of the
    * equinox of date (SE_ORBEL_EQ_DATE) are referred to a frame that turns
    * with t, and the speed was the two-body motion in the frame held at
@@ -6207,7 +6202,9 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
    * 8.8e-5 deg/day off the same elements as a seorbel.txt JDATE body and
    * off the positions' own rate. Now the turning as swi_osc_el_plan()
    * takes it for JDATE (bug 48), a central difference of the same rotation
-   * over +-1 day applied to the ecliptic position. G126. */
+   * over +-1 day applied to the ecliptic position. Unguarded, as bug
+   * 112's: this function is not upstream's, so there is no upstream
+   * behaviour to restore. G126. */
   if (of_date) {
     swi_coortrf(xe, xr, -swi_epsiln(ctx, tequ + 1, 0));
     swi_precess(ctx, xr, tequ + 1, 0, J_TO_J2000);
@@ -6216,7 +6213,6 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
     for (i = 0; i <= 2; i++)
       xp[3+i] += (xr[i] - xe[i]) / 2;
   }
-#endif
   return OK;
 }
 
@@ -6487,7 +6483,9 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       for (i = 0; i <= 5; i++)
         elret[i] = el[i];
       elret[0] = el[0] - dmot * dt;
-      if (swi_orbel_to_state(ctx, t, elret, mu, tequ, of_date, xx, serr) != OK)
+      /* bug 136, in both builds: an equinox of date at the emission
+       * instant, as upstream's JDATE branch reads it there too */
+      if (swi_orbel_to_state(ctx, t, elret, mu, of_date ? t : tequ, of_date, xx, serr) != OK)
 	return ERR;
       if (iplctr == SE_EARTH) {
         for (i = 0; i <= 5; i++)
