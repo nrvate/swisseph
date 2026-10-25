@@ -130,8 +130,22 @@
  *      files of 1800-2400 at 1500, fresh (and swe_fixstar2() without
  *      SEFLG_SPEED) and in (f)'s warm process: bit for bit the Moshier
  *      request's (they took the files' delta t, 6.7 s more at 1500:
- *      2.0e-8 deg in longitude, 1.35e-7 deg/day in its speed).
- * Measured: 1205 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ *      2.0e-8 deg in longitude, 1.35e-7 deg/day in its speed);
+ *  (k) the stars on de200.eph outside its span (UPSTREAM-BUGS 198):
+ *      Aldebaran by the four functions, geocentric, topocentric,
+ *      heliocentric, equatorial, J2000, sidereal, SEFLG_TRUEPOS with
+ *      SEFLG_SPEED and geocentric without, SEFLG_JPLEPH at 1500 and 2406:
+ *      with the fallback allowed bit for bit the Moshier request's (de200.eph
+ *      named for it too), flag SEFLG_MOSEPH, "Moshier" noted; strict the
+ *      downgrade's refusal; and in one process after a JPL star at 2000 Jul
+ *      1.5 the calls at 1500 so, then the call at 2000 bit for bit. Before,
+ *      main_planet_bary()'s BEYOND_EPH_LIMITS was the star's error, -1
+ *      "outside JPL eph. range", where swe_calc() of Mars answers 260 from
+ *      Moshier. And the heliocentric star of (d)'s directory, Swiss and
+ *      JPL, fallen to Moshier, bit for bit the Moshier request's (the
+ *      parallax from the Sun's barycentric place, bug 109's, where the
+ *      Earth's read left the Sun 0: 7.8e-8 deg off at 2000).
+ * Measured: 1383 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
  * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
  * (osculating), swe_calc_pctr()'s Moon 2.1e-7 deg.
  * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
@@ -173,6 +187,10 @@
  * osculating points, the Moon's heliocentric mean ones); with it and not
  * 174's, 16 (the Moon's mean points in Moshier's delta t). The upstream
  * build fails 469 in all.
+ * UPSTREAM-BUGS 198 adds (k)'s 178 rows (128 fresh on de200.eph, 34 warm,
+ * 16 heliocentric): before its fix 176 fail (all but the warm process's
+ * two calls inside the span), the upstream build the same 176 (645 in
+ * all).
  * Run as
  *   fbbary EPHEDIR
  */
@@ -249,6 +267,23 @@ static const struct cs T18[] = {
   {"Aldebaran topo., no speed", STAR2, 0, 0, SEFLG_TOPOCTR},
 };
 #define NT18 ((int) (sizeof T18 / sizeof T18[0]))
+/* (k): the stars on de200.eph outside its span, fallen to Moshier as
+ * swe_calc() falls (UPSTREAM-BUGS 198): the four functions, these flags */
+static const int KKIND[4] = {STAR2, STAR, STAR2_UT, STAR_UT};
+static const char *const KSZ[4] = {"swe_fixstar2()", "swe_fixstar()", "swe_fixstar2_ut()", "swe_fixstar_ut()"};
+static const struct { const char *sz; int32 fl; } KFL[] = {
+  {"Aldebaran", SEFLG_SPEED},
+  {"Aldebaran topo.", TS},
+  {"Aldebaran hel.", SEFLG_HELCTR | SEFLG_SPEED},
+  {"Aldebaran equatorial", SEFLG_EQUATORIAL | SEFLG_SPEED},
+  {"Aldebaran J2000", SEFLG_J2000 | SEFLG_NONUT | SEFLG_SPEED},
+  {"Aldebaran sidereal", SEFLG_SIDEREAL | SEFLG_SPEED},
+  {"Aldebaran TRUEPOS", SEFLG_TRUEPOS | SEFLG_SPEED},
+  {"Aldebaran, no speed", 0},
+};
+#define NKFL ((int) (sizeof KFL / sizeof KFL[0]))
+#define NK (4 * NKFL)
+static const double KJD[2] = {2268923.5, 2600000.5};	/* 1500, 2406: de200.eph is 1600-2170 */
 /* (g): swe_nod_aps() with barycentric output, every method and body class
  * (UPSTREAM-BUGS 149); ctr is the method. SEFLG_TOPOCTR with
  * SEFLG_BARYCTR is the barycentric output here (the function reads the
@@ -332,11 +367,12 @@ static void ask(const struct cs *c, int32 fl, double jd, struct ans *a)
   a->ran = 1;
 }
 
+static int name_jpl;	/* (k): de200.eph named for the Moshier request too */
 static void setup(const char *dir, int fb, int32 eph)
 {
   swe_set_ephe_path(dir);
   swe_set_ephe_fallback(fb);
-  if (eph == SEFLG_JPLEPH)
+  if (eph == SEFLG_JPLEPH || name_jpl)
     swe_set_jpl_file("de200.eph");
 }
 
@@ -525,6 +561,32 @@ static int warm18(double jd)
 }
 #define NWARM18 (3 + NW18)
 
+/* (k): one process on de200.eph, the fallback allowed: Aldebaran at 2000
+ * Jul 1.5, inside the file's span, then each (k) call at 1500, answered as
+ * the Moshier request in a fresh process (KREF), then the first call again
+ * bit for bit; returns the failures */
+static struct ans KREF[NK];
+static int warmk(void)
+{
+  static const struct cs in = {"Aldebaran, de200 span", STAR2, 0, 0, TS};
+  struct ans a, b, c;
+  int bad = 0, k;
+  setup(EPHE, 1, SEFLG_JPLEPH);
+  swe_set_topo(8.55, 47.37, 400);
+  ask(&in, in.fl | SEFLG_JPLEPH, JD[0], &a);
+  bad += !(a.r >= 0 && (a.r & EPHMASK) == SEFLG_JPLEPH);
+  for (k = 0; k < NK; k++) {
+    struct cs q = {KFL[k % NKFL].sz, KKIND[k / NKFL], 0, 0, KFL[k % NKFL].fl};
+    ask(&q, q.fl | SEFLG_JPLEPH, KJD[0], &b);
+    bad += !same(&b, &KREF[k]);
+  }
+  ask(&in, in.fl | SEFLG_JPLEPH, JD[0], &c);
+  bad += !same(&a, &c);
+  swe_close();
+  return bad;
+}
+#define NWARMK (2 + NK)
+
 static int warm_child(int32 eph, double jd, int at18)
 {
   int st;
@@ -533,7 +595,7 @@ static int warm_child(int32 eph, double jd, int at18)
   if ((pid = fork()) < 0)
     return 99;
   if (pid == 0)
-    _exit(at18 ? warm18(jd) : warm(eph, jd));
+    _exit(at18 == 2 ? warmk() : at18 ? warm18(jd) : warm(eph, jd));
   if (waitpid(pid, &st, 0) != pid || !WIFEXITED(st))
     return 99;
   return WEXITSTATUS(st);
@@ -810,6 +872,45 @@ int main(int argc, char **argv)
         }
       }
     }
+  /* (k) bug 198: de200.eph outside its span, as swe_calc() falls */
+  for (j = 0; j < 2; j++)
+    for (k = 0; k < NK; k++) {
+      struct cs c = {KFL[k % NKFL].sz, KKIND[k / NKFL], 0, 0, KFL[k % NKFL].fl};
+      struct ans f, m, st;
+      char sz[80];
+      snprintf(sz, sizeof sz, "%s, %s", c.sz, KSZ[k / NKFL]);
+      c.sz = sz;
+      child(EPHE, 1, SEFLG_JPLEPH, &c, KJD[j], &f);
+      child(EPHE, 0, SEFLG_JPLEPH, &c, KJD[j], &st);
+      name_jpl = 1;
+      child(EPHE, 0, SEFLG_MOSEPH, &c, KJD[j], &m);
+      name_jpl = 0;
+      if (j == 0)
+        KREF[k] = m;
+      check(same(&f, &m) && (f.r & EPHMASK) == SEFLG_MOSEPH && strstr(f.serr, "Moshier") != NULL,
+            "k", c.sz, SEFLG_JPLEPH, KJD[j], &f, "de200.eph beyond: not the Moshier request's answer");
+      check(strict_msg(&st), "k", c.sz, SEFLG_JPLEPH, KJD[j], &st,
+            "de200.eph beyond, strict: not the downgrade's refusal");
+    }
+  k = warm_child(SEFLG_JPLEPH, KJD[0], 2);
+  nwarm += NWARMK;
+  nrow += NWARMK;
+  if (k != 0) {
+    nbad += k;
+    printf("    FAIL (k) warm stars on de200.eph: %d of %d\n", k, NWARMK);
+  }
+  /* (k) and a heliocentric star fallen to Moshier (sefstars.txt alone),
+   * as the Moshier request: the Sun's barycentric place (bug 109) */
+  for (id = 0; id < 2; id++)
+    for (ie = 0; ie < 2; ie++)
+      for (k = 0; k < 4; k++) {
+        struct cs c = {"Aldebaran hel., stars only", KKIND[k], 0, 0, SEFLG_HELCTR | SEFLG_SPEED};
+        struct ans f, m;
+        child(DIR_, 1, EPH[ie], &c, JD[id], &f);
+        child(DIR_, 0, SEFLG_MOSEPH, &c, JD[id], &m);
+        check(same(&f, &m) && (f.r & EPHMASK) == SEFLG_MOSEPH, "k", KSZ[k], EPH[ie], JD[id], &f,
+              "heliocentric, fallen: not the Moshier request's answer");
+      }
   unbuild(DIR_);
   unbuild(DIRM);
   unbuild(DIRA);

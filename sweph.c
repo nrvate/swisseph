@@ -7874,6 +7874,30 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
   }
   return OK;
 }
+
+/* Upstream bug 198: a star's Earth at tjd, falling back as swe_calc()'s
+ * main_planet() does. main_planet_bary() returns a JPL file's
+ * BEYOND_EPH_LIMITS (tjd outside the file's span), where main_planet()
+ * goes on to Moshier within Moshier's span: SEFLG_JPLEPH on de200.eph at
+ * 1500, the fallback allowed, Mars answered 260 and every star refused,
+ * "outside JPL eph. range". A file missing (NOT_AVAILABLE) falls to the
+ * Swiss files and on to Moshier in main_planet_bary() already. The
+ * caller's refusal test sees the substitution as before. */
+static int fixstar_earth(swe_ctx *ctx, double tjd, int32 epheflag, int32 iflag,
+                         int32 *iephe_used, double *xe, double *xs, char *serr)
+{
+  int retc = main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, iephe_used,
+                              xe, xe, xs, NULL, serr);
+  if (retc == BEYOND_EPH_LIMITS && epheflag == SEFLG_JPLEPH
+      && tjd > MOSHPLEPH_START && tjd < MOSHPLEPH_END) {
+    if (serr != NULL && strlen(serr) + 30 < AS_MAXCH)
+      strcat(serr, " \nusing Moshier Eph; ");
+    retc = main_planet_bary(ctx, tjd, SEI_EARTH, SEFLG_MOSEPH,
+                            (iflag & ~SEFLG_EPHMASK) | SEFLG_MOSEPH, DO_SAVE, iephe_used,
+                            xe, xe, xs, NULL, serr);
+  }
+  return retc;
+}
 #endif
 
 /* computes 'annual' aberration
@@ -11886,10 +11910,12 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
    * With data that are already ICRF, epoch = 0 */
   if (epoch != 0) {
     swi_icrs2fk5(x, iflag, TRUE); /* backward, i. e. to icrf */
+#ifdef SWE_UPSTREAM_COMPAT
     /* with ephemerides < DE403, we now convert to J2000 */
     if (swi_get_denum(ctx, SEI_SUN, iflag) >= 403) {
       swi_bias(ctx, x, J2000, SEFLG_SPEED, FALSE);
     }
+#endif
   }
   /**************************************************** 
    * earth/sun 
@@ -11912,10 +11938,14 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
 #endif
 #ifndef SWE_UPSTREAM_COMPAT
     ctx->moshmoon_used = FALSE;	/* bug 120 */
-#endif
+    if ((retc = fixstar_earth(ctx, tjd, epheflag, iflag, &iephe_used, ctx->sp.fx_struct.xearth,
+                              ctx->sp.fx_struct.xsun, serr)) != OK)	/* bug 198 */
+      return ERR;
+#else
     if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, &iephe_used, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xsun, NULL, serr)) != OK) {
       return ERR;
     }
+#endif
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -11925,8 +11955,23 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     if (!(iflag & SEFLG_HELCTR) && swi_refuse_moshmoon(ctx, tjd, serr))
       return ERR;
     ephe_used = iephe_used;
+    /* Upstream bug 198: the rest as the request of the ephemeris that
+     * answered, as main_planet() goes on with swe_calc()'s flags: on
+     * de200.eph fallen to Moshier the frame bias and the catalogue's below
+     * by Moshier's DE number, 403, not de200's; a heliocentric star fallen
+     * to Moshier with the Sun's barycentric place, as bug 109's Moshier
+     * request (with its Sun 0 there, Swiss fallen to Moshier, 7.8e-8 deg
+     * off it at 2000). */
+    if (ephe_used != epheflag)
+      iflag = (iflag & ~SEFLG_EPHMASK) | ephe_used;
 #endif
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 198: the catalogue's frame by the DE number of the ephemeris that
+   * answered (with ephemerides < DE403, we now convert to J2000) */
+  if (epoch != 0 && swi_get_denum(ctx, SEI_SUN, iflag) >= 403)
+    swi_bias(ctx, x, J2000, SEFLG_SPEED, FALSE);
+#endif
   /************************************
    * observer: geocenter or topocenter
    ************************************/
@@ -12051,7 +12096,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     int32 spf = iflgsave & SEFLG_SPEED;
     if (spf && mosh_star)	/* bug 109: the Sun's motion over -dm, dp */
       swi_mosh_sun_accel(ctx, tjd, asb_star);	/* before the Earth's reads */
-    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag, siteflag,
+    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, ephe_used, iflag, siteflag,	/* bug 198 */
                               ctx->sp.fx_struct.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
     if (spf && mosh_star)
@@ -13690,10 +13735,12 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
    * With data that are already ICRF, epoch = 0 */
   if (epoch != 0) {
     swi_icrs2fk5(x, iflag, TRUE); /* backward, i. e. to icrf */
+#ifdef SWE_UPSTREAM_COMPAT
     /* with ephemerides < DE403, we now convert to J2000 */
     if (swi_get_denum(ctx, SEI_SUN, iflag) >= 403) {
       swi_bias(ctx, x, J2000, SEFLG_SPEED, FALSE);
     }
+#endif
   }
   /**************************************************** 
    * earth/sun 
@@ -13712,10 +13759,14 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
 #endif
 #ifndef SWE_UPSTREAM_COMPAT
     ctx->moshmoon_used = FALSE;	/* bug 120 */
-#endif
+    if ((retc = fixstar_earth(ctx, tjd, epheflag, iflag, &iephe_used, ctx->sp.fx_record.xearth,
+                              ctx->sp.fx_record.xsun, serr)) != OK)	/* bug 198 */
+      return ERR;
+#else
     if ((retc =  main_planet_bary(ctx, tjd, SEI_EARTH, epheflag, iflag, DO_SAVE, &iephe_used, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xsun, NULL, serr)) != OK) {
       return ERR;
     }
+#endif
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -13725,8 +13776,18 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     if (!(iflag & SEFLG_HELCTR) && swi_refuse_moshmoon(ctx, tjd, serr))
       return ERR;
     ephe_used = iephe_used;
+    /* Upstream bug 198: the rest as the request of the ephemeris that
+     * answered, as in fixstar_calc_from_struct() */
+    if (ephe_used != epheflag)
+      iflag = (iflag & ~SEFLG_EPHMASK) | ephe_used;
 #endif
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 198: the catalogue's frame by the DE number of the ephemeris that
+   * answered (with ephemerides < DE403, we now convert to J2000) */
+  if (epoch != 0 && swi_get_denum(ctx, SEI_SUN, iflag) >= 403)
+    swi_bias(ctx, x, J2000, SEFLG_SPEED, FALSE);
+#endif
   /************************************
    * observer: geocenter or topocenter
    ************************************/
@@ -13847,7 +13908,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     int32 spf = iflgsave & SEFLG_SPEED;
     if (spf && mosh_star)	/* bug 109: the Sun's motion over -dm, dp */
       swi_mosh_sun_accel(ctx, tjd, asb_star);	/* before the Earth's reads */
-    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag, siteflag,
+    if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, ephe_used, iflag, siteflag,	/* bug 198 */
                               ctx->sp.fx_record.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
     if (spf && mosh_star)

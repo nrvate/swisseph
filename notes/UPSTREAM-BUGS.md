@@ -226,6 +226,7 @@ worst were in code that had never executed even once.
 | 186 | `lunar_osc_elem()` puts the Moon at each epoch of the true node's and osculating apogee's five-point speed into the frame of date at that epoch, so within 1/32 day of a short-term precession window's edge the difference took the frame's step: with IAU 1976 under Vondrak ("0,9,1") on JPL and the Swiss files the node's speed 2.90e-3 deg/day off at J2000 - 2 centuries and 4.29e-3 at + 2, the apogee's 5.96e-3 and 6.49e-3; with IAU 2006 ("0,9,8") at -+ 75 centuries 7.90 and 0.68 | Correctness | `sweph.c`, `swephlib.c` |
 | 187 | `swe_houses_ex2()`'s cusp and ascmc speeds take the ARMC's, the obliquity's and the sidereal houses' ayanamsa's and auxiliary frames' rates as differences 1/64 day either side, across a short-term precession window's edge within 1/64 day of it: every speed 2.1e-3 to 8.1e-3 deg/day off with IAU 1976 under Vondrak (4.65e-5 with the IERS 2010 sidereal time, the obliquity's step alone), sidereal 3.9e-3 to 5.1e-3, 0.58 with IAU 2006 at 75 centuries | Correctness | `swehouse.c` |
 | 197 | A save-area answer skips entry 120's strict test, which read the setting of the call that filled the area: the semo files missing, Mars at 1500 answered 258 with the fallback allowed and again 258 from the area after `swe_set_ephe_fallback(0)` (or another thread's setting adopted), where a fresh strict context refuses it (-1); every Earth-seen body the area answers, `swe_calc_ut()` too | Correctness (behaviour) | `sweph.c` |
+| 198 | The star functions with SEFLG_JPLEPH outside the JPL file's span return `main_planet_bary()`'s BEYOND_EPH_LIMITS as their error: on de200.eph at 1500 and 2406, the fallback allowed, Aldebaran -1 "outside JPL eph. range" by all four functions, where `swe_calc()` of Mars falls to Moshier and answers 260; strict, that message, not the downgrade's; and a fallen star went on with the ephemeris bits asked: de200's frame (2.3e-6 deg off the Moshier request), and a heliocentric star fallen to Moshier without the Sun's barycentric place (7.8e-8 deg) | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -12887,7 +12888,7 @@ Noticed, not fixed: `swe_fixstar2()` and `swe_fixstar()` with SEFLG_JPLEPH
 on de200.eph at 1500, outside its span, the fallback allowed, refuse ("jd
 2268923.500000 outside JPL eph. range 2305424.50 .. 2513392.50;"), where
 `swe_calc()` of Mars falls to Moshier and answers (260), both before and
-after this fix.
+after this fix. Fixed as entry 198.
 
 ## 170. `swe_nod_aps_ut()` takes delta t from the ephemeris bits as given, and keeps it after a fallback
 
@@ -13503,6 +13504,94 @@ second return: -1 shipped, 258 compat (and shipped before the fix).
 Noticed, not fixed: with the fallback allowed a hit returns an empty serr
 where the computed answer had noted "using Moshier eph. for moon" (Mars
 at 1500, warm: '', fresh: the file-not-found message and the note).
+
+## 198. The star functions with SEFLG_JPLEPH outside the JPL file's span refuse, "outside JPL eph. range", where `swe_calc()` falls to Moshier and answers
+
+**Severity: Correctness (behaviour: a refusal where the fallback is allowed and `swe_calc()` answers, and the strict refusal's message not the downgrade's)**
+**Where:** `sweph.c`: `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, new `fixstar_earth()`, `fixstar_obs_rate()`'s call
+
+Found by entry 195's work (its notes). The star functions read the Earth
+by `main_planet_bary()`, which falls from a missing JPL file to the Swiss
+files and from missing files to Moshier on its own, but returns a JPL
+read's BEYOND_EPH_LIMITS (the instant outside the file's span) as it is,
+and the star functions returned it as their error. `swe_calc()`'s
+`main_planet()` goes on to Moshier there, within Moshier's span. So with
+de200.eph (1600-2170) and the fallback allowed, Aldebaran by
+`swe_fixstar2()`, `swe_fixstar()` and their `_ut` forms with SEFLG_JPLEPH
+at 1500 (JD 2268923.5) and at 2406 (JD 2600000.5) returned -1, "jd
+2268923.500000 outside JPL eph. range 2305424.50 .. 2513392.50;", in every
+frame but the barycentric one (which reads no Earth and answered), where
+`swe_calc()` of Mars answered 260, bit for bit the SEFLG_MOSEPH request,
+in every frame; under the strict setting the stars refused with that
+message, not the downgrade's that `swe_calc()` gives ("JPL ephemeris is
+not available for jd ...; falling back to Moshier ..."). Both builds.
+
+Falling back for the Earth alone is not enough: the rest of the star
+went on with the caller's ephemeris bits, where `main_planet()` replaces
+them by the ephemeris that answered. The frame bias of the catalogue and
+of the place is taken by the DE number, de200's 200 (none) against
+Moshier's 403: with the Earth alone fallen Aldebaran at 1500 was 2.3e-6
+deg in longitude and 3.8e-6 in latitude off the Moshier request. The same
+bits chose the heliocentric star's parallax: a star fallen to Moshier (a
+directory with sefstars.txt alone, Swiss or JPL asked, the fallback
+allowed) took it from the Sun the Moshier read leaves 0, where the
+Moshier request takes the Sun's barycentric place (entry 109):
+heliocentric Aldebaran at 2000 Jul 1.5 7.8e-8 deg in longitude and
+3.8e-9 in latitude off the Moshier request, by all four functions.
+
+**Fix, as done here:**
+- The star's Earth at the instant is read by `fixstar_earth()`:
+  `main_planet_bary()`, and on a JPL BEYOND_EPH_LIMITS within Moshier's
+  span the Moshier Earth, noted " \nusing Moshier Eph; " as
+  `main_planet()` notes it. The refusal test after it sees the
+  substitution: strict, the downgrade's refusal, as `swe_calc()`'s.
+- After the Earth, the star's flags take the ephemeris bits of the
+  ephemeris that answered, as `main_planet()` goes on with them
+  (SEFLG_JPLHOR's bits kept, as there).
+- The catalogue's frame bias is applied after the Earth, by that
+  ephemeris's DE number; nothing between reads the star's vector.
+- `fixstar_obs_rate()`'s reads for the aberration's rate take the
+  ephemeris that answered, so they read Moshier's Earth, not the JPL file
+  beyond its span.
+- Now all four functions answer at 1500 and 2406 bit for bit as the
+  Moshier request (de200.eph named for it too), flag SEFLG_MOSEPH, fresh
+  and warm, and the heliocentric fallen star as the Moshier request.
+  Every other call is unchanged: 10110 answers of the four functions --
+  Swiss, de200 within its span and Moshier, six stars, five instants, 14
+  flag sets with and without SEFLG_SPEED, and `swe_get_ayanamsa_ex()` and
+  Mars sidereal with SE_SIDM_TRUE_CITRA -- identical before and after.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; no hot path.
+
+G133 `tests/fbbary.c` (k): Aldebaran by the four functions, geocentric,
+topocentric, heliocentric, equatorial, J2000, sidereal and SEFLG_TRUEPOS
+with SEFLG_SPEED and geocentric without, SEFLG_JPLEPH on de200.eph at 1500
+and 2406, fresh: with the fallback allowed bit for bit the Moshier
+request's, flagged and noted so; strict the downgrade's refusal; in one
+process after a JPL star at 2000 Jul 1.5 the calls at 1500 so and the call
+at 2000 again bit for bit; and the heliocentric star of (d)'s directory,
+Swiss and JPL, at (d)'s instants, bit for bit the Moshier request's. 1383
+rows pass with entries 170 and 174's, 178 new; before the fix 176 of them fail (all but the warm
+process's two calls within the span); the upstream build the same 176
+(645 in all). G24 `star_jpl_beyond_ret`: Aldebaran by `swe_fixstar2()`
+with SEFLG_JPLEPH | SEFLG_SPEED on de200.eph at 1500, the fallback
+allowed, its return: 260 shipped, -1 compat (and shipped before the fix).
+
+Noticed, not fixed:
+- At de200.eph's edges a star with SEFLG_SPEED is refused where it
+  answers without. Aldebaran at 1/1000 day inside the end of the span
+  (JD 2513392.499) answers 1 (JPL) without SEFLG_SPEED and -1 with it
+  ("jd 2513392.500953 outside JPL eph. range"): `fixstar_obs_rate()`
+  reads the Earth 2^-9 day either side, past the span. Mars there
+  answers 257. At 1/1000 day inside the start, Mars falls to Moshier for
+  its light time (260) and the star with SEFLG_SPEED is refused.
+- A JPL request with SEFLG_JPLHOR_APPROX (or SEFLG_JPLHOR) fallen to
+  Moshier keeps the Horizons bit, in `swe_calc()` as now in the stars:
+  524548 (SEFLG_MOSEPH | SEFLG_JPLHOR_APPROX | SEFLG_SPEED), a flag no
+  request can ask for (`plaus_iflag()` drops the Horizons bits without
+  SEFLG_JPLEPH), its place the Horizons approximation's frame on
+  Moshier's places: Mars at 1500 3.5e-4 deg off the Moshier request,
+  Aldebaran 3.5e-4 at 1500 and 1.4e-5 at 2000; fallen to the Swiss files
+  the same (524546).
 
 ## How these were found
 

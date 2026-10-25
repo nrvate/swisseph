@@ -1487,6 +1487,12 @@ struct epsilon {
  *     answered after the setting went strict (bug 120 is not in this build
  *     either): Mars at 1500 with the fallback allowed, then
  *     swe_set_ephe_fallback(0), 258 (UPSTREAM-BUGS 197, G117, G24)
+ *   - the star functions refusing a JPL request outside the file's span,
+ *     "outside JPL eph. range", where swe_calc() falls to Moshier: on
+ *     de200.eph at 1500, the fallback allowed, Aldebaran -1 where Mars
+ *     answers 260; and a fallen star going on with the ephemeris bits
+ *     asked, a heliocentric one fallen to Moshier 7.8e-8 deg off the
+ *     Moshier request (UPSTREAM-BUGS 198, G133, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

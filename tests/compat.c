@@ -4703,6 +4703,29 @@ static double moshmoon_setting_ret(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 198: Aldebaran by swe_fixstar2() with SEFLG_JPLEPH |
+ * SEFLG_SPEED on de200.eph at 1500, outside the file's span, the fallback
+ * allowed, its return: the star functions returned the JPL read's
+ * BEYOND_EPH_LIMITS as an error, -1 ("outside JPL eph. range"), where
+ * swe_calc() of Mars falls to Moshier and answers 260; 260 now, the
+ * Moshier request's answer. */
+static double star_jpl_beyond_ret(void)
+{
+  double x[6];
+  char serr[AS_MAXCH], s[64];
+  swe_ctx *c;
+  int32 r = -2;
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "de200.eph");
+    swe_set_ephe_fallback_r(c, 1);
+    strcpy(s, "Aldebaran");
+    r = swe_fixstar2_r(c, s, 2268923.5, SEFLG_JPLEPH | SEFLG_SPEED, x, serr);
+    swe_ctx_free(c);
+  }
+  return r;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 with no JPL file set, the first call
  * against the second, deg, the larger of: a path whose de431.eph (the
  * default name) is de200.eph, and, after swe_close(), a path without
@@ -5133,7 +5156,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5270,6 +5293,7 @@ int main(int argc, char **argv)
   startopofb = star_topo_fallen_off();
   nodutfb = nodaps_ut_fallback_off();
   mmsetting = moshmoon_setting_ret();
+  starjplb = star_jpl_beyond_ret();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -5512,6 +5536,14 @@ int main(int argc, char **argv)
   else {
     printf("  topo star fallen site  %.2e deg FAIL: expected %s\n",
            startopofb, WANT_DEFECT ? "> 1e-8" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (starjplb == -1) : (starjplb == (SEFLG_MOSEPH | SEFLG_SPEED)))
+    printf("  star, de200 beyond, fallback %.0f OK\n", starjplb);
+  else {
+    printf("  star, de200 beyond, fallback %.0f FAIL: expected %s\n",
+           starjplb, WANT_DEFECT ? "-1" : "260");
     bad++;
   }
 
