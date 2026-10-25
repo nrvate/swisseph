@@ -1385,11 +1385,52 @@ static int house_resid_off(double *plac)
   return n;
 }
 
+/* The Moon's speed against five-point differences of its longitude, deg/day,
+ * worst of two: geocentric apparent over 2^-6 day, and topocentric true at
+ * Zurich over 2^-9 day with delta t set to 2^-11 day (UT1 exact, the site
+ * without jitter), at 500 and 2000. Here: the site turns at the sidereal
+ * time's rate with the nutation matrix's, the files' rate is per TT day,
+ * the velocity is moved to teval - tau with the place, the aberration's
+ * shift rate is central (UPSTREAM-BUGS 73): 2.4e-9. Upstream: 9.7e-4 (its
+ * topocentric paths, bugs 31-36, besides). */
+static double moon_site_speed_off(void)
+{
+  static const double yr[2] = {500, 2000};
+  double w = 0;
+  char serr[256];
+  int c, y, k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 47.37, 400);
+  for (c = 0; c < 2; c++) {
+    int32 fl = SEFLG_SWIEPH | (c ? SEFLG_TOPOCTR | SEFLG_TRUEPOS : 0);
+    double h = c ? 1.0 / 512 : 1.0 / 64;
+    if (c)
+      swe_set_delta_t_userdef(1.0 / 2048);
+    for (y = 0; y < 2; y++) {
+      double t = floor((2451545.0 + (yr[y] - 2000) * 365.25) * 256) / 256, x[6], f[4];
+      static const int off[4] = {-2, -1, 1, 2};
+      swe_calc(t, SE_MOON, fl | SEFLG_SPEED, x, serr);
+      for (k = 0; k < 4; k++) {
+        double g[6];
+        swe_calc(t + off[k] * h, SE_MOON, fl, g, serr);
+        f[k] = g[0];
+      }
+      x[3] -= (8 * swe_difdeg2n(f[2], f[1]) - swe_difdeg2n(f[3], f[0])) / (12 * h);
+      if (fabs(x[3]) > w)
+        w = fabs(x[3]);
+    }
+  }
+  swe_set_delta_t_userdef(SE_DELTAT_AUTOMATIC);
+  swe_close();
+  return w;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1435,6 +1476,7 @@ int main(int argc, char **argv)
   staracc = star_aberr_accel_off(SEFLG_SWIEPH, 2488070.1);
   staraccm = star_aberr_accel_off(SEFLG_MOSEPH, 2451545.0);
   moshrough = mosh_earth_rough_off();
+  moonsite = moon_site_speed_off();
   startd = star_topo_defl_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
@@ -1778,6 +1820,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier Earth rough    %.2e of a     FAIL: expected %s\n",
            moshrough, WANT_DEFECT ? "> 1e-6" : "< 1e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moonsite > 1e-6) : (moonsite < 3e-8))
+    printf("  Moon site/file speed   %.2e deg/day OK\n", moonsite);
+  else {
+    printf("  Moon site/file speed   %.2e deg/day FAIL: expected %s\n",
+           moonsite, WANT_DEFECT ? "> 1e-6" : "< 3e-8");
     bad++;
   }
 

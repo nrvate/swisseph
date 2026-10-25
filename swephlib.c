@@ -167,6 +167,62 @@ double swi_mod2PI(double x)
  * (UPSTREAM-BUGS 24). Against the full Fairhead & Bretagnon series: 9 us
  * worst over 1600-2169, 28 us over 1-3000, 1 ms at -13000 and 17000, where
  * its linear term is extrapolated; the term reading TT drops is 1.66 ms. */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 73: and its rate, d(TDB - TT)/dTT, days per day (up to
+ * 3.3e-10): read at TDB, a file's velocity is per day of TDB, and per day
+ * of TT, the argument of every position, it is that times 1 + this. The
+ * rate is computed when asked for; the last two instants are kept, a
+ * calculation alternating between t and t - tau. */
+static struct swi_tdb_memo *tdb_slot(swe_ctx *ctx, double tjd)
+{
+  struct swi_tdb_memo m;
+  double T;
+  if (ctx->tdb_np.valid && ctx->tdb_np.tjd == tjd)
+    return &ctx->tdb_np;
+  m = ctx->tdb_np;
+  if (ctx->tdb_np2.valid && ctx->tdb_np2.tjd == tjd) {
+    ctx->tdb_np = ctx->tdb_np2;
+  } else {
+    T = (tjd - J2000) / 36525.0;
+    ctx->tdb_np.tjd = tjd;
+    ctx->tdb_np.valid = TRUE;
+    ctx->tdb_np.rvalid = FALSE;
+    ctx->tdb_np.val = (0.001657 * sin(628.3076 * T + 6.2401)
+        + 0.000022 * sin(575.3385 * T + 4.2970)
+        + 0.000014 * sin(1256.6152 * T + 6.1969)
+        + 0.000005 * sin(606.9777 * T + 4.0212)
+        + 0.000005 * sin(52.9691 * T + 0.4444)
+        + 0.000002 * sin(21.3299 * T + 5.5431)
+        + 0.000010 * T * sin(628.3076 * T + 4.2490)) / 86400.0;
+  }
+  ctx->tdb_np2 = m;
+  return &ctx->tdb_np;
+}
+
+double swi_tdb_minus_tt(swe_ctx *ctx, double tjd)
+{
+  return tdb_slot(ctx, tjd)->val;
+}
+
+double swi_tdb_minus_tt_rate(swe_ctx *ctx, double tjd)
+{
+  struct swi_tdb_memo *p = tdb_slot(ctx, tjd);
+  double T = (tjd - J2000) / 36525.0;
+  if (!p->rvalid) {
+    p->rate = (0.001657 * 628.3076 * cos(628.3076 * T + 6.2401)
+        + 0.000022 * 575.3385 * cos(575.3385 * T + 4.2970)
+        + 0.000014 * 1256.6152 * cos(1256.6152 * T + 6.1969)
+        + 0.000005 * 606.9777 * cos(606.9777 * T + 4.0212)
+        + 0.000005 * 52.9691 * cos(52.9691 * T + 0.4444)
+        + 0.000002 * 21.3299 * cos(21.3299 * T + 5.5431)
+        + 0.000010 * sin(628.3076 * T + 4.2490)
+        + 0.000010 * T * 628.3076 * cos(628.3076 * T + 4.2490))
+        / 86400.0 / 36525.0;
+    p->rvalid = TRUE;
+  }
+  return p->rate;
+}
+#else
 double swi_tdb_minus_tt(swe_ctx *ctx, double tjd)
 {
   double T;
@@ -183,6 +239,7 @@ double swi_tdb_minus_tt(swe_ctx *ctx, double tjd)
         + 0.000002 * sin(21.3299 * T + 5.5431)
         + 0.000010 * T * sin(628.3076 * T + 4.2490)) / 86400.0;
 }
+#endif
 
 double swi_angnorm(double x)
 {

@@ -3093,6 +3093,22 @@ again:
    * 2. the speed flag has been specified.
    */
   need_speed = (do_save || (iflag & SEFLG_SPEED));
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 73: read at TDB (bug 24), the derivative is per day of
+   * TDB, and positions are functions of TT: per TT day it is that times
+   * dTDB/dTT = 1 + d(TDB - TT)/dTT, up to 3.3e-10 more, 5e-9 deg/day of
+   * the Moon's speed. */
+  {
+    double vfac = need_speed ? (1 + swi_tdb_minus_tt_rate(ctx, tjd)) / pdp->dseg * 2 : 0;
+    for (i = 0; i <= 2; i++) {
+      xp[i]  = swi_echeb (t, pdp->segp+(i*pdp->ncoe), pdp->neval);
+      if (need_speed)
+        xp[i+3] = swi_edcheb(t, pdp->segp+(i*pdp->ncoe), pdp->neval) * vfac;
+      else
+        xp[i+3] = 0;
+    }
+  }
+#else
   for (i = 0; i <= 2; i++) {
     xp[i]  = swi_echeb (t, pdp->segp+(i*pdp->ncoe), pdp->neval);
     if (need_speed) {
@@ -3101,6 +3117,7 @@ again:
       xp[i+3] = 0;	/* von Alois als billiger fix, evtl. illegal */
     }
   }
+#endif
   /* if planet wanted is barycentric sun:
    * current sepl* files have do not have barycentric sun,
    * but have heliocentric earth and barycentric earth.
@@ -5760,6 +5777,26 @@ void swi_aberr_light(double *xx, double *xe, int32 iflag) {
      * the influence of aberration on apparent velocity can
      * reach 0.4"/day
      */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 73: the shift's change along the body's motion was the
+     * backward difference over intv, the rate at t - intv/2: the Moon's
+     * place turns at 0.23 rad/day, so its 20" shift curves, and that was
+     * 1.9e-8 deg/day of its speed (2.8e-8 topocentric). Now the derivative of A(u) = (b u + f2
+     * |u| v) / (1 + f1) itself along w = u', b and v held: d|u| = u.w / |u|,
+     * df1 = v.w / |u| - f1 d|u| / |u|, df2 = df1 / (1 + b). */
+    double w[3], uw = 0, vw = 0, dru, df1, df2;
+    (void) dx1; (void) dx2; (void) xx2; (void) intv;
+    for (i = 0; i <= 2; i++) {
+      w[i] = xxs[i+3];
+      uw += xxs[i] * w[i];
+      vw += v[i] * w[i];
+    }
+    dru = uw / ru;
+    df1 = (vw - f1 * dru) / ru;
+    df2 = df1 / (1.0 + b_1);
+    for (i = 0; i <= 2; i++)
+      xx[i+3] = (b_1 * w[i] + (df2 * ru + f2 * dru) * v[i] - xx[i] * df1) / (1.0 + f1);
+#else
     for (i = 0; i <= 2; i++) 
       u[i] = xxs[i] - intv * xxs[i+3];
     ru = sqrt(square_sum(u));
@@ -5773,6 +5810,7 @@ void swi_aberr_light(double *xx, double *xe, int32 iflag) {
       dx1 -= dx2;
       xx[i+3] += dx1 / intv;
     }
+#endif
   }
 }
 
@@ -6324,7 +6362,7 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
   int32 flg1, flg2;
   double xx[6], xxsv[6], xobs[6], xxm[6], xs[6], xe[6], xobs2[6], dt;
 #ifndef SWE_UPSTREAM_COMPAT
-  double vb[3];
+  double vb[3], lt_e = 0;
 #endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
@@ -6477,6 +6515,18 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
       }
       for (i = 0; i <= 2; i++)
         xx[i] += e * vb[i];
+      /* Upstream bug 73: and the velocity is the one at the instant read,
+       * teval - dt, where it is wanted at teval - tau: dt - tau is the
+       * barycentric range rate times tau / c, up to 2e-9 day, which the
+       * barycentric Moon's acceleration turns into 0.07 m/day, 1.0e-8
+       * deg/day of the geocentric Moon's speed. Moved with the position, the
+       * acceleration taken between the velocities at the instant read and
+       * at teval (Moshier's carried there, bug 53). */
+      if (iflag & SEFLG_SPEED) {
+        for (i = 0; i <= 2; i++)
+          xx[i+3] += e * (vb[i] - xx[i+3]) / (pdp->teval - t);
+        lt_e = e;
+      }
     }
     /* Upstream bug 32: the Moon is seen at t - tau(t), so the velocity of
      * M(t - tau) - O(t) is v_M (1 - dtau/dt) - v_O, and dtau/dt = rdot / c
@@ -6522,6 +6572,18 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
       for (i = 0; i <= 5; i++)
 	xobs2[i] = xe[i];
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 73: the aberration rate term xobs - xobs2 is tau a, and
+     * xobs2 was the observer at the instant read, teval - dt, so it was
+     * dt a, 1.3e-4 too much or too little where dt - tau is 2e-9 day:
+     * 1.0e-8 deg/day of the geocentric Moon's speed, 4.0e-8 topocentric.
+     * Scaled to tau, both
+     * the Earth's part and the site's being linear in it. */
+    if (lt_e != 0)
+      for (i = 3; i <= 5; i++)
+        xobs2[i] = xobs[i] - (xobs[i] - xobs2[i])
+          * ((pdp->teval - t - lt_e) / (pdp->teval - t));
+#endif
   }
   /*************************
    * to correct center 
@@ -10165,6 +10227,8 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
    * than from the caches, whose entry may be another instant's. */
   struct epsilon oectmp;
   struct nut nuttmp;
+  double pm[9], pdm[9];
+  AS_BOOL have_pm;
   calc_epsilon(ctx, tjd, iflag, &oectmp);
   if (swi_nutation(ctx, tjd, iflag, nuttmp.nutlo) == ERR)
     return ERR;
@@ -10240,10 +10304,37 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
    * dUT1/dTT = 1 - d(delta t)/dTT. Far from now delta t changes by ~1800
    * s a century (-999), 5e-7 of the rotation, 2e-6 deg/day of the
    * topocentric Moon's speed; near now 3e-8. */
+  /* Upstream bug 73: the site is placed by sidereal time, its angle from
+   * the moving equinox of date, and turned at EARTH_ROT_SPEED, the rate of
+   * the Earth's rotation angle (1.0027378119 turns a day, against inertial
+   * space); swi_precess_speed() below adds the equinox's own motion, the
+   * precession in right ascension, so the site's velocity had it twice.
+   * And the true pole's turning was left out: the equation of the
+   * equinoxes' rate here, the nutation matrix's rate below. The site's
+   * velocity was off by 2-6 m/day, the topocentric Moon's speed by up to
+   * 8.7e-7 deg/day (G72). Now sidereal time's rate: the rotation angle's,
+   * per day of UT1, the precession in right ascension's from the
+   * precession matrix and its rate, -(dM/dt M^T)[0][1] (what the
+   * precession's rate takes off again below), and d(dpsi cos eps)/dt. */
   {
     double ddt = (swe_deltat_ex_r(ctx, tjd + 1, iflag, NULL)
                 - swe_deltat_ex_r(ctx, tjd - 1, iflag, NULL)) / 2;
-    xobs[3] = EARTH_ROT_SPEED * (1 - ddt);
+    double pra = 0;
+    swi_nutation_rate(ctx, tjd, iflag, nuttmp.dnut);
+    have_pm = swi_precess_matrix_rate(ctx, tjd, iflag, pm, pdm);
+    if (have_pm) {
+      for (i = 0; i <= 2; i++)
+        pra += pdm[3 + i] * pm[i];
+    } else {	/* the date's axes in J2000, rows of M */
+      double ex[3] = {1, 0, 0}, eyp[3] = {0, 1, 0}, eym[3] = {0, 1, 0};
+      swi_precess(ctx, ex, tjd, iflag, J_TO_J2000);
+      swi_precess(ctx, eyp, tjd + 1, iflag, J_TO_J2000);
+      swi_precess(ctx, eym, tjd - 1, iflag, J_TO_J2000);
+      for (i = 0; i <= 2; i++)
+        pra += (eyp[i] - eym[i]) / 2 * ex[i];
+    }
+    xobs[3] = TWOPI * 1.00273781191135448 * (1 - ddt) + pra
+      + nuttmp.dnut[0] * cos(eps) - nut * sin(eps) * nuttmp.dnut[1];
   }
 #else
   xobs[3] = EARTH_ROT_SPEED;		
@@ -10256,14 +10347,27 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
 #ifndef SWE_UPSTREAM_COMPAT
   /* true equator and equinox of date -> mean equator and equinox of date:
    * the transposed nutation matrix, as swi_nutate(..., TRUE) applies it,
-   * on the position and on the velocity. The rotation only: the nutation
-   * rate on a 6378 km vector is micrometres a day. */
+   * on the position and on the velocity. Upstream bug 73: and the matrix's
+   * rate, which this comment had as micrometres a day: the true pole turns
+   * at w = deps' e1 + dpsi' (0, -sin eps, cos eps), metres a day on a
+   * 6378 km vector, and the velocity gains -(N^T w) x x_mean, as in
+   * swi_nutate(). The mean obliquity's part of w (bug 69) is 1e-6 m/day
+   * here, and left out, as in the equation of the equinoxes' rate above. */
   {
-    double x[6];
+    double x[6], w[3], wm[3];
     for (i = 0; i <= 2; i++) {
       x[i]   = xobs[0] * nuttmp.matrix[i][0] + xobs[1] * nuttmp.matrix[i][1] + xobs[2] * nuttmp.matrix[i][2];
       x[i+3] = xobs[3] * nuttmp.matrix[i][0] + xobs[4] * nuttmp.matrix[i][1] + xobs[5] * nuttmp.matrix[i][2];
     }
+    w[0] = nuttmp.dnut[1];
+    w[1] = -nuttmp.dnut[0] * sin(eps);
+    w[2] = nuttmp.dnut[0] * cos(eps);
+    for (i = 0; i <= 2; i++)
+      wm[i] = -(w[0] * nuttmp.matrix[i][0] + w[1] * nuttmp.matrix[i][1]
+                + w[2] * nuttmp.matrix[i][2]);
+    x[3] += wm[1] * x[2] - wm[2] * x[1];
+    x[4] += wm[2] * x[0] - wm[0] * x[2];
+    x[5] += wm[0] * x[1] - wm[1] * x[0];
     for (i = 0; i <= 5; i++)
       xobs[i] = x[i];
   }
@@ -10278,9 +10382,27 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
   }
 #endif
   /* precess to J2000 */
+#ifndef SWE_UPSTREAM_COMPAT
+  if (have_pm) {
+    /* with the matrix and rate in hand: M^T x, swi_precess()'s to the bit,
+     * and M^T v + dM^T x, swi_precess_speed()'s */
+    double x[6];
+    for (i = 0; i <= 2; i++) {
+      x[i] = xobs[0] * pm[i] + xobs[1] * pm[i + 3] + xobs[2] * pm[i + 6];
+      x[i+3] = xobs[3] * pm[i] + xobs[4] * pm[i + 3] + xobs[5] * pm[i + 6]
+        + xobs[0] * pdm[i] + xobs[1] * pdm[i + 3] + xobs[2] * pdm[i + 6];
+    }
+    for (i = 0; i <= 5; i++)
+      xobs[i] = x[i];
+  } else {
+    swi_precess(ctx, xobs, tjd, iflag, J_TO_J2000);
+    swi_precess_speed(ctx, xobs, tjd, iflag, J_TO_J2000);
+  }
+#else
   swi_precess(ctx, xobs, tjd, iflag, J_TO_J2000);
   /*if (iflag & SEFLG_SPEED)*/
     swi_precess_speed(ctx, xobs, tjd, iflag, J_TO_J2000);
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   /* The Earth this is added to is ICRS (DE403 and later), and the callers
    * take the sum back to J2000 with the forward bias, so the site goes in

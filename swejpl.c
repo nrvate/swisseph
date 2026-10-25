@@ -883,6 +883,13 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
     intv = js->eh_ss[2];
     aufac = 1. / js->eh_au;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 73: read at TDB (bug 24), every rate interp() returns is
+   * per unit of TDB; per unit of TT, the argument et's, it is that times
+   * dTDB/dTT = 1 + d(TDB - TT)/dTT, up to 3.3e-10 more, 5e-9 deg/day of the
+   * Moon's speed. interp() divides by intv for the rates alone. */
+  intv /= 1 + swi_tdb_minus_tt_rate(ctx, et);
+#endif
   /* ipt[i*3] (base offset into buf[]) and ipt[i*3+2] (na, sub-intervals)
    * feed every interp() call below and are file-controlled with no direct
    * bound, unlike ncf (checked above). They stay inside buf[]'s js->ncoeffs

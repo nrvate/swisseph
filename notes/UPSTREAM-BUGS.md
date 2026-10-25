@@ -106,6 +106,7 @@ worst were in code that had never executed even once.
 | 70 | `swe_nod_aps()`'s apparent speeds are not the rate of the aberration it applies | Correctness | `swecl.c`, `sweph.c` |
 | 65 | Kronos' built-in semi-axis has two digits swapped, and the Kepler solver's starting guess is wrong | Correctness | `swemplan.c` |
 | 66 | The aberration rate's Earth lacks the Moon on JPL and Moshier, and the planets everywhere | Correctness | `sweph.c` |
+| 73 | The Moon's speed is not the rate of its position: the site's turning, the files' TDB rate, the light-time velocity, the aberration's shift rate | Correctness | `sweph.c`, `swejpl.c`, `swephlib.c` |
 | 76 | A fixed star's aberration rate takes the Earth's acceleration half a step back | Correctness | `sweph.c` |
 | 72 | The interpolated perigee's light-time estimate takes one pass, not two (this fork's) | Correctness | `sweph.c` |
 | 75 | The true node's and osculating apogee's speeds divide by the step asked for, not the step taken | Correctness | `sweph.c` |
@@ -3454,6 +3455,104 @@ bodies (2e-9 to 6e-9) and Harrington/Pluto before part 2 (1.4e-8 to 1.7e-8),
 Swiss at 4.6e-9; the build before part 1 fails the far-body rows at 5.9e-8 to
 6.0e-7; the upstream build fails them all. G24: `far_body_moon_pull_eph_off`,
 VEA's longitude speed on JPL and Moshier, 2.9e-11 shipped, 3.4e-5 compat.
+
+## 73. The Moon's speed is not the rate of its position: the site's turning, the files' TDB rate, the light-time velocity, the aberration's shift rate
+
+**Severity: Correctness (8.7e-7 deg/day on the topocentric Moon's longitude speed, 3.7e-7 on its latitude speed; 2.4e-8 on the geocentric Moon's; every topocentric body's site velocity 2-6 m/day off)**
+**Where:** `sweph.c`: `swi_get_observer()`, `sweph()`, `app_pos_etc_moon()`, `swi_aberr_light()`; `swejpl.c`: `state()`; `swephlib.c`: `swi_tdb_minus_tt_rate()`
+
+On the Swiss files the Moon's topocentric longitude speed was off a
+five-point difference of its positions by up to 8.7e-7 deg/day (latitude
+3.7e-7), the same with SEFLG_NOABERR, SEFLG_TRUEPOS or SEFLG_NONUT, and
+the same at every step from 2^-6 to 2^-11 day; geocentric 2.4e-8 (1.4e-8
+without aberration, 5e-9 for true positions). Ten epochs -2900..2900,
+binary-fraction instants. Taken apart, four causes:
+
+1. The site (`swi_get_observer()`). Against nine-point differences of the
+   observer itself it was 2.2-4.6 m/day off. It is placed by sidereal time,
+   its angle from the moving equinox of date, but turned at
+   EARTH_ROT_SPEED, 7.2921151467e-5 rad/s, the rate of the Earth rotation
+   angle (1.0027378119 turns a day, against inertial space), where
+   sidereal time turns 1.0027379093 a day; `swi_precess_speed()` then adds
+   the equinox's own motion, so the precession in right ascension counted
+   twice (9.7e-8 of the rotation, 2.6 m/day at 47N, up to 6.2e-7 deg/day on
+   the Moon). And the true pole's turning was missing: the equation of the
+   equinoxes' rate in the rotation, and the nutation matrix's rate on the
+   site (the code's comment had it as "micrometres a day"; it is 1-3 m/day,
+   each up to 9.8e-7 deg/day on the Moon, partly cancelling). Upstream has
+   both (it never nutated the site, every caller passing SEFLG_NONUT).
+2. The files' rate (`sweph()`, `state()`). Read at TDB since entry 24, the
+   Chebyshev derivative is per day of TDB, the positions are functions of
+   TT: short by d(TDB - TT)/dTT, up to 3.3e-10 of every speed, 5.1e-9
+   deg/day of the Moon's (the whole true-position residual, on JPL as on the
+   Swiss files). Not in upstream, which reads at TT.
+3. The light-time velocity (`app_pos_etc_moon()`). Entry 23 moves the Moon
+   read at teval - dt to teval - tau along its velocity, but left the
+   velocity the one at teval - dt: dt - tau is the barycentric range rate
+   times tau / c, up to 2e-9 day, which the barycentric Moon's acceleration
+   makes 0.07 m/day, 1.0e-8 deg/day. And the aberration rate term
+   xobs - xobs2 was the observer's velocity change over teval - (teval - dt),
+   not over tau: 1e-4 of the term, 1.0e-8 geocentric, 2.4-4.0e-8
+   topocentric.
+4. The aberration's shift along the body's motion (`swi_aberr_light()`)
+   was a backward difference over 1e-4 day, the rate at t - 0.5e-4: the
+   Moon's place turns at 0.23 rad/day, so its 20" shift curves, 1.9e-8
+   deg/day geocentric, 2.8e-8 topocentric. Upstream has it.
+
+The topocentric residual left is the site's own jitter: UT1 = TT - delta t
+rounds to 4.7e-10 day, 6 mm on the site, 1e-9 deg on the Moon, which a
+five-point difference over 2^-8 day reads as 2.5e-7. With delta t set to
+2^-11 day (UT1 exact) and a 17-point difference over 2^-5 day the shipped
+topocentric Moon is within 9.5e-10 deg/day, the build before within 6.2e-7.
+
+**Fix, as done here:** (1) the site turns at sidereal time's rate: the
+rotation angle's, 2 pi x 1.00273781191135448 per day of UT1, times
+dUT1/dTT (entry 36), plus the precession in right ascension's rate,
+-(dM/dt M^T)[0][1] from the precession matrix and its rate (what the
+precession's rate takes off again; the same matrices then precess the site,
+`swi_precess()`'s to the bit, so the matrix is computed once, not twice),
+plus d(dpsi cos eps)/dt; the nutation matrix's rate, -(N^T w) x x_mean as
+in `swi_nutate()`, is added to the site's velocity. Positions unchanged to
+the bit. Site velocity after: 0.21 m/day, the differences' own rounding.
+(2) `swi_tdb_minus_tt_rate()`, the analytic derivative of the seven-term
+series, scales the Swiss files' and the JPL file's rates (`intv` in
+`state()`); TDB - TT and its rate cached for the last two instants, the
+value bit-identical. (3) The Moon's velocity moved with its place by
+e (v(teval) - v(t_read)) / (teval - t_read), and the rate term's
+xobs - xobs2 scaled from teval - t_read to tau, on every ephemeris
+(entry 53 carries Moshier's Moon to t_read as well). (4) The shift's rate
+is the analytic derivative of A(u) = (b u + f2 |u| v) / (1 + f1) along u'.
+
+Measured after, against 17-point differences (noise-free with delta t
+2^-11 day for the site): geocentric 2.2e-10 deg/day with or without
+aberration (before 2.4e-8, 1.5e-8), topocentric 4.6e-10 to 9.5e-10 at 0,
+47.37 and -65 deg (before 5.1e-7 to 7.3e-7). Moshier: 2.3e-9 geocentric,
+2.8e-9 topocentric (before 2.0e-8, 7.4e-7), the series' own roughness
+(3.2e-9 for true positions) left. Removing any one part brings back its
+share: the precession 4.2-6.2e-7, the equation of the equinoxes'
+rate 9.8e-7, the nutation matrix's rate 9.7e-7, the TDB rate 5.1e-9, the
+light-time velocity 1.0e-8, the rate term's tau 1.0e-8 (4.0e-8 topo), the
+shift's rate 1.9e-8 (2.8e-8 topo). JPL (de200.eph, 1650..2150): geocentric
+4.7e-11 (before 2.2e-8), true positions 2.1e-11 (5.1e-9), topocentric with
+exact UT1 6e-10 (6.2e-7). Every body's speed moves by the TDB rate and
+the shift's rate (Venus 6e-10 deg/day) and every topocentric one by the
+site (Venus 4.8e-9); every apparent position by 2e-12 deg (geocentric) to 9e-12 (topocentric), through
+the observer's velocity in the aberration. Cost: calc-swieph +0.9%
+instructions, +1.1% cycles (median of five, `perf stat`, load 5-6; the
+minimum 0.6% lower), calc-moseph unchanged; a topocentric `swe_calc()` 4%
+fewer instructions than before, the precession matrix no longer computed
+twice for the site.
+
+G72 `tests/moonsitespeed.c`: the Moon's longitude and latitude speeds,
+Swiss files, with and without SEFLG_NOABERR, ten epochs -2900..2900,
+against five-point differences: geocentric over 2^-6 day within 5e-9
+(1.41e-9), topocentric at 0, 30, 47.37 and -65 deg over 2^-8 day within
+4e-7 (2.51e-7), the same with delta t 2^-11 day over 2^-9 day within 3e-8
+(1.05e-8). The build before fails all three (2.40e-8, 8.69e-7, 7.53e-7),
+the upstream build all three (6.86e-5, 1.66e-3, 2.33e-3). G24
+`moon_site_speed_off`: the geocentric apparent and the topocentric true
+Moon's longitude speed at 500 and 2000, 2.39e-9 deg/day shipped, 9.65e-4
+compat.
 
 ## 76. A fixed star's aberration rate takes the Earth's acceleration half a step back
 

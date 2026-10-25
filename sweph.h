@@ -877,6 +877,14 @@ struct epsilon {
  *     point (5e-9 deg on Mercury from Pluto), and gave swi_bias() the date
  *     0 under SEFLG_TRUEPOS (0.042" under SEFLG_JPLHOR_APPROX after 1962);
  *     UPSTREAM-BUGS 77, G76)
+ *   - the Moon's speed was not the rate of its position: the site turned at
+ *     the Earth rotation angle's rate with the precession added again by
+ *     swi_precess_speed(), without the equation of the equinoxes' or the
+ *     nutation matrix's rate (8.7e-7 deg/day topocentric); the files' rates
+ *     were per TDB day (5e-9); the Moon's velocity stayed at the instant
+ *     read, not teval - tau, and the aberration rate term spanned dt, not
+ *     tau (1e-8 each); swi_aberr_light()'s shift rate was a backward
+ *     difference (1.9e-8; UPSTREAM-BUGS 73, G72)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -1495,8 +1503,10 @@ struct swe_ctx {
   struct nut_grid_slot nut_grid[SWI_NUT_GRID_SLOTS];
   /* the last TDB - TT, swi_tdb_minus_tt(): a function of the instant
    * alone, so it can never go stale; the reads of one calculation come in
-   * groups at one instant (Sun, Moon and EMB at t, then at t - tau) */
-  struct { double tjd, val; AS_BOOL valid; } tdb_np;
+   * groups at one instant (Sun, Moon and EMB at t, then at t - tau); with
+   * its rate, swi_tdb_minus_tt_rate(), and the instant before in tdb_np2
+   * (UPSTREAM-BUGS 73) */
+  struct swi_tdb_memo { double tjd, val, rate; AS_BOOL valid, rvalid; } tdb_np, tdb_np2;
   struct dt_memo dt_np;		/* see struct dt_memo */
   struct file_data fidat[SEI_NEPHFILES];
   struct gen_const gcdat;

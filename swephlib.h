@@ -181,6 +181,9 @@ extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd,
 /* */
 extern double swi_mod2PI(double x);
 extern double swi_tdb_minus_tt(swe_ctx *ctx, double tjd);
+#ifndef SWE_UPSTREAM_COMPAT
+extern double swi_tdb_minus_tt_rate(swe_ctx *ctx, double tjd);
+#endif
 
 /* evaluation of chebyshew series and derivative */
 extern double swi_echeb(double x, double *coef, int ncf);
