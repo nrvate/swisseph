@@ -3315,7 +3315,11 @@ double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
 
 double CALL_CONV swe_deltat_r(swe_ctx *ctx, double tjd)
 {
-  int32 iflag = swi_guess_ephe_flag(ctx);
+  int32 iflag;
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);	/* bug 103: the guess reads the configuration */
+#endif
+  iflag = swi_guess_ephe_flag(ctx);
   return swe_deltat_ex_r(ctx, tjd, iflag, NULL); /* with default tidal acceleration/default ephemeris */
 }
 
@@ -3910,12 +3914,27 @@ void CALL_CONV swe_set_delta_t_userdef(double dt)
 int32 swi_guess_ephe_flag(swe_ctx *ctx)
 {
   int32 iflag = SEFLG_SWIEPH;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 103: the guess followed whether THIS context had the JPL
+   * file open, so swe_deltat(), swe_get_ayanamsa() and
+   * swe_get_ayanamsa_ut() answered for the configuration on one thread
+   * and not on the next, and moved after a calculation: after
+   * swe_set_jpl_file("de200.eph") swe_deltat() in AD 1000 was 1305.37 s
+   * on the setting thread and 1474.79 s on a second one, which had not
+   * opened the file, and a JPLEPH calculation from the default file with
+   * no swe_set_jpl_file() moved it from 1474.79 to 1463.50. It follows
+   * the configuration now: JPL when a JPL file has been set and read
+   * (jpldenum_cfg, published with the path). */
+  if (ctx->jpldenum_cfg != 0)
+    iflag = SEFLG_JPLEPH;
+#else
   /* if jpl file is open, assume SEFLG_JPLEPH */
   if (ctx->jpl_file_is_open) {
     iflag = SEFLG_JPLEPH;
   } else {
     iflag = SEFLG_SWIEPH;
   }
+#endif
   return iflag;
 }
 

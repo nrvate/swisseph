@@ -213,8 +213,22 @@ void swi_invalidate_models(swe_ctx *ctx)
 AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 {
   AS_BOOL path_changed, geo_changed, model_changed, dt_changed, nut_changed;
+#ifndef SWE_UPSTREAM_COMPAT
+  AS_BOOL jpl_only;
+#endif
   AS_BOOL any;
 
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 103 (this fork's): a master that names no path -- nobody
+   * has set one -- against a context that set its own on first use from
+   * SE_EPHE_PATH was a path change, so after any setter the next
+   * calculation adopted "not set", closed every file, emptied every cache
+   * and set the implicit path again: 8 opens per setter and calculation,
+   * 800 in 100, 52.8 us each for 4.0. That path is what the master's
+   * "none" means here, and it is kept. */
+  if ((groups & SWI_CFG_PATH) && !c->ephe_path_is_set && ctx->ephe_path_implicit)
+    groups &= ~SWI_CFG_PATH;
+#endif
   path_changed  = (groups & SWI_CFG_PATH)
                   && (strcmp(ctx->ephepath, c->ephepath) != 0
                    || strcmp(ctx->jplfnam, c->jplfnam) != 0
@@ -264,8 +278,20 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
   if (!any)
     return FALSE;
 
+#ifndef SWE_UPSTREAM_COMPAT
+  jpl_only = path_changed
+             && strcmp(ctx->ephepath, c->ephepath) == 0
+             && ctx->ephe_path_is_set == c->ephe_path_is_set
+             && ctx->sweph_denum_moon == c->sweph_denum_moon;
+#endif
   /* --- copy the values in, group by group ---------------------------- */
   if (groups & SWI_CFG_PATH) {
+#ifndef SWE_UPSTREAM_COMPAT
+    if (path_changed) {	/* bug 103: the adopted path is this one now */
+      ctx->ephe_path_live = TRUE;
+      ctx->ephe_path_implicit = FALSE;
+    }
+#endif
     memcpy(ctx->ephepath, c->ephepath, sizeof(ctx->ephepath));
     memcpy(ctx->jplfnam,  c->jplfnam,  sizeof(ctx->jplfnam));
     ctx->ephe_path_is_set = c->ephe_path_is_set;
@@ -308,6 +334,24 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     ctx->do_interpolate_nut = c->do_interpolate_nut;
 
   /* --- invalidate what that made stale ------------------------------ */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 103: only the JPL file's name or DE number moved (another thread's
+   * swe_set_jpl_file()): the Swiss files, the star catalogue and the memos
+   * are still this path's, so only the JPL file goes. Closing them all
+   * reopened 2 files on a thread computing nothing from JPL. */
+  if (path_changed && jpl_only) {
+    if (ctx->jpl_file_is_open) {
+      swi_close_jpl_file(ctx);
+      ctx->jpl_file_is_open = FALSE;
+    }
+    ctx->jpldenum = 0;
+    ctx->topd.teval = SWI_TJD_NEVER;	/* the DE number frames the site (bug 92) */
+    if (!ctx->is_tid_acc_manual) {
+      int32 denumret;
+      swi_get_tid_acc(ctx, 0, swi_guess_ephe_flag(ctx), 0, &denumret, &ctx->tid_acc, NULL);
+    }
+  } else
+#endif
   if (path_changed) {
     /* This thread's own file handles only. Another thread's fidat[] is
      * its own business -- these are per-thread FILE*, not shared. */

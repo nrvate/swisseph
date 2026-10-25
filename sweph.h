@@ -918,6 +918,10 @@ struct epsilon {
  *     swe_get_tid_acc() did not initialise (0 as the first call), so it
  *     read 0.136 off the value the next delta t uses (UPSTREAM-BUGS 101,
  *     G100)
+ *   - swe_deltat() and swe_get_ayanamsa() guessed their ephemeris from the
+ *     files this thread had open (169.4 s of delta t in AD 1000 on a second
+ *     thread), and a same path, a same JPL file and an ephemeris switch
+ *     closed and reopened every file (UPSTREAM-BUGS 103, G102)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -1560,6 +1564,11 @@ struct swe_ctx {
   int32     cfg_local;     /* groups this context set itself and now owns  */
   AS_BOOL   cfg_applying;  /* re-entrancy guard while a setter is applying */
   AS_BOOL ephe_path_is_set;
+  /* bug 103: the path was set by first use, not by a caller (implicit), and
+   * the files and caches it fed are still those of that path (live: not
+   * since swe_close()). */
+  AS_BOOL ephe_path_implicit;
+  AS_BOOL ephe_path_live;
   /* May a calculation quietly finish on a weaker ephemeris than the caller
    * asked for? FALSE by default in this fork -- see swe_set_ephe_fallback().
    *
@@ -1762,6 +1771,9 @@ extern void swi_hel_forget(swe_ctx *ctx);
  * (sweph.c), and close the star file: the catalogue is the path's
  * (UPSTREAM-BUGS 92). Called where swi_hel_forget() is. */
 extern void swi_fixstar_forget(swe_ctx *ctx);
+/* The path first use sets when none has been, local and marked implicit
+ * (UPSTREAM-BUGS 103). */
+extern void swi_set_ephe_path_implicit(swe_ctx *ctx);
 #endif
 
 /* Shared configuration layer. Included here, after struct sid_data and

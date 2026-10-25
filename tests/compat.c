@@ -25,6 +25,7 @@
 #include <math.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <pthread.h>
 #include "swephexp.h"
 
 #ifdef EXPECT_COMPAT
@@ -838,6 +839,33 @@ static double tid_auto_get_off(void)
   g2 = swe_get_tid_acc();
   swe_close();
   return fabs(g1 - g2);
+}
+
+/* swe_deltat() in AD 1000 on a second thread after swe_set_jpl_file(
+ * "de200.eph") on the first, against the first's, s. Upstream's guess
+ * follows whether the thread has the file open: 1474.79 for 1305.37,
+ * 169.4 s (UPSTREAM-BUGS 103). */
+static double dt_thread_val;
+static void *dt_thread(void *arg)
+{
+  (void) arg;
+  dt_thread_val = swe_deltat(2086302.5);
+  return NULL;
+}
+static double dt_guess_thread_off(void)
+{
+  pthread_t th;
+  double d0;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  d0 = swe_deltat(2086302.5);
+  dt_thread_val = 0;
+  if (pthread_create(&th, NULL, dt_thread, NULL) != 0)
+    return -1;
+  pthread_join(th, NULL);
+  swe_close();
+  return fabs(dt_thread_val - d0) * 86400;
 }
 
 /* Mars's heliocentric osculating ascending node at tjd = 0 against tjd =
@@ -2056,7 +2084,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2101,6 +2129,7 @@ int main(int argc, char **argv)
   tidpath = tid_acc_path_off();
   modpath = models_path_off();
   tidget = tid_auto_get_off();
+  dtthr = dt_guess_thread_off();
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
   apsrate = planet_apsis_rate_off();
@@ -2447,6 +2476,14 @@ int main(int argc, char **argv)
   else {
     printf("  tidal acc. automatic   %.2e FAIL: expected %s\n",
            tidget, WANT_DEFECT ? "> 0.1" : "< 1e-12");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (dtthr > 1) : (dtthr >= 0 && dtthr < 1e-9))
+    printf("  delta t, other thread  %.2e s OK\n", dtthr);
+  else {
+    printf("  delta t, other thread  %.2e s FAIL: expected %s\n",
+           dtthr, WANT_DEFECT ? "> 1" : "< 1e-9");
     bad++;
   }
 

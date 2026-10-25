@@ -135,6 +135,7 @@ worst were in code that had never executed even once.
 | 100 | A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read: NaN fresh, the last read's Moon warm (this fork's) | Correctness | `sweph.c` |
 | 95 | The Moshier Moon's velocity is a difference of the series, and the osculating apogee's eccentricity is sqrt(1 - p / a): the osculating apogee and perigee jitter | Correctness | `swemmoon.c`, `sweph.c`, `sweph.h` |
 | 104 | A refused Swiss file empties the constants of every file left open, so the next calls fail on healthy files; the path setter crashes on a refused moon file (the crash this fork's) | Correctness / Memory | `sweph.c` |
+| 103 | Files closed and reopened when nothing changed (the implicit `SE_EPHE_PATH` path after any setter, the same path or JPL file again, an ephemeris switch, another thread's JPL file), and `swe_deltat()`'s ephemeris guessed from the files this thread has open (partly this fork's) | Correctness, performance | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h` |
 
 ---
 
@@ -6053,6 +6054,97 @@ upstream build 521 ((c) 201; (d) passes there, its fix in both builds).
 G24 `refused_file_off`: the Sun 25 days after the Ceres that met the
 misnamed seas_06, against alone, 0 shipped, 1e9 (an error) compat and
 before the fix. G24, G62, G83 and G88 pass; G99 also under ASan and UBSan.
+
+## 103. Files closed and reopened when nothing changed, and `swe_deltat()`'s ephemeris guessed from the files this thread has open
+
+**Severity: Correctness (returned values: 169.4 s of delta t in AD 1000, 7.5e-8 deg of ayanamsa) and performance (up to 13 times slower)**
+**Where:** `swephlib.c`: `swi_guess_ephe_flag()`, `swe_deltat_r()`; `sweph.c`: `swe_get_ayanamsa_r()`, `swe_get_ayanamsa_ut_r()`, `swe_set_ephe_path_r()`, `ephe_path_resolve()`, `swi_set_ephe_path_implicit()`, `swe_set_jpl_file_r()`, `ephe_switch_forget()` (the ephemeris switch in `swecalc()`, `swe_calc_orbel` and the two fixed-star calculations), `ctx_release()`; `sweconfig.c`: `swi_config_apply()`; `sweph.h`: `ephe_path_implicit`, `ephe_path_live`
+
+**The guess.** `swe_deltat()`, `swe_get_ayanamsa()` and
+`swe_get_ayanamsa_ut()` take no ephemeris flag and guess one:
+`swi_guess_ephe_flag()` said JPL when this context had the JPL file open.
+So after `swe_set_jpl_file("de200.eph")`, `swe_deltat()` in AD 1000 was
+1305.37 s on the setting thread and 1474.79 s on a second one, which had
+not opened the file (the ayanamsa 7.5e-8 deg apart in AD 1000; upstream's
+second thread, sharing no configuration, 1463.50 s); and after a path
+change and a JPLEPH calculation, which reopened the file by its kept name,
+1305.37 for the 1474.79 just before it. The guess also ran before the
+context had synced, so a second thread's first call took the stale
+configuration. Upstream's in part.
+
+**The churn.** Measured in `fopen()` calls over 100 rounds after a warm-up
+(G102 interposes `fopen()` and counts per thread):
+
+| Round | Before | After |
+|---|---|---|
+| any setter + a calculation, files named by `SE_EPHE_PATH` | 794 | 0 |
+| `swe_set_ephe_path(same)` + a calculation | 398 | 0 |
+| `swe_set_jpl_file(same)` + a JPL calculation | 299 | 0 |
+| `swe_set_ephe_path(same)` + `swe_fixstar2()` | 300 | 0 |
+| Swiss / de200 / Moshier alternating | 101 | 0 |
+| a second thread computing Swiss while the first sets the de200 file | 2 | 0 |
+| a real path change, alternating two directories (must reopen) | 398 | 396 |
+
+- With the files named by `SE_EPHE_PATH`, the first calculation sets the
+  path itself, locally (it publishes nothing), and the shared master
+  names no path. Any setter's publish then made the next sync adopt "no
+  path": `path_changed`, every file closed, every cache emptied, and the
+  next calculation set the implicit path again. A setter and a Moon cost
+  52.8 us a round for 4.0 with an explicit path. This fork's; it was how
+  entries 92, 98 and 101 lost their settings.
+- `swe_set_ephe_path()` with the path the context already holds closed
+  every file and cache and reopened the moon file for its header;
+  `swe_set_jpl_file()` with the name already open closed every Swiss file
+  too; a fixed star after either reread the whole catalogue.
+- Every switch of ephemeris between calculations (`last_epheflag`) closed
+  every ephemeris file and the JPL file and freed every planet's file data:
+  alternating Swiss and de200 on Mars, 3000 opens in 2000 requests, 35.6
+  us each for 6.7.
+- A thread adopting another thread's `swe_set_jpl_file()` closed its
+  Swiss files and its star catalogue, though only the JPL name moved.
+
+**Fix, as done here** (behind `#ifndef SWE_UPSTREAM_COMPAT`):
+
+- The guess follows the configuration: JPL when a JPL file has been set
+  and read (`jpldenum_cfg`, published with the path); the three functions
+  initialise and sync before guessing.
+- The implicit path is set through `swi_set_ephe_path_implicit()`, which
+  marks it; a sync against a master that names no path keeps a marked
+  path (that is what "no path" means for it).
+- `swe_set_ephe_path()` with the path the context holds, live (set or
+  adopted, not since `swe_close()`), keeps its files and caches and only
+  resolves an automatic tidal acceleration again; `swe_set_jpl_file()`
+  with the name open and read does nothing but publish. Chosen: a caller
+  who rewrote a file on disk and wants it read again calls `swe_close()`
+  first, which releases everything, as the manual has it before a new
+  `swe_set_ephe_path()`. A same-path call no longer rereads
+  `seleapsec.txt`, `swe_deltat.txt`, `seorbel.txt` or `sefstars.txt`.
+- An ephemeris switch forgets every position (each body's last result,
+  the save areas, the nodes, the Earth-Moon memo -- cleared, not only
+  their instants: a Moshier request reads the barycentric Sun's slot,
+  which it never fills, as zero, and left at a Swiss Sun it moved Mars
+  2.9e-9 deg, which G83 caught) and keeps the files and their constants.
+- A sync whose only path change is the JPL name or DE number closes the
+  JPL file only.
+
+A real change still closes and re-derives everything entries 92, 98 and
+101 need; G91, G97, G100, G82 and G83 pass, and the golden transcript is
+unchanged.
+
+Noticed, not fixed: with the files named by `SE_EPHE_PATH`, the first
+`swe_calc_ut()` takes its delta t before `swe_calc()` sets the implicit
+path, so it reads `swe_deltat.txt` along the compiled default path: with
+a `swe_deltat.txt` giving 70.0 s for 2000 in the `SE_EPHE_PATH`
+directory, the first Moon at 2000 Jan 1 12h was 223.323751 deg and the
+second 223.324610 (8.6e-4 deg); and the table is read twice.
+
+G102 `tests/keepopen.c`: the seven counted rounds, each answer against a
+fresh process within 1e-12, and the three guess cases: 10 pass. Before the
+fix 9 fail, the compat build 9, the upstream build (legacy-master) 8 (its
+setter round opens nothing, having no shared configuration; its second
+thread finds no files at all, 600 opens). G24 `dt_guess_thread_off`: 0 s
+shipped, 169.4 s compat. G24, G81, G82, G83, G91, G97, G100, G2 and the
+context gate pass; bench within noise.
 
 ## How these were found
 

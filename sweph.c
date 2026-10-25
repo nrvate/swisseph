@@ -244,6 +244,7 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
 static void free_planets(swe_ctx *ctx);
 #ifndef SWE_UPSTREAM_COMPAT
 static void planets_forget_instants(swe_ctx *ctx);
+static void ephe_switch_forget(swe_ctx *ctx);
 #endif
 static void ctx_release(swe_ctx *ctx);
 
@@ -423,6 +424,10 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_calc() or swe_calc_ut()");
   }
   if (ctx->last_epheflag != epheflag) {
+#ifndef SWE_UPSTREAM_COMPAT
+    ephe_switch_forget(ctx);	/* bug 103: the files stay open */
+    ctx->last_epheflag = epheflag;
+#else
 #ifdef SWE_UPSTREAM_COMPAT
     free_planets(ctx);
 #endif
@@ -447,6 +452,7 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
       swi_close_ephe_files(ctx, KEEP_DENUM);
       ctx->last_epheflag = epheflag;
     }
+#endif
   }
   /* high precision speed prevails fast speed */
   if ((iflag & SEFLG_SPEED3) && (iflag & SEFLG_SPEED))
@@ -828,12 +834,7 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
    * AU on a SEFLG_TRUEPOS position, its velocity 2.4e-3 deg/day on the
    * speed of an orbit with a = 0.137 AU. */
   if (ctx->last_epheflag != epheflag) {
-    free_planets(ctx);
-    if (ctx->jpl_file_is_open) {
-      swi_close_jpl_file(ctx);
-      ctx->jpl_file_is_open = FALSE;
-    }
-    swi_close_ephe_files(ctx, KEEP_DENUM);
+    ephe_switch_forget(ctx);	/* bug 103: the files stay open */
     ctx->last_epheflag = epheflag;
   }
 #endif
@@ -990,7 +991,11 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     return ERR;
   }
   if (epheflag != SEFLG_MOSEPH && !ctx->ephe_path_is_set && !ctx->jpl_file_is_open)
+#ifndef SWE_UPSTREAM_COMPAT
+    swi_set_ephe_path_implicit(ctx);	/* bug 103 */
+#else
     SWI_CFG_LOCAL(ctx, swe_set_ephe_path_r(ctx, NULL));
+#endif
   if ((iflag & SEFLG_SIDEREAL) && !ctx->ayana_is_set)
     SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
   /****************************************** 
@@ -1557,6 +1562,35 @@ static void planets_forget_instants(swe_ctx *ctx)
     ctx->nddat[i].teval = SWI_TJD_NEVER;
 }
 
+/* Upstream bug 103: a request on another ephemeris than the last closed
+ * every ephemeris file, the JPL file with them, and freed every planet's
+ * file data, so alternating Swiss and de200 reopened 1.5 files a request
+ * (3000 opens in 2000 Mars, 35.6 us each for 6.7). The files are those of
+ * the path, whatever ephemeris is asked for, and every position cache is
+ * keyed on the ephemeris that filled it (entries 84, 89); the positions
+ * are forgotten, as before, and the files and their constants kept. */
+static void ephe_switch_forget(swe_ctx *ctx)
+{
+  int i;
+  /* free_planets() less the files' data: each body's last result goes,
+   * its constants and segment stay. The result has to be cleared, not only
+   * its instant: a Moshier request reads the barycentric Sun's slot, which
+   * it never fills, as zero; left at the Swiss Sun it moved Mars 2.9e-9
+   * deg (G83). */
+  for (i = 0; i < SEI_NPLANETS; i++) {
+    ctx->pldat[i].iephe = 0;
+    memset((void *) ctx->pldat[i].x, 0, sizeof(ctx->pldat[i].x));
+    memset((void *) ctx->pldat[i].xreturn, 0, sizeof(ctx->pldat[i].xreturn));
+  }
+  memset((void *) &ctx->earth_moon, 0, sizeof(ctx->earth_moon));
+  for (i = 0; i <= SE_NPLANETS; i++)
+    memset((void *) &ctx->savedat[i], 0, sizeof(struct save_positions));
+  for (i = 0; i < SEI_NNODE_ETC; i++)
+    memset((void *) &ctx->nddat[i], 0, sizeof(struct plan_data));
+  planets_forget_instants(ctx);
+  swi_force_app_pos_etc(ctx);
+}
+
 /* the same for the angles (bug 67 began it with ctx->nut) */
 static void angles_forget_instants(swe_ctx *ctx)
 {
@@ -1776,7 +1810,7 @@ static void fixstar_first_use(swe_ctx *ctx)
 {
   swi_init_swed_if_start(ctx);
   if (!ctx->ephe_path_is_set && !ctx->jpl_file_is_open)
-    SWI_CFG_LOCAL(ctx, swe_set_ephe_path_r(ctx, NULL));
+    swi_set_ephe_path_implicit(ctx);	/* bug 103 */
 }
 #endif
 
@@ -1883,6 +1917,7 @@ static void ctx_release(swe_ctx *ctx)
   angles_forget_instants(ctx);	/* Upstream bugs 67, 71 */
   swi_hel_forget(ctx);		/* Upstream bug 82 */
   swi_fixstar_forget(ctx);	/* Upstream bug 92 */
+  ctx->ephe_path_live = FALSE;	/* bug 103: the next path is a real one */
 #endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
@@ -2017,12 +2052,66 @@ void CALL_CONV swe_close(void)
  * won't return planet positions previously computed from other
  * ephemerides
  */
+/* The directory list swe_set_ephe_path() adopts for `path`: SE_EPHE_PATH
+ * if set, else `path`, else the compiled default, ending in DIR_GLUE. */
+static void ephe_path_resolve(const char *path, char *s)
+{
+  int i;
+  char *sp;
+  if ((sp = getenv("SE_EPHE_PATH")) != NULL
+    && strlen(sp) != 0
+    && strlen(sp) <= AS_MAXCH-1-13) {
+    snprintf(s, AS_MAXCH, "%s", sp);
+  } else if (path == NULL || *path == '\0') {
+    snprintf(s, AS_MAXCH, "%s", SE_EPHE_PATH);
+  } else if (strlen(path) <= AS_MAXCH-1-13) {
+    snprintf(s, AS_MAXCH, "%s", path);
+  } else {
+    snprintf(s, AS_MAXCH, "%s", SE_EPHE_PATH);
+  }
+  i = (int) strlen(s);
+  if (*(s + i - 1) != *DIR_GLUE && *s != '\0')
+    strcat(s, DIR_GLUE);
+}
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* The path a calculation or a star lookup sets on first use when none has
+ * been: the files SE_EPHE_PATH (or the compiled default) names. Local --
+ * computing publishes nothing -- and marked as implicit, so that a sync
+ * against a master that names no path keeps it (bug 103). */
+void swi_set_ephe_path_implicit(swe_ctx *ctx)
+{
+  SWI_CFG_LOCAL(ctx, swe_set_ephe_path_r(ctx, NULL));
+  ctx->ephe_path_implicit = TRUE;
+}
+#endif
+
 void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
 {
   AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
-  int i;
   char s[AS_MAXCH];
-  char *sp;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 103: the same path again closed every file, emptied every
+   * cache and reopened the moon file for its header: 4 opens a call, 398
+   * in 100 calls each followed by a Moon. A path the context already holds,
+   * live (not since swe_close()), is kept now: its files stay open and its
+   * caches full. An automatic tidal acceleration is resolved again, as the
+   * moon file's header would give it. A caller who rewrote a file on disk
+   * and wants it read again calls swe_close() first -- which releases
+   * everything -- as the manual has it before a new swe_set_ephe_path(). */
+  ephe_path_resolve(path, s);
+  if (ctx->swed_is_initialised && ctx->ephe_path_live && ctx->ephe_path_is_set
+      && strcmp(ctx->ephepath, s) == 0) {
+    ctx->ephe_path_implicit = FALSE;
+    if (!ctx->is_tid_acc_manual) {
+      int32 denumret;
+      swi_get_tid_acc(ctx, 0, swi_guess_ephe_flag(ctx), 0, &denumret, &ctx->tid_acc, NULL);
+    }
+    swi_config_end_apply(ctx, swi_cfg_was);
+    swi_config_publish(ctx, SWI_CFG_PATH);
+    return;
+  }
+#endif
   /* The path is changing: the next open may find a different generation of
    * files, so their DE numbers go with them. */
   swi_close_keep_topo_etc(ctx, FORGET_DENUM);
@@ -2039,20 +2128,7 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
    * default rather than silently truncated. They do not bound the file name
    * -- swi_fopen() checks that itself, per path element. snprintf here only
    * makes the copy structurally safe. */
-  if ((sp = getenv("SE_EPHE_PATH")) != NULL
-    && strlen(sp) != 0
-    && strlen(sp) <= AS_MAXCH-1-13) {
-    snprintf(s, AS_MAXCH, "%s", sp);
-  } else if (path == NULL || *path == '\0') {
-    snprintf(s, AS_MAXCH, "%s", SE_EPHE_PATH);
-  } else if (strlen(path) <= AS_MAXCH-1-13) {
-    snprintf(s, AS_MAXCH, "%s", path);
-  } else {
-    snprintf(s, AS_MAXCH, "%s", SE_EPHE_PATH);
-  }
-  i = (int) strlen(s);
-  if (*(s + i - 1) != *DIR_GLUE && *s != '\0')
-    strcat(s, DIR_GLUE);
+  ephe_path_resolve(path, s);
   snprintf(ctx->ephepath, AS_MAXCH, "%s", s);
 //swe_set_interpolate_nut(TRUE);
   /* Open the lunar ephemeris file for J2000 and read its header, to learn
@@ -2112,6 +2188,10 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
     }
   }
   swi_trace_unlock();
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->ephe_path_live = TRUE;	/* bug 103 */
+  ctx->ephe_path_implicit = FALSE;
 #endif
   swi_config_end_apply(ctx, swi_cfg_was);
   swi_config_publish(ctx, SWI_CFG_PATH);
@@ -2352,6 +2432,22 @@ void CALL_CONV swe_set_jpl_file_r(swe_ctx *ctx, const char *fname)
   char *sp, s[AS_MAXCH];
   int retc;
   double ss[3];
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 103: the JPL file already open under this name, read as
+   * set (jpldenum_cfg), was closed with every Swiss file and cache and
+   * opened again: 3 opens a call, 299 in 100 calls each followed by a JPL
+   * Moon. It is kept now. Another name, or one not open, is a real change. */
+  {
+    const char *nm = strrchr(fname, (int) *DIR_GLUE);
+    nm = (nm == NULL) ? fname : nm + 1;
+    if (ctx->swed_is_initialised && ctx->jpl_file_is_open && ctx->jpldenum_cfg != 0
+        && strlen(nm) < AS_MAXCH && strcmp(ctx->jplfnam, nm) == 0) {
+      swi_config_end_apply(ctx, swi_cfg_was);
+      swi_config_publish(ctx, SWI_CFG_PATH);
+      return;
+    }
+  }
+#endif
   /* The ephemeris path is unchanged, so the same .se1 files come back. */
   swi_close_keep_topo_etc(ctx, KEEP_DENUM);
   swi_init_swed_if_start(ctx);
@@ -4734,7 +4830,11 @@ int32 CALL_CONV swe_get_ayanamsa_ex_ut(double tjd_ut, int32 iflag, double *daya,
 double CALL_CONV swe_get_ayanamsa_r(swe_ctx *ctx, double tjd_et)
 {
   double daya;
-  int32 iflag = swi_guess_ephe_flag(ctx);
+  int32 iflag;
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);	/* bug 103: the guess reads the configuration */
+#endif
+  iflag = swi_guess_ephe_flag(ctx);
   // swi... function never includes nutation
   swi_get_ayanamsa_ex(ctx, tjd_et, iflag, &daya, NULL);
   return daya;
@@ -4750,7 +4850,11 @@ double CALL_CONV swe_get_ayanamsa(double tjd_et)
 double CALL_CONV swe_get_ayanamsa_ut_r(swe_ctx *ctx, double tjd_ut)
 {
   double daya;
-  int32 iflag = swi_guess_ephe_flag(ctx);
+  int32 iflag;
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);	/* bug 103: the guess reads the configuration */
+#endif
+  iflag = swi_guess_ephe_flag(ctx);
   swi_get_ayanamsa_ex(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL), 0, &daya, NULL);
   return daya;
 }
@@ -9920,6 +10024,10 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_fixstar() or swe_fixstar_ut()");
   }
   if (ctx->last_epheflag != epheflag) {
+#ifndef SWE_UPSTREAM_COMPAT
+    ephe_switch_forget(ctx);	/* bug 103 */
+    ctx->last_epheflag = epheflag;
+#else
     free_planets(ctx);
     /* close and free ephemeris files */
     if (ctx->jpl_file_is_open) {
@@ -9928,6 +10036,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     }
     swi_close_ephe_files(ctx, KEEP_DENUM);
     ctx->last_epheflag = epheflag;
+#endif
   }
   /* high precision speed prevails fast speed */
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
@@ -11472,6 +11581,10 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_fixstar() or swe_fixstar_ut()");
   }
   if (ctx->last_epheflag != epheflag) {
+#ifndef SWE_UPSTREAM_COMPAT
+    ephe_switch_forget(ctx);	/* bug 103 */
+    ctx->last_epheflag = epheflag;
+#else
     free_planets(ctx);
     /* close and free ephemeris files */
     if (ctx->jpl_file_is_open) {
@@ -11480,6 +11593,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     }
     swi_close_ephe_files(ctx, KEEP_DENUM);
     ctx->last_epheflag = epheflag;
+#endif
   }
   /* high precision speed prevails fast speed */
   /* JPL Horizons is only reproduced with SEFLG_JPLEPH */
