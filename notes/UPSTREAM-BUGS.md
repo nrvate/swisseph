@@ -57,6 +57,7 @@ worst were in code that had never executed even once.
 | 23 | A bad `seorbel.txt` field hangs `swe_calc()`, terms such as "T5" or ".0" are misread, a broken `sefstars.txt` is reported as "star not found" | Correctness / Robustness | `swemplan.c`, `sweph.c` |
 | 24 | Seven house defects: Placidus and Gauquelin cusps not converged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files, Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the speed of a cusp on an equinox point | Correctness | `swehouse.c` |
 | 25 | A setting made before the first calculation is lost; the first heliacal call after a setter fails | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c` |
+| 26 | `swe_set_ephe_fallback()` is never seen by another thread or a new context | Correctness | `sweconfig.c`, `sweph.c` |
 
 ---
 
@@ -1499,6 +1500,33 @@ context: 54 scenarios pass, 9 failed before.
 Not fixed here, upstream's too: a manual tidal acceleration is reset to
 automatic by every path change, including the implicit one at the first
 calculation when the files are named by `SE_EPHE_PATH`.
+
+## 26. `swe_set_ephe_fallback()` belongs to no configuration group, so another thread never sees it
+
+**Severity: Correctness (a Swiss request without its file refused where the setting allows Moshier, or answered from Moshier where it refuses)**
+**Where:** `sweph.c`, `swe_set_ephe_fallback()`, `swe_get_ephe_fallback()`, `swe_close()`; `sweconfig.c`
+
+The fork's own setting. Every other setter publishes its group to the
+shared configuration, which the other threads on the default context adopt
+at their next sync and a new context inherits; this one wrote the
+context's field and published nothing. With `SE_EPHE_FALLBACK` unset the
+main thread read 1 after `swe_set_ephe_fallback(1)` and a second thread 0,
+and the second thread's Swiss Mars at J2000 without `sepl_18.se1` returned
+-1 where the main thread's returned 4 (Moshier); with the variable set,
+`swe_set_ephe_fallback(0)` left the second thread on Moshier. A context made
+by `swe_ctx_new()` after the setting took the variable's value, and
+`swe_get_ephe_fallback()` as a thread's first call read the context before
+anything had started it: 0 with the variable set.
+
+**Fix, as done here:** the setting is the configuration group
+`SWI_CFG_FALLBACK`, captured, merged, adopted and inherited like the
+others, with no invalidation (the setter invalidates nothing). The master's
+default for it is the variable's, as a fresh context's is, so a setter of
+another group does not turn a thread strict. The getter initialises and
+syncs first. `swe_close()` keeps the context's ownership of the group, as
+it keeps the value. G35 `tests/fbshare.c`: 28 forked scenarios with a
+second thread and explicit contexts, the variable unset and set; 9 failed
+before.
 
 ## How these were found
 
