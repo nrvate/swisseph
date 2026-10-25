@@ -262,6 +262,7 @@ static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, double tdate, int32
 static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *serr);
 #ifndef SWE_UPSTREAM_COMPAT
 static void jpl_open_note_say(swe_ctx *ctx, char *serr);
+static void jpl_warn_keep(swe_ctx *ctx, int32 wg, char *serr);
 #endif
 static void free_planets(swe_ctx *ctx);
 #ifndef SWE_UPSTREAM_COMPAT
@@ -728,6 +729,7 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
       int m0, m2, m1, m3, side;
       AS_BOOL edge;
       char sb[AS_MAXCH];
+      int32 wg = ctx->jpl_warn_given;	/* bug 267 */
       if (serr != NULL)
         strcpy(sb, serr);
       r0 = speed3_read(ctx, tjd - dt, ipl, iplmoon, iflag, x0, serr, &m0);
@@ -737,8 +739,11 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
         sd->iflgsave = r2;
         side = swi_frame_step_side(ctx, tjd, dt, sd->iflgsave, SWI_FRAME_ALL);
       } else {
-        if (serr != NULL)
+        if (serr != NULL) {
           strcpy(serr, sb);
+          jpl_warn_keep(ctx, wg, serr);	/* bug 267: the JPL file's open warning kept */
+          strcpy(sb, serr);
+        }
         if ((sd->iflgsave = speed3_read(ctx, tjd, ipl, iplmoon, iflag, sd->xsaves, serr, &m1)) == ERR)
           goto return_error;
         side = speed3_same(r2, m2, sd->iflgsave, m1) ? 1 : speed3_same(r0, m0, sd->iflgsave, m1) ? -1 : 0;
@@ -3754,7 +3759,27 @@ static void jpl_open_note_say(swe_ctx *ctx, char *serr)
   if (serr != NULL) {
     strcpy(serr, ctx->jpl_open_note);
     *ctx->jpl_open_note = '\0';
+    ctx->jpl_warn_given++;	/* bug 267 */
   }
+}
+
+/* Upstream bug 267: a read dropped at a span's edge (bug 225's speed
+ * epochs, bug 249's SEFLG_SPEED3 places) had its serr put back as before
+ * it, and where that read opened the JPL file, the open's warning, which
+ * describes the configuration and is written once, went with it: with
+ * de200.eph as de406.eph and the default name, fresh, SEFLG_SPEED3 2^-16
+ * day before the file's end and the true node with SEFLG_SPEED 2^-10 day
+ * after its start answered serr "" where the call without the flag says
+ * "Error with JPL ephemeris file de431.eph: ... Defaulting to de406.eph".
+ * Now the serr put back after such a read, given the warning (wg the
+ * count before it), is the warning, as the open writes it; one owed and
+ * not yet said is said so. */
+static void jpl_warn_keep(swe_ctx *ctx, int32 wg, char *serr)
+{
+  if (serr == NULL || ctx->jpl_warn_given == wg)
+    return;
+  strcpy(serr, ctx->jpl_open_warn);
+  *ctx->jpl_open_note = '\0';
 }
 #endif
 
@@ -11055,6 +11080,7 @@ struct osc_span {
   int sl[5];		/* one-sided: the slots of k = 0, 1, 2, 3, 4 times in */
   AS_BOOL holdx;	/* bug 186's hold for the extra epochs' reach */
   char se[AS_MAXCH];	/* serr before a speed epoch's read */
+  int32 wg;		/* bug 267: the JPL open warning's count before it */
 };
 
 static void osc_span_init(struct osc_span *o, const double *off, const int *ord, int npt)
@@ -11070,17 +11096,18 @@ static void osc_span_init(struct osc_span *o, const double *off, const int *ord,
 }
 
 /* before the read of the k-th slot i: the serr to put back if it is skipped */
-static void osc_span_save(struct osc_span *o, int i, const char *serr)
+static void osc_span_save(swe_ctx *ctx, struct osc_span *o, int i, const char *serr)
 {
   if (i != 2 && serr != NULL)
     strcpy(o->se, serr);
+  o->wg = ctx->jpl_warn_given;
 }
 
 /* the read of the k-th slot i is past the span: 1 skip it (serr as before
  * the read), 0 not a speed epoch (tjd: the fallback as without the flag),
  * -1 an extra epoch past it too, which no span longer than 2^-4 day gives
  * (ERR, the read's message) */
-static int osc_span_out(struct osc_span *o, int k, int i, char *serr)
+static int osc_span_out(swe_ctx *ctx, struct osc_span *o, int k, int i, char *serr)
 {
   if (i == 2)
     return 0;
@@ -11089,6 +11116,7 @@ static int osc_span_out(struct osc_span *o, int k, int i, char *serr)
   o->out |= o->off[i] < 0 ? 1 : 2;
   if (serr != NULL)
     strcpy(serr, o->se);
+  jpl_warn_keep(ctx, o->wg, serr);	/* bug 267 */
   return 1;
 }
 
@@ -11344,7 +11372,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	i = osp.ord[k];
 	t = tjd + osp.off[i] * speed_intv;
 	rr[i] = osc_round_err(tjd, osp.off[i] * speed_intv, t);	/* bug 75 */
-	osc_span_save(&osp, i, serr);
+	osc_span_save(ctx, &osp, i, serr);
 #else
       for (k = kstart; k < npt; k++) {
 	i = ord[k];
@@ -11373,7 +11401,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
         }
 #ifndef SWE_UPSTREAM_COMPAT
 	/* bug 225: a speed epoch past the file's span */
-	if (retc == BEYOND_EPH_LIMITS && (j = osc_span_out(&osp, k, i, serr)) != 0) {
+	if (retc == BEYOND_EPH_LIMITS && (j = osc_span_out(ctx, &osp, k, i, serr)) != 0) {
 	  if (j < 0)
 	    return ERR;
 	  retc = OK;
@@ -11427,7 +11455,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	i = osp.ord[k];
 	t = tjd + osp.off[i] * speed_intv;
 	rr[i] = osc_round_err(tjd, osp.off[i] * speed_intv, t);	/* bug 75 */
-	osc_span_save(&osp, i, serr);
+	osc_span_save(ctx, &osp, i, serr);
 	tr[i] = t;		/* bug 250 */
 #else
       for (k = kstart; k < npt; k++) {
@@ -11450,7 +11478,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
         }
 #ifndef SWE_UPSTREAM_COMPAT
 	/* bug 225: a speed epoch past the Moon files' span */
-	if (retc == NOT_AVAILABLE && (j = osc_span_out(&osp, k, i, serr)) != 0) {
+	if (retc == NOT_AVAILABLE && (j = osc_span_out(ctx, &osp, k, i, serr)) != 0) {
 	  if (j < 0)
 	    return ERR;
 	  retc = OK;
@@ -11536,8 +11564,8 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	t = tjd + osp.off[i] * speed_intv;
 	rr[i] = osc_round_err(tjd, osp.off[i] * speed_intv, t);	/* bug 75 */
 	if (i != 2 && !(t >= MOSHLUEPH_START - 0.2 && t <= MOSHLUEPH_END + 0.2)) {
-	  osc_span_save(&osp, i, serr);
-	  if (osc_span_out(&osp, k, i, serr) < 0) {
+	  osc_span_save(ctx, &osp, i, serr);
+	  if (osc_span_out(ctx, &osp, k, i, serr) < 0) {
 	    if (serr != NULL)
 	      sprintf(serr, "jd %.8f: the Moon's speed epochs leave Moshier's range", tjd);
 	    return ERR;
@@ -14680,6 +14708,10 @@ static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, cha
 	if (strlen(serr2) + strlen(SE_FNAME_DFT2) < AS_MAXCH)
 	  strcat(serr2, SE_FNAME_DFT2);
         strcpy(serr, serr2);
+#ifndef SWE_UPSTREAM_COMPAT
+        strcpy(ctx->jpl_open_warn, serr2);	/* bug 267 */
+        ctx->jpl_warn_given++;
+#endif
       }
     }
   }

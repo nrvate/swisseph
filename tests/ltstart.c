@@ -1,8 +1,9 @@
 /* ltstart.c -- G171: within the light time after an ephemeris's start the
  * Moon (and an asteroid) answers whole from the ephemeris that answers the
  * instant it is seen at, as the fallback answers before the start, or is
- * refused under the strict setting; and SEFLG_SPEED answers where the
- * call without it does, its speed from reads on the instant's side.
+ * refused under the strict setting; SEFLG_SPEED answers where the call
+ * without it does, its speed from reads on the instant's side; and a read
+ * dropped at a span's edge keeps the JPL file's open warning.
  *
  * The defects. UPSTREAM-BUGS 264: the Moon is read at tjd and at the
  * light-time instant t = tjd - tau, and a read at t past the span of the
@@ -31,6 +32,14 @@
  * -1 for 4; Moshier's true node and osculating apogee within 2^-4 day
  * inside the Moon's margins (0.2 day past its range, bug 255), a speed
  * epoch past them, -1 for 4: bug 225's defect on Moshier.
+ * UPSTREAM-BUGS 267: a read dropped at a span's edge (bug 249's
+ * SEFLG_SPEED3 places, bug 225's speed epochs) had its serr put back, and
+ * where it opened the JPL file the open's warning went with it: with
+ * de200.eph as de406.eph under the default name, the Moon with
+ * SEFLG_SPEED3 2^-16 day before the file's end and the true node with
+ * SEFLG_SPEED 2^-10 day after its start serr "" where the call without the
+ * flag says "Error with JPL ephemeris file de431.eph: ... Defaulting to
+ * de406.eph".
  *
  * The check, the files linked in /tmp, de200.eph in EPHEDIR:
  *  (a) the Moon (and on de200.eph and sepl_18 the Sun, Mars and Pluto, on
@@ -66,12 +75,22 @@
  *      deg/day of one-sided differences inward of the places without the
  *      flag (five points 2^-8 day apart, the node's and apogee's nine 2^-4
  *      day apart); each edge's calls in one process as their pristine ones.
- * Measured: 840 rows pass, (b)'s speeds within 2.35e-9 deg/day of their
+ *  (c) with de200.eph as de406.eph, the files of 1200-2400 and the default
+ *      JPL name: the Moon, the Sun and Mars, geocentric and barycentric,
+ *      with SEFLG_SPEED3 2^-20, 2^-14 and 2^-12 day after the file's start
+ *      and before its end, the true node and the osculating apogee with
+ *      SEFLG_SPEED 2^-14, 2^-10, 2^-8 and 2^-6 day after its start and 2^-10
+ *      and 2^-6 before its end, swe_calc() and swe_calc_ut() (whose delta t
+ *      opens the file), both settings, each in a pristine process: the
+ *      flag, place and serr of the call without the flag in its own (102
+ *      of those carry the warning).
+ * Measured: 1033 rows pass, (b)'s speeds within 2.35e-9 deg/day of their
  * places' rate (the barycentric Sun's from the files, as inside; the
- * node's 6.6e-10, the apogee's 3.0e-9). Before the fix 391 fail ((a) 241:
- * de200.eph's start 122, of them 62 the asteroids', a segfault each with
- * SEFLG_SPEED, sepl_18's 60, semo_18's start 29, its end 30; (b) 150). The
- * upstream build fails 550.
+ * node's 6.6e-10, the apogee's 3.0e-9). Before the fixes 463 fail ((a)
+ * 241: de200.eph's start 122, of them 62 the asteroids', a segfault each
+ * with SEFLG_SPEED, sepl_18's 60, semo_18's start 29, its end 30; (b) 150;
+ * (c) 72, 58 with entries 264's and 265's fixes alone). The upstream build
+ * fails 596 ((c) 46).
  *
  * Run as
  *   ltstart EPHEDIR
@@ -93,12 +112,13 @@ static char DN12[] = "/tmp/ltstartn12-XXXXXX";	/* the same but semo_18 */
 static char DM24[] = "/tmp/ltstartm24-XXXXXX";	/* sepl_18, sepl_24, semo_18, seas_* */
 static char DN24[] = "/tmp/ltstartn24-XXXXXX";	/* the same but semo_18 */
 static char DNO[] = "/tmp/ltstartno-XXXXXX";	/* none */
-enum { D_FULL, D_18, D_M12, D_N12, D_M24, D_N24, D_NO };
+static char DJ[] = "/tmp/ltstartj-XXXXXX";	/* de200.eph as de406.eph, *_12, *_18 */
+enum { D_FULL, D_18, D_M12, D_N12, D_M24, D_N24, D_NO, D_J };
 
 static const char *dirof(int d)
 {
   return d == D_18 ? D18 : d == D_M12 ? DM12 : d == D_N12 ? DN12 : d == D_M24 ? DM24
-         : d == D_N24 ? DN24 : d == D_NO ? DNO : EPHE;
+         : d == D_N24 ? DN24 : d == D_NO ? DNO : d == D_J ? DJ : EPHE;
 }
 
 static const int32 FL[] = {0, SEFLG_TOPOCTR, SEFLG_HELCTR, SEFLG_BARYCTR, SEFLG_EQUATORIAL};
@@ -110,7 +130,7 @@ static const char *const FLSZ[] = {"geocentric", "topocentric", "heliocentric", 
 struct ans { int32 r; double x[6]; char serr[AS_MAXCH]; int ran; };
 #define MAXCALL 200
 struct many { struct ans a[MAXCALL]; int ran; };
-struct req { int ipl; int32 fl; double jd; };
+struct req { int ipl; int32 fl; double jd; int ut; };
 
 static int nbad, nrow;
 static double maxerr[3];	/* (b): the Suns', the node's, the apogee's */
@@ -118,7 +138,8 @@ static double maxerr[3];	/* (b): the Suns', the node's, the apogee's */
 static void setup(const char *dir, int fb)
 {
   swe_set_ephe_path(dir);
-  swe_set_jpl_file("de200.eph");
+  if (strcmp(dir, DJ) != 0)	/* there the default name, de431.eph, missing */
+    swe_set_jpl_file("de200.eph");
   swe_set_ephe_fallback(fb);
   swe_set_topo(8.55, 47.37, 400);
 }
@@ -126,7 +147,8 @@ static void setup(const char *dir, int fb)
 static void call(const struct req *q, struct ans *a)
 {
   memset(a, 0, sizeof *a);
-  a->r = swe_calc(q->jd, q->ipl, q->fl, a->x, a->serr);
+  a->r = q->ut ? swe_calc_ut(q->jd, q->ipl, q->fl, a->x, a->serr)
+              : swe_calc(q->jd, q->ipl, q->fl, a->x, a->serr);
   a->ran = 1;
 }
 
@@ -170,6 +192,7 @@ static int one(int dir, int fb, int ipl, int32 fl, double jd, struct ans *a)
   q.ipl = ipl;
   q.fl = fl;
   q.jd = jd;
+  q.ut = 0;
   if (run(dir, fb, &q, 1, &m) != 0)
     return -1;
   *a = m.a[0];
@@ -506,6 +529,7 @@ static void part_b(void)
               st[k].ipl = ipl;
               st[k].fl = fl;
               st[k].jd = jd + e->inward * k * h;
+              st[k].ut = 0;
             }
             if (run(e->dir, fb, st, npt, &pl) != 0) {
               report(sz, "the places without the flag gave no answer", &a);
@@ -571,6 +595,74 @@ static void part_b(void)
   }
 }
 
+/* (c): the JPL file's open warning, de200.eph as de406.eph under the
+ * default name: SEFLG_SPEED3 (bug 249's reads) and the true node's and
+ * osculating apogee's SEFLG_SPEED (bug 225's epochs) at the file's edges,
+ * swe_calc() and swe_calc_ut() (whose delta t opens the file, bug 165),
+ * each in a pristine process: the flag, place and serr of the call
+ * without the flag in its own */
+static void part_c(void)
+{
+  static const struct { const char *sz; int ipl; int32 fl, sfl; } CB[] = {
+    {"Moon", SE_MOON, 0, SEFLG_SPEED3}, {"Sun", SE_SUN, 0, SEFLG_SPEED3},
+    {"Mars", SE_MARS, 0, SEFLG_SPEED3}, {"Moon barycentric", SE_MOON, SEFLG_BARYCTR, SEFLG_SPEED3},
+    {"Sun barycentric", SE_SUN, SEFLG_BARYCTR, SEFLG_SPEED3},
+    {"Mars barycentric", SE_MARS, SEFLG_BARYCTR, SEFLG_SPEED3},
+    {"true node", SE_TRUE_NODE, 0, SEFLG_SPEED}, {"osc. apogee", SE_OSCU_APOG, 0, SEFLG_SPEED},
+  };
+  static const double OFF3[6] = {1.0 / 1048576, 1.0 / 16384, 1.0 / 4096,
+                                 -1.0 / 1048576, -1.0 / 65536, -1.0 / 4096};
+  static const double OFFN[6] = {1.0 / 16384, 1.0 / 1024, 1.0 / 256, 1.0 / 64,
+                                 -1.0 / 1024, -1.0 / 64};
+  static struct many pl, wf;
+  int fb, ut, ib, ko, r0 = nrow, b0 = nbad, warned = 0;
+  for (fb = 0; fb < 2; fb++)
+    for (ut = 0; ut < 2; ut++)
+      for (ib = 0; ib < (int) (sizeof CB / sizeof CB[0]); ib++)
+        for (ko = 0; ko < 6; ko++) {
+          double off = CB[ib].sfl == SEFLG_SPEED3 ? OFF3[ko] : OFFN[ko];
+          struct req q;
+          const struct ans *a = &wf.a[0], *z = &pl.a[0];
+          const char *why = NULL;
+          char sz[300];
+          q.ipl = CB[ib].ipl;
+          q.fl = SEFLG_JPLEPH | CB[ib].fl;
+          q.jd = (off > 0 ? 2305424.5 : 2513392.5) + off;
+          q.ut = ut;
+          snprintf(sz, sizeof sz, "de406.eph, %s, %s %s%s jd %.10f", fb ? "fallback" : "strict",
+                   CB[ib].sz, CB[ib].sfl == SEFLG_SPEED3 ? "SEFLG_SPEED3" : "SEFLG_SPEED",
+                   ut ? " UT" : "", q.jd);
+          nrow++;
+          if (run(D_J, fb, &q, 1, &pl) != 0) {
+            report(sz, "the call without the flag gave no answer", &pl.a[0]);
+            continue;
+          }
+          q.fl |= CB[ib].sfl;
+          if (run(D_J, fb, &q, 1, &wf) != 0) {
+            report(sz, "the process gave no answer", &wf.a[0]);
+            continue;
+          }
+          if (strstr(z->serr, "Defaulting to de406.eph") != NULL)
+            warned++;
+          if (a->r != (z->r < 0 ? z->r : (z->r | CB[ib].sfl)))
+            why = "flag not the one without the flag, with it";
+          else if (strcmp(a->serr, z->serr) != 0)
+            why = "serr not the one without the flag";
+          else if (z->r >= 0 && memcmp(a->x, z->x, 3 * sizeof(double)) != 0)
+            why = "place not the one without the flag";
+          if (why != NULL)
+            report(sz, why, a);
+        }
+  nrow++;
+  if (warned == 0) {
+    struct ans none;
+    memset(&none, 0, sizeof none);
+    report("de406.eph", "no call without the flag gave the open's warning", &none);
+  }
+  printf("  (c) de406.eph's open warning: %d rows (%d warned), %d failed\n", nrow - r0, warned,
+         nbad - b0);
+}
+
 static int link_set(char *dir, const char *const *f, int nf)
 {
   char src[PATH_MAX + 300], dst[PATH_MAX + 300];
@@ -609,21 +701,29 @@ int main(int argc, char **argv)
                                      "semo_18.se1"};
   static const char *const fm24[] = {"sepl_18.se1", "sepl_24.se1", "seas_18.se1", "seas_24.se1",
                                      "semo_18.se1"};
+  static const char *const fj[] = {"sepl_12.se1", "sepl_18.se1", "semo_12.se1", "semo_18.se1",
+                                   "seas_12.se1", "seas_18.se1"};
+  char src[PATH_MAX + 40], dst[PATH_MAX + 40];
   int ok;
   if (argc != 2 || realpath(argv[1], EPHE) == NULL) {
     fprintf(stderr, "usage: ltstart EPHEDIR\n");
     return 2;
   }
   ok = link_set(D18, f18, 3) == 0 && link_set(DM12, fm12, 5) == 0 && link_set(DN12, fm12, 4) == 0
-       && link_set(DM24, fm24, 5) == 0 && link_set(DN24, fm24, 4) == 0 && link_set(DNO, NULL, 0) == 0;
+       && link_set(DM24, fm24, 5) == 0 && link_set(DN24, fm24, 4) == 0 && link_set(DNO, NULL, 0) == 0
+       && link_set(DJ, fj, 6) == 0;
+  snprintf(src, sizeof src, "%s/de200.eph", EPHE);
+  snprintf(dst, sizeof dst, "%s/de406.eph", DJ);
+  ok = ok && symlink(src, dst) == 0;
   if (!ok) {
     printf("G171 FAIL: cannot build the directories in /tmp\n");
   } else {
     printf("G171: within the light time after a span's start the Moon answers whole from the\n"
-           "      ephemeris that answers its light-time instant, and SEFLG_SPEED answers where\n"
-           "      the call without it does\n");
+           "      ephemeris that answers its light-time instant, SEFLG_SPEED answers where the\n"
+           "      call without it does, and a read dropped at an edge keeps the JPL open warning\n");
     part_a();
     part_b();
+    part_c();
   }
   unlink_all(D18);
   unlink_all(DM12);
@@ -631,6 +731,7 @@ int main(int argc, char **argv)
   unlink_all(DM24);
   unlink_all(DN24);
   unlink_all(DNO);
+  unlink_all(DJ);
   if (!ok)
     return 1;
   printf("  rows %d, failed %d; (b)'s speeds within %.2e deg/day of their places' rate (the\n"

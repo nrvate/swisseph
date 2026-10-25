@@ -4636,6 +4636,61 @@ static double ast_lt_start_ret(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 267: de200.eph as de406.eph, the default JPL name
+ * (de431.eph) missing; the JPL Moon with SEFLG_SPEED3 2^-16 day before the
+ * file's end, on a fresh context, against the call without the flag on
+ * another: 1 serr the same, 0 not, -9 no warning to keep. The read at tjd
+ * - dt opened the file and was given its "Defaulting to de406.eph"
+ * warning, and bug 249 drops it (the one at tjd + dt past the end), serr
+ * put back; upstream's read past the end wrote "outside JPL eph. range"
+ * over it. The warning is the answer's now, 1. */
+static double jpl_warn_speed3_kept(void)
+{
+  static const char *const fl[] = {"sepl_18.se1", "semo_18.se1"};
+  char dir[] = "/tmp/compatjwXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 40], q[PATH_MAX + 40];
+  char s0[AS_MAXCH] = "", s3[AS_MAXCH] = "";
+  const double jd = 2513392.5 - 1.0 / 65536;
+  double x[6], r = -9;
+  int k, ok;
+  swe_ctx *c, *d;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL)
+    return -9;
+  snprintf(p, sizeof p, "%s/de200.eph", ephe);
+  snprintf(q, sizeof q, "%s/de406.eph", dir);
+  ok = symlink(p, q) == 0;
+  for (k = 0; ok && k < 2; k++) {
+    snprintf(p, sizeof p, "%s/%s", ephe, fl[k]);
+    snprintf(q, sizeof q, "%s/%s", dir, fl[k]);
+    ok = symlink(p, q) == 0;
+  }
+  c = swe_ctx_new();
+  d = swe_ctx_new();
+  if (ok && c != NULL && d != NULL) {
+    swe_set_ephe_path_r(c, dir);
+    swe_set_jpl_file_r(c, SE_FNAME_DFT);	/* not this process's de200.eph */
+    swe_set_ephe_fallback_r(c, 1);
+    swe_set_ephe_path_r(d, dir);
+    swe_set_jpl_file_r(d, SE_FNAME_DFT);
+    swe_set_ephe_fallback_r(d, 1);
+    if (swe_calc_r(c, jd, SE_MOON, SEFLG_JPLEPH, x, s0) >= 0
+        && strstr(s0, "Defaulting to de406.eph") != NULL)
+      r = (swe_calc_r(d, jd, SE_MOON, SEFLG_JPLEPH | SEFLG_SPEED3, x, s3) >= 0
+           && strcmp(s0, s3) == 0) ? 1 : 0;
+  }
+  if (c != NULL)
+    swe_ctx_free(c);
+  if (d != NULL)
+    swe_ctx_free(d);
+  for (k = 0; k < 2; k++) {
+    snprintf(q, sizeof q, "%s/%s", dir, fl[k]);
+    unlink(q);
+  }
+  snprintf(q, sizeof q, "%s/de406.eph", dir);
+  unlink(q);
+  rmdir(dir);
+  return r;
+}
+
 /* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
  * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
  * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
@@ -7409,7 +7464,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -7594,6 +7649,7 @@ int main(int argc, char **argv)
   moonltstart = moon_lt_start_ret();
   moshnodemargin = mosh_node_margin_ret();
   astltstart = ast_lt_start_ret();
+  jplwarn3 = jpl_warn_speed3_kept();
   sidtlrng = sidt_lterm_range_answered();
   fallmoonwin = fall_moon_window_off();
   topostarwin = topo_star_window_off();
@@ -9512,6 +9568,14 @@ int main(int argc, char **argv)
   else {
     printf("  JPL Chiron in de200's lt %.0f FAIL: expected %s\n",
            astltstart, WANT_DEFECT ? "1" : "4");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jplwarn3 == 0) : (jplwarn3 == 1))
+    printf("  de406 warning with SEFLG_SPEED3 at the end %.0f OK\n", jplwarn3);
+  else {
+    printf("  de406 warning with SEFLG_SPEED3 at the end %.0f FAIL: expected %s\n",
+           jplwarn3, WANT_DEFECT ? "0" : "1");
     bad++;
   }
 

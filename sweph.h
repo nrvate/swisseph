@@ -1800,6 +1800,11 @@ struct epsilon {
  *     light-time instant past a start, Moshier's true node and apogee
  *     reading speed epochs past its Moon's margins (UPSTREAM-BUGS 265,
  *     G171, G24)
+ *   - the JPL file's open warning (its fallback to de406.eph) lost with
+ *     the serr of a read dropped at a span's edge, SEFLG_SPEED3's place
+ *     or a true node's speed epoch: serr "" where the call without the
+ *     flag gives the warning (UPSTREAM-BUGS 267, G171, G24; the compat
+ *     build reads across, and the read past the span writes over it)
  *   - the houses of the ecliptic of t0 and the solar system plane
  *     returning in ascmc[2], and its speed, the auxiliary ARMC they are
  *     computed in: 3.90 deg off the ARMC on the solar system plane, 0.0043
@@ -2529,6 +2534,13 @@ struct swe_ctx {
    * no open, setter, close or adopted path or file -- so a delta t does not
    * try it again; the calculation still does, at each call, as upstream */
   AS_BOOL jpl_first_missed;
+  /* bug 267: the warning the open of the JPL file wrote last (its fallback
+   * to de406.eph), and a count of the times a calculation's serr was given
+   * it, by that open or as owed (bug 165): a read dropped at a span's edge
+   * that was given it hands it to the answer. Unused under
+   * SWE_UPSTREAM_COMPAT. */
+  char jpl_open_warn[AS_MAXCH];
+  int32 jpl_warn_given;
   int32 last_epheflag;
   AS_BOOL geopos_is_set;
   AS_BOOL ayana_is_set;

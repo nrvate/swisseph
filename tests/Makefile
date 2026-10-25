@@ -1727,10 +1727,12 @@ check-framefall: framefall
 # instant (or is refused, strict), where a read past the span went on with
 # zeros (JPL: the Sun's direction; an asteroid's Sun, and a segfault with
 # SEFLG_SPEED), refused the fallback, or mixed two Moons (UPSTREAM-BUGS
-# 264); and SEFLG_SPEED answers where the call without it does: the
+# 264); SEFLG_SPEED answers where the call without it does: the
 # barycentric Sun after a start, Moshier's Sun after its planets' start,
 # Moshier's true node and osculating apogee inside its Moon's margins, with
-# their speeds from reads on the instant's side (UPSTREAM-BUGS 265).
+# their speeds from reads on the instant's side (UPSTREAM-BUGS 265); and a
+# read dropped at a span's edge keeps the JPL file's open warning, the
+# de406.eph fallback's (UPSTREAM-BUGS 267).
 check-ltstart: ltstart
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./ltstart $(EPHE)
 

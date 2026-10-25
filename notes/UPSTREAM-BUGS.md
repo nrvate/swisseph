@@ -290,6 +290,7 @@ worst were in code that had never executed even once.
 | 259 | A topocentric star's aberration rate reads its site at tjd -+ 1e-5 day, of date and put into J2000 by the frame at its instant, across a step of the frame's models, on every ephemeris: with IAU 1976 under Vondrak within 1e-5 day of J2000 + 2 centuries Polaris's topocentric right ascension speed 8.33e-5 deg/day off its places' rate (3.41e-4 with the IERS 2010 sidereal time, 2.52e-4 at - 2), across SEFLG_JPLHOR_APPROX's 1962 step 9.49e-5 | Correctness | `sweph.c` |
 | 264 | Within its light time after an ephemeris's start the Moon's read at the light-time instant falls past the span and is not taken as a planet's: on de200.eph 1e-5 day after its start the JPL Moon 256.12 deg at 0.98 AU (the Sun's direction) for 159.82, flag 1, strict answering; the files of 1800-2400 alone refuse it with the fallback allowed; at semo_18's edges two Moons in one answer (2.7e-6 and 4.8e-4 deg); an asteroid's Sun read there overwritten, Chiron 0.0195 deg and Ceres 0.12 off under flag 1, a segfault with SEFLG_SPEED | Correctness (behaviour) | `sweph.c` |
 | 265 | SEFLG_SPEED refuses where the call without it answers: the barycentric Sun within its light time after de200.eph's and sepl_18's starts (-1 for 17921, 17922), Moshier's Sun after its planets' start - 0.3 day, Moshier's true node and osculating apogee within 2^-5 day inside its Moon's margins (-1 for 4) | Correctness (behaviour) | `sweph.c` |
+| 267 | A read dropped at a span's edge (entry 249's SEFLG_SPEED3 place, entry 225's speed epoch) takes the JPL file's open warning with it: with de200.eph as de406.eph under the default name, fresh, SEFLG_SPEED3 within 1e-4 day of the file's end and the true node with SEFLG_SPEED within 2^-6 day after its start answer serr "" where the call without the flag says "Error with JPL ephemeris file de431.eph: ... Defaulting to de406.eph" | Correctness (error reporting) | `sweph.c` |
 | 268 | The houses of the ecliptic of t0 and the solar system plane (`sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`; J2000, J1900, B1950 always) return in ascmc[2] the auxiliary ARMC they are computed in, armc - dvpx, where the manual gives the ARMC: at Zurich, 1800-2100, 0.0043 deg off on the ecliptic of 1900, 0.0085 J2000's, 3.90 the solar system plane, its speed 1.3e-7 to 2.7e-6 deg/day; given it, `swe_house_pos()` puts the sidereal cusps' places 1.4e-4 to 0.34 house off their numbers in P R C H X | Correctness | `swehouse.c` |
 | 269 | Sidereal whole signs on those planes are the auxiliary frame's signs moved by the frames' offset, not sidereal sign starts: 8.94 deg off on the ecliptic of 1900, 2.1-2.8 J1900, B1950 and J2000, 20.3 the solar system plane (cusp 1 against the sidereal Ascendant's sign), their speeds 6.7e-5 deg/day where they stand still; 'n' not taken as 'N', 0 Aries moved 2.80 to 25.3 deg | Correctness | `swehouse.c` |
 | 270 | `swe_house_pos()` in Sripati ('S') is Porphyry's position plus 0.5 cut by "if (hpos > 12) hpos = 1": all of house 12 and the first half of house 1 answer 1.0, tropically too (cusp 12 + 1e-4 of the house 1.000000 for 12.000003, house 12's middle 1 for 12.5) | Correctness | `swehouse.c` |
@@ -19632,6 +19633,82 @@ before 150 fail, the upstream build 150. G165 (entry 249) now counts no
 row SEFLG_SPEED's own (46 before). G24 `mosh_node_margin_ret`: the
 Moshier true node 2^-8 day inside 625000.3 with SEFLG_SPEED, 260
 shipped, -1 compat.
+
+## 267. A read dropped at a span's edge takes the JPL file's open warning with it: with de200.eph as de406.eph under the default name, fresh, SEFLG_SPEED3 2^-16 day before the file's end and the true node with SEFLG_SPEED 2^-10 day after its start answer serr "" where the call without the flag says "... Defaulting to de406.eph"
+
+**Severity: Correctness (error reporting: a configuration's warning lost by the flag and the instant)**
+**Where:** `sweph.c`: `swe_calc_r_body()` (SEFLG_SPEED3), `osc_span_save()`, `osc_span_out()`, `open_jpl_file()`, `jpl_open_note_say()`
+
+Entry 225's speed epochs and entry 249's SEFLG_SPEED3 places drop a read
+whose ephemeris is not the instant's, and put serr back as it was before
+the read. Where that read opened the JPL file, the open's warning went
+with it: with the default name (de431.eph) missing and de406.eph found,
+`open_jpl_file()` writes "Error with JPL ephemeris file de431.eph:
+SwissEph file 'de431.eph' not found in PATH '...'. Defaulting to
+de406.eph" into the opening call's serr and nowhere else, once (bug
+165's copy is owed only by an open from a delta t). The reads after it
+find the file open. Measured with de200.eph linked as de406.eph and the
+Swiss files, each call in a pristine process, at de200.eph's start and
+end -+ 2^-k day (k = 6..20), the Sun, the Moon, Mars, Pluto, the true
+node, the osculating apogee, the mean node and Chiron, geocentric,
+topocentric, heliocentric and barycentric, `swe_calc()` and
+`swe_calc_ut()`, both settings, against the call without a speed flag:
+184 answers at the start and 206 at the end with SEFLG_SPEED or
+SEFLG_SPEED3 whose serr is not that call's. Of them this entry's:
+SEFLG_SPEED3 within dt (1e-4 day) of the end, every body and frame, and
+of the start where the instant's own read is inside (the Moon 2^-14
+day after it, the barycentric Sun 2^-20 to 2^-14), the read at tjd -+
+dt the dropped one that opened the file; the true node's and apogee's
+SEFLG_SPEED within 2^-6 day after the start (bug 225's epoch before
+tjd). `swe_calc_ut()` alike: its delta t opens the file and owes the
+warning (bug 165), which the dropped read was given. The notes that
+describe the dropped instant are not this kind and stay dropped: the
+call without the flag does not give them ("outside JPL eph. range ...",
+" \ntrying Swiss Eph; ", "using Moshier eph. for moon", each written by
+every read that falls); at sepl_18's start with the files of 1800-2400
+alone (JPL and Swiss requests), semo_18's start without semo_12 and its
+end without semo_24 no SEFLG_SPEED or SEFLG_SPEED3 answer lost a note
+the call without the flag gives. Entry 244's approach (`sweph()` giving
+back the serr it had) does not fit: the dropped read is a whole
+`swecalc()` whose serr is rightly discarded; the warning has to outlive
+it.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`, the open
+keeps the warning it wrote (`ctx->jpl_open_warn`) and counts each time a
+calculation's serr is given it, by the open or as owed
+(`ctx->jpl_warn_given`, `jpl_open_note_say()`); where entry 249's edge
+path and entry 225's `osc_span_out()` put serr back after a dropped read,
+`jpl_warn_keep()` makes it the warning if the count moved during the
+read, as the open writes it (strcpy, so what comes after is appended or
+written over as in the call without the flag), and clears one still
+owed. With the fix 84 and 100 of the survey's answers still differ, none
+this entry's: the true node's and apogee's SEFLG_SPEED3 and Chiron's
+SEFLG_SPEED3, everywhere (below). The answers' flags and places do not
+change: the six-directory survey of entry 264 bit for bit, serr too. No
+cost: a counter read at entry 249's edge path and at each of entry
+225's speed epochs.
+- Not this entry's, noticed: `lunar_osc_elem()` empties serr at entry,
+  so the true node's and osculating apogee's SEFLG_SPEED3 lose the
+  warning anywhere (J2000: "" for the warning); an asteroid's
+  SEFLG_SPEED3 adds its "sun: " once per read ("sun: sun: sun: ...");
+  `swe_nod_aps()` makes one `swe_calc()` per point, each emptying serr,
+  so with SEFLG_SPEED, and the osculating method without it, the warning
+  is lost anywhere. All three upstream's, at every instant.
+
+G171 `tests/ltstart.c`, check (c): de200.eph as de406.eph with the files
+of 1200-2400 and the default JPL name; the Moon, the Sun and Mars,
+geocentric and barycentric, with SEFLG_SPEED3 2^-20, 2^-14 and 2^-12 day
+after the file's start and before its end; the true node and the
+osculating apogee with SEFLG_SPEED 2^-14, 2^-10, 2^-8 and 2^-6 day after
+its start and 2^-10 and 2^-6 before its end; `swe_calc()` and
+`swe_calc_ut()`, both settings, each in a pristine process against the
+call without the flag in its own (flag, place, serr): 193 rows, 102 of
+the calls without the flag carrying the warning, pass. Before the fix 58
+fail (72 on the tip before entries 264 and 265), the upstream build 46
+(its reads across write "outside JPL eph. range" over the warning). G24
+`jpl_warn_speed3_kept`: the JPL Moon with SEFLG_SPEED3 2^-16 day before
+de200.eph's end, serr the call's without the flag, 1 shipped, 0 compat.
+The gates of entry 264 pass.
 
 ## How these were found
 
