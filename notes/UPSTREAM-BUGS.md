@@ -150,6 +150,7 @@ worst were in code that had never executed even once.
 | 109 | Moshier's fictitious bodies, fixed stars and apparent light time stay heliocentric, and its heliocentric Moon's speed is off its positions | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 | 117 | `swe_calc()`'s mean node and mean apogee speeds divide by 0.001 a step that is not 0.001 | Correctness | `sweph.c` |
 | 121 | A sefstars.txt that failed to load is reread and reparsed by every later star call, a missing one searched for on every call | Performance / files | `sweph.c`, `sweph.h` |
+| 119 | A thread that adopts another thread's `swe_set_jpl_file()` keeps the old file's positions, and one that adopts another's `swe_set_ephe_path()` the old directory's segments, and answers from them (this fork's) | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h` |
 
 ---
 
@@ -7329,6 +7330,67 @@ upstream build all five, for bug 92 (it keeps the first path's catalogue,
 so the broken one is never read). G24 `star_load_kept`: after
 `swe_close()`, a failed load, then a repair in place: 0 (still refused)
 shipped, 1 (reread, answered) compat. G111, G91, G66 pass.
+
+## 119. A thread that adopts another thread's `swe_set_jpl_file()` keeps the old file's positions, and one that adopts another's `swe_set_ephe_path()` the old directory's segments (this fork's)
+
+**Severity: Correctness (a wrong answer with a success code, on the thread that follows the shared configuration: Mercury 5.8e-5 deg, Jupiter 3.4e-6 deg with the crafted files below; in general whatever the two files differ by)**
+**Where:** `sweconfig.c`: `swi_config_apply()`, its two branches for an adopted path group; `sweph.c`: `swi_adopted_files_forget()` (new)
+
+Found in the review of PR #33's file handling. A thread on the default
+context that has set no path of its own follows the master: when another
+thread sets a JPL file or a path, its next calculation adopts it in
+`swi_config_apply()`. The setting thread drops, in
+`swi_close_keep_topo_etc()`, every position and every file's data; the
+adopting thread did not.
+
+- A new JPL file on the same path (the `jpl_only` branch, bug 103) closed
+  the old JPL file and kept every position it had filled, and did not
+  reset `last_epheflag`, so nothing forgot them later either.
+  `jplplan()`'s Earth is cached on the instant and the ephemeris alone
+  (bug 84), so the adopting thread's next JPL call at that instant took
+  the old file's Earth. With de200 and de200x, a copy whose EMB
+  coefficients are scaled by 1 + 1e-5: Mercury at J2000 on the adopting
+  thread 271.8881245810 (de200's) for 271.8881823960, 5.78e-5 deg; the
+  Sun 1.01e-5 deg; at J2000 + 0.5, computed before as well, Mercury
+  5.24e-5.
+- A new path (the other branch) closed the Swiss files and set
+  `last_epheflag` to 0, and kept the bodies' constants and segments. The
+  next calculation's switch of ephemeris keeps those too since bug 103
+  (`ephe_switch_forget()`, the files being open there), and `read_const()`
+  frees a body's segment only when it has a reference ellipse. So Jupiter
+  to Pluto, Chiron and the main asteroids were read from the old
+  directory's segment, up to 4000 days of it, while the files reopened
+  from the new one: with a copy of sepl_18.se1 whose Jupiter segment at
+  J2000 has one packed coefficient moved, Jupiter at J2000 25.253056935371
+  for 25.253053515612 and a day later 25.295503129714 for 25.295499716142,
+  3.4e-6 deg; Mars, which has an ellipse, was right.
+
+Both are this fork's: the shared configuration is, and before bug 103 the
+next calculation's switch ran `free_planets()`. The compat build answers
+from the adopted files.
+
+**Fix, as done here:** an adopted file change drops what the setter drops
+on its own thread, through `swi_adopted_files_forget()`: with only the JPL
+file closed, the positions (`ephe_switch_forget()`: the Swiss files stay
+open, and their constants with them); with the Swiss files closed,
+`free_planets()`: the positions and the bodies' constants and segments.
+Neither opens or closes a file, so bug 103's no-change paths keep their 0
+opens (G102). Behind `SWE_UPSTREAM_COMPAT`'s `#ifndef`; there is no
+upstream code to restore under `#else`.
+
+G116 `tests/adoptfiles.c`: in forked processes, with de200x.eph and the
+crafted sepl_18.se1 built in /tmp directories of links, the main thread
+sets the path and file, a second thread computes, the main thread sets
+the crafted file or directory and computes, and the second thread
+computes again; its return, longitude, latitude, distance and speed must
+equal the main thread's within 1e-12, and the crafted file must move the
+answer by more than 1e-7 deg. Mercury and the Sun on JPL at J2000 and
+J2000 + 0.5, Jupiter on the Swiss files at J2000 and J2000 + 1, Saturn,
+whose segment was not moved, at both as controls: 8 pass; before the fix
+6 fail (the controls pass); the compat build passes 8. G24
+`adopt_jpl_off`, Mercury on the adopting thread against the setting
+thread's after de200 to de200x: 0 both ways, 5.78e-5 deg shipped before
+the fix. G102, G91, G83, G88, G2 and check-ctx pass.
 
 ## How these were found
 

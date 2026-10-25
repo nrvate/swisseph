@@ -2129,6 +2129,122 @@ static double moon_neighbour_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 119: a second thread follows the main thread's path and
+ * de200, computes Mercury on JPL at J2000, and the main thread then sets
+ * de200x.eph, de200 with every EMB coefficient scaled by 1 + 1e-5, in a
+ * directory of links; the second thread's Mercury again, against the main
+ * thread's, deg (1e9 if the file cannot be built, a call fails or the copy
+ * does not move Mercury by 1e-6). The shipped build kept the old file's
+ * Earth: 5.78e-5. The adoption shortcut that went wrong (bug 103) is this
+ * fork's, and under the switch the next calculation frees every body's
+ * data: 0 both ways. */
+static double adopt_t = 2451545.0;
+static double adopt_x[6];
+static int32 adopt_r;
+static pthread_barrier_t adopt_b1, adopt_b2;
+
+static void *adopt_worker(void *arg)
+{
+  char serr[256];
+  (void) arg;
+  swe_calc(adopt_t, SE_MERCURY, SEFLG_JPLEPH | SEFLG_SPEED, adopt_x, serr);
+  pthread_barrier_wait(&adopt_b1);
+  pthread_barrier_wait(&adopt_b2);
+  adopt_r = swe_calc(adopt_t, SE_MERCURY, SEFLG_JPLEPH | SEFLG_SPEED, adopt_x, serr);
+  return NULL;
+}
+
+static double adopt_jpl_off(void)
+{
+  char dir[] = "/tmp/compatajXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double r = 1e9, x[6], x0[6];
+  char serr[256];
+  struct dirent *e;
+  DIR *d;
+  FILE *f;
+  unsigned char *b = NULL;
+  long n = 0, rec, k;
+  int32 ipt[13][3], numde = 0, nc, j, m;
+  pthread_t th;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return 1e9;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.') {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  snprintf(p, sizeof p, "%s/de200.eph", ephe);
+  if ((f = fopen(p, "rb")) != NULL) {
+    fseek(f, 0, SEEK_END);
+    n = ftell(f);
+    rewind(f);
+    if ((b = malloc((size_t) n)) != NULL && fread(b, 1, (size_t) n, f) != (size_t) n) {
+      free(b);
+      b = NULL;
+    }
+    fclose(f);
+  }
+  if (b != NULL) {	/* the header: ss, ncon, au, emrat, ipt, numde, lpt */
+    memcpy(ipt, b + 2696, 36 * 4);
+    memcpy(&numde, b + 2840, 4);
+    memcpy(ipt[12], b + 2844, 12);
+  }
+  if (b != NULL && numde == 200) {
+    for (m = 0, j = 1; j < 13; j++)
+      if (ipt[j][0] > ipt[m][0])
+        m = j;
+    nc = ipt[m][0] - 1 + ipt[m][1] * ipt[m][2] * (m == 11 ? 2 : 3);
+    rec = (long) nc * 8;
+    for (k = 2; (k + 1) * rec <= n; k++)
+      for (j = 0; j < ipt[2][2] * 3; j++) {
+        double v;
+        long off = k * rec + (long) (ipt[2][0] - 1 + j * ipt[2][1]) * 8;
+        memcpy(&v, b + off, 8);
+        v *= 1 + 1e-5;
+        memcpy(b + off, &v, 8);
+      }
+    snprintf(q, sizeof q, "%s/de200x.eph", dir);
+    if ((f = fopen(q, "wb")) != NULL) {
+      if (fwrite(b, 1, (size_t) n, f) == (size_t) n && fclose(f) == 0) {
+        swe_close();
+        swe_set_ephe_path(dir);
+        swe_set_jpl_file("de200.eph");
+        swe_calc(adopt_t, SE_MERCURY, SEFLG_JPLEPH | SEFLG_SPEED, x0, serr);
+        pthread_barrier_init(&adopt_b1, NULL, 2);
+        pthread_barrier_init(&adopt_b2, NULL, 2);
+        if (pthread_create(&th, NULL, adopt_worker, NULL) == 0) {
+          pthread_barrier_wait(&adopt_b1);
+          swe_set_jpl_file("de200x.eph");
+          j = swe_calc(adopt_t, SE_MERCURY, SEFLG_JPLEPH | SEFLG_SPEED, x, serr);
+          pthread_barrier_wait(&adopt_b2);
+          pthread_join(th, NULL);
+          if (j >= 0 && adopt_r >= 0 && fabs(swe_difdeg2n(x[0], x0[0])) > 1e-6)
+            r = fabs(swe_difdeg2n(adopt_x[0], x[0]));
+        }
+        pthread_barrier_destroy(&adopt_b1);
+        pthread_barrier_destroy(&adopt_b2);
+      } else
+        fclose(f);
+    }
+  }
+  free(b);
+  swe_close();
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+  swe_set_ephe_path(EPHE);
+  return r;
+}
+
 /* UPSTREAM-BUGS 104: seas_06.se1 a link to seas_00.se1, which read_const()
  * refuses for its name; the Sun 25 days after a Ceres there that met it,
  * against the Sun alone, deg (1e9 if the warm call fails). Upstream's
@@ -2577,7 +2693,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2685,6 +2801,7 @@ int main(int argc, char **argv)
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   starkept = star_load_kept();
+  adoptjpl = adopt_jpl_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -3491,6 +3608,14 @@ int main(int argc, char **argv)
   else {
     printf("  failed star load kept  %.0f FAIL: expected %s\n",
            starkept, WANT_DEFECT ? "1 (reread)" : "0 (kept)");
+    bad++;
+  }
+
+  /* the same both ways: the shortcut it fixes is this fork's (see the function) */
+  if (adoptjpl == 0)
+    printf("  adopted JPL file       %.2e deg OK\n", adoptjpl);
+  else {
+    printf("  adopted JPL file       %.2e deg FAIL: expected 0\n", adoptjpl);
     bad++;
   }
 

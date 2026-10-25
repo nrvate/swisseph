@@ -1666,6 +1666,19 @@ static void ephe_switch_forget(swe_ctx *ctx)
   swi_force_app_pos_etc(ctx);
 }
 
+/* Upstream bug 119: what swi_config_apply() drops when it adopts another
+ * thread's files, as the setter drops it on its own thread: the positions,
+ * and with the Swiss files closed (a new path) their bodies' constants
+ * and segments too; with only the JPL file closed (a new JPL file) the
+ * positions alone, the Swiss files and their data being the path's. */
+void swi_adopted_files_forget(swe_ctx *ctx, AS_BOOL swiss_closed)
+{
+  if (swiss_closed)
+    free_planets(ctx);
+  else
+    ephe_switch_forget(ctx);
+}
+
 /* the same for the angles (bug 67 began it with ctx->nut) */
 static void angles_forget_instants(swe_ctx *ctx)
 {

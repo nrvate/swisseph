@@ -345,6 +345,13 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
       ctx->jpl_file_is_open = FALSE;
     }
     ctx->jpldenum = 0;
+    /* Upstream bug 119: the positions the old JPL file filled stayed, and
+     * jplplan()'s Earth, cached on the instant and the ephemeris alone,
+     * answered from it: after another thread's swe_set_jpl_file() from
+     * de200 to a copy with the EMB moved by 1e-5, Mercury at J2000 kept
+     * de200's 271.8881245810 for 271.8881823960 (5.8e-5 deg). Forgotten,
+     * as the setter forgets them on its own thread. */
+    swi_adopted_files_forget(ctx, FALSE);
     ctx->topd.teval = SWI_TJD_NEVER;	/* the DE number frames the site (bug 92) */
     if (!ctx->is_tid_acc_manual) {
       int32 denumret;
@@ -366,6 +373,14 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     swi_hel_forget(ctx);	/* a star's magnitude is the path's (bug 82) */
     swi_fixstar_forget(ctx);	/* and its catalogue, and its file (bug 92) */
     ctx->topd.teval = SWI_TJD_NEVER;	/* other files, another site (bug 92) */
+    /* Upstream bug 119: the files were closed and their bodies' constants
+     * and segments kept, which the next calculation's switch of ephemeris
+     * keeps too (bug 103), and read_const() frees a segment only for a
+     * body with a reference ellipse: Jupiter to Pluto, Chiron and the main
+     * asteroids were read from the old path's segment, up to 4000 days of
+     * it -- Jupiter at J2000 3.4e-6 deg off with a perturbed sepl_18.se1.
+     * They go with the files, as the setter's free_planets() drops them. */
+    swi_adopted_files_forget(ctx, TRUE);
     /* bug 101: an automatic value from the adopted path's DE numbers, as
      * the setting thread's swe_set_ephe_path() derived it */
     if (!ctx->is_tid_acc_manual) {

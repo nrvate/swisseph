@@ -1096,6 +1096,12 @@ struct epsilon {
  *     line 500), a missing one searched for on every call (two fopen());
  *     upstream also rereads a catalogue repaired in place
  *     (UPSTREAM-BUGS 121, G118)
+ *   - (nothing for UPSTREAM-BUGS 119: the thread that adopted another's
+ *     JPL file kept the old file's positions, and one that adopted another's
+ *     path the old directory's segments, through this fork's shortcuts of
+ *     bug 103; under the switch the next calculation frees every body's
+ *     data, as upstream's does, and answers from the adopted files: G24's
+ *     adopted-JPL case is 0 both ways; G116)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1864,6 +1870,10 @@ extern void swi_hel_forget(swe_ctx *ctx);
  * (sweph.c), and close the star file: the catalogue is the path's
  * (UPSTREAM-BUGS 92). Called where swi_hel_forget() is. */
 extern void swi_fixstar_forget(swe_ctx *ctx);
+/* Forget what files another thread's setter closed on adoption: the
+ * positions, and with swiss_closed the Swiss files' bodies' data too
+ * (sweph.c; UPSTREAM-BUGS 119). */
+extern void swi_adopted_files_forget(swe_ctx *ctx, AS_BOOL swiss_closed);
 /* The path first use sets when none has been, local and marked implicit
  * (UPSTREAM-BUGS 103). */
 extern void swi_set_ephe_path_implicit(swe_ctx *ctx);
