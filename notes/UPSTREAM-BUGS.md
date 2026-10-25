@@ -60,6 +60,7 @@ worst were in code that had never executed even once.
 | 26 | `swe_set_ephe_fallback()` is never seen by another thread or a new context | Correctness | `sweconfig.c`, `sweph.c` |
 | 27 | A call on the default context adopts another thread's setter half-way through: its files closed under it, two configurations in one answer | Crash / Correctness | `sweconfig.c`, every public calculation |
 | 28 | `swe_calc(SE_ECL_NUT)` with a speed flag differences its angles as a position, reads two doubles never written, and copies stale speed slots | Memory / Correctness | `sweph.c` |
+| 29 | A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read (this fork's) | Correctness | `sweph.c` |
 
 ---
 
@@ -1580,6 +1581,52 @@ on a new thread, and the first-call warning kept. 17 failed before.
 is held too: on a new thread after the main thread's True Sheoran, 10 deg
 came back nakshatra 0, 10 deg 0' where the main thread gives nakshatra 1,
 0 deg 0'. G36's split case.
+
+## 29. A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read: NaN fresh, the last read's Moon warm (this fork's)
+
+**Severity: Correctness (with `semo_12.se1` missing, the Moon NaN with no error on a fresh context, 37 deg off warm; the Sun and every geocentric body 6 arcsec apart fresh and warm)**
+**Where:** `sweph.c`: `sweph()`, the neighbour-file lookup (this fork's); the reader it misled is `sweplan()`'s Moon
+
+Upstream has no neighbour lookup: a missing moon file is a closed one, and
+the Moon is Moshier's. This fork's `sweph()`, when the file named for the
+instant is missing, opens the neighbouring 600-year bucket's file, whose data
+runs a little into this bucket, so that a context that had just computed on
+the neighbour and a fresh one answer alike. The range check after it refused
+an instant the neighbour does not hold, and left the file open. For the
+planets and the main asteroids the return value is what the callers look at:
+`main_planet()` falls to Moshier with "using Moshier eph.", an asteroid is an
+error. `sweplan()` reads the Moon to make the Earth from the EMB and takes
+"the moon file is not open" as its sign that there is no moon file and the
+Moshier Moon is to be used. With the neighbour open it went on with a Moon it
+never read: the save area's, empty (NaN) on a fresh context and the last
+read's on a warm one.
+
+Measured with `semo_12.se1` missing, at JD 2159377.5 (1200.0 + 20 days;
+`semo_06`'s data ends at +16): the Moon NaN with flags 0x100 and no error
+fresh, 26.44 deg warm (after the Sun 1.5 days before 1200.0) where Moshier's
+is 349.29; the Sun 307.55655 fresh and 307.55823 warm, 6.0 arcsec apart, and
+Mercury and every body whose Earth comes from that Moon likewise; J2000 XYZ
+the Moon zeros. The same at every instant of the bucket beyond the
+neighbour's overrun, after it or before it (`semo_18` starts 9 days early, so
+1800.0 - 20 days with `semo_12` missing). With both the file and its neighbour missing, serr
+named the neighbour last tried ("semo_06.se1 not found") for a Moon at 1200.
+
+**Fix, as done here:** a neighbour that does not hold the instant is closed
+again, with its bodies' file data, and the instant's own file is reported as
+not found: the state and message of a missing file with no neighbour at all,
+so `sweplan()` takes the Moshier Moon with "using Moshier eph. for moon" and a
+warm context answers as a fresh one. A neighbour that holds the instant still
+answers it. Only the open path is touched; no calculation that finds its file
+is. G38 `tests/missfile.c`, in directories of links in /tmp without
+`semo_12` and without `semo_18`: 16 instants about 600.0, 1200.0 and 1800.0
+(inside and past each neighbour's overrun, both sides), nine bodies, four
+flag sets with speed, 1152 rows. Every answer is an error or finite; a warm
+context equals a fresh one in flags and to 1e-6 AU; an answer is within 60
+arcsec of the complete directory's and says "Moshier" in serr when it is more
+than 0.5 arcsec from it. With `sepl_12` missing the Sun falls to Moshier, and
+with a file and its neighbour missing serr names the file for the instant.
+Before the fix 191 rows fail (7 not finite, 72 warm differ, 112 off or
+unannounced), after it none.
 
 ## How these were found
 

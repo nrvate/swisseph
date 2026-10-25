@@ -61,6 +61,7 @@
 
 
 #include <assert.h>
+#include <stddef.h>
 #include <string.h>
 #include <ctype.h>
 #if MSDOS
@@ -2800,6 +2801,42 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
   return (OK);
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* The part of plan_data that belongs to the file a body is read from --
+ * its constants, reference ellipse and loaded segment -- is everything
+ * before teval; from there on it is the body's last result. */
+#define PLAN_FILE_PART offsetof(struct plan_data, teval)
+
+/* the file of ctx->fidat[] that a body of ctx->pldat[] is read from; -1 for
+ * the slot the numbered asteroids and the planetary moons share */
+static int file_of_body(int i)
+{
+  if (i == SEI_MOON)
+    return SEI_FILE_MOON;
+  if (i == SEI_ANYBODY)
+    return -1;
+  if (i >= SEI_CHIRON)
+    return SEI_FILE_MAIN_AST;
+  return SEI_FILE_PLANET;
+}
+
+/* The open file of slot ifno closed, with the file data of its bodies: the
+ * state of a file that was never found. */
+static void file_close(swe_ctx *ctx, int ifno)
+{
+  int i;
+  if (ctx->fidat[ifno].fptr != NULL)
+    fclose(ctx->fidat[ifno].fptr);
+  memset((void *) &ctx->fidat[ifno], 0, sizeof(struct file_data));
+  for (i = 0; i < SEI_NPLANETS; i++)
+    if (file_of_body(i) == ifno) {
+      free((void *) ctx->pldat[i].segp);
+      free((void *) ctx->pldat[i].refep);
+      memset((void *) &ctx->pldat[i], 0, PLAN_FILE_PART);
+    }
+}
+#endif
+
 /* 
  * this function looks for an ephemeris file, 
  * opens it, if not yet open,
@@ -2875,6 +2912,8 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
   if (fdp->fptr == NULL) {
 #ifndef SWE_UPSTREAM_COMPAT
     int ineighbour = 0;
+    char serr_own[AS_MAXCH];	/* why the file named for the instant did not open */
+    *serr_own = '\0';
 #endif
     swi_gen_filename(tjd, ipli, fname); 
     strcpy(subdirnam, fname);
@@ -2928,17 +2967,23 @@ again:
        * a fresh one did not: the same question, two answers, by call
        * order (2026-09-16 review, F11; measured at JD 2597730, a Sun that
        * answered inside a window starting in 2399 and failed alone).
-       * Asking the neighbour here makes the fresh answer the warm one;
-       * the range check below still refuses an instant it does not
-       * cover. Planets, the Moon and the main asteroid files only: a
-       * numbered asteroid's or a planetary moon's file is one file. */
+       * Asking the neighbour here makes the fresh answer the warm one; a
+       * neighbour that does not cover the instant is closed again below.
+       * Planets, the Moon and the main asteroid files only: a numbered
+       * asteroid's or a planetary moon's file is one file. */
       if (ipli < SE_PLMOON_OFFSET && ipl != SEI_ANYBODY) {
+        if (ineighbour == 0 && serr != NULL)
+          snprintf(serr_own, AS_MAXCH, "%s", serr);
         while (ineighbour < 2) {
           swi_gen_filename(tjd + (ineighbour++ == 0 ? -3652.5 : 3652.5),
                            ipli, s);
           if (strcmp(s, fname) != 0)
             goto again;
         }
+        /* neither neighbour is here either: the message is the file named
+         * for the instant's, not that of the neighbour tried last */
+        if (serr != NULL)
+          snprintf(serr, AS_MAXCH, "%s", serr_own);
       }
 #endif
       return(NOT_AVAILABLE);
@@ -2948,6 +2993,21 @@ again:
     retc = read_const(ctx, ifno, serr);
     if (retc != OK)
       return(retc);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* The file opened is a neighbour's, asked for because the file named
+     * for the instant is missing. If its data does not reach the instant
+     * either, it is no file for it: closed again, and the instant's own
+     * file reported missing, as when there is no neighbour at all. Left
+     * open, it would pass for the moon file, and sweplan(), which takes a
+     * closed moon file as its sign to use the Moshier Moon, would go on
+     * with a Moon it never read. */
+    if (ineighbour > 0 && (tjd < fdp->tfstart || tjd > fdp->tfend)) {
+      file_close(ctx, ifno);
+      if (serr != NULL)
+        snprintf(serr, AS_MAXCH, "%s", serr_own);
+      return(NOT_AVAILABLE);
+    }
+#endif
   }
   /* if first ephemeris file (J-3000), it might start a mars period
    * after -3000. if last ephemeris file (J3000), it might end a
