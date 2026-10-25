@@ -20,7 +20,13 @@
  * barycentric and topocentric: the speeds against five-point differences
  * of the positions over 2^-7 day, nine dates 1800-2150, every call after a
  * swe_calc() 1000 days away, within 5e-9 deg/day (Moshier 2e-8; measured
- * <= 1.6e-9 and 5.1e-9), distance rates per unit distance likewise. The
+ * <= 1.6e-9 and 5.1e-9), distance rates per unit distance likewise.
+ * Topocentric, the site turns 6.3 rad/day, and a five-point difference's
+ * truncation, (omega h)^4 / 30 of the diurnal parallax's rate, is 3e-7
+ * deg/day on the Earth-centred orbit at 2^-7 day, while the site read at a
+ * UT rounded to the JD's ulp jitters by 4.7e-10 day: so those rows take a
+ * nine-point difference over 2^-8 day with delta t set to 2^-11 day, which
+ * makes UT exact (measured 2.3e-9 on the Earth-centred orbit). The
  * build before the fix fails 20 of the 37 checks, the SWE_UPSTREAM_COMPAT
  * build 33.
  *
@@ -78,24 +84,27 @@ static void first_call(const char *ephe, int32 fl, const char *sz)
   }
 }
 
-/* (2) speeds against five-point differences over 2^-7 day, nine dates
- * 1800-2150; the elements are moved by their mean motion with the date */
+/* (2) speeds against five-point differences over 2^-7 day (topocentric:
+ * nine-point over 2^-8 day, UT exact), nine dates 1800-2150; the elements
+ * are moved by their mean motion with the date */
 static void speeds(int32 fl, const char *sz)
 {
+  static const double c5[2] = {2.0 / 3, -1.0 / 12};
+  static const double c9[4] = {4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280};
   char serr[256];
-  double h = 1.0 / 128, w[3] = {0, 0, 0}, lim = (fl & SEFLG_MOSEPH) ? LIM_SPEED_MOSH : LIM_SPEED;
+  int topo = (fl & SEFLG_TOPOCTR) != 0, np = topo ? 4 : 2;
+  const double *cd = topo ? c9 : c5;
+  double h = topo ? 1.0 / 256 : 1.0 / 128, w[3] = {0, 0, 0};
+  double lim = (fl & SEFLG_MOSEPH) ? LIM_SPEED_MOSH : LIM_SPEED;
   int ib, k, j, i;
+  if (topo)
+    swe_set_delta_t_userdef(ldexp(1, -11));
   for (ib = 0; ib < 4; ib++) {
-    /* the topocentric speed of a body 0.0068 AU away carries the site's
-     * velocity, 1.3e-7 of it off (2.9e-7 deg/day; swe_calc()'s Waldemath
-     * the same): not this function's */
-    if ((fl & SEFLG_TOPOCTR) && orb[ib].ctr == SE_EARTH)
-      continue;
     double mu = orb[ib].ctr == SE_SUN ? 0.01720209895 * 0.01720209895
                                       : 0.0000298122353216 * 0.0000298122353216;
     double n = sqrt(mu / (orb[ib].el[1] * orb[ib].el[1] * orb[ib].el[1])) * 180 / M_PI;
     for (k = 0; k < 9; k++) {
-      double t = floor((2378496.5 + k * 16000.3 + 0.137) * 256) / 256, x[6], d[5][6], q[6];
+      double t = floor((2378496.5 + k * 16000.3 + 0.137) * 256) / 256, x[6], d[9][6], q[6];
       /* each call after a swe_calc() at another instant, whose caches of
        * date it must not answer from */
       swe_calc(t + 1000.5, SE_MARS, fl & (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH), q, serr);
@@ -105,18 +114,20 @@ static void speeds(int32 fl, const char *sz)
         bad++;
         break;
       }
-      for (j = 0; j < 5; j++) {
+      for (j = -np; j <= np; j++) {
         double e[6];
         memcpy(e, orb[ib].el, sizeof e);
-        e[0] += n * (j - 2) * h;
+        e[0] += n * j * h;
         swe_calc(t + 1000.5, SE_MARS, fl & (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH), q, serr);
-        swe_calc_orbel(t + (j - 2) * h, e, orb[ib].ctr, SE_ORBEL_EQ_J2000, 0, fl, d[j], serr);
+        swe_calc_orbel(t + j * h, e, orb[ib].ctr, SE_ORBEL_EQ_J2000, 0, fl, d[j + np], serr);
       }
       for (i = 0; i < 3; i++) {
-        double v[5], r, s;
-        for (j = 0; j < 5; j++)
-          v[j] = (i == 0 && !(fl & SEFLG_XYZ)) ? d[2][0] + swe_difdeg2n(d[j][0], d[2][0]) : d[j][i];
-        r = (v[0] - 8 * v[1] + 8 * v[3] - v[4]) / (12 * h);
+        double v[9], r = 0, s;
+        for (j = 0; j <= 2 * np; j++)
+          v[j] = (i == 0 && !(fl & SEFLG_XYZ)) ? d[np][0] + swe_difdeg2n(d[j][0], d[np][0]) : d[j][i];
+        for (j = 1; j <= np; j++)
+          r += cd[j - 1] * (v[np + j] - v[np - j]);
+        r /= h;
         s = fabs(x[3 + i] - r);
         if (i == 2 && !(fl & SEFLG_XYZ))
           s /= x[2];		/* distance rate per unit distance */
@@ -125,6 +136,8 @@ static void speeds(int32 fl, const char *sz)
       }
     }
   }
+  if (topo)
+    swe_set_delta_t_userdef(SE_DELTAT_AUTOMATIC);
   printf("  speed, %-40s %.2e %.2e %.2e\n", sz, w[0], w[1], w[2]);
   if (w[0] > lim || w[1] > lim || w[2] > lim) {
     printf("    FAIL: speed off its positions' rate by more than %.0e\n", lim);

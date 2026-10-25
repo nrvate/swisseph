@@ -5141,14 +5141,31 @@ differences over 2^-7 day, nine dates 1800..2150, four orbits (a = 0.137,
 `swe_calc()` 1000 days away: geocentric <= 1.6e-9 deg/day on the files
 (Moshier 5.1e-9, its Earth's own noise), heliocentric and barycentric <=
 3.8e-11, topocentric 2.7e-9; the distance rates <= 4.6e-11 of the distance
-per day. A body 0.0068 AU away is 2.9e-7 deg/day off topocentrically, in
-swe_calc() (Waldemath) as here, the site's velocity 1.3e-7 of itself off:
-not this function's, left out of the gate and not fixed.
+per day. The orbit 0.0068 AU from the Earth first looked 2.9e-7 deg/day
+off topocentrically (Waldemath through `swe_calc()` the same, the Moon
+6.8e-7), as if the site's velocity were 1.3e-7 of itself off. That was the
+reference, as under entry 79: the site turns at 6.3 rad/day, and the
+five-point's truncation, (omega h)^4 / 30 of the diurnal parallax's rate,
+is that much at 2^-7 day (7.2e-7, 4.3e-8 and 8.6e-9 deg/day on the Moon at
+2^-7, 2^-8 and 2^-9), and below that the site read at a UT rounded to the
+JD's ulp (4.7e-10 day) is the noise. Against a nine-point difference over
+2^-8 day with delta t set to 2^-11 day (UT exact): the Moon, Selena and
+Waldemath through `swe_calc()` and the Earth-centred orbit here, Swiss,
+JPL and Moshier, ecliptic and equator of date, J2000, true positions:
+<= 2.3e-9 deg/day on the files (Moshier 6.9e-9, 1.1e-8 on G87's orbit),
+the distance rates <= 3.7e-11 of the distance per day (Moshier 1.4e-10);
+and the site's velocity from `swi_get_observer()` is within 4.5e-11 of
+itself of the slope of a degree-8 least-squares fit through 257 of its
+places 2^-11 day apart, four latitudes, nine dates 1800..2150 (1.2e-8
+with the default delta t: the rounded UT's noise in the fit, which does
+not follow the delta t's rate). Nothing to fix; G87's topocentric rows
+take that reference and include the orbit.
 
 G87 `tests/orbelcalc.c`: (1) eight first calls against the same call
 warm, after a `swe_calc()` at another instant, equal to the bit; (2) the
-speeds of the four orbits against five-point differences over 2^-7 day,
-Swiss, Moshier and de200, geocentric, true, J2000, equator of date,
+speeds of the four orbits against five-point differences over 2^-7 day
+(topocentric, nine-point over 2^-8 day with delta t 2^-11 day), Swiss,
+Moshier and de200, geocentric, true, J2000, equator of date,
 heliocentric, barycentric and topocentric (29 rows), within 5e-9 deg/day
 (Moshier 2e-8). The build before the fix fails 20 of the 37 checks (all
 eight first calls; twelve speed rows of date, 8.7e-7 / 1.8e-5 deg/day); the
