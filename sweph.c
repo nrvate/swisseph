@@ -8358,8 +8358,11 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   double xpos[5][6], xx[5][6], xxa[5][6], xnorm[6], r[6];
   double *xp;
   double rxy, rxyz, t, dt, fac, sgn;
-  double sinnode, cosnode, sinincl, cosincl, sinu, cosu, sinE, cosE;
-  double uu, ny, sema, ecce, Gmsm, c2, v2, pp;
+  double sinnode, cosnode, sinincl, cosincl, sinu, cosu, cosE;
+  double uu, ny, sema, ecce, Gmsm, c2, v2;
+#ifdef SWE_UPSTREAM_COMPAT
+  double sinE, pp;
+#endif
   int32 speedf1, speedf2;
 #ifndef SWE_UPSTREAM_COMPAT
   double rr[5] = {0, 0, 0, 0, 0};
@@ -8641,6 +8644,25 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     rxyz = sqrt(square_sum(xpos[i]));
     v2 = square_sum((xpos[i]+3));
     sema = 1 / (2 / rxyz - v2 / Gmsm);	
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 95: the eccentricity was sqrt(1 - p / a), 1 - p / a
+     * being e^2 less a few ulps of 1, and the true anomaly from it through
+     * cos E = (1 - r / a) / e: with the Moon's e = 0.055 the apogee
+     * jittered by up to 3.5e-10 deg between instants 2^-30 day apart
+     * (de200; Swiss 1.1e-11), where the Moon's state allows 1e-12, and
+     * its five-point speed by 2.4e-8 deg/day (bug 80 fixed the same in
+     * swe_nod_aps()).
+     * Now the eccentricity vector, ((v^2 - GM / r) r - (r.v) v) / GM: e
+     * its length and the true anomaly the angle from it to r about h. */
+    {
+      double ev[3], evr[3], rv = dot_prod(xpos[i], xpos[i]+3);
+      for (j = 0; j <= 2; j++)
+        ev[j] = ((v2 - Gmsm / rxyz) * xpos[i][j] - rv * xpos[i][j+3]) / Gmsm;
+      ecce = sqrt(square_sum(ev));
+      swi_cross_prod(ev, xpos[i], evr);
+      ny = atan2(dot_prod(evr, xnorm) / sqrt(c2), dot_prod(ev, xpos[i]));
+    }
+#else
     /* eccentricity */
     pp = c2 / Gmsm;
     ecce = sqrt(1 - pp / sema);	
@@ -8649,6 +8671,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     sinE = 1 / ecce / sqrt(sema * Gmsm) * dot_prod(xpos[i], (xpos[i]+3));
     /* true anomaly */
     ny = 2 * atan(sqrt((1+ecce)/(1-ecce)) * sinE / (1 + cosE));
+#endif
     /* distance of apogee from ascending node */
     xxa[i][0] = swi_mod2PI(uu - ny + PI);
     xxa[i][1] = 0;			/* latitude */

@@ -655,6 +655,31 @@ static double osc_speed_off(int j2000)
   return fabs(x[3 + i] - r / h);
 }
 
+/* The noise of the Moon's osculating perigee's longitude speed from
+ * swe_nod_aps() on Moshier, at 24 instants 2^-30 day apart: the rms of
+ * the fourth differences over sqrt(70), deg/day. Upstream's Moshier Moon
+ * velocity is a difference over +-4.32 s (bug 51), ts20's a five-point one
+ * over 2^-5 day, whose rounding the near-circular orbit amplifies about
+ * 36-fold (UPSTREAM-BUGS 95). */
+static double moon_oscu_peri_noise(void)
+{
+  double t = floor(2460000.3 * 256) / 256, v[24], xn[6], xd[6], xp[6], xa[6], s = 0;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 24; k++) {
+    swe_nod_aps(t + k * ldexp(1, -30), SE_MOON, SEFLG_MOSEPH | SEFLG_SPEED,
+                SE_NODBIT_OSCU, xn, xd, xp, xa, serr);
+    v[k] = xp[3];
+  }
+  for (k = 0; k + 4 < 24; k++) {
+    double d = v[k] - 4 * v[k+1] + 6 * v[k+2] - 4 * v[k+3] + v[k+4];
+    s += d * d;
+  }
+  return sqrt(s / 20 / 70);
+}
+
 /* The flags swe_fixstar2() returns against swe_calc()'s for Mars, sidereal
  * and heliocentric Moshier: the bits that differ, counted. Upstream returns
  * the caller's iflag, without NONUT (1) and NOABERR|NOGDEFL (2)
@@ -1981,7 +2006,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2018,6 +2043,7 @@ int main(int argc, char **argv)
   stardd = star_dist_rate_off();
   oscspd = osc_speed_off(0);
   oscj2k = osc_speed_off(1);
+  operinoise = moon_oscu_peri_noise();
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
   nodjd0 = nodaps_jd0_off();
@@ -2752,6 +2778,14 @@ int main(int argc, char **argv)
     printf("  Moon, neighbour refused %.2e deg OK\n", moonnbr);
   else {
     printf("  Moon, neighbour refused %.2e deg FAIL: expected 0\n", moonnbr);
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (operinoise > 1e-6) : (operinoise < 5e-8))
+    printf("  Moshier oscu perigee speed noise %.2e deg/day OK\n", operinoise);
+  else {
+    printf("  Moshier oscu perigee speed noise %.2e deg/day FAIL: expected %s\n",
+           operinoise, WANT_DEFECT ? "> 1e-6" : "< 5e-8");
     bad++;
   }
 

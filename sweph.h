@@ -1013,6 +1013,12 @@ struct epsilon {
  *     again when the neighbour does not hold the instant is this fork's
  *     and absent under the switch; G24 asserts both builds take the
  *     Moshier Moon there, G99)
+ *   - swi_moshmoon()'s velocity a difference of the series' positions,
+ *     not their derivative (bug 51's five points left 1.2e-13 of it as
+ *     jitter, upstream's two far more), and lunar_osc_elem()'s
+ *     eccentricity sqrt(1 - p / a): the osculating apogee's and perigee's
+ *     speeds noisy by 1.4e-7 (SE_OSCU_APOG) and 5.5e-6 deg/day
+ *     (swe_nod_aps()) on Moshier, 2.4e-8 on de200 (UPSTREAM-BUGS 95, G94)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1457,6 +1463,14 @@ struct moon_state {
   double moonpol[3];
   double SWELP, M, MP, D, NF, T, T2, T3, T4;
   double f, g, Ve, Ea, Ma, Ju, Sa, cg, sg, l1, l2, l3, l4;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 95: the same quantities' rates, d/dT (T in Julian
+   * centuries), kept alongside while want_d is set (swi_moshmoon()'s
+   * velocity); dang[] the rates of sscc()'s angles, rad per century */
+  int want_d;
+  double dl, dB, dmoonpol[3], dSWELP, dM, dMP, dD, dNF, dang[4];
+  double df, dg, dVe, dEa, dMa, dJu, dSa, dcg, dsg, dl1, dl2, dl3, dl4;
+#endif
 };
 
 /* Memo caches for the heliacal code (swehel.c).

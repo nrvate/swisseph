@@ -133,6 +133,7 @@ worst were in code that had never executed even once.
 | 101 | `swe_get_tid_acc()` answers -25.80 after `SE_TIDAL_AUTOMATIC` and 0 before any initialisation, and the shared configuration copies an automatic tidal acceleration (partly this fork's) | Correctness | `swephlib.c`, `sweconfig.c` |
 | 97 | The nakshatras of `swe_split_deg()` are shifted for SE_SIDM_USER, whose 255 passes a bit-mask test for Sheoran | Correctness | `swephlib.c`, `sweph.c` |
 | 100 | A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read: NaN fresh, the last read's Moon warm (this fork's) | Correctness | `sweph.c` |
+| 95 | The Moshier Moon's velocity is a difference of the series, and the osculating apogee's eccentricity is sqrt(1 - p / a): the osculating apogee and perigee jitter | Correctness | `swemmoon.c`, `sweph.c`, `sweph.h` |
 
 ---
 
@@ -5901,6 +5902,98 @@ ways because the lookup is this fork's: the Moon at JD 2159377.5 with
 semo_12 missing, fresh against warm from 1200.0 + 10, 0 shipped and compat,
 1e9 (NaN) before the fix. G24, G62, G83 and G88 pass; G99 also under ASan
 and UBSan.
+
+## 95. The Moshier Moon's velocity is a difference of the series, and the osculating apogee's eccentricity is sqrt(1 - p / a): the osculating apogee and perigee jitter
+
+**Severity: Correctness (Moshier: `swe_nod_aps()`'s osculating perigee and apogee speeds noisy by up to 5.5e-6 deg/day, SE_OSCU_APOG's by 1.4e-7, positions by 3.4e-9 deg; de200: SE_OSCU_APOG's speed by 2.4e-8 deg/day; the Moshier Moon's speed 1.2e-10 of itself off)**
+**Where:** `swemmoon.c`: `swi_moshmoon()`, `swi_moshmoon2()`, `mean_elements()`, `mean_elements_pl()`, `moon1()`..`moon4()`, `chewm()`, `ecldat_equ2000()`; `sweph.c`: `lunar_osc_elem()`; `sweph.h`: `struct moon_state`
+
+Found while fixing entry 87: on Moshier the osculating apogee's
+longitude (SE_OSCU_APOG, and `swe_nod_aps()` SE_NODBIT_OSCU for the
+Moon) jittered from one instant to the next 2^-30 day later, at every
+date. Measured as the rms of fourth differences over sqrt(70), 32
+instants 2^-30 (and 2^-20) day apart, eight dates -2500..2100 (de200
+1700..2100):
+
+- The Moon's state. Moshier's velocity was bug 51's five-point
+  difference of the series over +-2^-5 and +-2^-4 day. The series'
+  samples are good to their last bits (longitude 1e-16..1.6e-15 rad, the
+  J2000 vector 1e-16..1e-15 of its length), but the difference divides
+  that by 0.03 day: the velocity jittered by 1e-14..1.2e-13 of itself,
+  against 1e-15..2e-15 on the Swiss files and JPL (whose velocity is the
+  Chebyshev series' derivative). Its truncation, (w h)^4 / 30, was
+  1.2e-10 of it (rms, against a nine-point difference). The apogee of a
+  near-circular orbit turns by about 2 dv / (v e), e = 0.055 (36-fold):
+  SE_OSCU_APOG and `swe_nod_aps()`'s points jittered by 3e-10 deg at
+  present dates, 3.4e-9 at -2500, their speeds by 1.4e-7 (five points
+  over 2^-5 day) and 5.5e-6 deg/day (three over 2^-11; 1.8e-5 off the
+  rate of the positions at -1125). With a 9-point velocity over 2^-3 day
+  the jitter fell threefold, as the noise ratio says. Moshier only.
+- `lunar_osc_elem()` took the eccentricity as sqrt(1 - p / a), 1 - p / a
+  being e^2 less a few ulps of 1, and the true anomaly from it through
+  cos E = (1 - r / a) / e: the formula entry 80 replaced in
+  `swe_nod_aps()`. From the same Moshier states, the eccentricity vector
+  in long double put the apogee's jitter at 0.9e-12..1.3e-12 deg, this
+  formula at 1.2e-11..1.5e-11. On every ephemeris: SE_OSCU_APOG 1.1e-11
+  deg and 5.4e-10 deg/day on the Swiss files, 3.5e-10 deg and 2.4e-8
+  deg/day on de200 (the last above the residual floor, which is why the
+  formula is changed; the Swiss figures are below it and fixed by the
+  same change).
+
+**Fix, as done here:** the Moshier Moon's velocity is the series' own
+derivative. Each statement of `mean_elements()`, `mean_elements_pl()`,
+`moon1()`..`moon4()` gets an `MD()` line before it computing the d/dT
+of what it assigns (forward-mode, generated mechanically from the
+statements and checked by hand; a cos/sin pair's rates after the pair),
+`chewm()` accumulates each table line's rate from its angle's, sum j x
+dang[m]; the values are untouched (positions bit for bit), and the
+rates are only computed while `ctx->moon.want_d` is set
+(`moshmoon2_d()`, from `swi_moshmoon()`; the interpolated apsides and
+the mean elements do not pay for them). The polar rates are made
+cartesian with the position, turned by the same frame, and the frame's
+own turning added as R'(t) x, the same frame at tjd +- 1 day applied to
+x (it moves at 6.6e-7 rad/day: curvature and rounding below 1e-15 of
+the Moon's speed). `lunar_osc_elem()` takes the eccentricity vector,
+((v^2 - GM / r) r - (r.v) v) / GM, as `swe_nod_aps()` does: e its length,
+the true anomaly the angle from it to r about h.
+
+After: the Moshier velocity agrees with a degree-12 least-squares fit
+of 2049 positions over +-1 day to 4e-14 of itself (rms 1.7e-14, the
+fit's noise), and jitters by 1e-16..1.4e-15. SE_OSCU_APOG's jitter
+<= 5.7e-13 deg (Swiss), 4.2e-13 (de200), 1.5e-12 (Moshier), its speed's
+<= 4.1e-11 deg/day; `swe_nod_aps()`'s osculating points <= 2.4e-11 deg
+and 3.6e-8 deg/day on all three, against 5.8e-8 off the rate of the
+positions on Moshier at -1125 (the step's truncation). The floors: for
+SE_OSCU_APOG the Moon's state inside `lunar_osc_elem()`, about 1e-12 deg
+(the long-double figure above); for `swe_nod_aps()`, which reads the Moon
+through `swe_calc()`, that state's 2e-14 of its distance on every
+ephemeris times 2 / e, <= 5.0e-11 deg; its speed is a three-point
+difference over 2^-11 day of the points, 1448 times their noise.
+Positions move by what was removed: the Moshier osculating apogee and
+`swe_nod_aps()` perigee by up to 3.7e-7 deg (the old velocity's
+truncation through 2 / e), the Moshier true node by 4.0e-10 deg, the
+Swiss and de200 apogee by 2.7e-10 deg (the formula's rounding); the
+Moshier Moon's apparent place by 1.2e-12 deg (rounding at the
+barycentric scale through the light time), its speed by 3.9e-9
+deg/day; nothing else moves (planets, Sun, interpolated apsides, Swiss
+and de200 Moon bit for bit, their true node within 6e-14 deg and
+4e-13 deg/day).
+Cost: one series evaluation with its rates and three frames where the
+difference took five of each: the `moon` bench 0.90 -> 0.565 s,
+calc-moseph 1.045 -> 0.957 s, calc-swieph unchanged.
+
+G94 `tests/oscsmooth.c`: the Swiss files, de200 and Moshier, eight dates,
+32 instants 2^-30 and 2^-20 day apart, the jitter of SE_OSCU_APOG's and
+`swe_nod_aps()`'s osculating perigee's and apogee's longitude and
+longitude speed: 18 rows, SE_OSCU_APOG within 3e-12 deg and 1e-10 deg/day
+(measured 1.5e-12, 4.1e-11), the `swe_nod_aps()` points 6e-11 and 8e-8
+(2.4e-11, 3.6e-8); it prints the Moon's-state floor per ephemeris. The
+build before the fix fails 10 rows, the upstream build all 18. G24
+`moon_oscu_peri_noise`: the Moshier osculating perigee's speed jitter at
+JD 2460000.297, 1.28e-8 deg/day shipped (1.05e-7 before the fix), 0.456
+compat. G74 (Moshier apogee 7.2e-8 -> 8.2e-9 deg/day against its
+reference; its 4e-7 limit not tightened), G79, G41, G86, G84, G52, G40,
+G46, G38, G54, G92 pass.
 
 ## How these were found
 
