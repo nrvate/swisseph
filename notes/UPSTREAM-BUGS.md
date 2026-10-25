@@ -316,6 +316,10 @@ worst were in code that had never executed even once.
 | 285 | A topocentric site's long-term sidereal time chooses its precession model at the site's UT + the default delta t, not at its call's TT: within 0.297 s after a short-term window's edge on the Swiss files (0.481 s before it on Moshier) the site's frame the other model's, the topocentric Moon 2.91e-7 deg off under "0,9,1" at J2000 - 2 centuries, Polaris's topocentric right ascension speed 1.83e-4 deg/day | Correctness | `swephlib.c`, `sweph.c` |
 | 266 | `swe_calc()` with SEFLG_SPEED3 divides the difference of its places at tjd -+ dt by the nominal 2 dt, though neither dt (1e-4 day, the Moon's 5e-5) is a binary fraction and the instants round to the date's grid: at JD 2^21 .. 2^22 (1030 .. 6770) the spacing 0.72 ulp short, every speed 1.68e-6 of itself too large, the Sun 1.73e-6 deg/day, Mercury 3.69e-6, the Moon up to 3.2e-5 (1.7e-5 at J2000) | Correctness (precision) | `sweph.c` |
 | 276 | Across a boundary of the Swiss files' segments inside a file (the Moon's every 27.55 days, the EMB's and the Sun's yearly, a planet's or asteroid's own), where the polynomials change and the places step as at a join (entry 250), the speeds whose reads straddle it take the step for motion: at J2000 + 17.23 days the true node 8.1e-4 deg/day off its places' rate, the osculating apogee 9.7e-3; at sepl_12's last EMB boundary Mars's heliocentric osculating perihelion 3.1e-3, the far files' up to 8.0e-2; the Sun within its light time 6.0e-7, the Moon's aberration share 2.1e-4, Aldebaran 8.6e-7, the Moon from Mars 2.7e-6; SEFLG_SPEED3 across joins and boundaries alike, Mars 2.2e-3 at the 1800 join, the Moon 0.25 at its own | Correctness | `sweph.c`, `swecl.c`, `swephlib.h` |
+| 277 | The site's height: `swe_rise_trans()`'s fast rising and setting, and with it `swe_gauquelin_sector()`'s methods 2 to 5, `swe_vis_limit_mag()` and `swe_topo_arcus_visionis()` take any height, where the eclipse, occultation and heliacal functions and the slow rising and setting refuse one outside -500 .. 25000 m; and the bound's test passes NaN: the Sun's rising from Zurich at 50000 m OK, 2451545.800726, `swe_vis_limit_mag()` -3.5629, the arcus visionis 99 deg, at a NaN height a date's range message or OK with -nan | Correctness (behaviour) | `swecl.c`, `swehel.c`, `sweph.h` |
+| 278 | `swe_get_orbital_elements()` refuses the Sun, "object 0 not valid", where `swe_orbit_max_min_true_distance()` takes it as the Earth's orbit (1.0166992, 0.9832941, 0.9833100 AU at J2000; swetest's -fq) and `swe_nod_aps()` gives the Sun's points as that orbit seen from the Earth | Correctness (behaviour) | `swecl.c` |
+| 279 | `swe_heliacal_pheno_ut()` never writes darr[28..30], inside SE_HELIACAL_DARR_SIZE: on success they keep what the caller had there (54 of 54 calls) | Correctness (behaviour) | `swehel.c` |
+| 281 | The eclipse searches begin at a lunation 1.8e-5 a lunation off their candidates' own (3.3 lunations at the Swiss files' ends) and the occultation searches take the UT start, and step back from a UT maximum, as TT: backward from 7929133.0 the solar and lunar searches refuse "jd 7929235.715052 > upper limit 7929133.500000", on de200.eph the lunar from 2513392.0; past 4300 years from J2000 forward in the future and backward in the past they pass over eclipses (from 7927148.0 7927313.519468 for 7927165.810722); backward occultation searches miss one within delta t before the start and, past 7 days of delta t, every other one (Venus's at -3026582.474721 from -3026575.471, then a refusal at the file's start) | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -20627,6 +20631,251 @@ Noticed, not fixed:
   measured.
 - Below the floor: the house cusps' speeds ('Y' near 58 N) are noisy to
   5.9e-8 deg/day from the cusps' own rounding (entry 266's survey).
+
+## 277. The site's height: `swe_rise_trans()`'s fast rising and setting, `swe_vis_limit_mag()` and `swe_topo_arcus_visionis()` take any height, where their siblings refuse one outside -500 .. 25000 m, and the bound's test passes NaN: the Sun's rising from Zurich at 50000 m OK, 2451545.800726
+
+**Severity: Correctness (behaviour: an answer where the functions beside it refuse; at a NaN height a date's range message, or OK with -nan), both builds**
+**Where:** `swecl.c`: `swe_rise_trans_r_body()`, the height tests of the eclipse and occultation functions and of `swe_rise_trans_true_hor_r_body()`; `swehel.c`: `swe_vis_limit_mag_r_body()`, `swe_topo_arcus_visionis_r_body()`, the heliacal functions' height tests; `sweph.h`
+
+Entry 239's noticed item. The library takes a site's height between
+SEI_ECL_GEOALT_MIN and SEI_ECL_GEOALT_MAX, -500 and 25000 m (the
+atmosphere, refraction and dip models' range: the pressure estimate
+1013.25 (1 - 0.0065 h / 288)^5.255 is NaN above 44307.7 m). Who refused
+a height outside it, and who did not (Zurich, J2000, the Swiss files;
+G177 check (a)):
+- refused: `swe_sol_eclipse_how()`, `swe_lun_eclipse_how()`,
+  `swe_sol_eclipse_when_loc()`, `swe_lun_eclipse_when_loc()` ("location
+  for eclipses must be between -500 and 25000 m above sea"),
+  `swe_lun_occult_when_loc()` ("... occultations ..."),
+  `swe_rise_trans_true_hor()` and `swe_rise_trans()`'s slow method, its
+  transits and twilights ("location for swe_rise_trans() ..."),
+  `swe_heliacal_ut()`, `swe_heliacal_pheno_ut()`, `swe_heliacal_angle()`
+  ("location for heliacal events ...");
+- answered: `swe_rise_trans()`'s rising and setting by the fast method
+  (the Sun to the true node, within 60 deg of the equator, the Sun 65),
+  which took no height test: the Sun's rising 2451545.800726168 at 50000
+  m (2451545.800726073 at 400), 2451545.800726070 at -1000, the Moon's
+  setting likewise; through it `swe_gauquelin_sector()`'s methods 2 to 5
+  (Mars 5.030066 at 50000 m); `swe_vis_limit_mag()`, no test at all,
+  Venus -3.5629 at 50000 m and -6.7527 at -1000 (-6.2557 at 400);
+  `swe_topo_arcus_visionis()` 99 deg at 50000 m (no answer in its
+  bisection), 6.4301 at -1000;
+- a NaN height passed the test, (h < MIN || h > MAX), everywhere: then a
+  date's message, "Swiss (.se1) ephemeris is not available for jd
+  2451545.0007; falling back to Moshier ..." (`swe_rise_trans()`,
+  `swe_sol_eclipse_how()`), "jd nan outside the range the Swiss
+  Ephemeris files are named for" (`swe_lun_eclipse_how()`, the Moon's
+  setting), "no heliacal date found within 5 synodic periods"; or OK:
+  `swe_vis_limit_mag()` 1 with -nan, `swe_topo_arcus_visionis()` 99,
+  `swe_heliacal_angle()` 2.97 deg.
+Taking a height and left answering, as they should: methods 0 and 1 of
+`swe_gauquelin_sector()` (house positions; the height is not read),
+`swe_set_topo()`'s topocentric places (`swe_calc()`, `swe_pheno()` with
+SEFLG_TOPOCTR: the site's parallax and diurnal aberration, no atmosphere,
+valid at any height; upstream bounds them nowhere), and `swe_azalt()`,
+`swe_azalt_rev()` and `swe_refrac_extended()`, which return no error (the
+azimuth and true altitude are geometry at any height). The "where"
+functions' geopos is an output; the houses take no height.
+
+Noticed, not fixed (a refraction model's range, not a refusal):
+`swe_azalt()` with atpress 0 gives the apparent altitude -nan above
+44307.7 m (the pressure estimate's root), and from about 17 km, where
+that estimate falls below 80 hPa, less than the true altitude (19.2502
+for 19.2536 deg at 25000 m: the refraction's (P - 80) / 930); and
+`calc_dip()` is NaN at every height below 0 (acos of a value above 1),
+so `swe_refrac_extended()` SE_APP_TO_TRUE at -500 m gives the apparent
+altitude back unrefracted (0.5 deg for 0.0197 at 0 m), dret[3] NaN.
+
+**Fix, as done here:** `SWI_GEOALT_OUT(h)`, `!(h >= MIN && h <= MAX)`,
+in all nine tests (NaN refused; upstream's test is its `#else`);
+`swe_rise_trans()`'s fast method taken only inside the bound, so a
+height outside takes the slow method's refusal and message, tret 0
+(entry 239's wrapper), and Gauquelin's methods 2 to 5 refuse with it;
+`swe_vis_limit_mag()` and `swe_topo_arcus_visionis()` refuse with the
+heliacal message after their date tests, the outputs 0. Inside the
+bound unchanged: G177 (a)'s answers at 400, 25000 and -500 m, the golden
+rows (13000) byte for byte.
+
+G177 `tests/agree.c` (new), check (a): eighteen calls (the three
+`swe_rise_trans()` kinds, `swe_rise_trans_true_hor()`, Gauquelin 2 to 5,
+the five heliacal functions, the five eclipse and occultation ones) at
+50000, 25000.5, -500.5, -1000 m, NaN, +inf and -inf: ERR, the bound's
+message, the outputs 0; at 400, 25000 and -500 m answered, Gauquelin 0
+and 1 at 50000. 180 of 180; before the fix 114 (the fast method's,
+Gauquelin's, `swe_vis_limit_mag()`'s and the arcus visionis's 56 answers
+at finite heights, the ten others' at NaN), the upstream build 54 (its
+refusals keep the outputs, entry 239). G24 `site_height_answered`: six
+calls at a height outside the bound answered, 0/6 shipped, 6/6 compat.
+
+## 278. `swe_get_orbital_elements()` refuses the Sun, "object 0 not valid", where `swe_orbit_max_min_true_distance()` takes it as the Earth's orbit, 1.0166992 .. 0.9832941 AU at J2000
+
+**Severity: Correctness (behaviour: two functions disagree on what the Sun is), both builds**
+**Where:** `swecl.c`: `swe_get_orbital_elements_r_body()`
+
+Entry 239's noticed item. `swe_orbit_max_min_true_distance()` takes the
+Sun by name: `orbit_max_min_true_distance_helio()` computes "the maximum
+distance, minimum distance and true distance between the Sun and the
+Earth-Moon barycentre" from the Earth's (the EMB's) heliocentric
+ellipse, 1.016699186995, 0.983294124520 and 0.983309975666 AU at J2000 on
+the Swiss files, and swetest's relative distance (-fq) takes it for the
+Sun. `swe_nod_aps()` gives the Sun's points as the Earth's orbit seen
+from the Earth (entry 167): the osculating perigee 282.917835913 deg in
+the J2000 frame. `swe_get_orbital_elements()` refused it, "error in
+swe_get_orbital_elements(): object 0 not valid", as the manual (7.2)
+says it does ("The function returns error, if called for the Sun, the
+lunar nodes, or the apsides"); 7.3 names "a planet, the EMB, or an
+asteroid" for the distances, which the code extends to the Sun and the
+Moon.
+
+Which is right: the Sun's heliocentric elements mean nothing; its
+geocentric distance range is the Earth's orbit's, what a caller asking
+the Sun's nearest and farthest wants (swetest's -fq does), and refusing
+it there would take that away. So the Sun is taken in both, as the
+Earth's orbit seen from the Earth, as the Moon's elements are geocentric
+and `swe_nod_aps()` gives the Sun's points: the same ellipse with the
+body at the other focus, its place and velocity negated. The semi-axis,
+eccentricity, inclination, node, mean, true and eccentric anomalies,
+periods (the synodic 0, the Earth's), time of periapsis passage and the
+two distances are the Earth's; the argument and longitude of periapsis
+and the mean longitude turn by 180 deg. At J2000 (Swiss): a 0.999996656,
+e 0.0167025871, i 0.000100684 deg, node 133.946821, argument of perigee
+148.971015, perigee 282.917836, mean longitude 280.463136 (the Sun's
+geometric mean longitude), perigee and apogee distances 0.983294125 and
+1.01669919 AU, those bit for bit `swe_orbit_max_min_true_distance()`'s;
+the perigee 3.9e-11 deg from `swe_nod_aps()`'s osculating one (Moshier
+4.7e-11), parting away from J2000 as the elements' periapsis is measured
+along the orbit (6.7e-6 deg at 1600, 6.7e-3 at -7450).
+
+Noticed, not fixed: a fresh context's first `swe_get_orbital_elements()`
+of the Earth (or `swe_orbit_max_min_true_distance()` of the Sun) answers
+the aphelion distance 1.0e-11 AU off a warm context's,
+1.0166991869845454 for 1.0166991869948216 AU (Swiss, J2000); and
+`swe_orbit_max_min_true_distance()` of the Earth without a centre flag
+takes the geocentric branch, the Earth's ellipse against itself: 1.999993,
+0 and 0 AU.
+
+**Fix, as done here:** the Sun's elements are the Earth's with the three
+angles turned, inside `#ifndef SWE_UPSTREAM_COMPAT`; the compat build
+refuses as upstream. G174 check (a)'s and G24 `refusal_outputs_kept`'s
+refused body is now the mean node.
+
+G177 check (b): the Sun on the Swiss files at six dates from -1000000.5
+to 5000000.5 and on Moshier at four, after a call of the Earth's: OK,
+the Earth's bit for bit with the three angles turned, the distances
+`swe_orbit_max_min_true_distance()`'s bit for bit, at J2000 the perigee
+within 1e-9 deg of `swe_nod_aps()`'s. 10 of 10; before the fix and the
+upstream build 0. G24 `sun_elements_refused`: 0 shipped, 1 compat.
+
+## 279. `swe_heliacal_pheno_ut()` never writes darr[28..30]: on success they keep what the caller had there
+
+**Severity: Correctness (behaviour: outputs of a successful call not written), both builds**
+**Where:** `swehel.c`: `swe_heliacal_pheno_ut_r_body()`
+
+Entry 239's noticed item. The array is SE_HELIACAL_DARR_SIZE, 31
+(this fork's, from the comment that "this function writes darr[0..30]";
+the manual says declare 50), and a successful call wrote darr[0..27],
+at the end and in the early answer of the evening first and morning last
+of Mars outward and the stars; 28 to 30 kept the caller's values: 54 of
+54 calls of five objects, four events and three dates with the array
+set to 7 (G177 check (c)). A refusal zeroes all 31 (entry 239). The
+manual's list, copied from the source's comment, names 28 "CVAact [deg]
+new" and 29 "MSk [-]", and 30 not at all; nothing in swehel.c computes
+either (26, which the list calls CVAact too, holds the elongation;
+`CVA()` is the critical visual angle of a background brightness, never
+evaluated at the object's), so the three are reserved.
+
+**Fix, as done here:** darr[28..30] 0 on success, inside `#ifndef
+SWE_UPSTREAM_COMPAT`.
+
+G177 check (c): 54 of 54; before the fix and the upstream build 0. G24
+`pheno_tail_kept`: of darr[28..30] left 7, 0/3 shipped, 3/3 compat.
+
+## 281. The eclipse searches begin at a lunation that drifts from their candidates' and the occultation searches read the UT start as TT: backward from 7929133.0 on the Swiss files they refuse "jd 7929235.715052 > upper limit 7929133.500000"; far from J2000 they pass over the nearest eclipse or occultation
+
+**Severity: Correctness (behaviour: a refusal where the event lies inside the ephemeris; the event after the nearest one answered), both builds**
+**Where:** `swecl.c`: `swe_sol_eclipse_when_glob_r_body()`, `swe_lun_eclipse_when_r_body()`, `eclipse_when_loc()` and through them `swe_sol_eclipse_when_loc()` and `swe_lun_eclipse_when_loc()`; `swe_lun_occult_when_glob_r_body()`, `occult_when_loc()`
+
+Entry 239's noticed item. The eclipse searches began at K = (int) of
+the start's days from J2000 times 12.3685 / 365.2425, stepped back one
+lunation (K -= direction), and their candidates are Meeus's mean
+syzygies, 2451550.09765 + 29.530588853 K days TT: 365.2425 / 12.3685 is
+29.530056 days, 1.8e-5 a lunation short, so the start's K drifted from
+its own by 1.8e-5 K: 3.3 lunations high at sepl_168.se1's end
+(7929133.5), 3.3 low at seplm132.se1's start (-3026605.471196), 1.1 at
+Moshier's ends, besides the start's UT against the candidates' TT (delta
+t 8.5 days at the Swiss ends).
+- Backward in the future (forward in the past) the search began 2 to 4
+  lunations beyond the start and refined each candidate before rejecting
+  it: within about 100 days of the end it read past the file. From 0.5,
+  3 and 10 days before 7929133.5 the solar and lunar searches, global and
+  local, refused "jd 7929235.715052 > upper limit 7929133.500000" (the
+  local solar 7929238.715052, the lunar 7929250.718377), the lunar from
+  30 days too ("jd 7929221.363530"); on de200.eph the lunar from 0.5, 3
+  and 10 days before 2513392.5, "JPL ephemeris is not available for jd
+  2513426.1645". From starts every 0.25 day within 40 days of each end
+  (inward), 742 of 3840 refused (Swiss 550, de200 92, Moshier none).
+- Forward in the future (backward in the past), once the drift passes
+  the one lunation stepped back, about 4300 years from J2000, the search
+  began after the nearest eclipses: from 7927148.0 7927313.519468 for
+  7927165.810722. Of 55 starts 37 days apart at the Swiss upper end the
+  global solar search missed 14, the lunar 19, at the lower end backward
+  12 and 9; from 88 starts 97 days apart the local solar 2 and 3, the
+  local lunar 25 and 12.
+- The occultation searches take no lunation; they began the conjunction
+  search at t = the start, a UT read as TT, and stepped on from a refined
+  maximum by t = tjd + direction 20 days with tjd already UT. Forward that
+  only begins early. Backward it began delta t before the start, passing
+  an occultation in that interval (Regulus's at 1048161.947536 from
+  1048162.0 on Moshier, delta t 0.496 day), and stepped back 20 days plus
+  delta t, more than the 27.3 days between the Moon's conjunctions with a
+  star once delta t passes 7.3 days: Regulus's occultations from starts
+  29.3 days apart at the Swiss upper end, 46 of 134 missed (7927587.969003
+  from 7927700, 7927560.635384 answered), at the lower end 118 of 137; at
+  -1850 on Moshier 4 of 1370 (within delta t). Near the lower end that
+  was a refusal: from -3026575.471 Venus's occultation at -3026582.474721
+  passed, the search refused at the conjunction before, "jd
+  -3026624.508296 < lower limit -3026605.471196".
+
+**Fix, as done here:**
+- `ecl_start_lunation()`: the start's lunation is the candidates' own,
+  floor of (TT - 2451550.09765 - the secular terms) / 29.530588853 (the
+  full moons' less 0.5), stepped back one as before.
+- A candidate whose approximate maximum lies more than
+  ECL_APPROX_MARGIN, 3 days, on the wrong side of the start's TT, which
+  the search would refine and reject, is passed over before its
+  refinement reads anything: over the Swiss range the refined maxima lie
+  within 1.52 days of the approximate (1558 candidates sampled every
+  20011 days, the solar and lunar; within 1.22 near the ends, 0.044 near
+  J2000).
+- The occultation searches backward: the start at its TT
+  (`occ_back_start()`: within delta t of an ephemeris's end, where the
+  start's TT lies past it, the latest whole day before that TT the body
+  and the Moon answer), and the tries from the maximum's TT. Forward as
+  before.
+- Inside `#ifndef SWE_UPSTREAM_COMPAT`. Not on the calculation path.
+- After: none of the 3840 starts within 40 days of an end refused (the
+  occultations' 240 none before or after); no event missed in the samples
+  above. Elsewhere bit for bit: of 5446 answers (the six searches and
+  Regulus's, both ways, at 141 starts 1967-2049 on the Swiss files, 144
+  over Moshier's range, 103 over de200's) all but two the same, Regulus
+  backward from 881873.9 on Moshier 4.4e-12 day off (its conjunction
+  search began 0.63 day later) and from 1048162.0 the occultation the
+  search used to pass; the golden's rows byte for byte. An eclipse whose
+  refinement window (5 days at the Swiss ends) reaches past an end can
+  still refuse; none at these ends.
+
+G177 check (d): the six searches backward from 0.5, 3, 10, 30 and 100
+days before the end of the Swiss files, de200.eph and Moshier and
+forward from as far after their starts: answered inside on the start's
+side, the search the other way from just past the answer finding
+nothing nearer (180); and from 21 starts 97 days apart at each Swiss end
+the solar and lunar eclipses global (local from every other start) both
+ways, Regulus's and Venus's occultations backward from 12 starts at the
+upper and lower ends, Regulus's from 1048162.0 on Moshier (281). 180 and
+281 pass; before the fix 160 and 248, the upstream build likewise. G24
+`ecl_search_end_missed`: five searches refused or missing the nearest
+event, 0/5 shipped, 5/5 compat. G174, G160, G161, G157, G152, G89, G41,
+G36, G81, G146, G82 and G106 pass.
 
 ## How these were found
 

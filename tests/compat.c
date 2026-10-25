@@ -6224,7 +6224,7 @@ static double refusal_outputs_kept(void)
     strcpy(ob, "Venus");
     switch (k) {
     case 0: r = swe_calc_pctr_r(c, j, SE_MARS, SE_MARS, M, o, serr); n = 6; break;
-    case 1: r = swe_get_orbital_elements_r(c, j, SE_SUN, M, o, serr); n = 17; break;
+    case 1: r = swe_get_orbital_elements_r(c, j, SE_MEAN_NODE, M, o, serr); n = 17; break;	/* the Sun before bug 278 */
     case 2: r = swe_orbit_max_min_true_distance_r(c, t, SE_MARS, M, o, o + 1, o + 2, serr); n = 3; break;
     case 3: r = swe_gauquelin_sector_r(c, j, SE_MARS, NULL, M, 9, geo, 1013.25, 10, o, serr); n = 1; break;
     case 4: r = swe_lun_occult_where_r(c, j, 0, st, M, o, o + 10, serr); n = 2; break;
@@ -7838,11 +7838,125 @@ static double speed3_spacing_off(void)
   return fabs(x[3] - (p[0] - 8 * p[1] + 8 * p[3] - p[4]) / (12 * h));
 }
 
+/* UPSTREAM-BUGS 277: six calls from Zurich at a height outside -500 ..
+ * 25000 m that answered: swe_rise_trans()'s fast rising of the Sun at
+ * 50000 m (2451545.800726) and setting of the Moon at -1000 m,
+ * swe_vis_limit_mag() and swe_topo_arcus_visionis() at 50000 m (-3.5629,
+ * 99 deg), swe_heliacal_angle() at a NaN height (2.97 deg) and
+ * swe_gauquelin_sector() method 2 at 50000 m. Shipped 0/6, upstream 6/6. */
+static double site_height_answered(void)
+{
+  double datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 }, o[64], j = 2451545.0;
+  char serr[AS_MAXCH], ob[AS_MAXCH];
+  int k, n = 0;
+  for (k = 0; k < 6; k++) {
+    swe_ctx *c = swe_ctx_new();
+    double geo[3] = { 8.55, 47.37, k == 1 ? -1000 : k == 4 ? NAN : 50000 };
+    int32 r;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, (char *) EPHE);
+    strcpy(ob, "Venus");
+    switch (k) {
+    case 0: r = swe_rise_trans_r(c, j, SE_SUN, NULL, SEFLG_SWIEPH, SE_CALC_RISE, geo, 1013.25, 10, o, serr); break;
+    case 1: r = swe_rise_trans_r(c, j, SE_MOON, NULL, SEFLG_SWIEPH, SE_CALC_SET, geo, 1013.25, 10, o, serr); break;
+    case 2: r = swe_vis_limit_mag_r(c, j, geo, datm, dobs, ob, SEFLG_SWIEPH, o, serr); break;
+    case 3: r = swe_topo_arcus_visionis_r(c, j, geo, datm, dobs, SEFLG_SWIEPH, -4, 100, 5, 280, 0, -10, o, serr); break;
+    case 4: r = swe_heliacal_angle_r(c, j, geo, datm, dobs, SEFLG_SWIEPH, -4, 100, 280, 0, -10, o, serr); break;
+    default: r = swe_gauquelin_sector_r(c, j, SE_MARS, NULL, SEFLG_SWIEPH, 2, geo, 1013.25, 10, o, serr); break;
+    }
+    n += r != ERR;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 278: the Sun's orbital elements at J2000 on the Swiss
+ * files, which swe_orbit_max_min_true_distance() takes as the Earth's
+ * orbit: refused, "object 0 not valid" (1), or the Earth's with the
+ * periapsis turned by 180 deg (0). Shipped 0, upstream 1. */
+static double sun_elements_refused(void)
+{
+  swe_ctx *c = swe_ctx_new();
+  double e[50], s[50];
+  char serr[AS_MAXCH];
+  int32 r;
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, (char *) EPHE);
+  /* the Earth first: a fresh context's first call answers it 1.0e-11 AU
+   * off (its aphelion distance), a warm one's not */
+  swe_get_orbital_elements_r(c, 2451545.0, SE_EARTH, SEFLG_SWIEPH, e, serr);
+  r = swe_get_orbital_elements_r(c, 2451545.0, SE_SUN, SEFLG_SWIEPH, s, serr);
+  swe_get_orbital_elements_r(c, 2451545.0, SE_EARTH, SEFLG_SWIEPH, e, serr);
+  swe_ctx_free(c);
+  return !(r != ERR && s[5] == swe_degnorm(e[5] + 180) && s[16] == e[16]);
+}
+
+/* UPSTREAM-BUGS 279: swe_heliacal_pheno_ut() of Venus at J2000 from
+ * Zurich, the array set to 7: how many of darr[28..30] kept the 7.
+ * Shipped 0/3, upstream 3/3. */
+static double pheno_tail_kept(void)
+{
+  swe_ctx *c = swe_ctx_new();
+  double geo[3] = { 8.55, 47.37, 400 }, datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  double d[SE_HELIACAL_DARR_SIZE];
+  char serr[AS_MAXCH], ob[AS_MAXCH];
+  int i, n = 0;
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, (char *) EPHE);
+  for (i = 0; i < SE_HELIACAL_DARR_SIZE; i++)
+    d[i] = 7;
+  strcpy(ob, "Venus");
+  if (swe_heliacal_pheno_ut_r(c, 2451545.0, geo, datm, dobs, ob, SE_HELIACAL_RISING, SEFLG_SWIEPH, d, serr) < 0)
+    n = -1;
+  else
+    for (i = 28; i <= 30; i++)
+      n += d[i] == 7;
+  swe_ctx_free(c);
+  return n;
+}
+
+/* UPSTREAM-BUGS 281: five searches on the Swiss files that refused or
+ * missed the nearest event: the solar and lunar eclipses backward from
+ * 7929133.0, half a day before sepl_168.se1's end ("jd 7929235.715052 >
+ * upper limit"); the solar eclipse forward from 7927148.0 (7927313.519468
+ * for 7927165.810722); Venus's occultation backward from -3026575.471
+ * (refused at the file's start for -3026582.474721); Regulus's backward
+ * from 7927700 (7927560.635384 for 7927587.969003). Shipped 0/5,
+ * upstream 5/5. */
+static double ecl_search_end_missed(void)
+{
+  static const double want[5] = { 7929055.364842, 7929070.827551, 7927165.810722, -3026582.474721, 7927587.969003 };
+  double tr[10];
+  char serr[AS_MAXCH], st[AS_MAXCH];
+  int k, n = 0;
+  for (k = 0; k < 5; k++) {
+    swe_ctx *c = swe_ctx_new();
+    int32 r, E = SEFLG_SWIEPH;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, (char *) EPHE);
+    strcpy(st, "Regulus");
+    switch (k) {
+    case 0: r = swe_sol_eclipse_when_glob_r(c, 7929133.0, E, 0, tr, 1, serr); break;
+    case 1: r = swe_lun_eclipse_when_r(c, 7929133.0, E, 0, tr, 1, serr); break;
+    case 2: r = swe_sol_eclipse_when_glob_r(c, 7927148.0, E, 0, tr, 0, serr); break;
+    case 3: r = swe_lun_occult_when_glob_r(c, -3026575.471, SE_VENUS, NULL, E, 0, tr, 1, serr); break;
+    default: r = swe_lun_occult_when_glob_r(c, 7927700.0, 0, st, E, 0, tr, 1, serr); break;
+    }
+    n += !(r > 0 && fabs(tr[0] - want[k]) < 1e-5);
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3, tzfar, utmsg, boundmsg, eclutmsg, stencilmsg, helnote, sidtfeps, nutrng, toposidt, segnode, spd3sp;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth, moonltstart, moshnodemargin, astltstart, jplwarn3, tzfar, utmsg, boundmsg, eclutmsg, stencilmsg, helnote, sidtfeps, nutrng, toposidt, segnode, spd3sp, sitehgt, sunorbel, phenotail, eclend;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -8048,6 +8162,10 @@ int main(int argc, char **argv)
   sidtfeps = sidt_formula_eps_answered();
   nutrng = nut_range_answered();
   toposidt = topo_site_window_off();
+  sitehgt = site_height_answered();
+  sunorbel = sun_elements_refused();
+  phenotail = pheno_tail_kept();
+  eclend = ecl_search_end_missed();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -10053,6 +10171,35 @@ int main(int argc, char **argv)
   else {
     printf("  SPEED3's spacing       %.2e deg/day FAIL: expected %s\n",
            spd3sp, WANT_DEFECT ? "> 1e-6" : "< 1e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (sitehgt == 6) : (sitehgt == 0))
+    printf("  site height answered   %.0f/6 OK\n", sitehgt);
+  else {
+    printf("  site height answered   %.0f/6 FAIL: expected %s\n",
+           sitehgt, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+  if (WANT_DEFECT ? (sunorbel == 1) : (sunorbel == 0))
+    printf("  Sun's elements refused %.0f OK\n", sunorbel);
+  else {
+    printf("  Sun's elements refused %.0f FAIL: expected %s\n",
+           sunorbel, WANT_DEFECT ? "1" : "0");
+    bad++;
+  }
+  if (WANT_DEFECT ? (phenotail == 3) : (phenotail == 0))
+    printf("  heliacal pheno darr[28..30] kept %.0f/3 OK\n", phenotail);
+  else {
+    printf("  heliacal pheno darr[28..30] kept %.0f/3 FAIL: expected %s\n",
+           phenotail, WANT_DEFECT ? "3" : "0");
+    bad++;
+  }
+  if (WANT_DEFECT ? (eclend == 5) : (eclend == 0))
+    printf("  eclipse search near an end or far missed %.0f/5 OK\n", eclend);
+  else {
+    printf("  eclipse search near an end or far missed %.0f/5 FAIL: expected %s\n",
+           eclend, WANT_DEFECT ? "5" : "0");
     bad++;
   }
 

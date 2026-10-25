@@ -212,6 +212,17 @@ typedef struct swe_ctx swe_ctx;
 
 #define SEI_ECL_GEOALT_MAX   25000.0
 #define SEI_ECL_GEOALT_MIN   (-500.0)
+/* Upstream bug 277: a site's height outside the bound the eclipse,
+ * occultation, rise and set and heliacal functions take. Upstream's test,
+ * (h < MIN || h > MAX), passes a NaN height, which then was refused by a
+ * date's range message ("Swiss (.se1) ephemeris is not available for jd
+ * 2451545.0007", "jd nan outside ...") or answered OK with NaN or a number
+ * (swe_vis_limit_mag() 1 and -nan, swe_heliacal_angle() 2.97 deg). */
+#ifndef SWE_UPSTREAM_COMPAT
+# define SWI_GEOALT_OUT(h)  (!((h) >= SEI_ECL_GEOALT_MIN && (h) <= SEI_ECL_GEOALT_MAX))
+#else
+# define SWI_GEOALT_OUT(h)  ((h) < SEI_ECL_GEOALT_MIN || (h) > SEI_ECL_GEOALT_MAX)
+#endif
 
 /* Chiron's orbit becomes chaotic 
  * before 720 AD and after 4606 AD, because of close encounters
@@ -1883,6 +1894,24 @@ struct epsilon {
  *     day after sepl_12's last EMB boundary Mars's heliocentric
  *     osculating node 2.2e-3 (the compat build's stencil), the Moon's
  *     SEFLG_SPEED3 at its own 0.25 (UPSTREAM-BUGS 276, G176, G24)
+ *   - a site's height outside -500 .. 25000 m answered by
+ *     swe_rise_trans()'s fast rising and setting (the Sun's from Zurich at
+ *     50000 m, 2451545.800726), swe_gauquelin_sector()'s methods 2 to 5
+ *     through it, swe_vis_limit_mag() and swe_topo_arcus_visionis(), and a
+ *     NaN height passing every function's test (UPSTREAM-BUGS 277, G177,
+ *     G24)
+ *   - swe_get_orbital_elements() refusing the Sun, "object 0 not valid",
+ *     which swe_orbit_max_min_true_distance() takes as the Earth's orbit
+ *     (UPSTREAM-BUGS 278, G177, G24)
+ *   - swe_heliacal_pheno_ut() leaving darr[28..30] as the caller had them
+ *     on success (UPSTREAM-BUGS 279, G177, G24)
+ *   - the eclipse searches beginning at a lunation 1.8e-5 a lunation off
+ *     their candidates', refusing backward within about 100 days of the
+ *     Swiss files' end ("jd 7929235.715052 > upper limit 7929133.500000"
+ *     from 7929133.0) and passing over the nearest eclipse forward in the
+ *     far future and backward in the far past; the occultation searches
+ *     reading the start's UT as TT and stepping back 20 days plus delta t,
+ *     missing occultations backward (UPSTREAM-BUGS 281, G177, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

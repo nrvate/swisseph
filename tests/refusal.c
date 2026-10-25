@@ -155,7 +155,7 @@ static int probe_a(int k)
   C(1, 6, swe_calc_pctr_r(c, j, SE_MARS, SE_MARS, M, o, S));
   C(2, 6, swe_calc_pctr_r(c, j, -5, SE_MARS, SEFLG_SWIEPH, o, S));
   C(3, 17, swe_get_orbital_elements_r(c, t, SE_MARS, M, o, S));
-  C(4, 17, swe_get_orbital_elements_r(c, j, SE_SUN, M, o, S));
+  C(4, 17, swe_get_orbital_elements_r(c, j, SE_MEAN_NODE, M, o, S));	/* the Sun, refused before bug 278 */
   C(5, 3, swe_orbit_max_min_true_distance_r(c, t, SE_MARS, M, o, o + 1, o + 2, S));
   C(6, 1, swe_gauquelin_sector_r(c, t, SE_MARS, NULL, M, 0, geo, 1013.25, 10, o, S));
   C(7, 1, swe_gauquelin_sector_r(c, j, SE_MARS, NULL, M, 9, geo, 1013.25, 10, o, S));

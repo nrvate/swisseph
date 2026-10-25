@@ -1522,6 +1522,15 @@ static int32 swe_vis_limit_mag_r_body(swe_ctx *ctx, double tjdut, double *dgeo, 
    * five. */
   if (swi_date_invalid(tjdut, serr))
     return ERR;
+  /* Upstream bug 277: no height test here, nor in
+   * swe_topo_arcus_visionis(), where the other heliacal functions refuse
+   * the site: Venus at J2000 from Zurich at 50000 m answered OK, -3.5629
+   * (-6.7527 at -1000 m). Refused now as theirs are. */
+  if (SWI_GEOALT_OUT(dgeo[2])) {
+    if (serr != NULL)
+      sprintf(serr, "location for heliacal events must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
+    return ERR;
+  }
 #endif
   tolower_string_star(ObjectName);
   if (DeterObject(ObjectName) == SE_SUN) {
@@ -1709,6 +1718,12 @@ static int32 swe_topo_arcus_visionis_r_body(swe_ctx *ctx, double tjdut, double *
   }
   if (hel_date_undefined(tjdut, serr))	/* bug 241, see swe_heliacal_angle() */
     return ERR;
+  /* bug 277, see swe_vis_limit_mag(): 99 deg, OK, at 50000 m */
+  if (SWI_GEOALT_OUT(dgeo[2])) {
+    if (serr != NULL)
+      sprintf(serr, "location for heliacal events must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
+    return ERR;
+  }
 #endif
   swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   sunra = SunRA(ctx, tjdut, helflag, serr);
@@ -1831,7 +1846,7 @@ static int32 swe_heliacal_angle_r_body(swe_ctx *ctx, double tjdut, double *dgeo,
   if (hel_date_undefined(tjdut, serr))	/* bug 241 */
     return ERR;
 #endif
-  if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
+  if (SWI_GEOALT_OUT(dgeo[2])) {
     if (serr != NULL)
       sprintf(serr, "location for heliacal events must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
@@ -2042,7 +2057,7 @@ static int32 swe_heliacal_pheno_ut_r_body(swe_ctx *ctx, double JDNDaysUT, double
     return ERR;
   }
 #endif
-  if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
+  if (SWI_GEOALT_OUT(dgeo[2])) {
     if (serr != NULL)
       sprintf(serr, "location for heliacal events must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
@@ -2232,6 +2247,15 @@ output_heliacal_pheno:
   darr[25] = LMoon;
   darr[26] = elong;
   darr[27] = illum;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 279: darr[28..30], inside SE_HELIACAL_DARR_SIZE, were
+   * never written on success and kept what the caller had there. The
+   * manual's list (from the source's comment above) names 28 CVAact and
+   * 29 MSk, which nothing here computes (26, which the list calls CVAact
+   * too, is the elongation), and 30 not at all: written 0 now, as on a
+   * refusal. */
+  darr[28] = darr[29] = darr[30] = 0;
+#endif
   return OK;
 }
 
@@ -3421,7 +3445,7 @@ static int32 swe_heliacal_ut_r_body(swe_ctx *ctx, double JDNDaysUTStart, double 
   if (swi_search_start_refused(ctx, JDNDaysUTStart, helflag, FALSE, 2000, serr_ret))
     return ERR;
 #endif
-  if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
+  if (SWI_GEOALT_OUT(dgeo[2])) {
     if (serr_ret != NULL)
       sprintf(serr_ret, "location for heliacal events must be between %.0f and %.0f m above sea\n", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;

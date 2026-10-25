@@ -74,6 +74,36 @@ static double lunation_trunc(double x)
 {
   return (x > -2147483649.0 && x < 2147483648.0) ? (double) (int) x : -2147483648.0;
 }
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 281: the eclipse searches began at the lunation the start's
+ * days from J2000 times 12.3685 / 365.2425 give, stepped back one, where
+ * their candidates are Meeus's mean syzygies, 29.530588853 days apart
+ * from 2451550.09765 TT: 1.8e-5 a lunation short, the start's lunation
+ * drifted from its own, 3.3 high at sepl_168.se1's end (7929133.5), 3.3
+ * low at seplm132.se1's start. Backward in the future the search began
+ * beyond the start and refined each candidate before rejecting it: from
+ * 7929133.0 it refused "jd 7929235.715052 > upper limit 7929133.500000",
+ * the eclipses before it inside the range (the lunar searches on
+ * de200.eph likewise); and past about 4300 years from J2000, where the
+ * drift passes the lunation stepped back, forward in the future (backward
+ * in the past) it began after eclipses it then never saw: from 7927148.0
+ * 7927313.519468 for 7927165.810722. Now the start's lunation is the
+ * candidates' own at its TT (their secular terms included), stepped back
+ * as before, and a candidate whose approximate maximum lies more than
+ * ECL_APPROX_MARGIN days on the wrong side of the start, which the search
+ * would refine and reject, is passed over unread: over the Swiss files'
+ * range the refined maxima lie within 1.52 days of it (0.044 near J2000).
+ * phase 0 for the new moons, 0.5 for the full. */
+#define ECL_APPROX_MARGIN  3.0
+static double ecl_start_lunation(swe_ctx *ctx, double tjd_start, int32 ifl, double phase, double *tt_start)
+{
+  double T, d;
+  *tt_start = tjd_start + swe_deltat_ex_r(ctx, tjd_start, ifl, NULL);
+  T = (*tt_start - 2451550.09765) / 29.530588853 / 1236.85;
+  d = 0.0001337 * T * T - 0.000000150 * T * T * T + 0.00000000073 * T * T * T * T;
+  return lunation_trunc(floor((*tt_start - 2451550.09765 - d) / 29.530588853 - phase));
+}
+#endif
 static int find_maximum(double y00, double y11, double y2, double dx, 
 			double *dxret, double *yret);
 static int find_zero(double y00, double y11, double y2, double dx, 
@@ -1033,6 +1063,23 @@ static int32 calc_planet_star(swe_ctx *ctx, double tjd_et, int32 ipl, char *star
   return retc;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 281: the TT of a backward occultation search's start;
+ * where an ephemeris ends between the start's UT and its TT (within delta
+ * t of the end, 8.5 days at sepl_168.se1's), the latest whole day before
+ * that TT at which the body and the Moon answer, so that the search
+ * begins inside it */
+static double occ_back_start(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl)
+{
+  double tt = tjd_start + swe_deltat_ex_r(ctx, tjd_start, ifl, NULL), t, x[6];
+  for (t = tt; t > tjd_start; t -= 1)
+    if (calc_planet_star(ctx, t, ipl, starname, ifl, x, NULL) != ERR
+        && swe_calc_r(ctx, t, SE_MOON, ifl, x, NULL) != ERR)
+      return t;
+  return tt < tjd_start ? tt : tjd_start;
+}
+#endif
+
 /* Computes attributes of a solar eclipse for given tjd, geo. longitude, 
  * geo. latitude, and geo. height.
  * 
@@ -1067,7 +1114,7 @@ static int32 swe_sol_eclipse_how_r_body(swe_ctx *ctx, double tjd_ut,
   double geopos2[20];
   for (i = 0; i <= 10; i++)
     attr[i] = 0;
-  if (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX) {
+  if (SWI_GEOALT_OUT(geopos[2])) {
     if (serr != NULL)
       sprintf(serr, "location for eclipses must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
@@ -1382,6 +1429,7 @@ static int32 swe_sol_eclipse_when_glob_r_body(swe_ctx *ctx, double tjd_start, in
   AS_BOOL dont_times = FALSE;
   int32 iflag, iflagcart;
 #ifndef SWE_UPSTREAM_COMPAT
+  double tt_start;
   /* Upstream bug 211: a NaN or infinite start went into the lunation
    * number's cast (UB, held at -2^31 above), and the search refused with
    * the range message of a date no caller gave: "jd 6634702579155901.000000
@@ -1428,7 +1476,11 @@ static int32 swe_sol_eclipse_when_glob_r_body(swe_ctx *ctx, double tjd_start, in
     ifltype |= SE_ECL_NONCENTRAL;
   if (backward)
     direction = -1;
+#ifndef SWE_UPSTREAM_COMPAT
+  K = ecl_start_lunation(ctx, tjd_start, ifl, 0, &tt_start);	/* bug 281 */
+#else
   K = lunation_trunc((tjd_start - J2000) / 365.2425 * 12.3685);	/* bug 211 */
+#endif
   K -= direction;
 next_try:
   retflag = 0;
@@ -1465,6 +1517,12 @@ next_try:
   Mm *= DEGTORAD;
   tjd = tjd - 0.4075 * sin(Mm)
             + 0.1721 * E * sin(M);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (direction * (tjd - tt_start) < -ECL_APPROX_MARGIN) {	/* bug 281 */
+    K += direction;
+    goto next_try;
+  }
+#endif
   /* 
    * time of maximum eclipse (if eclipse) = 
    * minimum geocentric angle between sun and moon edges.
@@ -1824,6 +1882,7 @@ static int32 swe_lun_occult_when_glob_r_body(swe_ctx *ctx, double tjd_start, int
   AS_BOOL dont_times = FALSE;
   int32 one_try = backward & SE_ECL_ONE_TRY;
 #ifndef SWE_UPSTREAM_COMPAT
+  double ut_to_tt = 0, tt_max;
   /* bugs 211, 240, as the eclipse searches: NaN was "jd nan outside
    * Moshier planet range", past delta t's range Moshier's range named */
   if (swi_date_invalid(tjd_start, serr)
@@ -1876,7 +1935,27 @@ static int32 swe_lun_occult_when_glob_r_body(swe_ctx *ctx, double tjd_start, int
     direction = -1;
   t = tjd_start;
   tjd = t;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 281: the search reads its places at TT; it took the
+   * start, a UT, as one, and stepped 20 days from a maximum it had turned
+   * into UT. Backward it began delta t before the start, passing an
+   * occultation there (Regulus's at 1048161.947536 from 1048162.0 on
+   * Moshier), and stepped 20 days plus delta t, past 7 days of it more than
+   * the Moon takes from one conjunction to the one before: from
+   * -3026575.471 on the Swiss files (8.3 days) Venus's occultation at
+   * -3026582.474721 was passed and the search refused at the file's start,
+   * "jd -3026624.508296 < lower limit"; Regulus's at 7927587.969003 was
+   * missed from 7927700 (7927560.635384 answered). Now a backward start
+   * and try are at their TT (occ_back_start(), ut_to_tt); forward, where
+   * both only begin early, as before. */
+  if (backward)
+    t = tjd = occ_back_start(ctx, tjd_start, ipl, starname, ifl);
+#endif
 next_try:
+#ifndef SWE_UPSTREAM_COMPAT
+  t += ut_to_tt;	/* bug 281: a UT the start or a try gave, at its TT */
+  ut_to_tt = 0;
+#endif
   if (calc_planet_star(ctx, t, ipl, starname, ifl, ls, serr) == ERR)
       return ERR;
   /* fixed stars with an ecliptic latitude > 7  or < -7 cannot have
@@ -1954,8 +2033,15 @@ next_try:
     find_maximum(dc[0], dc[1], dc[2], dt, &dtint, &dctr);
     tjd += dtint + dt;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  tt_max = tjd;
+#endif
   tjd -= swe_deltat_ex_r(ctx, tjd, ifl, serr);
   tjds = tjd;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (backward)	/* bug 281: the tries below step from the UT tjd */
+    ut_to_tt = tt_max - tjd;
+#endif
   if ((retflag = eclipse_where(ctx, tjd, ipl, starname, ifl, geopos, dcore, serr)) == ERR)
     return retflag;
   retflag2 = retflag;
@@ -2302,7 +2388,7 @@ static int32 swe_sol_eclipse_when_loc_r_body(swe_ctx *ctx, double tjd_start, int
   if (swi_search_start_refused(ctx, tjd_start, ifl, TRUE, backward ? -400 : 400, serr))
     return ERR;
 #endif
-  if (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX) {
+  if (SWI_GEOALT_OUT(geopos[2])) {
     if (serr != NULL)
       sprintf(serr, "location for eclipses must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
@@ -2395,7 +2481,7 @@ static int32 swe_lun_occult_when_loc_r_body(swe_ctx *ctx, double tjd_start, int3
 #endif
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */
-  if (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX) {
+  if (SWI_GEOALT_OUT(geopos[2])) {
     if (serr != NULL)
       sprintf(serr, "location for occultations must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
@@ -2467,8 +2553,15 @@ static int32 eclipse_when_loc(swe_ctx *ctx, double tjd_start, int32 ifl, double 
   double dt1 = 0, dt2 = 0, dtdiv, dtstart;
   int32 iflag = SEFLG_EQUATORIAL | SEFLG_TOPOCTR | ifl;
   int32 iflagcart = iflag | SEFLG_XYZ;
+#ifndef SWE_UPSTREAM_COMPAT
+  double tt_start;
+#endif
   set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
+#ifndef SWE_UPSTREAM_COMPAT
+  K = ecl_start_lunation(ctx, tjd_start, ifl, 0, &tt_start);	/* bug 281, as the global search */
+#else
   K = lunation_trunc((tjd_start - J2000) / 365.2425 * 12.3685);	/* bug 211 */
+#endif
   if (backward)
     K++;
   else
@@ -2512,6 +2605,15 @@ next_try:
   // A1 *= DEGTORAD;
   tjd = tjd - 0.4075 * sin(Mm)
             + 0.1721 * E * sin(M);
+#ifndef SWE_UPSTREAM_COMPAT
+  if ((backward ? tjd - tt_start : tt_start - tjd) > ECL_APPROX_MARGIN) {	/* bug 281 */
+    if (backward)
+      K--;
+    else
+      K++;
+    goto next_try;
+  }
+#endif
   set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
   dtdiv = 2;
   dtstart = 0.5;
@@ -2797,6 +2899,12 @@ static int32 occult_when_loc(
     direction = -1;
   t = tjd_start;
   tjd = tjd_start;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 281, as swe_lun_occult_when_glob(): backward the start
+   * at its TT, not delta t before it (its tries step from TT already) */
+  if (backward)
+    t = tjd = occ_back_start(ctx, tjd_start, ipl, starname, iflaggeo);
+#endif
 next_try:
   //is_partial = FALSE;
   if (calc_planet_star(ctx, t, ipl, starname, iflaggeo, ls, serr) == ERR)
@@ -3670,7 +3778,7 @@ static int32 swe_lun_eclipse_how_r_body(swe_ctx *ctx, double tjd_ut,
   /* attention: geopos[] is not used so far; may be NULL */
   if (geopos != NULL) 
     geopos[0] = geopos[0]; /* to shut up mint */
-  if (geopos != NULL && (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX)) {
+  if (geopos != NULL && SWI_GEOALT_OUT(geopos[2])) {
     if (serr != NULL)
       sprintf(serr, "location for eclipses must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
@@ -3909,6 +4017,7 @@ static int32 swe_lun_eclipse_when_r_body(swe_ctx *ctx, double tjd_start, int32 i
   int32 iflag;
   int32 iflagcart;
 #ifndef SWE_UPSTREAM_COMPAT
+  double tt_start;
   if (swi_date_invalid(tjd_start, serr)) {	/* bug 211, as the solar search */
     memset(tret, 0, 10 * sizeof(double));
     return ERR;
@@ -3935,7 +4044,11 @@ static int32 swe_lun_eclipse_when_r_body(swe_ctx *ctx, double tjd_start, int32 i
     ifltype = SE_ECL_TOTAL | SE_ECL_PENUMBRAL | SE_ECL_PARTIAL;
   if (backward)
     direction = -1;
+#ifndef SWE_UPSTREAM_COMPAT
+  K = ecl_start_lunation(ctx, tjd_start, ifl, 0.5, &tt_start);	/* bug 281, as the solar search */
+#else
   K = lunation_trunc((tjd_start - J2000) / 365.2425 * 12.3685);	/* bug 211 */
+#endif
   K -= direction;
 next_try:
   retflag = 0;
@@ -3994,6 +4107,12 @@ next_try:
             - 0.0002 * E * sin(M - 2 * F1)
             - 0.0002 * E * sin(2 * Mm - M)
             - 0.0002 * sin(Om);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (direction * (tjd - tt_start) < -ECL_APPROX_MARGIN) {	/* bug 281 */
+    K += direction;
+    goto next_try;
+  }
+#endif
   /* 
    * precise computation:
    * time of maximum eclipse (if eclipse) = 
@@ -4198,7 +4317,7 @@ static int32 swe_lun_eclipse_when_loc_r_body(swe_ctx *ctx, double tjd_start, int
   if (swi_search_start_refused(ctx, tjd_start, ifl, TRUE, backward ? -400 : 400, serr))
     return ERR;
 #endif
-  if (geopos != NULL && (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX)) {
+  if (geopos != NULL && SWI_GEOALT_OUT(geopos[2])) {
     if (serr != NULL)
       sprintf(serr, "location for eclipses must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
@@ -5021,6 +5140,16 @@ static int32 swe_rise_trans_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, char 
     && !(rsmi & (SE_BIT_CIVIL_TWILIGHT|SE_BIT_NAUTIC_TWILIGHT|SE_BIT_ASTRO_TWILIGHT))
     && (ipl >= SE_SUN && ipl <= SE_TRUE_NODE)
     && (fabs(geopos[1]) <= 60 || (ipl == SE_SUN && fabs(geopos[1]) <= 65))
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 277: the fast method took no height test: the Sun's
+     * rising from Zurich at 50000 m answered OK, 2451545.800726, and at
+     * -1000 m, where swe_rise_trans_true_hor(), the slow method and the
+     * transits refuse "location for swe_rise_trans() must be between -500
+     * and 25000 m above sea". A site outside the bound (or NaN) takes
+     * their refusal now, tret 0, and swe_gauquelin_sector()'s methods 2
+     * to 5 with it. */
+    && !SWI_GEOALT_OUT(geopos[2])
+#endif
     ) {
       retval = rise_set_fast(ctx, tjd_ut, ipl, epheflag, rsmi, geopos, atpress, attemp, tret, serr);
       return retval;
@@ -5086,7 +5215,7 @@ static int32 swe_rise_trans_true_hor_r_body(swe_ctx *ctx, double tjd_ut, int32 i
   int nazalt = 0;
   int ncalc = 0;
   AS_BOOL do_fixstar = (starname != NULL && *starname != '\0');
-  if (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX) {
+  if (SWI_GEOALT_OUT(geopos[2])) {
     if (serr != NULL)
       sprintf(serr, "location for swe_rise_trans() must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
@@ -7876,6 +8005,23 @@ static int32 swe_get_orbital_elements_r_body(swe_ctx *ctx, double tjd_et,
 #ifndef SWE_UPSTREAM_COMPAT
   int32 retc0;
   double ev[3], evr[3], rv;
+  /* Upstream bug 278: the Sun was refused, "object 0 not valid", where
+   * swe_orbit_max_min_true_distance() takes it as the Earth's orbit (the
+   * Sun's geocentric distance from the Earth-Moon barycentre's
+   * heliocentric ellipse, 1.0166992 .. 0.9832941 AU at J2000) and
+   * swe_nod_aps() gives the Sun's points as the Earth's orbit seen from
+   * the Earth (the osculating perigee 282.9178 deg). The Sun's
+   * heliocentric elements mean nothing; its geocentric ones are that
+   * ellipse seen from the other focus' body: the same a, e, i, node, mean,
+   * true and eccentric anomalies, periods, time of periapsis passage and
+   * distances, the argument and longitude of periapsis and the mean
+   * longitude turned by 180 deg (the place and velocity negated), as the
+   * Moon's elements are geocentric. */
+  AS_BOOL sun_geo = FALSE;
+  if (ipl == SE_SUN) {
+    sun_geo = TRUE;
+    ipl = SE_EARTH;
+  }
 #else
   double pp, sinE, ecce2, ytrop, ysid;
 #endif
@@ -8126,6 +8272,13 @@ static int32 swe_get_orbital_elements_r_body(swe_ctx *ctx, double tjd_et,
   dret[14] = tjd_et - dret[6] / dmot; /* tjd_et of perihelion passage */
   dret[15] = sema * (1 - ecce); /* perihelion distance */
   dret[16] = sema * (1 + ecce); /* aphelion distance */
+#ifndef SWE_UPSTREAM_COMPAT
+  if (sun_geo) {	/* bug 278: the Sun's geocentric orbit, its perigee */
+    dret[4] = swe_degnorm(parg + 180);
+    dret[5] = swe_degnorm(peri + 180);
+    dret[9] = swe_degnorm(mlon + 180);
+  }
+#endif
 //  printf("%d: a=%f, e=%f, in=%f, node=%f, parg=%f, peri=%f\n", ipl, sema, ecce, dret[2], dret[3], dret[4], dret[5]);
 //  printf("tan=%f, ean=%f, man=%f, mlon=%f\n", dret[7], dret[8], dret[6], dret[9]);
 //  printf("cyc=%f, dmot=%f, cyct=%f, cycs=%f\n", dret[10], dret[11], dret[12], dret[13]);
