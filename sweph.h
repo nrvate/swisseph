@@ -1190,6 +1190,11 @@ struct epsilon {
  *     request, which swe_calc() refuses: the heliocentric place under
  *     SEFLG_BARYCTR, 5.7e-3 AU off the barycentric one (UPSTREAM-BUGS 135,
  *     G126)
+ *   - swe_calc_orbel() (this fork's) with elements of the equinox of date
+ *     holding that equinox at the observation instant through the light
+ *     time and leaving its turning out of the speed: 1.9e-2 deg at a =
+ *     80000 AU, 3.5e-7 deg at 1.2 AU, 4.0e-5 to 8.8e-5 deg/day off the
+ *     same elements as a JDATE body (UPSTREAM-BUGS 136, G126)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

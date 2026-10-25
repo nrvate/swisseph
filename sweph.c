@@ -208,8 +208,8 @@ static void file_spare_drop(swe_ctx *ctx, int ifno);
 static void embofs(double * SWI_RESTRICT xemb, const double * SWI_RESTRICT xmoon);
 static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, char *serr);
 static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, char *serr);
-static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el, double mu, double tequ, double *xp, char *serr);
-static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el, double mu, double tequ, int32 iplctr, int32 iflag, char *serr);
+static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el, double mu, double tequ, AS_BOOL of_date, double *xp, char *serr);
+static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el, double mu, double tequ, AS_BOOL of_date, int32 iplctr, int32 iflag, char *serr);
 static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr);
 static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr);
@@ -943,7 +943,7 @@ static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el
   /* the ephemeris that actually answered: main_planet may have fallen back */
   iflag = ctx->pldat[SEI_EARTH].xflgs;
   epheflag = iflag & SEFLG_EPHMASK;
-  i = app_pos_etc_orbel(ctx, tjd_et, el, mu, tequ, iplctr, iflag, serr);
+  i = app_pos_etc_orbel(ctx, tjd_et, el, mu, tequ, equinox == SE_ORBEL_EQ_DATE, iplctr, iflag, serr);
   if (i == ERR)
     goto return_error;
   if (i == NOT_AVAILABLE || i == BEYOND_EPH_LIMITS) {
@@ -6017,12 +6017,21 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
  * dM/dt = n = sqrt(mu/a^3), so a call at a retarded epoch with
  * M - n * dt moves along the same motion.
  *
+ * of_date: the elements are referred to the equinox of date, tequ the
+ * instant evaluated, and the speed carries that frame's turning.
+ *
  * Invalid elements are errors, not clamps, as read_elements_file() refuses
  * them for the fictitious bodies. */
 static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
-    double mu, double tequ, double *xp, char *serr)
+    double mu, double tequ, AS_BOOL of_date, double *xp, char *serr)
 {
   double pqr[9], x[6];
+#ifndef SWE_UPSTREAM_COMPAT
+  double xe[3], xr[3];
+  int i;
+#else
+  (void) of_date;
+#endif
   double eps, K, fac, rho, cose, sine;
   double alpha, beta, zeta, sigma, M2, Msgn, M_180_or_0;
   double mano, sema, ecce, parg, node, incl;
@@ -6122,6 +6131,10 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
   xp[3] = pqr[0] * x[3] + pqr[1] * x[4];
   xp[4] = pqr[3] * x[3] + pqr[4] * x[4];
   xp[5] = pqr[6] * x[3] + pqr[7] * x[4];
+#ifndef SWE_UPSTREAM_COMPAT
+  for (i = 0; i <= 2; i++)
+    xe[i] = xp[i];
+#endif
   /* transformation to equator */
   eps = swi_epsiln(ctx, tequ, 0);
   swi_coortrf(xp, xp, -eps);
@@ -6131,6 +6144,24 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
     swi_precess(ctx, xp, tequ, 0, J_TO_J2000);
     swi_precess(ctx, xp+3, tequ, 0, J_TO_J2000);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 136 (this fork's swe_calc_orbel()): elements of the
+   * equinox of date (SE_ORBEL_EQ_DATE) are referred to a frame that turns
+   * with t, and the speed was the two-body motion in the frame held at
+   * tequ: the precession's and the obliquity's rates left out, 4.2e-5 to
+   * 8.8e-5 deg/day off the same elements as a seorbel.txt JDATE body and
+   * off the positions' own rate. Now the turning as swi_osc_el_plan()
+   * takes it for JDATE (bug 48), a central difference of the same rotation
+   * over +-1 day applied to the ecliptic position. G126. */
+  if (of_date) {
+    swi_coortrf(xe, xr, -swi_epsiln(ctx, tequ + 1, 0));
+    swi_precess(ctx, xr, tequ + 1, 0, J_TO_J2000);
+    swi_coortrf(xe, xe, -swi_epsiln(ctx, tequ - 1, 0));
+    swi_precess(ctx, xe, tequ - 1, 0, J_TO_J2000);
+    for (i = 0; i <= 2; i++)
+      xp[3+i] += (xr[i] - xe[i]) / 2;
+  }
+#endif
   return OK;
 }
 
@@ -6146,7 +6177,7 @@ static int swi_orbel_to_state(swe_ctx *ctx, double tjd, const double *el,
  * Returns ERR, or NOT_AVAILABLE / BEYOND_EPH_LIMITS from the ephemeris
  * reads, for the caller to redo with Moshier. */
 static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
-    double mu, double tequ, int32 iplctr, int32 iflag, char *serr)
+    double mu, double tequ, AS_BOOL of_date, int32 iplctr, int32 iflag, char *serr)
 {
   int i, j, niter, retc;
   double xx[6], dx[3], dt, dtsave_for_defl;
@@ -6197,7 +6228,7 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
   /* the two-body state at t, relative to the centre, then to the
    * centre's barycentric position: what swi_osc_el_plan() does with
    * xsun/xearth at its end */
-  if (swi_orbel_to_state(ctx, tjd, el, mu, tequ, pdp->x, serr) != OK)
+  if (swi_orbel_to_state(ctx, tjd, el, mu, tequ, of_date, pdp->x, serr) != OK)
     return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
   if (bias)	/* bug 130 */
@@ -6347,7 +6378,12 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       for (i = 0; i <= 5; i++)
         elret[i] = el[i];
       elret[0] = el[0] - dmot * dt;
-      if (swi_orbel_to_state(ctx, t, elret, mu, tequ, xx, serr) != OK)
+      /* Upstream bug 136: an equinox of date at the emission instant, as
+       * read_elements_file() gives JDATE (the protocol's 3.5a); it was
+       * held at teval, the frame's turn over the light time missing: 3.5e-7
+       * deg at a = 1.2 AU, 6.9e-6 deg at 30 AU, 1.9e-2 deg at 80000 AU
+       * (462 days) off the same elements as a JDATE body */
+      if (swi_orbel_to_state(ctx, t, elret, mu, of_date ? t : tequ, of_date, xx, serr) != OK)
 	return ERR;
       if (bias)	/* bug 130 */
         swi_bias(ctx, xx, t, SEFLG_SPEED, TRUE);
@@ -6396,7 +6432,7 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       for (i = 0; i <= 5; i++)
         elret[i] = el[i];
       elret[0] = el[0] - dmot * dt;
-      if (swi_orbel_to_state(ctx, t, elret, mu, tequ, xx, serr) != OK)
+      if (swi_orbel_to_state(ctx, t, elret, mu, tequ, of_date, xx, serr) != OK)
 	return ERR;
       if (iplctr == SE_EARTH) {
         for (i = 0; i <= 5; i++)

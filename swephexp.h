@@ -753,6 +753,9 @@ ext_def(int32) swe_calc_pctr(double tjd, int32 ipl, int32 iplctr, int32 iflag, d
  *
  * equinox names the mean equinox and ecliptic the elements are referred
  * to; the equinoxJd parameter is read only for SE_ORBEL_EQ_EXPLICIT.
+ * SE_ORBEL_EQ_DATE is the equinox of the instant evaluated, as
+ * seorbel.txt's JDATE: under light time the emission instant's, and the
+ * speed carries that frame's turning.
  *
  * iflag honours the subset a plain swe_calc() call honours: the ephemeris
  * bit, the observer bits (TOPOCTR, HELCTR, BARYCTR), the frame bits

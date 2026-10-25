@@ -1947,6 +1947,43 @@ static double orbel_mosh_bary_ret(void)
                         SEFLG_MOSEPH | SEFLG_SPEED | SEFLG_BARYCTR, x, serr);
 }
 
+/* UPSTREAM-BUGS 136: swe_calc_orbel() of an orbit with a = 1.2 AU whose
+ * elements are of the equinox of date (SE_ORBEL_EQ_DATE), heliocentric,
+ * geometric, J2000 equatorial XYZ, Swiss files: the velocity against a
+ * five-point difference of the positions (2^-7 day, the mean anomaly moved
+ * along the mean motion) at four binary-fraction dates in 2025, AU/day.
+ * The frame of date turns with t, and the speed was the two-body motion
+ * in the frame held at the date, the precession's turning left out:
+ * omega x r, 8e-7 AU/day; the upstream build's fictitious path has no such
+ * term either (bug 48's). */
+static double orbel_date_rate_off(void)
+{
+  static const double off[4] = {-2, -1, 1, 2};
+  const double h = 1.0 / 128, n = 0.01720209895 / (1.2 * sqrt(1.2)) * 180 / M_PI;
+  int32 fl = SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_TRUEPOS | SEFLG_J2000 | SEFLG_EQUATORIAL | SEFLG_XYZ;
+  double w = 0, xc[6], xs[4][6];
+  char serr[256];
+  int k, i, m;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 4; k++) {
+    double t0 = 2460676.5 + 91.25 * k;
+    for (m = -1; m < 4; m++) {
+      double t = m < 0 ? t0 : t0 + off[m] * h;
+      double el[6] = {40 + n * (t - t0), 1.2, 0.2, 30, 80, 12};
+      if (swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_DATE, 0, m < 0 ? fl | SEFLG_SPEED : fl,
+                         m < 0 ? xc : xs[m], serr) < 0)
+        return 1;
+    }
+    for (i = 0; i < 3; i++) {
+      double d = xc[i + 3] - (xs[0][i] - 8 * xs[1][i] + 8 * xs[2][i] - xs[3][i]) / (12 * h);
+      if (fabs(d) > w)
+        w = fabs(d);
+    }
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 86: the JPL barycentric Sun's sidereal (Lahiri) longitude,
  * right after a request for Mars ten years on, against its tropical
  * longitude less the ayanamsa at its own date, deg. The Sun is answered in
@@ -3239,7 +3276,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3357,6 +3394,7 @@ int main(int argc, char **argv)
   moshfarlt = mosh_far_lt_off();
   orbelbias = orbel_bias_off();
   orbelmb = orbel_mosh_bary_ret();
+  orbeldate = orbel_date_rate_off();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
@@ -4207,6 +4245,14 @@ int main(int argc, char **argv)
   else {
     printf("  orbel Moshier barycentre %.0f FAIL: expected %s\n",
            orbelmb, WANT_DEFECT ? "18180" : "< 0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbeldate > 1e-7) : (orbeldate < 1e-12))
+    printf("  orbel equinox of date rate %.2e AU/day OK\n", orbeldate);
+  else {
+    printf("  orbel equinox of date rate %.2e AU/day FAIL: expected %s\n",
+           orbeldate, WANT_DEFECT ? "> 1e-7" : "< 1e-12");
     bad++;
   }
 

@@ -167,6 +167,7 @@ worst were in code that had never executed even once.
 | 133 | The Sunshine houses' remembered declination, set by `swe_houses_armc()` before a context's first start, is wiped by the start's memset, which leaves 0 for 99, "none yet" (this fork's): a recall with 99 after the first calculation answers with declination 0, cusp 3 6.71 deg off | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 131 | After `swe_close()` without the path again, the kept path's first delta t takes the default tidal term (-25.80) until a file opens: 1463.43 s in AD 1000 for 1474.72, the first UT Moon there 1.6e-3 deg off the second, with de200.eph 14.29 s in AD 1700 for 3.01 -- on the closing thread, every thread and context adopting the close and an explicit context closed by `swe_close_r()` | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 | 135 | `swe_calc_orbel()` (this fork's) answers a barycentric Moshier request, which `swe_calc()` refuses: the heliocentric place under a return flag with SEFLG_BARYCTR set, 5.7e-3 AU off the barycentric one (0.29 deg at a = 1.2 AU) | Correctness (behaviour) | `sweph.c` |
+| 136 | `swe_calc_orbel()` (this fork's) with elements of the equinox of date holds that equinox at the observation instant through the light time and leaves its turning out of the speed: 1.9e-2 deg at a = 80000 AU, 6.9e-6 deg at 30 AU, 3.5e-7 deg at 1.2 AU off the same elements as a seorbel.txt JDATE body, the speeds 4.0e-5 to 8.8e-5 deg/day off them and off the positions' rate | Correctness | `sweph.c`, `swephexp.h` |
 
 ---
 
@@ -8505,6 +8506,10 @@ Left as they are:
   off the Swiss barycentric one, returning SEFLG_BARYCTR. A matter apart,
   not fixed here: entry 135, which made G126 check that centre on Moshier
   as a refusal.
+- Elements of the equinox of date (SE_ORBEL_EQ_DATE): the light time held
+  that equinox at the observation instant and the speed had no frame
+  turning, where seorbel.txt's JDATE path has both. Suspected here, not
+  measured: entry 136, measured and fixed there.
 
 G126 `tests/orbelbias.c`. Check 1: `swe_calc_orbel()` against `swe_calc()`
 of the same elements, written to a seorbel.txt in a temp dir (each with
@@ -8833,6 +8838,94 @@ build fails 26, its 20 of entry 130 and these 6.
 
 G24 `orbel_mosh_bary_ret`: `swe_calc_orbel()` of the a = 1.2 AU orbit,
 Moshier, barycentric, at 2000 Jul 1.5: -1 shipped, 18180 compat.
+
+## 136. `swe_calc_orbel()` holds an equinox of date at the observation instant through the light time, and its speed leaves out that frame's turning (this fork's)
+
+**Severity: Correctness (1.9e-2 deg at a = 80000 AU, 6.9e-6 deg at 30 AU, 3.5e-7 deg at 1.2 AU; speeds 4.0e-5 to 8.8e-5 deg/day off)**
+**Where:** `sweph.c`: `swi_orbel_to_state()`, `app_pos_etc_orbel()`; `swephexp.h` (the contract)
+
+Suspected by entry 130's work and measured here. With SE_ORBEL_EQ_DATE,
+`swe_calc_orbel_r()` takes the elements' equinox as tjd. Two things then
+departed from seorbel.txt's JDATE elements, the path `app_pos_etc_orbel()`
+was copied from:
+
+- **The light time.** The loop (bug 81's, on every flag set) evaluated the
+  elements at the retarded epoch, M - n dt, but still in the equinox of
+  tjd. `read_elements_file()` gives JDATE the instant it is read at: under
+  light time the emission instant, for the elements and for an equinox of
+  date alike (the ephemeris protocol's 3.5a, G27). So the frame's turn
+  over the light time was missing, about 3.8e-5 deg a day of light time.
+- **The speed.** `swi_orbel_to_state()` gave the two-body motion in the
+  frame held at tequ. A frame of date turns with t, and since entry 48
+  `swi_osc_el_plan()` adds that turning (the precession's and the
+  obliquity's rates) to a JDATE body's speed. Here it was missing.
+
+Measured against the same elements written as a JDATE body (G126's check
+1 arrangement: epoch the date, M0 + n T), five dates 1700..2150, every
+centre and twelve flag sets, Swiss, de200 and Moshier alike:
+
+| orbit | position | speed |
+|---|---|---|
+| a = 1.2 AU | 3.5e-7 deg (3.2e-7 geocentric) | 8.8e-5 deg/day geocentric, 4.2e-5 heliocentric |
+| a = 30 AU | 6.9e-6 deg | 4.0e-5 deg/day |
+| a = 80000 AU (462 days of light time) | 1.9e-2 deg | 4.2e-5 deg/day |
+| a = 0.01 AU about the Earth | 2.9e-9 deg | 4.6e-5 deg/day geocentric, 4.3e-7 heliocentric |
+
+The speeds were off the positions' own five-point rate by the same
+amounts, while the JDATE body's agree with theirs within 4.6e-9 deg/day
+(the Earth-centred orbit's topocentric speed apart, below). All are above
+the floor (1e-9 deg, 1e-8 deg/day). The position did not depend on
+SEFLG_SPEED, before or after.
+
+**Fix, as done here:**
+- `swi_orbel_to_state()` takes an `of_date` flag. With it the speed gains
+  the frame's turning exactly as `swi_osc_el_plan()` computes it for
+  JDATE: the same rotation over +-1 day, applied to the ecliptic position
+  and differenced centrally.
+- The light-time loop of `app_pos_etc_orbel()` evaluates the equinox at
+  the retarded epoch t.
+- The cost falls only on SE_ORBEL_EQ_DATE calls: two obliquities and two
+  precessions per state evaluated.
+- `swephexp.h` now says so: "SE_ORBEL_EQ_DATE is the equinox of the
+  instant evaluated, as seorbel.txt's JDATE: under light time the
+  emission instant's, and the speed carries that frame's turning."
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`. The compat build keeps its copy's
+  behaviour, as for entries 88, 130 and 135. Upstream's fictitious speed
+  has no turning (entry 48's defect). Its compat speed branch keeps the
+  equinox at tjd (upstream's own JDATE branch reads it at t).
+
+After: within 7.1e-13 deg and 8.2e-12 deg/day of the JDATE body. The
+speeds are within 4.6e-9 deg/day of five-point differences (the 1.2 AU
+orbit topocentric; the JDATE body's own 4.6e-9 there too), 2.4e-9 about
+the Earth.
+
+Left as it is, not this entry's: about the Earth, the topocentric speed
+of the 0.01 AU orbit is 1.8e-8 to 4.6e-8 deg/day off five-point
+differences of its positions. It holds flat over steps 2^-8..2^-12 day,
+on every equinox (J2000 too) and on the seorbel.txt path alike, at the tip
+before this change. A residual above the floor, measured and recorded
+here, not fixed.
+
+G126 `tests/orbelbias.c` (entries 130 and 135) gains four orbits, the
+first four with their elements of the equinox of date (JDATE in the
+file), in checks 1 to 3. Check 3 grows to 720 calls, 320 refused by both.
+A new check 4 takes their speeds against five-point differences of the
+positions:
+- step 2^-7 day (2^-10 about the Earth), at a binary-fraction instant
+  near each date, the mean anomaly moved along the mean motion;
+- six flag sets, every centre but Moshier's barycentre and the
+  Earth-centred orbit's topocentric one (above);
+- within 1e-8 deg/day.
+
+Before the fix 25 failures: checks 1 and 4 on each orbit of date on each
+ephemeris, and check 3's places, 1.8e-2 deg. After, it passes. The
+compat build fails 62 before and after, its output the same.
+
+G24 `orbel_date_rate_off`: the 1.2 AU orbit of date, heliocentric,
+geometric, J2000 equatorial XYZ, Swiss files: its velocity against a
+five-point difference of its positions over 2^-7 day, four dates in 2025.
+1.73e-14 AU/day shipped, 6.11e-7 AU/day compat (the frame's turning,
+omega x r); 6.11e-7 shipped before the fix.
 
 ## How these were found
 

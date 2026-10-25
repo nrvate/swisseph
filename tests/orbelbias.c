@@ -21,20 +21,29 @@
  * with SEFLG_BARYCTR set (18180 with SEFLG_SPEED), 5.7e-3 AU off the Swiss
  * barycentric place, 0.29 deg at a = 1.2 AU.
  *
- * Three checks, no golden file:
+ * And (UPSTREAM-BUGS 136): elements of the equinox of date
+ * (SE_ORBEL_EQ_DATE) are referred to a frame that turns with t, which
+ * seorbel.txt's JDATE path evaluates at the instant it reads, under light
+ * time the emission instant (the ephemeris protocol's 3.5a, G27), with the
+ * frame's turning in the speed (bug 48, G48). The orbel path held the
+ * equinox at the observation instant through its light-time loop and left
+ * the turning out of the speed.
+ *
+ * Four checks, no golden file:
  *   1. swe_calc_orbel() against swe_calc() of the same elements written
- *      to a seorbel.txt in a temp dir (as G27 does): four orbits (a =
+ *      to a seorbel.txt in a temp dir (as G27 does): eight orbits (a =
  *      1.2 AU; 30 AU on the B1950 equinox; 80000 AU circular; 0.01 AU
- *      about the Earth), five dates 1700-2150 spread over the year, the
- *      four centres (geo, topo, helio, bary), twelve flag sets (ecliptic
- *      of date with and without speed, J2000, ICRS, equatorial, equatorial
- *      XYZ J2000 and ICRS, ecliptic XYZ, true J2000 XYZ, no aberration or
- *      deflection, no nutation, sidereal), on the Swiss files, de200 and
- *      Moshier, and a DE4xx JPL file if one is named: 240 rows an orbit,
- *      180 on Moshier, whose 60 barycentric ones both refuse with
- *      swe_calc()'s message. Each element set is written with the date as
- *      its epoch and its mean anomaly as M0 + n T, n the two-body motion of
- *      this library's KGAUSS (KGAUSS_EARTH), so the two paths evaluate
+ *      about the Earth; and the four with their elements of the equinox
+ *      of date, JDATE in the file), five dates 1700-2150 spread over the
+ *      year, the four centres (geo, topo, helio, bary), twelve flag sets
+ *      (ecliptic of date with and without speed, J2000, ICRS, equatorial,
+ *      equatorial XYZ J2000 and ICRS, ecliptic XYZ, true J2000 XYZ, no
+ *      aberration or deflection, no nutation, sidereal), on the Swiss
+ *      files, de200 and Moshier, and a DE4xx JPL file if one is named: 240
+ *      rows an orbit, 180 on Moshier, whose 60 barycentric ones both refuse
+ *      with swe_calc()'s message. Each element set is written with the date
+ *      as its epoch and its mean anomaly as M0 + n T, n the two-body motion
+ *      of this library's KGAUSS (KGAUSS_EARTH), so the two paths evaluate
  *      the same orbit to the last bit at the date and move it alike over
  *      the light time. Positions within 1e-11 deg, speeds 1e-10 deg/day
  *      (distances and XYZ as their angle, d / r).
@@ -46,7 +55,7 @@
  *      the distance (AU, AU/day; of 1 AU below it).
  *   3. the files missing (the temp dir alone on the path), strict and
  *      with the fallback allowed: each orbit at each date, Moshier, Swiss
- *      and JPL, geocentric, heliocentric and barycentric, with speed: 360
+ *      and JPL, geocentric, heliocentric and barycentric, with speed: 720
  *      calls, the same return flag and message as swe_calc() of the same
  *      elements, and where both answer the same place (the limits of 1).
  *      Strict, Swiss and JPL are refused by both for the missing files and
@@ -54,6 +63,15 @@
  *      Moshier, barycentric requests included (the heliocentric place
  *      under SEFLG_BARYCTR, swe_calc()'s own answer there), and refuse
  *      only Moshier's barycentre asked for as such.
+ *   4. the orbits of date: the speed against a five-point difference of
+ *      the positions over 2^-7 day (2^-10 about the Earth) at a
+ *      binary-fraction instant near each date, the mean anomaly moved along
+ *      the mean motion, six flag sets (ecliptic of date, J2000, equatorial,
+ *      ecliptic XYZ true, no aberration or deflection, sidereal), every
+ *      centre but Moshier's barycentre and, about the Earth, the
+ *      topocentric one (a residual of its own, 1.8e-8 to 4.6e-8 deg/day on
+ *      every equinox and on the seorbel.txt path alike): within 1e-8
+ *      deg/day (distances and XYZ as their angle).
  *
  * Measured before the fix, on the Swiss files, Moshier and DE431 alike:
  * check 1 off by 1.1e-5 to 1.45e-5 deg geocentric and topocentric at a =
@@ -73,13 +91,22 @@
  * by 0.02 to 0.04 deg (its own light-time and speed defects, G27's and
  * G48's) or by an infinity on the first call (bug 88's zero obliquity).
  * Before bug 135's fix the Moshier barycentre, 60 rows an orbit in check
- * 1 and 40 in check 3, was answered (18180) where swe_calc() refuses: 5
- * failures, the rest passing. After: 240 refused by both in check 1, and
- * check 3's 360 calls agree with swe_calc() (160 refused by both), places
- * within 1.7e-13 deg and 1.0e-11 deg/day. The upstream build, whose
- * swe_calc_orbel() keeps answering there as its fictitious path's copy
- * did, fails 26 (each orbit's Moshier barycentre besides the 20 above,
- * and check 3 by it and bug 88's infinity).
+ * 1 and 40 calls in check 3 (the first four orbits, check 3's 360), was
+ * answered (18180) where swe_calc() refuses: 5 failures, the rest passing.
+ * Before bug 136's fix the four orbits of date were off in check 1 by
+ * 3.5e-7 deg at a = 1.2 AU, 6.9e-6 deg at 30 AU, 1.9e-2 deg at 80000 AU
+ * (462 days of the frame's turning) and 2.9e-9 deg about the Earth, and
+ * by 4.0e-5 to 8.8e-5 deg/day in speed, the same in check 4, on every
+ * ephemeris, and check 3 by those places: 25 failures. After: check 1
+ * within 7.1e-13 deg and 1.0e-11 deg/day, Moshier's barycentre refused by
+ * both; check 3's 720 calls agree with swe_calc() (320 refused by both),
+ * places within 5.1e-13 deg and 1.0e-11 deg/day; check 4 within 4.6e-9
+ * deg/day (the 1.2 AU orbit topocentric; 2.4e-9 about the Earth). The
+ * upstream build, whose swe_calc_orbel() keeps answering Moshier's
+ * barycentre and holds the equinox of date as its copy of the fictitious
+ * path did, fails 62: checks 1 and 2 as above on all eight orbits,
+ * Moshier's barycentre on each, check 4 on the orbits of date by 9.3e-5
+ * to 4.3e-4 deg/day, and check 3 by it and bug 88's infinity.
  * Run as
  *   orbelbias EPHEDIR [DE4XX_FILE]
  * DE4XX_FILE a path to a JPL file of DE number 403 or above (SE_TEST_DE4
@@ -92,20 +119,26 @@
 #include <unistd.h>
 #include "swephexp.h"
 
-#define NB 4
+#define NB 8
 #define ND 5
 #define RAD2DEG (180 / M_PI)
 
+/* the last four the first four's elements of the equinox of date */
 static const struct {
   double M0, a, e, w, N, i;
-  int geo, b1950;
+  int geo, eq;
 } B[NB] = {
-  {40, 1.2, 0.2, 30, 80, 12, 0, 0},
-  {200, 30, 0.05, 100, 200, 5, 0, 1},
-  {10, 80000, 0, 0, 0, 0, 0, 0},
-  {100, 0.01, 0.1, 40, 60, 20, 1, 0},
+  {40, 1.2, 0.2, 30, 80, 12, 0, SE_ORBEL_EQ_J2000},
+  {200, 30, 0.05, 100, 200, 5, 0, SE_ORBEL_EQ_B1950},
+  {10, 80000, 0, 0, 0, 0, 0, SE_ORBEL_EQ_J2000},
+  {100, 0.01, 0.1, 40, 60, 20, 1, SE_ORBEL_EQ_J2000},
+  {40, 1.2, 0.2, 30, 80, 12, 0, SE_ORBEL_EQ_DATE},
+  {200, 30, 0.05, 100, 200, 5, 0, SE_ORBEL_EQ_DATE},
+  {10, 80000, 0, 0, 0, 0, 0, SE_ORBEL_EQ_DATE},
+  {100, 0.01, 0.1, 40, 60, 20, 1, SE_ORBEL_EQ_DATE},
 };
-static const char *bname[NB] = {"a 1.2 AU", "a 30 B1950", "a 80000", "a 0.01 Earth"};
+static const char *bname[NB] = {"a 1.2 AU", "a 30 B1950", "a 80000", "a 0.01 Earth",
+                                "a 1.2 date", "a 30 date", "a 80000 date", "a .01 E date"};
 static const double JD[ND] = {2341972.8, 2415111.3, 2451727.0, 2460950.7, 2506377.2};
 
 /* the two-body mean motion, deg/day, of this library's constants (sweph.h) */
@@ -121,17 +154,52 @@ static double M0(int ib, int id)
   return fmod(B[ib].M0 + 37 * id, 360);
 }
 
-static int Orbel(int ib, int id, int32 fl, double *x, char *serr)
+/* the elements of date id at jd, the mean anomaly moved along the mean
+ * motion (exactly M0 at the date itself) */
+static int OrbelAt(int ib, int id, double jd, int32 fl, double *x, char *serr)
 {
   double el[6];
-  el[0] = M0(ib, id);
+  el[0] = M0(ib, id) + Motion(ib) * (jd - JD[id]);
   el[1] = B[ib].a;
   el[2] = B[ib].e;
   el[3] = B[ib].w;
   el[4] = B[ib].N;
   el[5] = B[ib].i;
-  return swe_calc_orbel(JD[id], el, B[ib].geo ? SE_EARTH : SE_SUN,
-                        B[ib].b1950 ? SE_ORBEL_EQ_B1950 : SE_ORBEL_EQ_J2000, 0, fl, x, serr);
+  return swe_calc_orbel(jd, el, B[ib].geo ? SE_EARTH : SE_SUN, B[ib].eq, 0, fl, x, serr);
+}
+
+static int Orbel(int ib, int id, int32 fl, double *x, char *serr)
+{
+  return OrbelAt(ib, id, JD[id], fl, x, serr);
+}
+
+/* check 4, elements of date: the speed against a five-point difference of
+ * the positions at a binary-fraction instant near the date, the step 2^-7
+ * day (2^-10 about the Earth); the worst, deg/day (distances and XYZ as
+ * their angle), into *w */
+static int FivePoint(int ib, int id, int32 fl, double *w, char *serr)
+{
+  static const double off[4] = {-2, -1, 1, 2};
+  double jb = floor(JD[id] * 256) / 256, h = B[ib].geo ? 1.0 / 1024 : 1.0 / 128;
+  double xc[6], xs[4][6], r;
+  int j, k;
+  if (OrbelAt(ib, id, jb, fl, xc, serr) < 0)
+    return -1;
+  for (k = 0; k < 4; k++)
+    if (OrbelAt(ib, id, jb + off[k] * h, fl & ~SEFLG_SPEED, xs[k], serr) < 0)
+      return -1;
+  r = (fl & SEFLG_XYZ) ? sqrt(xc[0] * xc[0] + xc[1] * xc[1] + xc[2] * xc[2]) : xc[2];
+  for (j = 0; j < 3; j++) {
+    double y[4], d;
+    for (k = 0; k < 4; k++)
+      y[k] = (!(fl & SEFLG_XYZ) && j == 0) ? xc[0] + remainder(xs[k][0] - xc[0], 360) : xs[k][j];
+    d = xc[j + 3] - (y[0] - 8 * y[1] + 8 * y[2] - y[3]) / (12 * h);
+    if ((fl & SEFLG_XYZ) || j == 2)
+      d = d / r * RAD2DEG;
+    if (fabs(d) > *w)
+      *w = fabs(d);
+  }
+  return 0;
 }
 
 /* the worst of a position (j < 3) or speed (j >= 3) difference, deg or
@@ -169,9 +237,15 @@ static void Leg(int32 eph, const char *name, int *bad)
     SEFLG_SPEED | SEFLG_NOABERR | SEFLG_NOGDEFL,
     SEFLG_SPEED | SEFLG_NONUT, SEFLG_SPEED | SEFLG_SIDEREAL,
   };
+  static const int32 f5[] = {
+    SEFLG_SPEED, SEFLG_SPEED | SEFLG_J2000, SEFLG_SPEED | SEFLG_EQUATORIAL,
+    SEFLG_SPEED | SEFLG_TRUEPOS | SEFLG_XYZ, SEFLG_SPEED | SEFLG_NOABERR | SEFLG_NOGDEFL,
+    SEFLG_SPEED | SEFLG_SIDEREAL,
+  };
   static const int32 ctrs[] = {0, SEFLG_TOPOCTR, SEFLG_HELCTR, SEFLG_BARYCTR};
   const int32 tf = eph | SEFLG_SPEED | SEFLG_TRUEPOS | SEFLG_J2000 | SEFLG_EQUATORIAL | SEFLG_XYZ;
-  int nfl = (int) (sizeof fls / sizeof fls[0]), ib, id, ic, ifl, j;
+  int nfl = (int) (sizeof fls / sizeof fls[0]), n5 = (int) (sizeof f5 / sizeof f5[0]);
+  int ib, id, ic, ifl, j;
   char serr[256], serr2[256];
   for (ib = 0; ib < NB; ib++) {
     double wp = 0, wv = 0, wf = 0, wfv = 0;
@@ -261,6 +335,33 @@ static void Leg(int32 eph, const char *name, int *bad)
       printf("    FAIL: the geocentric place is not the heliocentric less the Earth (1e-14)\n");
       (*bad)++;
     }
+    /* check 4: elements of date, the speed the rate of the positions
+     * (bug 136); every centre but Moshier's barycentre, and but the
+     * topocentric one about the Earth, whose speed has a residual of its
+     * own on every equinox and on the seorbel.txt path alike */
+    if (B[ib].eq == SE_ORBEL_EQ_DATE) {
+      double w5 = 0;
+      int n5row = 0, n5err = 0;
+      for (id = 0; id < ND; id++)
+        for (ic = 0; ic < 4; ic++)
+          for (ifl = 0; ifl < n5; ifl++) {
+            if (((eph & SEFLG_MOSEPH) && ctrs[ic] == SEFLG_BARYCTR)
+                || (B[ib].geo && ctrs[ic] == SEFLG_TOPOCTR))
+              continue;
+            if (FivePoint(ib, id, eph | f5[ifl] | ctrs[ic], &w5, serr) < 0) {
+              if (n5err++ == 0)
+                printf("    %s jd %.1f: %s\n", bname[ib], JD[id], serr);
+              continue;
+            }
+            n5row++;
+          }
+      printf("  %-6s %-12s %3d rows: speeds against five-point differences %.1e deg/day\n",
+             name, bname[ib], n5row, w5);
+      if (n5err || n5row == 0 || w5 > 1e-8) {
+        printf("    FAIL: the speed is not the rate of the positions (1e-8)\n");
+        (*bad)++;
+      }
+    }
   }
 }
 
@@ -337,7 +438,9 @@ int main(int argc, char **argv)
   for (ib = 0; ib < NB; ib++)
     for (id = 0; id < ND; id++)
       fprintf(pf, "%.17g, %s, %.17g + %.17g * T, %.17g, %.17g, %.17g, %.17g, %.17g, b%d_%d%s\n",
-              JD[id], B[ib].b1950 ? "B1950" : "J2000", M0(ib, id), Motion(ib) * 36525,
+              JD[id], B[ib].eq == SE_ORBEL_EQ_B1950 ? "B1950"
+                      : B[ib].eq == SE_ORBEL_EQ_DATE ? "JDATE" : "J2000",
+              M0(ib, id), Motion(ib) * 36525,
               B[ib].a, B[ib].e, B[ib].w, B[ib].N, B[ib].i, ib, id, B[ib].geo ? ", geo" : "");
   fclose(pf);
   printf("G126: swe_calc_orbel() against seorbel.txt, every centre and frame\n");
