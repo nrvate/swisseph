@@ -78,6 +78,8 @@ static double Asc2(double, double, double, double);
 #ifndef SWE_UPSTREAM_COMPAT
 static double AscDer(double, double, double, double);
 static double PlacDer(double, double, double, double, double, double, double);
+static int houses_date_refused(double tjd_ut, int hsys, double *cusp, double *ascmc,
+                               double *cusp_speed, double *ascmc_speed, char *serr);
 #endif
 static int CalcH(double th, double fi, double ekl, char hsy, struct houses *hsp);
 /* The frame of swe_houses_ex2_r() a little before and after the instant,
@@ -217,6 +219,10 @@ int CALL_CONV swe_houses_r(swe_ctx *ctx, double tjd_ut,
 				double *ascmc)
 {
   int ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (houses_date_refused(tjd_ut, hsys, cusp, ascmc, NULL, NULL, NULL))	/* bug 209 */
+    return ERR;
+#endif
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_houses_r_body(ctx, tjd_ut, geolat, geolon, hsys, cusp, ascmc);
   swi_config_release(ctx);
@@ -284,6 +290,36 @@ int CALL_CONV swe_houses_ex(double tjd_ut,
 #define HOUSE_SPEED_DT    (1.0 / 64)	/* day */
 #define HOUSE_SPEED_DEPS  (1.0 / 1024)	/* deg of obliquity or declination */
 
+/* Upstream bug 209: the houses took any date. Past |J| 1e12 days, where
+ * SE_ECL_NUT refuses (bug 196), they answered from an obliquity and a
+ * nutation past the residual floor: Placidus at latitude 50 at UT 1e20
+ * ERR "within polar circle, switched to Porphyry", its cusps filled and
+ * the ascendant's speed NaN, at 1e84, +1e300, +inf and NaN every cusp NaN;
+ * and the long-term sidereal time's hang and crash were theirs (see
+ * sidt_pra()). Refused now as SE_ECL_NUT refuses: ERR, the cusps, the
+ * ascmc and their speeds 0, the range in serr. */
+static int houses_date_refused(double tjd_ut, int hsys, double *cusp, double *ascmc,
+                               double *cusp_speed, double *ascmc_speed, char *serr)
+{
+  int i, ito = toupper(hsys) == 'G' ? 36 : 12;
+  if (tjd_ut >= -SWI_ECL_NUT_JMAX && tjd_ut <= SWI_ECL_NUT_JMAX)
+    return FALSE;
+  for (i = 0; i <= ito; i++) {
+    cusp[i] = 0;
+    if (cusp_speed != NULL)
+      cusp_speed[i] = 0;
+  }
+  for (i = 0; i < 10; i++) {
+    ascmc[i] = 0;
+    if (ascmc_speed != NULL)
+      ascmc_speed[i] = 0;
+  }
+  if (serr != NULL)
+    snprintf(serr, AS_MAXCH, "jd %.10g outside the obliquity and nutation range %g .. %g",
+             tjd_ut, -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+  return TRUE;
+}
+
 /* the quantities swe_houses_ex2_r() computes the houses from, at tjd_ut */
 static void house_frame_at(swe_ctx *ctx, double tjd_ut, int32 iflag, double geolon,
                            struct house_frame *f)
@@ -300,7 +336,8 @@ static void house_frame_at(swe_ctx *ctx, double tjd_ut, int32 iflag, double geol
       f->nutlo[i] = 0;
   }
   f->eps = eps_mean + f->nutlo[1];
-  f->armc = swe_degnorm(swe_sidtime0_r(ctx, tjd_ut, f->eps, f->nutlo[0]) * 15 + geolon);
+  /* bug 214: t -+ HOUSE_SPEED_DT may lie past the date bound t is within */
+  f->armc = swe_degnorm(swi_sidtime0(ctx, tjd_ut, f->eps, f->nutlo[0]) * 15 + geolon);
 }
 
 /* Upstream bug 187: within HOUSE_SPEED_DT of a step of the frame's models
@@ -642,6 +679,10 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
 				char *serr)
 {
   int ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (houses_date_refused(tjd_ut, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr))	/* bug 209 */
+    return ERR;
+#endif
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_houses_ex2_r_body(ctx, tjd_ut, iflag, geolat, geolon, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);
   swi_config_release(ctx);

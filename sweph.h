@@ -1565,6 +1565,16 @@ struct epsilon {
  *   - IAU 2000B, the compat build's default nutation, without its
  *     published fixed offsets for the planetary terms: dpsi 3.75e-8 deg
  *     and deps 1.08e-7 off at every date (UPSTREAM-BUGS 220, G162, G24)
+ *   - the houses taking any date: past |J| 1e12 days, where SE_ECL_NUT's
+ *     obliquity and nutation leave the residual floor, Placidus at UT
+ *     1e20 ERR "within polar circle" with its cusps filled, NaN from 1e84
+ *     (UPSTREAM-BUGS 209, G159, G24; the long-term sidereal time's hang
+ *     and crash past its table there are this fork's, bug 29, and have no
+ *     upstream form)
+ *   - swe_sidtime(), swe_sidtime0(), swe_azalt() and swe_azalt_rev() taking
+ *     any date and, with no error to return, answering a number past 1e12
+ *     days and NaN from 1e84, and the azimuth's ecliptic forms reading
+ *     SE_ECL_NUT without its return (UPSTREAM-BUGS 214, G159, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1898,6 +1908,14 @@ struct sidt_splice_memo {
   struct sidt_splice_slot slot[2][2];
 };
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* |J| past which SE_ECL_NUT refuses a date, days (UPSTREAM-BUGS 196), and
+ * with it the functions that take one and compute the obliquity, the
+ * nutation or the sidereal time: the houses refuse it (209), swe_sidtime(),
+ * swe_sidtime0(), swe_azalt() and swe_azalt_rev() answer NaN (214) */
+#define SWI_ECL_NUT_JMAX 1e12
+#endif
+
 /* The precession in right ascension accumulated since J2000, the part of
  * the long-term sidereal time that is not Earth rotation (swephlib.c,
  * sidt_pra(); UPSTREAM-BUGS 29): the integral of the mean-of-date frame's
@@ -1921,6 +1939,10 @@ struct sidt_pra_table {
   double w[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec per century */
   int njoin;
   struct { int side, n; double w; } join[SWI_SIDT_PRA_JOINS];
+  /* the integral to SIDT_PRA_TFAR and the rate there, each side, for the
+   * dates beyond it (UPSTREAM-BUGS 209) */
+  double a_far[2], w_far[2];
+  AS_BOOL far_valid[2];
   AS_BOOL valid;
 };
 struct sidt_pra_memo {

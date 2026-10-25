@@ -340,10 +340,6 @@ char *CALL_CONV swe_get_library_path(char *s)
 }
 #endif	// NO_SWE_GLP
 
-#ifndef SWE_UPSTREAM_COMPAT
-#define SWI_ECL_NUT_JMAX 1e12	/* |J| SE_ECL_NUT answers, days (bug 196) */
-#endif
-
 /* The routine called by the user.
  * It checks whether a position for the same planet, the same t, and the
  * same flag bits has already been computed. 

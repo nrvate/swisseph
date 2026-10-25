@@ -241,6 +241,8 @@ worst were in code that had never executed even once.
 | 218 | `swe_calc(SE_ECL_NUT)` with SEFLG_NONUT, and SEFLG_SIDEREAL and SEFLG_J2000, which imply it, answers the nutation cached for the last date asked without the flag: at 2460000.5 after a call at J2000, J2000's dpsi -0.003870001 and deps -0.001602611 deg and the true obliquity 23.434664974 for the mean 23.436267584, where a fresh context answers zero nutation and the true obliquity the mean | Correctness (behaviour) | `sweph.c` |
 | 219 | IAU 1980 and its Herring 1987 corrections, and SEFLG_JPLHOR's IAU 1980, evaluate their Delaunay arguments, polynomials to T^3 some 5e13" at 1e9 days, in double (entry 188's for 2000A and 2000B): against the series in mpmath dpsi 1.2e-10 deg off at 4e8 to 1e9 days, 9.0e-8 to 1e10, 3.7e-3 to 1e11 and 8.2 deg to 1e12, where `SE_ECL_NUT` answers | Correctness | `swephlib.c` |
 | 220 | IAU 2000B leaves out the published fixed offsets in lieu of its planetary terms (McCarthy & Luzum 2003; SOFA `iauNut00b`, NOVAS `iau2000b`: dpsi -0.135 mas, deps +0.388 mas): 3.75e-8 deg in dpsi and 1.08e-7 in deps at every date, 6.4e-10 and 1.9e-9 rad off SOFA's test values | Correctness | `swephlib.c` |
+| 209 | The long-term sidereal time integrates past its table's 400 centuries in 10-century panels on every call, out to any date: `swe_sidtime()` 1.1 s at J 1e10 and some 140 s at 1e12, and the houses, `swe_azalt()`, `swe_azalt_rev()` and `swe_gauquelin_sector()` with it; past 7.8e14 the panel count's cast overflows, at -1e300 and -inf (TT NaN) `(int) floor(NaN)` indexes the table: SIGSEGV; and the houses take any date, ERR "within polar circle" with their cusps filled at 1e20, NaN from 1e84 | Correctness (behaviour) | `swephlib.c`, `swehouse.c`, `sweph.h` |
+| 214 | `swe_sidtime()`, `swe_sidtime0()`, `swe_azalt()` and `swe_azalt_rev()` answer any date with no error to return: NaN at 1e84, -+1e300, -+inf and NaN, a number past 1e12; and the azimuth's ecliptic forms do not read SE_ECL_NUT's return, so from UT 8.13e11, where it refuses at TT past 1e12, they turn by 0 | Correctness (behaviour) | `swephlib.c`, `swecl.c`, `swehouse.c` |
 
 ---
 
@@ -14907,6 +14909,189 @@ Noticed, not fixed:
   7.4e-9 at 2023, 2.9e-8 (deps 9.1e-8) at 1900, 1.6e-7 at 2100, 1.4e-5 at
   AD 1000 and 1.5e-4 at -1000. Within the model's own 1 mas over
   1995-2050, but over the floor from a few years off 2006.
+
+## 209. The long-term sidereal time integrates past its table's 400 centuries on every call, out to any date: `swe_sidtime()` 1.1 s at J 1e10 and some 140 s at 1e12, the panel count's cast overflowing past 7.8e14, SIGSEGV at -1e300 and -inf; and the houses take any date
+
+**Severity: Correctness (behaviour: a hang whose cost grows with the date, undefined behaviour, a crash, in this fork's long-term sidereal time (entries 29, 181, 200) and every function that takes it; the houses answering past the obliquity and nutation range, both builds)**
+**Where:** `swephlib.c`: `sidt_pra()`, `sidt_pra_integral()`; `swehouse.c`: `swe_houses_r()`, `swe_houses_ex2_r()`, new `houses_date_refused()`; `sweph.h`: `struct sidt_pra_table`, `SWI_ECL_NUT_JMAX`
+
+Entry 196's first noticed item. `sidt_pra()` keeps the accumulated
+precession in right ascension at 1-century nodes to 400 centuries either
+side; past them it integrated the precession's rate from the last node in
+10-century panels of eight-point Gauss-Legendre on every call, out to any
+TT. Measured, a fresh context each, the default models (SEMOD_SIDT_LONGTERM,
+Vondrak 2011):
+- `swe_sidtime()` 0.02 s at J 1e8, 0.13 s at 1e9, 1.14 s at 1e10; at 1e12
+  (TT 1.28e12, 3.5e7 centuries, 3.5e6 panels) some 140 s, extrapolated,
+  not run; a call at 1e8 on a warm context 9.5e-3 s. `swe_houses_ex2()`
+  (three sidereal times with speeds), `swe_azalt()`, `swe_azalt_rev()` and
+  `swe_gauquelin_sector()` with it, past a 10 s cap at 1e12.
+- past |J| 7.8e14 (2.1e10 centuries) the panel count `(int) ceil(fabs(b -
+  a) / 10.0)` overflows (float-cast-overflow), and the call ends in one
+  panel: 13.6533 h at 1e20.
+- at -1e300 and -inf (and -1e200, -1e308, -DBL_MAX) delta t is NaN, so TT
+  is, and `k = (int) floor(x)` of a NaN indexes `pt->a[side][INT_MIN]`:
+  SIGSEGV in all five.
+The houses took any date, and past |J| 1e12, where SE_ECL_NUT refuses
+(entry 196), answered from an obliquity and a nutation past the residual
+floor: Placidus at latitude 50 at UT 1e20 ERR "within polar circle,
+switched to Porphyry", its cusps filled and the ascendant's speed NaN;
+every cusp NaN at 1e84, +1e300, +inf and NaN.
+
+Where to stop the integral. A memo of the panels alone (each integrated
+once per model) leaves the first call at 1e12 its 3.5e6 panels, and 3.5e6
+nodes to keep; so past a bound a closed form. The bound is Vondrak 2011's
+published validity, -+200000 years (2000 centuries), the longest of the
+eleven models'. Past it the integral was of a series past its fit: the
+model's matrices stay rotations to 5000 centuries (2e-16 off orthonormal)
+and leave them from 1e4 (1.12 off there, 1.3e3 at 3e4, 3.3e21 at 3.5e7, J
+1e12), so the "rate" there, -(dM/dt M^T)[1][0] of a matrix that is no
+rotation, is no precession's (Vondrak's 4612"/cy at J2000, 493 at 1e4
+centuries, -37 at 1e7, 1432 at 3.5e7). The other models are polynomials
+whose rates leave any precession's far sooner (IAU 1976 1.1e5"/cy at 1000
+centuries, Laskar 1986 7.4e7). So at 1e12 no value is the integral's to
+the floor, nor to any meaning; what holds there is below.
+
+**Fix, as done here:**
+- The integral stops at `SIDT_PRA_TFAR`, 2000 centuries of TT either
+  side, and beyond it the accumulated precession goes on at the model's
+  rate there: a(TFAR) + w(TFAR) (T - TFAR), a(TFAR) the integral to TFAR
+  by the very call a date at TFAR makes, w(TFAR) `sidt_pra_rate()` there
+  in its own Owen piece (entry 200); both kept with the table, each side,
+  per model (`a_far`, `w_far`, `far_valid` in `struct sidt_pra_table`,
+  reset with the slot). Continuous at TFAR in value, to the bit, and in
+  rate (Vondrak: 4565.964377"/cy after, 4693.687507 before J2000; the
+  integral's difference quotient over 1e-3 century within 0.04"/cy of it,
+  its own rounding).
+- No float-to-int cast is of a NaN or past INT_MAX: `k` is cast only for
+  x < 400 (a NaN x goes to the far branch and answers NaN), the panel
+  count only within 1 .. 2000.
+- The houses (`swe_houses()`, `swe_houses_ex()`, `swe_houses_ex2()`)
+  refuse a UT past |J| `SWI_ECL_NUT_JMAX`, 1e12 days, and at -+inf and
+  NaN, as SE_ECL_NUT refuses (the constant moved to `sweph.h`): ERR, the
+  cusps (13, 37 for Gauquelin), the ten ascmc and their speeds 0, serr "jd
+  1e+13 outside the obliquity and nutation range -1e+12 .. 1e+12". Tested
+  first, in the `_r` entry points, before any delta t or configuration.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT` (the long-term sidereal time of
+  this fork's is in none of the compat build).
+- After: a fresh context's first call 0.020 to 0.023 s at every date from
+  1e8 to -+1e12 (the table, 0.016, and the 160 panels to TFAR once), then
+  1.1e-5 s a call at
+  1e8 and 7e-5 to 8e-5 s at 1e9 to 1e12 (the nutation's double-double
+  arguments, entry 188); within 400 .. 2000 centuries a call integrates
+  from the table's end as before, at most 160 panels, 5.8 ms at 1930
+  centuries.
+- Within TFAR nothing changes, bit for bit: 7904 lines, nineteen model
+  sets (the default, the eleven long-term models, "0,9,1", "0,9,8",
+  "0,9,6", "0,10,10" and the three other sidereal times) at 52 dates
+  within 2000 centuries, `swe_sidtime()`, `swe_sidtime0()`, Placidus with
+  speeds, Gauquelin sidereal, Koch, `swe_azalt()` and `swe_azalt_rev()`
+  with either flag, identical to the tip's (ts20 25f499c). Beyond, the
+  answers change: Vondrak 2011 0.15 deg at J 7.6e7 (TT 2014 centuries),
+  -3.1 at -7.4e7, 9.4 at 8e7, 28 at 1e8, up to 133 at the eleven dates
+  sampled to -+1e9; the other models' up to 178.
+- Cost, `perf stat -e instructions:u`, bench's houses (one repetition):
+  19592381291 before, 19599559895 after (+0.04%); calc-swieph and
+  calc-moseph do not reach the code touched.
+
+G159 `tests/sidtrange.c`: (a) the cost, 14 dates to -+1e12 under 5 s
+alarms, the first call within 10 times the table's plus 0.05 s and a call
+within 100 times one in the table plus 0.1 ms; (b) 44 dates within the
+bound under fifteen model sets answered and finite; (c) 21 dates past it
+and no dates, the houses refused; (d) a call's answer its date's alone
+(see entry 214 for the rest of (b) and (c)). Measured (-O0): (a) 14 of 14,
+the first call at 1e12 0.031 s against the table's 0.022, a call 1.0e-4 s
+against 2.6e-5; (b) 660 of 660; (c) 273 of 273; (d) 0 differ. Before the
+fix (a) 0 of 14 (12 hung, -+1e8 at 9.5e-3 s a call), (b) 126 of 660 (the
+twelve long-term sidereal time contexts hung), (c) 50 of 273 (6 dates
+hung, 5 crashed), (d) hung; the upstream build passes (a) and (d) and
+fails (b) and (c) by entry 214's defects and the houses answered. G24
+`houses_far_answered`: Placidus with speeds and Koch at UT -+1e13 and
+-+1e20, a fresh context each, answered: 0 of 8 shipped (before the fix
+the four at -+1e13 hung in the sidereal time, as G159 (c) did there), 8
+of 8 compat. G152, G39, G35, G139, G45, G67,
+G58, G29, G70 and G155 pass.
+
+## 214. `swe_sidtime()`, `swe_sidtime0()`, `swe_azalt()` and `swe_azalt_rev()` answer any date: NaN at 1e84, -+1e300, -+inf and NaN, with no error to return, and a number past 1e12; and the azimuth's ecliptic forms turn by 0 where SE_ECL_NUT refuses, from UT 8.13e11
+
+**Severity: Correctness (behaviour: NaN, or a value from models past the residual floor, answered as a value by four functions with no error return; a wrong place that looks right from UT 8.13e11, within the bound)**
+**Where:** `swephlib.c`: `swe_sidtime_r()`, `swe_sidtime0_r()`, new `swi_sidtime0()`; `swecl.c`: `swe_azalt_r()`, `swe_azalt_rev_r()` and their bodies; `swehouse.c`: `house_frame_at()`
+
+Entry 196's sixth noticed item. The four functions return no error, and
+took any date: in the upstream build (and this fork's, entry 209's hang
+and crash aside) `swe_sidtime()` answered 22.53 h at 1e13, 6.93 at 1e20,
+NaN at 1e84, -+1e300, -+inf and NaN, `swe_sidtime0()` alike, and
+`swe_azalt()` and `swe_azalt_rev()` azimuths and altitudes from them,
+NaN from 1e84; `swe_azalt_rev()` SE_HOR2EQU's declination, which is the
+site's alone, answered at every date (21.5239480892 at NaN). Past 1e12
+the obliquity and the nutation they take leave the residual floor (entry
+196). And `swe_azalt()` SE_ECL2HOR and `swe_azalt_rev()` SE_HOR2ECL take
+the true obliquity from `swe_calc(SE_ECL_NUT)` at TT and do not read its
+return: since entry 196 it refuses past |TT| 1e12, from UT 8.13e11 (TT
+1e12), within the date bound, and there the ecliptic was turned by 0: at
+UT 9e11 (TT 1.13e12), the IERS 2010 sidereal time, the ecliptic place
+(100, 1) answered azimuth 95.831841562 and altitude -3.572531312 deg, the
+equatorial place (100, 1)'s; `swe_azalt_rev()` likewise.
+
+**Fix, as done here:**
+- `swe_sidtime()`, `swe_sidtime0()`, `swe_azalt()` and `swe_azalt_rev()`
+  answer NaN in every output at a UT past |J| `SWI_ECL_NUT_JMAX`, 1e12
+  days, and at -+inf and NaN (the test is `!(tjd >= -1e12 && tjd <=
+  1e12)`, in the `_r` entry points, before delta t): NaN, the one
+  honest "no answer" a double has.
+- `swe_azalt()` SE_ECL2HOR and `swe_azalt_rev()` SE_HOR2ECL answer NaN
+  in every output when SE_ECL_NUT refuses (TT past the bound): no
+  obliquity, no answer. SE_EQU2HOR and SE_HOR2EQU, which take none,
+  answer there. The refraction is a function of the altitude, the site's
+  height, pressure and temperature alone, no date; the sidereal time is
+  the bounded `swe_sidtime()`.
+- The houses' frames HOUSE_SPEED_DT about the instant (entry 42) take
+  the sidereal time by `swi_sidtime0()`, `swe_sidtime0_r()` without the
+  bound, so the speeds at UT -+1e12 itself, whose frames lie 1/64 day
+  past it, are answered as before.
+- Within the bound nothing changes, bit for bit (entry 209's 7904 lines).
+  The bound is each function's own date: `swe_sidtime()` and the houses
+  at UT 8.13e11 .. 1e12 answer, with the obliquity and nutation at a TT
+  past 1e12, which the bound on the UT allows.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; upstream's lines under `#else`.
+
+G159 `tests/sidtrange.c` (b): `swe_sidtime()` and `swe_sidtime0()`
+finite, SE_EQU2HOR and SE_HOR2EQU finite at 44 dates within the bound
+under fifteen model sets, the ecliptic forms finite where TT is within it
+and NaN in every output where it is past; (c): at 21 dates past the bound
+and no dates (|J| the double past 1e12, 1.5e12, 1e13, 1e20, 1e84, 1e200,
+1e300, 1e308, DBL_MAX and inf, either sign, and NaN) all four NaN in every
+output with either flag, the houses refused (entry 209), 13 checks a
+date. Measured: (b) 660 of 660, (c) 273 of 273. Before the fix (b) fails
+by entry 209's hang and, under the other three sidereal times, by the
+ecliptic forms turned by 0 at UT 1e12 (6), (c) 50 of 273; the upstream
+build fails (b), 630 of 660, the ecliptic forms answered past TT 1e12 (its
+SE_ECL_NUT answers there), and (c), 86 of 273, its NaN from 1e84 the only
+no-answers. G24 `sidt_far_answered`: the four at UT -+1e13 and -+1e20,
+and SE_ECL2HOR at UT 9e11 under IERS 2010, a fresh context each,
+answered: 0 of 17 shipped, 17 of 17 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. SEMOD_SIDT_IAU_2006's sidereal time leaves 0 .. 24 h from
+  |J| 2e10 days, inside the bound: -4.55 h at J 1.98e10, 1165 h at -6.3e10,
+  2.4e6 h at 2.5e11, -4.9e9 h at the double below 1e12, 0 at -+1e12, and
+  coarse from 4e9 (22.7466666667 at 3.98e9, 5.7333333333 at -3.98e9): its
+  polynomial's seconds, 1.2e20 at 2e10 days (T^5 terms, an ulp of 4.5 h)
+  and 1.3e29 at 1e12, less 86400 floor(gmst / 86400) in double. IAU 1976
+  and IERS 2010 stay within 0 .. 24 throughout; both builds.
+- BEHAVIOUR. `swe_gauquelin_sector()` method 0 at -1e200, -1e300,
+  -1e308 and -inf (delta t NaN there, so TT) and NaN returns 0 with the
+  sector NaN: `swe_calc()` of the body at a NaN TT passes the range tests
+  (entry 196's NaN-date item); both builds.
+- RESIDUAL(2e-4", 5e-8 deg, at 1500 .. 2000 centuries of TT, Vondrak
+  2011). The integral from 400 to 2000 centuries scatters by 2e-4" across
+  panel counts 16 .. 6400 (7386830.6110 +- 1e-4"), not converging with
+  them: the rate, a central difference of the matrices over -+50 days,
+  carries their rounding, 5e-7"/cy about its trend at 1000 and 2000
+  centuries (4e-9 at J2000), over the 128 to 51200 points. Within the
+  table (1-century panels from J2000) 4e-8" at 400 centuries. Left as it
+  is: bit for bit the tip's, and 200000 years out, where the fit itself
+  is good to arcseconds.
 
 ## How these were found
 

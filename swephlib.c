@@ -5239,6 +5239,24 @@ static double sidtime_iers2010_deg(swe_ctx *ctx, double tjd)
  * which is what G39 checks. */
 #define SIDT_PRA_NUTC  (-0.003874)	/* arcsec per century, see above */
 #define SIDT_PRA_DH    50.0		/* days */
+/* Upstream bug 209: past the table's 400 centuries sidt_pra() integrated
+ * from its last node in 10-century panels on every call, out to any date:
+ * swe_sidtime() took 0.02 s at J 1e8, 1.1 s at 1e10 and some 140 s at 1e12
+ * (TT 3.5e7 centuries, 3.5e6 panels), and the houses, swe_azalt(),
+ * swe_azalt_rev() and swe_gauquelin_sector() with it; past |J| 7.8e14 the
+ * panel count's (int) cast overflowed, and at -1e300 and -inf, TT NaN,
+ * (int) floor(NaN) indexed the table at INT_MIN: SIGSEGV. Now the integral
+ * stops at SIDT_PRA_TFAR, Vondrak 2011's published -+200000 years, the
+ * longest of the models', and beyond it the accumulated precession goes on
+ * at the model's rate there, a(TFAR) + w(TFAR) (T - TFAR), both kept with
+ * the table: at most 160 panels a call (5.8 ms at 1930 centuries, as
+ * before), every answer within TFAR bit for bit as before, continuous at
+ * it in value and rate. Beyond it the answers change (Vondrak 2011: 0.15
+ * deg at TT 2014 centuries, 28 deg at J 1e8): the integral there was of a
+ * series past its fit, from 1e4 centuries of matrices no longer rotations
+ * (1.12 off orthonormal there, 3e21 at J 1e12, TT 3.5e7 centuries), whose
+ * "rate" is no precession's. No cast is of a NaN or past INT_MAX. */
+#define SIDT_PRA_TFAR  2000.0		/* centuries, -+200000 years */
 static void sidt_pra_matrix(swe_ctx *ctx, double tjd, double m[3][3])
 {
   int i, k;
@@ -5313,9 +5331,10 @@ static double sidt_pra_integral(swe_ctx *ctx, double a, double b, int model)
                                0.7966664774136267, 0.9602898564975363};
   static const double gw[4] = {0.3626837833783620, 0.3137066458778873,
                                0.2223810344533745, 0.1012285362903763};
-  int n = (int) ceil(fabs(b - a) / 10.0), p, i;
+  /* bug 209: no cast of a count past INT_MAX or of NaN */
+  double np = ceil(fabs(b - a) / 10.0);
+  int n = np >= 1 && np <= SIDT_PRA_TFAR ? (int) np : 1, p, i;
   double h, sum = 0;
-  if (n < 1) n = 1;
   h = (b - a) / n;
   for (p = 0; p < n; p++) {
     double c = a + (p + 0.5) * h;
@@ -5345,11 +5364,13 @@ static double sidt_pra(swe_ctx *ctx, double tc, int model)
     pt->w[0][0] = pt->w[1][0] = sidt_pra_rate(ctx, 0, model, 0);
     pt->nnode[0] = pt->nnode[1] = 1;
     pt->njoin = 0;
+    pt->far_valid[0] = pt->far_valid[1] = FALSE;
     pt->valid = TRUE;
   }
   /* the interval [k, k + 1] holding x; beyond the table, its last one,
-   * and the rest integrated from the last node on every call */
-  k = x >= SWI_SIDT_PRA_NODES ? SWI_SIDT_PRA_NODES - 1 : (int) floor(x);
+   * and the rest integrated from the last node on every call (bug 209:
+   * a NaN x goes there too, not to a cast) */
+  k = x < SWI_SIDT_PRA_NODES ? (int) floor(x) : SWI_SIDT_PRA_NODES - 1;
   /* nodes 0 .. k + 1 */
   for (n = pt->nnode[side]; n <= k + 1; n++) {
     double ta = sg * (n - 1) * SWI_SIDT_PRA_STEP, tb = sg * n * SWI_SIDT_PRA_STEP;
@@ -5372,9 +5393,17 @@ static double sidt_pra(swe_ctx *ctx, double tc, int model)
     }
     pt->nnode[side] = n + 1;
   }
-  if (x >= SWI_SIDT_PRA_NODES) {
-    double tn = sg * SWI_SIDT_PRA_NODES * SWI_SIDT_PRA_STEP;
-    return pt->a[side][SWI_SIDT_PRA_NODES] + sidt_pra_integral(ctx, tn, tc, model);
+  if (!(x < SWI_SIDT_PRA_NODES)) {
+    double tn = sg * SWI_SIDT_PRA_NODES * SWI_SIDT_PRA_STEP, tf = sg * SIDT_PRA_TFAR;
+    if (fabs(tc) <= SIDT_PRA_TFAR)
+      return pt->a[side][SWI_SIDT_PRA_NODES] + sidt_pra_integral(ctx, tn, tc, model);
+    /* bug 209: past SIDT_PRA_TFAR, continued at the rate there */
+    if (!pt->far_valid[side]) {
+      pt->a_far[side] = pt->a[side][SWI_SIDT_PRA_NODES] + sidt_pra_integral(ctx, tn, tf, model);
+      pt->w_far[side] = sidt_pra_rate(ctx, tf, model, tf);
+      pt->far_valid[side] = TRUE;
+    }
+    return pt->a_far[side] + pt->w_far[side] * (tc - tf);
   }
   /* cubic Hermite between nodes k and k + 1, in the direction away from
    * J2000: s from 0 to 1, rates times the signed step */
@@ -5550,9 +5579,24 @@ sidtime_done:
   return gmst;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* swe_sidtime0_r() without its date bound (bug 214), under the caller's
+ * hold: for swe_houses_ex2_r()'s frames HOUSE_SPEED_DT about a date within
+ * the bound, which may lie past it */
+double swi_sidtime0(swe_ctx *ctx, double tjd, double eps, double nut)
+{
+  return swe_sidtime0_r_body(ctx, tjd, eps, nut);
+}
+#endif
+
 double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut)
 {
   double ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 214: see swe_sidtime_r() */
+  if (!(tjd >= -SWI_ECL_NUT_JMAX && tjd <= SWI_ECL_NUT_JMAX))
+    return NAN;
+#endif
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_sidtime0_r_body(ctx, tjd, eps, nut);
   swi_config_release(ctx);
@@ -5631,6 +5675,15 @@ static double swe_sidtime_r_body(swe_ctx *ctx, double tjd_ut)
 double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
 {
   double ret;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 214: swe_sidtime() and swe_sidtime0() took any date and,
+   * with no error to return, answered NaN at 1e84, +1e300, +inf and NaN
+   * and a number past 1e12 days, where SE_ECL_NUT refuses (bug 196) and
+   * the obliquity and nutation they take leave the residual floor. NaN now
+   * at those dates, the one honest "no answer" a double has. */
+  if (!(tjd_ut >= -SWI_ECL_NUT_JMAX && tjd_ut <= SWI_ECL_NUT_JMAX))
+    return NAN;
+#endif
   swi_config_hold(ctx);	/* bug 124 */
   ret = swe_sidtime_r_body(ctx, tjd_ut);
   swi_config_release(ctx);

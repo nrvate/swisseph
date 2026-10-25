@@ -2980,7 +2980,20 @@ static void swe_azalt_r_body(swe_ctx *ctx, double tjd_ut,
     xra[i] = xin[i];
   xra[2] = 1;
   if (calc_flag == SE_ECL2HOR) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 214: SE_ECL_NUT's return was not read, and it refuses
+     * past |TT| 1e12 days (bug 196), from UT 8.13e11, inside the date
+     * bound: there the ecliptic was turned by 0, the ecliptic place (100,
+     * 1) at UT 9e11 answered as the equatorial place (100, 1), azimuth
+     * 95.831841562 and altitude -3.572531312 deg (sidereal time IERS
+     * 2010). With no obliquity there is no answer: NaN, as past the bound. */
+    if (swe_calc_r(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL), SE_ECL_NUT, 0, x, NULL) < 0) {
+      xaz[0] = xaz[1] = xaz[2] = NAN;
+      return;
+    }
+#else
     swe_calc_r(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL), SE_ECL_NUT, 0, x, NULL);
+#endif
     eps_true = x[0];
     swe_cotrans(xra, xra, -eps_true);
   }
@@ -3010,6 +3023,18 @@ void CALL_CONV swe_azalt_r(swe_ctx *ctx, double tjd_ut,
       double *xin, 
       double *xaz)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 214: any date was taken, and with no error to return the
+   * answer was NaN at 1e84, +1e300, +inf and NaN, and past 1e12 days
+   * azimuth and altitude from a sidereal time and an obliquity past the
+   * residual floor. NaN now past the bound (SWI_ECL_NUT_JMAX) and at no
+   * date. The refraction takes no date (the altitude, the site's height,
+   * pressure and temperature). */
+  if (!(tjd_ut >= -SWI_ECL_NUT_JMAX && tjd_ut <= SWI_ECL_NUT_JMAX)) {
+    xaz[0] = xaz[1] = xaz[2] = NAN;
+    return;
+  }
+#endif
   swi_config_hold(ctx);	/* bug 124 */
   swe_azalt_r_body(ctx, tjd_ut, calc_flag, geopos, atpress, attemp, xin, xaz);
   swi_config_release(ctx);
@@ -3068,7 +3093,15 @@ static void swe_azalt_rev_r_body(swe_ctx *ctx, double tjd_ut,
   xout[1] = xaz[1];
   /* ecliptic positions */
   if (calc_flag == SE_HOR2ECL) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 214, as in swe_azalt_r_body() */
+    if (swe_calc_r(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL), SE_ECL_NUT, 0, x, NULL) < 0) {
+      xout[0] = xout[1] = NAN;
+      return;
+    }
+#else
     swe_calc_r(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL), SE_ECL_NUT, 0, x, NULL);
+#endif
     eps_true = x[0];
 	swe_cotrans(xaz, x, eps_true);
     xout[0] = x[0];
@@ -3082,6 +3115,14 @@ void CALL_CONV swe_azalt_rev_r(swe_ctx *ctx, double tjd_ut,
       double *xin, 
       double *xout)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 214, as in swe_azalt_r(); the declination too, which
+   * HOR2EQU answered at every date */
+  if (!(tjd_ut >= -SWI_ECL_NUT_JMAX && tjd_ut <= SWI_ECL_NUT_JMAX)) {
+    xout[0] = xout[1] = NAN;
+    return;
+  }
+#endif
   swi_config_hold(ctx);	/* bug 124 */
   swe_azalt_rev_r_body(ctx, tjd_ut, calc_flag, geopos, xin, xout);
   swi_config_release(ctx);

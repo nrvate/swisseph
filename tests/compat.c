@@ -3904,6 +3904,82 @@ static double nut_args_jitter(void)
   return worst;
 }
 
+/* UPSTREAM-BUGS 209: the houses at UT 1e13, -1e13, 1e20 and -1e20, a
+ * fresh context each, the default models: swe_houses_ex2() Placidus with
+ * speeds and swe_houses() Koch at latitude 50; the number answered, not
+ * refused with ERR, every cusp 0 (and swe_houses_ex2()'s serr the range).
+ * The shipped build refuses all 8; upstream answers all 8 (OK, or ERR
+ * "within polar circle" with its cusps filled). */
+static double houses_far_answered(void)
+{
+  static const double tq[4] = { 1e13, -1e13, 1e20, -1e20 };
+  double cu[13], a[10], cs[13], as[10];
+  char serr[AS_MAXCH];
+  int i, k, n = 0;
+  for (i = 0; i < 4; i++)
+    for (k = 0; k < 2; k++) {
+      swe_ctx *c = swe_ctx_new();
+      int r;
+      if (c == NULL)
+        return -1;
+      swe_set_ephe_path_r(c, EPHE);
+      serr[0] = '\0';
+      cu[1] = 7;
+      if (k == 0)
+        r = swe_houses_ex2_r(c, tq[i], SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
+      else
+        r = swe_houses_r(c, tq[i], 50, 10, 'K', cu, a);
+      if (!(r == ERR && cu[1] == 0
+            && (k == 1 || strstr(serr, "outside the obliquity and nutation range") != NULL)))
+        n++;
+      swe_ctx_free(c);
+    }
+  return n;
+}
+
+/* UPSTREAM-BUGS 214: swe_sidtime(), swe_sidtime0() (eps 23.44, nut -0.004),
+ * swe_azalt() SE_EQU2HOR and swe_azalt_rev() SE_HOR2EQU at UT 1e13, -1e13,
+ * 1e20 and -1e20, and swe_azalt() SE_ECL2HOR at UT 9e11, where TT is 1.13e12
+ * (SE_ECL_NUT refuses in the shipped build), a fresh context each, the
+ * default models and the IERS 2010 sidereal time; the number of outputs
+ * answered, not NaN. The shipped build answers none of 17; upstream all
+ * 17. */
+static double sidt_far_answered(void)
+{
+  static const double tq[4] = { 1e13, -1e13, 1e20, -1e20 };
+  double geo[3] = {10, 50, 100}, xin[3] = {100, 1, 1}, hin[2] = {100, 20}, x[6], v;
+  char mod[] = "0,0,0,0,0,0,0,3";
+  int i, k, n = 0;
+  for (i = 0; i < 5; i++)
+    for (k = 0; k < 4; k++) {
+      swe_ctx *c;
+      if (i == 4 && k > 0)
+        break;
+      if ((c = swe_ctx_new()) == NULL)
+        return -1;
+      swe_set_ephe_path_r(c, EPHE);
+      if (i == 4) {
+        swe_set_astro_models_r(c, mod, 0);
+        swe_azalt_r(c, 9e11, SE_ECL2HOR, geo, 0, 10, xin, x);
+        v = x[1];
+      } else if (k == 0) {
+        v = swe_sidtime_r(c, tq[i]);
+      } else if (k == 1) {
+        v = swe_sidtime0_r(c, tq[i], 23.44, -0.004);
+      } else if (k == 2) {
+        swe_azalt_r(c, tq[i], SE_EQU2HOR, geo, 0, 10, xin, x);
+        v = x[1];
+      } else {
+        swe_azalt_rev_r(c, tq[i], SE_HOR2EQU, geo, hin, x);
+        v = x[1];
+      }
+      if (!isnan(v))
+        n++;
+      swe_ctx_free(c);
+    }
+  return n;
+}
+
 /* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
  * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
  * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
@@ -5675,7 +5751,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5839,6 +5915,8 @@ int main(int argc, char **argv)
   housewin = house_window_speed_off();
   nodewin = node_window_speed_off();
   eclnutfar = ecl_nut_far_answered();
+  housefar = houses_far_answered();
+  sidtfar = sidt_far_answered();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -7282,6 +7360,22 @@ int main(int argc, char **argv)
   else {
     printf("  2000B against SOFA     %.2e rad FAIL: expected %s\n",
            nut00b, WANT_DEFECT ? "> 1e-9" : "< 3e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (housefar == 8) : (housefar == 0))
+    printf("  houses past 1e12       %.0f/8 answered OK\n", housefar);
+  else {
+    printf("  houses past 1e12       %.0f/8 answered FAIL: expected %s\n",
+           housefar, WANT_DEFECT ? "8" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (sidtfar == 17) : (sidtfar == 0))
+    printf("  sidtime, azalt past 1e12 %.0f/17 answered OK\n", sidtfar);
+  else {
+    printf("  sidtime, azalt past 1e12 %.0f/17 answered FAIL: expected %s\n",
+           sidtfar, WANT_DEFECT ? "17" : "0");
     bad++;
   }
 
