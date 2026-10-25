@@ -91,9 +91,10 @@ argument. Two contexts can hold two sidereal modes or two observer positions at
 once — something the process-wide API cannot express at all.
 
 `swe_close_r()` is separate from `swe_close()`: the latter also resets the
-process-wide configuration in what it resets on its own thread (the observer,
-the sidereal mode, the tidal acceleration), so a worker releasing its own state
-would otherwise reset them for every other thread.
+process-wide configuration in what it resets on its own thread (the tidal
+acceleration and the models of `swe_set_astro_models()`), so a worker releasing
+its own state would otherwise reset them for every other thread. The observer
+and the sidereal mode survive both, as the manual says.
 
 ---
 

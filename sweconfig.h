@@ -216,9 +216,10 @@ extern void swi_config_release(swe_ctx *ctx);
  * single point where a fresh context inherits. */
 extern void swi_config_inherit(swe_ctx *ctx);
 
-/* Reset the master's observer, sidereal and tidal groups and its DE
- * numbers -- what swe_close() resets in the context -- keep the rest, and
- * bump the generation. Used by swe_close() (bug 123). */
+/* Reset the master's tidal group, its models and its DE numbers -- what
+ * swe_close() resets in the context; under SWE_UPSTREAM_COMPAT the observer
+ * and the sidereal mode too (bug 127) -- keep the rest, and bump the
+ * generation. Used by swe_close() (bug 123). */
 extern void swi_config_reset(swe_ctx *ctx);
 
 /* Invalidate what a change to DELTA T makes stale on this thread: the

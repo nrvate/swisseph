@@ -84,7 +84,11 @@ struct obs {
   char err[AS_MAXCH];
 };
 
-/* the settings: the first six are what swe_close() keeps */
+/* the settings: the first six are what swe_close() kept when this was
+ * written; since UPSTREAM-BUGS 127 it keeps the observer and the sidereal
+ * mode too, as the manual says. B compares the two threads with each
+ * other, so its observer and sidereal cases hold either way; G123
+ * (closesurvive.c) checks those two against a process that never closed. */
 enum { K_PATH, K_JPL, K_DT, K_INTP, K_LAPSE, K_FB, K_TOPO, K_SID, K_TID, NK };
 #define NKEPT 6
 static const char *KN[NK] = {

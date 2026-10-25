@@ -3028,11 +3028,49 @@ static double mosh_geo_lt_jitter(void)
   return w;
 }
 
+/* swe_set_topo(), swe_set_sid_mode(SE_SIDM_LAHIRI), a Swiss Sun and
+ * swe_close(), then the topocentric Moon at J2000 by swe_calc_ut() and the
+ * ayanamsa there by swe_get_ayanamsa_ex(), against a fresh context given
+ * the two: the larger difference, deg, 360 for a refused Moon. The manual
+ * has both survive swe_close(); upstream's resets both, the Moon refused
+ * and the ayanamsa Fagan/Bradley's, 0.883 deg off (UPSTREAM-BUGS 127).
+ * Called last: in the shipped build the two outlive the close. */
+static double close_keeps_off(void)
+{
+  double x[6], moon[6], aya = 0, aya_ref = 0, r;
+  char serr[256];
+  int32 rf;
+  swe_ctx *c;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 47.37, 400);
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  swe_calc(2451600.0, SE_SUN, SEFLG_SWIEPH, x, serr);
+  swe_close();
+  rf = swe_calc_ut(2451545.0, SE_MOON, SEFLG_SWIEPH | SEFLG_TOPOCTR, moon, serr);
+  swe_get_ayanamsa_ex(2451545.0, SEFLG_SWIEPH, &aya, serr);
+  if ((c = swe_ctx_new()) == NULL)
+    return 360;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_topo_r(c, 8.55, 47.37, 400);
+  swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+  if (swe_calc_ut_r(c, 2451545.0, SE_MOON, SEFLG_SWIEPH | SEFLG_TOPOCTR, x, serr) < 0)
+    rf = -1;
+  swe_get_ayanamsa_ex_r(c, 2451545.0, SEFLG_SWIEPH, &aya_ref, serr);
+  swe_ctx_free(c);
+  r = rf < 0 ? 360 : fabs(moon[0] - x[0]);
+  if (fabs(aya - aya_ref) > r)
+    r = fabs(aya - aya_ref);
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  return r;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3147,6 +3185,7 @@ int main(int argc, char **argv)
   moshfarlt = mosh_far_lt_off();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
+  closekeep = close_keeps_off();	/* last: see the function */
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -4009,6 +4048,14 @@ int main(int argc, char **argv)
   else {
     printf("  interpolation unset    %.2e arcsec FAIL: expected %s\n",
            nutintp, WANT_DEFECT ? "> 5e-5" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (closekeep > 0.5) : (closekeep == 0))
+    printf("  topo, sid after close  %.2e deg OK\n", closekeep);
+  else {
+    printf("  topo, sid after close  %.2e deg FAIL: expected %s\n",
+           closekeep, WANT_DEFECT ? "> 0.5" : "0");
     bad++;
   }
 

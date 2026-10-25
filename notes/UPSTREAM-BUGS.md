@@ -159,6 +159,7 @@ worst were in code that had never executed even once.
 | 124 | The searches, the houses, the sidereal time, `swe_azalt()`, `swe_pheno()`, delta t and the UTC conversions on the default context (this fork's) adopt another thread's setter between two of their calculations, or never: a sidereal Moon crossing 5600 s off, a local eclipse searched at another site from half-way, 3752 s late; another thread's user delta t kept out of the UTC conversions, 22 s | Correctness (behaviour) | `swecl.c`, `swehel.c`, `swehouse.c`, `sweph.c`, `swephlib.c`, `swedate.c` |
 | 126 | `swe_set_interpolate_nut()` resets the interpolation's nodes and not the nutation, observer and positions cached at an instant, nor does a thread adopting the change (this fork's adoption): the old setting's nutation answers there, 7.42e-5" in dpsi | Correctness (behaviour) | `swephlib.c`, `sweconfig.c`, `sweconfig.h` |
 | 125 | Moshier's light time past a day carries the Sun about the barycentre by bug 109's Taylor step: VEA 2e-7 deg off its light time's fixed point, its speed 5.4e-9 deg/day off its positions, a `swe_calc_orbel()` orbit at 80000 AU the same (this fork's) | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
+| 127 | `swe_close()` resets the observer and the sidereal mode, which the manual has survive it: after it a topocentric calculation is refused ("geographic position has not been set") and a sidereal one is in Fagan/Bradley's mode, 0.88 deg off Lahiri's -- on the closing thread, every thread on the default context and an explicit context closed by `swe_close_r()` | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 
 ---
 
@@ -7679,11 +7680,12 @@ the change: interpolation on, the nutation at J2000 + 0.37, then off, and
 the same instant again answers the interpolated -13.926980" (7.42e-5" from
 the exact value; 8.38e-5" in the compat build, where the setter is
 upstream's). G120's second thread therefore syncs at another instant.
-Fixed as entry 126. Not fixed: the manual says the parameters of
+Fixed as entry 126. And the manual says the parameters of
 `swe_set_topo()` and `swe_set_sid_mode()` survive `swe_close()`, where
 upstream's code and this fork's reset both: after the close a topocentric
 Moon is refused "geographic position has not been set" and the ayanamsa is
-the default's 24.740 deg for Lahiri's 23.857.
+the default's 24.740 deg for Lahiri's 23.857. Fixed by entry 127: both
+survive, in the context and the master.
 
 ## 126. `swe_set_interpolate_nut()` resets the interpolation's nodes and not the nutation, observer and positions cached at an instant, nor does a thread adopting the change: the old setting answers there
 
@@ -8118,6 +8120,114 @@ build before).
 
 G27, G65, G108, G80, G52, G101, G77, G33 and G24 (both ways) pass; G108's,
 G80's, G52's, G101's, G77's and G33's outputs are unchanged.
+
+## 127. `swe_close()` resets the observer and the sidereal mode, which the manual has survive it
+
+**Severity: Correctness (behaviour: a setting lost -- a topocentric calculation refused, "geographic position has not been set", and a sidereal one in Fagan/Bradley's mode, 0.88 deg off Lahiri's -- after `swe_close()`, on every thread and context)**
+**Where:** `sweph.c`: `ctx_release()` (`swe_close()`, `swe_close_r()`), `swe_set_sid_mode_r()`, new `swi_sid_mode_models()`; `sweconfig.c`: `swi_config_reset()`; `sweph.h`, `sweconfig.h`
+
+Entry 123's noticed item. The programmer's manual says it twice: "The
+parameters set by swe_set_topo() survive swe_close()." (with
+`swe_set_topo()`) and "NOTE: the parameters set by swe_set_sid_mode()
+survive calls of the function swe_close()." (12.1). Upstream's
+`swe_close()` resets both -- `geopos_is_set` and `ayana_is_set` FALSE,
+`topd` and `sidd` zeroed -- and so did this fork's `ctx_release()`, and,
+since bug 123, the shared configuration's reset after it. After the path,
+`swe_set_topo(8.55, 47.37, 400)`, a Swiss Sun and `swe_close()`, the
+topocentric Moon at J2000 was refused where a process that never closed
+answers 222.988 deg. After `swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0)` the
+ayanamsa at J2000 was Fagan/Bradley's 24.740 deg (`swe_get_ayanamsa_ut()`)
+for 23.857, the sidereal Sun 0.883 deg off; a user t0 and ayan_t0 (23.857
+for 24.740), `SE_SIDM_J2000` with its `SE_SIDBIT_ECL_T0` (the ayanamsa 0.000
+for 24.740, the sidereal Moon in AD 1000 at 186.576 deg for 211.317) and
+Lahiri with `SE_SIDBIT_PREC_ORIG` went the same way. So on the closing
+thread, on a thread started after the close, on a thread that had computed
+before it, and on an explicit context closed by `swe_close_r()`; with the
+path set again after the close or another group's setter alike. The compat
+build the same; the upstream build (legacy-master), a main-thread program:
+the Moon refused, the ayanamsa 24.736 (true) for 23.853.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`, upstream's
+reset under `#else`, in `ctx_release()` and the master alike):
+- `ctx_release()` keeps `geopos_is_set` with the site (`topd`'s
+  geolon, geolat, geoalt) and `ayana_is_set` with `sidd` (the mode, t0,
+  ayan_t0, t0_is_UT). It empties the rest of `topd`, the observer's
+  computed place (`teval` to `SWI_TJD_NEVER`), which the files and the
+  tidal term the close resets frame. Nothing else caches what the two set:
+  there is no ayanamsa memo, and the nutation, obliquity and planets' save
+  areas the close empties already. `swe_set_ephe_path()`'s and
+  `swe_set_jpl_file()`'s close (`swi_close_keep_topo_etc()`) already kept
+  both and empties the observer's place, so the two closes now agree.
+- The models still go: the manual says nothing of `swe_set_astro_models()`
+  surviving. But the models `swe_set_sid_mode()` sets for
+  `SE_SIDBIT_PREC_ORIG` -- the ayanamsa's own precession and nutation --
+  are a parameter it set: the setter's code moved to
+  `swi_sid_mode_models()` (the setter unchanged), which the close calls on
+  the kept mode after zeroing the models. Without it Lahiri with the bit
+  kept its mode and lost its IAU 1976 precession: the ayanamsa in AD 1000
+  5.6e-4 deg off.
+- `swi_config_reset()` resets in the master the tidal group, the models
+  (the `SE_SIDBIT_PREC_ORIG` ones given back from the master's kept mode)
+  and the DE numbers, and keeps the observer and the sidereal mode; the
+  closing context keeps owning those two groups (`SWI_CFG_CLOSED` is the
+  tidal group alone). With `ctx_release()` changed alone, 54 of G123's 84
+  fail: every reader on the default context, the closing thread included,
+  takes the master's reset at its next sync.
+- The tidal acceleration stays reset, as entry 92 has it.
+- No hot path is touched: `swe_close()` and the sid-mode setter only.
+
+G123 `tests/closesurvive.c`, each scenario in a forked process: the path,
+the setting, a Swiss Sun, `swe_close()`, then nothing, the path again or
+another group's setter; the main thread, a thread started then, a thread
+that had computed before the close, and an explicit context given the same
+calls with `swe_close_r()` must answer bit for bit as a process given the
+same calls without the close. Seven settings: the observer (the
+topocentric Moon at J2000 with its speed), Lahiri, a user t0 and ayan_t0,
+Lahiri with `SE_SIDBIT_PREC_ORIG`, `SE_SIDM_J2000` (the ayanamsa at J2000
+and in AD 1000, the sidereal Sun and Moon, the nutation, in TT), and two the
+close still resets: `swe_set_astro_models("0,0,0,1")` against a process
+that never set it, and Lahiri with the bit, then `"0,0,0,4"`, against
+Lahiri with the bit alone. 84 checks; all pass. Before the fix 72 fail
+(the five kept settings and the bit with the models after it, everywhere;
+the models alone pass); the compat build 72; with the mode's models not
+given back 24 (5.6e-4 deg). G24 `close_keeps_off`, the topocentric Moon and
+the ayanamsa at J2000 after `swe_close()` against a fresh context given the
+two: 0 shipped, 360 compat (the Moon refused). G120's comment notes the two
+kept (its scenarios compare threads with each other and pass, 44); cfgleak's
+test 2 used the observer as the thing `swe_close()` clears from the master
+and asserted the new thread refused -- it now asserts the observer kept and
+a manual tidal acceleration (DE200's) cleared. G119, G112, G82, G2,
+check-ctx and G24 pass; the golden transcript is the same as before the
+fix, row for row.
+
+The manual's other `swe_close()` sentences, measured:
+- "After a call of swe_close() the data will be lost. A new call of
+  swe_fixstar2() will reload all stars from sefstars.txt." Holds: with
+  Aldebaran's right ascension edited in the catalogue after a first call,
+  `swe_fixstar2()` answers the old 69.790 deg until `swe_close()` and the
+  edited 84.190 after it.
+- "After swe_close(), no Swiss Ephemeris functions should be used unless
+  you call swe_set_ephe_path() again and, if required, swe_set_jpl_file()."
+  Advice, and the code keeps the path and the JPL file's name, as
+  upstream's does (its reset of the path is commented out): a Swiss Mars
+  after `swe_close()` alone is read from the files. Not changed.
+
+Noticed, not fixed:
+- After `swe_close()` without the path again, the path is kept and its DE
+  numbers are not (they go with the files, the 2026-09-16 review's F2), so a
+  first UT calculation before any file opens takes the default tidal term,
+  -25.80 for the moon file's -25.936: delta t in AD 1000 1463.43 s for
+  1474.72, and `swe_calc_ut()`'s Moon there 197.37472 deg for 197.37633
+  (1.6e-3 deg); the call itself opens the file, and the same call again
+  answers right. Upstream the same; the manual says to set the path again,
+  which answers right at once. G123 observes in TT for this reason (a UT
+  ayanamsa in AD 1000 moves by 5e-9 deg).
+- The manual has "Once the function swe_set_tid_acc() has been used, the
+  automatic setting of tidal acceleration is blocked. In order to unblock
+  it again, call swe_set_tid_acc(SE_TIDAL_AUTOMATIC)", and
+  `swe_close()` unblocks it too (as upstream's); `swe_set_delta_t_userdef()`,
+  whose return to automatic the manual words the same way, survives the
+  close. Neither sentence names `swe_close()`; left as entry 92 has it.
 
 ## How these were found
 

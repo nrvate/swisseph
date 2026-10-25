@@ -15,11 +15,14 @@
  *    house calculations at Cairo and other latitudes. Main's topocentric
  *    result must not move.
  *
- * 2. swe_close() MUST CLEAR THE SHARED MASTER of what it resets -- the
- *    observer here. Otherwise a thread started afterwards adopts the
- *    configuration of a session the caller believes was released. (What
- *    swe_close() keeps, such as the path, stays the master's: UPSTREAM-BUGS
- *    123.)
+ * 2. swe_close() MUST CLEAR THE SHARED MASTER of what it resets -- a
+ *    manual tidal acceleration here. Otherwise a thread started afterwards
+ *    adopts the configuration of a session the caller believes was
+ *    released. (What swe_close() keeps, such as the path, stays the
+ *    master's: UPSTREAM-BUGS 123; and so does the observer, which the
+ *    manual has survive swe_close(): UPSTREAM-BUGS 127. This test used the
+ *    observer as the thing reset and asserted the new thread refused,
+ *    "geographic position has not been set"; it now asserts Zurich.)
  *
  * Build: see tests/Makefile (make cfgleak)
  */
@@ -186,39 +189,47 @@ static int test_no_leak(void) {
 }
 
 /* ---- 2. swe_close() clears the master ------------------------------- */
-static volatile double post_close_lon;
-static volatile int    post_close_geoset;
+static volatile double post_close_lon, post_close_tid;
 
 static void *after_close(void *a) {
   char serr[AS_MAXCH] = ""; double x[6];
   (void)a;
   /* This thread never configures anything. If swe_close() cleared the
-   * master, it must NOT see Zurich; swe_calc with TOPOCTR should fail
-   * with "geographic position has not been set". */
+   * master of what it resets, it must NOT see the DE200 tidal term; and it
+   * must see Zurich, which swe_close() keeps (bug 127: until then this
+   * asserted the observer reset, the Moon refused). */
   int32 rf = swe_calc_ut(TJD, SE_MOON, SEFLG_SWIEPH | SEFLG_TOPOCTR, x, serr);
-  post_close_lon = x[0];
-  post_close_geoset = (rf >= 0 && x[0] != 0.0);
+  post_close_lon = rf >= 0 ? x[0] : 0;
+  post_close_tid = swe_get_tid_acc();
   return NULL;
 }
 
 static int test_close_resets(void) {
   pthread_t t;
+  double lon;
+  int bad = 0;
   swe_set_ephe_path((char *)EPHE);
   swe_set_topo(ZUR[0], ZUR[1], ZUR[2]);
-  (void)topo_moon();
+  swe_set_tid_acc(SE_TIDAL_DE200);
+  lon = topo_moon();
   swe_close();
 
   pthread_create(&t, NULL, after_close, NULL);
   pthread_join(t, NULL);
 
-  printf("  thread started after swe_close(): topo lon = %.9f\n",
-         post_close_lon);
-  if (post_close_geoset) {
+  printf("  thread started after swe_close(): tidal acceleration %.4f, "
+         "topo lon = %.9f\n", post_close_tid, post_close_lon);
+  if (post_close_tid == SE_TIDAL_DE200) {
     printf("  FAIL: inherited configuration from a closed session\n");
-    return 1;
+    bad = 1;
   }
-  printf("  PASS: master cleared by swe_close()\n");
-  return 0;
+  if (post_close_lon != lon) {
+    printf("  FAIL: the observer did not survive swe_close() (%.9f)\n", lon);
+    bad = 1;
+  }
+  if (!bad)
+    printf("  PASS: master cleared by swe_close(), the observer kept\n");
+  return bad;
 }
 
 /* ---- 3. sync coverage --------------------------------------------------

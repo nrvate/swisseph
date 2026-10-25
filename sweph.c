@@ -2137,6 +2137,10 @@ static void ctx_release(swe_ctx *ctx)
   ctx->ephe_path_live = FALSE;	/* bug 103: the next path is a real one */
 #endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 127: the sidereal mode stays, with the models it set */
+  swi_sid_mode_models(&ctx->sidd, ctx->astro_models);
+#endif
   /* close JPL file */
   swi_close_jpl_file(ctx);
   ctx->jpl_file_is_open = FALSE;
@@ -2148,16 +2152,38 @@ static void ctx_release(swe_ctx *ctx)
   }
   swi_free_fict_lines(ctx);
   SWI_CFG_LOCAL(ctx, swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC));
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 127: the observer and the sidereal mode were reset here,
+   * where the manual has "The parameters set by swe_set_topo() survive
+   * swe_close()" and "the parameters set by swe_set_sid_mode() survive
+   * calls of the function swe_close()": after swe_set_topo(8.55, 47.37,
+   * 400) and swe_close() the topocentric Moon at J2000 was refused
+   * ("geographic position has not been set") for 222.988 deg, and after
+   * swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0) the ayanamsa was the default's
+   * 24.740 deg for 23.857; a user t0 and ayan_t0, SE_SIDBIT_ECL_T0 and
+   * SE_SIDBIT_PREC_ORIG's models went with it. Both stay now, the mode
+   * with the models it set (above), and only the observer's computed
+   * place goes, which the files and the tidal term the close resets
+   * frame. swe_set_astro_models()' models and the tidal acceleration are
+   * still reset: the manual says nothing of them. */
+  {
+    double geolon = ctx->topd.geolon, geolat = ctx->topd.geolat;
+    double geoalt = ctx->topd.geoalt;
+    memset((void *) &ctx->topd, 0, sizeof(struct topo_data));
+    ctx->topd.geolon = geolon;
+    ctx->topd.geolat = geolat;
+    ctx->topd.geoalt = geoalt;
+    ctx->topd.teval = SWI_TJD_NEVER;	/* Upstream bug 71 */
+  }
+#else
   ctx->geopos_is_set = FALSE;
   ctx->ayana_is_set = FALSE;
+  memset((void *) &ctx->topd, 0, sizeof(struct topo_data));
+  memset((void *) &ctx->sidd, 0, sizeof(struct sid_data));
+#endif
   ctx->is_old_starfile = FALSE;
   ctx->i_saved_planet_name = 0;
   *(ctx->saved_planet_name) = '\0';
-  memset((void *) &ctx->topd, 0, sizeof(struct topo_data));
-#ifndef SWE_UPSTREAM_COMPAT
-  ctx->topd.teval = SWI_TJD_NEVER;	/* Upstream bug 71 */
-#endif
-  memset((void *) &ctx->sidd, 0, sizeof(struct sid_data));
   ctx->timeout = 0;
   ctx->last_epheflag = 0;
   /* eop_dpsi_loaded has to go back with them. load_dpsi_deps() opens with
@@ -2264,7 +2290,8 @@ void CALL_CONV swe_close(void)
   swe_close_r(ctx);
   /* The master resets what ctx_release() resets and keeps what it keeps,
    * and this context keeps owning what it kept: the fallback setting
-   * (bug 122) and every other (bug 123). */
+   * (bug 122), every other (bug 123), the observer and the sidereal mode
+   * (bug 127). */
   swi_config_reset(ctx);
 }
 
@@ -4899,24 +4926,36 @@ void CALL_CONV swe_set_sid_mode_r(swe_ctx *ctx, int32 sid_mode, double t0, doubl
     sip->t0_is_UT = ayanamsa[sid_mode].t0_is_UT;
   }
   // test feature: ayanamsha using its original precession model
+  swi_sid_mode_models(sip, ctx->astro_models);
+  swi_invalidate_models(ctx);
+  swi_config_end_apply(ctx, swi_cfg_was);
+  swi_config_publish(ctx, SWI_CFG_SID);
+}
+
+/* The models swe_set_sid_mode_r() sets for SE_SIDBIT_PREC_ORIG, from the
+ * mode it stored: the ayanamsa's own precession and its nutation. The
+ * setter's code, moved here so that swe_close(), which keeps the mode and
+ * resets the models, gives the mode its models back (UPSTREAM-BUGS 127).
+ * sip->sid_mode % SE_SIDBITS is the setter's sid_mode wherever the stored
+ * mode still has the bit. */
+void swi_sid_mode_models(const struct sid_data *sip, int32 *models)
+{
+  int32 sid_mode = sip->sid_mode % SE_SIDBITS;
   if (sid_mode < SE_NSIDM_PREDEF && (sip->sid_mode & SE_SIDBIT_PREC_ORIG) && ayanamsa[sid_mode].prec_offset > 0) {
-    ctx->astro_models[SE_MODEL_PREC_LONGTERM] = ayanamsa[sid_mode].prec_offset;
-    ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = ayanamsa[sid_mode].prec_offset;
+    models[SE_MODEL_PREC_LONGTERM] = ayanamsa[sid_mode].prec_offset;
+    models[SE_MODEL_PREC_SHORTTERM] = ayanamsa[sid_mode].prec_offset;
     // add a corresponding nutation model
     switch(ayanamsa[sid_mode].prec_offset) {
       case SEMOD_PREC_NEWCOMB:
-        ctx->astro_models[SE_MODEL_NUT] = SEMOD_NUT_WOOLARD;
+        models[SE_MODEL_NUT] = SEMOD_NUT_WOOLARD;
 	break;
       case SEMOD_PREC_IAU_1976:
-        ctx->astro_models[SE_MODEL_NUT] = SEMOD_NUT_IAU_1980;
+        models[SE_MODEL_NUT] = SEMOD_NUT_IAU_1980;
 	break;
       default:
         break;
     }
   }
-  swi_invalidate_models(ctx);
-  swi_config_end_apply(ctx, swi_cfg_was);
-  swi_config_publish(ctx, SWI_CFG_SID);
 }
 
 /* Legacy entry point: the process-wide default context.

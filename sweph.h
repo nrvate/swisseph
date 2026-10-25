@@ -1146,6 +1146,11 @@ struct epsilon {
  *     orbit at 80000 AU 2e-7 deg off the light time's fixed point, their
  *     speeds 5.4e-9 deg/day off their positions; under the switch the Sun
  *     is held still, as upstream's (UPSTREAM-BUGS 125, G27, G65)
+ *   - swe_close() resetting the observer and the sidereal mode, which the
+ *     manual has survive it, in the context and in the shared
+ *     configuration: after it the topocentric Moon refused ("geographic
+ *     position has not been set") and the ayanamsa Fagan/Bradley's 24.740
+ *     deg for Lahiri's 23.857 (UPSTREAM-BUGS 127, G123)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1387,6 +1392,11 @@ struct sid_data {
   double t0;
   AS_BOOL t0_is_UT;
 };
+/* The models swe_set_sid_mode() sets for a mode with SE_SIDBIT_PREC_ORIG
+ * (its ayanamsa's precession and nutation), into models[]; nothing for any
+ * other. The setter's, and swe_close()'s, which keeps the mode and resets
+ * the models (UPSTREAM-BUGS 127). */
+extern void swi_sid_mode_models(const struct sid_data *sip, int32 *models);
 
 #define SWI_STAR_LENGTH 40
 struct fixed_star {

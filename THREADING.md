@@ -115,10 +115,11 @@ swe_close_r(swi_default_ctx());
 swe_close();
 ```
 
-Calling `swe_close()` from a worker would also reset the observer, sidereal
-mode and tidal acceleration every other thread is reading (the settings
-`swe_close()` keeps -- path, JPL file, delta t, nutation interpolation, lapse
-rate, fallback -- stay shared).
+Calling `swe_close()` from a worker would also reset the tidal acceleration
+and the models of `swe_set_astro_models()` every other thread is reading (the
+settings `swe_close()` keeps -- path, JPL file, delta t, nutation
+interpolation, lapse rate, fallback, and the observer and sidereal mode, which
+the manual has survive it -- stay shared).
 
 `swe_ctx_free()` releases and frees an explicit context. It tolerates `NULL`,
 and refuses the process-wide default context rather than freeing memory it does

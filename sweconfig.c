@@ -720,8 +720,17 @@ void swi_config_inherit(swe_ctx *ctx)
  * the manual's swe_close() releases files and memory, not settings; the
  * generation is bumped, never zeroed; and the context gives up only the
  * groups the close reset (bug 122 kept the fallback's alone).
+ *
+ * Upstream bug 127: and ctx_release() keeps the observer and the sidereal
+ * mode, as the manual says, so the master keeps them too, the mode with
+ * the models it set; of the SID group only the models go. Under
+ * SWE_UPSTREAM_COMPAT ctx_release() resets both, and so does the master.
  *====================================================================*/
+#ifndef SWE_UPSTREAM_COMPAT
+#define SWI_CFG_CLOSED SWI_CFG_TIDACC
+#else
 #define SWI_CFG_CLOSED (SWI_CFG_TOPO | SWI_CFG_SID | SWI_CFG_TIDACC)
+#endif
 
 void swi_config_reset(swe_ctx *ctx)
 {
@@ -731,6 +740,10 @@ void swi_config_reset(swe_ctx *ctx)
     d.generation = 0;
     cfg_defaults(&d);
     cfg_merge(&cfg_master, &d, SWI_CFG_CLOSED);
+#ifndef SWE_UPSTREAM_COMPAT
+    memcpy(cfg_master.astro_models, d.astro_models, sizeof(d.astro_models));
+    swi_sid_mode_models(&cfg_master.sidd, cfg_master.astro_models);
+#endif
     cfg_master.sweph_denum_moon = 0;	/* as ctx_release() */
     cfg_master.jpldenum_cfg = 0;
     swi_gen_bump(&cfg_master.generation);
