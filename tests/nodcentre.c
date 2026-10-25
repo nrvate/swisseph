@@ -76,9 +76,9 @@
  *      apogee or focal point the perihelion's), less the site for the
  *      topocentric ones (the Sun's geometric geocentric less topocentric
  *      place, from swe_calc() on a context of its own), its distance
- *      within 1e-12 AU (topocentric 1e-11: the site is subtracted in the
+ *      within 1e-12 AU (topocentric 1e-11: the site was subtracted in the
  *      ephemeris's frame from points in J2000's, as every body's, 1.8e-12
- *      AU) and its direction within 1e-5 deg (the deflection, which takes
+ *      AU, until UPSTREAM-BUGS 221) and its direction within 1e-5 deg (the deflection, which takes
  *      the distance, the difference); Moshier's mean points the files'
  *      within 1e-5 deg and 1e-12 AU (the elements are the same; the files'
  *      observer moves with the Sun's barycentric velocity); and Moshier's
@@ -161,7 +161,8 @@
  *      24 values zeroed, with the fallback within 1e-7 deg of the complete
  *      directory's; heliocentric and barycentric answered strict, bit for
  *      bit the complete directory's and the fallback's.
- * Measured: (a) distance 4.4e-16 AU (topocentric 1.8e-12), direction
+ * Measured: (a) distance 4.4e-16 AU (topocentric 5.6e-16; 1.8e-12 before
+ * bug 221's fix), direction
  * 2.9e-6 deg (the focal point, 0.03 AU out), Moshier's mean points 2.9e-6
  * deg and 2.2e-16 AU off the files', their speeds 3.6e-12 deg/day and
  * 3.7e-14 AU/day; (b), (c), (d) 0; (e) 3.7e-10 deg/day (the files'

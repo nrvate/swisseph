@@ -5589,7 +5589,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   double Gmsm, dzmin;
 #ifndef SWE_UPSTREAM_COMPAT
   int32 retc0 = 0, retcs = 0, retx = 0, eph_asked, iflag_ctr = iflag;
-  AS_BOOL out_bary, mosh_ctr = FALSE, moon_geo_mean = FALSE;
+  AS_BOOL out_bary, mosh_ctr = FALSE, moon_geo_mean = FALSE, ctr_bias = FALSE;
   double xsite[6] = {0, 0, 0, 0, 0, 0};	/* the Sun's points' site, bug 190 */
 #endif
   double rxy, rxyz, fac, sgn;
@@ -6401,6 +6401,26 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     mosh_ctr = pedp->iephe == SEFLG_MOSEPH;
     iflag_ctr = (iflag & ~SEFLG_EPHMASK) | (pedp->iephe & SEFLG_EPHMASK);
   }
+  /* Upstream bug 221: the points are J2000 (the mean ones from elements of
+   * date, the osculating ones from a state swi_plan_for_osc_elem() biased),
+   * and the change of centre below adds and takes away the barycentric Sun
+   * and Earth, which are in the ephemeris's frame, ICRS for DE 403 and
+   * later (here the site too, which swi_get_observer() turns into it):
+   * every point off by the frame bias, 23 mas, times the vectors that do
+   * not cancel. On the files a planet's geocentric points were 3.5e-8 AU
+   * off its heliocentric ones less the Earth at J2000, 9.6e-8 AU and 1.9e-9
+   * AU/day at G163's instants -3000..3000 (2.6e-6 deg on Mercury's apparent
+   * perihelion), the barycentric ones, and the heliocentric ones of a
+   * barycentric ellipse, 9.7e-10 AU, the Moon's heliocentric and
+   * barycentric points 9.6e-8 AU off its geocentric ones plus the Earth
+   * (1.9e-6 deg), its and the Sun's topocentric ones 4.8e-12 AU off the
+   * geocentric less the site; Moshier alike; with SEFLG_ICRS and on de200
+   * (no bias) within 7e-15. Now the points go into the ephemeris's frame
+   * for the change of centre, the deflection and the aberration, and back
+   * to J2000 after, as swe_calc() takes a place through app_pos_rest();
+   * with SEFLG_ICRS and on de200, where the bias is the identity, bit for
+   * bit as before. */
+  ctr_bias = !(iflag & SEFLG_ICRS) && swi_get_denum(ctx, SEI_EARTH, iflag_ctr) >= 403;
 #endif
   /***********************
    * position of observer
@@ -6458,6 +6478,19 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     for (i = 0; i <= 5; i++)
       xobs[i] += xear[i];
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 221: that frame only where a vector of it is added or taken away,
+   * not where nothing is and the trip would only round: the Moon's mean
+   * geocentric points, which read no file (bug 174) and so must not
+   * depend on a DE number, Moshier's heliocentric points, a barycentric
+   * ellipse's barycentric ones */
+  if (ctr_bias) {
+    AS_BOOL adds = ipli == SE_MOON ? !moon_geo_mean : (!mosh_ctr && !ellipse_is_bary);
+    for (i = 0; i <= 5 && !adds; i++)
+      adds = xobs[i] != 0 || xsite[i] != 0;
+    ctr_bias = adds;
+  }
+#endif
   /* ecliptic obliqity */
   if (iflag & SEFLG_J2000)
     oe = &ctx->oec2000;
@@ -6528,6 +6561,9 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
       swi_precess_speed(ctx, xp, tjd_et, iflag, J_TO_J2000);
 #ifndef SWE_UPSTREAM_COMPAT
     }
+    /* bug 221: into the frame of the Sun, the Earth and the site */
+    if (ctr_bias)
+      swi_bias(ctx, xp, tjd_et, iflag, TRUE);
 #endif
 //      fprintf(stderr, "%.17f, %.17f, %.17f, %.17f, %.17f, %.17f\n", xp[0], xp[1], xp[2], xp[3], xp[4], xp[5]);
     /*********************
@@ -6729,6 +6765,11 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
 #endif
       }
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* bug 221: and back to J2000 */
+    if (ctr_bias)
+      swi_bias(ctx, xp, tjd_et, iflag, FALSE);
+#endif
     /*********************
      * precession
      *********************/

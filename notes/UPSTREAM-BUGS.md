@@ -243,6 +243,7 @@ worst were in code that had never executed even once.
 | 220 | IAU 2000B leaves out the published fixed offsets in lieu of its planetary terms (McCarthy & Luzum 2003; SOFA `iauNut00b`, NOVAS `iau2000b`: dpsi -0.135 mas, deps +0.388 mas): 3.75e-8 deg in dpsi and 1.08e-7 in deps at every date, 6.4e-10 and 1.9e-9 rad off SOFA's test values | Correctness | `swephlib.c` |
 | 209 | The long-term sidereal time integrates past its table's 400 centuries in 10-century panels on every call, out to any date: `swe_sidtime()` 1.1 s at J 1e10 and some 140 s at 1e12, and the houses, `swe_azalt()`, `swe_azalt_rev()` and `swe_gauquelin_sector()` with it; past 7.8e14 the panel count's cast overflows, at -1e300 and -inf (TT NaN) `(int) floor(NaN)` indexes the table: SIGSEGV; and the houses take any date, ERR "within polar circle" with their cusps filled at 1e20, NaN from 1e84 | Correctness (behaviour) | `swephlib.c`, `swehouse.c`, `sweph.h` |
 | 214 | `swe_sidtime()`, `swe_sidtime0()`, `swe_azalt()` and `swe_azalt_rev()` answer any date with no error to return: NaN at 1e84, -+1e300, -+inf and NaN, a number past 1e12; and the azimuth's ecliptic forms do not read SE_ECL_NUT's return, so from UT 8.13e11, where it refuses at TT past 1e12, they turn by 0 | Correctness (behaviour) | `swephlib.c`, `swecl.c`, `swehouse.c` |
+| 221 | `swe_nod_aps()` changes the centre of its J2000 points by adding and taking away the barycentric Sun and Earth in the ephemeris's frame, ICRS for DE 403 and later: every point off by the frame bias times the vectors that do not cancel, a planet's geocentric points 3.5e-8 AU off its heliocentric ones less the Earth at J2000 (9.6e-8 AU over -3000..3000, 2.6e-6 deg on Mercury's apparent perihelion), the Moon's heliocentric and barycentric points 9.6e-8 AU (1.9e-6 deg), the barycentric points 9.7e-10 AU; the files, Moshier and DE4xx, not with SEFLG_ICRS or on de200 | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -13998,7 +13999,7 @@ heliocentric ones less `swe_calc()`'s heliocentric Earth by the frame
 bias of the Earth's heliocentric vector, 3.5e-8 AU at J2000, 1.1e-7 AU
 over -3000..3000 (Mercury..Jupiter, the files; 2.7e-15 with SEFLG_ICRS),
 the Moon's topocentric points off its geocentric ones less the site by
-4.8e-12 AU.
+4.8e-12 AU. (Fixed since as entry 221.)
 
 G143 `tests/nodcentre.c` (a) compared the Sun's topocentric points with
 the Earth's heliocentric ones as it did the geocentric points, so it
@@ -15092,6 +15093,105 @@ Noticed, not fixed:
   table (1-century panels from J2000) 4e-8" at 400 centuries. Left as it
   is: bit for bit the tip's, and 200000 years out, where the fit itself
   is good to arcseconds.
+
+## 221. `swe_nod_aps()` changes the centre of its J2000 points with the ICRS Sun and Earth: a planet's geocentric points 3.5e-8 AU off its heliocentric ones less the Earth at J2000
+
+**Severity: Correctness (behaviour: every geocentric, topocentric and barycentric point of the planets, the Sun and the Earth, and the Moon's heliocentric, barycentric and topocentric ones, off by the frame bias, 23 mas, times the vectors that do not cancel: up to 9.6e-8 AU and 1.9e-9 AU/day, 2.6e-6 deg on the apparent points), the Swiss files, Moshier and JPL DE 403 and later; not with SEFLG_ICRS, not on de200**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Noticed by entry 190's work. The points are built in the J2000 frame: the
+mean ones from elements of the ecliptic of date, the osculating ones from
+a state `swi_plan_for_osc_elem()` takes from ICRS to J2000 with the bias
+(once since entry 108). The change of centre then added and took away the
+barycentric Sun and Earth of the save area, which are in the ephemeris's
+frame, ICRS for DE 403 and later (`swi_get_denum()`: the Swiss files'
+431, Moshier's 403, a JPL file's own; de200's frame is J2000 itself, and
+`swi_bias()`'s callers apply it only from 403). In this fork the site is
+ICRS too: `swi_get_observer()` turns it into that frame for `swe_calc()`
+(upstream neglects it, so there the Moon's topocentric points were right
+and the rest as here). So a point was B p + c where B c belongs, off by
+(B - I) times the sum of the vectors that do not cancel: the Earth's
+heliocentric place for the planets' geocentric points (Moshier's too,
+whose origin is the Sun), the Sun's barycentric place for their
+barycentric points and for the heliocentric ones of a barycentric ellipse
+(SE_NODBIT_OSCU_BAR beyond 6 AU), the Earth's for the Moon's heliocentric
+and barycentric points, the site for the Moon's and the Sun's topocentric
+ones. The vectors of one frame cancel: the planets' heliocentric points,
+the Moon's geocentric ones, the Sun's geocentric ones.
+
+Against each centre's points built from one centre's and `swe_calc()`'s
+geometric vectors (G163's (a)), J2000 equatorial, before the fix:
+
+| Points | at J2000 | -3000, -1000, 2000, 3000 |
+|---|---|---|
+| a planet's geocentric, topocentric | 3.52e-8 AU, 1.95e-9 AU/day | 9.56e-8 AU, 1.95e-9 AU/day |
+| a planet's, the Sun's barycentric | 8.59e-10 AU, 4.2e-13 AU/day | 9.74e-10 AU, 8.7e-13 AU/day |
+| the Moon's heliocentric, barycentric | 3.52e-8 AU, 1.95e-9 AU/day | 9.58e-8 AU, 1.95e-9 AU/day |
+| the Moon's and the Sun's topocentric | 4.77e-12 AU, 2.04e-11 AU/day | the same |
+| with SEFLG_ICRS, or on de200 | 7.3e-15 AU | 2.9e-14 AU |
+
+On the apparent points of date the fix moves a planet's geocentric points
+up to 2.57e-6 deg (Mercury's osculating perihelion in 2050), the Earth's
+geocentric perihelion 3.2e-5 deg in latitude (0.022 AU from it at 1900
+Jan 0.75), the Moon's heliocentric and barycentric points 1.89e-6 deg,
+its topocentric 8.8e-7 deg (the focal point), the Sun's topocentric
+8.1e-9 deg, a planet's barycentric points 2.9e-7 deg in latitude (the
+Sun's focal point, 0.035 AU from the barycentre, 1.3e-6), the
+heliocentric points of a barycentric ellipse 5.5e-9 deg (Chiron's;
+Saturn's 5.2e-9).
+
+**Fix, as done here:**
+- After their turn to J2000, the points go into the ephemeris's frame
+  (`swi_bias()` backward) for the change of centre, the light deflection
+  and the aberration, which read the save area's Sun and Earth and the
+  observer, and back to J2000 (forward) before the J2000 copy the
+  sidereal modes take and the precession: as `swe_calc()` takes a place
+  through `app_pos_rest()`. The condition is the site's,
+  `swi_get_denum(SEI_EARTH)` of the ephemeris whose Earth the save area
+  holds, from 403, and not with SEFLG_ICRS, where the points and the
+  vectors are ICRS alike.
+- Not where nothing is added or taken away, the trip there only rounding:
+  the Moon's mean geocentric points, which read no file (entry 174) and so
+  must not depend on a DE number (G143's (f) holds them bit for bit with
+  and without the JPL file), Moshier's heliocentric points, a barycentric
+  ellipse's barycentric ones.
+- With SEFLG_ICRS, on de200 and under SEMOD_BIAS_NONE every point bit for
+  bit as before (18480, 10080 and 13440 rows: ten bodies, six methods,
+  the four centres, seven flag sets, four instants); the rest move by the
+  table above, the cancelling ones by rounding (the Moon's osculating
+  geocentric points 1.2e-11 deg).
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`. No hot path: two 3x3 rotations of
+  each point in `swe_nod_aps()`.
+
+Also on JPL's DE406 (lnxm3000p3000.406, not in the test directory), G163's
+rows with it for de200's: 7632 of its JPL rows failed before the fix,
+none after.
+
+Below the floor, recorded and not fixed: the osculating apsides from the
+ICRS state and from the J2000 one, built in two frames, differ by the
+ellipse's rounding, 3.1e-12 AU and 1.3e-10 AU/day on Neptune's (e =
+0.009; 1e-13 rad, 2.6e-10 deg/day), 2.3e-12 AU/day on Venus's.
+
+G143 `tests/nodcentre.c` (a): the Sun's topocentric points against the
+Earth's negated less the site, 1.8e-12 AU before (its limit 1e-11 made
+room for this), 5.6e-16 now.
+
+G163 `tests/nodbias.c`, 71218 rows: (a) every centre's points from one
+centre's and `swe_calc()`'s vectors, the files and Moshier at -3000,
+-1000, 2000 and 3000 and de200 at 1900, 2000 and 2050, the Sun, the Moon,
+the Earth and seven planets, every method, J2000 and of date, with and
+without SEFLG_ICRS, within 1e-14 of the vectors' sizes: 3.8e-14 AU and
+1.4e-17 AU/day, 4.7e-16 of the sizes; (b) the osculating apsides the
+SEFLG_ICRS ones turned by the IAU 2006 bias, every centre: 3.1e-12 AU
+(above); (c) the Moon's mean geocentric points and Moshier's mean
+heliocentric ones as with SEFLG_ICRS, bit for bit, 210 rows. Before the
+fix 18698 fail (16128 of (a), 2570 of (b), 9.6e-8 AU); the upstream build
+53006 of its 77906, with entries 47, 149 and 167 in the same rows.
+
+G24 `nodaps_frame_off`: Mars's osculating geocentric points at J2000
+less its heliocentric ones and the Earth's heliocentric place, geometric
+ecliptic of date on the files: 5.0e-16 AU shipped (3.52e-8 before the
+fix), 3.52e-8 compat.
 
 ## How these were found
 

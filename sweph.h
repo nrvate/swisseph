@@ -1575,6 +1575,10 @@ struct epsilon {
  *     any date and, with no error to return, answering a number past 1e12
  *     days and NaN from 1e84, and the azimuth's ecliptic forms reading
  *     SE_ECL_NUT without its return (UPSTREAM-BUGS 214, G159, G24)
+ *   - swe_nod_aps()'s change of centre adding the ICRS Sun and Earth to
+ *     its J2000 points: Mars's geocentric points 3.5e-8 AU off its
+ *     heliocentric ones less the Earth at J2000, the planets' 9.6e-8 AU
+ *     over -3000..3000 (UPSTREAM-BUGS 221, G163, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

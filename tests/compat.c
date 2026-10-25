@@ -2256,6 +2256,35 @@ static double earth_mosh_moon_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 221: Mars's osculating geocentric points at J2000 less
+ * its heliocentric ones and the Earth's heliocentric place, geometric
+ * cartesian ecliptic of date, Swiss files, AU, the most of the four. The
+ * points are J2000 and the Sun and the Earth of the change of centre ICRS:
+ * 3.5e-8 before the fix and upstream (the bias times the Earth); now all
+ * ICRS there, 5e-16. */
+static double nodaps_frame_off(void)
+{
+  const int32 fl = SEFLG_SWIEPH | SEFLG_XYZ | SEFLG_TRUEPOS | SEFLG_NOABERR | SEFLG_NOGDEFL;
+  double g[24], h[24], e[6], w = 0;
+  char serr[256];
+  int k, i;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  if (swe_nod_aps(2451545.0, SE_MARS, fl, SE_NODBIT_OSCU, g, g + 6, g + 12, g + 18, serr) < 0
+      || swe_nod_aps(2451545.0, SE_MARS, fl | SEFLG_HELCTR, SE_NODBIT_OSCU, h, h + 6, h + 12, h + 18,
+                     serr) < 0
+      || swe_calc(2451545.0, SE_EARTH, fl | SEFLG_HELCTR, e, serr) < 0)
+    return -1;
+  for (k = 0; k < 4; k++) {
+    double s = 0;
+    for (i = 0; i < 3; i++)
+      s += (g[6 * k + i] - (h[6 * k + i] - e[i])) * (g[6 * k + i] - (h[6 * k + i] - e[i]));
+    if (sqrt(s) > w)
+      w = sqrt(s);
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 189: swe_get_orbital_elements() of the Earth on Moshier,
  * the longitude of perihelion's fourth difference over 2 days about 2000
  * Jan 30.5, deg. The EMB was Moshier's Earth plus Moshier's Moon, where the
@@ -5751,7 +5780,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5894,6 +5923,7 @@ int main(int argc, char **argv)
   mosheml = earth_mosh_moon_off();
   starspan = star_span_edge_ret();
   fictedge = fict_lt_edge_off();
+  nodframe = nodaps_frame_off();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -6960,6 +6990,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier Earth's Moon   %.2e AU FAIL: expected %s\n",
            mosheml, WANT_DEFECT ? "> 2e-7" : "< 1e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodframe > 1e-8) : (nodframe >= 0 && nodframe < 1e-13))
+    printf("  nod_aps centre's frame %.2e AU OK\n", nodframe);
+  else {
+    printf("  nod_aps centre's frame %.2e AU FAIL: expected %s\n",
+           nodframe, WANT_DEFECT ? "> 1e-8" : "< 1e-13");
     bad++;
   }
 
