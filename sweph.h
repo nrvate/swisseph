@@ -1322,6 +1322,13 @@ struct epsilon {
  *     tables a load it gave up on left, closing its file on every early
  *     return and freeing dpsi[] when deps[]'s allocation fails, is in both
  *     builds, a leak's fix that changes no answer; G134)
+ *   - under SEFLG_JPLHOR_APPROX and SEMOD_JPLHORA_3, the frame bias and the
+ *     Horizons offset in right ascension in from the step at 1962 Jan 20
+ *     itself, where the precession and nutation change after it (Polaris
+ *     4.95e-5 deg in right ascension there), and given the light-time
+ *     instant, so a place over its light time after the step without
+ *     them (Mars 1.23e-5 deg), the true Sun, given 0, at every date after
+ *     it (UPSTREAM-BUGS 161, G141)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

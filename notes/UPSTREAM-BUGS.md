@@ -193,6 +193,7 @@ worst were in code that had never executed even once.
 | 158 | `swe_calc_pctr()` overwrites the return of the centre's read at the light-time instant with the body's before testing it: a centre whose files begin between that instant and the date is taken as zero there, and Mars from Ceres in the first 0.024 day of seas_18.se1 returns 258 with a longitude speed 5.09e-3 deg/day off (0.130 upstream) | Correctness | `sweph.c` |
 | 171 | An eop_finals.txt that breaks off (a day missing after those it adds) makes `load_dpsi_deps()` set -3, which `plaus_iflag()` takes as no IERS corrections at all: a complete eop_1962_today.txt is thrown away with it, against upstream's own comment ("no error, as we do have data"), and SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX, dpsi 4.20e-2" off on G134's fixtures | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 172 | A failed allocation of the IERS corrections' tables sets ERR, eop_1962_today.txt's "not found", so SEFLG_JPLHOR's warning names a missing file that had just been opened | Robustness (message) | `sweph.c`, `sweph.h` |
+| 161 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, on a JPL file of DE 403 or later, `swi_bias()` puts the frame bias (23 mas) and the Horizons offset in right ascension (-51.26 mas) in from tjd >= 1962 Jan 20, where the precession and nutation change after it, and is given the instant the body was read at, the true Sun 0: over the light time after the step every body 1.1e-5 deg off (the true Sun at every date after it), at the step Polaris 4.95e-5 deg in right ascension, SEFLG_SPEED3 0.162 deg/day | Correctness | `sweph.c`, `swephlib.c` |
 
 ---
 
@@ -9704,7 +9705,8 @@ Noticed, not fixed:
   tjd <= it: at exactly 1962 Jan 20 0h TT a place is the left side's
   precession and nutation with the right side's bias (23 mas) and offset
   (-51.26 mas in right ascension). Only with a JPL file of DE >= 403,
-  none here to measure.
+  none here to measure. Measured and fixed as entry 161 (with the
+  light-time instant the callers gave it).
 - `swi_approx_jplhor()` turns the position by that offset and not the
   velocity, and leaves the table's rate out: the right ascension speed off
   by the offset times rho'/rho, estimated 1.4e-7 deg/day on Mars near
@@ -10876,6 +10878,95 @@ default to SEFLG_JPLHOR_APPROX". In both builds, as entry 156's fix of the
 same branch: the text of a failure, which nothing computes from. G134's
 warning check: the memory named, SEFLG_JPLHOR dropped; before the fix it
 fails. No G24 case: the fix is in both builds.
+
+## 161. Under `SEMOD_JPLHORA_3` the frame bias and the Horizons offset take the other side of the step at 1962 Jan 20 than the precession and nutation, and another instant: every body 1.1e-5 deg off over its light time after it, Polaris 4.95e-5 in right ascension at it
+
+**Severity: Correctness (with SEFLG_JPLHOR_APPROX under its default mode, on a JPL file of DE 403 or later: every body 1.11e-5 to 1.24e-5 deg off over its light time after 1962 Jan 20 0h TT, the true Sun at every date after it; at the instant Polaris 1.15e-5 deg in longitude and 4.95e-5 in right ascension, true Mars 1.12e-5, the topocentric Moon 1.7e-7; SEFLG_SPEED3 0.162 deg/day there)**
+**Where:** `swephlib.c`: `swi_bias()`; `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_sun()`, `app_pos_etc_moon()`, `swe_calc_pctr()`
+
+Entry 153's noticed item. With `SEFLG_JPLHOR_APPROX` and
+`SEMOD_JPLHORA_3`, `swi_precess()`, `swi_epsiln()` and `calc_nutation()`
+take SEFLG_JPLHOR's models up to and including
+`HORIZONS_TJD0_DPSI_DEPS_IAU1980`, JD 2437684.5 = 1962 Jan 20 0h TT, and
+the chosen models after it (entry 153). The frame bias (23 mas) and the
+Horizons offset in right ascension (`swi_approx_jplhor()`, -51.26 mas
+then) go with the chosen models, and `swi_bias()` left them out for tjd <
+the step only. Nor was it given the models' instant:
+`app_pos_etc_plan()`, `app_pos_etc_sun()`, `app_pos_etc_moon()` and
+`swe_calc_pctr()` pass t, the instant the body was read at, teval - tau,
+and precess and nutate at teval; `app_pos_etc_sun()` leaves t at 0 under
+SEFLG_TRUEPOS (entry 77's fault, fixed there for `swe_calc_pctr()`). So:
+- at the step instant a fixed star (given tjd), a true place (t = teval)
+  and the topocentric site (`swi_get_observer()` at tjd) took the left
+  side's precession and nutation with the right side's bias and offset;
+- over the light time after it, teval in (step, step + tau], the Sun, the
+  Moon and the planets took the chosen models without them;
+- the true Sun, given 0, at every date after it; under `SEMOD_JPLHORA_1`
+  the true Sun took the table's first offset, 1962's, at every date (in
+  2024 1.0 mas in right ascension off).
+
+Measured on de200 read as DE 431 (the context's DE number set after the
+file opens: no file of DE 403 or later is here, and the bias and the
+offset are rotations whatever the coefficients), the default models.
+After the step, against `SEMOD_JPLHORA_1`, which has the chosen models
+with the bias and the offset throughout: every body with a light time
+1.11e-5 to 1.24e-5 deg (ecliptic and equatorial) over it -- the Sun's 8.2
+minutes, the Moon's 1.3 s, Mars's 20 minutes, Saturn's 91, heliocentric
+Mars, the topocentric Moon -- and the true Sun throughout. At the step,
+against the place's five-point extrapolation from the left: Polaris
+1.15e-5 deg in longitude, 4.95e-5 in right ascension, true Mars 1.12e-5,
+the topocentric Moon 1.7e-7 (its site's frame). SEFLG_SPEED3 at
+the step, whose places at t - dt and t - 2 dt were the left side's (entry
+153) and t's had the right side's bias: true Mars 0.162 deg/day. The
+speeds are otherwise not affected: the bias and the offset are fixed
+rotations on each side and no rate differences them.
+
+Reached with a JPL file of DE 403 or later (`swi_get_denum()` >= 403 for
+the planets, the Sun, the Moon and the site; a barycentric fixed star
+takes the bias whatever the file), and through the fallback: with the
+JPL file missing and the fallback allowed, SEFLG_JPLEPH falls to the
+Swiss files keeping SEFLG_JPLHOR_APPROX, and their DE 431 takes the bias.
+Not affected: `SEMOD_JPLHORA_2` (no bias, ICRS), `SEMOD_JPLHORA_1` but for
+the true Sun's date, SEFLG_JPLHOR (the bias throughout), SEFLG_ICRS (none),
+and what `plaus_iflag()` drops the Horizons flags from: sidereal places,
+the nodes, apsides and fictitious bodies.
+
+**Fix, as done here:** `swi_bias()` leaves the bias and the offset out
+for tjd <= the step, the instant on its models' side, and
+`app_pos_etc_plan()`, `app_pos_etc_sun()` and `app_pos_etc_moon()` give
+it teval, `swe_calc_pctr()` tjd: the instants they precess and nutate at.
+The offset's table is read at that instant too, a light time later; its
+slope is at most 3.8e-10 deg/day (entry 162), 6e-11 deg over Neptune's
+four hours. Without SEFLG_JPLHOR_APPROX `swi_bias()` does not read its
+date, so every other place is as before, bit for bit. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, upstream's under `#else`.
+- After: `SEMOD_JPLHORA_3` is `SEMOD_JPLHORA_1` bit for bit after the
+  step, within the light time too; at the step every place within 3.0e-11
+  deg of its extrapolation from the left (the Moon; the others 6e-13);
+  SPEED3 there 1.01e-9 deg/day.
+- No hot path: the test is inside `swi_bias()`'s SEFLG_JPLHOR_APPROX
+  branch, and the callers pass another double. `perf stat` instructions,
+  `swe_calc()` of the ten bodies with speed at 20000 instants on the Swiss
+  files: 15887299279 before, 15888470747 after.
+
+G141 `tests/jplhorbias.c`: de200 read as DE 431, SEFLG_JPLHOR_APPROX, the
+default models; the Sun, the Moon, Mars, Saturn, Polaris, the true Sun
+and Mars, the topocentric Moon and heliocentric Mars, ecliptic and
+equatorial. After the step, at 148 instants in (step, step + 1] (every
+1/64 day, every 1/1024 day over the first 1/16, step + 2^-k for k =
+7..26), the place under `SEMOD_JPLHORA_3` against `SEMOD_JPLHORA_1`'s; at
+the step against the five-point extrapolation from the left over 2^-12
+day; both within 1e-9 deg; and SPEED3 at the step within 1e-5 deg/day: 37
+checks. Measured as above. Before the fix 21 of 37 fail: after the step
+every body with a light time and the true Sun, at the step Polaris, true
+Mars and the topocentric Moon, and SPEED3. The upstream build fails 25:
+those 21, and at the step Mars and heliocentric Mars by 1.3e-9 and the
+topocentric Moon by 1.1e-6, its own defects that earlier entries fixed.
+G24 `jplhora_bias_side_off`: Mars 2^-8 day after the step on the Swiss
+files the fallback reaches, against `SEMOD_JPLHORA_1`, 0 deg shipped
+(1.23e-5 before the fix), 1.23e-5 compat; barycentric Polaris on de200
+at the step against 2^-20 day before it less its motion, 8.2e-14 shipped
+(4.92e-5 before), 4.92e-5 compat.
 
 ## How these were found
 

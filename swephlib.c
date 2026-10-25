@@ -2953,8 +2953,22 @@ void swi_bias(swe_ctx *ctx, double *x, double tjd, int32 iflag, AS_BOOL backward
   if (iflag & SEFLG_JPLHOR_APPROX) {
     if (jplhora_model == SEMOD_JPLHORA_2)
       return;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 161: under SEMOD_JPLHORA_3 the bias and the Horizons
+     * offset in right ascension came in at tjd >= 1962 Jan 20, where
+     * swi_precess(), swi_epsiln() and calc_nutation() keep SEFLG_JPLHOR's
+     * models up to and including it: at the instant a fixed star, a true
+     * position and the topocentric site took the left side's precession
+     * and nutation with the right side's bias (23 mas) and offset (-51.26
+     * mas): Polaris 1.15e-5 deg in longitude, 4.95e-5 in right ascension,
+     * the topocentric Moon 1.7e-7. The instant is the left side's here too;
+     * the callers give the instant whose frame they apply. */
+    if (jplhora_model == SEMOD_JPLHORA_3 && tjd <= HORIZONS_TJD0_DPSI_DEPS_IAU1980)
+      return;
+#else
     if (jplhora_model == SEMOD_JPLHORA_3 && tjd < DPSI_DEPS_IAU1980_TJD0_HORIZONS)
       return;
+#endif
   }
 /* #if FRAME_BIAS_IAU2006 * frame bias 2006 */
   if (bias_model == SEMOD_BIAS_IAU2006) {

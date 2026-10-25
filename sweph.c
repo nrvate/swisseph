@@ -5072,7 +5072,17 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
       xx[i] = 0;
   /* ICRS to J2000 */
   if (!(iflag & SEFLG_ICRS) && swi_get_denum(ctx, ipli, epheflag) >= 403) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 161: the bias was given t, the instant the body was
+     * read at, where the precession and nutation are teval's: under
+     * SEFLG_JPLHOR_APPROX and SEMOD_JPLHORA_3, within the light time after
+     * 1962 Jan 20, a place had the chosen models without the bias and the
+     * Horizons offset (Mars 1.12e-5 deg in longitude, Saturn for 0.06
+     * day). teval, the frame's instant. */
+    swi_bias(ctx, xx, pdp->teval, iflag, FALSE);
+#else
     swi_bias(ctx, xx, t, iflag, FALSE);
+#endif
   }/**/
   /* save J2000 coordinates; required for sidereal positions */
   for (i = 0; i <= 5; i++)
@@ -8215,7 +8225,18 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
       xx[i] = 0;
   /* ICRS to J2000 */
   if (!(iflag & SEFLG_ICRS) && swi_get_denum(ctx, SEI_SUN, iflag) >= 403) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 161: the bias was given t, the instant read, where the
+     * precession and nutation are teval's, and with SEFLG_TRUEPOS t was
+     * left at 0: under SEFLG_JPLHOR_APPROX and SEMOD_JPLHORA_3 the Sun
+     * had the chosen models without the bias and the Horizons offset
+     * within its light time after 1962 Jan 20, the true Sun at every date
+     * after it (1.12e-5 deg in longitude); under SEMOD_JPLHORA_1 the true
+     * Sun took 1962's offset at every date. teval, the frame's instant. */
+    swi_bias(ctx, xx, pedp->teval, iflag, FALSE);
+#else
     swi_bias(ctx, xx, t, iflag, FALSE);
+#endif
   }/**/
   /* save J2000 coordinates; required for sidereal positions */
   for (i = 0; i <= 5; i++)
@@ -8626,7 +8647,11 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
       xx[i] = 0;
   /* ICRS to J2000 */
   if (!(iflag & SEFLG_ICRS) && swi_get_denum(ctx, SEI_MOON, iflag) >= 403) {
+#ifndef SWE_UPSTREAM_COMPAT
+    swi_bias(ctx, xx, pdp->teval, iflag, FALSE);	/* bug 161, as the planets */
+#else
     swi_bias(ctx, xx, t, iflag, FALSE);
+#endif
   }/**/
   /* save J2000 coordinates; required for sidereal positions */
   for (i = 0; i <= 5; i++)
@@ -14127,7 +14152,11 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
       xx[i] = 0;
   /* ICRS to J2000 */
   if (!(iflag & SEFLG_ICRS) && swi_get_denum(ctx, ipl, epheflag) >= 403) {
+#ifndef SWE_UPSTREAM_COMPAT
+    swi_bias(ctx, xx, tjd, iflag, FALSE);	/* bug 161: tjd's frame, below */
+#else
     swi_bias(ctx, xx, t, iflag, FALSE);
+#endif
   }/**/
   /* save J2000 coordinates; required for sidereal positions */
   for (i = 0; i <= 5; i++)

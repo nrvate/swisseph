@@ -3460,6 +3460,55 @@ out:
   return r;
 }
 
+/* UPSTREAM-BUGS 161: SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3, the frame
+ * bias and the Horizons offset in right ascension against the side of the
+ * step at 1962 Jan 20 that the precession and nutation take, deg. star 0:
+ * Mars 2^-8 day after the step, inside its light time, against
+ * SEMOD_JPLHORA_1 (the chosen models, the bias and the offset throughout),
+ * on the Swiss files (DE 431) that SEFLG_JPLEPH falls to with the JPL file
+ * missing and the fallback allowed: upstream gives the bias the instant
+ * read, 1.23e-5. star 1: barycentric Polaris on de200 (the bias whatever the
+ * DE number) at the step against 2^-20 day before it less its motion:
+ * upstream's bias starts at the step, 4.92e-5. -1 if a call fails. */
+static double jplhora_bias_side_off(int star)
+{
+  const double ts = 2437684.5, e = ldexp(1, -20);
+  const int32 ja = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX | SEFLG_EQUATORIAL | SEFLG_SPEED;
+  double x[6], y[6], r = -1;
+  char serr[256], s[64], m1[] = "0,0,0,0,0,0,1,0";
+  int32 fx, fy;
+  swe_ctx *c = swe_ctx_new(), *c1 = swe_ctx_new();
+  if (c == NULL || c1 == NULL)
+    goto out;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_ephe_path_r(c1, EPHE);
+  if (star) {
+    swe_set_jpl_file_r(c, "de200.eph");
+    strcpy(s, "Polaris");
+    fx = swe_fixstar2_r(c, s, ts, ja | SEFLG_BARYCTR, x, serr);
+    strcpy(s, "Polaris");
+    fy = swe_fixstar2_r(c, s, ts - e, ja | SEFLG_BARYCTR, y, serr);
+    y[0] += y[3] * e;
+    y[1] += y[4] * e;
+  } else {
+    swe_set_ephe_fallback_r(c, 1);
+    swe_set_ephe_fallback_r(c1, 1);
+    swe_set_jpl_file_r(c, "de-none.eph");
+    swe_set_jpl_file_r(c1, "de-none.eph");
+    swe_set_astro_models_r(c1, m1, 0);
+    fx = swe_calc_r(c, ts + 1.0 / 256, SE_MARS, ja, x, serr);
+    fy = swe_calc_r(c1, ts + 1.0 / 256, SE_MARS, ja, y, serr);
+  }
+  if (fx >= 0 && fy >= 0 && (fx & fy & SEFLG_JPLHOR_APPROX))
+    r = fmax(fabs(x[0] - y[0]), fabs(x[1] - y[1]));
+out:
+  if (c != NULL)
+    swe_ctx_free(c);
+  if (c1 != NULL)
+    swe_ctx_free(c1);
+  return r;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3862,7 +3911,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3994,6 +4043,8 @@ int main(int argc, char **argv)
   starkept = star_load_kept();
   eoppath = eop_path_kept_off();
   eopjpl = eop_jpl_kept_off();
+  biaslt = jplhora_bias_side_off(0);
+  biasstep = jplhora_bias_side_off(1);
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -5037,6 +5088,22 @@ int main(int argc, char **argv)
   else {
     printf("  IERS kept by de200.eph %.2e arcsec FAIL: expected %s\n",
            eopjpl, WANT_DEFECT ? "> 1e-2" : "0");
+    bad++;
+  }
+
+  if (biaslt >= 0 && (WANT_DEFECT ? (biaslt > 1e-6) : (biaslt < 1e-9)))
+    printf("  bias in light time     %.2e deg OK\n", biaslt);
+  else {
+    printf("  bias in light time     %.2e deg FAIL: expected %s\n",
+           biaslt, WANT_DEFECT ? "> 1e-6" : "< 1e-9");
+    bad++;
+  }
+
+  if (biasstep >= 0 && (WANT_DEFECT ? (biasstep > 1e-6) : (biasstep < 1e-9)))
+    printf("  bias at the step       %.2e deg OK\n", biasstep);
+  else {
+    printf("  bias at the step       %.2e deg FAIL: expected %s\n",
+           biasstep, WANT_DEFECT ? "> 1e-6" : "< 1e-9");
     bad++;
   }
 
