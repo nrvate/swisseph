@@ -766,6 +766,30 @@ static double mosh_earth_rough_off(void)
   return sqrt(e / an);
 }
 
+/* The Moshier Earth's velocity, heliocentric J2000, in 1900, against the
+ * five-point difference of its positions over 2^-4 day, AU/day. The
+ * Earth-Moon offset's rate left out the obliquity's turning, which each
+ * position takes at its own date: 1.87e-13 (UPSTREAM-BUGS 85 part 2);
+ * upstream's velocity is a backward difference (bug 51). */
+static double mosh_earth_vbias_off(void)
+{
+  const int32 fl = SEFLG_MOSEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_NONUT
+                   | SEFLG_TRUEPOS | SEFLG_XYZ | SEFLG_SPEED | SEFLG_ICRS;
+  double t = 2415020.5, H = 1.0 / 16, q[5][6], x[6], e = 0;
+  char serr[256];
+  int i, k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 5; k++)
+    swe_calc(t + (k - 2) * H, SE_EARTH, fl, q[k], serr);
+  swe_calc(t, SE_EARTH, fl, x, serr);
+  for (i = 0; i < 3; i++) {
+    double r = (8 * (q[3][i] - q[1][i]) - (q[4][i] - q[0][i])) / (12 * H);
+    e += (x[i+3] - r) * (x[i+3] - r);
+  }
+  return sqrt(e);
+}
+
 /* UPSTREAM-BUGS 62: VEA (seorbel.txt's set 26, 80,000 AU, 462 days of light
  * time): its geocentric longitude speed against a five-point difference of
  * its longitude, deg/day. The aberration rate there is tau times the
@@ -1430,7 +1454,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1477,6 +1501,7 @@ int main(int argc, char **argv)
   staraccm = star_aberr_accel_off(SEFLG_MOSEPH, 2451545.0);
   moshrough = mosh_earth_rough_off();
   moonsite = moon_site_speed_off();
+  moshvb = mosh_earth_vbias_off();
   startd = star_topo_defl_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
@@ -1828,6 +1853,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moon site/file speed   %.2e deg/day FAIL: expected %s\n",
            moonsite, WANT_DEFECT ? "> 1e-6" : "< 3e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshvb > 1e-10) : (moshvb < 1e-13))
+    printf("  Moshier Earth v bias   %.2e AU/day OK\n", moshvb);
+  else {
+    printf("  Moshier Earth v bias   %.2e AU/day FAIL: expected %s\n",
+           moshvb, WANT_DEFECT ? "> 1e-10" : "< 1e-13");
     bad++;
   }
 

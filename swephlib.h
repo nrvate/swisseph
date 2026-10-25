@@ -139,6 +139,8 @@ extern void swi_icrs2fk5(double *x, int32 iflag, AS_BOOL backward);
 extern int swi_precess(swe_ctx *ctx, double *R, double J, int32 iflag, int direction );
 #ifndef SWE_UPSTREAM_COMPAT
 extern int swi_precess_matrix_rate(swe_ctx *ctx, double J, int32 iflag, double *m, double *dm);
+extern int swi_precess_matrix_rate_eps(swe_ctx *ctx, double J, int32 iflag, double *m, double *dm,
+                                       double *deps);
 #endif
 extern void swi_precess_speed(swe_ctx *ctx, double *xx, double t, int32 iflag, int direction);
 

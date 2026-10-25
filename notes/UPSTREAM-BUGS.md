@@ -4173,7 +4173,7 @@ compat. G48, G59, G62, G64 pass.
 ## 85. The Moshier Earth-Moon offset's rate is a difference of rounded arguments
 
 **Severity: Correctness (2e-14 AU/day of roughness in every Moshier Earth velocity, 2.1e-6 of the Earth's acceleration from velocities 1e-5 day apart at 2000, 3.8e-5 at -3000; ~1e-12 AU/day of bias)**
-**Where:** `swemplan.c`: `embofs_mosh_rate()`, `embofs_mosh()`
+**Where:** `swemplan.c`: `embofs_mosh_rate()`, `embofs_mosh()`, `moon_short()`; `swephlib.c`: `pre_pmat_d()`
 
 The Moshier Earth is the EMB series less the Moon's share of a short
 lunar series, `embofs_mosh()`. Entry 51 gave the EMB the series'
@@ -4235,17 +4235,50 @@ read, not the form: a Moshier `swe_fixstar2()` with SEFLG_SPEED is 291.6k
 instructions against 292.6k, still +18% on the two reads before entry 76
 (why three reads, see there).
 
-Not done: the EMB series' velocity is itself rough at ~2e-16 AU/day at
--3000 (the 2.9e-8 above), and the offset's rate leaves out the
-obliquity's turning (1.5e-13 AU/day, 1e-11 of the Earth's speed).
+**Part 2.** Two things were left. (a) The 2.9e-8 at -3000 was not the
+EMB series: the residual falls as 1/spacing (velocity noise), and the
+offset's velocity, 7.3e-6 AU/day, still turned through arguments
+rounded at ulp(rate T), 6.5e-11 rad at T = -49: 4.7e-16 AU/day.
+Bug 50's exact arguments cover the EMB series (`mosh_arg()`, the
+polynomial terms' T term included) and bug 51's derivative takes A' as
+the sum of exact frequencies; nothing there rounds that needn't. The
+short lunar series' arguments now do the same (`moon_arg()`): T as th +
+tl, exact, the product rate * th with its fma error, the large part
+reduced modulo 360 exactly (p - 360 floor(p/360) is a multiple of ulp(p)
+below 360), the small T^2 and T^3 terms added after. This moves the
+offset's places by their old rounding: the heliocentric Earth by up to
+4.9e-15 AU at -2700, 2.1e-15 at -1800, geocentric places by <= 2.2e-6
+mas (planets) and 8e-6 mas (the Moon's one ulp); the compat build is bit
+for bit unchanged. (b) The obliquity's turning, which each place has
+through its own date's ctx->oec: eps' from the same Vondrak poles the
+precession's rate already evaluates, cos eps = P . Q, eps' = -(P' . Q +
+P . Q') / sin eps (`swi_precess_matrix_rate_eps()`, the mean obliquity of
+`swi_epsiln()`'s pole angle exactly), applied with
+`swi_ecl_frame_speed()`; the precession's rate then from the same M and
+dM/dt, inline. `swi_obliquity_rate()` remains for the other precession
+models. calc-moseph 24.904e9 -> 24.871e9 instructions (-0.13%): the
+first try at the arguments, five fma-quotient-remainders and fmod, was
++0.64%; one quotient for T and a floor reduction cost less than the
+precession call they save.
+
+After both: the acceleration 8.1e-9, 2.8e-9, 5.0e-9, 1.6e-9, 2.6e-9 at
+-3000, 1900, 2000, 2100, 2970 (falling as 1/spacing to ~2e-9 at 1.6e-4
+day): velocity noise of 2e-17 to 3.4e-17 AU/day, one or two ulp of a
+longitude near 2 pi (8.9e-16 rad) times the Earth's speed, the series'
+place in a double -- genuine rounding, nothing to take out. The
+velocity's bias 1.9e-14 to 5.7e-14 AU/day (was 2.9e-14 to 1.9e-13), the
+five-point reference's own rounding (1.1e-15 AU of position over 2^-4
+day). G52, G65, G50 and G40 within their noise; G75 Moshier <= 1.44e-11.
 
 G84 `tests/moshvel.c`: the Moshier heliocentric J2000 Earth at -3000,
 1900, 2000, 2100 and 2970 (the range ends in 2973): the acceleration as
-above within 1e-7 of itself, the velocity within 5e-13 AU/day: 10
-checks. The build before the fix fails 9 (all but 1900's acceleration);
-the upstream build fails all 10 (its backward difference, entry 51). G24
-`mosh_earth_rough_off`: the acceleration in 2000, 5.2e-9 shipped, 2.6e-3
-compat.
+above within 2e-8 of itself, the velocity within 1.2e-13 AU/day: 10
+checks. The build before bug 85 fails 9 (all but 1900's acceleration),
+the build after its first part 5; the upstream build fails all 10 (its
+backward difference, entry 51). G24 `mosh_earth_rough_off`: the
+acceleration in 2000, 5.0e-9 shipped, 2.6e-3 compat;
+`mosh_earth_vbias_off`: the velocity's bias in 1900, 2.7e-14 AU/day
+shipped (1.87e-13 after the first part), 3.4e-8 compat.
 
 ## How these were found
 

@@ -664,6 +664,22 @@ static void sscc (swe_ctx *ctx, int k, double arg, int n)
  * J = Julian day number
  * xemb = rectangular equatorial coordinates of Earth
  */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 85 (part 2): an argument of the short lunar series, rate
+ * degrees per century times T, reduced modulo 360 to its last bit, as bug
+ * 50's mosh_arg() does for the planets: T exact as th + tl, the product
+ * rate * th with its rounding error (fma), the large part reduced exactly
+ * (p - 360 k is a multiple of ulp(p) below 360). Formed as rate * T, the
+ * arguments rounded at ulp(rate T): 1e-12 rad near T = 1, 6.5e-11 at -3000
+ * (T = -49). */
+static double moon_arg(double rate, double th, double tl)
+{
+  double p = rate * th;
+  double pe = fma(rate, th, -p);
+  return (p - 360.0 * floor(p * (1.0 / 360.0))) + (pe + rate * tl);
+}
+#endif
+
 /* The geocentric Moon of the short series below, J2000 equatorial, AU; with
  * v != NULL also its velocity, AU/day: the series' derivative, term by term
  * (UPSTREAM-BUGS 85). The position's arithmetic is the series' own, to the
@@ -679,12 +695,29 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
   double dmp = 0, d2d = 0, df = 0, dM = 0, dL = 0, dB = 0, dp = 0;
   double dsmp = 0, dcmp = 0, ds2mp = 0, dc2mp = 0, ds2d = 0, dc2d = 0;
   double dsf = 0, dcf = 0, ds2f = 0, dsx = 0, dcx = 0, da, dsx2;
+  double pm[9], pdm[9];
+  int havem = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  double deps = 0;
+#endif
   const double tc = 1.0 / 36525.0;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* tjd - J1900 = dh + dl exactly (two-sum), and T = th + tl, for
+   * moon_arg() */
+  double dh = tjd - J1900, bb = dh - tjd;
+  double dl = (tjd - (dh - bb)) + (-J1900 - bb);
+  double th = dh / 36525.0;
+  double tl = (fma(-th, 36525.0, dh) + dl) / 36525.0;
+#endif
   /* Short series for position of the Moon
    */
   T = (tjd-J1900)/36525.0;
   /* Mean anomaly of moon (MP) */
+#ifndef SWE_UPSTREAM_COMPAT
+  a = swe_degnorm(moon_arg(477198.8491, th, tl) + ((1.44e-5*T + 0.009192)*T*T + 296.104608));
+#else
   a = swe_degnorm(((1.44e-5*T + 0.009192)*T + 477198.8491)*T + 296.104608);
+#endif
   a *= DEGTORAD;
   smp = sin(a);
   cmp = cos(a);
@@ -698,7 +731,11 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
     dc2mp = -2 * s2mp * dmp;
   }
   /* Mean elongation of moon (D) */
+#ifndef SWE_UPSTREAM_COMPAT
+  a = swe_degnorm(moon_arg(445267.1142, th, tl) + ((1.9e-6*T - 0.001436)*T*T + 350.737486));
+#else
   a = swe_degnorm(((1.9e-6*T - 0.001436)*T + 445267.1142)*T + 350.737486);
+#endif
   a  = 2.0 * DEGTORAD * a;
   s2d = sin(a);
   c2d = cos(a);
@@ -708,7 +745,11 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
     dc2d = -s2d * d2d;
   }
   /* Mean distance of moon from its ascending node (F) */
+#ifndef SWE_UPSTREAM_COMPAT
+  a = swe_degnorm(moon_arg(483202.0251, th, tl) + (( -3.e-7*T - 0.003211)*T*T + 11.250889));
+#else
   a = swe_degnorm((( -3.e-7*T - 0.003211)*T + 483202.0251)*T + 11.250889);
+#endif
   a  *= DEGTORAD;
   sf = sin(a);
   cf = cos(a);
@@ -724,9 +765,15 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
     dcx = -sx * (d2d - dmp);
   }
   /* Mean longitude of moon (LP) */
+#ifndef SWE_UPSTREAM_COMPAT
+  L = moon_arg(481267.8831, th, tl) + ((1.9e-6*T - 0.001133)*T*T + 270.434164);
+  /* Mean anomaly of sun (M) */
+  M = swe_degnorm(moon_arg(35999.0498, th, tl) + (( -3.3e-6*T - 1.50e-4)*T*T + 358.475833));
+#else
   L = ((1.9e-6*T - 0.001133)*T + 481267.8831)*T + 270.434164;
   /* Mean anomaly of sun (M) */
   M = swe_degnorm((( -3.3e-6*T - 1.50e-4)*T + 35999.0498)*T + 358.475833);
+#endif
   if (v) {
     dM = (( -3 * 3.3e-6*T - 2 * 1.50e-4)*T + 35999.0498) * DEGTORAD * tc;
     dL = ((3 * 1.9e-6*T - 2 * 0.001133)*T + 481267.8831) * tc
@@ -791,6 +838,16 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
     x6[4] = dB;
     x6[5] = -a * cos(p) / sin(p) * dp;
     swi_polcart_sp(x6, x6);
+    /* the ecliptic of date turns about the equinox as the obliquity
+     * changes: each place is rotated with its own date's ctx->oec. The
+     * rate from the precession series' poles, computed for the
+     * precession's rate below anyway (UPSTREAM-BUGS 85 part 2) */
+#ifndef SWE_UPSTREAM_COMPAT	/* (the compat build never asks for v) */
+    havem = swi_precess_matrix_rate_eps(ctx, tjd, 0, pm, pdm, &deps);
+    if (!havem)
+      deps = swi_obliquity_rate(ctx, tjd, 0, FALSE);
+    swi_ecl_frame_speed(x6, -deps);
+#endif
     swi_coortrf2(x6 + 3, x6 + 3, -seps, ceps);
     for (int i = 0; i <= 2; i++)
       v[i] = x6[i+3];
@@ -802,14 +859,27 @@ static void moon_short(swe_ctx *ctx, double tjd, double *xyz, double *v)
   swi_precess(ctx, xyz, tjd, 0, J_TO_J2000);/**/
   if (v) {
     /* the precession's own turning, dP/dt x0 */
-    double x6[6];
-    for (int i = 0; i <= 2; i++) {
-      x6[i] = xyz[i];
-      x6[i+3] = v[i];
+    if (havem) {
+      /* as swi_precess_speed() does it, M and dM/dt in hand: x(J) = M
+       * x(J2000), so v(J2000) = M^T v + dM^T x0, x0 the date's x */
+      double x0[3], w[3];
+      for (int i = 0; i <= 2; i++)
+        x0[i] = xyz[0] * pm[3 * i] + xyz[1] * pm[3 * i + 1] + xyz[2] * pm[3 * i + 2];
+      for (int i = 0; i <= 2; i++)
+        w[i] = v[0] * pm[i] + v[1] * pm[i + 3] + v[2] * pm[i + 6]
+          + x0[0] * pdm[i] + x0[1] * pdm[i + 3] + x0[2] * pdm[i + 6];
+      for (int i = 0; i <= 2; i++)
+        v[i] = w[i];
+    } else {
+      double x6[6];
+      for (int i = 0; i <= 2; i++) {
+        x6[i] = xyz[i];
+        x6[i+3] = v[i];
+      }
+      swi_precess_speed(ctx, x6, tjd, 0, J_TO_J2000);
+      for (int i = 0; i <= 2; i++)
+        v[i] = x6[i+3];
     }
-    swi_precess_speed(ctx, x6, tjd, 0, J_TO_J2000);
-    for (int i = 0; i <= 2; i++)
-      v[i] = x6[i+3];
   }
 }
 

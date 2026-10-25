@@ -898,7 +898,7 @@ static void pre_pequ_d(double tjd, double *veq, double *dveq)
   }
 }
 
-static void pre_pmat_d(double tjd, double *rp, double *drp)
+static void pre_pmat_d(double tjd, double *rp, double *drp, double *deps)
 {
   double peqr[3], pecl[3], dpeqr[3], dpecl[3], v[3], dv[3], a[3], w, ev, eqx[3], deqx[3];
   int i;
@@ -927,6 +927,15 @@ static void pre_pmat_d(double tjd, double *rp, double *drp)
     drp[i+3] = dv[i] + a[i];
     drp[i+6] = dpeqr[i];
   }
+  /* the mean obliquity's rate, rad/day: eps the angle between the unit
+   * poles (swi_epsiln()), cos eps = P . Q, so eps' = -(P' . Q + P . Q') /
+   * sin eps */
+  if (deps != NULL) {
+    double c = pecl[0] * peqr[0] + pecl[1] * peqr[1] + pecl[2] * peqr[2];
+    double dc = dpecl[0] * peqr[0] + dpecl[1] * peqr[1] + dpecl[2] * peqr[2]
+      + pecl[0] * dpeqr[0] + pecl[1] * dpeqr[1] + pecl[2] * dpeqr[2];
+    *deps = -dc / sqrt(1 - c * c);
+  }
 }
 
 /* The precession matrix of swi_precess() at J and its rate per day, if
@@ -934,6 +943,14 @@ static void pre_pmat_d(double tjd, double *rp, double *drp)
  * and long-term): x(J) = M x(J2000), row-major. Returns FALSE for any other
  * model, which the caller then differences. */
 int swi_precess_matrix_rate(swe_ctx *ctx, double J, int32 iflag, double *m, double *dm)
+{
+  return swi_precess_matrix_rate_eps(ctx, J, iflag, m, dm, NULL);
+}
+
+/* The same, and in *deps (if not NULL) the mean obliquity's rate, rad/day,
+ * from the same poles: swi_epsiln()'s angle, differentiated. */
+int swi_precess_matrix_rate_eps(swe_ctx *ctx, double J, int32 iflag, double *m, double *dm,
+                                double *deps)
 {
   double T = (J - J2000) / 36525.0;
   int prec_model = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
@@ -953,7 +970,7 @@ int swi_precess_matrix_rate(swe_ctx *ctx, double J, int32 iflag, double *m, doub
     return FALSE;
   if (prec_model != SEMOD_PREC_VONDRAK_2011 || J == J2000)
     return FALSE;
-  pre_pmat_d(J, m, dm);
+  pre_pmat_d(J, m, dm, deps);
   return TRUE;
 }
 #endif

@@ -848,7 +848,9 @@ struct epsilon {
  *     difference of the short lunar series over +-2^-8 day, whose rounded
  *     arguments made every Moshier Earth velocity rough at 2e-14 AU/day
  *     (2.1e-6 of the acceleration from velocities 1e-5 day apart;
- *     UPSTREAM-BUGS 85, G84)
+ *     UPSTREAM-BUGS 85, G84); and the series' arguments were formed as
+ *     rate * T, rounded at 6.5e-11 rad at -3000, the offset's rate
+ *     without the obliquity's turning (1.5e-13 AU/day; part 2)
  *   - swe_calc_pctr() read both bodies at tjd - dt rounded to a double,
  *     and added the centre's velocity change over the light time as its
  *     aberration rate, radial part and all (9.8e-8 deg/day on a five-point
