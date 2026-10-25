@@ -325,9 +325,11 @@ static int houses_date_refused(double tjd_ut, int hsys, double *cusp, double *as
     if (ascmc_speed != NULL)
       ascmc_speed[i] = 0;
   }
-  if (serr != NULL)
-    snprintf(serr, AS_MAXCH, "jd %.10g outside the obliquity and nutation range %g .. %g",
-             tjd_ut, -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+  if (serr != NULL) {	/* the date by swi_jd_str(), bug 243 (see SE_ECL_NUT's) */
+    char sjd[SWI_JDSTR_LEN];
+    snprintf(serr, AS_MAXCH, "jd %s outside the obliquity and nutation range %g .. %g",
+             swi_jd_str(tjd_ut, -1, sjd), -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+  }
   return TRUE;
 }
 

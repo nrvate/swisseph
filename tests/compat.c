@@ -4187,6 +4187,133 @@ static double sidt_formula_off(void)
   return n;
 }
 
+/* UPSTREAM-BUGS 237: swe_lmt_to_lat() and swe_lat_to_lmt() at LMT NaN,
+ * +inf and 1e300 at 10 E, and at J2000 at longitude NaN, a fresh context
+ * each, the files: the number whose output is not 0 (ERR in both
+ * builds). The shipped build answers 0 of 8; upstream all 8 (NaN, inf,
+ * the date as given, plus E 0). */
+static double lmt_far_answered(void)
+{
+  static const double tq[4] = { NAN, INFINITY, 1e300, 2451545.0 };
+  char serr[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 8; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double o = 7, g = i % 4 == 3 ? NAN : 10;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    if (i < 4)
+      swe_lmt_to_lat_r(c, tq[i % 4], g, &o, serr);
+    else
+      swe_lat_to_lmt_r(c, tq[i % 4], g, &o, serr);
+    if (o != 0)
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 238: swedate.c at no number and past the ints: OK from
+ * swe_utc_to_jd() at NaN seconds and from swe_date_conversion() of year,
+ * month and day INT_MIN at a NaN hour; a date or time from
+ * swe_utc_time_zone() at a NaN time zone, swe_jdet_to_utc() at TT 1e300
+ * and 1e12 and swe_jdut1_to_utc() at UT 7.9e11 (the year INT_MIN with
+ * them, from swe_revjul()), not every int INT_MIN and the seconds NaN. A
+ * fresh context each; the number answered. The shipped build answers 0
+ * of 6; upstream all 6. */
+static double utc_far_answered(void)
+{
+  char serr[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 6; i++) {
+    swe_ctx *c = swe_ctx_new();
+    int32 v[5] = { 7, 7, 7, 7, 7 };
+    double s = 7, d[2], j;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    switch (i) {
+    case 0: n += swe_utc_to_jd_r(c, 2000, 1, 1, 12, 0, NAN, SE_GREG_CAL, d, serr) == OK; break;
+    case 1: n += swe_date_conversion(INT_MIN, INT_MIN, INT_MIN, NAN, 'g', &j) == OK; break;
+    default:
+      if (i == 2)
+        swe_utc_time_zone(2000, 1, 1, 12, 0, 30, NAN, &v[0], &v[1], &v[2], &v[3], &v[4], &s);
+      else if (i < 5)
+        swe_jdet_to_utc_r(c, i == 3 ? 1e300 : 1e12, SE_GREG_CAL, &v[0], &v[1], &v[2], &v[3], &v[4], &s);
+      else
+        swe_jdut1_to_utc_r(c, 7.9e11, SE_GREG_CAL, &v[0], &v[1], &v[2], &v[3], &v[4], &s);
+      n += !(v[0] == INT_MIN && v[1] == INT_MIN && v[2] == INT_MIN && v[3] == INT_MIN
+             && v[4] == INT_MIN && isnan(s));
+      break;
+    }
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 243: the refusals of Mars, the Moon and the mean node on
+ * Moshier and of Mars on de200.eph at -+1e300, and swe_utc_to_jd()'s of
+ * seconds 1e300: the number whose date (or seconds), read back from serr,
+ * is not the one refused, or without "outside" and "range". A fresh
+ * context each. The shipped build none of 9; upstream all 9 (serr cut at
+ * 255 characters, digits from its fourth, or twentieth). */
+static double far_msg_unreadable(void)
+{
+  static const double tq[2] = { 1e300, -1e300 };
+  char serr[AS_MAXCH], *p;
+  int i, n = 0;
+  for (i = 0; i < 9; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double x[6], t = tq[i % 2];
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "de200.eph");
+    *serr = '\0';
+    switch (i / 2) {
+    case 0: swe_calc_r(c, t, SE_MARS, SEFLG_MOSEPH, x, serr); break;
+    case 1: swe_calc_r(c, t, SE_MOON, SEFLG_MOSEPH, x, serr); break;
+    case 2: swe_calc_r(c, t, SE_MEAN_NODE, SEFLG_MOSEPH, x, serr); break;
+    case 3: swe_calc_r(c, t, SE_MARS, SEFLG_JPLEPH, x, serr); break;
+    default: t = 1e300; swe_utc_to_jd_r(c, 2000, 1, 1, 12, 0, t, SE_GREG_CAL, x, serr); break;
+    }
+    p = i < 8 ? strstr(serr, "jd ") : strstr(serr, "12:0:");
+    if (p == NULL || strtod(p + (i < 8 ? 3 : 5), NULL) != t
+        || (i < 8 && (strstr(serr, "outside") == NULL || strstr(serr, "range") == NULL)))
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 255: Mars at 2818000.81 and 625000.19 and the Moon at
+ * 2818000.71 and 625000.29 on Moshier, refused, a fresh context each: the
+ * number whose message's range leaves out the date 0.02 day inside it
+ * (2818000.79, 625000.25 for Mars's light time, 2818000.69, 625000.31),
+ * which the test takes. The shipped build none of 4; upstream all 4
+ * ("625000.50 .. 2818000.50", the test's margins left out). */
+static double mosh_range_misnamed(void)
+{
+  static const double in[4] = { 2818000.79, 625000.25, 2818000.69, 625000.31 };
+  static const double out[4] = { 2818000.81, 625000.19, 2818000.71, 625000.29 };
+  char serr[AS_MAXCH], *p;
+  int i, n = 0;
+  for (i = 0; i < 4; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double x[6], a = 0, b = 0;
+    if (c == NULL)
+      return -1;
+    *serr = '\0';
+    swe_calc_r(c, out[i], i < 2 ? SE_MARS : SE_MOON, SEFLG_MOSEPH, x, serr);
+    p = strstr(serr, "range ");
+    if (p == NULL || sscanf(p + 6, "%lf .. %lf", &a, &b) != 2 || !(in[i] >= a && in[i] <= b))
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
 /* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
  * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
  * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
@@ -6562,7 +6689,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6739,6 +6866,10 @@ int main(int argc, char **argv)
   precfar = prec_far_answered();
   housett = houses_tt_far_answered();
   sidtform = sidt_formula_off();
+  lmtfar = lmt_far_answered();
+  utcfar = utc_far_answered();
+  msgfar = far_msg_unreadable();
+  moshrng = mosh_range_misnamed();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -8404,6 +8535,38 @@ int main(int argc, char **argv)
   else {
     printf("  sidtime off formula    %.0f/6 FAIL: expected %s\n",
            sidtform, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (lmtfar == 8) : (lmtfar == 0))
+    printf("  LMT, LAT past 1e12     %.0f/8 answered OK\n", lmtfar);
+  else {
+    printf("  LMT, LAT past 1e12     %.0f/8 answered FAIL: expected %s\n",
+           lmtfar, WANT_DEFECT ? "8" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (utcfar == 6) : (utcfar == 0))
+    printf("  UTC at NaN, far years  %.0f/6 answered OK\n", utcfar);
+  else {
+    printf("  UTC at NaN, far years  %.0f/6 answered FAIL: expected %s\n",
+           utcfar, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (msgfar == 9) : (msgfar == 0))
+    printf("  far dates' messages    %.0f/9 unreadable OK\n", msgfar);
+  else {
+    printf("  far dates' messages    %.0f/9 unreadable FAIL: expected %s\n",
+           msgfar, WANT_DEFECT ? "9" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshrng == 4) : (moshrng == 0))
+    printf("  Moshier range named    %.0f/4 not the tested OK\n", moshrng);
+  else {
+    printf("  Moshier range named    %.0f/4 not the tested FAIL: expected %s\n",
+           moshrng, WANT_DEFECT ? "4" : "0");
     bad++;
   }
 

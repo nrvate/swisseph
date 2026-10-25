@@ -269,6 +269,10 @@ worst were in code that had never executed even once.
 | 235 | The long-term sidereal time's rate is a central difference of the precession matrices over -+50 days: low by its truncation, 8.6e-7"/cy, at every date (3.4e-4" short by 400 centuries), and under Vondrak 2011 scattered by their rounding, -+3e-7"/cy, at 1000 to 2000 centuries, so the integral from 400 to 2000 centuries does not converge with its panel count (2.1e-4", 5.9e-8 deg) and the sidereal time there jitters by up to 1.9e-8 deg over consecutive JDs | Correctness | `swephlib.c` |
 | 245 | `lunar_osc_elem()`'s Moshier hold (entry 202) reads each epoch's Moon by `swi_moshmoon()`, which answers from the Moon Moshier's Earth was made with there (entry 191), unheld, after a `swe_calc()` of the Moon, the Earth, the Sun or a planet at that epoch: within 1/16 day of a short-term window's edge, with IAU 1976 under Vondrak, the true node's and osculating apogee's speeds up to 2.45e-3 and 3.71e-3 deg/day off a fresh context's across the edge, 1.4e-11 on tjd's side | Correctness (behaviour) | `sweph.c` |
 | 246 | Moshier's aberration rate reads the Earth, whose Moon is of date put into J2000 at its instant, across a short-term window's edge: the Moon difference's d'' over 2^-11 day, the Earth's acceleration over -+ 2^-8 day, a star's over -+ 2^-9; with IAU 1976 under Vondrak within 2^-11 day after J2000 + 2 centuries the apparent Sun's, planets' and stars' latitude speeds 3.28e-5 deg/day off (6.96e-7 after - 2), within 2^-8 day a far body's 2.06e-6, within 2^-9 a star's right ascension 5.3e-8; the heliocentric Moon's place 9.35e-8 deg | Correctness | `swemplan.c`, `sweph.c` |
+| 237 | `swe_lmt_to_lat()` and `swe_lat_to_lmt()` past 1e12 days, at -+inf and NaN, and at a NaN, infinite or huge longitude refuse (`swe_time_equ()`, entry 215) with their output the date plus E 0: NaN, -+inf, 1e300, or J2000 as given | Correctness (behaviour) | `sweph.c` |
+| 238 | swedate.c takes NaN and -+inf in its doubles: `swe_utc_to_jd()` OK at NaN seconds with both dates NaN, `swe_date_conversion()` OK of INT_MIN INT_MIN INT_MIN at a NaN hour, `swe_utc_time_zone()`, `swe_jdet_to_utc()` and `swe_jdut1_to_utc()` the hour and minute (int) of NaN; the last two answer a time past 1e12 days and, where the year holds in no int (from TT -6.19e11 and +9.14e11), `swe_revjul()`'s INT_MIN with a month, day and time | Correctness (behaviour; undefined behaviour) | `swedate.c` |
+| 243 | A refused date past about 1e188 days is its message: "jd %f outside ..." cut at 255 characters, the range lost, from 1e237 the text, `swe_utc_to_jd()`'s seconds likewise; and this fork's "%.10g" prints the double next past -+7.8e11 or -+1e12 as the bound | Correctness (error reporting) | `swephlib.c`, `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swecl.c`, `sweph.c`, `swehouse.c`, `swedate.c` |
+| 255 | Moshier's planets and Moon take 0.3 and 0.2 day past MOSHPLEPH's and MOSHLUEPH's ends (the margin for the light time and speed reads), and their refusals name the ends: Mars and Spica answer at 2818000.79, and 2818000.81 is refused "outside Moshier planet range 625000.50 .. 2818000.50"; the Moon at 2818000.69 and 2818000.71 likewise | Correctness (error reporting) | `swemplan.c`, `swemmoon.c` |
 
 ---
 
@@ -16915,6 +16919,224 @@ Noticed, not fixed:
   Earth and so the stars from 625000.2 to 2818000.8, and the refusal
   just outside "jd 625000.199000 outside Moshier planet range 625000.50
   .. 2818000.50".
+## 237. `swe_lmt_to_lat()` and `swe_lat_to_lmt()` past 1e12 days, at -+inf and NaN, and at a NaN or infinite longitude refuse with their output NaN, -+inf or the date as given
+
+**Severity: Correctness (behaviour: ERR with a value in the output, where a refusal's outputs are 0)**
+**Where:** `sweph.c`: `swe_lmt_to_lat_r()`, `swe_lat_to_lmt_r_body()`
+
+Entry 216's noticed item. Before entry 209 the three time-equation
+functions reached `swe_sidtime()`'s SIGSEGV at -inf and -1e300..-1e200 and
+ran past 10 s at -7.9e11; entry 209 bounded the sidereal time and entry
+215 `swe_time_equ()`'s delta t. Measured on ts20 54a599d, the Swiss files,
+10 E, each call on a fresh context: `swe_time_equ()` at NaN, -+inf,
+-+1e200, -+1e300, -+DBL_MAX and -+2e12 ERR, E 0, "jd 1e+300 outside the
+delta t range -1e+12 .. 1e+12"; `swe_lmt_to_lat()` and `swe_lat_to_lmt()`
+the same ERR and serr with their output tjd + E, E 0: NaN at NaN, -+inf at
+-+inf, 1e300 at 1e300, 2e12 at 2e12; at J2000 with the longitude NaN,
+-+inf or 1e300 (LMT less the longitude NaN, -+inf, -2.8e297) the date as
+given, 2451545. No crash or hang, none over 1 s.
+
+**Fix, as done here:** the two test the date the equation is taken at,
+LMT (or LAT) less the longitude over 360, by `swi_deltat_range()` before
+`swe_time_equ()`: past -+1e12, at NaN and -+inf, ERR, the output 0, serr
+`swe_time_equ()`'s ("jd nan outside the delta t range -1e+12 .. 1e+12",
+"jd -2.777777777777778e+297 ..."). Within the bound as before: at -+1e12
+at 0 E the files' refusal, the output the date plus E 0; where the
+longitude takes the date across the bound, within a third of a day of
+it, the refusal is the one `swe_time_equ()` gave there already, the
+output 0 now (6 of the 108 lines below, entry 238). Behind `#ifndef
+SWE_UPSTREAM_COMPAT`. `swe_time_equ()` is entry 215's.
+
+G160 `tests/absdate.c` check (e): the three at 10 E at NaN, -+inf,
+-+1e300, -+DBL_MAX, -+2e12 and the doubles next past -+1e12, and the two
+at J2000 at longitude NaN, -+inf and 1e300: ERR, the output 0, the range
+message with the date the equation is taken at, read back; at -+1e12 at
+0 E as before. 47 of 47; before the fix 15 of 47: `swe_time_equ()` at 7
+of its 11 (not at -+DBL_MAX and the doubles past -+1e12, whose "%.10g"
+did not give the date back, entry 243), the six at -+1e12, and the two at
+the double past +1e12 at 10 E, whose date less the longitude is inside;
+the upstream build 8 of 47. G24
+`lmt_far_answered`: the two at NaN, +inf and 1e300 and at longitude NaN,
+the output not 0: 0 of 8 shipped, 8 of 8 compat.
+
+## 238. swedate.c takes NaN and -+inf in its doubles, and `swe_jdet_to_utc()` and `swe_jdut1_to_utc()` answer a year no int holds: `swe_utc_to_jd()` OK at NaN seconds, both dates NaN
+
+**Severity: Correctness (behaviour: OK and values for no input; undefined behaviour, (int) of NaN)**
+**Where:** `swedate.c`: `swe_utc_to_jd()`, `swe_date_conversion()`, `swe_utc_time_zone()`, `swe_jdet_to_utc()`, `swe_jdut1_to_utc()`
+
+Entry 216's noticed item, and entry 217's (the year INT_MIN far out).
+Each double of each swedate.c entry point at NaN, +inf and -inf, measured
+on ts20 54a599d:
+- `swe_utc_to_jd()`: NaN seconds pass "dsec < 0 || dsec >= 61": OK, both
+  dates NaN, serr empty. -+inf refused "invalid time: 12:0:inf", the dates
+  as the caller had them.
+- `swe_date_conversion()` (no serr): ERR at a NaN or -+inf hour, *tjd NaN
+  or -+inf; OK for year, month and day INT_MIN at those hours, whose date
+  `swe_revjul()` gives back as INT_MIN three times.
+- `swe_utc_time_zone()` (no error return): at NaN or -+inf seconds or time
+  zone the hour and minute `(int)` of NaN (UB; INT_MIN on x86-64), the
+  seconds NaN or -+inf, the date 2000 1 1 or a day off.
+- `swe_jdet_to_utc()` and `swe_jdut1_to_utc()` (no error return): at NaN
+  and -+inf, and where delta t is NaN past the bound (entry 215), the same
+  casts, the seconds NaN, with the Julian calendar month 7 day 16 from
+  `swe_julday()` of INT_MIN; past the bound a time: TT 1e300 "INT_MIN
+  INT_MIN 0 12:00:00", 2e12 "INT_MIN 11 15 11:59:17.8"; and inside the
+  bound, where the year holds in no int, from TT -6.19e11 and +9.14e11
+  (UT -7.98e11 and +7.54e11 for `swe_jdut1_to_utc()`), `swe_revjul()`'s
+  INT_MIN (entry 216) with a month, day and time: TT 1e12 "INT_MIN 11 29
+  4:20:09.4", with the Julian calendar the year `swe_julday()` of INT_MIN
+  gives, -2147439551.
+- `swe_julday()` (a double, no error return): NaN at a NaN hour, -+inf at
+  -+inf, defined. `swe_revjul()`: INT_MIN three times and NaN at NaN and
+  -+inf (entry 216's casts). Both kept.
+
+**Fix, as done here:**
+- `swe_utc_to_jd()`: the seconds tested `!(dsec >= 0 && dsec < 61)`; at
+  NaN and -+inf ERR, both dates 0, "invalid time: 12:0:nan".
+- `swe_date_conversion()`: a NaN or -+inf hour ERR, *tjd 0.
+- `swe_utc_time_zone()`: a NaN or -+inf hour of day after the time zone
+  (either input, or their sum) no answer: every int INT_MIN, as
+  `swe_revjul()` gives at NaN, the seconds NaN.
+- `swe_jdet_to_utc()` and `swe_jdut1_to_utc()`: the same no answer past
+  -+1e12 (`SWI_ECL_NUT_JMAX`), at NaN and -+inf, and where the year, or
+  the Julian calendar's, comes back INT_MIN from `swe_revjul()`. The UT
+  form calls the TT form's body under its hold, as the bound is the
+  caller's date (a UT inside it has a TT past it from about 8e11).
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`. Inside the bound with the year an
+  int nothing changes: of 11247 lines (entries 237, 238 and 243's
+  functions at 541 dates, log-uniform 1e5..1e12 either sign, J2000 -+
+  1.1e7, the ranges' ends and the doubles either side, and swedate.c's
+  other entry points over 121 ordinary inputs each) 108 differ from
+  54a599d's: 44 the year INT_MIN now no answer, 8 entry 237's outputs 0,
+  56 entry 243's messages of dates past -+7.8e11.
+
+G160 check (f): `swe_utc_to_jd()`, `swe_date_conversion()` and
+`swe_utc_time_zone()` at NaN and -+inf, `swe_jdet_to_utc()` and
+`swe_jdut1_to_utc()` either calendar at those dates, -+1e300, -+DBL_MAX,
+-+2e12 and the doubles next past -+1e12 and at six dates whose year holds
+in no int, `swe_julday()` and `swe_revjul()` as they were, and four
+inside answered: 75 of 75; before the fix 30 of 75 (x86-64's casts of NaN
+give INT_MIN and pass most NaN cases by chance); the upstream build 22 of
+75. G24 `utc_far_answered`: `swe_utc_to_jd()` at NaN seconds,
+`swe_date_conversion()` of INT_MIN at a NaN hour, `swe_utc_time_zone()` at
+a NaN time zone, `swe_jdet_to_utc()` at 1e300 and 1e12,
+`swe_jdut1_to_utc()` at 7.9e11, answered: 0 of 6 shipped, 6 of 6 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR (undefined behaviour). `swe_jdet_to_utc()` and
+  `swe_utc_to_jd()` form `ndat = iyear * 10000 + imonth * 100 + iday` in
+  int, which overflows (signed, UB) for a year past 214748, inside the
+  bound from about 8.0e7 days (and at the INT_MIN year above before its
+  no answer; before 1972 neither forms it); it wraps on x86-64, and the
+  leap-second count read from the wrapped date is not used, the delta t
+  test past the table answering UT1 there.
+- BEHAVIOUR (undefined behaviour). `swe_utc_time_zone()` casts the hour
+  to int with no range: a finite time zone past about 2^31 hours (1e300:
+  hour INT_MIN, the seconds -3.6e303), or the hour and minute near
+  INT_MAX; and it moves the date by one day at most, so a time zone past
+  24 hours answers an hour outside 0..23 (12:00 at -100 h: 88).
+
+## 243. A refused date past about 1e188 days is its message: "jd %f" cut at 255 characters, the range lost, from 1e237 the text; and "%.10g" prints the double next past a bound as the bound
+
+**Severity: Correctness (error reporting)**
+**Where:** `swephlib.c`: new `swi_jd_str()`, `swi_deltat_range()`, `frame_model_range()`, `swi_frame_range()`; `swemplan.c`: `swi_moshplan()`; `swemmoon.c`: `swi_moshmoon()`, `swi_mean_node()`, `swi_mean_apog()`; `swejpl.c`: `state()`; `swecl.c`: `swe_nod_aps()`'s mean points; `sweph.c`: `swecalc()`'s SE_ECL_NUT, `sweph()`'s file names; `swehouse.c`: `houses_date_refused()`; `swedate.c`: `swe_utc_to_jd()`
+
+Entry 216's noticed item and entry 211's. Entry 210 kept the "jd %f
+outside ..." formats under `snprintf()`; `%f` writes every digit of the
+date. Measured on ts20 54a599d, Moshier: at 1e188 Mars's "jd 1000...
+outside Moshier planet range" cut at 253 characters, without its range;
+at 1e200 255, "outside" kept; from about 1e237 no text past the digits ("jd
+-1000000000000000052504760255204420...", 255 characters, at -1e300). So
+the Moon, the mean node and apogee, Mars on de200.eph, `swe_nod_aps()`'s
+mean points, Cupido and the stars on Moshier; `swe_utc_to_jd()`'s
+"invalid time: 12:0:" and the seconds' 236 digits at 1e300. And this
+fork's refusals print the date by "%.10g", which cannot give back the
+double next to a bound: "jd 7.8e+11 outside the range the Swiss
+Ephemeris files are named for, -7.8e+11 .. 7.8e+11" for 780000000000.0001
+(entry 216), "jd 1e+12 outside the obliquity and nutation range -1e+12 ..
+1e+12" for 1000000000000.0001 (SE_ECL_NUT, entry 196; the houses, 209;
+delta t, `swe_time_equ()` and the UT functions, 215; the ayanamsa, 212,
+217), and a TT not round to ten digits ("jd 1.2819597e+12" for
+1281959700055.5513).
+
+**Fix, as done here:** `swi_jd_str()` prints a refused date: with
+upstream's `%f` (or `swe_utc_to_jd()`'s `%.2f`) below 1e15 days, byte for
+byte, else, and for this fork's messages always, `%.Ng` with the fewest
+digits from 10 that read back as the date: "jd 1e+300 outside Moshier
+planet range 625000.50 .. 2818000.50 ", "jd 780000000000.0001 outside
+...", "invalid time: 12:0:1e+300"; a date "%.10g" gave back prints as
+before ("jd 7.9e+11", "jd 2e+12"). The upstream formats are behind
+`#ifndef SWE_UPSTREAM_COMPAT`, as this fork's messages are but entry
+216's, which is in both builds as its refusal is, and prints the digits
+in both. The eclipse searches' "jd 6634702579155901.000000" (the
+lunation count's cast, entry 211's noticed item) is now "jd
+6634702579155901". "no solar eclipse at tjd = %f", the JPL reader's
+read error and `sweph()`'s file limits print a date their callers'
+range tests keep below 1e15, and stay.
+
+G160 check (g): at |J| 1e188, 1e200, 1e300 and DBL_MAX either sign Mars,
+the Moon, the mean node and apogee and Cupido on Moshier, Mars on
+de200.eph, `swe_nod_aps()` of the Moon's mean points and
+`swe_utc_to_jd()` with those seconds: serr under 100 characters with its
+text and range, the date read back; the doubles next past -+7.8e11 (Mars
+on the files) and -+1e12 (SE_ECL_NUT, the houses, `swe_time_equ()`,
+`swe_deltat_ex()`, `swe_get_ayanamsa_ex()`): the date read back; five
+ordinary dates' messages, their dates' digits as before (two with entry
+255's ranges). 85 of 85 with entry 255's four; before the fixes 3 of 85
+(three of the five); the upstream build 4 of 85 (two of the five, and
+entry 216's two). G24
+`far_msg_unreadable`: Mars, the Moon and the mean node on Moshier and
+Mars on de200.eph at -+1e300, and `swe_utc_to_jd()` at seconds 1e300,
+the date not read back or the text missing: 0 of 9 shipped, 9 of 9
+compat. G160, G24, G152, G159, G161, G70, G99, G103, G117, G128, G157 and
+the delta t gates (dtmemo, dtobs) pass.
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_calc_ut()` and the UT functions inside the bound name
+  the TT of a UT, not the caller's date, when the files refuse it: UT
+  1e12, "jd 1281959700055.5513 outside the range the Swiss Ephemeris
+  files are named for" (delta t 2.8e11 days).
+- BEHAVIOUR (message only). Below 1e15 days the dates keep their fixed
+  decimals, coarser than a double's spacing below 2^32 days, so a double
+  next to a range's end can print as the end: strict, Mars on de200.eph
+  at 2305424.4999999995, "JPL ephemeris is not available for jd
+  2305424.5000" (this fork's `%.4f`); the Moshier tests' 0.3-day
+  margins keep their dates apart from the ranges they print.
+
+## 255. Moshier's planets and Moon take 0.3 and 0.2 day past their ranges' ends, and their refusals name the ends: 2818000.81 refused as outside "625000.50 .. 2818000.50" where 2818000.79 answers
+
+**Severity: Correctness (error reporting)**
+**Where:** `swemplan.c`: `swi_moshplan()`; `swemmoon.c`: `swi_moshmoon()`
+
+`swi_moshplan()` takes `MOSHPLEPH_START - 0.3 .. MOSHPLEPH_END + 0.3`
+("give some margin for speed at edge") and `swi_moshmoon()` the Moon's
+range with 0.2, but both refusals print `MOSHPLEPH_START ..
+MOSHPLEPH_END`, "625000.50 .. 2818000.50". Measured on ts20 54a599d,
+Moshier, no flags: Mars and Spica 4 at 2818000.79, Spica at 625000.21
+(Mars refused there, at its light-time instant 625000.196456, whose date
+the message prints), and at 2818000.81 "jd 2818000.810000 outside Moshier
+planet range 625000.50 .. 2818000.50 "; the Moon 4 at 2818000.69 and
+625000.31, refused at 2818000.71 and 625000.29 naming the same range. The
+mean node's and apogee's (`swi_mean_node()`, `swi_mean_apog()`),
+`swe_nod_aps()`'s mean points (the speed instants' dates against the
+range they are tested by), the JPL file's, the Swiss files' limits, the
+interpolated apsides', Chiron's and Pholus's name the bounds they test.
+
+**Fix, as done here:** the two messages name the range tested,
+"625000.20 .. 2818000.80" and "625000.30 .. 2818000.70"; the margins kept.
+Behind `#ifndef SWE_UPSTREAM_COMPAT`, with entry 243's date. Every Moshier
+refusal's message changes so: of entry 238's 11247 lines 982 more differ,
+each by its range alone (the commits from 54a599d to 432851c change none
+of these lines).
+
+G160 check (g): Mars and the Moon 0.01 day inside and outside the ranges
+tested (Mars 0.05 inside at the start), the inside one answered, the
+refusal's range holding it and not the outside one, and the two
+ordinary-date pins with the new range: 85 of 85 with entry 243's; before
+the fixes 3 of 85; the upstream build 4 of 85. G24 `mosh_range_misnamed`:
+Mars at 2818000.81 and 625000.19, the Moon at 2818000.71 and 625000.29,
+the range named leaving out the date the test takes 0.02 day inside: 0
+of 4 shipped, 4 of 4 compat.
 
 ## 234. The sidereal times are their formulas evaluated in double and then reduced: SEMOD_SIDT_IAU_2006's leaves 0 .. 24 h from |J| 2e10 days (1165 h at -6.3e10), every model answers 24 h where the sum falls just under 0, and IAU 2006 and IERS 2010 are 180 deg off their formulas at 1e12
 

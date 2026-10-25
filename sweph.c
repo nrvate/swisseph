@@ -430,9 +430,12 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * for absurd dates already. Within it all four are finite under every
    * model (G152). */
   if (ipl == SE_ECL_NUT && !(tjd >= -SWI_ECL_NUT_JMAX && tjd <= SWI_ECL_NUT_JMAX)) {
+    /* Upstream bug 243: "%.10g" printed the double next to the bound as
+     * the bound, "jd 1e+12 outside ... -1e+12 .. 1e+12"; swi_jd_str() */
+    char sjd[SWI_JDSTR_LEN];
     if (serr != NULL)
-      snprintf(serr, AS_MAXCH, "jd %.10g outside the obliquity and nutation range %g .. %g",
-               tjd, -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+      snprintf(serr, AS_MAXCH, "jd %s outside the obliquity and nutation range %g .. %g",
+               swi_jd_str(tjd, -1, sjd), -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
     goto return_error;
   }
 #endif
@@ -4456,9 +4459,12 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
    * or tested, where swe_calc() of a date beyond the files says no file
    * answers it; unguarded, undefined behaviour. */
   if (!(tjd >= -SWI_FILENAME_JMAX && tjd <= SWI_FILENAME_JMAX)) {
+    /* Upstream bug 243: "%.10g" printed the double past -+7.8e11 as the
+     * bound; swi_jd_str(), in both builds as the refusal is */
+    char sjd[SWI_JDSTR_LEN];
     if (serr != NULL)
-      snprintf(serr, AS_MAXCH, "jd %.10g outside the range the Swiss Ephemeris files are named for, %g .. %g",
-               tjd, -SWI_FILENAME_JMAX, SWI_FILENAME_JMAX);
+      snprintf(serr, AS_MAXCH, "jd %s outside the range the Swiss Ephemeris files are named for, %g .. %g",
+               swi_jd_str(tjd, -1, sjd), -SWI_FILENAME_JMAX, SWI_FILENAME_JMAX);
     return(NOT_AVAILABLE);
   }
 #ifndef SWE_UPSTREAM_COMPAT
@@ -14057,6 +14063,17 @@ int32 CALL_CONV swe_lmt_to_lat_r(swe_ctx *ctx, double tjd_lmt, double geolon, do
   int32 retval;
   double E, tjd_lmt0;
   tjd_lmt0 = tjd_lmt - geolon / 360.0;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 237: past the bound and at NaN and -+inf, of the date or
+   * the longitude, swe_time_equ() refuses (bug 215) with E 0, and the
+   * answer was the date plus 0: NaN, -+inf or the caller's date, with ERR.
+   * Refused now as swe_time_equ() refuses, the date it is taken at (LMT
+   * less the longitude): ERR, the output 0, the range in serr. */
+  if (swi_deltat_range(tjd_lmt0, "jd", serr) == ERR) {
+    *tjd_lat = 0;
+    return ERR;
+  }
+#endif
   retval = swe_time_equ_r(ctx, tjd_lmt0, &E, serr);
   *tjd_lat = tjd_lmt + E;
   return retval;
@@ -14074,6 +14091,12 @@ static int32 swe_lat_to_lmt_r_body(swe_ctx *ctx, double tjd_lat, double geolon, 
   int32 retval;
   double E, tjd_lmt0;
   tjd_lmt0 = tjd_lat - geolon / 360.0;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_deltat_range(tjd_lmt0, "jd", serr) == ERR) {	/* bug 237, see swe_lmt_to_lat_r() */
+    *tjd_lmt = 0;
+    return ERR;
+  }
+#endif
   retval = swe_time_equ_r(ctx, tjd_lmt0, &E, serr);
   /* iteration */
   retval = swe_time_equ_r(ctx, tjd_lmt0 - E, &E, serr);

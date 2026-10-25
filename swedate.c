@@ -84,6 +84,7 @@
 # include <limits.h>
 # include "swephexp.h"
 # include "sweph.h"
+# include "swephlib.h"
 
 /* moved to ctx->leapsec_done / ctx->leap_seconds (Phase 3c) */
 
@@ -98,6 +99,16 @@ int CALL_CONV swe_date_conversion(int y,
   int rday, rmon, ryear;
   double rut, jd;
   int gregflag = SE_JUL_CAL;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 238: a NaN or infinite hour made the date NaN or -+inf,
+   * which swe_revjul() answers with INT_MIN: ERR with that date in *tjd,
+   * and OK for the year, month and day INT_MIN. Refused now, ERR and *tjd
+   * 0 (there is no serr). */
+  if (!isfinite(uttime)) {
+    *tjd = 0;
+    return ERR;
+  }
+#endif
   if (c == 'g')
     gregflag = SE_GREG_CAL;
   rut = uttime;		/* hours UT */
@@ -262,6 +273,18 @@ void CALL_CONV swe_utc_time_zone(
   dhour = ((double) ihour) + ((double) imin) / 60.0 + dsec / 3600.0;
   tjd = swe_julday(iyear, imonth, iday, 0, SE_GREG_CAL);
   dhour -= d_timezone;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 238: NaN or -+inf seconds or time zone, with no error to
+   * return, made the hour and minute (int) of NaN (UB; INT_MIN on x86-64),
+   * the date the caller's or a day off, the seconds NaN or -+inf. Now no
+   * answer: every int INT_MIN, as swe_revjul() gives at NaN, the seconds
+   * NaN. */
+  if (!isfinite(dhour)) {
+    *iyear_out = *imonth_out = *iday_out = *ihour_out = *imin_out = INT_MIN;
+    *dsec_out = NAN;
+    return;
+  }
+#endif
   if (dhour < 0.0) {
     tjd -= 1.0;
     dhour += 24.0;
@@ -428,12 +451,28 @@ static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32
   }
   if (ihour < 0 || ihour > 23 
    || imin < 0 || imin > 59 
+#ifndef SWE_UPSTREAM_COMPAT
+   /* Upstream bug 238: NaN seconds passed "dsec < 0 || dsec >= 61": OK,
+    * both dates NaN. Refused now, and at NaN and -+inf both dates 0. */
+   || !(dsec >= 0 && dsec < 61)
+#else
    || dsec < 0 || dsec >= 61
+#endif
    || (dsec >= 60 && (imin < 59 || ihour < 23 || tjd_ut1 < J1972))) {
     /* Upstream bug 210: sprintf(), whose %.2f of the caller's dsec overran
      * serr from dsec about 1e232 (1e215 with the hour and minute INT_MIN) */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 243: past it the seconds' digits ran to the end of
+     * serr; by swi_jd_str() now, "%.2f" below 1e15 as before */
+    char ssec[SWI_JDSTR_LEN];
+    if (!isfinite(dsec))
+      dret[0] = dret[1] = 0;
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "invalid time: %d:%d:%s", ihour, imin, swi_jd_str(dsec, 2, ssec));
+#else
     if (serr != NULL)
       snprintf(serr, AS_MAXCH, "invalid time: %d:%d:%.2f", ihour, imin, dsec);
+#endif
     return ERR;
   }
   dhour = (double) ihour + ((double) imin) / 60.0 + dsec / 3600.0;
@@ -546,6 +585,31 @@ int32 CALL_CONV swe_utc_to_jd(int32 iyear, int32 imonth, int32 iday, int32 ihour
  *   the leap seconds table (or the Swiss Ephemeris version) has not been
  *   updated for a long time.
  */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 238: swe_jdet_to_utc() and swe_jdut1_to_utc() have no error
+ * to return, and answered any date. At NaN and -+inf, and where delta t
+ * is NaN past the bound (bug 215), the hour and minute were (int32) of NaN
+ * (UB; INT_MIN on x86-64), the seconds NaN, with the Julian calendar month
+ * 7 day 16 from swe_julday() of INT_MIN; at TT 1e300 "INT_MIN INT_MIN 0
+ * 12:00:00", at 2e12 "INT_MIN 11 15 11:59:17.8"; and where the year holds
+ * in no int, from TT -6.19e11 and +9.14e11 (UT -7.98e11 and +7.54e11 for
+ * swe_jdut1_to_utc()), swe_revjul()'s INT_MIN (bug 216) with a month, day
+ * and time (TT 1e12 "INT_MIN 11 29 4:20:09.4"), with the Julian calendar
+ * the year of swe_julday() of INT_MIN (-2147439551). Now no answer past
+ * the bound (SWI_ECL_NUT_JMAX), at NaN and -+inf, and where the year, or
+ * the Julian calendar's, is INT_MIN: every int INT_MIN, as swe_revjul()
+ * gives at NaN, the seconds NaN. */
+static AS_BOOL utc_out_none(AS_BOOL none, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
+{
+  if (!none)
+    return FALSE;
+  *iyear = *imonth = *iday = *ihour = *imin = INT_MIN;
+  *dsec = NAN;
+  return TRUE;
+}
+#define UTC_OUT_NONE(c) utc_out_none((c), iyear, imonth, iday, ihour, imin, dsec)
+#endif
+
 static void swe_jdet_to_utc_r_body(swe_ctx *ctx, double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
 {
   int i;
@@ -561,6 +625,10 @@ static void swe_jdet_to_utc_r_body(swe_ctx *ctx, double tjd_et, int32 gregflag, 
   tjd_ut = tjd_et - swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
   if (tjd_et < tjd_et_1972) {
     swe_revjul(tjd_ut, gregflag, iyear, imonth, iday, &d);
+#ifndef SWE_UPSTREAM_COMPAT
+    if (UTC_OUT_NONE(*iyear == INT_MIN))	/* bug 238 */
+      return;
+#endif
     *ihour = (int32) d;
     d -= (double) *ihour;
     d *= 60;
@@ -623,14 +691,25 @@ static void swe_jdet_to_utc_r_body(swe_ctx *ctx, double tjd_et, int32 gregflag, 
     *imin = (int32) d;
     *dsec = (d - (double) *imin) * 60.0;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  if (UTC_OUT_NONE(*iyear == INT_MIN))	/* bug 238 */
+    return;
+#endif
   if (gregflag == SE_JUL_CAL) {
     tjd = swe_julday(*iyear, *imonth, *iday, 0, SE_GREG_CAL);
     swe_revjul(tjd, gregflag, iyear, imonth, iday, &d);
+#ifndef SWE_UPSTREAM_COMPAT
+    UTC_OUT_NONE(*iyear == INT_MIN);	/* bug 238 */
+#endif
   }
 }
 
 void CALL_CONV swe_jdet_to_utc_r(swe_ctx *ctx, double tjd_et, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  if (UTC_OUT_NONE(!(tjd_et >= -SWI_ECL_NUT_JMAX && tjd_et <= SWI_ECL_NUT_JMAX)))	/* bug 238 */
+    return;
+#endif
   swi_config_hold(ctx);	/* bug 124 */
   swe_jdet_to_utc_r_body(ctx, tjd_et, gregflag, iyear, imonth, iday, ihour, imin, dsec);
   swi_config_release(ctx);
@@ -660,11 +739,22 @@ void CALL_CONV swe_jdet_to_utc(double tjd_et, int32 gregflag, int32 *iyear, int3
 static void swe_jdut1_to_utc_r_body(swe_ctx *ctx, double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
 {
   double tjd_et = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* the body under this hold: the TT of a UT inside the bound lies past
+   * it from UT about 8e11 (delta t 2.8e11 days at 1e12), which
+   * swe_jdet_to_utc_r()'s test of bug 238 would refuse */
+  swe_jdet_to_utc_r_body(ctx, tjd_et, gregflag, iyear, imonth, iday, ihour, imin, dsec);
+#else
   swe_jdet_to_utc_r(ctx, tjd_et, gregflag, iyear, imonth, iday, ihour, imin, dsec);
+#endif
 }
 
 void CALL_CONV swe_jdut1_to_utc_r(swe_ctx *ctx, double tjd_ut, int32 gregflag, int32 *iyear, int32 *imonth, int32 *iday, int32 *ihour, int32 *imin, double *dsec)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  if (UTC_OUT_NONE(!(tjd_ut >= -SWI_ECL_NUT_JMAX && tjd_ut <= SWI_ECL_NUT_JMAX)))	/* bug 238 */
+    return;
+#endif
   swi_config_hold(ctx);	/* bug 124 */
   swe_jdut1_to_utc_r_body(ctx, tjd_ut, gregflag, iyear, imonth, iday, ihour, imin, dsec);
   swi_config_release(ctx);

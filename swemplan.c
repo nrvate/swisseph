@@ -535,8 +535,25 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
     if (serr != NULL) {
       /* Upstream bug 210: sprintf(), whose %f of the date overran s from
        * |tjd| about 1e188 (glibc's fortify aborted) */
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 243: past it the message was cut at 255 characters,
+       * its range lost, from about 1e237 its text ("jd 1000...0", digits
+       * only); the date by swi_jd_str() now, "%f" below 1e15 days as
+       * before.
+       * Upstream bug 255: the range named was MOSHPLEPH_START ..
+       * MOSHPLEPH_END, 625000.50 .. 2818000.50, where the test above takes
+       * 0.3 day more either side: Mars and Spica answered at 2818000.79,
+       * Spica at 625000.21, and 2818000.81 was refused as outside a range
+       * ending at 2818000.50. The range tested now, 625000.20 ..
+       * 2818000.80; the margin, for the light time and speed reads at
+       * the edges, kept. */
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside Moshier planet range %.2f .. %.2f ",
+		    swi_jd_str(tjd, 6, sjd), MOSHPLEPH_START - 0.3, MOSHPLEPH_END + 0.3);
+#else
       snprintf(s, sizeof s, "jd %f outside Moshier planet range %.2f .. %.2f ",
 		    tjd, MOSHPLEPH_START, MOSHPLEPH_END);
+#endif
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }

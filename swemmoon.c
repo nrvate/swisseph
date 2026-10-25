@@ -782,8 +782,17 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
     if (serr != NULL) {
       /* Upstream bug 210: sprintf(), whose %f of the date overran s from
        * |tjd| about 1e188 (glibc's fortify aborted) */
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 243: see swi_moshplan(). Upstream bug 255: as
+       * there, the range named the one tested, 0.2 day more either side
+       * than MOSHLUEPH_START .. MOSHLUEPH_END: 625000.30 .. 2818000.70 */
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside Moshier's Moon range %.2f .. %.2f ",
+		    swi_jd_str(tjd, 6, sjd), MOSHLUEPH_START - 0.2, MOSHLUEPH_END + 0.2);
+#else
       snprintf(s, sizeof s, "jd %f outside Moshier's Moon range %.2f .. %.2f ",
 		    tjd, MOSHLUEPH_START, MOSHLUEPH_END);
+#endif
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }
@@ -1488,8 +1497,15 @@ int swi_mean_node(swe_ctx *ctx, double J, double *pol, char *serr)
     if (serr != NULL) {
       /* Upstream bug 210: sprintf(), whose %f of the date overran s from
        * |J| about 1e193 (glibc's fortify aborted) */
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 243: see swi_moshplan() */
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside mean node range %.2f .. %.2f ",
+		    swi_jd_str(J, 6, sjd), MOSHNDEPH_START, MOSHNDEPH_END);
+#else
       snprintf(s, sizeof s, "jd %f outside mean node range %.2f .. %.2f ",
 		    J, MOSHNDEPH_START, MOSHNDEPH_END);
+#endif
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }
@@ -1563,8 +1579,15 @@ int swi_mean_apog(swe_ctx *ctx, double J, double *pol, char *serr)
   if (!(J >= MOSHNDEPH_START && J <= MOSHNDEPH_END)) {
     if (serr != NULL) {
       /* Upstream bug 210: as swi_mean_node()'s, from |J| about 1e191 */
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 243: see swi_moshplan() */
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside mean apogee range %.2f .. %.2f ",
+		    swi_jd_str(J, 6, sjd), MOSHNDEPH_START, MOSHNDEPH_END);
+#else
       snprintf(s, sizeof s, "jd %f outside mean apogee range %.2f .. %.2f ",
 		    J, MOSHNDEPH_START, MOSHNDEPH_END);
+#endif
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }

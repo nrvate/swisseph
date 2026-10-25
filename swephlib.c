@@ -3251,11 +3251,12 @@ static int frame_models(swe_ctx *ctx, double J, int32 iflag, int which)
  * serr saying so; the UT functions refuse a NaN delta t. */
 int swi_deltat_range(double tjd, const char *what, char *serr)
 {
+  char sjd[SWI_JDSTR_LEN];
   if (tjd >= -SWI_ECL_NUT_JMAX && tjd <= SWI_ECL_NUT_JMAX)
     return OK;
-  if (serr != NULL)
-    snprintf(serr, AS_MAXCH, "%s %.10g outside the delta t range %g .. %g",
-             what, tjd, -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+  if (serr != NULL)	/* the date by swi_jd_str(), bug 243 */
+    snprintf(serr, AS_MAXCH, "%s %s outside the delta t range %g .. %g",
+             what, swi_jd_str(tjd, -1, sjd), -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
   return ERR;
 }
 
@@ -3319,10 +3320,11 @@ static int frame_model_range(int m, int prec, double J, const char *what,
   if (J >= a && J <= b)
     return OK;
   if (serr != NULL) {
+    char sjd[SWI_JDSTR_LEN];	/* bug 243 */
     *s = '\0';
     get_precession_model(m, 0, s);
-    snprintf(serr, AS_MAXCH, "%s %.10g outside the %.60s precession model's range %.10g .. %.10g",
-             what, J, s, a, b);
+    snprintf(serr, AS_MAXCH, "%s %s outside the %.60s precession model's range %.10g .. %.10g",
+             what, swi_jd_str(J, -1, sjd), s, a, b);
   }
   return ERR;
 }
@@ -3331,9 +3333,10 @@ int swi_frame_range(swe_ctx *ctx, double J, int32 iflag, int which,
                     const char *what, char *serr)
 {
   if (!(J >= -SWI_ECL_NUT_JMAX && J <= SWI_ECL_NUT_JMAX)) {
+    char sjd[SWI_JDSTR_LEN];	/* bug 243 */
     if (serr != NULL)
-      snprintf(serr, AS_MAXCH, "%s %.10g outside the obliquity and nutation range %g .. %g",
-               what, J, -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+      snprintf(serr, AS_MAXCH, "%s %s outside the obliquity and nutation range %g .. %g",
+               what, swi_jd_str(J, -1, sjd), -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
     return ERR;
   }
   if ((which & SWI_FRAME_EPS)
@@ -6406,6 +6409,30 @@ AS_BOOL swi_date_invalid(double tjd, char *serr)
   if (serr != NULL)
     snprintf(serr, AS_MAXCH, "invalid date: jd %g", tjd);
   return TRUE;
+}
+
+/* UPSTREAM-BUGS 243: a refused date (or the seconds swe_utc_to_jd()
+ * refuses) for its message, in s, SWI_JDSTR_LEN bytes. With fdig >= 0 and
+ * |jd| below 1e15, "%.*f" with fdig decimals, the format of upstream's
+ * messages, byte for byte; else, and at NaN and -+inf, "%.*g" with the
+ * fewest significant digits from 10 that read back as jd: no date's digits
+ * cut its message at 255 characters (past 1e188 the range lost, from about
+ * 1e237 the text), and no double next to a bound prints as the bound
+ * ("%.10g" gave "7.8e+11" for the double past 7.8e11). */
+char *swi_jd_str(double jd, int fdig, char *s)
+{
+  int p;
+  if (fdig >= 0 && fabs(jd) < 1e15) {
+    snprintf(s, SWI_JDSTR_LEN, "%.*f", fdig, jd);
+    return s;
+  }
+  for (p = 10; p < 17; p++) {
+    snprintf(s, SWI_JDSTR_LEN, "%.*g", p, jd);
+    if (strtod(s, NULL) == jd)
+      return s;
+  }
+  snprintf(s, SWI_JDSTR_LEN, "%.17g", jd);
+  return s;
 }
 
 /**************************************************************

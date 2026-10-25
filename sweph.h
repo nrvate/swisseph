@@ -1705,6 +1705,24 @@ struct epsilon {
  *     Poseidon's 2.06e-6 (the compat build's are upstream's, differenced
  *     across the edge: 1.5e-5 on the Sun there) (UPSTREAM-BUGS 246, G139,
  *     G24)
+ *   - swe_lmt_to_lat() and swe_lat_to_lmt() past 1e12 days, at -+inf and
+ *     NaN and at a NaN, infinite or huge longitude refused with their
+ *     output the date plus E 0: NaN, -+inf, 1e300 or the date as given
+ *     (UPSTREAM-BUGS 237, G160, G24)
+ *   - swedate.c taking NaN and -+inf: swe_utc_to_jd() OK at NaN seconds,
+ *     both dates NaN; swe_date_conversion() OK of year, month and day
+ *     INT_MIN at a NaN hour; swe_utc_time_zone(), swe_jdet_to_utc() and
+ *     swe_jdut1_to_utc() the hour and minute (int) of NaN, the latter two
+ *     a time past 1e12 days and, where the year holds in no int,
+ *     swe_revjul()'s INT_MIN with a month, day and time (UPSTREAM-BUGS
+ *     238, G160, G24)
+ *   - the refusals' "jd %f" (and swe_utc_to_jd()'s seconds) cut at 255
+ *     characters from about 1e188 days, the range lost, the text from
+ *     1e237 (UPSTREAM-BUGS 243, G160, G24); entry 216's refusal, in both
+ *     builds, prints its date with the digits that give it back in both
+ *   - Moshier's planets' and Moon's refusals naming 625000.50 ..
+ *     2818000.50, where their tests take 0.3 and 0.2 day more either side
+ *     (UPSTREAM-BUGS 255, G160, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

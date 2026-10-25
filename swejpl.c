@@ -876,8 +876,15 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
    * Upstream bug 210: sprintf() into serr, whose %f of the date overran it
    * from |et| about 1e196 (360 characters at 1e300). */
   if (!(et >= js->eh_ss[0] && et <= js->eh_ss[1])) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 243: see swi_moshplan() */
+    char sjd[SWI_JDSTR_LEN];
+    if (serr != NULL) 
+      snprintf(serr, AS_MAXCH, "jd %s outside JPL eph. range %.2f .. %.2f;", swi_jd_str(et, 6, sjd), js->eh_ss[0], js->eh_ss[1]);
+#else
     if (serr != NULL) 
       snprintf(serr, AS_MAXCH, "jd %f outside JPL eph. range %.2f .. %.2f;", et, js->eh_ss[0], js->eh_ss[1]);
+#endif
     return BEYOND_EPH_LIMITS;
   }
   /*       calculate record # and relative time in interval */

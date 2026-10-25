@@ -6576,9 +6576,11 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * Upstream bug 210: sprintf() into serr, whose %f of the date overran
      * it from |tjd| about 1e193 (glibc's fortify aborted). */
     if (!(tm >= MOSHNDEPH_START && tp <= MOSHNDEPH_END)) {
+      /* Upstream bug 243: the date by swi_jd_str(), see swi_moshplan() */
+      char sjd[SWI_JDSTR_LEN];
       if (serr != NULL)
-        snprintf(serr, AS_MAXCH, "jd %f outside mean node range %.2f .. %.2f ",
-                tm < MOSHNDEPH_START ? tm : tp, MOSHNDEPH_START, MOSHNDEPH_END);
+        snprintf(serr, AS_MAXCH, "jd %s outside mean node range %.2f .. %.2f ",
+                swi_jd_str(tm < MOSHNDEPH_START ? tm : tp, 6, sjd), MOSHNDEPH_START, MOSHNDEPH_END);
       return ERR;
     }
     if ((retcs = swe_calc_r(ctx, tjd_et, SE_ECL_NUT, iflg0, x, serr)) == ERR)
