@@ -54,6 +54,10 @@ worst were in code that had never executed even once.
 | 16 | `swe_pheno(SE_ECL_NUT)` indexes two tables with -1 | Memory | `swecl.c` |
 | 17 | `ipl * 100` overflows int32 for a large negative body number | Robustness | `sweph.c` |
 | 18 | Changing delta t does not invalidate the cached topocentric observer | Correctness | `swephlib.c`, `sweph.c` |
+| 19 | A fictitious body's position depends on SEFLG_SPEED | Correctness | `sweph.c` |
+| 20 | A geocentric fictitious body mixes the dynamical and ICRS frames | Correctness | `swemplan.c`, `sweph.c` |
+| 21 | A sidereal node or apsis carries the nutation in longitude | Correctness | `swecl.c` |
+| 22 | The built-in Spica record's radial velocity is a stale catalogue value | Data | `sweph.c` |
 | 23 | A bad `seorbel.txt` field hangs `swe_calc()`, terms such as "T5" or ".0" are misread, a broken `sefstars.txt` is reported as "star not found" | Correctness / Robustness | `swemplan.c`, `sweph.c` |
 | 24 | Seven house defects: Placidus and Gauquelin cusps not converged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files, Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the speed of a cusp on an equinox point | Correctness | `swehouse.c` |
 | 25 | A setting made before the first calculation is lost; the first heliacal call after a setter fails | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c` |
@@ -1593,6 +1597,30 @@ is held too: on a new thread after the main thread's True Sheoran, 10 deg
 came back nakshatra 0, 10 deg 0' where the main thread gives nakshatra 1,
 0 deg 0'. G36's split case.
 
+## 28. `swe_calc(SE_ECL_NUT)` with a speed flag differences its angles as a position, reads two doubles never written, and copies stale speed slots
+
+**Severity: Memory (an uninitialised read) / Correctness (x[3..5] wrong by up to 1.6e-3 deg)**
+**Where:** `sweph.c`: `swe_calc_r()`
+
+SE_ECL_NUT answers four angles: the true and mean obliquity and the
+nutation in longitude and in obliquity. With SEFLG_SPEED3, or with
+SEFLG_SPEED and SEFLG_TOPOCTR (which takes the three-position speed),
+`calc_speed()` differenced them as if they were a position. x[3], the
+nutation in obliquity (-1.6026e-3 deg), came back as the true obliquity's
+rate (-6.06e-6), and x[4] and x[5] as rates (up to 5e-5).
+`denormalize_positions()` read `x0[12]` and `x2[12]`, which nothing writes:
+valgrind counts 1948 errors over a 30-call hostile run, and on a stack that
+leaves NaN there, UBSan stops in `swe_revjul()`. With SEFLG_SPEED alone,
+x[4] and x[5] were copied from the save area SE_ECL_NUT shares with the
+asteroids, so they were stale.
+
+**Fix, as done here:** SE_ECL_NUT never takes the three-position speed, and
+no speed slots are copied for it. Any speed flag answers as none: x[3] is
+the nutation in obliquity, and x[4] = x[5] = 0. G37 `tests/eclnutspeed.c`
+compares the six slots under no speed flag, SPEED and SPEED3 at six epochs,
+on the Swiss files and Moshier, in degrees and radians, and finds 0
+differences. Before the fix it failed by 1.6e-3 deg.
+
 ## 29. A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read: NaN fresh, the last read's Moon warm (this fork's)
 
 **Severity: Correctness (with `semo_12.se1` missing, the Moon NaN with no error on a fresh context, 37 deg off warm; the Sun and every geocentric body 6 arcsec apart fresh and warm)**
@@ -2275,28 +2303,3 @@ depend on, and is all of it in the key?*
 - Entries 5, 6, 10 and 11 change numerical output. That is the point of
   them, but it means they need a deliberate decision about regression
   fixtures rather than a silent adoption.
-
-## 28. `swe_calc(SE_ECL_NUT)` with a speed flag differences its angles as a position, reads two doubles never written, and copies stale speed slots
-
-**Severity: Memory (an uninitialised read) / Correctness (x[3..5] wrong by up to 1.6e-3 deg)**
-**Where:** `sweph.c`: `swe_calc_r()`
-
-SE_ECL_NUT answers four angles: the true and mean obliquity and the
-nutation in longitude and in obliquity. With SEFLG_SPEED3, or with
-SEFLG_SPEED and SEFLG_TOPOCTR (which takes the three-position speed),
-`calc_speed()` differenced them as if they were a position. x[3], the
-nutation in obliquity (-1.6026e-3 deg), came back as the true obliquity's
-rate (-6.06e-6), and x[4] and x[5] as rates (up to 5e-5).
-`denormalize_positions()` read `x0[12]` and `x2[12]`, which nothing writes:
-valgrind counts 1948 errors over a 30-call hostile run, and on a stack that
-leaves NaN there, UBSan stops in `swe_revjul()`. With SEFLG_SPEED alone,
-x[4] and x[5] were copied from the save area SE_ECL_NUT shares with the
-asteroids, so they were stale.
-
-**Fix, as done here:** SE_ECL_NUT never takes the three-position speed, and
-no speed slots are copied for it. Any speed flag answers as none: x[3] is
-the nutation in obliquity, and x[4] = x[5] = 0. G37 `tests/eclnutspeed.c`
-compares the six slots under no speed flag, SPEED and SPEED3 at six epochs,
-on the Swiss files and Moshier, in degrees and radians, and finds 0
-differences. Before the fix it failed by 1.6e-3 deg.
-
