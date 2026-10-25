@@ -326,10 +326,14 @@ static int p9(void)
   if (chdir(DNOMOON) != 0)
     return 1;
   zero();
+  /* No moon file here: the Earth comes from the Moshier Moon only with
+   * the fallback allowed (UPSTREAM-BUGS 120); this case counts opens. */
+  swe_set_ephe_fallback(1);
   r = swe_calc(2451545.0, SE_MARS, SEFLG_SWIEPH, x, serr);
+  swe_set_ephe_fallback(0);
   if (r >= 0 && nsepl == 1)
     return 0;
-  printf("    Mars %d, sepl_18.se1 opened %d times; want 1\n", r, nsepl);
+  printf("    Mars %d, sepl_18.se1 opened %d times; want 1 (%s)\n", r, nsepl, serr);
   return 1;
 }
 
