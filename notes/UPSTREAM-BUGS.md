@@ -142,6 +142,7 @@ worst were in code that had never executed even once.
 | 108 | `swe_nod_aps()`'s osculating points turned by the frame bias twice and its EMB built with the AA's Earth-Moon ratio; `swe_get_orbital_elements()` takes the AA's GMs and gives Pluto Mercury's mass | Correctness | `swecl.c`, `sweph.c`, `sweph.h` |
 | 110 | A first call warns "Please call swe_set_ephe_path()" whenever it initialises the context, with a path in effect too: `swe_deltat_ex()` and `swe_get_ayanamsa_ex_ut()` answer correctly with the warning in serr, and `swe_calc_orbel()` refuses on it (that refusal this fork's) | Correctness (error reporting) | `sweph.c`, `swephlib.c`, `sweph.h` |
 | 106 | Values read from an ephemeris file's header, and from the delta-psi and fixed-star tables, index and size arrays unchecked: a crafted file writes past `pldat[]`, `rot_back()`'s stack array, `sastnam[]` and `dpsi[]`, or reads past the JPL record | Memory | `sweph.c`, `swejpl.c` |
+| 112 | `swe_calc_orbel()` (this fork's) refuses on the "Please call swe_set_ephe_path()" warning with no path at all, ignores the strict fallback setting, and never names the path from `SE_EPHE_PATH` itself | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -6583,7 +6584,9 @@ the J2000 planet file or the JPL file. It runs on a context's first call
 only, after the initialisation test, so it costs nothing later. With no
 path at all the warning is as before: `swe_deltat_ex()`,
 `swe_get_ayanamsa_ex_ut()` and `swe_calc_orbel()` still carry it, and the
-rest answer with the missing file's own message, as before.
+rest answer with the missing file's own message, as before. (Since entry
+112 `swe_calc_orbel()` answers as `swe_calc()` there, and G24's second
+probe is `swe_get_ayanamsa_ex_ut()`.)
 
 G109 `tests/pathwarn.c`: with a path, every call answers with serr empty;
 with none, the three still warn: 84 pass. Before the fix 9 fail, the compat
@@ -6683,6 +6686,60 @@ flags). 14 pass in both; before the fix ASan fails 10 and UBSan 13, every
 case in one of them. In the compat build the memory checks hold too; its
 calls after a refusal fail by entry 104's `free_planets()`. G24, G83, G88
 and G99 pass.
+
+## 112. `swe_calc_orbel()` refuses on the "Please call swe_set_ephe_path()" warning, ignores the strict fallback setting, and does not name the path itself (this fork's)
+
+**Severity: Correctness (behaviour: a refusal where `swe_calc()` answers, an answer where it refuses)**
+**Where:** `sweph.c`: `swe_calc_orbel_r()` (and through it `swe_calc_orbel_ut_r()`)
+
+`swe_calc_orbel()` was written to do "the ephemeris setup, as swe_calc()
+does it", and differed from it in three ways, each measured in G109's part
+2 against `swe_calc()` of the Sun, which reads the same Earth, first call
+in a fresh process:
+
+- With no path at all, its warning was a `goto return_error`: -1, "Please
+  call swe_set_ephe_path() or swe_set_jplfile() before calling swe_calc()
+  or swe_calc_orbel()", where `swe_calc()` tries the default path and
+  refuses for the missing file under the strict default ("Swiss (.se1)
+  ephemeris is not available for jd 2451545.0000; falling back to Moshier
+  would answer with lower precision. ...") or answers from Moshier under
+  `swe_set_ephe_fallback(1)` (260, "SwissEph file 'sepl_18.se1' not found
+  ... using Moshier eph.; "). A setter before it, such as
+  `swe_set_ephe_fallback(1)` itself, or the delta t of
+  `swe_calc_orbel_ut()`, initialised the context first and hid the
+  refusal.
+- It never applied the strict setting (`swi_refuse_downgrade()`, which
+  `swe_calc_r()` applies to every answer): where the files are missing it
+  answered from Moshier (260) whatever `swe_set_ephe_fallback()` said --
+  with no path through `swe_calc_orbel_ut()`, and with the links' path at
+  AD 1000, which they do not cover, for Swiss, JPL and no ephemeris flag.
+  12 of the 24 cases fail, every strict one.
+- It never named the path on first use, as `swe_calc_r()` does: in a build
+  without entry 107's naming at the first file (the compat build) it never
+  read `SE_EPHE_PATH`: with the strict check alone in place, the compat
+  build refused its first call for the missing file with the files in
+  that directory (-1, where its `swe_calc()` answers), and with the
+  fallback allowed answered from Moshier, naming the compiled default
+  path in its note.
+
+**Fix, as done here**, unguarded: the warning is a warning, `main_planet()`
+then deciding as for `swe_calc()`; the requested ephemeris is kept and
+`swi_refuse_downgrade()` applied before the output; and the path is named
+on first use with `swe_calc_r()`'s own statement, including its compat
+branch. Chosen unguarded: the function is not upstream's, so there is no
+upstream behaviour for `SWE_UPSTREAM_COMPAT` to restore, and the compat
+build's `swe_calc()` warns and carries on too -- the compat build's
+`swe_calc_orbel()` now answers as its `swe_calc()` does, part 2 passing in
+both builds. No G24 case for that reason, and no `sweph.h` bullet; G24's
+`path_warn_first_count` (entry 110) took `swe_get_ayanamsa_ex_ut()` for
+its second probe, `swe_calc_orbel()` no longer warning in the compat
+build either.
+
+G109 `tests/pathwarn.c`, part 2: the 24 first calls, the same return and
+serr as `swe_calc()`/`swe_calc_ut()`: 24 pass, 108 in all. Before the fix
+12 fail; the compat build passes part 2 (its 12 failures are part 1's,
+entries 98, 107 and 110 restored); the upstream build, which has no
+`swe_calc_orbel()`, 24, all part 1's. G87, G106 and G24 pass.
 
 ## How these were found
 

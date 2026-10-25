@@ -876,10 +876,11 @@ static double calc_ut_first_path_off(void)
 }
 
 /* With the files named by SE_EPHE_PATH, how many of two first calls --
- * swe_deltat_ex() and swe_calc_orbel(), each in a pristine forked child --
- * write the "Please call swe_set_ephe_path()" warning into serr. Upstream
- * writes it whenever the call initialises the context: 2, and
- * swe_calc_orbel() refuses on it (UPSTREAM-BUGS 110). */
+ * swe_deltat_ex() and swe_get_ayanamsa_ex_ut(), each in a pristine forked
+ * child -- write the "Please call swe_set_ephe_path()" warning into serr.
+ * Upstream writes it whenever the call initialises the context: 2
+ * (UPSTREAM-BUGS 110; swe_calc_orbel(), this fork's, no longer refuses on
+ * it in either build, UPSTREAM-BUGS 112). */
 static double path_warn_first_count(void)
 {
   int k, n = 0;
@@ -893,14 +894,14 @@ static double path_warn_first_count(void)
     if ((pid = fork()) < 0)
       return -1;
     if (pid == 0) {
-      double x[6], el[6] = { 200, 0.387, 0.2056, 29, 48, 7.0 };
+      double x[6];
       char serr[256] = "";
       close(fd[0]);
       setenv("SE_EPHE_PATH", EPHE, 1);
       if (k == 0)
         swe_deltat_ex(2451545.0, SEFLG_SWIEPH, serr);
       else
-        swe_calc_orbel(2451545.0, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, SEFLG_SWIEPH, x, serr);
+        swe_get_ayanamsa_ex_ut(2451545.0, SEFLG_SWIEPH, x, serr);
       w = strstr(serr, "swe_set_ephe_path()") != NULL;
       _exit(write(fd[1], &w, 1) == 1 ? 0 : 3);
     }

@@ -1120,7 +1120,9 @@ check-firstpath: firstpath
 # G109: the "Please call swe_set_ephe_path()" warning only when no path is
 # in effect: not with SE_EPHE_PATH, files along the default path, or a path
 # another thread set; and still there with no path at all (UPSTREAM-BUGS
-# 110).
+# 110). Part 2: swe_calc_orbel()'s first call answers as swe_calc()'s
+# where the files are missing, strict and with the fallback allowed
+# (UPSTREAM-BUGS 112).
 check-pathwarn: pathwarn
 	@env -u SE_EPHE_PATH ./pathwarn $(EPHE)
 

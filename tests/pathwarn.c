@@ -6,22 +6,36 @@
  * that takes a non-empty serr as a problem had a false alarm on a correct
  * answer, and swe_calc_orbel() (this fork's) refused on it.
  *
- * The check: 21 first calls, each in a fresh process, in four settings --
- * SE_EPHE_PATH naming a directory of links to the files; no SE_EPHE_PATH,
- * the current directory holding the files ("." starts the default path);
- * the path set by another thread; and no path at all (an empty current
- * directory). With a path in effect, every call answers (return >= 0) with
- * serr empty. With none, swe_deltat_ex(), swe_get_ayanamsa_ex_ut() (its
- * delta t) and swe_calc_orbel() still carry the warning; the others answer
- * with the missing file's own message, which is not checked.
+ * The check, part 1: 21 first calls, each in a fresh process, in four
+ * settings -- SE_EPHE_PATH naming a directory of links to the files; no
+ * SE_EPHE_PATH, the current directory holding the files ("." starts the
+ * default path); the path set by another thread; and no path at all (an
+ * empty current directory). With a path in effect, every call answers
+ * (return >= 0) with serr empty. With none, swe_deltat_ex() and
+ * swe_get_ayanamsa_ex_ut() (its delta t) still carry the warning; the
+ * others answer with the missing file's own message, which is not checked.
  *
- * Measured before the fix, 9 of 84 fail: in each of the three settings with
- * a path, swe_deltat_ex() and swe_get_ayanamsa_ex_ut() answer with the
- * warning in serr, and swe_calc_orbel() returns -1 on it. The compat build
- * fails 15 (with entries 98 and 107 restored the stars miss their catalogue
- * and the True Citra ayanamsa its files); the upstream build
- * (legacy-master, no swe_calc_orbel) 24, swe_calc() carrying the warning
- * too and its threads sharing no path. Run as
+ * Measured before the fix (bug 110), 9 of 84 fail: in each of the three
+ * settings with a path, swe_deltat_ex() and swe_get_ayanamsa_ex_ut() answer
+ * with the warning in serr, and swe_calc_orbel() returns -1 on it.
+ *
+ * Part 2 (UPSTREAM-BUGS 112): swe_calc_orbel()'s and swe_calc_orbel_ut()'s
+ * first calls against swe_calc()'s and swe_calc_ut()'s of the Sun, which
+ * read the same Earth: the same return and the same serr, word for word,
+ * with no path at all at J2000 and with the links' path at AD 1000 (which
+ * they do not cover), strict and with swe_set_ephe_fallback(1), for Swiss,
+ * JPL and no ephemeris flag: 24 cases. Before that fix 12 fail, every
+ * strict one: with no path swe_calc_orbel() refused on the warning (-1,
+ * "Please call swe_set_ephe_path()") where swe_calc() refuses for the
+ * missing file, and otherwise it answered from Moshier (return 260)
+ * whatever the strict setting said.
+ *
+ * The compat build fails 12 of the 108, all in part 1 (entries 98, 107 and
+ * 110 restored: the stars miss their catalogue, the True Citra ayanamsa its
+ * files, the first delta t warns); part 2 passes, the function being this
+ * fork's. The upstream build (legacy-master, no swe_calc_orbel(): part 2
+ * compares swe_calc() with itself) fails 24, swe_calc() carrying the
+ * warning too and its threads sharing no path. Run as
  *   pathwarn EPHEDIR [v]
  */
 #include <math.h>
@@ -159,14 +173,72 @@ static int in_child(int k, int s, struct res *out)
 }
 
 /* With no path at all, the cases whose warning reaches the caller: the
- * others answer with the refusal of the missing file instead */
+ * others answer with the refusal of the missing file instead, as
+ * swe_calc_orbel() now does (checked against swe_calc() in part 2) */
 static int warns_without_path(int k)
 {
-#ifdef SE_ORBEL_EQ_J2000
-  if (k == C_ORBEL)
-    return 1;
+  return k == C_DELTAT_EX || k == C_AYA_EX_UT;	/* swe_calc_orbel(): part 2 */
+}
+
+/* Part 2 (UPSTREAM-BUGS 112): swe_calc_orbel()'s first call against
+ * swe_calc()'s of the Sun -- the same Earth read, so the same refusal or
+ * fallback note, word for word, and the same returned flags -- where the
+ * files are missing: no path at all (J2000), and the links' path at AD 1000,
+ * which they do not cover; under the strict default and with
+ * swe_set_ephe_fallback(1); Swiss, JPL and no ephemeris flag; TT and UT. */
+#define T_1000 2086302.5
+static void orbel_case(int k, int orbel, struct res *a)
+{
+  int nopath = k & 1, fb = (k >> 1) & 1, ut = (k >> 2) & 1, ie = k >> 3;
+  int32 fl = (ie == 0 ? SEFLG_SWIEPH : ie == 1 ? SEFLG_JPLEPH : 0) | SEFLG_SPEED;
+  double t = nopath ? T0 : T_1000, x[6];
+  double el[6] = { 200, 0.387, 0.2056, 29, 48, 7.0 };
+  unsetenv("SE_EPHE_PATH");
+  if (chdir(EMPTY) != 0)
+    return;
+  if (!nopath)
+    setenv("SE_EPHE_PATH", DIR, 1);
+#ifdef SE_ORBEL_EQ_J2000	/* this fork's, as the strict setting is */
+  if (fb)
+    swe_set_ephe_fallback(1);
+  if (orbel)
+    a->r = ut ? swe_calc_orbel_ut(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl, x, a->serr)
+              : swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl, x, a->serr);
+  else
+#else
+  (void) el, (void) fb, (void) orbel;
 #endif
-  return k == C_DELTAT_EX || k == C_AYA_EX_UT;
+    a->r = ut ? swe_calc_ut(t, SE_SUN, fl, x, a->serr) : swe_calc(t, SE_SUN, fl, x, a->serr);
+  a->ran = 1;
+}
+#define NO 24
+
+static int orbel_child(int k, int orbel, struct res *out)
+{
+  int fd[2];
+  ssize_t got = 0, r;
+  pid_t pid;
+  if (pipe(fd) != 0)
+    return -1;
+  fflush(stdout);
+  if ((pid = fork()) < 0)
+    return -1;
+  if (pid == 0) {
+    struct res a;
+    close(fd[0]);
+    memset(&a, 0, sizeof a);
+    orbel_case(k, orbel, &a);
+    _exit(write(fd[1], &a, sizeof a) == (ssize_t) sizeof a ? 0 : 3);
+  }
+  close(fd[1]);
+  memset(out, 0, sizeof *out);
+  while (got < (ssize_t) sizeof *out
+         && (r = read(fd[0], (char *) out + got, sizeof *out - got)) > 0)
+    got += r;
+  close(fd[0]);
+  waitpid(pid, NULL, 0);
+  out->serr[AS_MAXCH - 1] = '\0';
+  return (got == (ssize_t) sizeof *out && out->ran == 1) ? 0 : -1;
 }
 
 static const char *LNK[] = { "sepl_18.se1", "semo_18.se1", "seas_18.se1",
@@ -216,6 +288,25 @@ int main(int argc, char **argv)
       } else if (verbose)
         printf("    %-28s %d [%s]\n", CN[k], a.r, a.serr);
     }
+  }
+  for (k = 0; k < NO; k++, n++) {
+    struct res o, c;
+    char nm[96];
+    int ie = k >> 3;
+    snprintf(nm, sizeof nm, "swe_calc_orbel%s %s, %s, %s", (k >> 2) & 1 ? "_ut" : "",
+             ie == 0 ? "SWIEPH" : ie == 1 ? "JPLEPH" : "no flag",
+             k & 1 ? "no path, J2000" : "the links, AD 1000",
+             (k >> 1) & 1 ? "fallback" : "strict");
+    if (orbel_child(k, 1, &o) != 0 || orbel_child(k, 0, &c) != 0) {
+      printf("  %-58s did not run\n", nm);
+      nfail++;
+      continue;
+    }
+    if (o.r != c.r || strcmp(o.serr, c.serr) != 0) {
+      printf("  %-58s FAIL: returned %d [%s], swe_calc() %d [%s]\n", nm, o.r, o.serr, c.r, c.serr);
+      nfail++;
+    } else if (verbose)
+      printf("  %-58s %d [%s]\n", nm, o.r, o.serr);
   }
   for (j = 0; j < NLNK; j++) {
     snprintf(lnk, sizeof lnk, "%s/%s", DIR, LNK[j]);

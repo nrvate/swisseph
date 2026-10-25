@@ -741,7 +741,7 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
         double *xx, char *serr)
 {
   int i, j;
-  int32 epheflag;
+  int32 epheflag, epheflag_asked;
   double tequ, mu;
   double x[24], *xs;
   /* The scratch body: the fictitious bodies compute into SEI_ANYBODY the
@@ -815,7 +815,14 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
   if (swi_init_swed_if_start(ctx) == 1 && !(iflag & SEFLG_MOSEPH) && serr != NULL) {
 #endif
     strcpy(serr, "Please call swe_set_ephe_path() or swe_set_jplfile() before calling swe_calc() or swe_calc_orbel()");
-    goto return_error;
+    /* Upstream bug 112 (this fork's swe_calc_orbel()): the warning was a
+     * refusal, so with no path at all the first call returned -1 where
+     * swe_calc() tries the default path and answers from the files, from
+     * Moshier with its "using Moshier" note when the fallback is allowed,
+     * or refuses only when it is not. A warning now, as swe_calc()'s is;
+     * main_planet() below decides, as for swe_calc(). Unguarded: this
+     * function is not upstream's, and the compat build's swe_calc() warns
+     * and carries on too, so there is no upstream behaviour to restore. */
   }
   epheflag = iflag & SEFLG_EPHMASK;
   if (epheflag & SEFLG_JPLEPH) {
@@ -828,6 +835,16 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
     epheflag = SEFLG_SWIEPH;
     iflag |= SEFLG_SWIEPH;
   }
+  epheflag_asked = epheflag;	/* for the strict check, bug 112 */
+  /* Bug 112: and the path named on first use, as swe_calc_r() names it --
+   * which this function never did, so in a build without bug 107's
+   * naming at the first file it never read SE_EPHE_PATH at all */
+  if (epheflag != SEFLG_MOSEPH && !ctx->ephe_path_is_set && !ctx->jpl_file_is_open)
+#ifndef SWE_UPSTREAM_COMPAT
+    swi_set_ephe_path_implicit(ctx);	/* bug 103 */
+#else
+    SWI_CFG_LOCAL(ctx, swe_set_ephe_path_r(ctx, NULL));
+#endif
   iflag = plaus_iflag(ctx, iflag, -1, tjd_et, serr);
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 88 (this fork's swe_calc_orbel()): the obliquity and
@@ -875,6 +892,11 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
     }
     goto return_error;
   }
+  /* Bug 112: the strict fallback setting, as swe_calc_r() applies it --
+   * which this function never did: with the files missing it answered
+   * from Moshier whatever swe_set_ephe_fallback() said. */
+  if (swi_refuse_downgrade(ctx, epheflag_asked, epheflag, tjd_et, serr))
+    goto return_error;
   /* same output selection as swe_calc() */
   for (j = 0; j < 24; j++)
     x[j] = xp[j];
