@@ -5469,8 +5469,8 @@ static void nodaps_ecl_to_j2000(swe_ctx *ctx, double *x, double tjd, int32 iflag
 }
 
 /* swe_nod_aps()'s refusal of a barycentric Moshier answer (UPSTREAM-BUGS
- * 149): its points zeroed, as swe_calc() zeroes a refused position and
- * this function an unimplemented body's */
+ * 149), and since bug 179 of any: its points zeroed, as swe_calc() zeroes
+ * a refused position and this function an unimplemented body's */
 static int32 nodaps_refuse(double *xnasc, double *xndsc, double *xperi, double *xaphe)
 {
   int i;
@@ -5639,8 +5639,8 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
    * to, were its heliocentric ones. The change of centre below adds the
    * barycentric Sun (to the Moon's points the barycentric Earth) except on
    * Moshier, whose origin is the Sun and which serves no barycentric place,
-   * and the barycentric output (SEFLG_BARYCTR without SEFLG_HELCTR, which
-   * wins here) subtracts nothing: Mars's osculating ascending node at 2000
+   * and the barycentric output (SEFLG_BARYCTR, with SEFLG_HELCTR too since
+   * bug 169 above) subtracts nothing: Mars's osculating ascending node at 2000
    * Jul 1.5 49.5626 deg, Moshier's heliocentric node to the last digit,
    * where the files' barycentric one is 49.6398 (0.077 deg, the latitude
    * 7.2e-3 deg); its mean node 0.077 deg off, the Moon's 0.37, the Sun's
@@ -6674,6 +6674,16 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   int32 ret;
   swi_config_hold(ctx);	/* bug 115 */
   ret = swe_nod_aps_r_body(ctx, tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr, NULL);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 179: a refusal by a calculation inside (the strict
+   * setting's, a file's, a range's) returned -1 and left the four points as
+   * the caller had them, where swe_calc() zeroes a refused position (the
+   * manual: "the position and speed variables are set to zero") and this
+   * function zeroed an unimplemented body's and, since bug 149, a
+   * barycentric Moshier request's. Every refusal zeroes them now. */
+  if (ret == ERR)
+    nodaps_refuse(xnasc, xndsc, xperi, xaphe);
+#endif
   swi_config_release(ctx);
   return ret;
 }
@@ -6738,6 +6748,10 @@ int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 i
   int32 ret;
   swi_config_hold(ctx);	/* bug 115 */
   ret = swe_nod_aps_ut_r_body(ctx, tjd_ut, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (ret == ERR)	/* bug 179, as swe_nod_aps_r() */
+    nodaps_refuse(xnasc, xndsc, xperi, xaphe);
+#endif
   swi_config_release(ctx);
   return ret;
 }

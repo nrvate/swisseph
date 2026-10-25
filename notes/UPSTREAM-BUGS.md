@@ -219,6 +219,7 @@ worst were in code that had never executed even once.
 | 195 | A topocentric star fallen to another ephemeris (the fallback allowed, the files for the date missing) places its site by the delta t of the caller's ephemeris bits, not of the ephemeris that answered: Aldebaran at 1500, Swiss fallen to Moshier, 2.0e-8 deg in longitude and 1.35e-7 deg/day in its speed off the Moshier request, by `swe_fixstar2()`, `swe_fixstar()` and their `_ut` forms; JPL fallen to Swiss 7.5e-9 deg | Correctness (behaviour) | `sweph.c` |
 | 170 | `swe_nod_aps_ut()` takes delta t from the ephemeris bits as given and keeps it after a fallback: fallen to Moshier, the files' delta t at 1900 (-1.9915 s for Moshier's -2.0521 s), Mars's perihelion 2.8e-7 deg off the Moshier request's, the Moon's 1.7e-6; SEFLG_JPLEPH with SEFLG_SWIEPH on de200 the Swiss files' tidal term, the Moon's points 3.6e-5 deg off the SEFLG_JPLEPH request's | Correctness (behaviour) | `swecl.c` |
 | 174 | `swe_nod_aps()` reads the Moon for the save area of the Moon's mean points, geocentric and topocentric, which do not use it: without the moon files the strict setting refuses them, as in an empty directory and JPL without its file, where `swe_calc()` answers the mean node; with the fallback the read says Moshier, so `swe_nod_aps_ut()` redoing delta t for it (entry 170) moves the mean node 6.0e-8 deg at 1900 and 1.8e-5 in AD 1000, and the site takes Moshier's delta t (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
+| 179 | A refusal inside `swe_nod_aps()` (the strict setting's, a file's, a range's) returns -1 with the four points as the caller had them, where `swe_calc()` zeroes a refused place (the manual: "the position and speed variables are set to zero") and the function itself an unimplemented body's: 1234.5 put in came back 1234.5, all 24 values | Robustness (behaviour) | `swecl.c` |
 
 ---
 
@@ -12948,6 +12949,54 @@ build fails 412.
 G24 `nodaps_moon_mean_ret`: `swe_nod_aps()` of the Moon's mean points at
 1900 Jan 0.75, Swiss, in an empty directory under the strict setting, its
 return: 0 shipped, -1 compat.
+
+## 179. A refusal inside `swe_nod_aps()` leaves the four points as the caller had them
+
+**Severity: Robustness (behaviour: a refused call's outputs neither zeroed nor written, where `swe_calc()`'s and this function's own refusals zero them), both builds**
+**Where:** `swecl.c`: `swe_nod_aps()`, `swe_nod_aps_ut()`
+
+Found by entry 174's work. The manual says of `swe_calc()`'s errors "the
+return code of the function is -1; the position and speed variables are
+set to zero", and `swe_calc()` does so; `swe_nod_aps()` zeroes its four
+points for an unimplemented body ("no nodes for planet %d", by its own
+loop) and, since entry 149, for a barycentric Moshier request. Every other
+refusal in it returns -1 straight from the calculation that refused, the
+save area's or the ellipse's `swe_calc()`, or since entry 174 the mean
+node's range, before a point is written: the caller's arrays come back as
+they went in. G143 (g) fills them with 1234.5 and finds all 24 values
+1234.5 after Mars's osculating and mean points, Swiss, in an empty
+directory under the strict setting ("Swiss (.se1) ephemeris is not
+available"), JPL without its file, the Moon's osculating and heliocentric
+mean points without the moon files ("Swiss (.se1) Moon file is not
+available"), Mars's topocentric points, the Moon's mean points beyond the
+mean node's range, and `swe_nod_aps_ut()` of two of them; a caller that
+reads the points without the return takes its last call's, or
+uninitialized memory, for this one's. Both builds.
+
+**Fix, as done here:**
+- `swe_nod_aps()` and `swe_nod_aps_ut()` zero the four points on any -1,
+  by the zeroing of entry 149 (the NULL apsides left alone); the message
+  is the inner calculation's, as before.
+- Now every refusal returns the points zeroed, as `swe_calc()`'s and the
+  unimplemented body's; answers unchanged.
+- The comment of entry 149 on the barycentric output, "SEFLG_BARYCTR
+  without SEFLG_HELCTR, which wins here", out of date since entry 169
+  (both bits now ask the barycentric output), says so now; no code.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream returns without writing
+  them. No hot path (the refusal's alone).
+
+G143 `tests/nodcentre.c` (g): (f)'s directories, the outputs filled with
+1234.5, 11 refusals (the 9 above and the two zeroed before, an
+unimplemented body and Mars barycentric on Moshier), each with all four
+outputs and with the apsides NULL: refused (-1), the 24 values zeroed, and
+with the apsides NULL the nodes' 12 zeroed and nothing written past them.
+22 rows pass; before the fix 18 fail (all but the two zeroed before, 24
+and 12 values left); G143 2149 rows pass, the upstream build fails 1535.
+
+G24 `nodaps_err_left`: `swe_nod_aps()` of Mars's osculating points at 2000
+Jul 1.5, Swiss, along an empty directory under the strict setting, the
+outputs filled with 1234.5, how many of the 24 values the refusal leaves
+unzeroed: 0 shipped, 24 compat.
 
 ## How these were found
 

@@ -47,8 +47,12 @@
  * fallback flagged by the ephemeris the read fell to, so swe_nod_aps_ut()'s
  * delta t taken again for it (bug 170) moved them (6.0e-8 deg at 1900,
  * 1.8e-5 in AD 1000), and the site took Moshier's delta t.
+ * UPSTREAM-BUGS 179: a refusal by a calculation inside (the strict
+ * setting's, a file's, a range's) returned -1 with the four points as the
+ * caller had them, where swe_calc() zeroes a refused place and this
+ * function an unimplemented body's and a barycentric Moshier request's.
  *
- * The check, the complete directory, and for (f) others:
+ * The check, the complete directory, and for (f) and (g) others:
  *  (a) the Swiss files and Moshier, seven instants -3000..3000: the Sun's
  *      geocentric and topocentric perigee and apogee against the Earth's
  *      heliocentric points of the same ephemeris and method (method 0,
@@ -106,13 +110,21 @@
  *      made from Moshier's Moon, refused strict as bug 120 refuses it and
  *      with the fallback the complete directory's within 1e-7 deg; and
  *      about the ends of the mean node's range refused where swe_calc() is,
- *      with its message, and answered a day inside them.
+ *      with its message, and answered a day inside them;
+ *  (g) (f)'s directories, the outputs filled with 1234.5: Mars's
+ *      osculating and mean points, Swiss and JPL, the Moon's osculating
+ *      and heliocentric mean points without the moon files, under the
+ *      strict setting; the Moon's mean points beyond the mean node's
+ *      range; swe_nod_aps_ut() of two of them; the unimplemented mean node
+ *      and Mars barycentric on Moshier, zeroed before: refused (-1), the
+ *      24 values zeroed, and with the apsides' pointers NULL the nodes'
+ *      12 zeroed and nothing written past them.
  * Measured: (a) distance 4.4e-16 AU, direction 7.6e-7 deg (the focal
  * point, 0.03 AU out), Moshier's mean points 2.9e-6 deg and 2.2e-16 AU off
  * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b), (c),
  * (d) 0; (e) 3.2e-10 deg/day, 1.2e-13 AU/day; (f) the node 1.1e-13 deg off
- * the mean node's, the heliocentric and barycentric points 1.6e-8 deg off.
- * 2127 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
+ * the mean node's, the heliocentric and barycentric points 1.6e-8 deg off;
+ * (g) 0. 2149 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
  * first check fail (143 deg, 0.97 AU), the 14 of its second and 7 of the
  * third's 14 (the topocentric); before bug 168's, 340 of (b)'s 480 (12
  * deg); before bug 169's, 448 of (c)'s 456 (180 deg: the Sun's
@@ -122,8 +134,9 @@
  * before bug 170's, the 32 UT rows of (b) at 1900 with SEFLG_JPLEPH |
  * SEFLG_SWIEPH, alone or with SEFLG_MOSEPH (3.6e-5 deg); before bug 174's,
  * 114 of (f)'s 390 (144 with bug 170's fix and not 174's) and (d)'s 4 rows
- * of the Moon's mean points (refused strict). The upstream build
- * (SWE_UPSTREAM_COMPAT) fails 1515. Run as
+ * of the Moon's mean points (refused strict); before bug 179's, 18 of
+ * (g)'s 22 (all but the two zeroed already). The upstream build
+ * (SWE_UPSTREAM_COMPAT) fails 1535. Run as
  *   nodcentre EPHEDIR
  */
 #include <dirent.h>
@@ -526,7 +539,7 @@ static void d_ask(swe_ctx *c, double jd, int32 eph, int32 meth, struct dres *a)
   a->node = x[0];
 }
 
-static void part_f(const char *ephe)
+static int part_f(const char *ephe)
 {
   static const int32 M[3] = {SE_NODBIT_MEAN, 0, SE_NODBIT_FOPOINT};
   static const int32 E[3] = {SEFLG_SWIEPH, SEFLG_JPLEPH, SEFLG_MOSEPH};
@@ -542,7 +555,7 @@ static void part_f(const char *ephe)
       check(0, "f", "could not make the directories in /tmp", 0, 0);
       while (--id > 0)
         unlink_dir(DIRS[id]);
-      return;
+      return -1;
     }
   }
   /* each directory, ephemeris, setting and instant on a context of its
@@ -631,10 +644,67 @@ static void part_f(const char *ephe)
                         : ra < 0 && rn < 0 && strstr(sa, "outside mean node range") != NULL
                           && strstr(sn, "outside mean node range") != NULL), "f", what, 0, 0);
   }
-  for (id = 1; id < ND; id++)
-    unlink_dir(DIRS[id]);
   printf("  (f) the Moon's mean points with files missing: swe_nod_aps_ut()'s node %.2e deg off the\n"
          "      mean node's; heliocentric and barycentric, the Moon files missing, %.2e deg\n", wn, wb);
+  return 0;
+}
+
+/* (g) every refusal leaves the points it was given zeroed, as swe_calc()
+ * zeroes a refused place and this function an unimplemented body's, bug
+ * 179: (f)'s directories, the outputs filled with 1234.5 first */
+static void part_g(void)
+{
+  struct ecase { const char *sz; int id, ipl, ut; int32 fl, meth; double jd; };
+  static const struct ecase EC[] = {
+    /* an inner swe_calc() refusing: the ellipse's, the save area's */
+    {"Mars osculating, no files, strict", D_EMPTY, SE_MARS, 0, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_OSCU, 2451727.0},
+    {"Mars mean, no files, strict", D_EMPTY, SE_MARS, 0, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_MEAN, 2451727.0},
+    {"Mars osculating, JPL, no JPL file, strict", D_NOJPL, SE_MARS, 0, SEFLG_JPLEPH | SEFLG_SPEED, SE_NODBIT_OSCU,
+     2451727.0},
+    {"the Moon osculating, no Moon files, strict", D_NOMOON, SE_MOON, 0, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_OSCU,
+     2451727.0},
+    {"the Moon mean, heliocentric, no Moon files, strict", D_NOMOON, SE_MOON, 0,
+     SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_HELCTR, SE_NODBIT_MEAN, 2451727.0},
+    {"Mars osculating topocentric, no files, strict", D_EMPTY, SE_MARS, 0, SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_TOPOCTR,
+     SE_NODBIT_OSCU, 2451727.0},
+    /* this function's own: the mean node's range (bug 174) */
+    {"the Moon mean, beyond the mean node's range", D_ALL, SE_MOON, 0, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_MEAN,
+     8000016.5 + 1},
+    /* the UT form */
+    {"Mars osculating, UT, no files, strict", D_EMPTY, SE_MARS, 1, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_OSCU,
+     2451727.0},
+    {"the Moon mean, UT, beyond the range", D_ALL, SE_MOON, 1, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_MEAN,
+     8000016.5 + 1},
+    /* zeroed before: an unimplemented body, barycentric Moshier (bug 149) */
+    {"the mean node, not implemented", D_ALL, SE_MEAN_NODE, 0, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_MEAN, 2451727.0},
+    {"Mars barycentric on Moshier", D_ALL, SE_MARS, 0, SEFLG_MOSEPH | SEFLG_SPEED | SEFLG_BARYCTR, SE_NODBIT_OSCU,
+     2451727.0},
+  };
+  char what[200];
+  int k, i, nul, left;
+  for (k = 0; k < (int) (sizeof EC / sizeof EC[0]); k++)
+    for (nul = 0; nul < 2; nul++) {
+      const struct ecase *e = &EC[k];
+      double a[24];
+      char serr[AS_MAXCH] = "";
+      swe_ctx *c = dir_ctx(e->id, 0);
+      int32 r = -99;
+      for (i = 0; i < 24; i++)
+        a[i] = 1234.5;
+      /* all four outputs; then the nodes' alone, the apsides NULL */
+      if (c != NULL)
+        r = e->ut ? swe_nod_aps_ut_r(c, e->jd, e->ipl, e->fl, e->meth, a, a + 6, nul ? NULL : a + 12,
+                                     nul ? NULL : a + 18, serr)
+                  : swe_nod_aps_r(c, e->jd, e->ipl, e->fl, e->meth, a, a + 6, nul ? NULL : a + 12,
+                                  nul ? NULL : a + 18, serr);
+      swe_ctx_free(c);
+      for (i = left = 0; i < 24; i++)
+        left += nul && i >= 12 ? a[i] != 1234.5 : a[i] != 0;
+      snprintf(what, sizeof what, "%s%s: ret %d, '%.50s', outputs not zeroed (or NULL ones written)",
+               e->sz, nul ? ", the apsides NULL" : "", r, serr);
+      check(r < 0 && left == 0, "g", what, left, 0);
+    }
+  printf("  (g) refusals: the points zeroed, %d cases\n", (int) (sizeof EC / sizeof EC[0]));
 }
 
 int main(int argc, char **argv)
@@ -653,7 +723,11 @@ int main(int argc, char **argv)
   part_c();
   part_d(argv[1]);
   part_e();
-  part_f(ephe);
+  if (part_f(ephe) == 0) {
+    part_g();
+    for (int id = 1; id < ND; id++)
+      unlink_dir(DIRS[id]);
+  }
   printf("  rows %d, failed %d\n", nrow, nbad);
   printf(nbad ? "G143 FAIL: %d\n" : "G143 PASS\n", nbad);
   return nbad ? 1 : 0;

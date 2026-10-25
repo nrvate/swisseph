@@ -1453,6 +1453,9 @@ struct epsilon {
  *     without its file, where swe_calc() answers the mean node; with the
  *     fallback the read's ephemeris flagged, the site Moshier's delta t
  *     (UPSTREAM-BUGS 174, G143, G142, G133)
+ *   - swe_nod_aps() refusing after an inner calculation refused with the
+ *     four points as the caller had them, not zeroed as for an
+ *     unimplemented body (UPSTREAM-BUGS 179, G143)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
