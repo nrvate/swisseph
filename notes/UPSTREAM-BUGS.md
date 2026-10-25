@@ -147,6 +147,7 @@ worst were in code that had never executed even once.
 | 113 | A seorbel.txt element field with a character no term has hangs `swe_calc()` for that body; a non-numeric epoch or equinox, an empty field, a short line are read as 0 or refuse every later body; a broken sefstars.txt is reported as "star not found", and `swe_fixstar()` with serr NULL answers an unknown star with the catalogue's last | Correctness (a hang; error reporting) | `swemplan.c`, `sweph.c` |
 | 114 | A seorbel.txt element term reads a power "T5" to "T9" as nothing, "T0" as T, "T 2" as T2 times 2, a number ".0" as 1 and "1.2.3" as 1.2, all without an error | Correctness | `swemplan.c` |
 | 116 | `swe_set_astro_models()` of a version before 2.01 sets the tidal acceleration but publishes only the SID group, so the default context's next sync puts the automatic term back (this fork's) | Correctness | `swephlib.c` |
+| 118 | The path setter (this fork's code): a context's first tidal term opens the default path's moon file and the setter overwrites that FILE (106 descriptors after 100 contexts); the setters resolve the automatic tidal term before their new state, so `swe_get_tid_acc()` reports a dropped JPL file's; the same path again never sees a moon file installed since; the first-call warning probe opens the planet file the calculation then opens again | Correctness / Resources | `sweph.c`, `sweph.h` |
 | 109 | Moshier's fictitious bodies, fixed stars and apparent light time stay heliocentric, and its heliocentric Moon's speed is off its positions | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 | 117 | `swe_calc()`'s mean node and mean apogee speeds divide by 0.001 a step that is not 0.001 | Correctness | `sweph.c` |
 | 121 | A sefstars.txt that failed to load is reread and reparsed by every later star call, a missing one searched for on every call | Performance / files | `sweph.c`, `sweph.h` |
@@ -7395,6 +7396,73 @@ whose segment was not moved, at both as controls: 8 pass; before the fix
 `adopt_jpl_off`, Mercury on the adopting thread against the setting
 thread's after de200 to de200x: 0 both ways, 5.78e-5 deg shipped before
 the fix. G102, G91, G83, G88, G2 and check-ctx pass.
+
+## 118. The path setter (this fork's code): a context's first tidal term opens the default path's moon file and the setter overwrites that FILE; the setters resolve the automatic tidal term before their new state; the same path again never sees a moon file installed since; the first-call probe opens the planet file twice
+
+**Severity: Correctness (`swe_get_tid_acc()` and delta t for a JPL file the configuration no longer has, 11.3 s of delta t in AD 1000; a file opened outside the path set) / Resources (a FILE leaked per context and per first path)**
+**Where:** `sweph.c`: `swi_init_swed_if_start()`, `swi_close_keep_topo_etc()`, `ephe_path_read_moon()`, `swe_set_ephe_path_r()`, `swe_set_jpl_file_r()`, `swi_ephe_path_none()`
+
+Found by an independent review of the path setter, all in code this fork
+added (bugs 101, 103, 107, 110), so the compat build has none of them.
+Measured with the files linked into the current directory, which the
+compiled default path's "." finds, and the path set to the ephemeris
+directory:
+
+- D1, a FILE leak. A context's initialisation resolves the automatic
+  tidal acceleration (bug 101), which names the default path on first use
+  (bug 107) and opens its moon file; inside `swe_set_ephe_path()`
+  `swi_close_keep_topo_etc()` initialised the context that way, and
+  `ephe_path_read_moon()` then opened the moon file of the path being set
+  into the same slot without closing the first: 2 ephemeris descriptors
+  after the first `swe_set_ephe_path()`, 1 still open after
+  `swe_close()`; 100 x (`swe_ctx_new()`, `swe_set_ephe_path_r()`,
+  `swe_ctx_free()`) left 100 (compat 0). A thread's first calculation
+  opened ./semo_18.se1 the same way before it adopted the main thread's
+  path (2 opens outside the path set).
+- D4. `swi_close_keep_topo_etc()` resolved the automatic term (bug 92 kept
+  it from resetting a manual one), but before the setter calling it had
+  put its new state in place -- the path, the JPL DE number it publishes:
+  the path, `swe_set_jpl_file("de200.eph")`, then a path without
+  semo_18.se1: `swe_get_tid_acc()` -23.8946 (de200's) where a fresh
+  process with that path answers -25.80; the path, de200, then a JPL file
+  that is not there: -23.8946 for the path's -25.936. Delta t followed at
+  its next resolution.
+- D5. Bug 103's same-path fast path kept the context's state even when no
+  moon file had been found: a path without semo_18.se1, the file then
+  installed and the same path set again, delta t in AD 1000 was 1463.44 s
+  (the default term) until a Moon was computed, then 1474.72, and
+  `swe_get_tid_acc()` -25.80 for -25.936.
+- D7. `swi_ephe_path_none()` (bug 110) opened the planet file at J2000, or
+  the JPL file, and closed it, to learn whether a path is in effect; the
+  calculation then opened it again: sepl_18.se1 opened twice for a first
+  Mars with no path set and no moon file (compat once).
+
+**Fix, as done here:** a context's initialisation resolves the automatic
+term without naming the path, and names it after adopting the master's
+configuration, only if there is still no path and no setter is naming one
+(`path_naming_off`, set by the path setter); `ephe_path_read_moon()` also
+closes a moon file it finds open before opening the path's. The setters no
+longer resolve the term in `swi_close_keep_topo_etc()` but when they are
+done (`setter_tid_acc_auto()`), for the path, moon file and JPL file now in
+place. The same path again looks for the moon file when none was found,
+which opens nothing while there is still none; with one open, nothing is
+touched (G102's counts stay 0). `swi_ephe_path_none()` looks the files up
+along the path with `stat()`, opening nothing. All in this fork's code,
+under `#ifndef SWE_UPSTREAM_COMPAT`.
+
+G115 `tests/pathset.c`, nine cases in children, `fopen()` interposed and
+descriptors counted in /proc/self/fd: the first path (1 descriptor, 0 after
+`swe_close()`), 100 contexts (0 left), a thread's first Moon (nothing
+opened outside the path), the two tidal sequences and the late moon file
+against a fresh process's `swe_get_tid_acc()` and delta t in AD 1000 (on a
+second thread too), the same path with nothing changed (no `fopen()`) and
+still without a moon file (nothing opened), a first Mars (sepl_18 opened
+once). 9 pass; before the fix 7 fail. The compat build fails 3 of them
+(P4, P5, P7) by the upstream behaviour it restores (threads sharing no
+configuration, bug 101's -25.80 until the next delta t, bug 103's reopening
+path), none by these. G24 `path_setter_118`: the 100 contexts' descriptors
+and the late moon file's delta t, 0 in both builds, 2 before the fix.
+G2, G24, G91, G97, G100, G102, G106 and G109 pass.
 
 ## How these were found
 

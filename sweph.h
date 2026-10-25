@@ -1102,6 +1102,12 @@ struct epsilon {
  *     bug 103; under the switch the next calculation frees every body's
  *     data, as upstream's does, and answers from the adopted files: G24's
  *     adopted-JPL case is 0 both ways; G116)
+ *   - (nothing for UPSTREAM-BUGS 118: the moon file a context's first
+ *     tidal term opened and the path setter overwrote, the setters'
+ *     automatic tidal term resolved before their new state, the same path
+ *     blind to a moon file installed since, and the first-call probe's
+ *     second open are all in this fork's code (bugs 101, 103, 107, 110) and
+ *     absent under the switch; G24 asserts both builds clean, G115)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1654,6 +1660,10 @@ struct swe_ctx {
    * since swe_close()). */
   AS_BOOL ephe_path_implicit;
   AS_BOOL ephe_path_live;
+  /* bug 118: the path setter is naming the path itself, or the context is
+   * initialising before it adopts the master's: a tidal term resolved
+   * meanwhile must not name the default path (and open its moon file) */
+  AS_BOOL path_naming_off;
   /* May a calculation quietly finish on a weaker ephemeris than the caller
    * asked for? FALSE by default in this fork -- see swe_set_ephe_fallback().
    *

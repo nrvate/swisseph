@@ -64,6 +64,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <ctype.h>
+#include <sys/stat.h>	/* stat(): bug 118 */
 #if MSDOS
 #include <tchar.h>
 #include <windows.h>
@@ -247,6 +248,9 @@ static void planets_forget_instants(swe_ctx *ctx);
 static void ephe_switch_forget(swe_ctx *ctx);
 #endif
 static void ephe_path_read_moon(swe_ctx *ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+static void file_close_open(swe_ctx *ctx, int ifno);
+#endif
 static void ctx_release(swe_ctx *ctx);
 
 #ifdef TRACE
@@ -1818,6 +1822,9 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
      * i.e. delta-T, i.e. tid_acc. */
     swi_gen_t saved_seen  = ctx->cfg_seen;
     int32     saved_local = ctx->cfg_local;
+#ifndef SWE_UPSTREAM_COMPAT
+    AS_BOOL saved_naming_off = ctx->path_naming_off;
+#endif
     AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
     /* ctx, not &swed: a non-default context must clear itself. */
     memset((void *) ctx, 0, sizeof(struct swe_ctx));
@@ -1839,7 +1846,19 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
     /* initialised before the tidal setter, which now initialises a context
      * itself (bug 83) and would otherwise come back here */
     ctx->swed_is_initialised = TRUE;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 118: resolving the automatic term named the default
+     * path (bug 107) and opened its moon file -- before the master's path
+     * was adopted below, and inside the path setter before the path it was
+     * setting: that FILE was then overwritten, not closed (see
+     * swe_set_ephe_path_r()). Resolved here without naming; named after
+     * the sync, if there is still no path. */
+    ctx->path_naming_off = TRUE;
     swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+    ctx->path_naming_off = saved_naming_off;
+#else
+    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+#endif
     swi_config_end_apply(ctx, swi_cfg_was);
     started = 1;
   }
@@ -1850,6 +1869,16 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
    * configuration actually moved. No-op while a setter on this thread is
    * mid-apply. */
   swi_config_sync(ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 118: the automatic term of the path now in effect, adopted or, if
+   * none, the default one named on this first use (bugs 101, 107); not
+   * published -- nothing was set */
+  if (started && !ctx->is_tid_acc_manual && !ctx->path_naming_off) {
+    AS_BOOL was = swi_config_begin_apply(ctx);
+    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+    swi_config_end_apply(ctx, was);
+  }
+#endif
   return started;
 }
 
@@ -1965,8 +1994,12 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
    * automatic setting is blocked until swe_set_tid_acc(SE_TIDAL_AUTOMATIC).
    * A manual value stays now; swe_close(), which releases everything,
    * still returns it to automatic. */
-  if (!ctx->is_tid_acc_manual)
-    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+  /* Upstream bug 118: and an automatic one was resolved here, before the
+   * setter calling this had put its new state in place -- the path, the
+   * JPL DE number it publishes -- so swe_get_tid_acc() reported the
+   * dropped JPL file's term (-23.8946 after de200 and then a path without
+   * the moon file, or a missing JPL file, for -25.80 and -25.936). The
+   * setters resolve it now when they are done (setter_tid_acc_auto()). */
 #else
   swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
 #endif
@@ -2151,6 +2184,13 @@ static void ephe_path_read_moon(swe_ctx *ctx)
   struct file_data *fdp = &ctx->fidat[SEI_FILE_MOON];
   char fname[AS_MAXCH];
   swi_gen_filename(J2000, SEI_MOON, fname);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 118: an open moon file was overwritten here, not closed
+   * (the default path's, opened by a tidal term resolved before the path
+   * was set: 106 descriptors after 100 contexts) */
+  if (fdp->fptr != NULL)
+    file_close_open(ctx, SEI_FILE_MOON);
+#endif
   if ((fdp->fptr = swi_fopen(ctx, SEI_FILE_MOON, fname, ctx->ephepath, NULL)) != NULL) {
     if (read_const(ctx, SEI_FILE_MOON, NULL) != OK) {
       /* read_const() has closed it: fclose(NULL) here crashed the path
@@ -2227,7 +2267,8 @@ void swi_ephe_path_name_first_use(swe_ctx *ctx)
 {
   char s[AS_MAXCH];
   double tid_acc = ctx->tid_acc;
-  if (!ctx->swed_is_initialised || ctx->ephe_path_is_set || ctx->jpl_file_is_open)
+  if (!ctx->swed_is_initialised || ctx->ephe_path_is_set || ctx->jpl_file_is_open
+      || ctx->path_naming_off)	/* bug 118 */
     return;
   ephe_path_resolve(NULL, s);
   snprintf(ctx->ephepath, AS_MAXCH, "%s", s);
@@ -2250,11 +2291,33 @@ void swi_ephe_path_name_first_use(swe_ctx *ctx)
  * SE_EPHE_PATH, and none of the files -- the moon and planet files at
  * J2000, the JPL file -- along the default path. Run on a first call
  * only; naming the path (bug 107) is what the call would do next. */
+/* Upstream bug 118: whether a file is on the path, looked up as
+ * swi_fopen() would find it, but not opened: swi_ephe_path_none() opened
+ * the planet file and closed it, and the calculation then opened it again */
+static AS_BOOL file_on_path(const char *ephepath, const char *fname)
+{
+  char s1[AS_MAXCH], s[2 * AS_MAXCH], *cpos[20];
+  struct stat st;
+  int np, i;
+  snprintf(s1, sizeof s1, "%s", ephepath);
+  np = swi_cutstr(s1, PATH_SEPARATOR, cpos, 20);
+  for (i = 0; i < np; i++) {
+    size_t j = strlen(cpos[i]);
+    if (strcmp(cpos[i], ".") == 0)
+      snprintf(s, sizeof s, "%s", fname);
+    else
+      snprintf(s, sizeof s, "%s%s%s", cpos[i],
+               (j > 0 && cpos[i][j - 1] != *DIR_GLUE) ? DIR_GLUE : "", fname);
+    if (stat(s, &st) == 0 && !(st.st_mode & S_IFDIR))
+      return TRUE;
+  }
+  return FALSE;
+}
+
 AS_BOOL swi_ephe_path_none(swe_ctx *ctx)
 {
   char *sp = getenv("SE_EPHE_PATH");
   char fname[AS_MAXCH];
-  FILE *fp;
   if (ctx->jpl_file_is_open)
     return FALSE;
   if (ctx->ephe_path_is_set && !ctx->ephe_path_implicit)
@@ -2265,12 +2328,19 @@ AS_BOOL swi_ephe_path_none(swe_ctx *ctx)
   if (ctx->fidat[SEI_FILE_MOON].fptr != NULL)
     return FALSE;
   swi_gen_filename(J2000, SEI_EARTH, fname);
-  if ((fp = swi_fopen(ctx, -1, fname, ctx->ephepath, NULL)) != NULL
-      || (fp = swi_fopen(ctx, -1, ctx->jplfnam, ctx->ephepath, NULL)) != NULL) {
-    fclose(fp);
+  if (file_on_path(ctx->ephepath, fname) || file_on_path(ctx->ephepath, ctx->jplfnam))
     return FALSE;
-  }
   return TRUE;
+}
+#endif
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 118: an automatic tidal acceleration resolved for what a
+ * path or JPL setter has just put in place, not for what it replaced */
+static void setter_tid_acc_auto(swe_ctx *ctx)
+{
+  if (!ctx->is_tid_acc_manual)
+    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
 }
 #endif
 
@@ -2291,6 +2361,13 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
   if (ctx->swed_is_initialised && ctx->ephe_path_live && ctx->ephe_path_is_set
       && strcmp(ctx->ephepath, s) == 0) {
     ctx->ephe_path_implicit = FALSE;
+    /* Upstream bug 118: kept even when the path had no moon file, so one
+     * installed since was never read: delta t in AD 1000 1463.44 s (the
+     * default term) until a Moon was computed, then 1474.72. The same
+     * path with a moon file it did not have is a change: looked for again
+     * when none was found, which opens nothing when there is still none. */
+    if (ctx->fidat[SEI_FILE_MOON].fptr == NULL && ctx->sweph_denum_moon == 0)
+      ephe_path_read_moon(ctx);
     if (!ctx->is_tid_acc_manual) {
       int32 denumret;
       swi_get_tid_acc(ctx, 0, swi_guess_ephe_flag(ctx), 0, &denumret, &ctx->tid_acc, NULL);
@@ -2302,6 +2379,9 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
 #endif
   /* The path is changing: the next open may find a different generation of
    * files, so their DE numbers go with them. */
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->path_naming_off = TRUE;	/* bug 118: this setter names it */
+#endif
   swi_close_keep_topo_etc(ctx, FORGET_DENUM);
   swi_init_swed_if_start(ctx);
   ctx->ephe_path_is_set = TRUE;
@@ -2325,6 +2405,10 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
    * file and filled the save area; the header is all that is used. */
   ctx->last_epheflag = 2;
   ephe_path_read_moon(ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->path_naming_off = FALSE;
+  setter_tid_acc_auto(ctx);	/* bug 118 */
+#endif
 #ifdef TRACE
   swi_open_trace(NULL);
   swi_trace_lock();
@@ -2650,6 +2734,9 @@ void CALL_CONV swe_set_jpl_file_r(swe_ctx *ctx, const char *fname)
 	load_dpsi_deps(ctx);
     }
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  setter_tid_acc_auto(ctx);	/* bug 118: for the file just read, or none */
+#endif
 #ifdef TRACE
   swi_open_trace(NULL);
   swi_trace_lock();

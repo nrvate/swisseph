@@ -2461,6 +2461,99 @@ static double fict_star_parse(void)
   return mask;
 }
 
+/* UPSTREAM-BUGS 118, this fork's code (bugs 101, 103, 107, 110), so both
+ * builds must be clean: (1) the cwd a directory of links to the files, 100
+ * x (swe_ctx_new, swe_set_ephe_path_r(EPHE), swe_ctx_free) left an
+ * ephemeris descriptor each, the default path's moon file a context's
+ * initialisation opened and the setter overwrote; (2) a moon file linked
+ * into a path that had none, the same path set again: delta t in AD 1000
+ * the default term's until a Moon (1463.44 s, then 1474.72). The count of
+ * the two shown, 0 in both builds. */
+static int path_fds(void)
+{
+  DIR *d = opendir("/proc/self/fd");
+  struct dirent *e;
+  char p[300], l[PATH_MAX];
+  int n = 0;
+  if (d == NULL)
+    return 0;
+  while ((e = readdir(d)) != NULL) {
+    ssize_t k;
+    if (e->d_name[0] == '.')
+      continue;
+    snprintf(p, sizeof p, "/proc/self/fd/%s", e->d_name);
+    if ((k = readlink(p, l, sizeof l - 1)) > 0) {
+      l[k] = '\0';
+      if (strstr(l, ".se1") != NULL)
+        n++;
+    }
+  }
+  closedir(d);
+  return n;
+}
+
+static double path_setter_118(void)
+{
+  char dir[] = "/tmp/compatpsXXXXXX", ephe[PATH_MAX], cwd[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  char serr[256];
+  double x[6], t = 2086302.5, a, b;
+  int i, n0, bad = 0;
+  struct dirent *e;
+  DIR *d;
+  if (realpath(EPHE, ephe) == NULL || getcwd(cwd, sizeof cwd) == NULL || mkdtemp(dir) == NULL
+      || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strcmp(e->d_name, "semo_18.se1") != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  /* (1), with the moon file in cwd too */
+  snprintf(p, sizeof p, "%s/semo_18.se1", ephe);
+  snprintf(q, sizeof q, "%s/semo_18.se1", dir);
+  swe_close();	/* no master configuration: the contexts start unnamed */
+  if (symlink(p, q) == 0 && chdir(dir) == 0) {
+    n0 = path_fds();
+    for (i = 0; i < 100; i++) {
+      swe_ctx *c = swe_ctx_new();
+      swe_set_ephe_path_r(c, ephe);
+      swe_ctx_free(c);
+    }
+    if (path_fds() > n0)
+      bad++;
+    if (chdir(cwd) != 0)
+      bad += 10;
+  }
+  /* (2) */
+  unlink(q);
+  swe_close();
+  swe_set_ephe_path(dir);
+  swe_deltat(t);
+  if (symlink(p, q) == 0) {
+    swe_set_ephe_path(dir);
+    a = swe_deltat(t);
+    swe_calc(2451545.0, SE_MOON, SEFLG_SWIEPH, x, serr);
+    b = swe_deltat(t);
+    if (a != b)
+      bad++;
+  }
+  swe_close();
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+  swe_set_ephe_path(EPHE);
+  return bad;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -2693,7 +2786,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2798,6 +2891,7 @@ int main(int argc, char **argv)
   moonnbr = moon_neighbour_off();
   refused = refused_file_off();
   fictstar = fict_star_parse();
+  pathset = path_setter_118();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   starkept = star_load_kept();
@@ -3528,6 +3622,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier oscu perigee speed noise %.2e deg/day FAIL: expected %s\n",
            operinoise, WANT_DEFECT ? "> 1e-6" : "< 5e-8");
+    bad++;
+  }
+
+  /* fork-only, so clean both ways */
+  if (pathset == 0)
+    printf("  path setter, 118       %.0f of 2 OK\n", pathset);
+  else {
+    printf("  path setter, 118       %.0f of 2 FAIL: expected 0 in both builds\n", pathset);
     bad++;
   }
 
