@@ -899,7 +899,7 @@ static int house_fix_off(double *placid)
 /* UPSTREAM-BUGS 68, three house residues, as the number present (0..3):
  * a SEFLG_MOSEPH Sunshine call returning the Swiss Sun's declination,
  * Gauquelin at 80N (fallen back to Porphyry) leaving cusp 13 as the caller
- * had it (7), and the Placidus cusp 11 speed at the ARMC (330) that puts it
+ * had it (7), by swe_houses_ex2() or swe_houses_armc_ex2(), and the Placidus cusp 11 speed at the ARMC (330) that puts it
  * on the equinox point being ARMCS (465.61 against 360.99). *plac gets the
  * latter's error from a five-point difference, deg/day. */
 static int house_resid_off(double *plac)
@@ -907,7 +907,7 @@ static int house_resid_off(double *plac)
   const double jd = 2461223.5 + 0.3125, h = 1.0 / 256;
   double c[37], a[10], cs[37], as[10], xs[6], f[4];
   char serr[256];
-  int k, n = 0;
+  int i, k, n = 0;
   swe_close();
   swe_set_ephe_path(EPHE);
   swe_calc_ut(jd, SE_SUN, SEFLG_EQUATORIAL, xs, serr);
@@ -917,7 +917,11 @@ static int house_resid_off(double *plac)
   for (k = 0; k < 37; k++)
     c[k] = 7;
   swe_houses_ex2(jd, SEFLG_RADIANS, 80, 8.55, 'G', c, a, cs, as, serr);
-  if (c[13] != 0)
+  k = c[13] != 0;
+  for (i = 0; i < 37; i++)
+    c[i] = 7;
+  swe_houses_armc_ex2(100, 80, 23.44, 'G', c, a, NULL, NULL, serr);
+  if (k || c[13] != 0)
     n++;
   for (k = 0; k < 4; k++) {
     static const int off[4] = {-2, -1, 1, 2};

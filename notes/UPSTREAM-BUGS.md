@@ -2951,6 +2951,7 @@ polar circle, a negative return) has 12 cusps. Cusps 13..36 and their
 speeds stayed as the caller had them, and with `SEFLG_RADIANS` the
 conversion multiplied them anyway: at 80N arrays prefilled with 7 came
 back 7 in degrees and 0.1222 in radians, 24 cusps and 24 speeds each.
+`swe_houses_r()` and `swe_houses_armc_ex2_r()` left them the same way.
 3. In the Placidus and Gauquelin branches, when the first-guess cusp is on
 the equator (|tan dec| < 1e-10, the cusp at an equinox point; cusps 11, 12,
 2, 3 and sectors 2..9, 29..36) the cusp is the right ascension and its
@@ -2961,13 +2962,14 @@ fraction m gives there (f'(C) = 0 on the equator, as `PlacDer()` takes it):
 
 **Fix, as done here:** (1) the caller's `SEFLG_JPLEPH`, `SEFLG_SWIEPH` and
 `SEFLG_MOSEPH` bits go with the Sun's call; bug 59's Moshier retry on a
-refusal stays. (2) After the call, a Gauquelin return below zero zeroes
-cusps and speeds 13..36 before the radians conversion. (3) The speed is
+refusal stays. (2) A Gauquelin return below zero zeroes cusps and speeds 13..36 in
+`swe_houses_armc_ex2_r()` (so `swe_houses_r()` too) and, after the call and
+before the radians conversion, in `swe_houses_ex2_r()` (the sidereal paths). (3) The speed is
 A_x * ARMCS at pole height atan(m tan fi), the same limit `PlacDer()`
 uses. No cost: none of it is on a path that was not already taken.
 
 G67 `tests/houseresid.c`: the MOSEPH call's `ascmc[9]` is Moshier's Sun to
-1e-12 (the Swiss one before); 96 of 96 entries 0 at 80N (24 of 96 stale);
+1e-12 (the Swiss one before); 96 of 96 entries 0 at 80N (24 of 96 stale), and 72 of 72 from `swe_houses_r()` and `swe_houses_armc_ex2_r()`;
 the 12 equinox-point cusps (Placidus 11, 12, 2, 3; Gauquelin 9, 29; 47N and
 60N) within 6.5e-8 deg/day of five-point differences (up to 427 deg/day off
 before). The upstream build fails all three (14 failures). G24

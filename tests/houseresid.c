@@ -73,13 +73,24 @@ int main(int argc, char **argv)
   /* 2: Gauquelin fallen back to Porphyry */
   {
     double t = 2461223.5 + 0.3125, c[37], a[10], cs[37], as[10], cr[37], ar[10], csr[37], asr[10];
-    int r, k, nz = 0;
+    int r, k, nz = 0, nz2 = 0;
     for (k = 0; k < 37; k++) c[k] = cs[k] = cr[k] = csr[k] = 7;
     r = swe_houses_ex2_r(ctx, t, 0, 80, 8.55, 'G', c, a, cs, as, serr);
     if (r >= 0) BAD("Gauquelin at 80N did not fall back (retc %d)", r);
     r = swe_houses_ex2_r(ctx, t, SEFLG_RADIANS, 80, 8.55, 'G', cr, ar, csr, asr, serr);
     for (k = 13; k <= 36; k++)
       if (c[k] != 0 || cs[k] != 0 || cr[k] != 0 || csr[k] != 0) nz++;
+    {
+      /* swe_houses_r() and swe_houses_armc_ex2_r() the same way */
+      double cr2[37], cc[37], ac[10], ss[37], sa[10];
+      for (k = 0; k < 37; k++) cr2[k] = cc[k] = ss[k] = 7;
+      swe_houses_r(ctx, t, 80, 8.55, 'G', cr2, ac);
+      swe_houses_armc_ex2_r(ctx, 100, 80, 23.44, 'G', cc, ac, ss, sa, serr);
+      for (k = 13; k <= 36; k++)
+        if (cr2[k] != 0 || cc[k] != 0 || ss[k] != 0) nz2++;
+      printf("  swe_houses_r / swe_houses_armc_ex2_r: %d of 72 not 0\n", nz2);
+      if (nz2) BAD("%d of cusps/speeds 13..36 left unset by swe_houses_r/armc_ex2_r", nz2);
+    }
     printf("  Gauquelin at 80N: retc %d, cusp 13 %g (rad %g), speed 13 %g (rad %g), %d of 96 not 0\n",
            r, c[13], cr[13], cs[13], csr[13], nz);
     if (nz) BAD("%d of cusps/speeds 13..36 left unset after the Porphyry fallback", nz);

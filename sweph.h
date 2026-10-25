@@ -771,7 +771,8 @@ struct epsilon {
  *     59, G58)
  *   - swe_houses_ex2(): the Sun of Sunshine houses asked with no ephemeris
  *     flag (Swiss for a SEFLG_MOSEPH call); Gauquelin cusps and speeds
- *     13..36 left stale after the Porphyry fallback; a Placidus or
+ *     13..36 left stale after the Porphyry fallback (also in swe_houses()
+ *     and swe_houses_armc_ex2()); a Placidus or
  *     Gauquelin cusp on an equinox point moving at the ARMC's rate
  *     (465.6 deg/day against 360.99) (UPSTREAM-BUGS 68, G67)
  *   - the Moshier series formed their arguments as freq * T and reduced

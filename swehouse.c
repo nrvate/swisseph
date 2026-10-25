@@ -1068,6 +1068,17 @@ int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
   if (retc < 0) {
     ito = 12;
     if (serr != NULL) strcpy(serr, h.serr);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 68, part 2, as in swe_houses_ex2_r(): swe_houses_r()
+     * and this function left cusps and speeds 13..36 of a Gauquelin call
+     * that fell back to Porphyry as the caller had them. */
+    if (toupper(hsys) == 'G') {
+      for (i = 13; i <= 36; i++) {
+        cusp[i] = 0;
+        if (h.do_hspeed) cusp_speed[i] = 0;
+      }
+    }
+#endif
   }
   for (i = 1; i <= ito; i++) {
     cusp[i] = h.cusp[i];
