@@ -107,7 +107,16 @@
  * checks, 97 in all. Measured before the fix: 4718592 bytes more (8 x
  * 589824, two tables of 294912 mapped a load) in the first two, 2359296 in
  * the third (bug 154's fix closes that one in the shipped build); after,
- * none, in both builds. Run as
+ * none, in both builds.
+ *
+ * And the loader's early returns (UPSTREAM-BUGS 156): calloc() failing
+ * dpsi[]'s table, then deps[]'s, and a full table of 36525 days with an
+ * eop_finals.txt that holds more. After swe_set_jpl_file() of the fixture
+ * no descriptor may be open on an IERS file and, where an allocation
+ * failed, no table left allocated. 3 checks, 100 in all. Measured before
+ * the fix, the 3 fail in both builds: eop_1962_today.txt left open after
+ * each failed allocation, dpsi[] with it after deps[]'s (294912 bytes),
+ * eop_finals.txt left open after the full table. Run as
  *   eopfollow EPHEDIR
  */
 #include <dirent.h>
@@ -135,17 +144,19 @@
 static const char *EPHE;
 static const double GEO[3] = { 8.55, 47.37, 400 };
 /* EPHE, the fixtures: A, B (other corrections), N (none), G (a gap), F (A's
- * and an eop_finals.txt that breaks off) */
-enum { D_EPHE, D_A, D_B, D_N, D_G, D_F, ND };
+ * and an eop_finals.txt that breaks off), M (a full table and an
+ * eop_finals.txt with more) */
+enum { D_EPHE, D_A, D_B, D_N, D_G, D_F, D_M, ND };
 static char DIRS[ND][512];
 
-/* UPSTREAM-BUGS 155: the corrections' tables are counted at calloc(). This
- * definition takes the process's every calloc(), the library objects linked
- * in here among them, and makes it of malloc() and a memset() through a
- * pointer that no compiler folds back into a calloc(). It counts only where
- * that check sets it, in its single-threaded children. */
+/* UPSTREAM-BUGS 155 and 156: the corrections' tables are counted, and one
+ * of them failed, at calloc(). This definition takes the process's every
+ * calloc(), the library objects linked in here among them, and makes it of
+ * malloc() and a memset() through a pointer that no compiler folds back
+ * into a calloc(). It counts and fails only where those checks set it, in
+ * their single-threaded children. */
 #define TABLE ((size_t) 36525 * sizeof (double))	/* SWE_DATA_DPSI_DEPS */
-static int counting, ntable;
+static int counting, ntable, fail_table;	/* fail_table: the nth, 0 none */
 static void *(*volatile fill)(void *, int, size_t) = memset;
 void *calloc(size_t n, size_t s)
 {
@@ -154,8 +165,10 @@ void *calloc(size_t n, size_t s)
     errno = ENOMEM;
     return NULL;
   }
-  if (counting && n * s == TABLE)
-    ntable++;
+  if (counting && n * s == TABLE && ++ntable == fail_table) {
+    errno = ENOMEM;
+    return NULL;
+  }
   if ((p = malloc(n * s)) != NULL)
     fill(p, 0, n * s);
   return p;
@@ -619,6 +632,29 @@ static void run5(int l, int unused, int fresh, struct obs *o)
   o->v[3] = eop_fds();
 }
 
+/* The loader's early returns (UPSTREAM-BUGS 156): dpsi[]'s allocation
+ * failing, deps[]'s, and a full table with eop_finals.txt holding more.
+ * swe_set_jpl_file() of the fixture: the bytes it left allocated (v[0]),
+ * the corrections' files open after it (v[1]), the tables asked for (v[2]). */
+enum { H_DPSI, H_DEPS, H_FULL, NH };
+static const char *HN[NH] = { "dpsi[]'s allocation failing",
+  "deps[]'s allocation failing", "a full table, eop_finals.txt with more" };
+static void run6(int h, int unused, int fresh, struct obs *o)
+{
+  double b0;
+  (void) unused;
+  (void) fresh;
+  memset(o, 0, sizeof *o);
+  swe_set_ephe_path(DIRS[h == H_FULL ? D_M : D_A]);
+  counting = 1;
+  fail_table = h == H_DPSI ? 1 : h == H_DEPS ? 2 : 0;
+  b0 = live_bytes();
+  setjpl(NULL, JPL_FIXTURE);
+  o->v[0] = live_bytes() - b0;
+  o->v[1] = eop_fds();
+  o->v[2] = ntable;
+}
+
 /* run(k, p, fresh) in a forked process: 0, -1 if it failed, or the signal
  * that ended it */
 static int in_child(void (*run)(int, int, int, struct obs *), int k, int p,
@@ -719,6 +755,19 @@ static int write_eop(const char *path, double a, double b, double c, double d, i
   return fclose(fp);
 }
 
+/* eop_1962_today.txt of 36525 days, a full table, MJD 15059..51583 */
+static int write_eop_full(const char *path)
+{
+  FILE *fp = fopen(path, "w");
+  int i;
+  if (fp == NULL)
+    return -1;
+  for (i = 0; i < 36525; i++)
+    fprintf(fp, "2000  1  1  %5d   0.0 0.0 0.0 0.0 %.9f %.9f\n",
+            51584 - 36525 + i, -0.05 - i * 1e-9, -0.005);
+  return fclose(fp);
+}
+
 /* eop_finals.txt (finals.all columns: the MJD at 7, dpsi and deps of
  * Bulletin B at 168 and 178, mas) for the days listed */
 static int write_finals(const char *path, const int *mjd, int n)
@@ -739,12 +788,12 @@ static int write_finals(const char *path, const int *mjd, int n)
   return fclose(fp);
 }
 
-static const char *SUB[ND] = { NULL, "", "/B", "/N", "/G", "/F" };
+static const char *SUB[ND] = { NULL, "", "/B", "/N", "/G", "/F", "/M" };
 static int make_fixtures(void)
 {
   char p[600], base[400], de200[PATH_MAX], q[PATH_MAX + 20];
   const char *tmp = getenv("TMPDIR");
-  static const int fgap[2] = { 51584, 51586 };
+  static const int fgap[2] = { 51584, 51586 }, fmore[1] = { 51584 };
   int d;
   if (snprintf(base, sizeof base, "%s/eopfollow.XXXXXX", tmp && *tmp ? tmp : "/tmp")
       >= (int) sizeof base || mkdtemp(base) == NULL)
@@ -771,6 +820,12 @@ static int make_fixtures(void)
     return -1;
   snprintf(p, sizeof p, "%s/eop_finals.txt", DIRS[D_F]);
   if (write_finals(p, fgap, 2) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[D_M]);
+  if (write_eop_full(p) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/eop_finals.txt", DIRS[D_M]);
+  if (write_finals(p, fmore, 1) != 0)
     return -1;
   snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[D_A]);
   if (write_eop(p, -0.05, -1e-5, -0.005, -1e-6, 0) != 0)
@@ -921,6 +976,20 @@ int main(int argc, char **argv)
     if (o.v[1] - o.v[0] >= (double) TABLE || o.v[3] != 0) {
       printf("    %d loads, %s: %.0f bytes more after the last %d (%.0f tables asked for),"
              " %.0f files open FAIL\n", NR, LN[x], o.v[1] - o.v[0], NR - 2, o.v[2], o.v[3]);
+      nfail++;
+    }
+  }
+  for (x = 0; x < NH; x++) {
+    struct obs o;
+    n++;
+    if (in_child(run6, x, 0, 0, &o) != 0) {
+      printf("    %s: child failed\n", HN[x]);
+      nfail++;
+      continue;
+    }
+    if ((x != H_FULL && o.v[0] >= (double) TABLE) || o.v[1] != 0) {
+      printf("    %s: %.0f bytes left allocated (%.0f tables asked for), %.0f files open FAIL\n",
+             HN[x], o.v[0], o.v[2], o.v[1]);
       nfail++;
     }
   }

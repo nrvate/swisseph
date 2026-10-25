@@ -2773,11 +2773,14 @@ void load_dpsi_deps(swe_ctx *ctx)
     ctx->eop_dpsi_loaded = ERR;
     return;
   }
-  if ((ctx->dpsi = (double *) calloc((size_t) SWE_DATA_DPSI_DEPS, sizeof(double))) == NULL) {
-    ctx->eop_dpsi_loaded = ERR;
-    return;
-  }
-  if ((ctx->deps = (double *) calloc((size_t) SWE_DATA_DPSI_DEPS, sizeof(double))) == NULL) {
+  /* Upstream bug 156: a failed allocation left eop_1962_today.txt open,
+   * and dpsi[] with it when deps[]'s failed (G134: one descriptor and
+   * 294912 bytes a call). Both go. In both builds, as bug 155's. */
+  if ((ctx->dpsi = (double *) calloc((size_t) SWE_DATA_DPSI_DEPS, sizeof(double))) == NULL
+      || (ctx->deps = (double *) calloc((size_t) SWE_DATA_DPSI_DEPS, sizeof(double))) == NULL) {
+    free(ctx->dpsi);
+    ctx->dpsi = NULL;
+    fclose(fp);
     ctx->eop_dpsi_loaded = ERR;
     return;
   }
@@ -2819,8 +2822,11 @@ void load_dpsi_deps(swe_ctx *ctx)
     mjd = atoi(s + IERS_FINALS_COL_MJD);
     if (mjd + TJDOFS <= ctx->eop_tjd_end)
       continue;
-    if (n >= SWE_DATA_DPSI_DEPS)
+    if (n >= SWE_DATA_DPSI_DEPS) {
+      /* Upstream bug 156: and here a full table left eop_finals.txt open */
+      fclose(fp);
       return;
+    }
     /* are data in one-day steps? */
     if (mjdsv > 0 && mjd - mjdsv != 1) {
       /* no error, as we do have data; however, if this file is usefull,

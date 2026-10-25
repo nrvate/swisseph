@@ -189,6 +189,7 @@ worst were in code that had never executed even once.
 | 157 | `SE_SIDM_LAHIRI_ICRC`'s mean ayanamsa at its epoch is 23.25 deg less 0.00464207 deg (16.7115"), the broken Woolard series' dpsi there (entry 151), not Woolard's 16.792088": with the series fixed, mode 46 with `SE_SIDBIT_PREC_ORIG` gives a true ayanamsa of 23 deg 15' 0.0806" on 1956 Mar 21 for the Calendar Reform Committee's 23 deg 15' 00" | Correctness | `sweph.h` |
 | 154 | `swe_set_jpl_file()` of a file below DE 403, or of one not there, keeps the IERS corrections a DE 403 file loaded from the same directory: SEFLG_JPLHOR answers A's dpsi under its own return flag where a fresh process falls to SEFLG_JPLHOR_APPROX, 4.2e-2" on G134's fixtures, on the setter's thread and an explicit context | Correctness (behaviour) | `sweph.c` |
 | 155 | `load_dpsi_deps()` allocates its two tables anew over those a load it gave up on left (a day missing, -2; eop_finals.txt broken off, -3): 589824 bytes leaked a reload | Memory | `sweph.c` |
+| 156 | `load_dpsi_deps()` leaves eop_1962_today.txt open when a table's allocation fails, `dpsi[]` allocated when `deps[]`'s does, and eop_finals.txt open when a full table meets more days | Memory | `sweph.c` |
 
 ---
 
@@ -10023,8 +10024,8 @@ Noticed, not fixed:
   for eop_finals.txt) the next load, by `swe_set_jpl_file()` of another
   file and the fixture again, allocates both anew: 589824 bytes more
   mapped each time (two 292200-byte tables). It does not close the file
-  when an allocation fails (by reading). Both builds. Fixed as entry 155
-  (the tables).
+  when an allocation fails (by reading). Both builds. Fixed as entries 155
+  and 156.
 
 ## 151. Woolard's nutation turns the Moon's mean anomaly at 10^4 times its rate: its five terms in it cycle every 3.97 minutes, dpsi up to 0.236" off the series
 
@@ -10723,6 +10724,40 @@ file may be left open. calloc() is the gate's own, counting the tables
 (4718592 bytes), the third in the compat build (2359296), all three on
 the tip before entry 154; after it both builds pass the three. No G24
 case: the fix is in both builds.
+
+## 156. `load_dpsi_deps()` leaves the IERS file open when a table's allocation fails, and when a full table meets more days in eop_finals.txt; `dpsi[]` stays allocated when `deps[]`'s allocation fails
+
+**Severity: Memory (a file descriptor leaked a call, and 294912 bytes with it when the second allocation fails), both builds**
+**Where:** `sweph.c`: `load_dpsi_deps()`
+
+By reading, measured here. Of the loader's early returns three skipped
+`fclose()`: `dpsi[]`'s allocation failing and `deps[]`'s left
+eop_1962_today.txt open, `deps[]`'s with `dpsi[]` allocated; and a table
+full at 36525 days returned from the eop_finals.txt loop with that file
+open (upstream's own return; a real eop_1962_today.txt reaches 36525 days
+in 2062, a crafted one at once). The others close the file, and the
+missing file's allocates nothing. Measured with the gate's calloc()
+failing the first, then the second table-sized allocation, and a
+36525-day eop_1962_today.txt with an eop_finals.txt of one day more:
+after `swe_set_jpl_file()` of G19's DE431 fixture one descriptor open on
+eop_1962_today.txt in the first two, on eop_finals.txt in the third
+(/proc/self/fd, and strace's open and close calls); 326768 bytes left
+allocated after `deps[]`'s failure for the JPL file's 31856. Both builds.
+
+**Fix, as done here:** each of the three returns closes the file, and
+`deps[]`'s failure frees `dpsi[]` too. In both builds, as entry 155's: a
+leak's fix, the flag and every answer as before. No hot path.
+
+G134 `tests/eopfollow.c`, extended with 3 checks, each in a forked
+process: after `swe_set_jpl_file()` of the fixture with `dpsi[]`'s
+allocation failing, with `deps[]`'s, and with the full table, no
+descriptor open on an IERS file and, after a failed allocation, the bytes
+allocated under one table more than before the call. 100 checks in all;
+before the fix the 3 fail in both builds, after it both pass them (the
+compat build failing only entries 144's and 154's 18, behind the switch).
+No G24 case: the fix is in both builds. With the three fixes (entries
+154-156) G19, G103, G116, G122, G127, G132, G24, G2 (check-threads) and
+check-ctx pass.
 
 ## How these were found
 
