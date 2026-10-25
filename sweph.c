@@ -1591,7 +1591,10 @@ static void planets_forget_instants(swe_ctx *ctx)
   for (i = 0; i <= SE_NPLANETS; i++)
     ctx->savedat[i].tsave = SWI_TJD_NEVER;
   ctx->earth_moon.t = SWI_TJD_NEVER;   /* bug 66's Moon of the saved Earth */
-  ctx->mosh_sun_bary.t = SWI_TJD_NEVER;	/* bug 102's Sun */
+  ctx->mosh_sun_bary.s[0].t = SWI_TJD_NEVER;	/* bug 102's Sun */
+  ctx->mosh_sun_bary.s[1].t = SWI_TJD_NEVER;
+  for (i = 0; i < 9; i++)		/* and bug 109's series */
+    ctx->mosh_sun_bary.tp[i] = SWI_TJD_NEVER;
   for (i = 0; i < SEI_NNODE_ETC; i++)
     ctx->nddat[i].teval = SWI_TJD_NEVER;
 }
@@ -3886,6 +3889,20 @@ static int calc_center_body(int32 ipli, int32 iflag, double * SWI_RESTRICT xx,
  * iflag	flags
  * serr         error string
  */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bugs 102, 109: a heliocentric Moshier state at teval + s into
+ * the frame of the Sun at teval with barycentric velocities, the Sun's
+ * displacement s v_S + s^2 a_S / 2 and its velocity v_S + s a_S added */
+static void mosh_sun_shift(double *x, const double *vs, const double *as, double s)
+{
+  int i;
+  for (i = 0; i <= 2; i++) {
+    x[i] += s * (vs[i] + 0.5 * s * as[i]);
+    x[i+3] += vs[i] + s * as[i];
+  }
+}
+#endif
+
 static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, char *serr)
 {
   int i, j, niter, retc = OK;
@@ -3900,10 +3917,11 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
   struct epsilon *oe = &ctx->oec2000;
   int32 epheflag = iflag & SEFLG_EPHMASK;
 #ifndef SWE_UPSTREAM_COMPAT
-  /* bug 102: Moshier's light time in a frame where the Sun moves */
-  AS_BOOL mosh_bary = epheflag == SEFLG_MOSEPH
-    && (iflag & SEFLG_NOABERR) && !(iflag & SEFLG_TRUEPOS);
-  double vsun[3] = {0, 0, 0}, asun[3] = {0, 0, 0};
+  /* bug 102: Moshier's light time in a frame where the Sun moves; bug
+   * 109: with aberration too */
+  AS_BOOL mosh_bary = epheflag == SEFLG_MOSEPH && !(iflag & SEFLG_TRUEPOS);
+  double xsb[6] = {0, 0, 0, 0, 0, 0}, asun[3] = {0, 0, 0};
+  const double *vsun = xsb + 3;
 #endif
   dtsave_for_defl = 0;	
   /* Upstream bug 90 (-Og): dt is set by the light-time loop below, which
@@ -4001,8 +4019,9 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
    * agreeing to 1e-14). With aberration it cancels against the
    * aberration taken with the heliocentric Earth's velocity, the
    * direction depending on the relative velocity only (6.6e-10 deg from
-   * the barycentric solution; that path is unchanged, UPSTREAM-BUGS 102
-   * for its distance). Now, without aberration, the light time is solved
+   * the barycentric solution), but not the distance: rho . v_S tau, 5e-8
+   * AU on the Sun to 2.4e-6 on Pluto (upstream bug 109). Now, with or
+   * without aberration (bug 109), the light time is solved
    * with the origin at the Sun at teval and barycentric velocities, as
    * on the files: v_S and a_S from Moshier's own planets
    * (swi_mosh_sun_bary()), every velocity at teval gains v_S, the body
@@ -4010,7 +4029,7 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
    * s = t - teval, and the heliocentric centre is the Sun at teval,
    * (0, v_S). Asteroids heliocentric 2.5e-10 deg from the files after. */
   if (mosh_bary) {
-    swi_mosh_sun_bary(ctx, pdp->teval, vsun, asun);
+    swi_mosh_sun_bary(ctx, pdp->teval, SWI_MOSH_SUN_FULL, xsb, asun);
     for (i = 0; i <= 2; i++) {
       xx0[i+3] += vsun[i];
       xobs[i+3] += vsun[i];
@@ -4185,19 +4204,10 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	  }
 	  if (retc != OK)
 	    return(retc);
-	  if (mosh_bary) {	/* bug 102: the Sun's displacement, see above */
-	    double s = t - pdp->teval;
-	    for (i = 0; i <= 2; i++) {
-	      double ds = s * (vsun[i] + 0.5 * s * asun[i]);
-	      double dv = vsun[i] + s * asun[i];
-	      xx[i] += ds;
-	      xx[i+3] += dv;
-	      if (need_earth) {
-	        xearth[i] += ds;
-	        xearth[i+3] += dv;
-	      }
-	    }
-	  }
+	  /* bug 102: the Sun's displacement, see above; xearth stays
+	   * heliocentric for the aberration rate's observer (bug 109) */
+	  if (mosh_bary)
+	    mosh_sun_shift(xx, vsun, asun, t - pdp->teval);
 	}
 	break;
 #else
@@ -4295,7 +4305,11 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
       /* observer position for t(light-time) */
       if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xobs2, serr) != OK)
+        /* bug 109: built heliocentric, then the Sun's motion */
+        double xoh[6];
+        for (i = 0; i <= 5; i++)
+          xoh[i] = xobs[i] - (i >= 3 ? vsun[i-3] : 0);
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xoh, pedp->x, xearth, xobs2, serr) != OK)
           return ERR;
 #else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
@@ -4311,6 +4325,10 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
           xobs2[i] = xearth[i];
 #endif
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      if (mosh_bary)
+        mosh_sun_shift(xobs2, vsun, asun, t - pedp->teval);
+#endif
     }
   }
   /*******************************
@@ -5175,6 +5193,11 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 #ifndef SWE_UPSTREAM_COMPAT
   double dtNew, acc_e[3];
   int have_acc = FALSE;
+  /* bug 109: Moshier's light time in a frame where the Sun moves, as a
+   * planet's (bug 102); xv0 the body's velocity at teval in it */
+  AS_BOOL mosh_bary = (iflag & SEFLG_MOSEPH) && !(iflag & SEFLG_TRUEPOS);
+  double xsb[6] = {0, 0, 0, 0, 0, 0}, asun[3] = {0, 0, 0}, xv0[3];
+  const double *vsun = xsb + 3;
 #endif
   double xearth[6], xsun[6], xmoon[6];
   double xxsv[6], xxsp[3]={0}, xobs[6], xobs2[6];
@@ -5239,6 +5262,27 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
     for (i = 0; i <= 5; i++)
       xobs[i] = pedp->x[i];	
   }
+
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 109: bug 102's on the fictitious bodies. Moshier's
+   * light time held the Sun still, v_S tau off: 2.6e-6 to 3.0e-6 deg on
+   * Cupido, Isis and Vulcan heliocentric and without aberration (their
+   * elements the files' own), the apparent distance by rho^.v_S tau.
+   * Solved with the origin at the Sun at teval and barycentric
+   * velocities: the observer's and the body's velocity at teval gain v_S,
+   * the body read at t (with its focus, the Earth at t, for an
+   * Earth-centred set) moves by the Sun's displacement, the heliocentric
+   * centre is (0, v_S). */
+  for (i = 0; i <= 2; i++)
+    xv0[i] = pdp->x[i+3];
+  if (mosh_bary) {
+    swi_mosh_sun_bary(ctx, pedp->teval, SWI_MOSH_SUN_FULL, xsb, asun);
+    for (i = 0; i <= 2; i++) {
+      xobs[i+3] += vsun[i];
+      xv0[i] += vsun[i];
+    }
+  }
+#endif
   /*******************************
    * light-time                  * 
    *******************************/
@@ -5316,6 +5360,8 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	return ERR;
       if (retc != OK)
 	return(retc);
+      if (mosh_bary)	/* bug 109: the Sun's displacement */
+        mosh_sun_shift(xx, vsun, asun, t - pdp->teval);
       for (i = 0; i <= 2; i++) {
 	dx[i] = xx[i] - xobs[i];   /* xobs: the centre, see app_pos_etc_plan() */
       }
@@ -5330,7 +5376,7 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
      * barycentric motion, 0.017 AU/day, over 1e-12 day at 0.0065 AU). One
      * Newton step on tau = |X(teval - tau) - O|/c finishes it; the body
      * is moved by the change with the rounding below. */
-    dt = lt_newton_step(dx, pdp->x + 3, dt, dtNew);
+    dt = lt_newton_step(dx, xv0, dt, dtNew);
     /* Upstream bug 81: as a planet's (bug 63), the body was read at t =
      * teval - dt rounded to a double, up to half an ulp of the date from
      * the emission instant. An Earth-centred set's focus is the Earth at t,
@@ -5343,7 +5389,7 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
     {
       double eps = (pdp->teval - t) - dt;
       for (i = 0; i <= 2; i++)
-        xx[i] += eps * pdp->x[i+3];
+        xx[i] += eps * xv0[i];
     }
     dtsave_for_defl = dt;
     if (iflag & SEFLG_SPEED) {
@@ -5362,7 +5408,10 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 #endif
       if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xobs2, serr) != OK)
+        double xoh[6];	/* bug 109: heliocentric, then the Sun's motion */
+        for (i = 0; i <= 5; i++)
+          xoh[i] = xobs[i] - (i >= 3 ? vsun[i-3] : 0);
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xoh, pedp->x, xearth, xobs2, serr) != OK)
           return ERR;
 #else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
@@ -5378,6 +5427,10 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
           xobs2[i] = xearth[i];
 #endif
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      if (mosh_bary)
+        mosh_sun_shift(xobs2, vsun, asun, t - pedp->teval);
+#endif
     }
   }
   /*******************************
@@ -5603,6 +5656,11 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
 #ifndef SWE_UPSTREAM_COMPAT
   double dtNew, acc_e[3];
   int have_acc = FALSE;
+  /* bug 109: Moshier's light time in a frame where the Sun moves, as a
+   * planet's (bug 102); xv0 the body's velocity at teval in it */
+  AS_BOOL mosh_bary = (iflag & SEFLG_MOSEPH) && !(iflag & SEFLG_TRUEPOS);
+  double xsb[6] = {0, 0, 0, 0, 0, 0}, asun[3] = {0, 0, 0}, xv0[3];
+  const double *vsun = xsb + 3;
 #endif
   double xearth[6], xsun[6], xmoon[6];
   double xxsv[6], xxsp[3]={0}, xobs[6], xobs2[6];
@@ -5679,6 +5737,27 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
     for (i = 0; i <= 5; i++)
       xobs[i] = pedp->x[i];
   }
+
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 109: bug 102's on the fictitious bodies and swe_calc_orbel(). Moshier's
+   * light time held the Sun still, v_S tau off: 2.6e-6 to 3.0e-6 deg on
+   * Cupido, Isis and Vulcan heliocentric and without aberration (their
+   * elements the files' own), the apparent distance by rho^.v_S tau.
+   * Solved with the origin at the Sun at teval and barycentric
+   * velocities: the observer's and the body's velocity at teval gain v_S,
+   * the body read at t (with its focus, the Earth at t, for an
+   * Earth-centred set) moves by the Sun's displacement, the heliocentric
+   * centre is (0, v_S). */
+  for (i = 0; i <= 2; i++)
+    xv0[i] = pdp->x[i+3];
+  if (mosh_bary) {
+    swi_mosh_sun_bary(ctx, pedp->teval, SWI_MOSH_SUN_FULL, xsb, asun);
+    for (i = 0; i <= 2; i++) {
+      xobs[i+3] += vsun[i];
+      xv0[i] += vsun[i];
+    }
+  }
+#endif
   /*******************************
    * light-time                  *
    *******************************/
@@ -5759,6 +5838,8 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       }
       if (retc != OK)
 	return retc;
+      if (mosh_bary)	/* bug 109: the Sun's displacement */
+        mosh_sun_shift(xx, vsun, asun, t - pdp->teval);
       for (i = 0; i <= 2; i++)
         dx[i] = xx[i] - xobs[i];
       dtNew = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
@@ -5770,10 +5851,13 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       /* the orbit was taken at M - n dt exactly, the centre read at t, the
        * rounding of teval - dt: each moved by its own velocity at teval */
       double dtr = dt, eps, *vc = (iplctr == SE_EARTH) ? pedp->x + 3 : psdp->x + 3;
-      dt = lt_newton_step(dx, pdp->x + 3, dt, dtNew);
+      double vcb[3];	/* bug 109: the centre's velocity in the frame */
+      for (i = 0; i <= 2; i++)
+        vcb[i] = vc[i] + vsun[i];
+      dt = lt_newton_step(dx, xv0, dt, dtNew);
       eps = (pdp->teval - t) - dt;
       for (i = 0; i <= 2; i++)
-        xx[i] += (dtr - dt) * (pdp->x[i+3] - vc[i]) + eps * vc[i];
+        xx[i] += (dtr - dt) * (xv0[i] - vcb[i]) + eps * vcb[i];
     }
     dtsave_for_defl = dt;
     if (iflag & SEFLG_SPEED) {
@@ -5804,7 +5888,10 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
 #endif
       if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xobs2, serr) != OK)
+        double xoh[6];	/* bug 109: heliocentric, then the Sun's motion */
+        for (i = 0; i <= 5; i++)
+          xoh[i] = xobs[i] - (i >= 3 ? vsun[i-3] : 0);
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xoh, pedp->x, xearth, xobs2, serr) != OK)
           return ERR;
 #else
         if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, serr) != OK)
@@ -5820,6 +5907,10 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
           xobs2[i] = xearth[i];
 #endif
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      if (mosh_bary)
+        mosh_sun_shift(xobs2, vsun, asun, t - pedp->teval);
+#endif
     }
   }
   /*******************************
@@ -7028,10 +7119,11 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
   struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
   struct epsilon *oe = &ctx->oec2000;
 #ifndef SWE_UPSTREAM_COMPAT
-  /* bug 102: Moshier's light time in a frame where the Sun moves */
-  AS_BOOL mosh_bary = pedp->iephe == SEFLG_MOSEPH
-    && (iflag & SEFLG_NOABERR) && !(iflag & SEFLG_TRUEPOS);
-  double vsun[3] = {0, 0, 0}, asun[3] = {0, 0, 0};
+  /* bug 102: Moshier's light time in a frame where the Sun moves; bug
+   * 109: with aberration too */
+  AS_BOOL mosh_bary = pedp->iephe == SEFLG_MOSEPH && !(iflag & SEFLG_TRUEPOS);
+  double xsb[6] = {0, 0, 0, 0, 0, 0}, asun[3] = {0, 0, 0};
+  const double *vsun = xsb + 3;
 #endif
   /* if the same conversions have already been done for the same 
    * date, then return */
@@ -7074,9 +7166,10 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
    * where the Sun seen is S(t - tau) - E(t), and its heliocentric Earth
    * was E(t - tau) where the light time ends at the Sun of teval: both
    * v_S tau off, 2.96e-6 deg. The Sun and the Earth are taken in the frame
-   * of the Sun at teval with barycentric velocities, the Sun moving. */
+   * of the Sun at teval with barycentric velocities, the Sun moving; with
+   * aberration too (bug 109), where the Sun's distance was 5e-8 AU off. */
   if (mosh_bary) {
-    swi_mosh_sun_bary(ctx, pedp->teval, vsun, asun);
+    swi_mosh_sun_bary(ctx, pedp->teval, SWI_MOSH_SUN_FULL, xsb, asun);
     for (i = 0; i <= 2; i++)
       xobs[i+3] += vsun[i];
   }
@@ -7177,15 +7270,11 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
 #ifndef SWE_UPSTREAM_COMPAT
 	    /* bug 102: but the Sun's displacement over s = t - teval */
 	    if (mosh_bary && retc == OK) {
-	      double s = t - pedp->teval;
-	      double *xb = (iflag & SEFLG_HELCTR) ? xearth : xsun;
 	      if (!(iflag & SEFLG_HELCTR))
 	        for (i = 0; i <= 5; i++)
 	          xsun[i] = 0;
-	      for (i = 0; i <= 2; i++) {
-	        xb[i] += s * (vsun[i] + 0.5 * s * asun[i]);
-	        xb[i+3] += vsun[i] + s * asun[i];
-	      }
+	      mosh_sun_shift((iflag & SEFLG_HELCTR) ? xearth : xsun, vsun, asun,
+	                     t - pedp->teval);
 	    }
 #endif
 	    break;
@@ -7278,11 +7367,17 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
       if (retc != OK)
         return retc;
       if (iflag & SEFLG_TOPOCTR) {
-        if (observer_at_lt(ctx, pedp->teval, tlt, iflag, xobs, pedp->x, xelt, xobs2, serr) != OK)
+        /* bug 109: built heliocentric, then the Sun's motion */
+        double xoh[6];
+        for (i = 0; i <= 5; i++)
+          xoh[i] = xobs[i] - (i >= 3 ? vsun[i-3] : 0);
+        if (observer_at_lt(ctx, pedp->teval, tlt, iflag, xoh, pedp->x, xelt, xobs2, serr) != OK)
           return ERR;
       } else {
         earth_at_lt(ctx, pedp->teval, tlt, pedp->x, xelt, xobs2);
       }
+      if (mosh_bary)
+        mosh_sun_shift(xobs2, vsun, asun, tlt - pedp->teval);
       add_aberr_rate(xx, xobs, xobs2);
     }
 #endif
@@ -7373,10 +7468,13 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
   struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
   struct plan_data *pdp = &ctx->pldat[SEI_MOON];
 #ifndef SWE_UPSTREAM_COMPAT
-  /* bug 102: Moshier's light time in a frame where the Sun moves */
-  AS_BOOL mosh_bary = pdp->iephe == SEFLG_MOSEPH
-    && (iflag & SEFLG_NOABERR) && !(iflag & SEFLG_TRUEPOS);
-  double vsun[3] = {0, 0, 0}, asun[3] = {0, 0, 0};
+  /* bug 102: Moshier's light time in a frame where the Sun moves; bug
+   * 109: with aberration too, the Sun's motion from fewer planets there
+   * (its direction does not depend on it, its distance to 1e-13 AU) */
+  AS_BOOL mosh_bary = pdp->iephe == SEFLG_MOSEPH && !(iflag & SEFLG_TRUEPOS);
+  int mosh_set = (iflag & SEFLG_NOABERR) ? SWI_MOSH_SUN_FULL : SWI_MOSH_SUN_MOON;
+  double xsb[6] = {0, 0, 0, 0, 0, 0}, asun[3] = {0, 0, 0}, xeh[6];
+  const double *vsun = xsb + 3;
 #endif
   struct epsilon *oe = &ctx->oec;
   double t = 0; 
@@ -7439,9 +7537,11 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
   /* Upstream bug 102, as for the planets (app_pos_etc_plan()): Moshier's
    * Moon and Earth were carried over the light time with the Sun held
    * still, v_S tau off without aberration and heliocentric, 3.0e-6 deg.
-   * In the frame of the Sun at teval with barycentric velocities. */
+   * In the frame of the Sun at teval with barycentric velocities; with
+   * aberration too (bug 109: the distance 1.3e-10 AU off), v_S there from
+   * Venus, the Earth-Moon barycentre and the giants (SWI_MOSH_SUN_MOON). */
   if (mosh_bary) {
-    swi_mosh_sun_bary(ctx, pdp->teval, vsun, asun);
+    swi_mosh_sun_bary(ctx, pdp->teval, mosh_set, xsb, asun);
     for (i = 0; i <= 2; i++) {
       xx[i+3] += vsun[i];
       xobs[i+3] += vsun[i];
@@ -7493,10 +7593,32 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
          * accelerations' 4e-5, see mosh_moon_earth_acc()). Re-reading the
          * series would cost a fifth of every Moshier Moon (its five-point
          * velocity) and an Earth. Heliocentric, over 500 s, the third
-         * order leaves 5e-8 deg/day. */
-        {
+         * order left 4.2e-8 deg/day, its distance rate 7.4e-10 AU/day,
+         * constant at every step: upstream bug 109, heliocentric the Moon
+         * and the Earth are read at t, the Moon's place and velocity the
+         * series' (bug 95), at the cost of a Moon and an Earth there. */
+        if (iflag & SEFLG_HELCTR) {
+          double xm[6];
+          retc = swi_moshplan(ctx, t, SEI_EARTH, NO_SAVE, xe, xe, serr);
+          if (retc == OK)
+            retc = swi_moshmoon(ctx, t, NO_SAVE, xm, serr);
+          if (retc != OK)
+            return retc;
+          for (i = 0; i <= 5; i++) {
+            xx[i] = xm[i] + xe[i];
+            xs[i] = 0;
+          }
+        } else {
           double am[3], ae[3], s = t - pdp->teval;
           mosh_moon_earth_acc(pdp->x, pedp->x, am, ae);
+          /* bug 109: without aberration the Earth's acceleration is the
+           * series' own (bug 66 part 3), not the gravitational model's,
+           * which the series' monthly terms and the planets move by 1e-4:
+           * s da was 1.1e-8 deg/day of the geocentric Moon's speed. With
+           * aberration it cancels against the aberration rate's Earth,
+           * carried the same way. */
+          if (mosh_bary && (iflag & SEFLG_NOABERR))
+            swi_mosh_earth_accel(ctx, pedp->teval, pedp->x, ae);
           for (i = 0; i <= 2; i++) {
             xe[i] = pedp->x[i] + s * (pedp->x[i+3] + 0.5 * s * ae[i]);
             xe[i+3] = pedp->x[i+3] + s * ae[i];
@@ -7505,17 +7627,16 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
             xs[i] = 0;
             xs[i+3] = 0;
           }
-          if (mosh_bary)	/* bug 102: the Sun's displacement */
-            for (i = 0; i <= 2; i++) {
-              double ds = s * (vsun[i] + 0.5 * s * asun[i]);
-              double dv = vsun[i] + s * asun[i];
-              xe[i] += ds;
-              xe[i+3] += dv;
-              xx[i] += ds;
-              xx[i+3] += dv;
-              xs[i] = ds;
-              xs[i+3] = dv;
-            }
+        }
+        {
+          double s = t - pdp->teval;
+          for (i = 0; i <= 5; i++)
+            xeh[i] = xe[i];	/* heliocentric, for a site's rate below */
+          if (mosh_bary) {	/* bug 102: the Sun's displacement */
+            mosh_sun_shift(xe, vsun, asun, s);
+            mosh_sun_shift(xx, vsun, asun, s);
+            mosh_sun_shift(xs, vsun, asun, s);
+          }
         }
 #else
         /* this method results in an error of a milliarcsec in speed */
@@ -7591,8 +7712,18 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
 #endif
     if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
-      if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xe, xobs2, NULL) != OK)
+      if (pdp->iephe != SEFLG_MOSEPH) {
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xe, xobs2, NULL) != OK)
 	  return ERR;
+      } else {		/* bug 109: built heliocentric, then the Sun's motion */
+        double xoh[6];
+        for (i = 0; i <= 5; i++)
+          xoh[i] = xobs[i] - (i >= 3 ? vsun[i-3] : 0);
+        if (observer_at_lt(ctx, pedp->teval, t, iflag, xoh, pedp->x, xeh, xobs2, NULL) != OK)
+	  return ERR;
+        if (mosh_bary)
+          mosh_sun_shift(xobs2, vsun, asun, t - pedp->teval);
+      }
 #else
       if (swi_get_observer(ctx, t, iflag | SEFLG_NONUT, NO_SAVE, xobs2, NULL) != OK)
 	  return ERR;
@@ -10435,6 +10566,8 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   int32 epheflag, iflgsave;
 #ifndef SWE_UPSTREAM_COMPAT
   int32 ephe_used = 0;	/* the ephemeris that answered, 0: none consulted */
+  AS_BOOL mosh_star = FALSE;	/* bug 109 */
+  double xsb_star[6] = {0, 0, 0, 0, 0, 0}, asb_star[3] = {0, 0, 0};
 #endif
   struct epsilon *oe = &ctx->oec2000;
   iflgsave = iflag;
@@ -10579,12 +10712,35 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
 #endif
     }
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 109: Moshier's Earth is heliocentric, and a star's
+   * parallax and aberration want the barycentric observer: the parallax
+   * was taken from the heliocentric Earth (9.2e-7 deg on Sirius without
+   * aberration; none heliocentric, where the Sun's 0.005-0.01 AU from the
+   * barycentre is the parallax), the aberration with its heliocentric
+   * velocity, v_S short (3.0e-6 deg on every apparent star). The Sun's
+   * barycentric place and velocity from Moshier's planets
+   * (swi_mosh_sun_bary()) carry the observer there, and the aberration
+   * rate's observer at -dm, dp takes the rate of that velocity
+   * (swi_mosh_sun_accel()). */
+  if (ephe_used == SEFLG_MOSEPH || ((iflag & SEFLG_HELCTR) && (iflag & SEFLG_MOSEPH))) {
+    mosh_star = TRUE;
+    swi_mosh_sun_bary(ctx, tjd, SWI_MOSH_SUN_FULL, xsb_star, NULL);
+    if (!(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)))
+      for (i = 0; i <= 5; i++)
+        xobs[i] += xsb_star[i];
+  }
+#endif
   /************************************
    * position and speed at tjd        *
    ************************************/
   /* for parallax */ 
   if ((iflag & SEFLG_HELCTR) && (iflag & SEFLG_MOSEPH)) {
+#ifndef SWE_UPSTREAM_COMPAT
+    xpo = xsb_star;	/* bug 109: the Sun's barycentric place */
+#else
     xpo = NULL;		/* no parallax, if moshier and heliocentric */
+#endif
     xpo_dt = NULL;	/* no parallax, if moshier and heliocentric */
   } else if (iflag & SEFLG_HELCTR) {
     xpo = ctx->sp.fx_struct.xsun;//psdp->x;
@@ -10633,9 +10789,18 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     /* the observer at t - dm and t + dp (xpo is xobs here, xpo_dt xobs_dt),
      * read only for a speed the caller asked for */
     int32 spf = iflgsave & SEFLG_SPEED;
+    if (spf && mosh_star)	/* bug 109: the Sun's motion over -dm, dp */
+      swi_mosh_sun_accel(ctx, tjd, asb_star);	/* before the Earth's reads */
     if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag,
                               ctx->sp.fx_struct.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
+    if (spf && mosh_star)
+      for (i = 0; i <= 2; i++) {
+        xpo_dt[i] += xsb_star[i] - dm * xsb_star[i+3];
+        xpo_dt[i+3] += xsb_star[i+3] - dm * asb_star[i];
+        xpo_p[i] += xsb_star[i] + dp * xsb_star[i+3];
+        xpo_p[i+3] += xsb_star[i+3] + dp * asb_star[i];
+      }
     aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, spf);
   }
 #else
@@ -12059,6 +12224,8 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   int32 epheflag, iflgsave;
 #ifndef SWE_UPSTREAM_COMPAT
   int32 ephe_used = 0;	/* the ephemeris that answered, 0: none consulted */
+  AS_BOOL mosh_star = FALSE;	/* bug 109 */
+  double xsb_star[6] = {0, 0, 0, 0, 0, 0}, asb_star[3] = {0, 0, 0};
 #endif
   // char s[AS_MAXCH];
   struct epsilon *oe = &ctx->oec2000;
@@ -12201,12 +12368,35 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
 #endif
     }
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 109: Moshier's Earth is heliocentric, and a star's
+   * parallax and aberration want the barycentric observer: the parallax
+   * was taken from the heliocentric Earth (9.2e-7 deg on Sirius without
+   * aberration; none heliocentric, where the Sun's 0.005-0.01 AU from the
+   * barycentre is the parallax), the aberration with its heliocentric
+   * velocity, v_S short (3.0e-6 deg on every apparent star). The Sun's
+   * barycentric place and velocity from Moshier's planets
+   * (swi_mosh_sun_bary()) carry the observer there, and the aberration
+   * rate's observer at -dm, dp takes the rate of that velocity
+   * (swi_mosh_sun_accel()). */
+  if (ephe_used == SEFLG_MOSEPH || ((iflag & SEFLG_HELCTR) && (iflag & SEFLG_MOSEPH))) {
+    mosh_star = TRUE;
+    swi_mosh_sun_bary(ctx, tjd, SWI_MOSH_SUN_FULL, xsb_star, NULL);
+    if (!(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)))
+      for (i = 0; i <= 5; i++)
+        xobs[i] += xsb_star[i];
+  }
+#endif
   /************************************
    * position and speed at tjd        *
    ************************************/
   /* for parallax */ 
   if ((iflag & SEFLG_HELCTR) && (iflag & SEFLG_MOSEPH)) {
+#ifndef SWE_UPSTREAM_COMPAT
+    xpo = xsb_star;	/* bug 109: the Sun's barycentric place */
+#else
     xpo = NULL;		/* no parallax, if moshier and heliocentric */
+#endif
     xpo_dt = NULL;	/* no parallax, if moshier and heliocentric */
   } else if (iflag & SEFLG_HELCTR) {
     xpo = ctx->sp.fx_record.xsun;//psdp->x;
@@ -12259,9 +12449,18 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     /* the observer at t - dm and t + dp (xpo is xobs here, xpo_dt xobs_dt),
      * read only for a speed the caller asked for */
     int32 spf = iflgsave & SEFLG_SPEED;
+    if (spf && mosh_star)	/* bug 109: the Sun's motion over -dm, dp */
+      swi_mosh_sun_accel(ctx, tjd, asb_star);	/* before the Earth's reads */
     if (spf && fixstar_obs_rate(ctx, tjd, dm, dp, epheflag, iflag,
                               ctx->sp.fx_record.xearth, xpo_dt, xpo_p, serr) != OK)
       return ERR;
+    if (spf && mosh_star)
+      for (i = 0; i <= 2; i++) {
+        xpo_dt[i] += xsb_star[i] - dm * xsb_star[i+3];
+        xpo_dt[i+3] += xsb_star[i+3] - dm * asb_star[i];
+        xpo_p[i] += xsb_star[i] + dp * xsb_star[i+3];
+        xpo_p[i+3] += xsb_star[i+3] + dp * asb_star[i];
+      }
     aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, spf);
   }
 #else

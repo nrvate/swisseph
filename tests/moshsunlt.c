@@ -10,7 +10,11 @@
  * heliocentric Earth. With aberration it cancelled against the aberration
  * taken with the heliocentric Earth's velocity, and that path is not
  * touched. The Sun's barycentric velocity and acceleration now come from
- * Moshier's own eight planets.
+ * Moshier's own eight planets (nine since UPSTREAM-BUGS 109, Pluto added,
+ * which also takes the apparent path about the barycentre, G108; the
+ * reference below takes the nine too). Since bug 109 the Moon's
+ * heliocentric fixed point is 1.25e-12 deg and its speed without
+ * aberration 1.5e-9 deg/day.
  *
  * The checks. (1) An asteroid under Moshier is read from the same file as
  * on the Swiss path (its true heliocentric places agree to 1e-14 deg), so
@@ -72,16 +76,16 @@ static double ang(const double *a, const double *b)
  * Moshier planets, heliocentric, point masses, DE431's mass ratios. */
 static void sun_bary(double jd, double *v, double *a)
 {
-  static const int ipl[8] = {SE_MERCURY, SE_VENUS, SE_EARTH, SE_MARS,
-                             SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE};
-  static const double rm[8] = {6023600, 408523.719, 328900.5, 3098703.59,
-                               1047.348644, 3497.9018, 22902.98, 19412.26};
+  static const int ipl[9] = {SE_MERCURY, SE_VENUS, SE_EARTH, SE_MARS,
+                             SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE, SE_PLUTO};
+  static const double rm[9] = {6023600, 408523.719, 328900.5, 3098703.59,
+                               1047.348644, 3497.9018, 22902.98, 19412.26, 136566000};
   char serr[256];
   double x[6], m[6], ms = 1, r;
   int k, i;
   for (i = 0; i < 3; i++)
     v[i] = a[i] = 0;
-  for (k = 0; k < 8; k++) {
+  for (k = 0; k < 9; k++) {
     swe_calc(jd, ipl[k], FC | SEFLG_HELCTR | SEFLG_TRUEPOS | SEFLG_SPEED, x, serr);
     if (ipl[k] == SE_EARTH) {	/* the Earth-Moon barycentre */
       swe_calc(jd, SE_MOON, FC | SEFLG_TRUEPOS | SEFLG_SPEED, m, serr);

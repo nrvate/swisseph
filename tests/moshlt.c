@@ -72,10 +72,10 @@ static double wrap(double d)
  * heliocentric planets as point masses (bug 102; G101 has the same) */
 static void sun_bary_mosh(swe_ctx *c, double jd, double *v, double *a)
 {
-  static const int ipl[8] = {SE_MERCURY, SE_VENUS, SE_EARTH, SE_MARS,
-                             SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE};
-  static const double rm[8] = {6023600, 408523.719, 328900.5, 3098703.59,
-                               1047.348644, 3497.9018, 22902.98, 19412.26};
+  static const int ipl[9] = {SE_MERCURY, SE_VENUS, SE_EARTH, SE_MARS,
+                             SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE, SE_PLUTO};
+  static const double rm[9] = {6023600, 408523.719, 328900.5, 3098703.59,
+                               1047.348644, 3497.9018, 22902.98, 19412.26, 136566000};
   const double k2 = 1.32712440017987e+20 * 86400.0 * 86400.0
                     / (1.49597870700e11 * 1.49597870700e11 * 1.49597870700e11);
   const int32 fc = SEFLG_MOSEPH | SEFLG_J2000 | SEFLG_ICRS | SEFLG_XYZ
@@ -85,7 +85,7 @@ static void sun_bary_mosh(swe_ctx *c, double jd, double *v, double *a)
   int k, i;
   for (i = 0; i < 3; i++)
     v[i] = a[i] = 0;
-  for (k = 0; k < 8; k++) {
+  for (k = 0; k < 9; k++) {
     swe_calc_r(c, jd, ipl[k], fc | SEFLG_HELCTR, x, serr);
     if (ipl[k] == SE_EARTH) {	/* the Earth-Moon barycentre */
       swe_calc_r(c, jd, SE_MOON, fc, m, serr);

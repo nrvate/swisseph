@@ -77,6 +77,9 @@
 
 static void embofs_mosh(swe_ctx *ctx, double J, double *xemb);
 #ifndef SWE_UPSTREAM_COMPAT
+static void mosh_series_cart(swe_ctx *ctx, double tjd, int iplm, double *x);
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
 static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb, double *moon);
 #endif
 static int check_t_terms(double t, double tlo, double mod, char *sinp, double *doutp, double *drate);
@@ -503,8 +506,10 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
   int iplm = pnoint2msh[ipli];
   struct plan_data *pdp = &ctx->pldat[ipli];
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
+#ifdef SWE_UPSTREAM_COMPAT	/* else in mosh_series_cart() (bug 109) */
   double seps2000 = ctx->oec2000.seps;
   double ceps2000 = ctx->oec2000.ceps;
+#endif
   if (do_save) {
     xp = pdp->x;
     xe = pedp->x;
@@ -539,10 +544,7 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
        * Mercury, S ~ 250) and the osculating elements amplified. Now the
        * series' derivative, and the Earth-Moon offset's rate from a
        * central difference over exact instants. */
-      moshplan2(ctx, tjd, pnoint2msh[SEI_EMB], xe, xe + 3);
-      swi_polcart_sp(xe, xe);
-      swi_coortrf2(xe, xe, -seps2000, ceps2000);
-      swi_coortrf2(xe + 3, xe + 3, -seps2000, ceps2000);
+      mosh_series_cart(ctx, tjd, pnoint2msh[SEI_EMB], xe);	/* bug 109 */
       embofs_mosh(ctx, tjd, xe);
       embofs_mosh_rate(ctx, tjd, xe + 3, do_save ? ctx->earth_moon.x : NULL);
       if (do_save) {
@@ -590,11 +592,9 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
       xp = pdp->x;
     } else { 
 #ifndef SWE_UPSTREAM_COMPAT
-      /* Upstream bug 51: the series' derivative, see the Earth above */
-      moshplan2(ctx, tjd, iplm, xp, xp + 3);
-      swi_polcart_sp(xp, xp);
-      swi_coortrf2(xp, xp, -seps2000, ceps2000);
-      swi_coortrf2(xp + 3, xp + 3, -seps2000, ceps2000);
+      /* Upstream bug 51: the series' derivative, see the Earth above;
+       * bug 109: memoised with the Sun's barycentric motion */
+      mosh_series_cart(ctx, tjd, iplm, xp);
       if (do_save) {
 	pdp->teval = tjd;/**/
 	pdp->xflgs = -1;
@@ -632,19 +632,48 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
 }
 
 #ifndef SWE_UPSTREAM_COMPAT
-/* Upstream bug 102: the Sun's barycentric velocity and acceleration,
- * equatorial J2000, AU/day and AU/day^2, from Moshier's own planets, for
+/* Upstream bugs 102, 109: a planet's series, heliocentric equatorial J2000
+ * cartesian with its analytic velocity, as swi_moshplan() forms it,
+ * memoised per planet and instant (Moshier's order, 2 the Earth-Moon
+ * barycentre), so that the Sun's barycentric motion below and the bodies of
+ * a chart share every series: computed once, the same bits either way. */
+static void mosh_series_eval(swe_ctx *ctx, double tjd, int iplm, double *c)
+{
+  moshplan2(ctx, tjd, iplm, c, c + 3);
+  swi_polcart_sp(c, c);
+  swi_coortrf2(c, c, -ctx->oec2000.seps, ctx->oec2000.ceps);
+  swi_coortrf2(c + 3, c + 3, -ctx->oec2000.seps, ctx->oec2000.ceps);
+}
+
+static void mosh_series_cart(swe_ctx *ctx, double tjd, int iplm, double *x)
+{
+  int i;
+  double *c = ctx->mosh_sun_bary.xp[iplm];
+  if (ctx->mosh_sun_bary.tp[iplm] != tjd) {
+    mosh_series_eval(ctx, tjd, iplm, c);
+    ctx->mosh_sun_bary.tp[iplm] = tjd;
+  }
+  for (i = 0; i <= 5; i++)
+    x[i] = c[i];
+}
+
+/* Upstream bug 102: the Sun's barycentric place, velocity and acceleration,
+ * equatorial J2000, AU, AU/day and AU/day^2, from Moshier's own planets, for
  * the light times that Moshier's heliocentric frame cannot see the Sun
- * move over. The barycentre of the Sun and the eight planets (the
- * Earth-Moon barycentre's series for the Earth and the Moon): v_S =
- * -sum m_i v_i / (M_S + sum m_i), v_i heliocentric; a_S = k^2 sum
- * (m_i / M_S) x_i / r_i^3, the planets' pull, exact for point masses.
- * The masses DE431's, as swecl.c's. Left out: Pluto (3e-5 m/s), the
- * asteroids (Ceres 8e-6 m/s). Against the Swiss files' barycentric Sun
- * <= 6.5 mm/s 1800..2200, as the files' own planets give the same way
- * (1.2e-9 deg of v_S / c). Memoised per instant: a chart's bodies share
- * it. */
-static const double mosh_plmass[8] = {	/* M_Sun / m, Moshier's order */
+ * move over. The barycentre of the Sun and the planets as point masses (the
+ * Earth-Moon barycentre's series for the Earth and the Moon): x_S =
+ * -sum m_i x_i / (M_S + sum m_i), v_S the same of the velocities, x_i, v_i
+ * heliocentric; a_S = k^2 sum (m_i / M_S) x_i / r_i^3, the planets' pull.
+ * The masses DE431's, as swecl.c's. Left out: the asteroids (Ceres 8e-6
+ * m/s). Against the Swiss files' barycentric Sun <= 6.5 mm/s 1800..2200,
+ * as the files' own planets give the same way (1.2e-9 deg of v_S / c).
+ * Upstream bug 109: Pluto joins (3.4e-5 m/s, 5.5e-12 AU over Pluto's light
+ * time); SWI_MOSH_SUN_MOON takes Venus, the Earth-Moon barycentre and the
+ * four giants alone, for the Moon's apparent place, whose direction does not
+ * depend on v_S and whose distance wants it to 0.11 m/s over 1.3 s (left
+ * out 0.016 m/s, 1.4e-13 AU). Memoised per instant, the series per planet:
+ * a chart's bodies share them. */
+static const double mosh_plmass[9] = {	/* M_Sun / m, Moshier's order */
   6023600,        /* Mercury */
   408523.719,     /* Venus */
   328900.5,       /* Earth and Moon */
@@ -653,40 +682,107 @@ static const double mosh_plmass[8] = {	/* M_Sun / m, Moshier's order */
   3497.9018,      /* Saturn */
   22902.98,       /* Uranus */
   19412.26,       /* Neptune */
+  136566000,      /* Pluto */
 };
-void swi_mosh_sun_bary(swe_ctx *ctx, double tjd, double *vs, double *as)
+static const int mosh_set_moon[9] = {0, 1, 1, 0, 1, 1, 1, 1, 0};
+/* the sums; cached: the series memoised (a chart's), else evaluated aside,
+ * leaving the memo to the instant a chart is at */
+static void mosh_sun_sum(swe_ctx *ctx, double tjd, int set, int cached,
+                         double *xs, double *as)
 {
   int i, ip;
-  double x[6], r, m, msum = 1, v[3] = {0, 0, 0}, a[3] = {0, 0, 0};
+  double x[6], r, m, msum = 1, p[6] = {0, 0, 0, 0, 0, 0}, a[3] = {0, 0, 0};
   const double k2 = HELGRAVCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT);
-  double seps2000 = ctx->oec2000.seps;
-  double ceps2000 = ctx->oec2000.ceps;
-  if (ctx->mosh_sun_bary.t != tjd) {
-    for (ip = 0; ip < 8; ip++) {
-      moshplan2(ctx, tjd, ip, x, x + 3);
-      swi_polcart_sp(x, x);
-      swi_coortrf2(x, x, -seps2000, ceps2000);
-      swi_coortrf2(x + 3, x + 3, -seps2000, ceps2000);
-      m = 1.0 / mosh_plmass[ip];
-      r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
-      r = r * r * r;
-      msum += m;
-      for (i = 0; i <= 2; i++) {
-        v[i] += m * x[i+3];
-        a[i] += m * x[i] / r;
+  for (ip = 0; ip < 9; ip++) {
+    if (set == SWI_MOSH_SUN_MOON && !mosh_set_moon[ip])
+      continue;
+    if (cached)
+      mosh_series_cart(ctx, tjd, ip, x);
+    else
+      mosh_series_eval(ctx, tjd, ip, x);
+    m = 1.0 / mosh_plmass[ip];
+    r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+    r = r * r * r;
+    msum += m;
+    for (i = 0; i <= 2; i++) {
+      p[i] += m * x[i];
+      p[i+3] += m * x[i+3];
+      a[i] += m * x[i] / r;
+    }
+  }
+  for (i = 0; i <= 5; i++)
+    xs[i] = -p[i] / msum;
+  if (as != NULL)
+    for (i = 0; i <= 2; i++)
+      as[i] = k2 * a[i];
+}
+
+void swi_mosh_sun_bary(swe_ctx *ctx, double tjd, int set, double *xs, double *as)
+{
+  int i;
+  struct swi_mosh_sun *ms = &ctx->mosh_sun_bary.s[set];
+  if (ms->t != tjd) {
+    mosh_sun_sum(ctx, tjd, set, 1, ms->x, ms->a);
+    ms->t = tjd;
+  }
+  for (i = 0; i <= 5; i++)
+    xs[i] = ms->x[i];
+  if (as != NULL)
+    for (i = 0; i <= 2; i++)
+      as[i] = ms->a[i];
+}
+
+/* Upstream bug 109: the rate of swi_mosh_sun_bary()'s v_S (every planet)
+ * at tjd, for a star's aberration rate: a star's speed is the rate of its
+ * positions, which take the series' v_S. The point masses' pull above is
+ * the Newtonian rate; the giants' series are 1.2e-4 (Jupiter) to 7e-3
+ * (Neptune) of their acceleration off it, 2e-12 AU/day^2 on the Sun,
+ * 1.2e-14 rad/day of aberration rate, 1.05e-10 deg/day in Polaris's right
+ * ascension near the pole. (1 + sum m_i) a_S = -sum m_i a_i, a_i each
+ * planet's heliocentric acceleration: the four giants' from their series,
+ * one-sided over 2^-9 day (1.5e-14 AU/day^2 of the Sun's from Jupiter's
+ * rate of change), the others' Newtonian with the planets' pull and its
+ * indirect part (their series are within 5e-6 of it, 3e-15 AU/day^2 on
+ * the Sun). Four series at tjd + 2^-9, outside the memo. */
+void swi_mosh_sun_accel(swe_ctx *ctx, double tjd, double *as)
+{
+  int i, ip, jp;
+  const double h = 1.0 / 512;
+  const double k2 = HELGRAVCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT);
+  double x[9][6], xh[6], ai[3], d[3], r, msum = 1, sum[3] = {0, 0, 0}, rj3[9];
+  for (ip = 0; ip < 9; ip++) {
+    mosh_series_cart(ctx, tjd, ip, x[ip]);
+    r = sqrt(x[ip][0] * x[ip][0] + x[ip][1] * x[ip][1] + x[ip][2] * x[ip][2]);
+    rj3[ip] = r * r * r;
+  }
+  for (ip = 0; ip < 9; ip++) {
+    double m = 1.0 / mosh_plmass[ip];
+    if (ip >= 4 && ip <= 7) {	/* Jupiter to Neptune */
+      mosh_series_eval(ctx, tjd + h, ip, xh);
+      for (i = 0; i <= 2; i++)
+        ai[i] = (xh[i+3] - x[ip][i+3]) / h;
+    } else {
+      for (i = 0; i <= 2; i++)
+        ai[i] = -k2 * (1 + m) * x[ip][i] / rj3[ip];
+      for (jp = 0; jp < 9; jp++) {
+        if (jp == ip)
+          continue;
+        for (i = 0; i <= 2; i++)
+          d[i] = x[jp][i] - x[ip][i];
+        r = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        r = r * r * r;
+        for (i = 0; i <= 2; i++)
+          ai[i] += k2 / mosh_plmass[jp] * (d[i] / r - x[jp][i] / rj3[jp]);
       }
     }
-    for (i = 0; i <= 2; i++) {
-      ctx->mosh_sun_bary.v[i] = -v[i] / msum;
-      ctx->mosh_sun_bary.a[i] = k2 * a[i];
-    }
-    ctx->mosh_sun_bary.t = tjd;
+    msum += m;
+    for (i = 0; i <= 2; i++)
+      sum[i] += m * ai[i];
   }
-  for (i = 0; i <= 2; i++) {
-    vs[i] = ctx->mosh_sun_bary.v[i];
-    as[i] = ctx->mosh_sun_bary.a[i];
-  }
+  for (i = 0; i <= 2; i++)
+    as[i] = -sum[i] / msum;
 }
+
 #endif
 
 

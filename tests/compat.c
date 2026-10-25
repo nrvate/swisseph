@@ -1752,6 +1752,43 @@ static double mosh_sun_lt_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 109: Moshier against the Swiss files at five dates
+ * 1900-2100, deg, the larger of two: Sirius without aberration, whose
+ * parallax was taken from the heliocentric Earth (9.2e-7 before the fix),
+ * and Cupido heliocentric, whose light time held the Sun still (2.9e-6);
+ * 3.1e-6 upstream, 1.2e-10 after. */
+static double mosh_bary_off(void)
+{
+  double w = 0, d, a[6], b[6], ra, rb;
+  int32 fl = SEFLG_J2000 | SEFLG_EQUATORIAL | SEFLG_XYZ;
+  char serr[256], s[SE_MAX_STNAME * 2 + 1];
+  int k, i, j;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 5; k++)
+    for (j = 0; j < 2; j++) {
+      double t = 2451547.5 + 182.625 + 365.25 * (-100 + 50 * k);
+      if (j == 0) {
+        strcpy(s, "Sirius");
+        if (swe_fixstar2(s, t, fl | SEFLG_NOABERR | SEFLG_MOSEPH, a, serr) < 0)
+          return 1;
+        strcpy(s, "Sirius");
+        if (swe_fixstar2(s, t, fl | SEFLG_NOABERR | SEFLG_SWIEPH, b, serr) < 0)
+          return 1;
+      } else if (swe_calc(t, SE_CUPIDO, fl | SEFLG_HELCTR | SEFLG_MOSEPH, a, serr) < 0
+                 || swe_calc(t, SE_CUPIDO, fl | SEFLG_HELCTR | SEFLG_SWIEPH, b, serr) < 0)
+        return 1;
+      ra = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+      rb = sqrt(b[0] * b[0] + b[1] * b[1] + b[2] * b[2]);
+      for (d = 0, i = 0; i < 3; i++)
+        d += (a[i] / ra - b[i] / rb) * (a[i] / ra - b[i] / rb);
+      d = sqrt(d) * 180 / M_PI;
+      if (d > w)
+        w = d;
+    }
+  return w;
+}
+
 /* UPSTREAM-BUGS 86: the JPL barycentric Sun's sidereal (Lahiri) longitude,
  * right after a request for Mars ten years on, against its tropical
  * longitude less the ayanamsa at its own date, deg. The Sun is answered in
@@ -2430,7 +2467,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2534,6 +2571,7 @@ int main(int argc, char **argv)
   refused = refused_file_off();
   fictstar = fict_star_parse();
   moshsunlt = mosh_sun_lt_off();
+  moshbary = mosh_bary_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -3309,6 +3347,14 @@ int main(int argc, char **argv)
   else {
     printf("  orbel Venus anomaly    %.2e deg FAIL: expected %s\n",
            orbelanom, WANT_DEFECT ? "> 1e-9" : "< 1e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshbary > 1e-7) : (moshbary < 2e-9))
+    printf("  Moshier star, fict     %.2e deg OK\n", moshbary);
+  else {
+    printf("  Moshier star, fict     %.2e deg FAIL: expected %s\n",
+           moshbary, WANT_DEFECT ? "> 1e-7" : "< 2e-9");
     bad++;
   }
 

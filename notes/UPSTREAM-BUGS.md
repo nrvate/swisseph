@@ -146,6 +146,7 @@ worst were in code that had never executed even once.
 | 111 | `swe_get_orbital_elements()`: the true anomaly cancels near aphelion, e loses digits, and the periods leave out the body's mass (the tropical one 3.9e-5 long, the synodic against k) | Correctness | `swecl.c` |
 | 113 | A seorbel.txt element field with a character no term has hangs `swe_calc()` for that body; a non-numeric epoch or equinox, an empty field, a short line are read as 0 or refuse every later body; a broken sefstars.txt is reported as "star not found", and `swe_fixstar()` with serr NULL answers an unknown star with the catalogue's last | Correctness (a hang; error reporting) | `swemplan.c`, `sweph.c` |
 | 114 | A seorbel.txt element term reads a power "T5" to "T9" as nothing, "T0" as T, "T 2" as T2 times 2, a number ".0" as 1 and "1.2.3" as 1.2, all without an error | Correctness | `swemplan.c` |
+| 109 | Moshier's fictitious bodies, fixed stars and apparent light time stay heliocentric, and its heliocentric Moon's speed is off its positions | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 
 ---
 
@@ -6318,21 +6319,18 @@ eight series per new instant land on the other paths: a ten-body chart
 without aberration +12%, heliocentric +17%, a single body without
 aberration per instant +30%.
 
-Not fixed here: the apparent distance. The apparent direction needs no
-v_Sun, but the light-time distance does, rho^.v_Sun tau, along the line of
-sight: Mercury 7.1e-8 AU, Mars 1.3e-7, Saturn 4.4e-7, Pluto 2.4e-6,
-Chiron 8.3e-7 (its apparent distance 9.2e-7 off the files against 3.1e-7
-without aberration), the Sun 5e-8, the Moon 1.3e-10. Taking it needs v_Sun
-on every apparent call: +12% on calc-moseph with the memo (measured with
-the barycentric frame on the apparent path too, whose directions it moves
-by <= 6.6e-10 deg), against a 2% budget. Moshier's own distance error is
-3e-7 AU (Mercury) to 2.9e-4 AU (Pluto), above it but for the asteroids.
-Nor the fictitious bodies (`app_pos_etc_plan_osc()`, the same 2.6e-6 to
-3.0e-6 deg heliocentric on Moshier, Cupido, Isis, Vulcan), nor the fixed
-stars, whose Moshier aberration is taken with the heliocentric Earth's
-velocity and has no light time to cancel it (3.0e-6 deg on Spica,
+Not fixed here, fixed since in entry 109 (G108): the apparent distance.
+The apparent direction needs no v_Sun, but the light-time distance does,
+rho^.v_Sun tau, along the line of sight: Mercury 7.1e-8 AU, Mars 1.3e-7,
+Saturn 4.4e-7, Pluto 2.4e-6, Chiron 8.3e-7 (its apparent distance 9.2e-7
+off the files against 3.1e-7 without aberration), the Sun 5e-8, the Moon
+1.3e-10. Nor the fictitious bodies (`app_pos_etc_plan_osc()`, the same
+2.6e-6 to 3.0e-6 deg heliocentric on Moshier, Cupido, Isis, Vulcan), nor
+the fixed stars, whose Moshier aberration was taken with the heliocentric
+Earth's velocity and has no light time to cancel it (3.0e-6 deg on Spica,
 Aldebaran, Polaris and Sirius apparent; Sirius 9.2e-7 without aberration,
-its parallax from the heliocentric Earth).
+its parallax from the heliocentric Earth). Entry 109 also adds Pluto to
+v_Sun.
 
 Found on the way, the reference's: the Swiss files' barycentric Sun is
 discontinuous at its yearly segment joins, by up to 1.2e-8 AU (302 joins
@@ -6956,6 +6954,208 @@ Zeus and Kronos as from the complete file. 19 pass; before the fix
 O11-O14 and O16 fail (O15 passes, as it should); the compat build fails
 12. G24 `fict_star_parse` bit 6, ".0 * T" against "0.0 * T": 0 shipped, 63
 of 63 compat. G24, G59, G64 and G80 pass.
+
+## 109. Moshier's fictitious bodies, fixed stars and apparent light time stay heliocentric, and its heliocentric Moon's speed is off its positions
+
+**Severity: Correctness (3.0e-6 deg on every Moshier apparent fixed star and every heliocentric fictitious body, 9.2e-7 deg on Sirius without aberration; Moshier apparent distances up to 2.4e-6 AU; the heliocentric Moon's speed 4.2e-8 deg/day)**
+**Where:** `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_sun()`, `app_pos_etc_moon()`, `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `mosh_sun_shift()` (new); `swemplan.c`: `swi_mosh_sun_bary()`, `mosh_series_cart()` (new), `swi_mosh_sun_accel()` (new), `swi_moshplan()`; `sweph.h`: the memo
+
+Entry 102's remainder: Moshier's places are heliocentric, and bug 102 took
+the light time about the barycentre only for the planets, the Sun and the
+Moon, and only where aberration was off. Four things were left.
+
+(a) The fictitious bodies. `app_pos_etc_plan_osc()`, and
+`app_pos_etc_orbel()` for `swe_calc_orbel()`, solved the light time with
+the Sun held still, v_Sun tau left out. Measured, Moshier against the
+Swiss files, heliocentric, 13 dates 1800..2200: Cupido 2.88e-6 deg, Isis
+2.79e-6, Vulcan 2.98e-6, and an orbit with a = 0.387 AU 2.86e-6. The
+elements are heliocentric on both paths, so this is the whole difference.
+
+(b) The fixed stars. A star's parallax was taken from the heliocentric
+Earth, and its aberration from the heliocentric Earth's velocity, v_Sun
+short. Against the files, J2000:
+- apparent: 2.8e-6 to 2.9e-6 deg on Sirius, Spica and Polaris;
+- without aberration and with SEFLG_TRUEPOS: Sirius 9.2e-7 (the Sun's
+  0.005-0.01 AU from the barycentre, against a parallax of 0.38"), Spica
+  2.4e-8, Polaris 1.8e-8;
+- heliocentric: no parallax at all, the same values.
+
+(c) The heliocentric Moon. Its speed was a constant 4.2e-8 deg/day off
+its positions, and its distance rate 7.4e-10 AU/day off. The Moon and the
+Earth were carried over the light time (about 500 s heliocentric) by a
+Taylor series with the gravity model's acceleration. That model differs
+from the series' own acceleration by 1e-4, the series' monthly terms and
+the planets' pull. The geocentric Moon without aberration carried the
+Earth the same way, which put 1.1e-8 deg/day on its speed
+(-3000..+3000).
+
+(d) The apparent light time. With aberration the light time stayed
+heliocentric. The direction cancels against the aberration, but the
+distance does not: it is off by rho^.v_Sun tau. Moshier's apparent
+distance less its distance without aberration, against the files' same
+difference, 81 dates 1800..2200, AU:
+
+| Body | Before | After |
+|---|---|---|
+| Sun | 4.95e-8 | 8.9e-16 |
+| Moon | 1.25e-10 | 1.46e-13 |
+| Mercury | 7.13e-8 | 1.1e-15 |
+| Venus | 7.34e-8 | 1.3e-15 |
+| Mars | 1.25e-7 | 1.1e-15 |
+| Jupiter | 1.00e-7 | 4.4e-15 |
+| Saturn | 4.39e-7 | 8.9e-15 |
+| Uranus | 9.99e-7 | 1.8e-14 |
+| Neptune | 1.44e-6 | 2.1e-14 |
+| Pluto | 2.40e-6 | 3.6e-14 |
+| Chiron | 8.26e-7 | 1.4e-14 |
+| Ceres | 1.80e-7 | 2.2e-15 |
+
+**Fix, as done here:**
+
+- **The Sun's motion.** Every Moshier path now works in entry 102's frame:
+  the origin at the Sun at teval, with barycentric velocities. With
+  aberration as well, not SEFLG_TRUEPOS. `mosh_sun_shift()` moves a body
+  read at t by s v_Sun + s^2 a_Sun / 2.
+  - The aberration-rate observer is built heliocentric, then shifted.
+  - In the planets' set (`SWI_MOSH_SUN_FULL`), Pluto joins the eight
+    planets: 3.4e-5 m/s, 5.5e-12 AU over Pluto's light time.
+  - The fictitious bodies take the same frame: the observer's and the
+    body's velocities at teval gain v_Sun, the body read at t (with an
+    Earth-centred set's focus) is shifted, and swe_calc_orbel()'s centre
+    is moved too.
+
+- **The stars.** On Moshier the observer is the barycentric Earth: the
+  heliocentric Earth plus the Sun's barycentric place and velocity from
+  `swi_mosh_sun_bary()`. Heliocentric, the parallax is the Sun's
+  barycentric place.
+  - The aberration rate's observer at -dm and +dp also takes the Sun's
+    motion. Its acceleration comes from `swi_mosh_sun_accel()`: the rate
+    of the series' v_Sun, since a star's speed is the rate of its
+    positions.
+  - The point masses' Newtonian pull is 2e-12 AU/day^2 off that rate,
+    because the giants' series are 1.2e-4 to 7e-3 of their acceleration
+    off Newton. Used alone it gave 1.05e-10 deg/day in Polaris's right
+    ascension, against G75's 6e-11 and 7.3e-12 before.
+  - (1 + sum m) a_Sun = -sum m_i a_i, with the four giants' a_i taken
+    one-sided from their series over 2^-9 day. The others' a_i are
+    Newtonian, with the planets' pull and its indirect part.
+  - This lands within 1.2e-12 AU/day^2 of the central difference of v_Sun
+    across the theory's range, and gives the full difference's answers on
+    G75: Polaris 2.27e-11.
+
+- **The Moon.** Heliocentric, the Moon and the Earth are read at t, so
+  the place and velocity are the series' own (entry 95). Geocentric
+  without aberration, the Earth's acceleration for the carry is the
+  series' (`swi_mosh_earth_accel()`, entry 66 part 3).
+
+- **The cost.** The series are memoised per planet and instant
+  (`mosh_series_cart()`, the same bits as `swi_moshplan()`'s own
+  evaluation), so the Sun's motion and a chart's bodies share them.
+
+Cheapest form, examined:
+
+- **a_Sun.** It is needed on the apparent path. s^2 a_Sun / 2 is 4.3e-10
+  AU over Pluto's light time.
+- **The inner planets.** They cannot be dropped from v_Sun for the far
+  bodies. Mercury's share alone (8 mm/s) is 1.1e-9 AU over Pluto's light
+  time, and even Pluto's own share is 5.5e-12 AU. A cheaper source for
+  them, mean elements, would need Mercury to 1e-3 and Venus to 1e-4 of
+  their velocity. It would also add a table from outside the code. And in
+  a chart their series are computed for the bodies anyway, so it would
+  cost a chart more, not less. Not done.
+- **The Moon's light time (1.3 s).** It needs v_Sun only to 0.11 m/s.
+  `SWI_MOSH_SUN_MOON` takes Venus, the Earth-Moon barycentre (read for the
+  Earth anyway) and the four giants: Mercury, Mars and Pluto left out are
+  0.016 m/s, 1.5e-13 AU.
+- **A fixed-grid interpolated v_Sun.** It is a pure function of t, and
+  would make a scan's new instants cheap. But a chart would then pay grid
+  nodes on top of the series it computes anyway, and switching between
+  exact and interpolated by what is cached would make answers depend on
+  call order (G-callorder). Not done.
+
+After, against the Swiss files, 13 dates 1800..2200:
+
+- **(a)** Cupido 6.6e-10 deg, Isis 3.0e-10, Vulcan 9.6e-10, the 0.387 AU
+  orbit 8.5e-10. This is the files' Sun against Moshier's planets'
+  barycentre, 6.5 mm/s, 1.2e-9 deg of v_Sun / c (2.8e-10 mid-way between
+  the files' yearly Sun joins). Without aberration, the geocentric
+  fictitious bodies are now as close as their apparent places, the Moshier
+  Earth's own error.
+- **(b)** Without aberration, TRUEPOS and heliocentric: Sirius 1.06e-10,
+  Spica 1.1e-10 (3e-12 TRUEPOS), Polaris 1.9e-12. Apparent: 8.9e-9 to
+  1.17e-8. The rest is the Moshier Earth's velocity theory error, 5.4 cm/s
+  or 1.04e-8 deg of aberration: RESIDUAL, below the floor, not fixed.
+- **(c)** The heliocentric Moon's speed is 1.9e-11 deg/day off its
+  five-point rate (3.7e-11 at -3000..+3000) and its distance rate 9e-14
+  AU/day. The geocentric Moon without aberration is at 2.2e-9 deg/day
+  (G101's dates 1.07e-8 -> 1.48e-9; the Moon's own series). The Moon's
+  heliocentric fixed point (G101) is 1.03e-10 -> 1.25e-12 deg.
+- **(d)** The table above. Each apparent distance is now as far off the
+  files as the one without aberration, Moshier's own theory error, from
+  1.8e-7 AU (the Sun) to 2.9e-4 (Pluto). Chiron's error is 9.17e-7 ->
+  3.10e-7 and Ceres's 3.63e-7 -> 3.06e-7, the whole of the asteroids'
+  difference.
+- **The apparent direction** moves by at most 6.6e-10 deg (-2900..+2900):
+  Pluto 6.6e-10, Mercury 6.1e-10, Saturn 5.9e-10, the Sun 1.6e-10, the
+  Moon 1.5e-10, topocentric the same. Speeds move by at most 9.5e-10
+  deg/day (Saturn), each still the rate of its positions (Saturn 1.38e-10
+  -> 1.37e-10 against five-point differences).
+
+Cost, perf stat instructions (the machine was too loaded for wall time):
+
+- calc-moseph +1.85% (2.2913e10 -> 2.3337e10). Every body needs v_Sun
+  now, and a chart shares the series.
+- calc-swieph +0.06%.
+- moon +55% (1.3456e10 -> 2.0827e10). That is +153k instructions a call:
+  a Moon-only scan at 0.37 day pays the five series of Venus and the
+  giants at every new instant.
+
+Per call at new instants, Moshier:
+
+| Call | Before | After |
+|---|---|---|
+| Mars apparent | 667k | 884k (+32%) |
+| Moon | 616k | 770k (+25%) |
+| Cupido apparent | 815k | 1077k (+32%) |
+| Vulcan | 1180k | 1438k (+22%) |
+| A star apparent, with speed | 627k | 1024k (+63%: the nine series and the four giants' at t + 2^-9) |
+| A star without speed, or without aberration | 533k | 794k (+49%) |
+| Cupido heliocentric | 1112k | 1119k (bug 102 already paid) |
+
+The 2% rule was waived for (d).
+
+The Swiss files' barycentric Sun jumps at its yearly segment joins (up to
+1.2e-8 AU). That is data, recorded in entry 102.
+
+G108 `tests/moshbary.c`, 34 rows:
+- (1) Cupido, Isis, Vulcan and a swe_calc_orbel() orbit heliocentric
+  against the files, within 2e-9 deg.
+- (2) Sirius, Spica and Polaris against the files: within 1e-9 deg without
+  aberration, true and heliocentric, and within 3e-8 apparent.
+- (3) The Moon's heliocentric speeds within 1e-9 deg/day and 1e-11 AU/day,
+  and without aberration within 5e-9.
+- (4) The apparent less the astrometric distance against the files'
+  within 1e-12 AU, for the Sun, the Moon, Mercury to Pluto and Chiron, and
+  the apparent distance rate of the Sun, the Moon, Mars and Pluto within
+  1e-11 AU/day.
+
+The build before the fix fails 30 rows. The upstream build fails 23: its
+11 distance rows pass, both its light times held heliocentric alike.
+
+G80's Moshier fixed-point reference now moves the body by the Sun's motion
+over the light time. Without that, its four Moshier rows fail by 2.5e-6 to
+3.0e-6. With it they are 3.3e-14 to 2.25e-12.
+
+The Sun's motion in the G101, G77, G52 and G33 references now takes Pluto,
+as the library does.
+
+G24 `mosh_bary_off`: Sirius without aberration and Cupido heliocentric
+against the files, five dates 1900..2100. 1.2e-10 deg shipped, 3.05e-6
+compat.
+
+G108, G101, G95, G80, G87, G75, G60, G52, G84, G77, G33 and G24 (both
+ways) pass. The compat build's output is bit-identical to before
+(planets, stars, fictitious and orbel bodies, every flag set dumped).
 
 ## How these were found
 

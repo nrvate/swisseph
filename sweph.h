@@ -937,6 +937,13 @@ struct epsilon {
  *     context, with SE_EPHE_PATH, files along the default path or another
  *     thread's path in effect (swe_deltat_ex(), swe_get_ayanamsa_ex_ut();
  *     swe_calc_orbel() refused on it; UPSTREAM-BUGS 110, G109)
+ *   - on Moshier the fictitious bodies' and swe_calc_orbel()'s light time
+ *     held the Sun still (3.0e-6 deg heliocentric), a fixed star took its
+ *     parallax and aberration from the heliocentric Earth (3.0e-6 deg
+ *     apparent, 9.2e-7 without aberration), the apparent light time stayed
+ *     heliocentric (the distance 2.4e-6 AU off on Pluto), and the
+ *     heliocentric Moon's speed was 4.2e-8 deg/day off its positions
+ *     (UPSTREAM-BUGS 109, G108)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -1161,7 +1168,10 @@ extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, dou
 extern int swi_moshplan2(swe_ctx *ctx, double J, int iplm, double *pobj);
 #ifndef SWE_UPSTREAM_COMPAT
 extern void swi_mosh_earth_accel(swe_ctx *ctx, double tjd, const double *x0, double *acc);
-extern void swi_mosh_sun_bary(swe_ctx *ctx, double tjd, double *vs, double *as);
+#define SWI_MOSH_SUN_FULL 0	/* every planet (bug 102) */
+#define SWI_MOSH_SUN_MOON 1	/* Venus, EMB and the giants (bug 109) */
+extern void swi_mosh_sun_bary(swe_ctx *ctx, double tjd, int set, double *xs, double *as);
+extern void swi_mosh_sun_accel(swe_ctx *ctx, double tjd, double *as);
 #endif
 extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
                            int ipl, int ipli, const double * SWI_RESTRICT xearth,
@@ -1726,9 +1736,14 @@ struct swe_ctx {
    * was made with, on JPL and Moshier; t is its instant, 0 for none
    * (UPSTREAM-BUGS 66) */
   struct { double t, x[6]; int32 iephe; } earth_moon;
-  /* the Sun's barycentric velocity and acceleration from Moshier's planets
-   * at instant t (UPSTREAM-BUGS 102), swi_mosh_sun_bary()'s memo */
-  struct { double t, v[3], a[3]; } mosh_sun_bary;
+  /* the Sun's barycentric place, velocity and acceleration from Moshier's
+   * planets at instant t, for each planet set, and the planets' series at
+   * their own instants tp (UPSTREAM-BUGS 102, 109), swi_mosh_sun_bary()'s
+   * memo */
+  struct {
+    struct swi_mosh_sun { double t, x[6], a[3]; } s[2];
+    double tp[9], xp[9][6];
+  } mosh_sun_bary;
 #endif
   /* nddat is deliberately the heavier plan_data, not node_data.
    *

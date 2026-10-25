@@ -53,7 +53,13 @@
  * geocentric rows' Earth difference E(t - tau) - E(t) is a fit's, not two
  * reads' (UPSTREAM-BUGS 96, G95: the library carries the Earth at t back
  * along its motion): Waldemath 2.4e-12 deg, Selena 1.0e-12; before bug 96
- * 6.3e-11 and 9.7e-12, the reads' noise. Run as
+ * 6.3e-11 and 9.7e-12, the reads' noise. Moshier's places are
+ * heliocentric, and since UPSTREAM-BUGS 109 (G108) the library moves the
+ * body read at t - tau by the Sun's barycentric motion over the light time,
+ * -tau v_S + tau^2 a_S / 2, Moshier's planets as point masses; the
+ * reference does the same (without it the four Moshier rows are 2.5e-6 to
+ * 3.0e-6 deg off, the bug-109 fix itself; with it Vulcan heliocentric
+ * 3.3e-14, Selena 1.05e-12, Waldemath 2.25e-12). Run as
  *   fictltround EPHEDIR
  */
 #include <math.h>
@@ -204,11 +210,47 @@ static double earth_fit_diff(const double *c, double dx)
   return v;
 }
 
+/* Moshier's Sun's barycentric velocity and acceleration, from its own
+ * heliocentric planets as point masses (UPSTREAM-BUGS 102, 109; G101 has
+ * the same): Moshier's places are heliocentric, and over the light time the
+ * Sun moves by s v_S + s^2 a_S / 2 (s = t - tau - t) */
+static void sun_bary_mosh(double jd, double *v, double *a)
+{
+  static const int ipl[9] = {SE_MERCURY, SE_VENUS, SE_EARTH, SE_MARS,
+                             SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE, SE_PLUTO};
+  static const double rm[9] = {6023600, 408523.719, 328900.5, 3098703.59,
+                               1047.348644, 3497.9018, 22902.98, 19412.26, 136566000};
+  const double k2 = 1.32712440017987e+20 * 86400.0 * 86400.0
+                    / (1.49597870700e11 * 1.49597870700e11 * 1.49597870700e11);
+  const int32 fc = SEFLG_MOSEPH | FR | SEFLG_TRUEPOS | SEFLG_SPEED;
+  char serr[256];
+  double x[6], m[6], ms = 1, r;
+  int k, i;
+  for (i = 0; i < 3; i++)
+    v[i] = a[i] = 0;
+  for (k = 0; k < 9; k++) {
+    swe_calc(jd, ipl[k], fc | SEFLG_HELCTR, x, serr);
+    if (ipl[k] == SE_EARTH) {	/* the Earth-Moon barycentre */
+      swe_calc(jd, SE_MOON, fc, m, serr);
+      for (i = 0; i < 6; i++)
+        x[i] += m[i] / (81.30056907419062 + 1);
+    }
+    r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+    ms += 1 / rm[k];
+    for (i = 0; i < 3; i++) {
+      v[i] += x[i + 3] / rm[k];
+      a[i] += k2 * x[i] / (r * r * r) / rm[k];
+    }
+  }
+  for (i = 0; i < 3; i++)
+    v[i] = -v[i] / ms;
+}
+
 static double fict_fixed_point_off(double t, int ipl, int32 eph, int hel)
 {
   char serr[256];
   double O[6] = {0, 0, 0, 0, 0, 0}, B[6], E[6], X[6], d[3] = {0, 0, 0}, tau = 0, old = -1;
-  double cf[3][FDEG + 1];
+  double cf[3][FDEG + 1], vs[3] = {0, 0, 0}, as[3] = {0, 0, 0};
   int32 cfl = eph | FR | SEFLG_TRUEPOS | SEFLG_SPEED;
   int32 bfl = cfl | (eph == SEFLG_MOSEPH ? SEFLG_HELCTR : SEFLG_BARYCTR);
   int it, i, mgeo = eph == SEFLG_MOSEPH && !hel;
@@ -218,6 +260,8 @@ static double fict_fixed_point_off(double t, int ipl, int32 eph, int hel)
     swe_calc(t, SE_EARTH, cfl | SEFLG_HELCTR, O, serr);
   if (mgeo)
     earth_fit(t, cfl, cf);
+  if (eph == SEFLG_MOSEPH)
+    sun_bary_mosh(t, vs, as);
   for (it = 0; it < 30 && fabs(tau - old) > 1e-18; it++) {
     double tp = t - tau, eps;
     old = tau;
@@ -231,6 +275,8 @@ static double fict_fixed_point_off(double t, int ipl, int32 eph, int hel)
       for (i = 0; i < 3; i++)
         d[i] = B[i] + eps * B[i + 3] - O[i];
     }
+    for (i = 0; i < 3; i++)	/* the Sun's motion over the light time */
+      d[i] += -tau * vs[i] + tau * tau * as[i] / 2;
     tau = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) * AUNIT_ / CLIGHT_ / 86400;
   }
   swe_calc(t, ipl, eph | FR | SEFLG_NOABERR | SEFLG_NOGDEFL | (hel ? SEFLG_HELCTR : 0), X, serr);
