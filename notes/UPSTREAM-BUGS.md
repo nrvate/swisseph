@@ -55,6 +55,7 @@ worst were in code that had never executed even once.
 | 17 | `ipl * 100` overflows int32 for a large negative body number | Robustness | `sweph.c` |
 | 18 | Changing delta t does not invalidate the cached topocentric observer | Correctness | `swephlib.c`, `sweph.c` |
 | 23 | A bad `seorbel.txt` field hangs `swe_calc()`, terms such as "T5" or ".0" are misread, a broken `sefstars.txt` is reported as "star not found" | Correctness / Robustness | `swemplan.c`, `sweph.c` |
+| 24 | Seven house defects: Placidus and Gauquelin cusps not converged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files, Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the speed of a cusp on an equinox point | Correctness | `swehouse.c` |
 
 ---
 
@@ -1375,6 +1376,87 @@ the distributed `seorbel.txt` (six instants and its names), catalogue stars
 1 to 1141 through `swe_fixstar2()` and `swe_fixstar2_mag()`, and lines 1 to
 1210 through `swe_fixstar()` and `swe_fixstar_mag()` are bit for bit as
 before. G32 `tests/fictstar.c`: 19 cases in child processes under a 5 s alarm.
+
+## 24. Seven house defects: Placidus and Gauquelin cusps not converged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files, Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the speed of a cusp on an equinox point
+
+**Severity: Correctness (up to 1.1e-5 deg on a Placidus cusp; 57.3 times on every RADIANS speed; 41 deg on sidereal Makransky cusps; ERR and Porphyry, 16.7 deg off, for Sunshine houses without files; 6e-6 deg on a Sunshine declination; 24 cusps and 24 speeds left as the caller had them; up to 427 deg/day on a cusp speed at one instant)**
+**Where:** `swehouse.c`: `CalcH()` (Placidus, Gauquelin), `swe_houses_ex2_r()`, `swe_houses_r()`, `swe_houses_armc_ex2_r()`, `sidereal_houses_trad()`
+
+1. The Placidus and Gauquelin cusp is the fixed point of C = Asc1(ra,
+f(C)), iterated until two cusps lie within 1/360000 deg. The last step
+is the error times the iteration's contraction, so the cusp stayed off
+the fixed point by 1.4e-9 deg at 30-40N, 1.8e-8 at 40-50N, 1.3e-7 at
+55-60N, 6.2e-7 at 63-65N, 1.3e-6 at 65-66N and 1.1e-5 within 0.01 deg of
+the polar circle (Placidus and Gauquelin, scanned over ARMCs 7.3 deg apart). The
+cusps of consecutive instants differ by the rate of that error, so a
+speed taken from differences of the returned cusps is off by it.
+2. With `SEFLG_RADIANS`, `swe_houses_ex2()` turned the cusps and ascmc to
+radians and left `cusp_speed` and `ascmc_speed` in deg/day: 57.3 times
+the radian rate.
+3. `sidereal_houses_trad()` took `toupper()` of the house system, so
+sidereal Makransky Sunshine (`'i'`, the one lower-case system the tropical
+path dispatches; the others are upcased with a deprecation warning)
+computed Treindl's `'I'`: 41 deg apart at worst at 60S.
+4. Sunshine houses need the Sun's declination, from `swe_calc_ut()`. With
+no Swiss files for the date, and the ephemeris fallback off (this fork's
+default), it refuses; the houses went to Porphyry and returned ERR (16.7
+deg from the Sunshine cusps), `ascmc[9]` 0.
+5. `swe_houses_ex2_r()` asked the Sun's declination with no ephemeris
+flag, so a `SEFLG_MOSEPH` (or `SEFLG_JPLEPH`) call got the Swiss
+ephemeris' Sun whatever the caller chose: at 2026-07, 47N, the declination
+23.026219549 against Moshier's 23.026225558 (6.0e-6 deg; the cusps 3.8e-6
+deg). `swe_houses_r()` has no `iflag`, so there is nothing to pass there.
+6. A Gauquelin call (36 cusps) that fell back to Porphyry (within the
+polar circle, a negative return) has 12 cusps. Cusps 13..36 and their
+speeds stayed as the caller had them, and with `SEFLG_RADIANS` the
+conversion multiplied them anyway: at 80N arrays prefilled with 7 came
+back 7 in degrees and 0.1222 in radians, 24 cusps and 24 speeds each. In
+the sidereal calls the ayanamsa was subtracted from them as well.
+`swe_houses_r()` and `swe_houses_armc_ex2_r()` left them the same way.
+7. In the Placidus and Gauquelin branches, when the first-guess cusp is on
+the equator (|tan dec| < 1e-10, the cusp at an equinox point; cusps 11, 12,
+2, 3 and sectors 2..9, 29..36) the cusp is the right ascension and its
+speed was set to the ARMC's, 360.99 deg/day. The cusp moves at A_x, the
+rate of Asc1 in the right ascension at the pole height m tan(fi) that the
+semi-arc fraction m gives there (the pole height has a zero derivative on
+the equator): 415 to 788 deg/day at 47N and 60N, up to 427 deg/day from
+what the ARMC's rate gave.
+
+**Fix, as done here:** (1) The stopping step is 1e-12 deg, with an Aitken
+step once the steps are below 1e-3 deg and shrinking by less than 0.9 (the
+remaining error is d r / (1 - r)): about one evaluation of the map more
+per cusp. Plain steps down to 1e-12 would exhaust the 100 iterations a few
+hundred metres short of the polar circle, where the old stop still
+answered; the Aitken step keeps the answers: of 242190 Placidus and
+Gauquelin calls over the last 0.02 deg of latitude before the circle, 9
+(within 65 m of it) go to Porphyry that did not, against 303 with Aitken
+limited to ratios below 0.5. Elsewhere no call changes between OK and
+Porphyry.
+(2) The speeds are converted with the positions. (3) `'i'` is kept as is
+for the call inside, as the tropical path does. (4) and (5) One
+function asks the Sun with the caller's `SEFLG_JPLEPH`, `SEFLG_SWIEPH` and
+`SEFLG_MOSEPH` bits and, on a refusal, again from Moshier: the declination
+is an input to the houses, not an ephemeris position the caller asked for,
+and Moshier's is 0.1" off (cusps 3.8e-6 deg from the Swiss-file call).
+(6) A Gauquelin return below zero zeroes cusps and speeds 13..36 in
+`swe_houses_armc_ex2_r()` (so `swe_houses_r()` and the tropical
+`swe_houses_ex2_r()` too), and the three sidereal paths then keep the 12
+Porphyry cusps only, as that function does, so that they do not subtract
+the ayanamsa from the zeros. (7) The speed is A_x * ARMCS at pole height
+atan(m tan fi).
+
+G33 `tests/housecusps.c`: the cusps of Placidus 11, 12, 2, 3 and
+Gauquelin sectors 2..9, 29..36 satisfy their defining condition (the right
+ascension at the fraction of the cusp's own semi-arc) to 1.1e-13 deg at 47N,
+60N and 65N over 24 ARMCs (3.0e-7 before); the 12 equinox-point cusps are
+within 6.5e-8 deg/day of five-point differences (427 deg/day before);
+RADIANS speeds are the degree speeds times pi/180 to 3.2e-18 (0.98
+before); sidereal `'i'` is the tropical cusps less the ayanamsa (41 deg off
+before); Sunshine houses are OK without files and agree with the
+Swiss-file call to 3.8e-6 deg (ERR, 16.7 deg off before); the MOSEPH call's
+`ascmc[9]` is Moshier's Sun to 1e-12 (the Swiss one before); 0 of 96
+entries 13..36 stale in each of four kinds of call and 0 of 72 from
+`swe_houses_r()` and `swe_houses_armc_ex2_r()` (all stale before).
 
 ## How these were found
 

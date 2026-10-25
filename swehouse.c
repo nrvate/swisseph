@@ -110,6 +110,22 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
 static int sunshine_solution_makransky(double ramc, double lat, double ecl, struct houses *hsp);
 static int sunshine_solution_treindl(double ramc, double lat, double ecl, struct houses *hsp);
 
+#define EPHE_FLAGS (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)
+
+/* The Sun's equatorial position for Sunshine houses. Its declination is an
+ * input to the houses, not an ephemeris position the caller asked for: it
+ * comes from the ephemeris the caller chose (iflag), and where that one
+ * refuses (no Swiss file for the date, with the ephemeris fallback off) from
+ * Moshier's, which is 0.1" off. */
+static int sunshine_sun(swe_ctx *ctx, double tjd_ut, int32 iflag, double *xp)
+{
+  int32 flags = SEFLG_SPEED | SEFLG_EQUATORIAL | (iflag & EPHE_FLAGS);
+  int retc = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, flags, xp, NULL);
+  if (retc < 0 && !(flags & SEFLG_MOSEPH))
+    retc = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, (flags & ~EPHE_FLAGS) | SEFLG_MOSEPH, xp, NULL);
+  return retc;
+}
+
 /* housasp.c 
  * cusps are returned in double cusp[13],
  *                           or cusp[37] with house system 'G'.
@@ -140,9 +156,8 @@ int CALL_CONV swe_houses_r(swe_ctx *ctx, double tjd_ut,
     nutlo[i] *= RADTODEG;
   armc = swe_degnorm(swe_sidtime0_r(ctx, tjd_ut, eps + nutlo[1], nutlo[0]) * 15 + geolon);
   if (toupper(hsys) ==  'I') {	// compute sun declination for sunshine houses
-    int flags = SEFLG_SPEED| SEFLG_EQUATORIAL;
     double xp[6];
-    int result = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, flags, xp, NULL);
+    int result = sunshine_sun(ctx, tjd_ut, 0, xp);
     if (result < 0) {
       // in case of failure, Porphyry houses
       result = swe_houses_armc_ex2_r(ctx, armc, geolat, eps + nutlo[1], 'O', cusp, ascmc, NULL, NULL, NULL);
@@ -284,8 +299,7 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
   armc = swe_degnorm(swe_sidtime0_r(ctx, tjd_ut, eps_mean + nutlo[1], nutlo[0]) * 15 + geolon);
 //fprintf(stderr, "armc=%f, iflag=%d\n", armc, iflag);
   if (toupper(hsys) ==  'I') {	// compute sun declination for sunshine houses
-    int flags = SEFLG_SPEED| SEFLG_EQUATORIAL;
-    retc_makr = swe_calc_ut_r(ctx, tjd_ut, SE_SUN, flags, xp, NULL);
+    retc_makr = sunshine_sun(ctx, tjd_ut, iflag, xp);
     if (retc_makr < 0) {
       // in case of failure, provide Porphyry houses
       hsys = (int) 'O';
@@ -309,6 +323,14 @@ int CALL_CONV swe_houses_ex2_r(swe_ctx *ctx, double tjd_ut,
       cusp[i] *= DEGTORAD;
     for (i = 0; i < SE_NASCMC; i++)
       ascmc[i] *= DEGTORAD;
+    if (cusp_speed != NULL) {
+      for (i = 1; i <= ito; i++)
+        cusp_speed[i] *= DEGTORAD;
+    }
+    if (ascmc_speed != NULL) {
+      for (i = 0; i < SE_NASCMC; i++)
+        ascmc_speed[i] *= DEGTORAD;
+    }
   }
   if (retc_makr < 0)
     return retc_makr;
@@ -424,6 +446,8 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
   armcx = swe_degnorm(armc - dvpx);        /* 3 */
   /* compute axes and houses: */
   retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  if (retc < 0)
+    ito = 12;		/* Porphyry: the sectors 13..36 stay 0 */
   /* distance between auxiliary vernal point and
    * vernal point of t0 (a section on the sidereal plane) */
   dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
@@ -534,6 +558,8 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
   armcx = swe_degnorm(armc - dvpx);        /* 3 */
   /* compute axes and houses: */
   retc = swe_houses_armc_ex2_r(ctx, armcx, lat, epsx, hsys, cusp, ascmc, cusp_speed, ascmc_speed, serr);  /* 4 */
+  if (retc < 0)
+    ito = 12;		/* Porphyry: the sectors 13..36 stay 0 */
   /* distance between the auxiliary vernal point at t and
    * the sidereal zero point of 2000 at t
    * (a section on the sidereal plane).
@@ -591,7 +617,9 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
   double ay;
   int ito;
   int ihs = toupper(hsys);
-  int ihs2 = ihs;
+  /* 'i' (Sunshine, Makransky) is the one lower-case system that is not
+   * 'I' (Treindl): swe_houses_armc_ex2_r() tells them apart. */
+  int ihs2 = hsys == 'i' ? hsys : ihs;
   (void) nutl;	/* unused */
 // ay = swe_get_ayanamsa(tjde);
 //fprintf(stderr, "ay=%f\n", ay);
@@ -607,6 +635,8 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
 //fprintf(stderr, "armc=%f\n", armc);
 //if (hsys == 'P') fprintf(stderr, "ay=%f, t=%f %c", ay, tjde, (char) hsys);
   retc = swe_houses_armc_ex2_r(ctx, armc, lat, eps, ihs2, cusp, ascmc, cusp_speed, ascmc_speed, serr);
+  if (retc < 0)
+    ito = 12;		/* Porphyry: the sectors 13..36 stay 0 */
 //if (hsys == 'P') fprintf(stderr, "  h1=%f", cusp[1]);
   for (i = 1; i <= ito; i++) {
     //cusp[i] = swe_degnorm(cusp[i] - ay - nutl);
@@ -724,6 +754,14 @@ int CALL_CONV swe_houses_armc_ex2_r(swe_ctx *ctx, double armc,
   if (retc < 0) {
     ito = 12;
     if (serr != NULL) strcpy(serr, h.serr);
+    /* a Gauquelin call has no sectors 13..36 then: 0, not what the caller
+     * had in the arrays */
+    if (toupper(hsys) == 'G') {
+      for (i = 13; i <= 36; i++) {
+        cusp[i] = 0;
+        if (h.do_hspeed) cusp_speed[i] = 0;
+      }
+    }
   }
   for (i = 1; i <= ito; i++) {
     cusp[i] = h.cusp[i];
@@ -940,7 +978,50 @@ double swi_armc_to_mc(double armc, double eps)
 }
 
 //#define DEBUG_PLAC_ITER 1
-#define VERY_SMALL_PLAC_ITER (1.0 / 360000.0 )
+/* A Placidus or Gauquelin cusp is the fixed point of C = Asc1(ra, f(C)),
+ * found by iterating the map from the cusp before the loop. The error of
+ * an iterate is its step times the map's contraction, which nears 1 toward
+ * the polar circle, so the iteration runs to a step of
+ * VERY_SMALL_PLAC_ITER, a few ulps of the cusp. Whatever error is left
+ * moves with the instant, and the cusps of consecutive instants differ by
+ * its rate (a stop at a step of 1/360000 deg leaves up to 1.3e-7 deg at
+ * 60N, 1.3e-6 at 65N).
+ *
+ * Once the steps are below 1e-3 deg and shrinking by a ratio r of less than
+ * 0.9, the error left is d r / (1 - r), d the last step: plac_converged()
+ * adds it (Aitken) and the next step is the rounding. That costs about one
+ * evaluation of the map more per cusp than a stop at 1/360000 deg. Without
+ * it, plain steps down to 1e-12 would run past the iteration limit a few
+ * hundred metres short of the polar circle, where a stop at 1/360000 deg
+ * still answered. *dsv is the previous step, 0 where there is none. */
+#define VERY_SMALL_PLAC_ITER 1e-12
+static AS_BOOL plac_converged(double *cusp, double cuspsv, double *dsv)
+{
+  double d = swe_difdeg2n(*cusp, cuspsv);
+  double r;
+  if (fabs(d) < VERY_SMALL_PLAC_ITER)
+    return TRUE;
+  r = *dsv != 0 ? d / *dsv : 1;
+  if (fabs(d) < 1e-3 && fabs(r) < 0.9) {
+    *cusp += d * r / (1 - r);
+    *dsv = 0;
+  } else {
+    *dsv = d;
+  }
+  return FALSE;
+}
+
+/* The speed of a Placidus or Gauquelin cusp on an equinox point, where its
+ * declination is 0: the cusp is the right ascension rectasc itself. It moves
+ * at the rate of Asc1 in right ascension at the pole height atan(m tan(fi))
+ * that the cusp's fraction m of the semi-arc gives there (the pole height has
+ * a zero derivative on the equator), not at the ARMC's rate. */
+static double plac_equator_speed(double rectasc, double m, double tanfi,
+                                 double sine, double cose)
+{
+  return AscDash(rectasc, atand(m * tanfi), sine, cose);
+}
+
 static int CalcH(
 	double th, double fi, double ekl, char hsy, struct houses *hsp)
 /* *********************************************************
@@ -990,7 +1071,7 @@ static int CalcH(
   double sine, cose;
   double x[3], krHorizonLon; /* BK 14.02.2006 */
   int niter_max = 100; // maximum iterations allowed with Placidus
-  double cuspsv;
+  double cuspsv, dsv;
   *hsp->serr = '\0';
   hsp->do_interpol = 0;
   cose  = cosd(ekl);
@@ -1693,12 +1774,12 @@ porphyry:
       tant = tand(asind(sine * sind(Asc1(rectasc, fh1, sine, cose))));
       if (fabs(tant) < VERY_SMALL) {
 	hsp->cusp[ih] = rectasc;
-	if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+	if (hsp->do_hspeed) hsp->cusp_speed[ih] = plac_equator_speed(rectasc, ih2 / 9.0, tanfi, sine, cose);
       } else {
 	/* pole height */
 	f = atand(sind(asind(tanfi * tant) * ih2 / 9)  /tant);
         hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-	cuspsv = 0;
+	cuspsv = hsp->cusp[ih]; dsv = 0;
         for (i = 1; i <= niter_max; i++) {
 	  tant = tand(asind(sine * sind(hsp->cusp[ih])));
 	  if (fabs(tant) < VERY_SMALL) {
@@ -1709,7 +1790,7 @@ porphyry:
 	  /* pole height */
 	  f = atand(sind(asind(tanfi * tant) * ih2 / 9) / tant);
   	  hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-	  if (i > 1 && fabs(swe_difdeg2n(hsp->cusp[ih], cuspsv)) < VERY_SMALL_PLAC_ITER)
+	  if (plac_converged(&hsp->cusp[ih], cuspsv, &dsv))
 	    break;
 	  cuspsv = hsp->cusp[ih];
         }
@@ -1735,12 +1816,12 @@ porphyry:
       tant = tand(asind(sine * sind(Asc1(rectasc, fh1, sine, cose))));
       if (fabs(tant) < VERY_SMALL) {
         hsp->cusp[ih] = rectasc;
-	if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+	if (hsp->do_hspeed) hsp->cusp_speed[ih] = plac_equator_speed(rectasc, ih2 / 9.0, tanfi, sine, cose);
       } else {
         f = atand(sind(asind(tanfi * tant) * ih2 / 9) / tant);
         /*  pole height */
         hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-	cuspsv = 0;
+	cuspsv = hsp->cusp[ih]; dsv = 0;
         for (i = 1; i <= niter_max; i++) {
 	  tant = tand(asind(sine * sind(hsp->cusp[ih])));
 	  if (fabs(tant) < VERY_SMALL) {
@@ -1751,7 +1832,7 @@ porphyry:
 	  f = atand(sind(asind(tanfi * tant) * ih2 / 9) / tant);
 	  /*  pole height */
   	  hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-	  if (i > 1 && fabs(swe_difdeg2n(hsp->cusp[ih], cuspsv)) < VERY_SMALL_PLAC_ITER)
+	  if (plac_converged(&hsp->cusp[ih], cuspsv, &dsv))
 	    break;
 	  cuspsv = hsp->cusp[ih];
 	}
@@ -1894,12 +1975,12 @@ porphyry:
     ih = 11;
     if (fabs(tant) < VERY_SMALL) {
       hsp->cusp[ih] = rectasc;
-      if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = plac_equator_speed(rectasc, 1 / 3.0, tanfi, sine, cose);
     } else {
       /* pole height */
       f = atand(sind(asind(tanfi * tant) / 3)  /tant);  
       hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-      cuspsv = 0;
+      cuspsv = hsp->cusp[ih]; dsv = 0;
       for (i = 1; i <= niter_max; i++) {
 	tant = tand(asind(sine * sind(hsp->cusp[ih])));
 	if (fabs(tant) < VERY_SMALL) {
@@ -1910,7 +1991,7 @@ porphyry:
 	/* pole height */
 	f = atand(sind(asind(tanfi * tant) / 3) / tant);
 	hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-	if (i > 1 && fabs(swe_difdeg2n(hsp->cusp[ih], cuspsv)) < VERY_SMALL_PLAC_ITER)
+	if (plac_converged(&hsp->cusp[ih], cuspsv, &dsv))
 	  break;
 	cuspsv = hsp->cusp[ih];
       }
@@ -1930,12 +2011,12 @@ porphyry:
     ih = 12;
     if (fabs(tant) < VERY_SMALL) {
       hsp->cusp[ih] = rectasc;
-      if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = plac_equator_speed(rectasc, 2 / 3.0, tanfi, sine, cose);
     } else {
       f = atand(sind(asind(tanfi * tant) / 1.5) / tant);  
       /*  pole height */
       hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-      cuspsv = 0;
+      cuspsv = hsp->cusp[ih]; dsv = 0;
       for (i = 1; i <= niter_max; i++) {
 	tant = tand(asind(sine * sind(hsp->cusp[ih])));
 	if (fabs(tant) < VERY_SMALL) {
@@ -1946,7 +2027,7 @@ porphyry:
 	f = atand(sind(asind(tanfi * tant) / 1.5) / tant);  
 	/*  pole height */
 	hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-	if (i > 1 && fabs(swe_difdeg2n(hsp->cusp[ih], cuspsv)) < VERY_SMALL_PLAC_ITER)
+	if (plac_converged(&hsp->cusp[ih], cuspsv, &dsv))
 	  break;
 	cuspsv = hsp->cusp[ih];
       }
@@ -1966,12 +2047,12 @@ porphyry:
     ih = 2;
     if (fabs(tant) < VERY_SMALL) {
       hsp->cusp[ih] = rectasc;
-      if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = plac_equator_speed(rectasc, 2 / 3.0, tanfi, sine, cose);
     } else {
       f = atand(sind(asind(tanfi * tant) / 1.5) / tant);
       /*  pole height */
       hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-      cuspsv = 0;
+      cuspsv = hsp->cusp[ih]; dsv = 0;
       for (i = 1; i <= niter_max; i++) {
 	tant = tand(asind(sine * sind(hsp->cusp[ih])));
 	if (fabs(tant) < VERY_SMALL) {
@@ -1982,7 +2063,7 @@ porphyry:
 	f = atand(sind(asind(tanfi * tant) / 1.5) / tant);
 	/*  pole height */
 	hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-	if (i > 1 && fabs(swe_difdeg2n(hsp->cusp[ih], cuspsv)) < VERY_SMALL_PLAC_ITER)
+	if (plac_converged(&hsp->cusp[ih], cuspsv, &dsv))
 	  break;
 	cuspsv = hsp->cusp[ih];
       }
@@ -2002,12 +2083,12 @@ porphyry:
     ih = 3;
     if (fabs(tant) < VERY_SMALL) {
       hsp->cusp[ih] = rectasc;
-      if (hsp->do_hspeed) hsp->cusp_speed[ih] = hsp->armc_speed;
+      if (hsp->do_hspeed) hsp->cusp_speed[ih] = plac_equator_speed(rectasc, 1 / 3.0, tanfi, sine, cose);
     } else {
       f = atand(sind(asind(tanfi * tant) / 3) / tant);  
       /*  pole height */
       hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-      cuspsv = 0;
+      cuspsv = hsp->cusp[ih]; dsv = 0;
       for (i = 1; i <= niter_max; i++) {
 	tant = tand(asind(sine * sind(hsp->cusp[ih])));
 	if (fabs(tant) < VERY_SMALL) {
@@ -2018,7 +2099,7 @@ porphyry:
 	f = atand(sind(asind(tanfi * tant) / 3) / tant);
 	/*  pole height */
 	hsp->cusp[ih] = Asc1(rectasc, f, sine, cose);
-	if (i > 1 && fabs(swe_difdeg2n(hsp->cusp[ih], cuspsv)) < VERY_SMALL_PLAC_ITER)
+	if (plac_converged(&hsp->cusp[ih], cuspsv, &dsv))
 	  break;
 	cuspsv = hsp->cusp[ih];
       }
