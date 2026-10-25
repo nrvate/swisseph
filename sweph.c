@@ -7485,8 +7485,8 @@ static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, ch
  * Moon's 7.5% of a' (1.4e-8 to 1.7e-8). The Moon is now the one the saved
  * Earth was made from, kept by that computation at no extra read:
  * ctx->earth_moon, the geocentric Moon of the JPL Earth (EMB less the
- * Moon's share, swi_pleph) and of Moshier's (embofs_mosh, whose rate
- * difference holds the Moon's velocity and place). It serves every light
+ * Moon's share, swi_pleph) and of Moshier's (the full series' Moon its
+ * Earth was made with, mosh_earth_moon(): bug 191). It serves every light
  * time. Without it (an Earth not saved at teval) the Moon is read past
  * 0.3 day. Past 0.3 day tau a is whole and now also holds the pull of
  * Mercury, Venus, Mars, Jupiter and Saturn on the Earth, 5e-5 of a each for
@@ -7550,8 +7550,8 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
     return;
   /* the Moon's pull on the Earth, a_m = GM_m d/|d|^3, and its rate: from
    * the save area on the Swiss files, from the Earth's own read on JPL (the
-   * Earth is the EMB less the Moon's share) and Moshier (embofs), else, past
-   * the switch, read here */
+   * Earth is the EMB less the Moon's share) and Moshier (mosh_earth_moon()),
+   * else, past the switch, read here */
   {
     const double gmm = GEOGCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT) / EARTH_MOON_MRAT;
     double dm[6];
@@ -10322,7 +10322,7 @@ static void rot_back(swe_ctx *ctx, int ipli)
  * xmoon= geocentric position or velocity vector of moon
  */
 /* restrict: the only two call sites are embofs(xpe, xpm) and
- * embofs(xpe+3, xpm+3) at sweph.c:2101,2109 -- distinct arrays. */
+ * embofs(xpe+3, xpm+3) -- distinct arrays. */
 static void embofs(double * SWI_RESTRICT xemb, const double * SWI_RESTRICT xmoon)
 {
   int i;
@@ -12041,7 +12041,7 @@ static int32 plaus_iflag(swe_ctx *ctx, int32 iflag, int32 ipl, double tjd, char 
   if (epheflag == 0)
     epheflag = SEFLG_DEFAULTEPH;
   iflag = (iflag & ~SEFLG_EPHMASK) | epheflag;
-  /* SEFLG_JPLHOR only with JPL and Swiss Ephemeeris */
+  /* SEFLG_JPLHOR and SEFLG_JPLHOR_APPROX only with JPL */
   if (!(epheflag & SEFLG_JPLEPH)) 
     iflag = iflag & ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
   /* planets that have no JPL Horizons mode */
