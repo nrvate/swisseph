@@ -89,6 +89,7 @@ worst were in code that had never executed even once.
 | 51 | The Moshier velocities are differences at rounded instants | Correctness | `swemplan.c`, `swemmoon.c`, `sweph.c` |
 | 60 | A negative mean anomaly with no T terms freezes a fictitious body | Correctness | `swemplan.c` |
 | 54 | `SEFLG_SPEED3` takes the true node's and osculating apogee's speeds over 0.1 day | Correctness | `sweph.c` |
+| 55 | The mean nodes' and apsides' speeds are one-day differences | Correctness | `swecl.c`, `swemmoon.c` |
 
 ---
 
@@ -2710,6 +2711,50 @@ deg/day and 1e-10 AU/day. The upstream build fails all six rows (apogee
 7e-7 AU/day). G24 `node3_speed_off`: the Moshier apogee at 2800, 1.1e-6
 deg/day shipped, 0.19 compat. G1: rows with `SEFLG_SPEED3` on these two
 bodies, if any, move by the figures above; not re-baselined here.
+
+## 55. The mean nodes' and apsides' speeds are one-day differences
+
+**Severity: Correctness (2e-5 deg/day on the Moon's mean perigee and apogee latitude speed, 2e-6 on their longitude speed, 6e-10 AU/day on the nodes' distance speed)**
+**Where:** `swecl.c`, `swe_nod_aps_r()`; `swemmoon.c`, `swi_mean_lunar_elements()`
+
+The mean points' speeds were never rates. `swi_mean_lunar_elements()` gave the
+Moon's node and perigee speeds as the position less the position a day back,
+a backward difference with the curvature of half a day and without the
+correction terms (`corr_mean_node()`, `corr_mean_apog()`) of the position
+itself: 2e-6 deg/day on the perigee's longitude. `swe_nod_aps()` took the
+aux. position of the mean perigee a day on and the speed as that less the
+position (bug 38 had only moved the subtraction to the latitude): the
+Moon's perigee turns 0.11 deg/day on an orbit inclined 5.1 degrees, and the
+half day of the latitude's curvature is 2e-5 deg/day of the latitude speed.
+The nodes' distance speed was the radius at an argument of perihelion a day
+on less the radius, 6e-10 AU/day for the Moon (1e-10 for Mars; the planets'
+perihelia turn slowly, their longitude and latitude speeds were within 1e-8).
+
+**Fix, as done here:** the Moon's node and perigee speeds are central
+differences of the corrected positions over +-2^-5 day, at exact instants;
+`swe_nod_aps()` carries the node, the argument of perihelion, the
+inclination, the semi-major axis and the eccentricity to +-2^-6 day and
+takes the perigee's longitude and latitude speeds and the nodes' distance
+speeds as the central differences of those points (the aphelion's from the
+perigee's). Positions are unchanged (the Moon's node and perigee at tjd are
+the same code). Against five-point differences of the library's own
+positions at binary-fraction instants, 1500..2500, mean, ecliptic: Moon
+geocentric lon 4.7e-6 to 8.1e-10, lat 2.1e-5 to 3.9e-11 deg/day, dist 6.2e-10
+to 3.8e-15 AU/day; Moon heliocentric 2.8e-8, 5.7e-8, 5.6e-10 to 7.9e-10,
+4.7e-11, 5.8e-11. Mars is unchanged, 4.2e-8, 5.8e-9, 6.6e-10 at +-500 years:
+the planets' element rates are the linear terms only, ep[1]/36525, and the
+elements' quadratic and cubic terms are not in the speeds. Left, not
+fixed here.
+
+G54 `tests/moonaspeed.c`: the longitude, latitude and distance speed of the
+four points, Moon and Mars, geocentric and heliocentric, at seven instants
+1500..2500, within 3e-8, 1e-8 and 2e-10; the upstream build fails all four
+cases (Moon geocentric 5.2e-6 lon, 5.1 lat, the latitude through bug 38).
+G42 and G47 unchanged. G24 `moon_perigee_speed_off`: the Moon's mean
+perigee longitude speed at 2461338.137 (binary fraction), 2.6e-10 deg/day
+shipped, 1.8e-6 compat. G1 rows of the mean nodes' and apsides' speeds
+move (the Moon by 5e-6 deg/day longitude, 2e-5 latitude) and need the
+re-baseline.
 
 ## How these were found
 

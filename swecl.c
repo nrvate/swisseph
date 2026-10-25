@@ -5296,7 +5296,10 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   double xq[3][6], xa[3][6];
   double xobs2[6], x2[6];
   double *xna, *xnd, *xpe, *xap;
-  double incl, sema, ecce, parg, ea, vincl, vsema, vecce, pargx, eax;
+  double incl, sema, ecce, parg, ea, vincl, vsema, vecce;
+#ifdef SWE_UPSTREAM_COMPAT
+  double pargx, eax;
+#endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *psbdp = &ctx->pldat[SEI_SUNBARY];
   struct plan_data pldat;
@@ -5414,6 +5417,63 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     xnd[0] = swe_degnorm(xna[0] + 180);
     xnd[3] = xna[3];
     /* angular distance of perihelion from node */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 55: the speeds were differences over one day -- the
+     * perigee's latitude 2e-5 deg/day off the rate for the Moon (curvature
+     * of a 5.1 deg inclined orbit turning 0.11 deg/day), its longitude
+     * 2e-6, the nodes' distance 6e-10 AU/day -- the aux. position a day on
+     * less the position. They are now central differences of the elements
+     * carried +-2^-6 day, the planets' mean apsides' too (bug 38's latitude
+     * speed, xpe[4] -= xpe[1], is this with a one-sided step). */
+    {
+      const double hh = 1.0 / 64;
+      double xa[2][3], rn[2], rd[2];
+      int sg;
+      parg = xpe[0] = swe_degnorm(xpe[0] - xna[0]);
+      for (sg = 0; sg < 2; sg++) {
+	double s1 = sg ? hh : -hh;
+	double pg = swe_degnorm(parg + s1 * (xpe[3] - xna[3]));
+	double ec = ecce + s1 * vecce, se = sema + s1 * vsema;
+	xa[sg][0] = pg; xa[sg][1] = 0; xa[sg][2] = 0;
+	/* transform from orbital plane to mean ecliptic of date */
+	swe_cotrans(xa[sg], xa[sg], -(incl + s1 * vincl));
+	/* add node again */
+	xa[sg][0] = swe_degnorm(xa[sg][0] + xna[0] + s1 * xna[3]);
+	ea = atan(tan(-pg * DEGTORAD / 2) * sqrt((1-ec)/(1+ec))) * 2;
+	rn[sg] = se * (cos(ea) - ec) / cos(pg * DEGTORAD);
+	ea = atan(tan((180 - pg) * DEGTORAD / 2) * sqrt((1-ec)/(1+ec))) * 2;
+	rd[sg] = se * (cos(ea) - ec) / cos((180 - pg) * DEGTORAD);
+      }
+      /* transform from orbital plane to mean ecliptic of date */
+      swe_cotrans(xpe, xpe, -incl);
+      /* add node again */
+      xpe[0] = swe_degnorm(xpe[0] + xna[0]);
+      xpe[3] = swe_difdeg2n(xa[1][0], xa[0][0]) / (2 * hh);
+      xpe[4] = (xa[1][1] - xa[0][1]) / (2 * hh);
+      /* heliocentric distance of perihelion and aphelion */
+      xpe[2] = sema * (1 - ecce);
+      xpe[5] = (sema + vsema) * (1 - ecce - vecce) - xpe[2];
+      /* aphelion */
+      xap[0] = swe_degnorm(xpe[0] + 180);
+      xap[1] = -xpe[1];
+      xap[3] = xpe[3];
+      xap[4] = -xpe[4];
+      if (do_focal_point) {
+	xap[2] = sema * ecce * 2;
+	xap[5] = (sema + vsema) * (ecce + vecce) * 2 - xap[2];
+      } else {
+	xap[2] = sema * (1 + ecce);
+	xap[5] = (sema + vsema) * (1 + ecce + vecce) - xap[2];
+      }
+      /* heliocentric distance of nodes */
+      ea = atan(tan(-parg * DEGTORAD / 2) * sqrt((1-ecce)/(1+ecce))) * 2;
+      xna[2] = sema * (cos(ea) - ecce) / cos(parg * DEGTORAD);
+      xna[5] = (rn[1] - rn[0]) / (2 * hh);
+      ea = atan(tan((180 - parg) * DEGTORAD / 2) * sqrt((1-ecce)/(1+ecce))) * 2;
+      xnd[2] = sema * (cos(ea) - ecce) / cos((180 - parg) * DEGTORAD);
+      xnd[5] = (rd[1] - rd[0]) / (2 * hh);
+    }
+#else
     parg = xpe[0] = swe_degnorm(xpe[0] - xna[0]);
     pargx = xpe[3] = swe_degnorm(xpe[0] + xpe[3]  - xna[3]);
     /* transform from orbital plane to mean ecliptic of date */
@@ -5426,15 +5486,6 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     xpe[3] = swe_degnorm(xpe[3] + xna[0] + xna[3]);
     /* speed */
     xpe[3] = swe_degnorm(xpe[3] - xpe[0]);
-#ifndef SWE_UPSTREAM_COMPAT
-    /* Upstream bug 38: the latitude's speed was never taken. xpe[4] is the
-     * aux. position's latitude, a day on, and went out as the speed, so
-     * the mean perihelion's and aphelion's latitude speed was the latitude
-     * itself (1.8 deg/day for Mars, against a true 1e-6), and through the
-     * cartesian state the geocentric longitude speed was off by 0.01-0.04
-     * deg/day with it. */
-    xpe[4] -= xpe[1];
-#endif
     /* heliocentric distance of perihelion and aphelion */
     xpe[2] = sema * (1 - ecce);
     xpe[5] = (sema + vsema) * (1 - ecce - vecce) - xpe[2];
@@ -5461,6 +5512,7 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     xnd[2] = sema * (cos(ea) - ecce) / cos((180 - parg) * DEGTORAD);
     xnd[5] = (sema+vsema) * (cos(eax) - ecce - vecce) / cos((180 - pargx) * DEGTORAD);
     xnd[5] -= xnd[2];
+#endif
     /* no light-time correction because speed is extremely small */
     for (i = 0, xp = xx; i < 4; i++, xp += 6) {
       /* to cartesian coordinates */

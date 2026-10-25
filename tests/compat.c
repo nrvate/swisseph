@@ -560,6 +560,27 @@ static double mean_apsis_lat_speed_off(void)
   return fabs(x[4] - r);
 }
 
+/* The Moon's mean perigee, geocentric: its longitude speed against a
+ * five-point difference of its longitude over 2^-6 day, deg/day. Upstream
+ * takes it as the elements' position less their position a day back, and
+ * the aux. position's a day on, half a day's curvature: 2e-6 deg/day off,
+ * and 2e-5 on the latitude speed (UPSTREAM-BUGS 55; the latitude speed is
+ * not used here, it is 5 deg/day off in upstream anyway, bug 38). */
+static double moon_perigee_speed_off(void)
+{
+  double jd = floor(2461338.137 * 256) / 256, h = 1.0 / 64, x[6], f[5][6], u[6], v[5];
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_nod_aps(jd, SE_MOON, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_MEAN, u, u, x, u, serr);
+  for (k = 0; k < 5; k++)
+    swe_nod_aps(jd + (k - 2) * h, SE_MOON, SEFLG_SWIEPH, SE_NODBIT_MEAN, u, u, f[k], u, serr);
+  for (k = 0; k < 5; k++)
+    v[k] = f[2][0] + swe_difdeg2n(f[k][0], f[2][0]);
+  return fabs(x[3] - (v[0] - 8 * v[1] + 8 * v[3] - v[4]) / (12 * h));
+}
+
 /* UPSTREAM-BUGS 46: Mars's osculating descending node, perihelion and
  * aphelion, geocentric, with and without SEFLG_SPEED: the largest move in
  * longitude or latitude, mas. Upstream's aberration-rate call leaves the
@@ -759,7 +780,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, hspd, hsid, moshr, moshs, n3spd;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, hspd, hsid, moshr, moshs, n3spd, moonpspd;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -789,6 +810,7 @@ int main(int argc, char **argv)
   intprough = intp_rough_off();
   stardd = star_dist_rate_off();
   n3spd = node3_speed_off();
+  moonpspd = moon_perigee_speed_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -999,6 +1021,14 @@ int main(int argc, char **argv)
   else {
     printf("  apogee SPEED3          %.2e deg/day FAIL: expected %s\n",
            n3spd, WANT_DEFECT ? "> 5e-4" : "< 1e-5");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moonpspd > 1e-6) : (moonpspd < 1e-8))
+    printf("  Moon perigee speed     %.2e deg/day OK\n", moonpspd);
+  else {
+    printf("  Moon perigee speed     %.2e deg/day FAIL: expected %s\n",
+           moonpspd, WANT_DEFECT ? "> 1e-6" : "< 1e-8");
     bad++;
   }
 

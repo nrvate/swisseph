@@ -282,7 +282,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-moonlt check-jpltdb check-sidsplice check-sidera check-obliq check-nutgrid check-sidnod check-spicarv check-nutspeed check-eopload \
-       check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-intpaps check-node3speed check-starspeed check-housespeed check-moshprec \
+       check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-intpaps check-node3speed check-starspeed check-moonaspeed check-housespeed check-moshprec \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -424,6 +424,9 @@ starspeed: starspeed.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 fictneg: fictneg.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+moonaspeed: moonaspeed.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 housespeed: housespeed.c $(SWEOBJ_STD)
@@ -695,6 +698,11 @@ check-node3speed: node3speed
 check-starspeed: starspeed
 	@env -u SE_EPHE_PATH ./starspeed $(EPHE)
 
+# G54: the mean nodes' and apsides' speeds are the rates of their positions,
+# longitude, latitude and distance, Moon and Mars (UPSTREAM-BUGS 55).
+check-moonaspeed: moonaspeed
+	@env -u SE_EPHE_PATH ./moonaspeed $(EPHE)
+
 # G45: house cusp speeds are the rate of the cusps in every system: whole
 # signs, Porphyry, Krusinski, Koch, Placidus, Gauquelin and the differenced
 # systems, the ARMC's and obliquity's own rates, sidereal frames' rates
@@ -811,7 +819,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed housespeed starspeed orbelspeed fictneg nodaps2 intpaps node3speed moshprec .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed housespeed starspeed orbelspeed fictneg nodaps2 intpaps node3speed moonaspeed moshprec .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
@@ -829,7 +837,7 @@ clean:
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
         check-ctxfiles check-compat check-jplhor check-hostile \
-        check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-intpaps check-node3speed check-starspeed check-housespeed check-moshprec \
+        check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-intpaps check-node3speed check-starspeed check-moonaspeed check-housespeed check-moshprec \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
@@ -1014,7 +1022,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg intpaps node3speed starspeed housespeed moshprec .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg intpaps node3speed starspeed moonaspeed housespeed moshprec .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.

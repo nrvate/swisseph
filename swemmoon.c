@@ -1404,10 +1404,38 @@ static void ecldat_equ2000(swe_ctx *ctx, double tjd, double *xpm) {
  * answer in arc seconds
  */
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* the mean node's and perigee's longitudes at tjd, corrections included */
+static void mean_node_peri(swe_ctx *ctx, double tjd, double *node, double *peri)
+{
+  ctx->moon.T = (tjd - J2000) / 36525.0;
+  ctx->moon.T2 = ctx->moon.T*ctx->moon.T;
+  mean_elements(ctx);
+  *node = swe_degnorm((ctx->moon.SWELP - ctx->moon.NF) * STR * RADTODEG);
+  *peri = swe_degnorm((ctx->moon.SWELP - ctx->moon.MP) * STR * RADTODEG);
+  *node = swe_degnorm(*node - corr_mean_node(tjd));
+  *peri = swe_degnorm(*peri - corr_mean_apog(tjd));
+}
+#endif
+
 void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 
 							 double *node, double *dnode, 
 							 double *peri, double *dperi)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 55: the speeds were the position less the position a day
+   * back, a backward difference: half a day's curvature, 2e-6 deg/day on
+   * the perigee's longitude, and the correction terms of the position
+   * (corr_mean_node(), corr_mean_apog()) were left out of it. They are now
+   * the central difference of the corrected positions over +-2^-5 day. */
+  const double h = 1.0 / 32;
+  double nm, pm, np, pp;
+  mean_node_peri(ctx, tjd - h, &nm, &pm);
+  mean_node_peri(ctx, tjd + h, &np, &pp);
+  *dnode = swe_difdeg2n(np, nm) / (2 * h);
+  *dperi = swe_difdeg2n(pp, pm) / (2 * h);
+  mean_node_peri(ctx, tjd, node, peri);
+#else
   double dcor;
   ctx->moon.T = (tjd - J2000) / 36525.0;
   ctx->moon.T2 = ctx->moon.T*ctx->moon.T;
@@ -1423,6 +1451,7 @@ void swi_mean_lunar_elements(swe_ctx *ctx, double tjd,
   *node = swe_degnorm(*node - dcor);
   dcor = corr_mean_apog(tjd);
   *peri = swe_degnorm(*peri - dcor);
+#endif
 }
 
 #ifndef SWE_UPSTREAM_COMPAT

@@ -775,6 +775,11 @@ struct epsilon {
  *   - swe_calc_r() took the SEFLG_SPEED3 speed of the true node and the
  *     osculating apogee over +-0.1 day on every ephemeris: 1.4e-3 deg/day
  *     on the apogee, 3.5e-5 on the node (UPSTREAM-BUGS 54, G53)
+ *   - the mean nodes' and apsides' speeds as one-day differences: the Moon's
+ *     node and perigee backward, without the position's correction terms
+ *     (2e-6 deg/day), the aux. position of the mean perigee a day on (2e-5
+ *     deg/day on the Moon's latitude speed), the nodes' distance speed over
+ *     a day (UPSTREAM-BUGS 55, G54)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
