@@ -1234,6 +1234,10 @@ struct epsilon {
  *     equinox of date at the emission instant under light time, as
  *     upstream's JDATE branch reads them, and that frame's turning in the
  *     speed, are this fork's function, active in both builds; G126)
+ *   - (nothing for UPSTREAM-BUGS 141: swe_calc_orbel()'s return flag as
+ *     swe_calc() makes it, the caller's coordinate bits and no default
+ *     ephemeris bit where none was named, is this fork's function, active
+ *     in both builds; G126)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

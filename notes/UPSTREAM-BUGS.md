@@ -174,6 +174,7 @@ worst were in code that had never executed even once.
 | 145 | `swe_deltat_ex()` with no ephemeris bit in the flag takes the tidal term of the JPL file the context has open, else the default, not the Swiss files' that a 0 flag means to `swe_calc()` and every UT function: at 1950 28.927550 s on the thread that set de200.eph, 28.931886 on a second thread until it opens the file, for 28.932196; 169.4 s in AD 1000; a flag-0 eclipse search 11.3 s off | Correctness | `swephlib.c` |
 | 139 | With the fallback allowed, a Swiss or JPL barycentric request whose files are missing is answered from Moshier, which refuses it asked for itself: Moshier's heliocentric place under SEFLG_BARYCTR and SEFLG_MOSEPH, Mars 0.24 deg and 7.2e-3 AU off the files' barycentric one, the Moon 0.37 deg; `swe_calc_orbel()`, `swe_calc_pctr()` and `swe_nod_aps()`'s barycentric ellipse alike | Correctness (behaviour) | `sweph.c` |
 | 146 | The nutation interpolation's nodes lie both sides of `SEMOD_JPLHORA_3`'s step at 1962 Jan 20 under SEFLG_JPLHOR_APPROX (7.17e-2" in dpsi on the default model): dpsi and every place of date within a day of it interpolated across it, 1.95e-2" off the exact nutation at the switch + 0.3 after a call at - 0.5, 6.93e-2" at worst, where the interpolation is otherwise within about 3 mas | Correctness | `swephlib.c` |
+| 141 | `swe_calc_orbel()` (this fork's) returns SEFLG_SWIEPH where no ephemeris was named (18178 for `swe_calc()`'s 18176 with SEFLG_BARYCTR and SEFLG_SPEED) and drops SEFLG_RADIANS with SEFLG_XYZ (4354 for 12546): not `swe_calc()`'s return flag for the same flags, the answer the same | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -9515,6 +9516,57 @@ Noticed, not fixed:
   `NUT_SPEED_INTV` (1e-4 day) of it the nutation's rate, a central
   difference there, takes its 7.17e-2" step: the speed 9.96e-2 deg/day
   off at the switch - 2^-16 and - 2^-14 day.
+
+## 141. `swe_calc_orbel()` returns SEFLG_SWIEPH where no ephemeris was named, and drops SEFLG_RADIANS with SEFLG_XYZ: not `swe_calc()`'s return flag (this fork's)
+
+**Severity: Correctness (behaviour: a return flag that differs from `swe_calc()`'s for the same flags; the answer itself the same)**
+**Where:** `sweph.c`: `swe_calc_orbel_r()` (and through it `swe_calc_orbel_ut_r()`)
+
+`swe_calc_orbel()` returned the flags as the Earth's computation left them
+(`pldat[SEI_EARTH].xflgs`, the light time's Moshier redo applied). The
+answer was right; the flag was not `swe_calc()`'s, which returns its
+answer's flags with the caller's coordinate bits (SEFLG_EQUATORIAL,
+SEFLG_XYZ, SEFLG_RADIANS) and, where the caller named no ephemeris,
+without the default's bit ("if no ephemeris has been specified, do not
+return chosen ephemeris"). Measured against `swe_calc()` of the same
+elements from a seorbel.txt, files present, 2000 Jul 1.5:
+
+- no ephemeris bit: SEFLG_BARYCTR | SEFLG_SPEED returned 18178 for
+  18176, 0 returned 2 for 0, every flag set and centre the default's bit
+  more (SEFLG_SWIEPH, 2); a fallback to Moshier says SEFLG_MOSEPH in both;
+- SEFLG_XYZ | SEFLG_RADIANS: the radians bit, which `swe_calc()` drops for
+  the computation as this function does, came back cleared, 4354 for
+  12546 with SEFLG_SWIEPH | SEFLG_SPEED, on every ephemeris and centre and
+  through `swe_calc_orbel_ut()` as well.
+
+`swe_calc_orbel_ut()` names the ephemeris for its delta t as
+`swe_calc_ut()` does, so its no-bit returns already agreed. Both builds
+behaved the same way.
+
+**Fix, as done here:** `swe_calc()`'s own statement at the end of
+`swe_calc_orbel_r()`: the answer's flags with the caller's SEFLG_COORDSYS
+bits, and SEFLG_DEFAULTEPH cleared when the caller's flags had no
+ephemeris bit. Unguarded, on entry 112's precedent: the function is the
+fork's and follows the fork's `swe_calc()` in both builds; no G24 case.
+Not a hot path: two masks a call.
+
+Left as it is: SEFLG_SPEED3 is refused by contract ("SEFLG_SPEED3 is not
+supported for orbital elements"), where `swe_calc()` answers a fictitious
+body with three positions.
+
+G126 `tests/orbelbias.c` gains a check 5, files present: check 1's twelve
+flag sets and SEFLG_RADIANS with and without SEFLG_XYZ, every centre, the
+Swiss files, de200, Moshier and no ephemeris bit, each orbit at one date,
+through `swe_calc_orbel()` and `swe_calc_orbel_ut()` against `swe_calc()`
+and `swe_calc_ut()`: 3584 calls, the same return and message, Moshier's
+barycentre (224) refused by both. Check 3 (files missing, strict and with
+the fallback) takes no ephemeris bit too: 960 calls, 440 refused by both,
+the same before and after. Before the fix check 5 fails in both builds,
+656 calls: the 448 with no ephemeris bit through `swe_calc_orbel()`, and
+240 with SEFLG_XYZ | SEFLG_RADIANS (32 among those). After, G126 passes;
+the compat build fails 53 (54 before), the others its copy of upstream's
+fictitious path's (entry 130's guard, G27's light time, entry 88's first
+call).
 
 ## How these were found
 

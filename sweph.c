@@ -805,7 +805,7 @@ static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el
         double *xx, char *serr)
 {
   int i, j;
-  int32 epheflag, epheflag_asked;
+  int32 epheflag, epheflag_asked, iflgsave = iflag;	/* bug 141 */
   double tequ, mu;
   double x[24], *xs;
   /* The scratch body: the fictitious bodies compute into SEI_ANYBODY the
@@ -1019,6 +1019,17 @@ static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el
         xx[j] *= DEGTORAD;
     }
   }
+  /* Upstream bug 141 (this fork's swe_calc_orbel()): the return flag was
+   * the flags as the Earth's computation left them, where swe_calc()
+   * returns its answer's flags with the caller's coordinate bits and,
+   * when no ephemeris was named, without the default's bit: 18178 for
+   * swe_calc()'s 18176 with SEFLG_BARYCTR | SEFLG_SPEED, 2 for 0, and
+   * SEFLG_RADIANS dropped with SEFLG_XYZ (4354 for 12546). Now
+   * swe_calc()'s statement. Unguarded, as bug 112's: this function is not
+   * upstream's. G126. */
+  iflag = (iflag & ~SEFLG_COORDSYS) | (iflgsave & SEFLG_COORDSYS);
+  if ((iflgsave & SEFLG_EPHMASK) == 0)
+    iflag &= ~SEFLG_DEFAULTEPH;
   return iflag;
   return_error:;
   for (i = 0; i <= 5; i++)

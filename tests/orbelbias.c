@@ -29,7 +29,13 @@
  * equinox at the observation instant through its light-time loop and left
  * the turning out of the speed.
  *
- * Four checks, no golden file:
+ * And (UPSTREAM-BUGS 141): the return flag was the flags the Earth's
+ * computation left, where swe_calc() returns its answer's flags with the
+ * caller's coordinate bits, and without the default ephemeris's bit when
+ * none was named: 18178 for 18176 with SEFLG_BARYCTR | SEFLG_SPEED, and
+ * SEFLG_RADIANS dropped with SEFLG_XYZ.
+ *
+ * Five checks, no golden file:
  *   1. swe_calc_orbel() against swe_calc() of the same elements written
  *      to a seorbel.txt in a temp dir (as G27 does): eight orbits (a =
  *      1.2 AU; 30 AU on the B1950 equinox; 80000 AU circular; 0.01 AU
@@ -54,11 +60,12 @@
  *      orbit's heliocentric ones its geocentric plus the Earth, to 1e-14 of
  *      the distance (AU, AU/day; of 1 AU below it).
  *   3. the files missing (the temp dir alone on the path), strict and
- *      with the fallback allowed: each orbit at each date, Moshier, Swiss
- *      and JPL, geocentric, heliocentric and barycentric, with speed: 720
- *      calls, the same return flag and message as swe_calc() of the same
- *      elements, and where both answer the same place (the limits of 1).
- *      Strict, Swiss and JPL are refused by both for the missing files and
+ *      with the fallback allowed: each orbit at each date, Moshier, Swiss,
+ *      JPL and no ephemeris bit, geocentric, heliocentric and barycentric,
+ *      with speed: 960 calls, the same return flag and message as
+ *      swe_calc() of the same elements, and where both answer the same
+ *      place (the limits of 1). Strict, Swiss, JPL and no bit (a Swiss
+ *      request) are refused by both for the missing files and
  *      Moshier's barycentre for itself; with the fallback both answer from
  *      Moshier and refuse every barycentric request, Swiss and JPL ones
  *      fallen to Moshier as Moshier's (UPSTREAM-BUGS 139; before it, both
@@ -72,6 +79,13 @@
  *      topocentric one (a residual of its own, 1.8e-8 to 4.6e-8 deg/day on
  *      every equinox and on the seorbel.txt path alike): within 1e-8
  *      deg/day (distances and XYZ as their angle).
+ *   5. the return flag, files present: swe_calc_orbel() and
+ *      swe_calc_orbel_ut() return what swe_calc() and swe_calc_ut() of the
+ *      same elements return, with the same message, for check 1's twelve
+ *      flag sets and SEFLG_RADIANS with and without SEFLG_XYZ, every
+ *      centre, the Swiss files, de200, Moshier and no ephemeris bit, each
+ *      orbit at one date: 3584 calls, Moshier's barycentre (224) refused
+ *      by both.
  *
  * Measured before the fix, on the Swiss files, Moshier and DE431 alike:
  * check 1 off by 1.1e-5 to 1.45e-5 deg geocentric and topocentric at a =
@@ -99,9 +113,9 @@
  * by 4.0e-5 to 8.8e-5 deg/day in speed, the same in check 4, on every
  * ephemeris, and check 3 by those places: 25 failures. After: check 1
  * within 7.1e-13 deg and 1.0e-11 deg/day, Moshier's barycentre refused by
- * both; check 3's 720 calls agree with swe_calc() (320 refused by both,
- * 400 since bug 139's fix),
- * places within 5.1e-13 deg and 1.0e-11 deg/day; check 4 within 4.6e-9
+ * both; check 3's 960 calls (720 before bug 141's no ephemeris bit) agree
+ * with swe_calc() (560 refused by both since bug 139's fix), places
+ * within 5.1e-13 deg and 1.0e-11 deg/day; check 4 within 4.6e-9
  * deg/day (the 1.2 AU orbit topocentric; 2.4e-9 about the Earth). The
  * upstream build, whose swe_calc_orbel() refuses Moshier's barycentre and
  * takes the equinox of date at the emission instant with its turning in
@@ -110,7 +124,13 @@
  * all eight orbits, check 4 on the orbits of date by 9.3e-5 to 4.0e-4
  * deg/day (its light time's defects, G27's), and check 3's places by bug
  * 88's infinity; with those two fixes guarded it failed 62, Moshier's
- * barycentre too on each orbit and in check 3's returns.
+ * barycentre too on each orbit and in check 3's returns. Before bug
+ * 141's fix check 5 fails in both builds, 656 of its calls: the 448 with
+ * no ephemeris bit through swe_calc_orbel() return SEFLG_SWIEPH, and 240
+ * with SEFLG_XYZ | SEFLG_RADIANS (32 of them among those) return without
+ * SEFLG_RADIANS (4354 for 12546 with SEFLG_SWIEPH | SEFLG_SPEED); the UT
+ * function, whose delta t names the ephemeris as swe_calc_ut() does, only
+ * the latter. The upstream build fails 54 then, 53 after.
  * Run as
  *   orbelbias EPHEDIR [DE4XX_FILE]
  * DE4XX_FILE a path to a JPL file of DE number 403 or above (SE_TEST_DE4
@@ -369,13 +389,75 @@ static void Leg(int32 eph, const char *name, int *bad)
   }
 }
 
+/* check 5: the return flag and message, files present: swe_calc_orbel()
+ * and swe_calc_orbel_ut() return what swe_calc() and swe_calc_ut() return
+ * for the same flags (bug 141) -- check 1's twelve flag sets and
+ * SEFLG_RADIANS with and without SEFLG_XYZ, every centre, each ephemeris
+ * bit and none, each orbit at one of the dates */
+static void RetLeg(int *bad)
+{
+  static const int32 fls[] = {
+    SEFLG_SPEED, 0, SEFLG_SPEED | SEFLG_J2000, SEFLG_SPEED | SEFLG_ICRS,
+    SEFLG_SPEED | SEFLG_EQUATORIAL,
+    SEFLG_SPEED | SEFLG_EQUATORIAL | SEFLG_XYZ | SEFLG_J2000,
+    SEFLG_SPEED | SEFLG_EQUATORIAL | SEFLG_XYZ | SEFLG_ICRS,
+    SEFLG_SPEED | SEFLG_XYZ,
+    SEFLG_SPEED | SEFLG_TRUEPOS | SEFLG_J2000 | SEFLG_XYZ,
+    SEFLG_SPEED | SEFLG_NOABERR | SEFLG_NOGDEFL,
+    SEFLG_SPEED | SEFLG_NONUT, SEFLG_SPEED | SEFLG_SIDEREAL,
+    SEFLG_SPEED | SEFLG_RADIANS, SEFLG_SPEED | SEFLG_XYZ | SEFLG_RADIANS,
+  };
+  static const int32 ephs[] = {0, SEFLG_SWIEPH, SEFLG_JPLEPH, SEFLG_MOSEPH};
+  static const int32 ctrs[] = {0, SEFLG_TOPOCTR, SEFLG_HELCTR, SEFLG_BARYCTR};
+  int nfl = (int) (sizeof fls / sizeof fls[0]), ib, ie, ic, ifl, ut, nrow = 0, nfail = 0, nref = 0;
+  char serr[256], serr2[256];
+  for (ib = 0; ib < NB; ib++)
+    for (ut = 0; ut < 2; ut++)
+      for (ie = 0; ie < 4; ie++)
+        for (ic = 0; ic < 4; ic++)
+          for (ifl = 0; ifl < nfl; ifl++) {
+            int32 fl = ephs[ie] | ctrs[ic] | fls[ifl], r1, r2;
+            int id = ib % ND;
+            double xo[6], xf[6], el[6];
+            el[0] = M0(ib, id);
+            el[1] = B[ib].a;
+            el[2] = B[ib].e;
+            el[3] = B[ib].w;
+            el[4] = B[ib].N;
+            el[5] = B[ib].i;
+            *serr = *serr2 = '\0';
+            if (ut) {
+              r1 = swe_calc_orbel_ut(JD[id], el, B[ib].geo ? SE_EARTH : SE_SUN, B[ib].eq, 0, fl, xo, serr);
+              r2 = swe_calc_ut(JD[id], SE_FICT_OFFSET + ib * ND + id, fl, xf, serr2);
+            } else {
+              r1 = swe_calc_orbel(JD[id], el, B[ib].geo ? SE_EARTH : SE_SUN, B[ib].eq, 0, fl, xo, serr);
+              r2 = swe_calc(JD[id], SE_FICT_OFFSET + ib * ND + id, fl, xf, serr2);
+            }
+            nrow++;
+            if (r1 != r2 || strcmp(serr, serr2) != 0) {
+              if (nfail++ == 0)
+                printf("    %s jd %.1f flags %d%s: orbel %d \"%s\", seorbel.txt %d \"%s\"\n",
+                       bname[ib], JD[id], fl, ut ? " UT" : "", r1, serr, r2, serr2);
+              continue;
+            }
+            if (r1 < 0)
+              nref++;
+          }
+  printf("  return flags, files present: %d calls (%d refused by both), %d otherwise than"
+         " swe_calc()\n", nrow, nref, nfail);
+  if (nfail || nref == nrow) {
+    printf("    FAIL: a return or message not swe_calc()'s for the same flags\n");
+    (*bad)++;
+  }
+}
+
 /* check 3: the files missing (the element file's directory alone), strict
  * and with the fallback allowed: swe_calc_orbel() answers or refuses as
  * swe_calc() does for the same flags, with the same return flag, message
- * and place (bugs 112, 120, 135 and 139) */
+ * and place (bugs 112, 120, 135, 139 and 141), no ephemeris bit included */
 static void MissLeg(const char *dir, int *bad)
 {
-  static const int32 ephs[] = {SEFLG_MOSEPH, SEFLG_SWIEPH, SEFLG_JPLEPH};
+  static const int32 ephs[] = {SEFLG_MOSEPH, SEFLG_SWIEPH, SEFLG_JPLEPH, 0};
   static const int32 ctrs[] = {0, SEFLG_HELCTR, SEFLG_BARYCTR};
   int fb0 = swe_get_ephe_fallback(), fb, ie, ic, ib, id, nrow = 0, nfail = 0, nref = 0;
   double wp = 0, wv = 0;
@@ -386,7 +468,7 @@ static void MissLeg(const char *dir, int *bad)
     swe_set_ephe_fallback(fb);
     for (ib = 0; ib < NB; ib++)
       for (id = 0; id < ND; id++)
-        for (ie = 0; ie < 3; ie++)
+        for (ie = 0; ie < 4; ie++)
           for (ic = 0; ic < 3; ic++) {
             int32 fl = ephs[ie] | ctrs[ic] | SEFLG_SPEED, r1, r2;
             double xo[6], xf[6];
@@ -456,6 +538,7 @@ int main(int argc, char **argv)
   swe_set_jpl_file("de200.eph");
   Leg(SEFLG_JPLEPH, "de200", &bad);
   Leg(SEFLG_MOSEPH, "Moshier", &bad);
+  RetLeg(&bad);
   if (*de4) {
     const char *sl = strrchr(de4, '/');
     if (sl != NULL)
