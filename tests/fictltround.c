@@ -1,5 +1,6 @@
 /* fictltround.c -- G80: a fictitious body's light-time position is read at
- * teval - tau, not at its rounding, and its elements are exact to theirs.
+ * teval - tau, not at its rounding, at the light time's fixed point, and its
+ * elements are exact to theirs.
  *
  * app_pos_etc_plan_osc() solved the light time on the orbit (bug 26, G27)
  * and read the elements at t = teval - dt rounded to a double, up to half
@@ -21,6 +22,14 @@
  * from the rate in two doubles and an fma product with its revolutions
  * taken out exactly.
  *
+ * Part 3: the light-time loop stopped within 1e-12 day of its fixed point
+ * with the body read at the last pass's dt (2.3e-11 deg on Waldemath,
+ * 1.5e-11 on Selena), now finished by a Newton step; and this fork's
+ * swe_calc_orbel() solved it along a straight line, reading the orbit at
+ * t - tau only with SEFLG_SPEED (1.6e-5 deg off the fixed point without
+ * the flag for a = 0.137 AU, 4.4e-9 with it), now as the fictitious
+ * bodies.
+ *
  * The check, Swiss files and Moshier, the shipped seorbel.txt, binary-
  * fraction instants. (1) Vulcan heliocentric and geocentric, Selena and
  * Waldemath geocentric, apparent (default flags), thirteen dates 1700..2300.
@@ -33,7 +42,14 @@
  * off a smooth curve (3.4e-10 deg at 0.0065 AU, 1.8e-8 deg/day). Measured
  * and the builds that fail in UPSTREAM-BUGS 81: before part 1 and on the
  * upstream build every one of the 24 rows; with part 1 alone the four
- * Vulcan rows of (1) and all sixteen of (2). Run as
+ * Vulcan rows of (1) and all sixteen of (2). (3) The astrometric
+ * direction of the four bodies (Swiss, Moshier) and of three
+ * swe_calc_orbel() orbits (a = 0.137 and 0.387 AU about the Sun, 0.0068
+ * about the Earth; with and without SEFLG_SPEED; Swiss) at the thirteen
+ * dates of (1), against the light time's fixed point iterated here:
+ * within 5e-12 deg (measured <= 1.5e-12) and 2e-11 (<= 3.6e-12). Before
+ * part 3 the Earth-centred rows and all six orbel rows fail (2.3e-11,
+ * 1.6e-5 deg); the upstream build fails all fourteen. Run as
  *   fictltround EPHEDIR
  */
 #include <math.h>
@@ -51,6 +67,8 @@
 # define LJ_W 1e-9
 # define LV_T 1e-9
 # define LJ_T 2e-11
+# define LF_FICT 5e-12
+# define LF_ORBEL 2e-11
 #endif
 
 static int bad = 0;
@@ -110,6 +128,76 @@ static void row(const char *seph, const char *sz, int ipl, int32 fl,
   }
 }
 
+/* (3) The light time at its fixed point: the astrometric direction
+ * (SEFLG_NOABERR | SEFLG_NOGDEFL, J2000 ICRS XYZ) against B(t - tau) - O(t)
+ * with tau iterated here to 1e-18 day, B the body's true barycentric (on
+ * Moshier heliocentric) place read at t - tau and moved by that instant's
+ * rounding, O the observer's at t. Returns the angle, deg. */
+#define AUNIT_ 1.49597870700e11
+#define CLIGHT_ 2.99792458e8
+static const int32 FR = SEFLG_J2000 | SEFLG_NONUT | SEFLG_ICRS | SEFLG_XYZ;
+
+static double angle(const double *a, const double *b)
+{
+  double c[3] = {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+  return atan2(sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]),
+               a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) * 180 / M_PI;
+}
+
+static double fict_fixed_point_off(double t, int ipl, int32 eph, int hel)
+{
+  char serr[256];
+  double O[6] = {0, 0, 0, 0, 0, 0}, B[6], X[6], d[3] = {0, 0, 0}, tau = 0, old = -1;
+  int32 cfl = eph | FR | SEFLG_TRUEPOS | SEFLG_SPEED;
+  int32 bfl = cfl | (eph == SEFLG_MOSEPH ? SEFLG_HELCTR : SEFLG_BARYCTR);
+  int it, i;
+  if (eph != SEFLG_MOSEPH)
+    swe_calc(t, hel ? SE_SUN : SE_EARTH, cfl | SEFLG_BARYCTR, O, serr);
+  else if (!hel)
+    swe_calc(t, SE_EARTH, cfl | SEFLG_HELCTR, O, serr);
+  for (it = 0; it < 30 && fabs(tau - old) > 1e-18; it++) {
+    double tp = t - tau, eps;
+    old = tau;
+    swe_calc(tp, ipl, bfl, B, serr);
+    eps = (t - tp) - tau;
+    for (i = 0; i < 3; i++)
+      d[i] = B[i] + eps * B[i + 3] - O[i];
+    tau = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) * AUNIT_ / CLIGHT_ / 86400;
+  }
+  swe_calc(t, ipl, eph | FR | SEFLG_NOABERR | SEFLG_NOGDEFL | (hel ? SEFLG_HELCTR : 0), X, serr);
+  return angle(X, d);
+}
+
+/* The same for swe_calc_orbel(): the two-body orbit at t - tau is the
+ * elements with M - n tau, n = sqrt(mu / a^3), the centre read at t - tau.
+ * withspeed selects the call compared. */
+static double orbel_fixed_point_off(double t, const double *el0, int32 ctr, double mu, int withspeed)
+{
+  char serr[256];
+  double O[6], P[6], C[6], C0[6], X[6], el[6], d[3] = {0, 0, 0}, tau = 0, old = -1;
+  double n = sqrt(mu / (el0[1] * el0[1] * el0[1])) * 180 / M_PI;
+  int32 cfl = SEFLG_SWIEPH | FR | SEFLG_TRUEPOS | SEFLG_BARYCTR | SEFLG_SPEED;
+  int it, i;
+  swe_calc(t, SE_EARTH, cfl, O, serr);
+  swe_calc(t, ctr, cfl, C0, serr);
+  for (it = 0; it < 40 && fabs(tau - old) > 1e-18; it++) {
+    double tp = t - tau, eps;
+    old = tau;
+    for (i = 0; i < 6; i++)
+      el[i] = el0[i];
+    el[0] -= n * tau;
+    swe_calc_orbel(t, el, ctr, SE_ORBEL_EQ_J2000, 0, cfl, P, serr);
+    swe_calc(tp, ctr, cfl, C, serr);
+    eps = (t - tp) - tau;
+    for (i = 0; i < 3; i++)
+      d[i] = P[i] - C0[i] + C[i] + eps * C[i + 3] - O[i];
+    tau = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) * AUNIT_ / CLIGHT_ / 86400;
+  }
+  swe_calc_orbel(t, el0, ctr, SE_ORBEL_EQ_J2000, 0,
+                 SEFLG_SWIEPH | FR | SEFLG_NOABERR | SEFLG_NOGDEFL | (withspeed ? SEFLG_SPEED : 0), X, serr);
+  return angle(X, d);
+}
+
 int main(int argc, char **argv)
 {
   /* (1) apparent, thirteen dates 1700..2300; limits speed deg/day, jitter
@@ -150,6 +238,50 @@ int main(int argc, char **argv)
         row(eph[ie].sz, sz, rgt[ib].ipl, eph[ie].fl | rgt[ib].fl | SEFLG_TRUEPOS,
             iy ? -200 : -3000, 0, 3, LV_T, LJ_T);
       }
+  /* (3) the light time's fixed point */
+  {
+    static const struct { int ipl; int hel; const char *sz; } rgf[] = {
+      {SE_FICT_OFFSET + 15, 1, "Vulcan, helio"}, {SE_FICT_OFFSET + 15, 0, "Vulcan, geo"},
+      {SE_FICT_OFFSET + 16, 0, "Selena, geo"}, {SE_FICT_OFFSET + 18, 0, "Waldemath, geo"},
+    };
+    static const struct { double el[6]; int32 ctr; double mu; const char *sz; } rgo[] = {
+      {{10, 0.13744, 0.019, 30, 47, 7.5}, SE_SUN, 0.01720209895 * 0.01720209895, "orbel, a = 0.137 AU"},
+      {{10, 0.387, 0.2056, 29, 48, 7.0}, SE_SUN, 0.01720209895 * 0.01720209895, "orbel, a = 0.387 AU"},
+      {{10, 0.00684, 0.1587, 8, 136, 2.5}, SE_EARTH, 0.0000298122353216 * 0.0000298122353216, "orbel, Earth, 0.0068"},
+    };
+    int y, sp;
+    for (ie = 0; ie < 2; ie++)
+      for (ib = 0; ib < 4; ib++) {
+        double w = 0;
+        for (y = 0; y < 13; y++) {
+          double t = floor((2451545.0 + (-300 + y * 50) * 365.25 + 37.3 * y) * 256) / 256;
+          double e = fict_fixed_point_off(t, rgf[ib].ipl, eph[ie].fl, rgf[ib].hel);
+          if (e > w)
+            w = e;
+        }
+        printf("  %-6s %-22s light time off its fixed point by %.2e deg\n", eph[ie].sz, rgf[ib].sz, w);
+        if (w > LF_FICT) {
+          printf("    FAIL: more than %.0e deg\n", LF_FICT);
+          bad++;
+        }
+      }
+    for (ib = 0; ib < 3; ib++)
+      for (sp = 0; sp < 2; sp++) {
+        double w = 0;
+        for (y = 0; y < 13; y++) {
+          double t = floor((2451545.0 + (-300 + y * 50) * 365.25 + 37.3 * y) * 256) / 256;
+          double e = orbel_fixed_point_off(t, rgo[ib].el, rgo[ib].ctr, rgo[ib].mu, sp);
+          if (e > w)
+            w = e;
+        }
+        printf("  Swiss  %-22s %s light time off its fixed point by %.2e deg\n", rgo[ib].sz,
+               sp ? "speed" : "plain", w);
+        if (w > LF_ORBEL) {
+          printf("    FAIL: more than %.0e deg\n", LF_ORBEL);
+          bad++;
+        }
+      }
+  }
   printf(bad ? "G80 FAIL: %d\n" : "G80 PASS\n", bad);
   return bad ? 1 : 0;
 }

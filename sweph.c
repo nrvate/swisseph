@@ -4382,10 +4382,29 @@ int swi_trop_ra2sid_lon_sosy(swe_ctx *ctx, const double * SWI_RESTRICT xin,
  * ipli		planet number
  * iflag	flags
  */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 81 (part 3): one Newton step on the light-time equation
+ * f(tau) = tau - |X(teval - tau) - O| / c from tau = dt, where the body read
+ * at teval - dt is dx from the observer with barycentric velocity v and
+ * gives dtNew = |dx| / c: f' = 1 + (dx/|dx|).v / c, so tau = dt + (dtNew -
+ * dt) / f'. The caller moves the body along v by the change. v is the
+ * body's velocity at teval (pdp->x), there with or without SEFLG_SPEED;
+ * the Earth read at t - dt has none without it. */
+static double lt_newton_step(const double *dx, const double *v, double dt, double dtNew)
+{
+  double r = sqrt(square_sum(dx));
+  double k = r > 0 ? dot_prod(dx, v) / r * AUNIT / CLIGHT / 86400.0 : 0;
+  return dt + (dtNew - dt) / (1 + k);
+}
+#endif
+
 static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, char *serr)
 {
   int i, j, niter, retc;
   double xx[6], dx[3], dt, dtsave_for_defl;
+#ifndef SWE_UPSTREAM_COMPAT
+  double dtNew;
+#endif
   double xearth[6], xsun[6], xmoon[6];
   double xxsv[6], xxsp[3]={0}, xobs[6], xobs2[6];
   double t;
@@ -4516,7 +4535,6 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
      * at the emission instant, as the ephemeris protocol's 3.5a defines
      * it. Converged to 1e-12 day, about 26 m of light travel. G27. */
     for (j = 0; j < 10; j++) {
-      double dtNew;
       t = pdp->teval - dt;
       retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
       if (swi_osc_el_plan(ctx, t, xx, ipl-SE_FICT_OFFSET, ipli, xearth, xsun, serr) != OK)
@@ -4527,10 +4545,17 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
 	dx[i] = xx[i] - xobs[i];   /* xobs: the centre, see app_pos_etc_plan() */
       }
       dtNew = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
-      if (fabs(dtNew - dt) < 1e-12)
+      if (fabs(dtNew - dt) < 1e-12 || j == 9)
 	break;
       dt = dtNew;
     }
+    /* Upstream bug 81 (part 3): the loop stops within 1e-12 day of the
+     * fixed point with the body read at the last dt, not the converged
+     * one: 2.3e-11 deg on Waldemath, 1.5e-11 on Selena (their whole
+     * barycentric motion, 0.017 AU/day, over 1e-12 day at 0.0065 AU). One
+     * Newton step on tau = |X(teval - tau) - O|/c finishes it; the body
+     * is moved by the change with the rounding below. */
+    dt = lt_newton_step(dx, pdp->x + 3, dt, dtNew);
     /* Upstream bug 81: as a planet's (bug 63), the body was read at t =
      * teval - dt rounded to a double, up to half an ulp of the date from
      * the emission instant. An Earth-centred set's focus is the Earth at t,
@@ -4538,7 +4563,8 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
      * (4.7e-10 day) is 8e-12 AU, 7e-8 deg on Waldemath at 0.0065 AU, a
      * sawtooth in its apparent place that a five-point difference over
      * 2^-7 day made 1e-6 to 5.5e-6 deg/day. Moved along the barycentric
-     * velocity at teval by the rounding, (teval - t) - dt. */
+     * velocity at teval by the rounding, (teval - t) - dt (with dt now
+     * part 3's Newton step, by that change too). */
     {
       double eps = (pdp->teval - t) - dt;
       for (i = 0; i <= 2; i++)
@@ -4799,6 +4825,9 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
 {
   int i, j, niter, retc;
   double xx[6], dx[3], dt, dtsave_for_defl;
+#ifndef SWE_UPSTREAM_COMPAT
+  double dtNew;
+#endif
   double xearth[6], xsun[6], xmoon[6];
   double xxsv[6], xxsp[3]={0}, xobs[6], xobs2[6];
   double t, dmot, elret[6];
@@ -4917,6 +4946,57 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
 	xx[i+3] = pdp->x[i+3];
       }
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    if (iflag & SEFLG_SPEED) {
+      /* part of daily motion resulting from change of dt */
+      for (i = 0; i <= 2; i++)
+	xxsp[i] = pdp->x[i] - xx[i] - xxsp[i];
+    }
+    /* Upstream bug 81 (part 3), this fork's swe_calc_orbel(): the light
+     * time was the straight line above, x(t) - dt v(t), and the orbit was
+     * read at t - dt only with SEFLG_SPEED, so the position depended on
+     * the flag (bug 26's defect, G27, here never fixed): a Vulcan-like
+     * orbit (a = 0.137 AU) 1.6e-5 deg off the light-time fixed point
+     * without the flag, 4.4e-9 with it, a Mercury-like one 3.0e-6 and
+     * 7.2e-10. Solved on the orbit for every flag set as
+     * app_pos_etc_plan_osc() does, finished by a Newton step; the orbit
+     * moved by that step, the centre by it and the rounding of t. */
+    for (j = 0; j < 10; j++) {
+      t = pdp->teval - dt;
+      retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
+      for (i = 0; i <= 5; i++)
+        elret[i] = el[i];
+      elret[0] = el[0] - dmot * dt;
+      if (swi_orbel_to_state(ctx, t, elret, mu, tequ, xx, serr) != OK)
+	return ERR;
+      if (iplctr == SE_EARTH) {
+        for (i = 0; i <= 5; i++)
+          xx[i] += xearth[i];
+      } else {
+        for (i = 0; i <= 5; i++)
+          xx[i] += xsun[i];
+      }
+      if (retc != OK)
+	return retc;
+      for (i = 0; i <= 2; i++)
+        dx[i] = xx[i] - xobs[i];
+      dtNew = sqrt(square_sum(dx)) * AUNIT / CLIGHT / 86400.0;
+      if (fabs(dtNew - dt) < 1e-12 || j == 9)
+        break;
+      dt = dtNew;
+    }
+    {
+      /* the orbit was taken at M - n dt exactly, the centre read at t, the
+       * rounding of teval - dt: each moved by its own velocity at teval */
+      double dtr = dt, eps, *vc = (iplctr == SE_EARTH) ? pedp->x + 3 : psdp->x + 3;
+      dt = lt_newton_step(dx, pdp->x + 3, dt, dtNew);
+      eps = (pdp->teval - t) - dt;
+      for (i = 0; i <= 2; i++)
+        xx[i] += (dtr - dt) * (pdp->x[i+3] - vc[i]) + eps * vc[i];
+    }
+    dtsave_for_defl = dt;
+    if (iflag & SEFLG_SPEED) {
+#else
     if (iflag & SEFLG_SPEED) {
       /* part of daily motion resulting from change of dt */
       for (i = 0; i <= 2; i++)
@@ -4940,6 +5020,7 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
       }
       if (retc != OK)
 	return retc;
+#endif
       if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT
         if (observer_at_lt(ctx, pedp->teval, t, iflag, xobs, pedp->x, xearth, xobs2, serr) != OK)

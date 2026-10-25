@@ -1129,6 +1129,31 @@ static double vulcan_true_jitter_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 81 part 3: swe_calc_orbel()'s position for an orbit with
+ * a = 0.137 AU (Vulcan's), default flags, with SEFLG_SPEED against without
+ * it, nine dates 1800-2335, deg. The light time was a straight line, and
+ * the orbit was read at t - tau only for the speed. (A call to swe_calc()
+ * first: swe_calc_orbel() as a context's first call answers zeros, a
+ * separate defect.) */
+static double orbel_lt_flag_off(void)
+{
+  double w = 0, a[6], b[6], el[6] = {10, 0.13744, 0.019, 30, 47, 7.5};
+  char serr[256];
+  int k, i;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(2451545.0, SE_SUN, SEFLG_SWIEPH, a, serr);
+  for (k = 0; k < 9; k++) {
+    double t = floor((2378496.5 + k * 24413.7 + 0.137) * 256) / 256;
+    swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, SEFLG_SWIEPH, a, serr);
+    swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, SEFLG_SWIEPH | SEFLG_SPEED, b, serr);
+    for (i = 0; i < 2; i++)
+      if (fabs(a[i] - b[i]) > w)
+        w = fabs(a[i] - b[i]);
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 77: swe_calc_pctr()'s distance rate of Mercury seen from
  * Mars, default flags, against a five-point difference of its distance
  * over 2^-8 day, nine dates 1800-2335, AU/day. The aberration rate added
@@ -1476,7 +1501,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1544,6 +1569,7 @@ int main(int argc, char **argv)
   pctrdd = pctr_dist_rate_off();
   waldlr = waldemath_lt_round_off();
   vulcj = vulcan_true_jitter_off();
+  orbellt = orbel_lt_flag_off();
   moshlt = mosh_lt_off();
   pctrsd = pctr_sun_defl_off();
   earthlr = earth_helio_lt_rate_off();
@@ -2044,6 +2070,14 @@ int main(int argc, char **argv)
   else {
     printf("  fict. element rounding %.2e deg     FAIL: expected %s\n",
            vulcj, WANT_DEFECT ? "> 1e-9" : "< 2e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbellt > 1e-7) : (orbellt == 0))
+    printf("  orbel, light time flag  %.2e deg     OK\n", orbellt);
+  else {
+    printf("  orbel, light time flag  %.2e deg     FAIL: expected %s\n",
+           orbellt, WANT_DEFECT ? "> 1e-7" : "0");
     bad++;
   }
 

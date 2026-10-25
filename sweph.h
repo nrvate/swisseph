@@ -918,6 +918,11 @@ struct epsilon {
  *   - check_t_terms() rounded an element's n T as the unreduced angle
  *     (Vulcan's mean anomaly 3.5e7 deg at -3000: its true places 3.0e-8
  *     deg off a smooth curve; UPSTREAM-BUGS 81 part 2, G80)
+ *   - app_pos_etc_plan_osc() stopped its light time 1e-12 day short of the
+ *     fixed point (2.3e-11 deg on Waldemath), and swe_calc_orbel() took it
+ *     along a straight line, reading the orbit at t - tau only with
+ *     SEFLG_SPEED (1.6e-5 deg for a = 0.137 AU; UPSTREAM-BUGS 81 part 3,
+ *     G80)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

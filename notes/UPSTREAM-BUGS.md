@@ -4123,7 +4123,7 @@ entry 53, are gone with it: <= 2.2e-10 now, Mercury to Vesta.
 ## 81. A fictitious body's light-time position is read at the rounded instant, and its elements' large terms are rounded unreduced
 
 **Severity: Correctness (3.9e-8 deg on Waldemath's apparent position, a jitter that a five-point difference over 2^-7 day turns into 1e-6 to 5.5e-6 deg/day; 3.4e-7 deg/day on Vulcan heliocentric, 6.7e-8 on Selena under Moshier; part 2: 3.0e-8 deg on Vulcan's true position at -3000, 2.4e-6 deg/day in its differences)**
-**Where:** `sweph.c`: `app_pos_etc_plan_osc()`; part 2 `swemplan.c`: `check_t_terms()`, `read_elements_file()`
+**Where:** `sweph.c`: `app_pos_etc_plan_osc()`; part 2 `swemplan.c`: `check_t_terms()`, `read_elements_file()`; part 3 `sweph.c`: `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`
 
 Entry 63's defect on the fictitious bodies' path. The light time is solved
 on the orbit (entry 26, G27), the elements read at t = teval - dt rounded to
@@ -4335,6 +4335,54 @@ heliocentric true longitude at -3000, Moshier, largest fourth difference,
 9.8e-13 deg shipped (3.05e-8 with part 1 alone), 3.05e-8 compat; G24
 `waldemath_lt_round_off` is now 2.0e-9 (1.65e-8 with part 1 alone). G48,
 G59, G64 pass.
+
+**Part 3 (the light time's fixed point).** `app_pos_etc_plan_osc()`
+iterates the light time on the orbit and stops when a pass changes it by
+less than 1e-12 day, the body as read at that pass's dt, not the converged
+one: Waldemath 2.3e-11 deg and Selena 1.5e-11 deg off the fixed point (their
+barycentric motion, 0.017 AU/day, over ~1e-12 day at 0.0065 and 0.053 AU),
+Vulcan and the heliocentric sets <= 1e-12. This fork's `swe_calc_orbel()`
+(`app_pos_etc_orbel()`) had kept upstream's fictitious-body light time from
+before entry 26: a straight line, x(t) - dt v(t), and the orbit read at
+t - dt only with SEFLG_SPEED, so the position depended on the flag. Against
+the fixed point, astrometric (SEFLG_NOABERR | SEFLG_NOGDEFL), thirteen dates
+1700..2300: an orbit with a = 0.137 AU 1.6e-5 deg without the flag and
+4.4e-9 with it, a = 0.387 AU 3.0e-6 and 7.2e-10, an Earth-centred one at
+0.0068 AU 1.7e-9 and 3.0e-8 (its centre read at the rounded instant).
+
+**Fix, as done here (part 3):** both finish the loop with one Newton step on
+f(tau) = tau - |X(teval - tau) - O| / c, f' = 1 + (rho^ . v) / c, v the
+body's barycentric velocity at teval (there with or without SEFLG_SPEED;
+the Earth read at t - dt has none without it, which made a first try
+move fictitious positions by 2.3e-13 deg with the flag), as entry 78 does for the planets, and
+part 1's move takes the step with the rounding. `app_pos_etc_orbel()` now
+solves the light time on the orbit for every flag set, as the fictitious
+bodies do; its orbit is taken at M - n dt exactly and only its centre at the
+rounded instant, so the orbit is moved by the Newton step and the centre by
+the step and the rounding. After: the fictitious bodies <= 1.5e-12 deg
+(Waldemath; Selena 2.7e-13), the orbel orbits 5.4e-15, 1.0e-14 and 3.6e-12,
+the same with and without SEFLG_SPEED (positions bit-identical either way,
+fictitious and orbel). Speeds unchanged in form; swe_calc_orbel()'s default
+geocentric longitude speed against five-point differences over 2^-7 day goes
+from 4.9e-6 to 1.2e-7 deg/day (the rest is below).
+
+G80 gains (3): the four bodies, Swiss and Moshier, and the three orbel
+orbits with and without SEFLG_SPEED, Swiss, against the fixed point
+iterated in the gate (the body's true barycentric place read at t - tau and
+moved by that instant's rounding, the observer at t) within 5e-12 and 2e-11
+deg. The build before part 3 fails 10 of its 14 rows (the four Earth-centred
+ones, all six orbel ones); upstream fails all 14 (Vulcan heliocentric by
+1.0e-3, entry 26). G24 `orbel_lt_flag_off`: swe_calc_orbel()'s position for
+a = 0.137 AU with against without SEFLG_SPEED, 0 shipped (1.55e-5 deg
+before), 1.55e-5 compat.
+
+Not fixed (found measuring part 3, `swe_calc_orbel()` only): as the first
+call of a context it returns zeros (ecliptic) or (0.17, -0, 0) (XYZ) with its
+flags as the return value and no error, until some `swe_calc()` has run; its
+speeds are off five-point differences of its positions by 8e-8 deg/day in
+the ecliptic of date with SEFLG_TRUEPOS (1.8e-12 in J2000), by 1.07e-6
+heliocentric apparent in J2000 (the heliocentric light-time rate), and by
+2.45e-3 deg/day on Moshier heliocentric (SEFLG_TRUEPOS, J2000).
 
 Not fixed here: at exactly tjd = 2451545.0 every body's latitude of date
 (planets too; Mars 1.5e-10, the Sun 2.7e-10 deg in a fourth difference) is
