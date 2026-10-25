@@ -3410,6 +3410,58 @@ static double jplhora_step_speed_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 159: the speeds across SEFLG_JPLHOR's step of the
+ * precession and obliquity at 1799 Jan 1 (IAU 1976 after it, Owen 1990 up
+ * to and including it), which SEMOD_JPLHORA_3 takes before 1962. On de200
+ * with SEFLG_JPLHOR_APPROX, the Sun's ecliptic speeds at the step - 0.5 day
+ * and -+ 2^-14 day against five-point differences of its places over 2^-6
+ * day on the instant's side (centred, else one-sided), the largest,
+ * deg/day. The shipped build differenced the obliquity across the step
+ * within a day before it (5.0e-6) and the precession within a day either
+ * side; upstream's speeds of date are off there by the defects earlier
+ * entries fixed (the ecliptic's turning, entry 33). */
+static double jplhor_1799_speed_off(void)
+{
+  static const double o5[5] = { -25.0 / 12, 4, -3, 4.0 / 3, -1.0 / 4 };
+  const double ts = 2378131.5, h = 1.0 / 64, dt[3] = { -0.5, -1.0 / 16384, 1.0 / 16384 };
+  const int32 ja = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX;
+  double x[6], f[5][6], r = 0;
+  char serr[256];
+  int i, j, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_jpl_file_r(c, "de200.eph");
+  for (i = 0; i < 3; i++) {
+    double t = ts + dt[i];
+    int dir = (t <= ts) ? -1 : 1, centred = (i == 0);
+    if (swe_calc_r(c, t, SE_SUN, ja | SEFLG_SPEED, x, serr) < 0) {
+      swe_ctx_free(c);
+      return -1;
+    }
+    for (k = 0; k < 5; k++)
+      if (swe_calc_r(c, centred ? t + (k - 2) * h : t + dir * k * h, SE_SUN, ja, f[k], serr) < 0) {
+        swe_ctx_free(c);
+        return -1;
+      }
+    for (j = 0; j < 2; j++) {
+      double d = 0;
+      if (centred)
+        d = (8 * (f[3][j] - f[1][j]) - (f[4][j] - f[0][j])) / (12 * h);
+      else {
+        for (k = 0; k < 5; k++)
+          d += o5[k] * (f[k][j] - f[0][j]);
+        d *= dir / h;
+      }
+      if (fabs(x[3 + j] - d) > r)
+        r = fabs(x[3 + j] - d);
+    }
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 154: the IERS corrections across swe_set_jpl_file() of a
  * file below DE 403. G134's directory A (its corrections, de200.eph linked
  * in): path A, the DE431 fixture, SE_ECL_NUT with SEFLG_JPLHOR at 2000 Jan
@@ -4207,7 +4259,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, nodmsun, nodmix, nodhb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, nodmsun, nodmix, nodhb, jplhor1799;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4347,6 +4399,7 @@ int main(int argc, char **argv)
   biaslt = jplhora_bias_side_off(0);
   biasstep = jplhora_bias_side_off(1);
   biasvel = jplhora_vel_off();
+  jplhor1799 = jplhor_1799_speed_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -5472,6 +5525,14 @@ int main(int argc, char **argv)
   else {
     printf("  Horizons offset rate   %.2e AU/day FAIL: expected %s\n",
            biasvel, WANT_DEFECT ? "> 1e-9" : "< 1e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jplhor1799 > 1e-6) : (jplhor1799 >= 0 && jplhor1799 < 1e-8))
+    printf("  speed across 1799      %.2e deg/day OK\n", jplhor1799);
+  else {
+    printf("  speed across 1799      %.2e deg/day FAIL: expected %s\n",
+           jplhor1799, WANT_DEFECT ? "> 1e-6" : "< 1e-8");
     bad++;
   }
 

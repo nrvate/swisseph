@@ -202,6 +202,7 @@ worst were in code that had never executed even once.
 | 167 | `swe_nod_aps()` on Moshier takes the Earth for the observer of the Sun's geocentric points, not the Sun: the mean perigee at 2000 Jul 1.5 281.4259 deg at 1.9993 AU, the apogee 191.4583 deg at 0.0531 AU, where the files' are 282.9417 deg at 0.9833 AU and 102.9417 deg at 1.0167 AU; every method, SEFLG_TOPOCTR too | Correctness (behaviour) | `swecl.c` |
 | 168 | `swe_nod_aps()` takes its frame and site from the caller's ephemeris bits, not from the ephemeris that answered or as `swe_calc()` resolves them: warm, a request fallen to Moshier adds an earlier call's Swiss Sun (Mars's node at 1500 0.13 deg off Moshier's, the Moon's heliocentric 0.40 deg), the site takes the files' delta t (2.9e-4 deg on the Moon's topocentric perigee); SEFLG_SWIEPH with SEFLG_MOSEPH, answered from the files, takes Moshier's frame (0.108 deg), SEFLG_JPLEPH with SEFLG_MOSEPH Moshier's frame bias (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
 | 169 | `swe_nod_aps()` reads the centre bits otherwise than `swe_calc()`: SEFLG_HELCTR with SEFLG_BARYCTR answers heliocentric (Mars's node 49.5625 deg for `swe_calc()`'s barycentric 49.6398), SEFLG_TOPOCTR with SEFLG_HELCTR heliocentric, SEFLG_TOPOCTR with SEFLG_BARYCTR the barycentric points less the site's offset (1.2e-3 deg off the barycentric node), where `swe_calc()` answers topocentric | Correctness (behaviour) | `swecl.c` |
+| 159 | SEFLG_JPLHOR's precession and obliquity step at 1799 Jan 1 and 2202 Jan 1 (IAU 1976 within, Owen 1990 outside; 17.6 and 19.8 mas in the mean obliquity), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across, under SEFLG_JPLHOR and (at 1799) SEFLG_JPLHOR_APPROX: every speed of date 2.8e-7 to 1.0e-6 deg/day off for a day either side, the Sun's latitude 5.0e-6 the day before, Polaris's right ascension 5.6e-6, SEFLG_SPEED3 8.9e-3 | Correctness | `swephlib.c`, `sweph.c` |
 
 ---
 
@@ -11553,6 +11554,95 @@ once the file changed). 1120 rows pass; the upstream build fails 390.
 G24 `nodaps_helbary_off`: Mars's osculating node at 2000 Jul 1.5,
 SEFLG_HELCTR | SEFLG_BARYCTR against SEFLG_BARYCTR: 0 shipped, 0.077 deg
 compat.
+
+## 159. SEFLG_JPLHOR's precession and obliquity step at 1799 Jan 1 and 2202 Jan 1, IAU 1976 within and Owen 1990 outside, and the frame's rates difference them across: for a day either side every speed of date 2.8e-7 to 1.0e-6 deg/day off, latitudes 5.0e-6 the day before, SEFLG_SPEED3 8.9e-3
+
+**Severity: Correctness (under SEFLG_JPLHOR within a day of 1799 Jan 1 or 2202 Jan 1, and with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` within a day of 1799 Jan 1: every speed of date off by the precession's difference, 2.8e-7 deg/day at 1799 and 1.0e-6 at 2202 in its own rate, by the obliquity's on the day before, the Sun's latitude speed 5.0e-6, Polaris's right ascension 5.6e-6; SEFLG_SPEED3 8.9e-3 within 1e-4 day)**
+**Where:** `swephlib.c`: `swi_frame_step_side()`, which `sweph.c`'s `swi_precess_speed()`, `swi_obliquity_rate()`, `swi_get_observer()` and `swe_calc()`'s SEFLG_SPEED3 consult
+
+Entry 153's noticed item. Under SEFLG_JPLHOR, and with
+SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` up to 1962 Jan 20,
+`swi_precess()` and `swi_epsiln()` take IAU 1976 for 2378131.5 < J <
+2525323.5 (strictly between 1799 Jan 1 and 2202 Jan 1) and Owen 1990
+outside, so each boundary's own instant is Owen's: at 1799 the left
+side's model, at 2202 the right side's. Measured between the instant and 2^-20
+day either side, less the motion: the mean obliquity 17.57 mas at 1799 and
+19.75 mas at 2202, the precession matrix 6.45 and 7.35 mas. The rates
+that difference the two models reached across them as they did across
+1962 (entry 153), but `swi_frame_step_side()` told them of the 1962 step
+alone, and of none under SEFLG_JPLHOR:
+- the precession's, entry 49's (P(t + 1) - P(t - 1)) / 2, which both
+  models take (neither is Vondrak's): within a day either side its rate
+  2.82e-7 deg/day off at 1799 and 1.02e-6 at 2202 (`swi_precess_speed()`
+  of a unit vector of date against five-point differences of
+  `swi_precess()`); the site's precession in right ascension the same;
+- the mean obliquity's, eps(t + 1) - eps(t), for t in the day before:
+  4.88e-6 and 5.49e-6 deg/day;
+- SEFLG_SPEED3's three places within 1e-4 day either side.
+The nutation has no step there (IAU 1980 throughout). On de200 with
+SEFLG_JPLHOR_APPROX at 1799 Jan 1 (2202 is beyond de200, and SEFLG_JPLHOR
+needs a DE 403 file and the IERS corrections, neither here), against
+five-point differences of the same call's positions over 2^-6 day on the
+instant's side (G139's), the worst over the day before and the day after:
+the Sun's ecliptic speeds 5.02e-6 deg/day (its latitude, from the
+obliquity) and 5.78e-7 equatorial, the Moon 1.96e-6, Mars 1.05e-6,
+Polaris 4.81e-6 in the ecliptic and 5.60e-6 in right ascension, the
+topocentric Moon 1.95e-6; SEFLG_SPEED3 on Mars 6.04e-3 in the ecliptic and
+8.85e-3 in right ascension; sidereal Mars, which has no Horizons flags,
+1.6e-11.
+
+**Fix, as done here:** `swi_frame_step_side(ctx, t, h, iflag, which)`
+compares the model each function of `which` (`SWI_FRAME_PREC`, `_EPS`,
+`_NUT`) takes at t with the one it takes at t + h and at t - h, chosen as
+the function itself chooses it (`frame_prec_model()`, `frame_eps_model()`,
+`frame_nut_model()`, SEFLG_JPLHOR's models by `frame_is_jplhor()`):
+-1 when t + h's differs (difference backward), +1 when t - h's does
+(forward), 0 when neither. So every step of the three, with its own
+inclusive side, is found where the model changes, and each rate asks for
+its own model: the precession's fallback and the site's for the
+precession, the obliquity's for the obliquity, the nutation's for the
+nutation (no step at 1799 and 2202), SEFLG_SPEED3 for all three. Entry
+153's one-sided differences then take each side's rate as at 1962. Behind
+`#ifndef SWE_UPSTREAM_COMPAT`, as entry 153's. The test returns 0 at once
+unless the flags take SEFLG_JPLHOR's models somewhere (SEFLG_JPLHOR, or
+SEFLG_JPLHOR_APPROX under mode 3); the default models and flags read one
+model number and two flag bits, as before.
+- After, on de200 at 1799: the Sun within 3.6e-11 deg/day, Mars 3.1e-11,
+  Polaris 3.1e-11 in the ecliptic and 7.5e-10 in right ascension (as
+  elsewhere), the Moon 2.0e-9 (the one-sided reference's truncation over
+  2^-6; 2.8e-10 away from the step), the topocentric Moon 6.8e-10;
+  SEFLG_SPEED3 1.0e-6, its own everywhere. Under SEFLG_JPLHOR the
+  precession's rate within 3.7e-12 deg/day of the five-point difference
+  at 1799 and 2202, the obliquity's within 2.4e-12.
+
+G139 `tests/framestep.c`, extended: check (a) takes de200 with
+SEFLG_JPLHOR_APPROX and the default models at 1799 Jan 1 too, the same
+seven bodies and two frames over the day before, the day after and the
+rest, 42 checks; check (b) takes the rates themselves under SEFLG_JPLHOR
+(`swi_precess_speed()`'s and `swi_obliquity_rate()`'s against five-point
+differences of `swi_precess()` and `swi_epsiln()` on the instant's side)
+at 1799 and 2202, 12 checks, in the fork's build only. 138 checks; before
+the fix 30 fail: at 1799 every body but sidereal Mars on both days, 24 of
+42, and in (b) the precession's on both days and the obliquity's the day
+before at both steps, 6 of 12. The upstream build fails 120 of (a)'s 126,
+its speeds of date off throughout by the defects earlier entries fixed
+(the Sun's 1e-5 deg/day, the ecliptic's turning, entry 33); its SPEED3
+2.65e-2 the day before 1799 Jan 1. G24 `jplhor_1799_speed_off`: the Sun's
+ecliptic speeds at 1799 Jan 1 - 0.5 day and -+ 2^-14 day on de200 with
+SEFLG_JPLHOR_APPROX against the five-point difference on its side, the
+largest: 1.67e-11 deg/day shipped (5.02e-6 before the fix), 9.98e-6
+compat.
+
+Noticed, not fixed:
+- RESIDUAL. Owen 1990's own fits are pieces 80 centuries long, joined at
+  the midpoints between their centres (`get_owen_t0_icof()`: JD
+  -1931455.5, 990544.5, 3912544.5, 6834544.5, about -10000, -2000, +6000
+  and +14000), where the model steps: the mean obliquity by 0.095 mas at
+  -10000, the precession by 0.085 mas at +6000 and 0.065 mas at +14000.
+  The same rates reach across them, under SEFLG_JPLHOR (Owen outside
+  1799-2202) and with Owen 1990 chosen: the obliquity's 2.6e-8 deg/day the
+  day before -10000, the precession's 9.8e-9 and 1.1e-8 either side of
+  +6000 and +14000; SEFLG_SPEED3 some 1.2e-4 within 1e-4 day.
 
 ## How these were found
 

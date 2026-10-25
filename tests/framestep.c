@@ -1,5 +1,6 @@
-/* framestep.c -- G139: across SEMOD_JPLHORA_3's step at 1962 Jan 20 every
- * speed of date is the rate of its own side's model.
+/* framestep.c -- G139: across the steps of the frame's models every speed of
+ * date is the rate of its own side's model: SEMOD_JPLHORA_3's at 1962 Jan
+ * 20, SEFLG_JPLHOR's at 1799 Jan 1 and 2202 Jan 1.
  *
  * The defect (UPSTREAM-BUGS 153): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), the precession, the mean obliquity
@@ -19,51 +20,94 @@
  * SEFLG_SPEED3 within 1e-4 day 5.75e-2; with IAU 2006 precession and IAU
  * 2000B nutation after it, the same within a day after it too.
  *
- * The check: de200, SEFLG_JPLHOR_APPROX, the default models and IAU 2006
- * precession with IAU 2000B nutation ("0,8,8,4", which difference after
- * the step too); the Sun, the Moon, Mars, Polaris (swe_fixstar2()),
- * sidereal Mars (Lahiri; swe_calc() drops the Horizons flags for it, so it
- * has no step), the topocentric Moon at Zurich, and Mars under
- * SEFLG_SPEED3; ecliptic and equatorial, longitude and latitude speeds, at
- * 105 instants across (switch - 2, switch + 2]: every 1/16 day, and the
- * switch -+ 2^-k for k = 7..26. The reference is a five-point difference
- * of the same call's positions over 2^-6 day, centred where its points lie
- * on the instant's side of the step (at or before it, or after it), else
- * one-sided on that side (t, t -+ h, ..., t -+ 4h). The topocentric Moon
- * takes delta t set to 2^-11 day, so that its UT1 is exact and the site has
- * no jitter, and a centred nine-point difference over 2^-7 day, at the
- * instants where that lies on their side (the one-sided ones carry the
+ * The defect (UPSTREAM-BUGS 159): SEFLG_JPLHOR's precession and obliquity
+ * are IAU 1976's strictly between 1799 Jan 1 (JD 2378131.5) and 2202 Jan 1
+ * (2525323.5) and Owen 1990's outside, so each boundary's own instant is
+ * Owen's; SEMOD_JPLHORA_3 takes them before 1962 too. The mean obliquity
+ * steps by 17.6 and 19.8 mas there, the precession by 6.5 and 7.4 mas, and
+ * the same differences reached across: the precession's on both sides (both
+ * models are differenced), the obliquity's from the day before, SPEED3's
+ * within 1e-4 day.
+ *
+ * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
+ * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
+ * difference after the step too), at 1799 Jan 1 the default models; the
+ * Sun, the Moon, Mars, Polaris (swe_fixstar2()), sidereal Mars (Lahiri;
+ * swe_calc() drops the Horizons flags for it, so it has no step), the
+ * topocentric Moon at Zurich, and Mars under SEFLG_SPEED3; ecliptic and
+ * equatorial, longitude and latitude speeds, at 105 instants across (step -
+ * 2, step + 2]: every 1/16 day, and the step -+ 2^-k for k = 7..26. The
+ * reference is a five-point difference of the same call's positions over
+ * 2^-6 day, centred where its points lie on the instant's side of the step,
+ * else one-sided on that side (t, t -+ h, ..., t -+ 4h). The topocentric
+ * Moon takes delta t set to 2^-11 day, so that its UT1 is exact and the
+ * site has no jitter, and a centred nine-point difference over 2^-7 day, at
+ * the instants where that lies on their side (the one-sided ones carry the
  * diurnal parallax's curvature, 3e-6 at five points over 2^-8). Each
  * setting, body and frame is judged on the worst of its two speeds over
- * three spans, the day before the step, the day after it and the rest: 84
+ * three spans, the day before the step, the day after it and the rest: 126
  * checks, within 1e-8 deg/day, SEFLG_SPEED3 within 1e-5 (its own three
  * places over 1e-4 day are 1.3e-6 off everywhere).
  *
- * Measured after the fix: within 1.45e-9 (Polaris's right ascension; the
- * Moon 1.04e-9, the topocentric Moon 9.6e-10, the others 6e-11), SPEED3
- * 1.41e-6. Before it 38 of the 84 fail: every body but sidereal Mars on the
- * day before the step under both settings and on the day after under the
- * second, and SPEED3 on both days under both, by 1.57e-5 to 1.09 deg/day.
- * The upstream build fails 80 of 84: its nutation rate, a backward
- * difference, reaches across the step just after it (0.200 deg/day,
- * Polaris's right ascension 2.14), and its own speeds are off elsewhere by
- * the defects earlier entries fixed (the topocentric Moon 4e-3, sidereal
- * Mars 5e-7); only SPEED3 away from the step passes. Run as
+ * Check (b): the rates themselves under SEFLG_JPLHOR, which swe_calc()
+ * takes only with a DE 403 file and the IERS corrections: the precession's
+ * (swi_precess_speed() of a unit vector of date) and the mean obliquity's
+ * (swi_obliquity_rate()), against five-point differences of swi_precess()
+ * and swi_epsiln() over 2^-6 day on the instant's side, at the same 105
+ * instants about 1799 Jan 1 and 2202 Jan 1, the worst over the three spans:
+ * 12 checks within 1e-8 deg/day. It calls the fork's own functions and is
+ * left out of the upstream build.
+ *
+ * Measured after the fix: (a) within 2.0e-9 (the Moon's one-sided
+ * reference at 1799; Polaris's right ascension 1.45e-9 at 1962, the
+ * topocentric Moon 9.6e-10, the others 7e-11), SPEED3 1.41e-6; (b) within
+ * 3.7e-12. Before the fix of bug 153, 38 of the first 84 checks fail:
+ * every body but sidereal Mars on the day before the step under both
+ * settings and on the day after under the second, and SPEED3 on both days
+ * under both, by 1.57e-5 to 1.09 deg/day. Before the fix of bug 159, 24 of
+ * the 42 at 1799 fail, every body but sidereal Mars on both days (the
+ * Sun's latitude speed 5.0e-6 deg/day off, Polaris's right ascension
+ * 5.6e-6, SPEED3 8.9e-3), and 6 of (b)'s 12: the precession's rate 2.8e-7
+ * and 1.0e-6 on both days, the obliquity's 4.9e-6 and 5.5e-6 the day
+ * before. The upstream build fails 120 of (a)'s 126: its nutation rate, a
+ * backward difference, reaches across the 1962 step just after it (0.200
+ * deg/day, Polaris's right ascension 2.14), and its own speeds are off
+ * elsewhere by the defects earlier entries fixed (the topocentric Moon
+ * 4e-3, sidereal Mars 5e-7); only SPEED3 away from the step passes. Run as
  *   framestep EPHEDIR
  */
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "swephexp.h"
+#ifndef SWE_UPSTREAM_COMPAT
+#include "sweph.h"
+#include "swephlib.h"
+#endif
 
-#define TS 2437684.5	/* HORIZONS_TJD0_DPSI_DEPS_IAU1980 */
 #define FL (SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX)
+
+/* check (a)'s settings: the step, whether its own instant is the left
+ * side's model (at or before it) or the right side's, the models */
+static const struct {
+  double ts;
+  int left;
+  const char *mod;
+} SET[] = {
+  { 2437684.5, 1, "0,0,0,0,0,0,0,0" },	/* HORIZONS_TJD0_DPSI_DEPS_IAU1980 */
+  { 2437684.5, 1, "0,8,8,4,0,0,0,0" },
+  { 2378131.5, 1, "0,0,0,0,0,0,0,0" },	/* SEFLG_JPLHOR's 1799 Jan 1 */
+};
+#define NSET ((int) (sizeof SET / sizeof SET[0]))
 
 enum { B_SUN, B_MOON, B_MARS, B_POLARIS, B_SIDMARS, B_TOPOMOON, B_SPEED3, NB };
 static const char *BN[NB] = { "Sun", "Moon", "Mars", "Polaris", "sidereal Mars",
   "topocentric Moon", "Mars SPEED3" };
-static const char *MODS[2] = { "0,0,0,0,0,0,0,0", "0,8,8,4,0,0,0,0" };
 static const char *RN[3] = { "day before", "day after", "outside" };
+
+/* the step in use */
+static double TS;
+static int LEFT;
 
 /* the place at t, in degrees, and its speeds; the flags returned checked to
  * be the Horizons approximation's on de200 (but for sidereal Mars) */
@@ -93,10 +137,24 @@ static int place(swe_ctx *c, int b, double t, int32 xf, double *x)
   return 0;
 }
 
-/* on the instant's side of the step: at or before it, or after it */
+/* t on the step's left side: before it, or at it where that is the left's */
+static int left_of(double t)
+{
+  return LEFT ? (t <= TS) : (t < TS);
+}
+
+/* on the instant's side of the step */
 static int same_side(double p, double t)
 {
-  return (t <= TS) ? (p <= TS) : (p > TS);
+  return left_of(p) == left_of(t);
+}
+
+/* the span of t: the day before the step, the day after it, the rest */
+static int span(double t)
+{
+  if (left_of(t))
+    return (t > TS - 1 || (!LEFT && t == TS - 1)) ? 0 : 2;
+  return (t < TS + 1 || (LEFT && t == TS + 1)) ? 1 : 2;
 }
 
 /* |speed - reference| for the two angles, the larger; 0 with *skip set
@@ -120,7 +178,7 @@ static double off(swe_ctx *c, int b, double t, int32 xf, int *skip, int *err)
     *err = 1;
     return 0;
   }
-  dir = (t <= TS) ? -1 : 1;
+  dir = left_of(t) ? -1 : 1;
   for (k = 0; k <= 2 * n; k++) {
     double tk = centred ? t + (k - n) * h : t + dir * k * h;
     if (place(c, b, tk, xf, f[k]) < 0) {
@@ -150,39 +208,115 @@ static double off(swe_ctx *c, int b, double t, int32 xf, int *skip, int *err)
   return r;
 }
 
-int main(int argc, char **argv)
+/* the 105 instants about TS */
+static int instants(double *tq)
 {
-  double tq[105];
-  int nq = 0, m, b, f, k, i, bad = 0, n = 0, err = 0;
-  if (argc != 2) {
-    fprintf(stderr, "usage: framestep EPHEDIR\n");
-    return 2;
-  }
+  int nq = 0, k;
   for (k = -32; k <= 32; k++)
     tq[nq++] = TS + k / 16.0;
   for (k = 7; k <= 26; k++) {
     tq[nq++] = TS - ldexp(1, -k);
     tq[nq++] = TS + ldexp(1, -k);
   }
-  printf("G139: the speeds across SEMOD_JPLHORA_3's step at 1962 Jan 20 are each side's rate\n");
-  for (m = 0; m < 2; m++) {
+  return nq;
+}
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* check (b)'s rate r of g at t, rad/day: 0 the precession of a unit
+ * vector of date (three components), 1 the mean obliquity */
+static void rate_b(swe_ctx *c, int g, double t, int32 fl, double *r)
+{
+  if (g == 0) {
+    double xx[6] = { 0.3, 0.5, 0, 0, 0, 0 };
+    xx[2] = sqrt(1 - xx[0] * xx[0] - xx[1] * xx[1]);
+    swi_precess(c, xx, t, fl, J2000_TO_J);
+    swi_precess_speed(c, xx, t, fl, J2000_TO_J);
+    r[0] = xx[3];
+    r[1] = xx[4];
+    r[2] = xx[5];
+  } else {
+    r[0] = swi_obliquity_rate(c, t, fl, FALSE);
+  }
+}
+
+static void value_b(swe_ctx *c, int g, double t, int32 fl, double *v)
+{
+  if (g == 0) {
+    v[0] = 0.3;
+    v[1] = 0.5;
+    v[2] = sqrt(1 - v[0] * v[0] - v[1] * v[1]);
+    swi_precess(c, v, t, fl, J2000_TO_J);
+  } else {
+    v[0] = swi_epsiln(c, t, fl);
+  }
+}
+
+/* check (b): the worst |rate - reference| of g over each span, deg/day */
+static void check_b(swe_ctx *c, int g, int32 fl, double *w)
+{
+  static const double c5[2] = { 2.0 / 3, -1.0 / 12 };
+  static const double o5[5] = { -25.0 / 12, 4, -3, 4.0 / 3, -1.0 / 4 };
+  double tq[105], h = 1.0 / 64;
+  int nq = instants(tq), i, k, j, ng = (g == 0) ? 3 : 1;
+  w[0] = w[1] = w[2] = 0;
+  for (i = 0; i < nq; i++) {
+    double t = tq[i], r[3], v[5][3], e = 0;
+    int centred = 1, dir = left_of(t) ? -1 : 1;
+    for (k = 1; k <= 2; k++)
+      if (!same_side(t - k * h, t) || !same_side(t + k * h, t))
+        centred = 0;
+    rate_b(c, g, t, fl, r);
+    for (k = 0; k <= 4; k++)
+      value_b(c, g, centred ? t + (k - 2) * h : t + dir * k * h, fl, v[k]);
+    for (j = 0; j < ng; j++) {
+      double d = 0;
+      if (centred) {
+        d = (c5[0] * (v[3][j] - v[1][j]) + c5[1] * (v[4][j] - v[0][j])) / h;
+      } else {
+        for (k = 0; k <= 4; k++)
+          d += o5[k] * (v[k][j] - v[0][j]);
+        d *= dir / h;
+      }
+      if (fabs(r[j] - d) > e)
+        e = fabs(r[j] - d);
+    }
+    e *= RADTODEG;
+    if (e > w[span(t)])
+      w[span(t)] = e;
+  }
+}
+#endif
+
+int main(int argc, char **argv)
+{
+  double tq[105];
+  int nq, m, b, f, k, i, bad = 0, n = 0, err = 0;
+  if (argc != 2) {
+    fprintf(stderr, "usage: framestep EPHEDIR\n");
+    return 2;
+  }
+  printf("G139: the speeds across the steps of the frame's models are each side's rate\n");
+  for (m = 0; m < NSET; m++) {
     char mod[40];
     swe_ctx *c = swe_ctx_new();
-    strcpy(mod, MODS[m]);
+    TS = SET[m].ts;
+    LEFT = SET[m].left;
+    nq = instants(tq);
+    strcpy(mod, SET[m].mod);
     swe_set_ephe_path_r(c, argv[1]);
     swe_set_jpl_file_r(c, "de200.eph");
     swe_set_topo_r(c, 8.55, 47.37, 400);
     swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
     swe_set_delta_t_userdef_r(c, ldexp(1, -11));
     swe_set_astro_models_r(c, mod, 0);
-    printf("  models %s: worst |speed - reference|, deg/day, %s / %s / %s\n",
-           MODS[m], RN[0], RN[1], RN[2]);
+    printf("  (a) step JD %.1f, models %s: worst |speed - reference|, deg/day, %s / %s / %s\n",
+           TS, SET[m].mod, RN[0], RN[1], RN[2]);
     for (b = 0; b < NB; b++)
       for (f = 0; f < 2; f++) {
         int32 xf = f ? SEFLG_EQUATORIAL : 0;
         double w[3] = { 0, 0, 0 }, lim = (b == B_SPEED3) ? 1e-5 : 1e-8;
         for (i = 0; i < nq; i++) {
-          int skip, reg;
+          int skip;
           double d = off(c, b, tq[i], xf, &skip, &err);
           if (err) {
             swe_ctx_free(c);
@@ -191,9 +325,8 @@ int main(int argc, char **argv)
           }
           if (skip)
             continue;
-          reg = (tq[i] > TS - 1 && tq[i] <= TS) ? 0 : (tq[i] > TS && tq[i] <= TS + 1) ? 1 : 2;
-          if (d > w[reg])
-            w[reg] = d;
+          if (d > w[span(tq[i])])
+            w[span(tq[i])] = d;
         }
         printf("    %-16s %s  %.2e  %.2e  %.2e\n", BN[b], f ? "equ" : "ecl", w[0], w[1], w[2]);
         for (k = 0; k < 3; k++) {
@@ -207,6 +340,35 @@ int main(int argc, char **argv)
       }
     swe_ctx_free(c);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  {
+    /* check (b): SEFLG_JPLHOR's own steps, both Owen's at their instant */
+    static const double tb[2] = { 2378131.5, 2525323.5 };
+    static const int lb[2] = { 1, 0 };
+    static const char *gn[2] = { "precession", "obliquity" };
+    swe_ctx *c = swe_ctx_new();
+    int g;
+    for (m = 0; m < 2; m++) {
+      TS = tb[m];
+      LEFT = lb[m];
+      printf("  (b) SEFLG_JPLHOR, step JD %.1f: worst |rate - reference|, deg/day, %s / %s / %s\n",
+             TS, RN[0], RN[1], RN[2]);
+      for (g = 0; g < 2; g++) {
+        double w[3];
+        check_b(c, g, SEFLG_JPLHOR, w);
+        printf("    %-16s      %.2e  %.2e  %.2e\n", gn[g], w[0], w[1], w[2]);
+        for (k = 0; k < 3; k++) {
+          n++;
+          if (!(w[k] <= 1e-8)) {
+            bad++;
+            printf("    FAIL SEFLG_JPLHOR %s, %s: %.2e > 1e-8\n", gn[g], RN[k], w[k]);
+          }
+        }
+      }
+    }
+    swe_ctx_free(c);
+  }
+#endif
   if (bad) {
     printf("G139 FAIL: %d of %d\n", bad, n);
     return 1;

@@ -2810,6 +2810,60 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
 }
 
 #ifndef SWE_UPSTREAM_COMPAT
+/* SEFLG_JPLHOR's IAU 1976 precession and obliquity, strictly between 1799
+ * Jan 1 and 2202 Jan 1 (Owen 1990 outside), as swi_precess() and
+ * swi_epsiln() bound them */
+#define SWI_JPLHOR_IAU1976_T0  2378131.5
+#define SWI_JPLHOR_IAU1976_T1  2525323.5
+
+/* Whether swi_precess(), swi_epsiln() and calc_nutation() take SEFLG_JPLHOR's
+ * models at J: under the flag throughout, and with SEFLG_JPLHOR_APPROX
+ * under SEMOD_JPLHORA_3 up to and including 1962 Jan 20. */
+static AS_BOOL frame_is_jplhor(swe_ctx *ctx, double J, int32 iflag)
+{
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+  if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
+  if (iflag & SEFLG_JPLHOR)
+    return TRUE;
+  return (iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3
+         && J <= HORIZONS_TJD0_DPSI_DEPS_IAU1980;
+}
+
+/* The model each of the frame's three functions takes at J, as each
+ * chooses it, as an int that differs where the model does: the
+ * precession's (swi_precess()), the mean obliquity's (swi_epsiln()) and
+ * the nutation's (calc_nutation(), whose flags go through
+ * swi_jplhor_plaus() first). Under SEFLG_JPLHOR's models the precession
+ * and obliquity are IAU 1976's within 1799-2202 and Owen's outside, the
+ * nutation IAU 1980's with the IERS corrections or a fixed offset. */
+static int frame_prec_model(swe_ctx *ctx, double J, int32 iflag)
+{
+  if (frame_is_jplhor(ctx, J, iflag))
+    return (J > SWI_JPLHOR_IAU1976_T0 && J < SWI_JPLHOR_IAU1976_T1)
+           ? SEMOD_PREC_IAU_1976 : SEMOD_PREC_OWEN_1990;
+  return 0;	/* the chosen models */
+}
+static int frame_eps_model(swe_ctx *ctx, double J, int32 iflag)
+{
+  return frame_prec_model(ctx, J, iflag);
+}
+static int frame_nut_model(swe_ctx *ctx, double J, int32 iflag)
+{
+  return frame_is_jplhor(ctx, J, swi_jplhor_plaus(ctx, iflag));
+}
+
+static int frame_models(swe_ctx *ctx, double J, int32 iflag, int which)
+{
+  int k = 0;
+  if (which & SWI_FRAME_PREC)
+    k = frame_prec_model(ctx, J, iflag);
+  if (which & SWI_FRAME_EPS)
+    k = k * 32 + frame_eps_model(ctx, J, iflag);
+  if (which & SWI_FRAME_NUT)
+    k = k * 32 + frame_nut_model(ctx, J, iflag);
+  return k;
+}
+
 /* Upstream bug 153: with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3 (the
  * default mode), swi_precess(), swi_epsiln() and calc_nutation() take
  * SEFLG_JPLHOR's models (IAU 1976, IAU 1980 plus a fixed offset) up to
@@ -2818,20 +2872,27 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
  * longitude), 3.19 mas in the mean obliquity and 7.17e-2" in dpsi on the
  * default models. A rate that differences them over t - h .. t + h must
  * not reach across it: the speed at t is the rate of t's side's model.
- * Returns -1 when t is at or before the step and t + h after it (difference
- * backward), +1 when t is after it and t - h at or before it (forward), 0
- * when the step is not within h, or not there under these flags
- * (SEFLG_JPLHOR, which wins, takes its models throughout). */
-int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag)
+ * Upstream bug 159: and SEFLG_JPLHOR's own models step at 1799 Jan 1 and
+ * 2202 Jan 1, IAU 1976 within, Owen 1990 outside: 17.6 and 19.8 mas in the
+ * mean obliquity, 6.5 and 7.4 mas in the precession (under SEFLG_JPLHOR,
+ * and at 1799 with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3). Each model
+ * of `which` (SWI_FRAME_PREC, _EPS, _NUT) is compared at t and t -+ h as
+ * the model chooses it, so each step has its own inclusive side.
+ * Returns -1 when t + h takes another model than t (difference backward),
+ * +1 when t - h does (forward), 0 when neither does. */
+int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which)
 {
-  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE], k;
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
-  if (!(iflag & SEFLG_JPLHOR_APPROX) || (iflag & SEFLG_JPLHOR)
-      || jplhora_model != SEMOD_JPLHORA_3)
+  if (!(iflag & SEFLG_JPLHOR)
+      && !((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3))
     return 0;
-  if (t <= HORIZONS_TJD0_DPSI_DEPS_IAU1980)
-    return (t + h > HORIZONS_TJD0_DPSI_DEPS_IAU1980) ? -1 : 0;
-  return (t - h <= HORIZONS_TJD0_DPSI_DEPS_IAU1980) ? 1 : 0;
+  k = frame_models(ctx, t, iflag, which);
+  if (frame_models(ctx, t + h, iflag, which) != k)
+    return -1;
+  if (frame_models(ctx, t - h, iflag, which) != k)
+    return 1;
+  return 0;
 }
 
 /* Upstream bug 58: the rate of the nutation angles, rad/day. Upstream took
@@ -2868,7 +2929,7 @@ void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
     }
   } else {
     double a[2], b[2];
-    int side = swi_frame_step_side(ctx, tjd, NUT_SPEED_INTV, iflag);
+    int side = swi_frame_step_side(ctx, tjd, NUT_SPEED_INTV, iflag, SWI_FRAME_NUT);
     if (side != 0) {
       /* Upstream bug 153: within NUT_SPEED_INTV of SEMOD_JPLHORA_3's step
        * the central difference took its 7.17e-2" in dpsi (the default

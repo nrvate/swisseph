@@ -170,7 +170,13 @@ extern int swi_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo);
 extern int32 swi_jplhor_plaus(swe_ctx *ctx, int32 iflag);
 #ifndef SWE_UPSTREAM_COMPAT
 extern void swi_nutation_rate(swe_ctx *ctx, double J, int32 iflag, double *rate);
-extern int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag);
+/* the frame's models for swi_frame_step_side(): the precession, the mean
+ * obliquity, the nutation */
+#define SWI_FRAME_PREC  1
+#define SWI_FRAME_EPS   2
+#define SWI_FRAME_NUT   4
+#define SWI_FRAME_ALL   (SWI_FRAME_PREC | SWI_FRAME_EPS | SWI_FRAME_NUT)
+extern int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which);
 #endif
 extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 #ifndef SWE_UPSTREAM_COMPAT

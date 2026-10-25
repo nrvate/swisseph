@@ -1332,14 +1332,15 @@ check-eopfollow: eopfollow
 check-woolard: woolard
 	@env -u SE_EPHE_PATH ./woolard
 
-# G139: with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3, de200, the speeds
-# across the step of the precession, obliquity and nutation models at 1962
-# Jan 20 are each side's own rate: no difference of the frame's models (the
-# precession's, the site's precession in right ascension, the obliquity's,
-# the nutation's) nor SEFLG_SPEED3's places reaches across it. The Sun,
-# Moon, Mars, Polaris, sidereal Mars, the topocentric Moon and Mars under
-# SEFLG_SPEED3, against five-point differences on the instant's side
-# (UPSTREAM-BUGS 153).
+# G139: the speeds across the steps of the frame's models are each side's
+# own rate: no difference of the frame's models (the precession's, the
+# site's precession in right ascension, the obliquity's, the nutation's) nor
+# SEFLG_SPEED3's places reaches across one. With SEFLG_JPLHOR_APPROX under
+# SEMOD_JPLHORA_3 on de200 at 1962 Jan 20 (UPSTREAM-BUGS 153) and at 1799
+# Jan 1, the Sun, Moon, Mars, Polaris, sidereal Mars, the topocentric Moon
+# and Mars under SEFLG_SPEED3 against five-point differences on the
+# instant's side; SEFLG_JPLHOR's own steps at 1799 and 2202 Jan 1 in the
+# precession's and obliquity's rates themselves (UPSTREAM-BUGS 159).
 check-framestep: framestep
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./framestep $(EPHE)
 

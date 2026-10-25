@@ -633,8 +633,10 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
        * within dt of it the three places lay both sides of the step: Mars's
        * longitude speed 5.75e-2 deg/day off. There now the three-point
        * derivative on tjd's side, the third place at tjd -+ 2 dt taken
-       * before tjd's, which the save areas keep. */
-      int side = swi_frame_step_side(ctx, tjd, dt, sd->iflgsave);
+       * before tjd's, which the save areas keep.
+       * Upstream bug 159: and at SEFLG_JPLHOR's steps of the precession and
+       * obliquity at 1799 and 2202 Jan 1 (8.9e-3 deg/day at 1799). */
+      int side = swi_frame_step_side(ctx, tjd, dt, sd->iflgsave, SWI_FRAME_ALL);
       double x3[24];
       if (side != 0
           && (sd->iflgsave = swecalc(ctx, tjd + 2 * side * dt, ipl, iplmoon, iflag, x3, serr)) == ERR)
@@ -6955,8 +6957,12 @@ void swi_precess_speed(swe_ctx *ctx, double *xx, double t, int32 iflag, int dire
      * other model (and within a day after it P(t - 1), for a model other
      * than Vondrak's), every speed of date 1.57e-5 deg/day off in
      * longitude, Polaris's right ascension 1.31e-4. Within a day of it now
-     * the three-point derivative on t's side, P(t), P(t -+ 1), P(t -+ 2). */
-    int side = swi_frame_step_side(ctx, t, 1, iflag);
+     * the three-point derivative on t's side, P(t), P(t -+ 1), P(t -+ 2).
+     * Upstream bug 159: and within a day of SEFLG_JPLHOR's steps at 1799
+     * and 2202 Jan 1, IAU 1976 within, Owen 1990 outside, both differenced:
+     * 2.8e-7 and 1.0e-6 deg/day either side, under SEFLG_JPLHOR and (1799)
+     * SEMOD_JPLHORA_3. */
+    int side = swi_frame_step_side(ctx, t, 1, iflag, SWI_FRAME_PREC);
     if (side != 0) {
       double b[3], c[3];
       for (i = 0; i <= 2; i++)
@@ -7442,8 +7448,11 @@ double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nu
    * after it, a step of 3.19 mas on the default: within a day before it,
    * eps(t + 1) was the other model's, the rate 8.9e-7 deg/day off (42 mas
    * and 1.2e-5 with IAU 2006 after it). There now the difference back,
-   * eps(t) - eps(t - 1). */
-  if (swi_frame_step_side(ctx, tjd, 1, iflag) < 0)
+   * eps(t) - eps(t - 1).
+   * Upstream bug 159: and before SEFLG_JPLHOR's steps at 1799 and 2202 Jan
+   * 1, Owen 1990's at their instants: 17.6 and 19.8 mas, the rate 4.9e-6
+   * and 5.5e-6 deg/day off the day before. */
+  if (swi_frame_step_side(ctx, tjd, 1, iflag, SWI_FRAME_EPS) < 0)
     rate = e0 - swi_epsiln(ctx, tjd - 1, iflag);
   else
     rate = swi_epsiln(ctx, tjd + 1, iflag) - e0;
@@ -12935,8 +12944,9 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
     } else {	/* the date's axes in J2000, rows of M */
       double ex[3] = {1, 0, 0}, eyp[3] = {0, 1, 0}, eym[3] = {0, 1, 0};
       /* Upstream bug 153: within a day of SEMOD_JPLHORA_3's step, the
-       * difference on the instant's side, as in swi_precess_speed() */
-      int side = swi_frame_step_side(ctx, tjd, 1, iflag);
+       * difference on the instant's side, as in swi_precess_speed(); and
+       * of SEFLG_JPLHOR's at 1799 and 2202 (bug 159) */
+      int side = swi_frame_step_side(ctx, tjd, 1, iflag, SWI_FRAME_PREC);
       swi_precess(ctx, ex, tjd, iflag, J_TO_J2000);
       if (side != 0) {
         double ey0[3] = {0, 1, 0};
