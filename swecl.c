@@ -5526,7 +5526,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   double Gmsm, dzmin;
 #ifndef SWE_UPSTREAM_COMPAT
   int32 retc0 = 0, retcs = 0, retx = 0, eph_asked, iflag_ctr = iflag;
-  AS_BOOL out_bary, mosh_ctr = FALSE;
+  AS_BOOL out_bary, mosh_ctr = FALSE, moon_geo_mean = FALSE;
 #endif
   double rxy, rxyz, fac, sgn;
   double sinnode, cosnode, sinincl, cosincl, sinu, cosu, cosE, cosE2;
@@ -6133,6 +6133,28 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   /* to set the variables required in the save area,
    * i.e. ecliptic, nutation, barycentric sun, earth
    * we compute the planet */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 174: the Moon's mean points (every method but the
+   * osculating ones) geocentric or topocentric read the Moon here, and
+   * nothing of it reaches them: the elements read no file, and the
+   * barycentric Earth added to the points and to the observer below
+   * cancels. They need the ecliptic and the nutation of date, and the site
+   * its delta t. Yet the read made them depend on the Moon files: without
+   * them the strict setting refused them ("Swiss (.se1) Moon file is not
+   * available"), and in an empty directory every ephemeris but Moshier, as
+   * JPL without its file, where swe_calc() answers SE_MEAN_NODE under the
+   * ephemeris asked; with the fallback the read fell to Moshier and said
+   * so, so that a delta t taken again for the ephemeris that answered (bug
+   * 170) moved them, the mean node by swe_nod_aps_ut() 6.0e-8 deg off at
+   * 1900 and 1.8e-5 in AD 1000, the apogee 1.3e-7 and 3.8e-5, and in an
+   * empty directory the site took Moshier's delta t (the topocentric node
+   * 1.4e-6 deg off at 1900, 1.5e-4 in AD 1000). Now the ecliptic and
+   * nutation alone (SE_ECL_NUT, which returns the ephemeris asked), no
+   * Earth added or taken away (its rounding, 1.6e-11 deg on the focal
+   * point, gone), the site placed by the delta t of the ephemeris asked,
+   * and swe_calc()'s range of the mean node. */
+  moon_geo_mean = ipli == SE_MOON && !is_true_nodaps && !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR));
+#endif
   if (ipli == SE_MOON && (iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))) {
     swi_force_app_pos_etc(ctx);
 #ifndef SWE_UPSTREAM_COMPAT
@@ -6141,6 +6163,19 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     if (swe_calc_r(ctx, tjd_et, SE_SUN, iflg0, x, serr) == ERR)
 #endif
       return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+  } else if (moon_geo_mean) {
+    /* swe_calc()'s range of the mean node, its speed's instants in it */
+    double tm = tjd_et - 1.0 / 32, tp = tjd_et + 1.0 / 32;
+    if (tm < MOSHNDEPH_START || tp > MOSHNDEPH_END) {
+      if (serr != NULL)
+        sprintf(serr, "jd %f outside mean node range %.2f .. %.2f ",
+                tm < MOSHNDEPH_START ? tm : tp, MOSHNDEPH_START, MOSHNDEPH_END);
+      return ERR;
+    }
+    if ((retcs = swe_calc_r(ctx, tjd_et, SE_ECL_NUT, iflg0, x, serr)) == ERR)
+      return ERR;
+#endif
   } else {
 #ifndef SWE_UPSTREAM_COMPAT
     /* Not TOPOCTR for the Earth (the Sun's orbit): a topocentric Earth
@@ -6185,8 +6220,14 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
    * above has set, the ephemeris of the save area's Earth: a Moon from
    * Moshier on the files' Earth, the Moon file alone missing, keeps the
    * files' frame and site, as swe_calc() computes it. */
-  mosh_ctr = pedp->iephe == SEFLG_MOSEPH;
-  iflag_ctr = (iflag & ~SEFLG_EPHMASK) | (pedp->iephe & SEFLG_EPHMASK);
+  if (moon_geo_mean) {	/* bug 174: no Earth read; the ephemeris asked */
+    int32 e = (iflag & SEFLG_EPHMASK) ? (iflag & SEFLG_EPHMASK) : SEFLG_SWIEPH;
+    mosh_ctr = e == SEFLG_MOSEPH;
+    iflag_ctr = (iflag & ~SEFLG_EPHMASK) | e;
+  } else {
+    mosh_ctr = pedp->iephe == SEFLG_MOSEPH;
+    iflag_ctr = (iflag & ~SEFLG_EPHMASK) | (pedp->iephe & SEFLG_EPHMASK);
+  }
 #endif
   /***********************
    * position of observer
@@ -6235,6 +6276,9 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
 #endif
   } else {
     /* barycentric position of observer */
+#ifndef SWE_UPSTREAM_COMPAT
+    if (!moon_geo_mean)	/* bug 174: the points stay geocentric */
+#endif
     for (i = 0; i <= 5; i++)
       xobs[i] += xear[i];
   }
@@ -6314,6 +6358,9 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * to barycenter 
      *********************/
     if (ipli == SE_MOON) {
+#ifndef SWE_UPSTREAM_COMPAT
+      if (!moon_geo_mean)	/* bug 174 */
+#endif
       for (i = 0; i <= 5; i++)
         xp[i] += xear[i];
     } else {

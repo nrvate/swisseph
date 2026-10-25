@@ -34,8 +34,15 @@
  * lunar series' Moon (0.24 deg away at 2000): the EMB 1.3e-7 AU off, the
  * perihelion wobbling 8e-3 deg with the Moon's inequalities, its speed
  * 4.7e-8 deg/day off its positions' rate, the distance's 2.5e-11 AU/day.
+ * UPSTREAM-BUGS 174: the Moon's mean points geocentric and topocentric
+ * read the Moon for the save area, which nothing of them uses: refused
+ * under the strict setting without the moon files, in an empty directory,
+ * JPL without its file, where swe_calc() answers SE_MEAN_NODE; with the
+ * fallback flagged by the ephemeris the read fell to, so swe_nod_aps_ut()'s
+ * delta t taken again for it (bug 170) moved them (6.0e-8 deg at 1900,
+ * 1.8e-5 in AD 1000), and the site took Moshier's delta t.
  *
- * The check, the complete directory:
+ * The check, the complete directory, and for (f) others:
  *  (a) the Swiss files and Moshier, seven instants -3000..3000: the Sun's
  *      geocentric and topocentric perigee and apogee against the Earth's
  *      heliocentric points of the same ephemeris and method (method 0,
@@ -68,30 +75,55 @@
  *      mean, osculating, SE_NODBIT_OSCU_BAR and osculating with
  *      SE_NODBIT_FOPOINT, the four centres, each pair from a closed
  *      context; the return and points bit for bit (both refusing the
- *      barycentric points and Saturn's barycentric ellipse);
+ *      barycentric points and Saturn's barycentric ellipse); the Moon's
+ *      mean points geocentric and topocentric, which read no file (bug
+ *      174), against SEFLG_JPLEPH strict;
  *  (e) Moshier and the files, 13 instants -3000..3000: the osculating
  *      apsides (and the focal point) of the Earth, heliocentric, and of
  *      the Sun, geocentric and topocentric, their speeds against
  *      five-point differences of their positions over 2^-6 day at binary
  *      instants, within 2e-9 deg/day (the files' topocentric Sun 1e-8, at
  *      the residual floor: 3.9e-9 there, not this check's) and 1e-12
- *      AU/day.
+ *      AU/day;
+ *  (f) the Moon's mean points (SE_NODBIT_MEAN, 0, SE_NODBIT_FOPOINT)
+ *      along directories of links to EPHEDIR's files but the moon files,
+ *      but the JPL file, and none, and the complete one; Swiss, JPL
+ *      (de200) and Moshier; strict and with the fallback; 1900 Jan 0.75
+ *      and AD 1000; each directory, ephemeris, setting and instant on a
+ *      context of its own: the geocentric and J2000 points answered bit
+ *      for bit as the complete directory's; swe_nod_aps_ut()'s node within
+ *      1e-10 deg of swe_calc_ut(SE_MEAN_NODE)'s there, which returns the
+ *      ephemeris asked (its delta t); with the fallback the strict answer
+ *      bit for bit, topocentric and UT too; the heliocentric and
+ *      barycentric points without the moon files, which read the Earth
+ *      made from Moshier's Moon, refused strict as bug 120 refuses it and
+ *      with the fallback the complete directory's within 1e-7 deg; and
+ *      about the ends of the mean node's range refused where swe_calc() is,
+ *      with its message, and answered a day inside them.
  * Measured: (a) distance 4.4e-16 AU, direction 7.6e-7 deg (the focal
  * point, 0.03 AU out), Moshier's mean points 2.9e-6 deg and 2.2e-16 AU off
  * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b), (c),
- * (d) 0; (e) 3.2e-10 deg/day, 1.2e-13 AU/day. 1609 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
+ * (d) 0; (e) 3.2e-10 deg/day, 1.2e-13 AU/day; (f) the node 1.1e-13 deg off
+ * the mean node's, the heliocentric and barycentric points 1.6e-8 deg off.
+ * 1999 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
  * first check fail (143 deg, 0.97 AU), the 14 of its second and 7 of the
  * third's 14 (the topocentric); before bug 168's, 340 of (b)'s 480 (12
  * deg); before bug 169's, 448 of (c)'s 456 (180 deg: the Sun's
  * topocentric points heliocentric, the Earth's orbit's); before bug 176's,
  * 84 of (d)'s 160, every osculating row that answers (1.75e-4 deg); before
- * bug 180's, (e)'s 78 Moshier rows (4.7e-8 deg/day, 2.5e-11 AU/day). The
- * upstream build (SWE_UPSTREAM_COMPAT) fails 1311. Run as
+ * bug 180's, (e)'s 78 Moshier rows (4.7e-8 deg/day, 2.5e-11 AU/day);
+ * before bug 174's, 114 of (f)'s 390 (144 with bug 170's fix and not
+ * 174's) and (d)'s 4 rows of the Moon's mean points (refused strict). The
+ * upstream build (SWE_UPSTREAM_COMPAT) fails 1424. Run as
  *   nodcentre EPHEDIR
  */
+#include <dirent.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "swephexp.h"
 
 static int nbad, nrow;
@@ -304,7 +336,11 @@ static void part_c(void)
  * allowed, answers as SEFLG_MOSEPH, return and points bit for bit. Each
  * pair from a closed context: after a JPL call the first Moshier
  * deflection takes that call's barycentric Sun (5.8e-8 deg on the Sun's
- * mean points), which is not this check's. */
+ * mean points), which is not this check's. The Moon's mean points
+ * geocentric and topocentric read no file since bug 174 and fall back
+ * from nothing: answered under de200, its delta t placing the site, as
+ * swe_calc()'s mean node is (1.57e-3 deg from Moshier's topocentric
+ * points at 1500, its tidal term's), so against the strict request. */
 static void part_d(const char *ephe)
 {
   static const int ipl[5] = {SE_SUN, SE_MOON, SE_MARS, SE_SATURN, SE_EARTH};
@@ -323,7 +359,8 @@ static void part_d(const char *ephe)
         for (ic = 0; ic < 4; ic++) {
           int32 fa = SEFLG_JPLEPH | SEFLG_SPEED | C[ic], fb = SEFLG_MOSEPH | SEFLG_SPEED | C[ic], ra, rb;
           double d = 0;
-          int same;
+          int same, moonmean = ipl[ib] == SE_MOON && M[im] == SE_NODBIT_MEAN
+                               && (C[ic] == 0 || C[ic] == SEFLG_TOPOCTR);
           memset(a, 0, sizeof a);
           memset(b, 0, sizeof b);
           *sa = *sb = '\0';
@@ -331,15 +368,21 @@ static void part_d(const char *ephe)
           swe_set_ephe_path(ephe);
           swe_set_jpl_file("de200.eph");
           ra = swe_nod_aps(JD[id], ipl[ib], fa, M[im], a, a + 6, a + 12, a + 18, sa);
-          rb = swe_nod_aps(JD[id], ipl[ib], fb, M[im], b, b + 6, b + 12, b + 18, sb);
+          if (moonmean) {	/* bug 174: de200 strict */
+            swe_set_ephe_fallback(0);
+            rb = swe_nod_aps(JD[id], ipl[ib], fa, M[im], b, b + 6, b + 12, b + 18, sb);
+            swe_set_ephe_fallback(1);
+          } else {
+            rb = swe_nod_aps(JD[id], ipl[ib], fb, M[im], b, b + 6, b + 12, b + 18, sb);
+          }
           for (k = 0; k < 4; k++)
             if (dir_off(a, k, b, k) > d)
               d = dir_off(a, k, b, k);
           if (d > w)
             w = d;
           same = ra == rb && memcmp(a, b, sizeof a) == 0;
-          snprintf(what, sizeof what, "body %d method %d centre %d jd %.1f, de200 fallen to Moshier against Moshier: ret %d %d, deg",
-                   ipl[ib], (int) M[im], (int) C[ic], JD[id], ra, rb);
+          snprintf(what, sizeof what, "body %d method %d centre %d jd %.1f, de200 fallen to Moshier against %s: ret %d %d, deg",
+                   ipl[ib], (int) M[im], (int) C[ic], JD[id], moonmean ? "de200 strict" : "Moshier", ra, rb);
           /* both refuse the barycentric points (bug 149) and Saturn's
            * barycentric ellipse */
           check(same && (rb == 0 || C[ic] == SEFLG_BARYCTR
@@ -397,9 +440,198 @@ static void part_e(void)
          "      %.2e deg/day (the files' topocentric Sun %.2e), %.2e AU/day\n", wa, wt, wr);
 }
 
+/* (f) the Moon's mean points read no file, bug 174: directories of links
+ * to EPHEDIR's files but some */
+enum { D_ALL, D_NOMOON, D_NOJPL, D_EMPTY, ND };
+static const char *DN[ND] = {"complete", "no Moon files", "no JPL file", "empty"};
+static char DIRS[ND][PATH_MAX];
+
+static int link_dir(const char *ephe, const char *dir, int which)
+{
+  DIR *d = opendir(ephe);
+  struct dirent *e;
+  char p[PATH_MAX + 300], q[PATH_MAX + 300];
+  if (d == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL) {
+    if (e->d_name[0] == '.' || which == D_EMPTY
+        || (which == D_NOMOON && strncmp(e->d_name, "semo", 4) == 0)
+        || (which == D_NOJPL && strstr(e->d_name, ".eph") != NULL))
+      continue;
+    snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+    snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+    if (symlink(p, q) != 0) {
+      closedir(d);
+      return -1;
+    }
+  }
+  closedir(d);
+  return 0;
+}
+
+static void unlink_dir(const char *dir)
+{
+  DIR *d = opendir(dir);
+  struct dirent *e;
+  char p[PATH_MAX + 300];
+  if (d == NULL)
+    return;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.') {
+      snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
+      unlink(p);
+    }
+  closedir(d);
+  rmdir(dir);
+}
+
+static swe_ctx *dir_ctx(int id, int fb)
+{
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return NULL;
+  swe_set_ephe_path_r(c, DIRS[id]);
+  swe_set_jpl_file_r(c, "de200.eph");
+  swe_set_ephe_fallback_r(c, fb);
+  swe_set_topo_r(c, 8.55, 47.37, 400);
+  return c;
+}
+
+#define NDC 5	/* geo, J2000, topo (TT); geo, topo (UT) */
+struct dres { int32 r[NDC], rn; double x[NDC][24], node; };
+
+static void d_ask(swe_ctx *c, double jd, int32 eph, int32 meth, struct dres *a)
+{
+  static const int32 CF[NDC] = {0, SEFLG_J2000, SEFLG_TOPOCTR, 0, SEFLG_TOPOCTR};
+  double x[6];
+  char serr[AS_MAXCH];
+  int k;
+  memset(a, 0, sizeof *a);
+  for (k = 0; k < NDC; k++) {
+    int32 fl = eph | SEFLG_SPEED | CF[k];
+    double *p = a->x[k];
+    a->r[k] = k < 3 ? swe_nod_aps_r(c, jd, SE_MOON, fl, meth, p, p + 6, p + 12, p + 18, serr)
+                    : swe_nod_aps_ut_r(c, jd, SE_MOON, fl, meth, p, p + 6, p + 12, p + 18, serr);
+  }
+  a->rn = swe_calc_ut_r(c, jd, SE_MEAN_NODE, eph | SEFLG_SPEED, x, serr);
+  a->node = x[0];
+}
+
+static void part_f(const char *ephe)
+{
+  static const int32 M[3] = {SE_NODBIT_MEAN, 0, SE_NODBIT_FOPOINT};
+  static const int32 E[3] = {SEFLG_SWIEPH, SEFLG_JPLEPH, SEFLG_MOSEPH};
+  static const double JD[2] = {2415020.25, 2086308.0};
+  static struct dres R[ND][3][2][2][3];	/* directory, ephemeris, fallback, instant, method */
+  char what[200];
+  double wn = 0, wb = 0;
+  int id, ie, fb, it, im, k;
+  snprintf(DIRS[D_ALL], PATH_MAX, "%s", ephe);
+  for (id = 1; id < ND; id++) {
+    snprintf(DIRS[id], PATH_MAX, "/tmp/nodcentre%d-XXXXXX", id);
+    if (mkdtemp(DIRS[id]) == NULL || link_dir(ephe, DIRS[id], id) != 0) {
+      check(0, "f", "could not make the directories in /tmp", 0, 0);
+      while (--id > 0)
+        unlink_dir(DIRS[id]);
+      return;
+    }
+  }
+  /* each directory, ephemeris, setting and instant on a context of its
+   * own, the three methods one after another on it */
+  for (id = 0; id < ND; id++)
+    for (ie = 0; ie < 3; ie++)
+      for (fb = 0; fb < 2; fb++)
+        for (it = 0; it < 2; it++) {
+          swe_ctx *c = dir_ctx(id, fb);
+          for (im = 0; im < 3; im++) {
+            if (c != NULL)
+              d_ask(c, JD[it], E[ie], M[im], &R[id][ie][fb][it][im]);
+            else
+              R[id][ie][fb][it][im].r[0] = -99;
+          }
+          swe_ctx_free(c);
+        }
+  for (id = 0; id < ND; id++)
+    for (ie = 0; ie < 3; ie++)
+      for (fb = 0; fb < 2; fb++)
+        for (it = 0; it < 2; it++)
+          for (im = 0; im < 3; im++) {
+            const struct dres *a = &R[id][ie][fb][it][im], *s = &R[id][ie][0][it][im];
+            const struct dres *f = &R[D_ALL][ie][0][it][im];
+            int ok = 1;
+            double dn = fabs(swe_difdeg2n(a->x[3][0], a->node));
+            for (k = 0; k < NDC; k++)
+              ok = ok && a->r[k] == 0;
+            if (ok && dn > wn)
+              wn = dn;
+            snprintf(what, sizeof what, "%s, eph %d, %s, jd %.2f, method %d: ret %d %d %d %d %d, deg",
+                     DN[id], (int) E[ie], fb ? "fallback" : "strict", JD[it], (int) M[im],
+                     a->r[0], a->r[1], a->r[2], a->r[3], a->r[4]);
+            /* geocentric and J2000: the complete directory's points */
+            check(ok && memcmp(a->x[0], f->x[0], sizeof a->x[0]) == 0
+                  && memcmp(a->x[1], f->x[1], sizeof a->x[1]) == 0, "f", what,
+                  fabs(swe_difdeg2n(a->x[0][0], f->x[0][0])), 0);
+            /* swe_nod_aps_ut(): the delta t swe_calc_ut() takes for the
+             * mean node with the same flags, there */
+            check(ok && a->rn == (E[ie] | SEFLG_SPEED) && dn <= 1e-10, "f", what, dn, 1e-10);
+            /* the same answer strict and with the fallback: nothing to
+             * fall back from, the site placed by the delta t asked */
+            if (fb)
+              check(ok && memcmp(a->x, s->x, sizeof a->x) == 0, "f", what,
+                    fabs(swe_difdeg2n(a->x[2][0], s->x[2][0])), 0);
+          }
+  /* the heliocentric and barycentric points read the Earth, made from
+   * Moshier's Moon there: strict refused as bug 120 refuses the Earth;
+   * with the fallback the complete directory's within 1e-7 deg */
+  for (fb = 0; fb < 2; fb++)
+    for (it = 0; it < 2; it++)
+      for (im = 0; im < 3; im++)
+        for (k = 0; k < 2; k++) {
+          int32 fl = SEFLG_SWIEPH | SEFLG_SPEED | (k ? SEFLG_BARYCTR : SEFLG_HELCTR);
+          double a[24], b[24], d = 0;
+          char sa[AS_MAXCH] = "", sb[AS_MAXCH];
+          swe_ctx *c = dir_ctx(D_NOMOON, fb), *cf = dir_ctx(D_ALL, 0);
+          int32 ra = c != NULL ? swe_nod_aps_r(c, JD[it], SE_MOON, fl, M[im], a, a + 6, a + 12, a + 18, sa) : -99;
+          int32 rb = cf != NULL ? swe_nod_aps_r(cf, JD[it], SE_MOON, fl, M[im], b, b + 6, b + 12, b + 18, sb) : -99;
+          swe_ctx_free(c);
+          swe_ctx_free(cf);
+          if (ra == 0 && rb == 0)
+            d = dir_off(a, 0, b, 0) > dir_off(a, 2, b, 2) ? dir_off(a, 0, b, 0) : dir_off(a, 2, b, 2);
+          if (d > wb)
+            wb = d;
+          snprintf(what, sizeof what, "no Moon files, %s, %s, jd %.2f, method %d: ret %d, deg",
+                   k ? "barycentric" : "heliocentric", fb ? "fallback" : "strict", JD[it], (int) M[im], ra);
+          check(rb == 0 && (fb ? ra == 0 && d <= 1e-7
+                            : ra < 0 && strstr(sa, "Moon file is not available") != NULL), "f", what, d, 1e-7);
+        }
+  /* swe_calc()'s range of the mean node (-3100015.5 .. 8000016.5, its
+   * speed's instants 2^-5 day either side in it), the complete directory:
+   * refused where swe_calc(SE_MEAN_NODE) is, with its message, and
+   * answered where it is, past the planet files' -3026605.5 .. 7929133.5 */
+  for (k = 0; k < 6; k++) {
+    static const double JR[6] = {-3100015.5 - 1, -3100015.5 + 1.0 / 64, -3100015.5 + 1,
+                                 8000016.5 + 1, 8000016.5 - 1.0 / 64, 8000016.5 - 1};
+    double a[24], x[6];
+    char sa[AS_MAXCH] = "", sn[AS_MAXCH] = "";
+    swe_ctx *c = dir_ctx(D_ALL, 0);
+    int32 ra = c != NULL ? swe_nod_aps_r(c, JR[k], SE_MOON, SEFLG_SWIEPH, SE_NODBIT_MEAN, a, a + 6, a + 12, a + 18, sa) : 0;
+    int32 rn = c != NULL ? swe_calc_r(c, JR[k], SE_MEAN_NODE, SEFLG_SWIEPH, x, sn) : 0;
+    swe_ctx_free(c);
+    snprintf(what, sizeof what, "jd %.4f, the mean node's range: ret %d (swe_calc() %d), '%.60s'", JR[k], ra, rn, sa);
+    check(c != NULL && (k % 3 == 2 ? ra == 0 && rn >= 0
+                        : ra < 0 && rn < 0 && strstr(sa, "outside mean node range") != NULL
+                          && strstr(sn, "outside mean node range") != NULL), "f", what, 0, 0);
+  }
+  for (id = 1; id < ND; id++)
+    unlink_dir(DIRS[id]);
+  printf("  (f) the Moon's mean points with files missing: swe_nod_aps_ut()'s node %.2e deg off the\n"
+         "      mean node's; heliocentric and barycentric, the Moon files missing, %.2e deg\n", wn, wb);
+}
+
 int main(int argc, char **argv)
 {
-  if (argc != 2) {
+  char ephe[PATH_MAX];
+  if (argc != 2 || realpath(argv[1], ephe) == NULL) {
     fprintf(stderr, "usage: nodcentre EPHEDIR\n");
     return 2;
   }
@@ -412,6 +644,7 @@ int main(int argc, char **argv)
   part_c();
   part_d(argv[1]);
   part_e();
+  part_f(ephe);
   printf("  rows %d, failed %d\n", nrow, nbad);
   printf(nbad ? "G143 FAIL: %d\n" : "G143 PASS\n", nbad);
   return nbad ? 1 : 0;

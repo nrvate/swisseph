@@ -1393,7 +1393,8 @@ check-jplhorbias: jplhorbias
 # swe_close() (UPSTREAM-BUGS 166). And without the files for J2000, the
 # other spans' DE number from the first call: delta t and the getter, a UT
 # body in AD 1500 twice, delta t in 1900, as with the complete directory
-# (UPSTREAM-BUGS 175). /tmp directories of links.
+# (UPSTREAM-BUGS 175); and the Moon's mean points under the strict setting
+# too, which read no file (174). /tmp directories of links.
 check-moonlesstid: moonlesstid
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./moonlesstid $(EPHE)
 
@@ -1406,7 +1407,9 @@ check-moonlesstid: moonlesstid
 # swe_calc() takes (169) and de200 fallen to Moshier with Moshier's frame
 # bias on its ellipses (176), bit for bit; on Moshier the Earth's and the
 # Sun's osculating apsides' speeds the rates of their positions, the EMB
-# the series' own (180).
+# the series' own (180); the Moon's mean points answered under the
+# ephemeris asked with files missing, strict or not, as the mean node is
+# (174; /tmp directories of links).
 check-nodcentre: nodcentre
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodcentre $(EPHE)
 

@@ -13,6 +13,14 @@
  * 1.3e-4). The Moon itself, Moshier's there, answers SEFLG_MOSEPH and
  * takes Moshier's own term (bug 120).
  *
+ * And UPSTREAM-BUGS 174: swe_nod_aps() of the Moon's mean points
+ * geocentric read the Moon for its save area, which nothing of them uses,
+ * so without the moon files the strict setting refused them ("Swiss (.se1)
+ * Moon file is not available"), and with the fallback the read said
+ * SEFLG_MOSEPH, so that swe_nod_aps_ut(), taking delta t again for the
+ * ephemeris that answered (bug 170), moved them: the mean node 6.0e-8 deg
+ * at 1900 and 1.8e-5 in AD 1000, the apogee 1.3e-7 and 3.8e-5.
+ *
  * The check, each case in a forked, pristine process: a /tmp directory of
  * links to EPHEDIR's files but the moon files (semo*.se1), read by the
  * setting thread, a thread started after the path, a thread running
@@ -22,18 +30,20 @@
  * swe_close() (bug 131's reading again). Under the strict setting:
  * swe_get_tid_acc() first, swe_deltat_ex() in AD 1000 and 1900 with
  * SEFLG_SWIEPH, swe_deltat() in AD 1000, the heliocentric Mars by
- * swe_calc_ut() at 1900 and in AD 1000, and the getter again; with the
- * fallback allowed, swe_nod_aps_ut()'s mean node and apogee of the Moon at
- * 1900 and in AD 1000, and the UT Moon's return flag (SEFLG_MOSEPH: the
- * directory has no moon file). Each bit for bit as the same reader given
- * EPHEDIR, but the Moon's flag (SEFLG_SWIEPH there). 7 readers x 2
- * observations = 14 checks.
+ * swe_calc_ut() at 1900 and in AD 1000, the getter again, and
+ * swe_nod_aps_ut()'s mean node and apogee of the Moon at 1900 and in AD
+ * 1000 (bug 174); with the fallback allowed, those four, and the UT Moon's
+ * return flag (SEFLG_MOSEPH: the directory has no moon file). Each bit for
+ * bit as the same reader given EPHEDIR, but the Moon's flag (SEFLG_SWIEPH
+ * there). 7 readers x 2 observations = 14 checks.
  *
- * Measured: the 14 pass. Before the fix all 14 fail, the term -25.80 for
- * -25.936 and the values above; the compat build (SWE_UPSTREAM_COMPAT),
- * which keeps upstream's default term, fails the 14 with the fix and
- * without. The upstream build fails as the compat build on its main
- * thread.
+ * Measured: the 14 pass. Before bug 166's fix all 14 fail, the term -25.80
+ * for -25.936 and the values above; before bug 174's the 7 strict ones
+ * (the Moon's points refused), and with bug 170's fix and not 174's the 7
+ * of the fallback too. The compat build (SWE_UPSTREAM_COMPAT), which keeps
+ * upstream's default term and its read of the Moon, fails the 14 with the
+ * fixes and without. The upstream build fails as the compat build on its
+ * main thread.
  *
  * UPSTREAM-BUGS 175: with neither file for J2000 (semo_18.se1,
  * sepl_18.se1) and other spans' files along the path, no DE number was
@@ -74,7 +84,7 @@
 #define T_1900 2415020.5
 #define T_1000 2086308.0
 #define T_1500 2268923.5
-#define NV     8
+#define NV     12
 
 static char EPHE[PATH_MAX], NOMOON[] = "/tmp/moonlesstidXXXXXX";
 static char NO18[] = "/tmp/moonlesstidXXXXXX";	/* bug 175: no J2000 files */
@@ -169,6 +179,17 @@ static void observe(swe_ctx *c, struct obs *a)
                    : swe_calc_ut(T_1000, SE_MARS, SEFLG_SWIEPH | SEFLG_HELCTR, x, serr)) >= 0)
       a->v[5] = x[0];
     a->v[6] = c != NULL ? swe_get_tid_acc_r(c) : swe_get_tid_acc();
+    /* the Moon's mean points read no file (bug 174) */
+    if ((c != NULL ? swe_nod_aps_ut_r(c, T_1900, SE_MOON, SEFLG_SWIEPH, SE_NODBIT_MEAN, xn, xs, xp, xa, serr)
+                   : swe_nod_aps_ut(T_1900, SE_MOON, SEFLG_SWIEPH, SE_NODBIT_MEAN, xn, xs, xp, xa, serr)) >= 0) {
+      a->v[7] = xn[0];
+      a->v[8] = xa[0];
+    }
+    if ((c != NULL ? swe_nod_aps_ut_r(c, T_1000, SE_MOON, SEFLG_SWIEPH, SE_NODBIT_MEAN, xn, xs, xp, xa, serr)
+                   : swe_nod_aps_ut(T_1000, SE_MOON, SEFLG_SWIEPH, SE_NODBIT_MEAN, xn, xs, xp, xa, serr)) >= 0) {
+      a->v[9] = xn[0];
+      a->v[10] = xa[0];
+    }
     return;
   }
   if (c != NULL)

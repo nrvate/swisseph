@@ -106,8 +106,11 @@
  *      geocentric points too, seen from the Sun on Moshier as on the files
  *      (UPSTREAM-BUGS 167). SEFLG_HELCTR | SEFLG_BARYCTR, barycentric now
  *      as in swe_calc() (bug 169; heliocentric before), refused on Moshier
- *      and the fallback alike. Not the UT calls, whose fallback takes the
- *      files' delta t;
+ *      and the fallback alike. The Moon's mean points geocentric and
+ *      topocentric read no file (UPSTREAM-BUGS 174): nothing falls back,
+ *      and the fallback answers as the same request does strict, bit for
+ *      bit, under the ephemeris asked (the site by its delta t). Not the UT
+ *      calls, whose fallback takes the files' delta t;
  *  (i) swe_calc_pctr()'s return flag: the complete directory's the
  *      ephemeris asked; the JPL file alone missing, JPL asked, the
  *      fallback allowed: Mars from Jupiter (SEFLG_SPEED, SEFLG_TRUEPOS,
@@ -159,6 +162,11 @@
  * 16 of (d), 5 fresh and 8 warm of the files of 1800-2400: before its fix
  * 21 fail (the 8 of (d) at 1900, the 5 fresh, the 8 warm), the upstream
  * build all 29 (435 in all; (d)'s also for its return flag, bug 67).
+ * UPSTREAM-BUGS 174 compares the Moon's
+ * mean points geocentric and topocentric in (h) with the strict request:
+ * before its fix the 8 fail (strict refused them; the Moshier request
+ * they matched answered the topocentric ones with Moshier's delta t for
+ * the site, 1.4e-6 deg at 1900).
  * Run as
  *   fbbary EPHEDIR
  */
@@ -711,12 +719,18 @@ int main(int argc, char **argv)
           continue;
         for (j = 0; j < NHCTR; j++) {
           struct cs c = G[k];
+          /* the Moon's mean points geocentric and topocentric read no
+           * file (bug 174): the strict request's answer */
+          int nofile = c.ipl == SE_MOON && (j == 1 || j == 3)
+                       && ((c.ctr % SE_NODBIT_FOPOINT) == 0 || (c.ctr & SE_NODBIT_MEAN));
           c.fl = (c.fl & ~(SEFLG_BARYCTR | SEFLG_TOPOCTR)) | HCTR[j];
-          child(DIR_, 0, SEFLG_MOSEPH, &c, jd, &m[j]);
+          child(DIR_, 0, nofile ? eph : SEFLG_MOSEPH, &c, jd, &m[j]);
           child(DIR_, 1, eph, &c, jd, &f);
-          check(m[j].ran && f.ran && f.r == m[j].r
+          check(m[j].ran && f.ran && f.r == m[j].r && (!nofile || f.r == 0)
                 && (f.r < 0 ? strcmp(f.serr, m[j].serr) == 0 : memcmp(f.x, m[j].x, sizeof f.x) == 0),
-                "h", c.sz, eph, jd, &f, j == 0 ? "heliocentric: not the Moshier request's answer"
+                "h", c.sz, eph, jd, &f, nofile ? (j == 1 ? "geocentric: not the strict request's answer"
+                                                 : "TOPOCTR | BARYCTR: not the strict request's answer")
+                : j == 0 ? "heliocentric: not the Moshier request's answer"
                 : j == 1 ? "geocentric: not the Moshier request's answer"
                 : j == 2 ? "HELCTR | BARYCTR: not the Moshier request's answer"
                 : "TOPOCTR | BARYCTR: not the Moshier request's answer");

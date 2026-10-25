@@ -217,6 +217,7 @@ worst were in code that had never executed even once.
 | 188 | The IAU 2000A and 2000B series' Delaunay arguments, polynomials to T^4 in arcseconds, are evaluated in double, and past the default grid's 4e8 days (where the default is the direct 2000A) they are some 1e14": their rounding, T's own and the products', puts up to 1e-2" into every term's angle, dpsi 9.5e-9 deg off the series evaluated in long double at 8e8 to 1e9 days, 3.0e-9 at 6e8 to 8e8, a jitter of 4e-9 deg between instants 2^-12 day apart | Correctness | `swephlib.c` |
 | 194 | `swe_calc()`'s strict test of a Moon from Moshier (entry 120) reads the centre off the caller's bits, where `swecalc()` takes `plaus_iflag()`'s: SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR, topocentric, answered from the Earth of Moshier's Moon (Mars at 1900 32770, 283.6744143987 deg, 9e-10 deg off the files'), where SEFLG_TOPOCTR is refused, and the save area then answered a SEFLG_TOPOCTR request | Correctness (behaviour) | `sweph.c` |
 | 195 | A topocentric star fallen to another ephemeris (the fallback allowed, the files for the date missing) places its site by the delta t of the caller's ephemeris bits, not of the ephemeris that answered: Aldebaran at 1500, Swiss fallen to Moshier, 2.0e-8 deg in longitude and 1.35e-7 deg/day in its speed off the Moshier request, by `swe_fixstar2()`, `swe_fixstar()` and their `_ut` forms; JPL fallen to Swiss 7.5e-9 deg | Correctness (behaviour) | `sweph.c` |
+| 174 | `swe_nod_aps()` reads the Moon for the save area of the Moon's mean points, geocentric and topocentric, which do not use it: without the moon files the strict setting refuses them, as in an empty directory and JPL without its file, where `swe_calc()` answers the mean node; with the fallback the read says Moshier, so `swe_nod_aps_ut()` redoing delta t for it (entry 170) moves the mean node 6.0e-8 deg at 1900 and 1.8e-5 in AD 1000, and the site takes Moshier's delta t (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -12769,6 +12770,119 @@ on de200.eph at 1500, outside its span, the fallback allowed, refuse ("jd
 2268923.500000 outside JPL eph. range 2305424.50 .. 2513392.50;"), where
 `swe_calc()` of Mars falls to Moshier and answers (260), both before and
 after this fix.
+
+## 174. `swe_nod_aps()` reads the Moon for the save area of the Moon's mean points, which do not use it
+
+**Severity: Correctness (behaviour: a refusal where `swe_calc()` answers the mean node, and a flag that names an ephemeris that did not contribute; with entry 170's delta t the mean node 6.0e-8 deg off at 1900 and 1.8e-5 in AD 1000, the apogee 1.3e-7 and 3.8e-5, a topocentric node 1.5e-4), both builds**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Found by entry 166's work. "To set the variables required in the save
+area, i.e. ecliptic, nutation, barycentric sun, earth", `swe_nod_aps()`
+computes the body after its points; for the Moon's mean points (method 0,
+SE_NODBIT_MEAN, SE_NODBIT_FOPOINT), geocentric or topocentric, that is the
+Moon itself. Nothing of it reaches them: the elements read no file, the
+barycentric Earth is added to the points and to the observer and cancels
+(but for its rounding), and the ecliptic, the nutation and the site's delta
+t are the ephemeris's in name only. Yet the read made the answer depend on
+the Moon files, where `swe_calc(SE_MEAN_NODE)` answers under the ephemeris
+asked in every directory, strict or not (258 for SEFLG_SWIEPH,
+SEFLG_SPEED; 257 for JPL):
+- strict, along a directory without the moon files, refused: "Swiss
+  (.se1) Moon file is not available for jd ..." (bug 120's refusal of
+  Moshier's Moon); in an empty directory "Swiss (.se1) ephemeris is not
+  available"; JPL asked without its file "JPL ephemeris is not available",
+  also in the complete directory before de200's 1600 (AD 1000);
+- with the fallback the read fell to Moshier (or JPL to Swiss) and said
+  so. Entry 170's `swe_nod_aps_ut()`, taking delta t again for the
+  ephemeris that answered, then moved the points: without the moon files
+  the mean node at 1900 Jan 0.75 UT 259.16130721 deg for 259.16130715 (6.0e-8),
+  the apogee 154.332767043 for 154.33276717 (1.3e-7), in AD 1000 25.9216291415
+  for 25.9216110287 (1.8e-5) and 253.531611585 for 253.531649698 (3.8e-5);
+  G142 failed 7 of 14 with 170 applied. In an empty directory the
+  topocentric points took Moshier's delta t for the site, Swiss asked: the
+  node 1.4e-6 deg off at 1900, 1.5e-4 in AD 1000.
+The heliocentric and barycentric points do need the read (there the Sun's,
+which sets the barycentric Earth and Sun): the Earth they add is made from
+Moshier's Moon without the moon files, 9.2e-9 deg on the Moon's mean points,
+and bug 120 refuses it under the strict setting, rightly. Both builds.
+
+**Fix, as done here:**
+- The Moon's mean points geocentric or topocentric (every method but the
+  osculating ones) read the ecliptic and the nutation alone, by
+  `swe_calc(SE_ECL_NUT)` with the same flags, which returns the ephemeris
+  asked and reads no file; they add and take away no Earth; the site is
+  placed by the delta t of the ephemeris asked (Swiss with none);
+  `swe_calc()`'s range of the mean node holds for them, its speed's
+  instants 2^-5 day either side within -3100015.5 .. 8000016.5, with its
+  message beyond (the read's before: the planet files' -3026605.5 ..
+  7929133.5, "asteroid eph. file (seplm132.se1): jd ... < lower limit").
+- Now they answer in every directory, strict or not, under the ephemeris
+  asked: without the moon files bit for bit the complete directory's (the
+  site too), in an empty directory and without the JPL file the same
+  answer strict and with the fallback, and `swe_nod_aps_ut()`'s node within
+  1.1e-13 deg of `swe_calc_ut(SE_MEAN_NODE)`'s with the same flags, its
+  delta t. With the complete directory they move by the Earth's rounding
+  alone: 1.5e-12 deg on the mean node and apogee, 1.6e-11 on the focal point
+  (2 a e = 2.8e-4 AU out). The heliocentric and barycentric points, the
+  osculating ones and every other body as before.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+Noticed, not fixed (not this entry's):
+- **The Sun's mean points and the Earth's heliocentric and barycentric
+  ones are refused under the strict setting without the moon files**, the
+  same way: their save area is read from the heliocentric Earth, which
+  bug 120 refuses, though they use the barycentric Sun (the planet file's)
+  and the Earth only for the deflection's observer; with the fallback they
+  are the complete directory's within 6.5e-15 deg (the Sun's at 1900).
+- **The planets' geocentric and topocentric points answer under the
+  strict setting without the moon files**, mean and osculating, though
+  they are seen from the Earth made from Moshier's Moon, which bug 120
+  refuses for `swe_calc()`: at 1900 Mars's 4.2e-9 deg off the complete
+  directory's, Mercury's 8.6e-9, Jupiter's 1.5e-9. Their save-area read is
+  the heliocentric planet, which bug 120 lets through.
+- **`swe_calc()` lets SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR
+  through the strict setting without the moon files.** Bug 120's test
+  reads the bits before `plaus_iflag()`, and the answer is topocentric:
+  Mars at 1900 283.6744143987 deg (32770), 9e-10 deg off the complete
+  directory's, where SEFLG_TOPOCTR alone is refused; and a SEFLG_TOPOCTR
+  request after it at the instant is answered from the save area. That is
+  how the planets' topocentric points above pass.
+
+G143 `tests/nodcentre.c` (d): directories of links to EPHEDIR's files but
+the moon files, but the JPL file, and none, with the complete one; Swiss,
+JPL (de200) and Moshier; strict and with the fallback; 1900 Jan 0.75 and
+AD 1000; methods SE_NODBIT_MEAN, 0 and SE_NODBIT_FOPOINT, each directory,
+ephemeris, setting and instant on a context of its own: the Moon's
+geocentric and J2000 points by `swe_nod_aps()` answered bit for bit as the
+complete directory's; `swe_nod_aps_ut()`'s node within 1e-10 deg of
+`swe_calc_ut(SE_MEAN_NODE)`'s there, the ephemeris asked returned; with the
+fallback the strict answer bit for bit, topocentric and UT too; the
+heliocentric and barycentric points without the moon files refused strict
+("Moon file is not available"), with the fallback within 1e-7 deg of the
+complete directory's (1.6e-8 measured); about the ends of the mean node's
+range refused where `swe_calc(SE_MEAN_NODE)` is, with its message, and
+answered a day inside them, past the planet files. 390 rows pass; before
+the fix 114 fail (the strict refusals, the fallback's other answers and
+the range), 144 with entry 170's fix applied (its delta t). G143 (d)
+(entry 176's: SEFLG_JPLEPH on de200 with the fallback, at 1500 and 2200,
+against SEFLG_MOSEPH) compares the Moon's mean points geocentric and
+topocentric with the strict SEFLG_JPLEPH request instead: they fall back
+from nothing now, de200's delta t placing the site, as `swe_calc()`'s
+mean node is (1.57e-3 deg from Moshier's topocentric points at 1500,
+2.7e-8 at 2200, the tidal terms'); before the fix those 4 fail (strict
+refused them). G143 1999 rows pass; the upstream build fails 1424. G142
+`tests/moonlesstid.c` reads the Moon's mean node and apogee by
+`swe_nod_aps_ut()` under the strict setting too: its 28 pass; before the
+fix the 7 strict fail, and with entry 170's fix the 7 of the fallback too;
+the compat build fails 26 (with the fix and without). G133 (h) compares
+the Moon's mean points geocentric and topocentric in its directory
+without files with the strict request, not the Moshier one: 1136 rows
+pass; before the fix those 8 fail (strict refused them); the upstream
+build fails 412.
+
+G24 `nodaps_moon_mean_ret`: `swe_nod_aps()` of the Moon's mean points at
+1900 Jan 0.75, Swiss, in an empty directory under the strict setting, its
+return: 0 shipped, -1 compat.
 
 ## How these were found
 

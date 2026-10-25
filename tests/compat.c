@@ -4693,6 +4693,31 @@ static double mosh_sun_slot_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 174: swe_nod_aps() of the Moon's mean points at 1900 Jan
+ * 0.75, Swiss, geocentric, along an empty directory under the strict
+ * setting, on a context made and given its path: the return. The points
+ * read no file, and swe_calc() answers SE_MEAN_NODE there, but upstream
+ * reads the Moon for the save area, which the strict setting refuses (-1,
+ * "Swiss (.se1) ephemeris is not available"); answered now (0). */
+static double nodaps_moon_mean_ret(void)
+{
+  char dir[] = "/tmp/compatnmmXXXXXX";
+  double xn[6], xd[6], xp[6], xa[6], r = -99;
+  char serr[256];
+  swe_ctx *c;
+  if (mkdtemp(dir) == NULL)
+    return -99;
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, dir);
+    swe_set_ephe_fallback_r(c, 0);
+    r = swe_nod_aps_r(c, 2415020.25, SE_MOON, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_MEAN,
+                      xn, xd, xp, xa, serr);
+    swe_ctx_free(c);
+  }
+  rm_dir(dir);
+  return r;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 after the path,
  * swe_set_jpl_file("de200.eph") and the path again by another string, the
  * first call against the second, deg. Upstream's path setter forgets the
@@ -4822,7 +4847,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodmoonm;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4982,6 +5007,7 @@ int main(int argc, char **argv)
   moonless = moonless_tid_off();
   noj2000 = noj2000_tid_off();
   moshslot = mosh_sun_slot_off();
+  nodmoonm = nodaps_moon_mean_ret();
   dtflag0 = dt_flag0_off();
   closekeep = close_keeps_off();	/* last: see the function */
 
@@ -6054,6 +6080,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier Sun slot       %.2e deg FAIL: expected %s\n",
            moshslot, WANT_DEFECT ? "> 0.1, < 1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodmoonm == -1) : (nodmoonm == 0))
+    printf("  nod_aps Moon mean, no files %.0f OK\n", nodmoonm);
+  else {
+    printf("  nod_aps Moon mean, no files %.0f FAIL: expected %s\n",
+           nodmoonm, WANT_DEFECT ? "-1" : "0");
     bad++;
   }
 
