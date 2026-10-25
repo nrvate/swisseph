@@ -108,6 +108,7 @@ worst were in code that had never executed even once.
 | 76 | A fixed star's aberration rate takes the Earth's acceleration half a step back | Correctness | `sweph.c` |
 | 72 | The interpolated perigee's light-time estimate takes one pass, not two (this fork's) | Correctness | `sweph.c` |
 | 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, and its aberration rate is the centre's whole velocity change over the light time | Correctness | `sweph.c` |
+| 75 | The true node's and osculating apogee's speeds divide by the step asked for, not the step taken | Correctness | `sweph.c` |
 
 ---
 
@@ -3526,6 +3527,73 @@ centre: up to 0.28" on Saturn seen from Mercury and 0.135" on the Sun seen
 from Jupiter, which should not be deflected by itself at all (SEFLG_NOGDEFL
 against default, NOABERR, 200 dates from 2000). Its speed is the rate of
 that position (G76).
+
+## 75. The true node's and osculating apogee's speeds divide by the step asked for, not the step taken
+
+**Severity: Correctness (1.7e-6 to 2.3e-6 of the speed: 2.3e-7 deg/day on the true node's longitude, 6e-6 on the osculating apogee's, 2.8e-7 in the node's declination (G41); 3.5e-7 in both bodies' J2000 latitude and declination speeds)**
+**Where:** `sweph.c`: `lunar_osc_elem()`
+
+G41 found the true node's declination speed 2.8e-7 deg/day off, 30 times
+its neighbours (the mean node's 4e-9). Measured against five-point
+differences of the library's own positions at binary instants, eight to
+twelve dates -2500..2800 (de200 1650..2100), steps 2^-4..2^-10 day: on
+the Swiss files the node's longitude speed was off by 2.2e-7 to 2.5e-7 at
+every step, the apogee's by 5.8e-6 to 6.1e-6, the distances by 1.6e-11
+and 1.8e-11 AU/day; de200 4.2e-7, 6e-6, 3.3e-11. Constant over the steps,
+so not the reference's noise (which shows only below 2^-7 day, 1e-8 on
+the node). Two causes:
+
+1. The speeds are `(x(tjd + h) - x(tjd - h)) / 2h`, h = 0.0001 day, from
+   the Moon at those epochs less the light-time. Neither `tjd +- h` nor
+   `t - lt` is representable: they round to the date's grid, 2^-31 day
+   from JD 2097152 to 4194304, and the interval between the Moon's epochs
+   is off by up to 2.3e-6 of itself: 1.7e-6, steadily, at a binary date
+   (1e-4 is 214748.36 grid steps) and at random with the light-time.
+   With SEFLG_TRUEPOS and the interval fixed alone, the node's error fell
+   to 1.6e-9 and the apogee's to 1e-7; with the light-time, still 5.5e-8
+   and 6e-6. Moshier's 2^-8 day step is exact and has no light-time here.
+2. Bug 33 gave the node's and apogee's equatorial speed of date the
+   ecliptic's turning, but not with SEFLG_J2000, though both are found in
+   the ecliptic of date and precessed to J2000 afterwards (only the
+   `SID_TNODE_FROM_ECL_T0` build finds them in J2000's): their J2000
+   latitude and declination speeds left out the mean obliquity's rate,
+   3.5e-7 deg/day, on every ephemeris. The sidereal ECL_T0 and SSY_PLANE
+   modes, which convert the same equatorial speed of date, were right.
+
+Sidereal (traditional), NONUT and TRUEPOS were otherwise like the default.
+
+**Fix, as done here:** each Moon epoch used and its light-time are kept;
+the difference is divided by the interval between the two epochs as
+rounded, times dts / (dts - (lt1 - lt0)), dts = (tjd + h) - (tjd - h),
+the light-time-corrected epoch's rate from the unrounded light-times
+(Moshier: exactly 2^-7 day). The frame's turning is added for J2000 too
+(not under `SID_TNODE_FROM_ECL_T0`). Positions unchanged. Measured after,
+same grid, steps 2^-5..2^-7: the Swiss node's longitude, latitude and
+declination speeds 8.5e-10..2.5e-9, de200 6e-10..4.3e-9, distances
+<= 5e-13 AU/day; J2000 latitude 3.5e-7 -> 1.2e-11 (de200 8e-13, Moshier
+3e-10); the apogee's longitude 2.5e-7 without nutation, 6e-7 with (de200
+1e-7..4e-7), latitude 2e-8..3e-7. What is left on the apogee is the
+Moon's velocity noise over the 0.0001-day step, sporadic by date (a
+smaller step is worse: 1.6e-6 at 2^-15 day; 1.2e-7 at 2^-11, not changed
+here). A Swiss Moon segment boundary inside a reference stencil (JD
+1790500.80) shows 4e-4 on the node either way: the file's jump, not the
+speed. Moshier is unchanged apart from J2000: node 5.5e-8, apogee 2.7e-6,
+bug 51's three-point slope over 2^-8 day. G41's true node declination
+2.80e-7 -> 1.65e-9, its limit 1e-6 -> 2e-8 (the build before the fix
+fails it). G53 and G40 unchanged.
+
+G74 `tests/oscspeed.c`: the true node and osculating apogee on the Swiss
+files and de200, the node on Moshier, ecliptic, equatorial, equatorial
+NONUT, J2000 ecliptic and equatorial, eight epochs, longitude, latitude
+and distance speeds against a five-point difference over 2^-6 day: 25
+rows, the node within 2e-8 deg/day (measured <= 1.5e-9), the apogee 5e-7
+(<= 9.6e-8), the Moshier node 1.5e-7 (5.2e-8), distances 5e-12 AU/day
+(1.9e-13; Moshier 2e-11, 6.7e-12). Before the fix 22 of 25 fail (node
+longitude 9.4e-8 Swiss, 4.5e-7 de200, J2000 latitude 3.5e-7, apogee
+1.1-1.3e-5, distances 2.5-3.3e-11); the upstream build fails all 25. G24
+`osc_speed_off`: the apogee's longitude speed at JD 2460000.297, 9.97e-9
+deg/day shipped, 4.01e-6 compat; the node's J2000 latitude speed 1.0e-13
+shipped, 2.32e-7 compat.
 
 ## How these were found
 

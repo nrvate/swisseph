@@ -537,6 +537,27 @@ static double star_dist_rate_off(void)
   return fabs(x[5] - (8 * (f[3][2] - f[1][2]) - (f[4][2] - f[0][2])) / (12 * h));
 }
 
+/* The osculating apogee's longitude speed (j2000 = 0) or the true node's
+ * J2000 latitude speed (j2000 = 1), Swiss files, at a binary instant,
+ * against a five-point difference over 2^-6 day, deg/day. Upstream divides
+ * by 2 x 0.0001 day, not by the interval between the Moon's rounded
+ * epochs, and leaves J2000's mean obliquity rate out (UPSTREAM-BUGS 75). */
+static double osc_speed_off(int j2000)
+{
+  double t = floor(2460000.3 * 256) / 256, h = 1.0 / 64, x[6], f[5][6];
+  int32 fl = SEFLG_SWIEPH | (j2000 ? SEFLG_J2000 : 0);
+  int ipl = j2000 ? SE_TRUE_NODE : SE_OSCU_APOG, i = j2000 ? 1 : 0, k;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, ipl, fl | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_calc(t + (k - 2) * h, ipl, fl, f[k], serr);
+  for (k = 0; k < 5; k++)
+    f[k][0] = f[2][0] + swe_difdeg2n(f[k][0], f[2][0]);
+  return fabs(x[3 + i] - (8 * (f[3][i] - f[1][i]) - (f[4][i] - f[0][i])) / (12 * h));
+}
+
 /* The flags swe_fixstar2() returns against swe_calc()'s for Mars, sidereal
  * and heliocentric Moshier: the bits that differ, counted. Upstream returns
  * the caller's iflag, without NONUT (1) and NOABERR|NOGDEFL (2)
@@ -1239,7 +1260,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, oscspd, oscj2k;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1271,6 +1292,8 @@ int main(int argc, char **argv)
   intpfix = intp_fixpoint_off();
   intplt = intp_lighttime_off();
   stardd = star_dist_rate_off();
+  oscspd = osc_speed_off(0);
+  oscj2k = osc_speed_off(1);
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
   n3spd = node3_speed_off();
@@ -1507,6 +1530,22 @@ int main(int argc, char **argv)
   else {
     printf("  star distance rate     %.2e AU/day FAIL: expected %s\n",
            stardd, WANT_DEFECT ? "> 1e-4" : "< 1e-5");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (oscspd > 1e-6) : (oscspd < 3e-7))
+    printf("  osc. apogee speed      %.2e deg/day OK\n", oscspd);
+  else {
+    printf("  osc. apogee speed      %.2e deg/day FAIL: expected %s\n",
+           oscspd, WANT_DEFECT ? "> 1e-6" : "< 3e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (oscj2k > 1e-7) : (oscj2k < 1e-8))
+    printf("  true node J2000 lat sp %.2e deg/day OK\n", oscj2k);
+  else {
+    printf("  true node J2000 lat sp %.2e deg/day FAIL: expected %s\n",
+           oscj2k, WANT_DEFECT ? "> 1e-7" : "< 1e-8");
     bad++;
   }
 

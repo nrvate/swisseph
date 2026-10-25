@@ -844,6 +844,12 @@ struct epsilon {
  *     difference of Mercury's places from Mars, 1.5e-6 AU/day on its
  *     distance rate, 2.1e-6 deg/day on Saturn's speed from Mercury;
  *     UPSTREAM-BUGS 77, G76)
+ *   - lunar_osc_elem() divided the true node's and osculating apogee's
+ *     differences by 2 x 0.0001 day, not by the interval between the
+ *     Moon's rounded epochs, off by up to 2.3e-6 of itself (2.3e-7 deg/day
+ *     on the node, 6e-6 on the apogee), and their J2000 latitude and
+ *     declination speeds left out the mean obliquity's rate (3.5e-7;
+ *     UPSTREAM-BUGS 75, G74)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

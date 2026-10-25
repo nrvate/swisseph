@@ -7264,6 +7264,9 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   double sinnode, cosnode, sinincl, cosincl, sinu, cosu, sinE, cosE;
   double uu, ny, sema, ecce, Gmsm, c2, v2, pp;
   int32 speedf1, speedf2;
+#ifndef SWE_UPSTREAM_COMPAT
+  double tm[3] = {0, 0, 0}, dl[3] = {0, 0, 0};
+#endif
 #ifdef SID_TNODE_FROM_ECL_T0
   struct sid_data *sip = &ctx->sidd;
   struct epsilon oectmp;
@@ -7343,6 +7346,10 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	}
 	xp = xpos[i];
 	retc = jplplan(ctx, t, ipli, iflag, NO_SAVE, xp, NULL, NULL, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+	tm[i] = t;	/* the Moon's epoch and light-time, bug 75 */
+	dl[i] = 0;
+#endif
 	/* read error or corrupt file */
 	if (retc == ERR)
 	  return(ERR);
@@ -7355,6 +7362,10 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	if ((iflag & SEFLG_TRUEPOS) == 0 && retc >= OK) { 
 	  dt = sqrt(square_sum(xpos[i])) * AUNIT / CLIGHT / 86400.0;     
 	  retc = jplplan(ctx, t-dt, ipli, iflag, NO_SAVE, xpos[i], NULL, NULL, serr);/**/
+#ifndef SWE_UPSTREAM_COMPAT
+	  tm[i] = t - dt;
+	  dl[i] = dt;
+#endif
 	  /* read error or corrupt file */
 	  if (retc == ERR)
 	    return(ERR);
@@ -7391,12 +7402,20 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	  t = tjd;
 	}
 	retc = swemoon(ctx, t, iflag | SEFLG_SPEED, NO_SAVE, xpos[i], serr);/**/
+#ifndef SWE_UPSTREAM_COMPAT
+	tm[i] = t;	/* the Moon's epoch and light-time, bug 75 */
+	dl[i] = 0;
+#endif
 	if (retc == ERR)
 	  return(ERR);
 	/* light-time-corrected moon for apparent node (~ 0.006") */
 	if ((iflag & SEFLG_TRUEPOS) == 0 && retc >= OK) { 
 	  dt = sqrt(square_sum(xpos[i])) * AUNIT / CLIGHT / 86400.0;     
 	  retc = swemoon(ctx, t-dt, iflag | SEFLG_SPEED, NO_SAVE, xpos[i], serr);/**/
+#ifndef SWE_UPSTREAM_COMPAT
+	  tm[i] = t - dt;
+	  dl[i] = dt;
+#endif
 	  if (retc == ERR)
 	    return(ERR);
         }
@@ -7436,6 +7455,10 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	  t = tjd;
 	}
 	retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);/**/
+#ifndef SWE_UPSTREAM_COMPAT
+	tm[i] = t;	/* the Moon's epoch and light-time, bug 75 */
+	dl[i] = 0;
+#endif
 	if (retc == ERR)
 	  return(retc);
 	/* precession and nutation etc. */
@@ -7554,12 +7577,30 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     for (j = 0; j <= 2; j++)
       xx[i][j] *= r[0] / r[1];
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 75: the difference was divided by 2 x 0.0001 day, but
+   * the Moon's epochs, tjd +- 0.0001 less the light-time, are rounded to
+   * the date's grid (2^-31 day from JD 2097152 to 4194304): the interval
+   * between them is off by up to 2.3e-6 of itself, steadily (1.7e-6 at
+   * binary dates) and at random with the light-time. Every speed was off
+   * by that fraction of itself on the Swiss files and JPL: 2.3e-7 deg/day
+   * on the node's longitude, 6e-6 on the apogee's. Now the difference is
+   * divided by the interval between the epochs used, over the light-time
+   * corrected epoch's rate, (dts - (lt1 - lt0)) / dts, from the unrounded
+   * light-times (Moshier's 2^-8 step and no light-time: exactly 2^-7). */
+  if (iflag & SEFLG_SPEED) {
+    double dts = (tjd + speed_intv) - (tjd - speed_intv);
+    dt = (tm[1] - tm[0]) * dts / (dts - (dl[1] - dl[0]));
+  }
+#else
+  dt = 2 * speed_intv;
+#endif
   /* save position and speed */
   for (i = 0; i <= 2; i++) {
     /* apogee */
     ndap->x[i] = xxa[2][i];
     if (iflag & SEFLG_SPEED) {
-      ndap->x[i+3] = (xxa[1][i] - xxa[0][i]) / speed_intv / 2;
+      ndap->x[i+3] = (xxa[1][i] - xxa[0][i]) / dt;
     } else {
       ndap->x[i+3] = 0;
     }
@@ -7568,7 +7609,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     /* node */
     ndnp->x[i] = xx[2][i];
     if (iflag & SEFLG_SPEED) {
-      ndnp->x[i+3] = (xx[1][i] - xx[0][i]) / speed_intv / 2;/**/    
+      ndnp->x[i+3] = (xx[1][i] - xx[0][i]) / dt;/**/    
     } else {
       ndnp->x[i+3] = 0;
     }
@@ -7597,11 +7638,18 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     swi_coortrf2(ndp->xreturn+6, ndp->xreturn+18, -oe->seps, oe->ceps);
     if (iflag & SEFLG_SPEED) {
 #ifndef SWE_UPSTREAM_COMPAT
-      /* out of the true ecliptic of date, which turns (bug 33) */
+      /* out of the true ecliptic of date, which turns (bug 33). Bug 75:
+       * bug 33 left J2000 out, but the node and apogee are found in the
+       * mean ecliptic of date and precessed to J2000 below, so their J2000
+       * latitude and declination speeds missed the mean obliquity's rate,
+       * 3.5e-7 deg/day. Only SID_TNODE_FROM_ECL_T0 finds them in the fixed
+       * J2000 ecliptic. */
       double xe[6];
       for (i = 0; i <= 5; i++)
         xe[i] = ndp->xreturn[6+i];
+#ifdef SID_TNODE_FROM_ECL_T0
       if (!(iflag & SEFLG_J2000))
+#endif
         swi_ecl_frame_speed(xe, -swi_obliquity_rate(ctx, tjd, iflag, !(iflag & SEFLG_NONUT)));
       swi_coortrf2(xe+3, ndp->xreturn+21, -oe->seps, oe->ceps);
 #else

@@ -15,11 +15,14 @@
  * the ecliptic latitude speed of the Sun, Moon, Mars, Chiron, the mean
  * and interpolated apogees, Aldebaran and the planetocentric Moon seen
  * from Mars; the equatorial declination speed of the mean and true nodes
- * and the interpolated apogee. Within 1e-6 deg/day (measured <= 3e-7),
+ * and the interpolated apogee. Within 1e-6 deg/day (measured <= 3.5e-8),
  * and within 2.5e-7 where only the mean obliquity's 3.6e-7 is at stake
  * (the mean node's and the interpolated apogee's declination, which leave
- * the mean ecliptic, and the Sun without nutation). The upstream build
- * fails all twelve, by 1.1-1.6e-5 and 3.2-3.9e-7. Run as
+ * the mean ecliptic, and the Sun without nutation), and within 2e-8 for
+ * the true node (measured 1.7e-9; 2.8e-7 before UPSTREAM-BUGS 75, its
+ * speed off by 1.7e-6 of itself from the rounded step, which the build
+ * before that fix fails). The upstream build fails all twelve, by
+ * 1.1-1.6e-5 and 3.2-3.9e-7. Run as
  *   eclspeed EPHEDIR
  */
 #include <math.h>
@@ -55,7 +58,7 @@ int main(int argc, char **argv)
     {KIND_STAR, 0, 0, "Aldebaran, latitude", 1e-6},
     {KIND_PCTR, 0, 0, "Moon from Mars, latitude", 1e-6},
     {KIND_CALC, SE_MEAN_NODE, SEFLG_EQUATORIAL, "mean node, declination", 2.5e-7},
-    {KIND_CALC, SE_TRUE_NODE, SEFLG_EQUATORIAL, "true node, declination", 1e-6},
+    {KIND_CALC, SE_TRUE_NODE, SEFLG_EQUATORIAL, "true node, declination", 2e-8},
     {KIND_CALC, SE_INTP_APOG, SEFLG_EQUATORIAL, "interpolated apogee, declination", 2.5e-7},
     {KIND_CALC, SE_SUN, SEFLG_NONUT, "Sun, latitude, no nutation", 2.5e-7},
   };
