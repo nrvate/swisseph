@@ -222,6 +222,7 @@ worst were in code that had never executed even once.
 | 179 | A refusal inside `swe_nod_aps()` (the strict setting's, a file's, a range's) returns -1 with the four points as the caller had them, where `swe_calc()` zeroes a refused place (the manual: "the position and speed variables are set to zero") and the function itself an unimplemented body's: 1234.5 put in came back 1234.5, all 24 values | Robustness (behaviour) | `swecl.c` |
 | 192 | Under the strict setting without the moon files `swe_nod_aps()` refuses the Sun's points and the Earth's heliocentric and barycentric ones ("Swiss (.se1) Moon file is not available"), which the Moon does not reach: their reads of the Earth, and for the osculating ones of the Moon to rebuild the Earth-Moon barycentre, are refused by entry 120's test; with the fallback they answer 6.5e-15 deg off the complete directory's | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 | 193 | Under the strict setting without the moon files `swe_nod_aps()` answers a planet's geocentric and topocentric points from the Earth made from Moshier's Moon, its read being the heliocentric planet, which entry 120's test lets through, where `swe_calc()` of the planet refuses: Mars's at 1900 3.7e-9 deg off the complete directory's, Mercury's at 2000 8.7e-9 | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
+| 181 | The long-term sidereal time (this fork's, entry 29) integrates the precession of each instant through a short-term model's window edges, where the table's nodes take the step over 100 days: with IAU 1976 and Vondrak ("0,9,1") +24.0" at every date before 1700, +50.8" at 1776 and -22.2" at 2215 against "0,9,9", whose model holds there; with IAU 2006 ("0,9,8") 1143" at -5550; the topocentric Moon's speed 1.9e-8 deg/day off | Correctness | `swephlib.c`, `sweph.h` |
 
 ---
 
@@ -11901,6 +11902,116 @@ Noticed, not fixed:
   the quadratic still divides by 2 `NUT_SPEED_INTV` rather than the
   instants' own separation, rounded at the JD's resolution: 1.0e-10
   deg/day against the quadratic's derivative, near J2000 and far from it.
+
+## 181. The long-term sidereal time integrates the precession through a short-term model's window edges: with IAU 1976 and Vondrak ("0,9,1") +24.0" before 1700, +50.8" at 1776, -22.2" at 2215; with IAU 2006 at 75 centuries 1143"
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()` and the default long-term sidereal time, outside 1850-2050: sidereal time off its own side's model's by up to 50.8" within a century of J2000 -+ 2 centuries and 24.0" at every date before 1700, 1.9" with IAU 2000, 1143" at -5550 with IAU 2006; every house cusp and the topocentric site with it)**
+**Where:** `swephlib.c`: `sidt_pra_rate()`, `sidt_pra()`, `sidtime_era_long_deg()`, `sidt_lterm_offset()`, `swe_sidtime0_r()`; `sweph.h`: `struct sidt_pra_table`, `struct sidt_splice_memo`
+
+Entry 160's noticed item. The fork's long-term sidereal time (entry 29),
+outside 1850-2050 under `SEMOD_SIDT_LONGTERM`, the default, is ERA(UT1)
+plus the precession in right ascension accumulated since J2000,
+integrated from the precession matrices `swi_precess()` takes at each
+instant and tabulated at nodes a century apart, each with its rate, a
+central difference over -+ 50 days (`sidt_pra_rate()`), for a cubic
+Hermite between two, then spliced onto IERS 2010 at 1850 and 2050 (entry
+25, `sidt_lterm_offset()`). With a short-term model chosen, the
+precession steps at the window's edges (entry 160: 0.53" and 0.57" at
+J2000 -+ 2 centuries with IAU 1976 under Vondrak, 42" and 107" at -+ 75
+with IAU 2006). The edges fall on the table's nodes, whose rate took the
+step over 100 days, some 180"/cy (1.5e4"/cy with IAU 2006), and the
+cubic carried it a century either side, and through the 1850 splice's
+offset, at - 1.5 centuries inside that century, to every date before.
+Measured against the default models' ("0,9,9", which hold outside the
+window in both), `swe_sidtime0()` with a fixed obliquity and no
+nutation:
+- "0,9,1": +24.03" at every date before 1700, +48.2" at 1750, +50.78" at
+  1776, +39.7" at 1790, +16.9" at 1804, -4.42" at 1831; +26.4" at 2150,
+  -22.2" at 2215, -25.7" at 2250, +0.43" from 2300 on (the window's own
+  difference from IERS 2010, kept by the 2050 splice);
+- "0,9,6" (IAU 2000): -0.90" before 1700, -1.90" at 1776, +0.98" at 2150;
+- "0,9,8" (IAU 2006 within 75 centuries): +1142.8" at -5550, +71.1" at
+  -5501, -111.2" at -5499 (inside).
+Against each side's own model alone ("0,1,1", "0,6,6", "0,8,8" inside,
+"0,9,9" or "0,8,8" outside), which is what the precession and obliquity
+of date are there, 3.1e-4 deg (IAU 2000) to 0.38 deg (IAU 2006). The
+houses' ARMC is this sidereal time; the topocentric site is turned by it,
+whose velocity takes the precession's rate of the instant's model (entry
+73), so the topocentric Moon's speed was 1.5e-8 to 1.9e-8 deg/day off its
+places' rate within two days of J2000 - 2 centuries (de200, delta t
+2^-11 day, G139's nine-point reference). Upstream's
+`sidtime_long_term()`, kept in the compat build, precesses the mean Earth
+at the instant and has no table: its sides are its models' own (outside
+the window "0,9,1" within 3e-4" of "0,9,9", from the obliquity of J2000 it
+takes at every date).
+
+What is correct on each side: the precession and obliquity of date are,
+at each instant, those of the model that holds there, the long-term
+model's own outside the window and the short-term model's inside, with
+no memory of the other; so the sidereal time is, at each instant, the
+sidereal time that model alone gives, spliced as it would be alone. It is
+continuous wherever the precession is and steps at the edges with it.
+
+**Fix, as done here:** `sidt_pra_rate()` takes the rate of one model
+alone, `model` held at every instant as `get_aya_correction()` holds a
+model (both precession entries set to it for its three matrices and put
+back), so no edge is in the integrand; the table (`struct
+sidt_pra_table`) is keyed by that model, two slots as before; the
+sidereal time takes the model `swi_precess()` takes at its instant, TT
+(`frame_chosen_model()`, which entry 160 wrote, gives its number), and
+the splice offset is that model's at the boundary (`struct
+sidt_splice_memo` keeps one per boundary for the long-term model and one
+for a short-term model whose window holds it). Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, as the long-term sidereal time itself (entry 29):
+the compat build keeps upstream's formula.
+- After: outside the window the sidereal time is the long-term model's
+  own, inside the short-term model's own, bit for bit, at every setting
+  above and at every instant G139 (d) takes. At the edges it steps, "0,9,1"
+  by +0.128" at J2000 - 2 centuries and -0.433" at + 2, where the equinox
+  steps about the pole by 0.529" and 0.573": what is left between them,
+  0.40" and 0.14", is the IAU 1976 sidereal time's offset from IERS 2010
+  at the 1850 and 2050 splices, which holds inside the window and not
+  outside. Mars's hour angle, which the sidereal time continuous across
+  the edge stepped by the whole equinox (-0.594" and +0.608" on the Swiss
+  files), steps by -0.467" and +0.175".
+- The topocentric Moon within 6.0e-10 to 8.6e-10 deg/day of its places'
+  rate across J2000 - 2 centuries (4.8e-10 to 6.1e-10 with the IERS 2010
+  sidereal time).
+- Where no window holds (the default models, "0,9,9", "0,8,8", "0,1,1",
+  Owen's, Laskar's, "0,8,9", and "0,1,8", where IAU 1976 long-term wins),
+  one table as before: `swe_sidtime()` and the houses' ARMC bit for bit
+  the tip's at 400 dates from -11400 to +15400. Cost: `perf stat -e instructions:u`,
+  20000 `swe_sidtime()` and `swe_houses_ex2()` with speeds 1452..2400 on
+  the default models, 16888547065 before, 16899471275 after (+0.065%, the
+  model's choice and a memoized delta t a sidereal time).
+
+G139 `tests/framestep.c`, extended: check (a) takes de200 with "0,9,1" at
+J2000 - 2 centuries with the long-term sidereal time too, the same seven
+bodies and two frames over the three spans, 42 checks; new check (d), the
+mean sidereal time of `swe_sidtime0()` under "0,9,1" at J2000 -+ 2
+centuries, "0,9,6" at + 2, "0,9,8" at -+ 75 and "0,8,1" at - 2, against
+the side's model alone at the 105 instants about each edge and every 1/8
+century to 1 3/8 either side, and 3 and 6 centuries outside, the worst
+inside and outside, 12 checks within 1e-9 deg. 384 checks with entries
+183-185's check (c); before the fix
+18 fail: the topocentric Moon's 6 at the new setting (1.5e-8 to 1.9e-8
+deg/day) and all 12 of (d), 3.1e-4 deg to 0.38; after, (d) is 0. The
+upstream build fails 200 of (a)'s 210 (the defects earlier entries fixed)
+and 3 of (d)'s 12 (269 of 288 in all), outside the IAU 1976 window by 4.6e-9 to 6.6e-9 deg
+(the obliquity of J2000 above). No G24 case: the long-term sidereal time
+is this fork's (entry 29), and upstream's, which the compat build keeps,
+has no table and so no such defect; there is nothing for that build to
+show both ways.
+
+Noticed, not fixed:
+- RESIDUAL. Owen 1990's own fits step at the midpoints between their
+  centres (entry 159's noticed item), each within a day of a node of the
+  table, -+ 40 and -+ 120 centuries: with Owen 1990 the long-term model,
+  those nodes' rates take the step over 100 days as the window edges' did.
+  Against the same table with the rate differenced over -+ 0.25 day,
+  which does not reach the step, the sidereal time bends at those nodes by
+  at most 1.3e-5" (3.6e-9 deg) over -+ 0.9 century, not separated from the
+  two differences' own noise. Owen's steps are another item.
 
 ## 182. The Horizons approximation's obliquity offset table is interpolated backwards too: the mean obliquity jumps up to 0.44 mas at every year from 1963 to 2011
 

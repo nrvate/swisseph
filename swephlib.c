@@ -2951,6 +2951,10 @@ static int frame_owen_piece(double J)
   return FRAME_OWEN_PIECE(icof);
 }
 
+/* frame_chosen_model()'s value is the chosen model's own number
+ * (SEMOD_PREC_*), or with Owen 1990 its piece's (FRAME_OWEN_PIECE()); the
+ * long-term sidereal time takes from it the model of its instant (bug
+ * 181). */
 static int frame_chosen_model(swe_ctx *ctx, double J)
 {
   double T = (J - J2000) / 36525.0;
@@ -5109,14 +5113,36 @@ static void sidt_pra_matrix(swe_ctx *ctx, double tjd, double m[3][3])
   }
 }
 
-/* the rate, arcsec per century, at tc centuries after J2000 */
-static double sidt_pra_rate(swe_ctx *ctx, double tc)
+/* Upstream bug 181: the integral was of the precession swi_precess() takes
+ * at each instant, so with a short-term model chosen (swe_set_astro_models())
+ * it ran through the window's edges, where the model steps: with IAU 1976
+ * and Vondrak ("0,9,1") by 0.53" at J2000 - 2 centuries and 0.57" at + 2,
+ * with IAU 2006 at -+ 75 centuries by 42" and 107". The edges fall on the
+ * table's nodes, whose rate, a difference over -+ SIDT_PRA_DH, took the
+ * step over 100 days (some 180"/cy, 1.5e4 with IAU 2006), and the cubic
+ * Hermite carried it a century either side and through the 1850 splice to
+ * every date before: against "0,9,9" the sidereal time was +24.0" before
+ * 1700, +50.8" at 1776 and -22.2" at 2215, 1143" at -5550 with "0,9,8".
+ * Now each model's own integral: the rate of model `model` alone, held at
+ * every instant as get_aya_correction() holds a model, so no edge is in
+ * it, and the sidereal time takes at each instant the model swi_precess()
+ * takes there (swe_sidtime0_r()), as the precession and obliquity of date
+ * do: outside the window the long-term model's own, inside the short-term
+ * one's, each spliced as it would be alone. It is continuous wherever the
+ * precession is and steps at the edges with it. */
+static double sidt_pra_rate(swe_ctx *ctx, double tc, int model)
 {
   double tjd = J2000 + tc * 36525.0, mp[3][3], mm[3][3], m[3][3], w = 0;
+  int32 pl = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
+  int32 ps = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
   int k;
+  ctx->astro_models[SE_MODEL_PREC_LONGTERM] = model;
+  ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = model;
   sidt_pra_matrix(ctx, tjd + SIDT_PRA_DH, mp);
   sidt_pra_matrix(ctx, tjd - SIDT_PRA_DH, mm);
   sidt_pra_matrix(ctx, tjd, m);
+  ctx->astro_models[SE_MODEL_PREC_LONGTERM] = pl;
+  ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = ps;
   for (k = 0; k <= 2; k++)
     w += (mp[1][k] - mm[1][k]) / (2 * SIDT_PRA_DH) * m[0][k];
   return w * RADTODEG * 3600.0 * 36525.0;
@@ -5125,7 +5151,7 @@ static double sidt_pra_rate(swe_ctx *ctx, double tc)
 /* its integral from a to b (centuries), eight-point Gauss-Legendre on
  * panels of at most 10 centuries: the integrand's shortest period under
  * Vondrak 2011 is 203 centuries, and 10 against 1 agree to 1e-7" */
-static double sidt_pra_integral(swe_ctx *ctx, double a, double b)
+static double sidt_pra_integral(swe_ctx *ctx, double a, double b, int model)
 {
   static const double gx[4] = {0.1834346424956498, 0.5255324099163290,
                                0.7966664774136267, 0.9602898564975363};
@@ -5138,32 +5164,29 @@ static double sidt_pra_integral(swe_ctx *ctx, double a, double b)
   for (p = 0; p < n; p++) {
     double c = a + (p + 0.5) * h;
     for (i = 0; i < 4; i++)
-      sum += gw[i] * (sidt_pra_rate(ctx, c - gx[i] * h / 2)
-                      + sidt_pra_rate(ctx, c + gx[i] * h / 2));
+      sum += gw[i] * (sidt_pra_rate(ctx, c - gx[i] * h / 2, model)
+                      + sidt_pra_rate(ctx, c + gx[i] * h / 2, model));
   }
   return sum * h / 2;
 }
 
-/* the accumulated precession in right ascension since J2000, arcsec, at
- * tc centuries after J2000 (TT); see struct sidt_pra_memo */
-static double sidt_pra(swe_ctx *ctx, double tc)
+/* the accumulated precession in right ascension since J2000 of precession
+ * model `model` (SEMOD_PREC_*, bug 181), arcsec, at tc centuries after
+ * J2000 (TT); see struct sidt_pra_memo */
+static double sidt_pra(swe_ctx *ctx, double tc, int model)
 {
-  int32 pl = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
-  int32 ps = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
   struct sidt_pra_table *pt = NULL;
   int side = tc >= 0, k, n, j;
   double sg = side ? 1 : -1, x = fabs(tc) / SWI_SIDT_PRA_STEP, s, h, d0, d1;
   for (j = 0; j < 2; j++)
-    if (ctx->sidt_pra.slot[j].valid && ctx->sidt_pra.slot[j].prec_long == pl
-        && ctx->sidt_pra.slot[j].prec_short == ps)
+    if (ctx->sidt_pra.slot[j].valid && ctx->sidt_pra.slot[j].prec_model == model)
       pt = &ctx->sidt_pra.slot[j];
   if (pt == NULL) {
     pt = &ctx->sidt_pra.slot[ctx->sidt_pra.next];
     ctx->sidt_pra.next = !ctx->sidt_pra.next;
-    pt->prec_long = pl;
-    pt->prec_short = ps;
+    pt->prec_model = model;
     pt->a[0][0] = pt->a[1][0] = 0;
-    pt->w[0][0] = pt->w[1][0] = sidt_pra_rate(ctx, 0);
+    pt->w[0][0] = pt->w[1][0] = sidt_pra_rate(ctx, 0, model);
     pt->nnode[0] = pt->nnode[1] = 1;
     pt->valid = TRUE;
   }
@@ -5173,13 +5196,13 @@ static double sidt_pra(swe_ctx *ctx, double tc)
   /* nodes 0 .. k + 1 */
   for (n = pt->nnode[side]; n <= k + 1; n++) {
     double ta = sg * (n - 1) * SWI_SIDT_PRA_STEP, tb = sg * n * SWI_SIDT_PRA_STEP;
-    pt->a[side][n] = pt->a[side][n - 1] + sidt_pra_integral(ctx, ta, tb);
-    pt->w[side][n] = sidt_pra_rate(ctx, tb);
+    pt->a[side][n] = pt->a[side][n - 1] + sidt_pra_integral(ctx, ta, tb, model);
+    pt->w[side][n] = sidt_pra_rate(ctx, tb, model);
     pt->nnode[side] = n + 1;
   }
   if (x >= SWI_SIDT_PRA_NODES) {
     double tn = sg * SWI_SIDT_PRA_NODES * SWI_SIDT_PRA_STEP;
-    return pt->a[side][SWI_SIDT_PRA_NODES] + sidt_pra_integral(ctx, tn, tc);
+    return pt->a[side][SWI_SIDT_PRA_NODES] + sidt_pra_integral(ctx, tn, tc, model);
   }
   /* cubic Hermite between nodes k and k + 1, in the direction away from
    * J2000: s from 0 to 1, rates times the signed step */
@@ -5194,13 +5217,14 @@ static double sidt_pra(swe_ctx *ctx, double tc)
 }
 
 /* Mean sidereal time, long term, in degrees: ERA(UT1) and the accumulated
- * precession in right ascension, with the IERS 2010 complementary terms. */
-static double sidtime_era_long_deg(swe_ctx *ctx, double tjd)
+ * precession in right ascension of precession model `model`, with the
+ * IERS 2010 complementary terms. */
+static double sidtime_era_long_deg(swe_ctx *ctx, double tjd, int model)
 {
   double gmst, dadd;
   double tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
   gmst = era_deg(tjd);
-  gmst += (0.014506 + SIDT_PRA_NUTC * tt + sidt_pra(ctx, tt)) / 3600.0;
+  gmst += (0.014506 + SIDT_PRA_NUTC * tt + sidt_pra(ctx, tt, model)) / 3600.0;
   dadd = sidtime_non_polynomial_part(ctx, tt);
   return swe_degnorm(gmst + dadd);
 }
@@ -5212,28 +5236,33 @@ static double sidtime_era_long_deg(swe_ctx *ctx, double tjd)
  * models since 2.06 sidereal time stepped by -0.097" at 1850 and -1.908" at
  * 2050. The offset is now the two formulas' difference at the boundary,
  * under this context's models, in hours: continuous by construction.
- * Memoized by value on everything it reads (struct sidt_splice_memo). */
-static double sidt_lterm_offset(swe_ctx *ctx, int ib)
+ * Memoized by value on everything it reads (struct sidt_splice_memo).
+ * Bug 181: the long-term formula's of precession model `model`, the one
+ * of the instant, which need not be the boundary's: each model spliced as
+ * it would be alone, a slot for the long-term model and one for a
+ * short-term model whose window holds the boundary. */
+static double sidt_lterm_offset(swe_ctx *ctx, int ib, int model)
 {
   double tb = ib ? SIDT_LTERM_T1 : SIDT_LTERM_T0;
   double dt_b = swe_deltat_ex_r(ctx, tb, -1, NULL);
   double dt_j2000 = swe_deltat_ex_r(ctx, J2000, -1, NULL);
   double ofs;
-  if (ctx->sidt_splice.slot[ib].valid
-      && ctx->sidt_splice.slot[ib].dt_b == dt_b
-      && ctx->sidt_splice.slot[ib].dt_j2000 == dt_j2000
-      && memcmp(ctx->sidt_splice.slot[ib].models, ctx->astro_models,
-                sizeof(ctx->astro_models)) == 0)
-    return ctx->sidt_splice.slot[ib].ofs;
-  ofs = (sidtime_era_long_deg(ctx, tb) - sidtime_iers2010_deg(ctx, tb)) / 15.0;
+  int pl = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
+  struct sidt_splice_slot *sl;
+  if (pl == 0) pl = SEMOD_PREC_DEFAULT;
+  sl = &ctx->sidt_splice.slot[ib][model == pl];
+  if (sl->valid && sl->model == model && sl->dt_b == dt_b && sl->dt_j2000 == dt_j2000
+      && memcmp(sl->models, ctx->astro_models, sizeof(ctx->astro_models)) == 0)
+    return sl->ofs;
+  ofs = (sidtime_era_long_deg(ctx, tb, model) - sidtime_iers2010_deg(ctx, tb)) / 15.0;
   if (ofs > 12) ofs -= 24;
   if (ofs < -12) ofs += 24;
-  ctx->sidt_splice.slot[ib].dt_b = dt_b;
-  ctx->sidt_splice.slot[ib].dt_j2000 = dt_j2000;
-  memcpy(ctx->sidt_splice.slot[ib].models, ctx->astro_models,
-         sizeof(ctx->astro_models));
-  ctx->sidt_splice.slot[ib].ofs = ofs;
-  ctx->sidt_splice.slot[ib].valid = TRUE;
+  sl->model = model;
+  sl->dt_b = dt_b;
+  sl->dt_j2000 = dt_j2000;
+  memcpy(sl->models, ctx->astro_models, sizeof(ctx->astro_models));
+  sl->ofs = ofs;
+  sl->valid = TRUE;
   return ofs;
 }
 #endif
@@ -5283,8 +5312,13 @@ static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double n
   tu = (jd0 - J2000)/36525.0; /* UT1 in centuries after J2000 */
 #ifndef SWE_UPSTREAM_COMPAT
   if (long_era) {
-    gmst = (sidtime_era_long_deg(ctx, tjd) / 15.0
-            - sidt_lterm_offset(ctx, tjd >= SIDT_LTERM_T1)) * 3600.0;
+    /* bug 181: the precession model of the instant, TT, as swi_precess()
+     * chooses it */
+    int pm = frame_chosen_model(ctx, tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL));
+    if (pm > SEMOD_NPREC)	/* a piece of Owen 1990 (bug 183) */
+      pm = SEMOD_PREC_OWEN_1990;
+    gmst = (sidtime_era_long_deg(ctx, tjd, pm) / 15.0
+            - sidt_lterm_offset(ctx, tjd >= SIDT_LTERM_T1, pm)) * 3600.0;
   } else
 #endif
   if (sidt_model == SEMOD_SIDT_IERS_CONV_2010 || sidt_model == SEMOD_SIDT_LONGTERM) {

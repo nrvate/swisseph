@@ -2,7 +2,8 @@
  * date is the rate of its own side's model: SEMOD_JPLHORA_3's at 1962 Jan
  * 20, SEFLG_JPLHOR's at 1799 Jan 1 and 2202 Jan 1, the edges of a
  * short-term precession model's window, and the joins of Owen 1990's
- * pieces.
+ * pieces; and across a window's edges the long-term sidereal time is its
+ * own side's model's.
  *
  * The defect (UPSTREAM-BUGS 153): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), the precession, the mean obliquity
@@ -69,13 +70,23 @@
  * deg/day off within a day of them, an Earth orbit of 0.053 AU 8.7e-5, a
  * Sun orbit of 1.2 AU 4.6e-5, Vulcan 7.7e-6.
  *
+ * The defect (UPSTREAM-BUGS 181): the long-term sidereal time (outside
+ * 1850-2050) integrates the precession in right ascension from the
+ * precession matrices at nodes a century apart, each with its rate, a
+ * difference over -+ 50 days, for a cubic Hermite between two. The edges
+ * fall on nodes, whose rate took the step over 100 days, and the cubic
+ * carried it a century either side and through the 1850 splice: against
+ * "0,9,9" the sidereal time under "0,9,1" was +24.0" before 1700, +50.8" at
+ * 1776, -22.2" at 2215, under "0,9,8" 1143" at -5550; and the topocentric
+ * Moon's site turned by it, its speed 1.6e-8 to 1.9e-8 deg/day off the
+ * places' rate within two days of J2000 - 2 centuries.
+ *
  * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
  * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
  * difference after the step too), at 1799 Jan 1 the default models; and
- * without the flag IAU 1976's window at J2000 - 2 centuries ("0,9,1",
- * with the IERS 2010 sidereal time throughout, so that the long-term
- * sidereal time's own reach across the edge stays out of the topocentric
- * Moon); the Sun, the Moon, Mars, Polaris (swe_fixstar2()), sidereal Mars
+ * without the flag IAU 1976's window at J2000 - 2 centuries ("0,9,1"),
+ * with the IERS 2010 sidereal time throughout and with the long-term one,
+ * which steps with the precession there (bug 181); the Sun, the Moon, Mars, Polaris (swe_fixstar2()), sidereal Mars
  * (Lahiri; swe_calc() drops the Horizons flags for it, so it has no step
  * at 1962 and 1799), the topocentric Moon at Zurich, and Mars under
  * SEFLG_SPEED3; ecliptic and equatorial, longitude and latitude speeds, at
@@ -89,7 +100,7 @@
  * the instants where that lies on their side (the one-sided ones carry the
  * diurnal parallax's curvature, 3e-6 at five points over 2^-8). Each
  * setting, body and frame is judged on the worst of its two speeds over
- * three spans, the day before the step, the day after it and the rest: 168
+ * three spans, the day before the step, the day after it and the rest: 210
  * checks, within 1e-8 deg/day, SEFLG_SPEED3 within 1e-5 (its own three
  * places over 1e-4 day are 1.3e-6 off everywhere).
  *
@@ -125,6 +136,15 @@
  * 1e-8 floor). It calls the fork's own functions and is left out of the
  * upstream build.
  *
+ * Check (d): the long-term sidereal time across the windows' edges, the
+ * mean sidereal time of swe_sidtime0() under "0,9,1" at J2000 -+ 2
+ * centuries, "0,9,6" at + 2, "0,9,8" at -+ 75 and "0,8,1" at - 2, against
+ * the same of the side's model alone ("0,1,1", "0,6,6" or "0,8,8" inside,
+ * "0,9,9" or "0,8,8" outside), at the 105 instants about the edge and
+ * every 1/8 century to 1 3/8 inside and outside, and 3 and 6 centuries
+ * outside (through the 1850 splice at - 2 centuries): delta t 2^-11 day,
+ * the worst inside and outside, 12 checks within 1e-9 deg.
+ *
  * Measured after the fix: (a) within 2.4e-9 (the Moon's one-sided
  * reference at J2000 - 2 centuries, 2.0e-9 at 1799; Polaris's right
  * ascension 1.45e-9 at 1962, the topocentric Moon 9.6e-10, the others
@@ -153,13 +173,22 @@
  * 6.5e-6 to 8.7e-5 deg/day) and in the ecliptic on the day before (the
  * obliquity's, 6.5e-7 to 9.3e-7), SPEED3 0.80 to 0.83 on both, and 15 of
  * (b)'s 42 at the windows: the precession's rate 2.6e-6 to 1.5e-2
- * deg/day, the obliquity's 4.5e-7 to 1.9e-2. The upstream build fails 160
- * of (a)'s 168: its nutation rate, a backward difference, reaches across
- * the 1962 step just after it (0.200 deg/day, Polaris's right ascension
- * 2.14), its ayanamsa rate, a backward difference too, across the window's
- * edge (sidereal Mars 0.160), its SPEED3 2.48 there, and its own speeds
- * are off elsewhere by the defects earlier entries fixed (the topocentric
- * Moon 4e-3, sidereal Mars 5e-7); only SPEED3 away from the steps passes.
+ * deg/day, the obliquity's 4.5e-7 to 1.9e-2. Before the fix of bug 181,
+ * 6 of the 42 at J2000 - 2 centuries with the long-term sidereal time fail,
+ * the topocentric Moon's both frames over the three spans (1.5e-8 to
+ * 1.9e-8 deg/day; 6.0e-10 to 8.6e-10 after), and all 12 of (d), by
+ * 3.1e-4 deg ("0,9,6") to 0.38 ("0,9,8"); after, (d) is 0 bit for bit
+ * everywhere. The upstream build fails 200 of (a)'s 210, the 66 of (c)
+ * and 3 of (d)'s 12, 269 of its 288
+ * (outside the IAU 1976 window by 4.6e-9 to 6.6e-9 deg: its long-term
+ * formula takes the obliquity of J2000, inside the window, at every
+ * date). Of (a)'s first 168 it fails 160: its nutation rate, a backward
+ * difference, reaches across the 1962 step just after it (0.200 deg/day,
+ * Polaris's right ascension 2.14), its ayanamsa rate, a backward
+ * difference too, across the window's edge (sidereal Mars 0.160), its
+ * SPEED3 2.48 there, and its own speeds are off elsewhere by the defects
+ * earlier entries fixed (the topocentric Moon 4e-3, sidereal Mars 5e-7);
+ * only SPEED3 away from the steps passes.
  * Run as
  *   framestep EPHEDIR
  */
@@ -189,6 +218,9 @@ static const struct {
   /* IAU 1976's short-term window, J2000 - 2 centuries; the sidereal
    * time the IERS 2010 formula's throughout */
   { 2378495.0, 0, 0, "0,9,1,0,0,0,0,3" },
+  /* the same with the long-term sidereal time, each side's own (bug 181),
+   * which the topocentric Moon's site turns by */
+  { 2378495.0, 0, 0, "0,9,1,0,0,0,0,0" },
 };
 #define NSET ((int) (sizeof SET / sizeof SET[0]))
 
@@ -444,6 +476,81 @@ static void check_b(swe_ctx *c, int g, int32 fl, double *w)
 }
 #endif
 
+/* check (d): the long-term sidereal time across a window's edge, the
+ * mean sidereal time of swe_sidtime0() (fixed obliquity, no nutation) of
+ * the models against the same of the model alone on the instant's side:
+ * inside the short-term one, outside the long-term one. The instants in
+ * TT, their UT 2^-11 day before (delta t set to it); the worst inside and
+ * outside, degrees; returns the failures, *n the checks. */
+static int check_d(int *n)
+{
+  static const struct {
+    double ts;
+    int left;
+    const char *mod, *in, *out;
+  } SC[] = {
+    { 2378495.0, 0, "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { 2524595.0, 1, "0,9,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { 2524595.0, 1, "0,9,6,0,0,0,0,0", "0,6,6,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { -287830.0, 0, "0,9,8,0,0,0,0,0", "0,8,8,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { 5190920.0, 1, "0,9,8,0,0,0,0,0", "0,8,8,0,0,0,0,0", "0,9,9,0,0,0,0,0" },
+    { 2378495.0, 0, "0,8,1,0,0,0,0,0", "0,1,1,0,0,0,0,0", "0,8,8,0,0,0,0,0" },
+  };
+  static const double cy[13] = { 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1.125,
+                                 1.25, 1.375, 3, 6 };
+  static const char *sn[2] = { "inside", "outside" };
+  double tq[105 + 24];
+  int m, i, k, bad = 0;
+  for (m = 0; m < (int) (sizeof SC / sizeof SC[0]); m++) {
+    char s0[40], s1[40], s2[40];
+    swe_ctx *c = swe_ctx_new(), *ci = swe_ctx_new(), *co = swe_ctx_new();
+    double w[2] = { 0, 0 };
+    int nq;
+    strcpy(s0, SC[m].mod);
+    strcpy(s1, SC[m].in);
+    strcpy(s2, SC[m].out);
+    swe_set_astro_models_r(c, s0, 0);
+    swe_set_astro_models_r(ci, s1, 0);
+    swe_set_astro_models_r(co, s2, 0);
+    swe_set_delta_t_userdef_r(c, ldexp(1, -11));
+    swe_set_delta_t_userdef_r(ci, ldexp(1, -11));
+    swe_set_delta_t_userdef_r(co, ldexp(1, -11));
+    TS = SC[m].ts;
+    LEFT = SC[m].left;
+    nq = instants(tq);
+    /* to 1.375 centuries inside, and through the 1850 splice outside */
+    for (k = 0; k < 13; k++) {
+      double sg = (TS < 2451545.0) ? -1 : 1;
+      tq[nq++] = TS + sg * cy[k] * 36525;
+      if (k < 11)
+        tq[nq++] = TS - sg * cy[k] * 36525;
+    }
+    for (i = 0; i < nq; i++) {
+      double ut = tq[i] - ldexp(1, -11), d;
+      /* the window is J2000's side of the edge */
+      int inside = (TS < 2451545.0) ? !left_of(tq[i]) : left_of(tq[i]);
+      d = swe_sidtime0_r(c, ut, 23.4, 0) - swe_sidtime0_r(inside ? ci : co, ut, 23.4, 0);
+      d = fabs(d - 24 * floor(d / 24 + 0.5)) * 15;
+      if (d > w[!inside])
+        w[!inside] = d;
+    }
+    printf("  (d) models %s, edge JD %.1f: worst |sidereal time - the side's model alone's|,"
+           " deg, %s / %s\n", SC[m].mod, TS, sn[0], sn[1]);
+    printf("    sidereal time         %.2e  %.2e\n", w[0], w[1]);
+    for (k = 0; k < 2; k++) {
+      (*n)++;
+      if (!(w[k] <= 1e-9)) {
+        bad++;
+        printf("    FAIL models %s, sidereal time %s: %.2e > 1e-9\n", SC[m].mod, sn[k], w[k]);
+      }
+    }
+    swe_ctx_free(c);
+    swe_ctx_free(ci);
+    swe_ctx_free(co);
+  }
+  return bad;
+}
+
 int main(int argc, char **argv)
 {
   double tq[105];
@@ -633,6 +740,7 @@ int main(int argc, char **argv)
     }
   }
 #endif
+  bad += check_d(&n);
   if (bad) {
     printf("G139 FAIL: %d of %d\n", bad, n);
     return 1;

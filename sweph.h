@@ -1467,6 +1467,11 @@ struct epsilon {
  *     Moon, where swe_calc() of the planet refuses: Mars's points at 1900
  *     3.7e-9 deg off the complete directory's (UPSTREAM-BUGS 193, G143,
  *     G24)
+ *   - (nothing for UPSTREAM-BUGS 181: the long-term sidereal time's table,
+ *     whose nodes at a short-term window's edges took the precession's
+ *     step over 100 days, +50.8" at 1776 under "0,9,1", is this fork's
+ *     (entry 29); the compat build keeps upstream's sidtime_long_term(),
+ *     which precesses at its instant and has no table; G139)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1778,28 +1783,33 @@ struct sidt_memo {
  * key, by value, so a changed model or delta t misses; a configuration
  * generation would not do, since get_aya_correction() overrides
  * astro_models[] mid-calculation without bumping it (see struct
- * nut_memo). */
+ * nut_memo). UPSTREAM-BUGS 181: and the precession model whose formula it
+ * splices, the long-term model's (slot [1]) or a short-term model's whose
+ * window holds the boundary ([0]). */
+struct sidt_splice_slot {
+  double dt_b, dt_j2000, ofs;
+  int32 model;
+  int32 models[SEI_NMODELS];
+  AS_BOOL valid;
+};
 struct sidt_splice_memo {
-  struct {
-    double dt_b, dt_j2000, ofs;
-    int32 models[SEI_NMODELS];
-    AS_BOOL valid;
-  } slot[2];
+  struct sidt_splice_slot slot[2][2];
 };
 
 /* The precession in right ascension accumulated since J2000, the part of
  * the long-term sidereal time that is not Earth rotation (swephlib.c,
  * sidt_pra(); UPSTREAM-BUGS 29): the integral of the mean-of-date frame's
- * rotation about its pole, from the context's own precession model, at
- * nodes SWI_SIDT_PRA_STEP centuries apart on each side of J2000, with the
- * rate at each node, for a cubic Hermite polynomial between two. Built
- * outward from J2000 as far as asked, once per precession model. Keyed by
- * value on the two precession models swi_precess() reads (the only inputs
- * the integral has), two slots, for the reason given at struct nut_memo. */
+ * rotation about its pole, from one precession model alone (UPSTREAM-BUGS
+ * 181: a short-term model's window and the long-term model outside it are
+ * two tables), at nodes SWI_SIDT_PRA_STEP centuries apart on each side of
+ * J2000, with the rate at each node, for a cubic Hermite polynomial
+ * between two. Built outward from J2000 as far as asked, once per
+ * precession model. Keyed by value on the model (the only input the
+ * integral has), two slots, for the reason given at struct nut_memo. */
 #define SWI_SIDT_PRA_STEP   1.0	/* centuries */
 #define SWI_SIDT_PRA_NODES  400	/* per side: +-400 centuries */
 struct sidt_pra_table {
-  int32 prec_long, prec_short;
+  int32 prec_model;
   int nnode[2];		/* nodes computed, [0] before J2000, [1] after */
   double a[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec */
   double w[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec per century */
