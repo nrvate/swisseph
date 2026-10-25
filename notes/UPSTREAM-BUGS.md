@@ -217,6 +217,7 @@ worst were in code that had never executed even once.
 | 188 | The IAU 2000A and 2000B series' Delaunay arguments, polynomials to T^4 in arcseconds, are evaluated in double, and past the default grid's 4e8 days (where the default is the direct 2000A) they are some 1e14": their rounding, T's own and the products', puts up to 1e-2" into every term's angle, dpsi 9.5e-9 deg off the series evaluated in long double at 8e8 to 1e9 days, 3.0e-9 at 6e8 to 8e8, a jitter of 4e-9 deg between instants 2^-12 day apart | Correctness | `swephlib.c` |
 | 194 | `swe_calc()`'s strict test of a Moon from Moshier (entry 120) reads the centre off the caller's bits, where `swecalc()` takes `plaus_iflag()`'s: SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR, topocentric, answered from the Earth of Moshier's Moon (Mars at 1900 32770, 283.6744143987 deg, 9e-10 deg off the files'), where SEFLG_TOPOCTR is refused, and the save area then answered a SEFLG_TOPOCTR request | Correctness (behaviour) | `sweph.c` |
 | 195 | A topocentric star fallen to another ephemeris (the fallback allowed, the files for the date missing) places its site by the delta t of the caller's ephemeris bits, not of the ephemeris that answered: Aldebaran at 1500, Swiss fallen to Moshier, 2.0e-8 deg in longitude and 1.35e-7 deg/day in its speed off the Moshier request, by `swe_fixstar2()`, `swe_fixstar()` and their `_ut` forms; JPL fallen to Swiss 7.5e-9 deg | Correctness (behaviour) | `sweph.c` |
+| 170 | `swe_nod_aps_ut()` takes delta t from the ephemeris bits as given and keeps it after a fallback: fallen to Moshier, the files' delta t at 1900 (-1.9915 s for Moshier's -2.0521 s), Mars's perihelion 2.8e-7 deg off the Moshier request's, the Moon's 1.7e-6; SEFLG_JPLEPH with SEFLG_SWIEPH on de200 the Swiss files' tidal term, the Moon's points 3.6e-5 deg off the SEFLG_JPLEPH request's | Correctness (behaviour) | `swecl.c` |
 | 174 | `swe_nod_aps()` reads the Moon for the save area of the Moon's mean points, geocentric and topocentric, which do not use it: without the moon files the strict setting refuses them, as in an empty directory and JPL without its file, where `swe_calc()` answers the mean node; with the fallback the read says Moshier, so `swe_nod_aps_ut()` redoing delta t for it (entry 170) moves the mean node 6.0e-8 deg at 1900 and 1.8e-5 in AD 1000, and the site takes Moshier's delta t (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
 
 ---
@@ -12770,6 +12771,70 @@ on de200.eph at 1500, outside its span, the fallback allowed, refuse ("jd
 2268923.500000 outside JPL eph. range 2305424.50 .. 2513392.50;"), where
 `swe_calc()` of Mars falls to Moshier and answers (260), both before and
 after this fix.
+
+## 170. `swe_nod_aps_ut()` takes delta t from the ephemeris bits as given, and keeps it after a fallback
+
+**Severity: Correctness (behaviour: the points at another instant than the ephemeris that answered puts UT at; 2.8e-7 deg on Mars's perihelion, 3.6e-5 deg on the Moon's), both builds**
+**Where:** `swecl.c`: `swe_nod_aps_ut_r_body()`, `swe_nod_aps_r_body()`
+
+Found by entry 149's work. `swe_nod_aps_ut()` was `swe_nod_aps()` at
+tjd_ut + `swe_deltat_ex(tjd_ut, iflag)`, the caller's bits as given.
+`swe_calc_ut()` (and `swe_calc_orbel_ut()`, `swe_fixstar_ut()`,
+`swe_pheno_ut()`) resolves the bits first and, when the answer's
+ephemeris is not the one asked, takes delta t again from the one that
+answered and computes again; `swe_nod_aps()` returned no flag to say
+which. Measured:
+- Fallen to Moshier, the fallback allowed, it kept the files' delta t: in
+  an empty directory at 1900 Jan 0.75 UT -1.9915 s for Moshier's -2.0521 s
+  (the default tidal term against DE404's), Mars's osculating perihelion
+  2.8e-7 deg off the Moshier request's, the Moon's osculating perigee
+  1.7e-6, its mean node 3.7e-8 (which reads no file, and since entry 174
+  falls back from nothing).
+- `swe_deltat_ex()` takes SEFLG_SWIEPH with SEFLG_JPLEPH for the Swiss
+  files' tidal term ("SEFLG_SWIEPH wanted or SEFLG_JPLEPH failed"): on
+  de200, SEFLG_JPLEPH | SEFLG_SWIEPH, answered from DE200, took DE431's
+  delta t for DE200's, the Moon's topocentric osculating points at 1900
+  3.6e-5 deg off the SEFLG_JPLEPH request's, Mars's 2.7e-6.
+Both builds.
+
+**Fix, as done here:**
+- `swe_nod_aps_r_body()` says which ephemeris answered: the less precise
+  of its reads where they differ (the osculating ellipse's, the save
+  area's), as `swe_calc_pctr()` returns it (entry 150); a Moon from
+  Moshier, the Moon files alone missing, SEFLG_MOSEPH, as `swe_calc()`
+  flags it (entry 120).
+- `swe_nod_aps_ut()` as `swe_calc_ut()`: one ephemeris bit by
+  `plaus_iflag()`'s precedence (Swiss without one), delta t of it, and if
+  another answered, delta t of that one and the points computed again, the
+  first call's message kept.
+- Now the fallback's UT points are the Moshier request's bit for bit, and
+  the mixed bits' those of the ephemeris they resolve to.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+G143 `tests/nodcentre.c` (b) gains `swe_nod_aps_ut()` of the Moon and
+Mars, mean and osculating, the four centres, both instants and the four
+bit combinations against the ephemeris they resolve to, bit for bit: 128
+rows pass; before the fix the 32 with SEFLG_JPLEPH | SEFLG_SWIEPH at 1900
+fail (3.6e-5 deg). G143 2127 rows pass; the upstream build fails 1515.
+G133 (h) no longer skips the UT calls (Mars osculating, the Moon mean, its
+four centres): the fallback answers as the Moshier request does, bit for
+bit (the Moon's mean points geocentric and topocentric as the strict
+request, entry 174), 40 rows; before the fix the 8 fallback rows at 1900
+fail (Mars's osculating points, the Moon's heliocentric mean ones). 1205
+pass, with entry 195's rows; the upstream build fails 469.
+
+Landed after entry 174, which had to come first: the Moon's mean points
+geocentric and topocentric read the Moon for their save area, which with
+the moon files missing fell to Moshier, so this entry's return of the
+ephemeris that answered said SEFLG_MOSEPH and `swe_nod_aps_ut()` took
+Moshier's delta t for points nothing of Moshier's reaches (G142 failed 7 of
+14 with this fix alone: the mean node 6.0e-8 deg off at 1900).
+
+G24 `nodaps_ut_fallback_off`: Mars's osculating perihelion by
+`swe_nod_aps_ut()` at 1900 Jan 0.75 UT, Swiss asked in an empty directory
+with the fallback allowed, against the Moshier request: 0 shipped, 4.4e-5
+deg compat (upstream's own Moshier differences on top of the delta t's
+2.8e-7).
 
 ## 174. `swe_nod_aps()` reads the Moon for the save area of the Moon's mean points, which do not use it
 

@@ -106,11 +106,13 @@
  *      geocentric points too, seen from the Sun on Moshier as on the files
  *      (UPSTREAM-BUGS 167). SEFLG_HELCTR | SEFLG_BARYCTR, barycentric now
  *      as in swe_calc() (bug 169; heliocentric before), refused on Moshier
- *      and the fallback alike. The Moon's mean points geocentric and
- *      topocentric read no file (UPSTREAM-BUGS 174): nothing falls back,
- *      and the fallback answers as the same request does strict, bit for
- *      bit, under the ephemeris asked (the site by its delta t). Not the UT
- *      calls, whose fallback takes the files' delta t;
+ *      and the fallback alike. The UT calls too, their delta t redone for
+ *      the ephemeris that answered (UPSTREAM-BUGS 170; the fallback took
+ *      the files' delta t, Mars's perihelion at 1900 2.8e-7 deg off). The
+ *      Moon's mean points geocentric and topocentric read no file
+ *      (UPSTREAM-BUGS 174): nothing falls back, and the fallback answers
+ *      as the same request does strict, bit for bit, under the ephemeris
+ *      asked (the site and the UT calls by its delta t);
  *  (i) swe_calc_pctr()'s return flag: the complete directory's the
  *      ephemeris asked; the JPL file alone missing, JPL asked, the
  *      fallback allowed: Mars from Jupiter (SEFLG_SPEED, SEFLG_TRUEPOS,
@@ -129,7 +131,7 @@
  *      SEFLG_SPEED) and in (f)'s warm process: bit for bit the Moshier
  *      request's (they took the files' delta t, 6.7 s more at 1500:
  *      2.0e-8 deg in longitude, 1.35e-7 deg/day in its speed).
- * Measured: 1165 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ * Measured: 1205 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
  * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
  * (osculating), swe_calc_pctr()'s Moon 2.1e-7 deg.
  * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
@@ -166,7 +168,11 @@
  * mean points geocentric and topocentric in (h) with the strict request:
  * before its fix the 8 fail (strict refused them; the Moshier request
  * they matched answered the topocentric ones with Moshier's delta t for
- * the site, 1.4e-6 deg at 1900).
+ * the site, 1.4e-6 deg at 1900). UPSTREAM-BUGS 170 adds the UT calls to
+ * (h), 40 rows: before its fix the 8 fallback rows at 1900 fail (Mars's
+ * osculating points, the Moon's heliocentric mean ones); with it and not
+ * 174's, 16 (the Moon's mean points in Moshier's delta t). The upstream
+ * build fails 469 in all.
  * Run as
  *   fbbary EPHEDIR
  */
@@ -711,12 +717,10 @@ int main(int argc, char **argv)
        * the Moshier request does; the Sun's geocentric points too, seen
        * from the Sun on Moshier now (bug 167), and SEFLG_TOPOCTR |
        * SEFLG_BARYCTR, topocentric (bug 169). SEFLG_HELCTR | SEFLG_BARYCTR,
-       * barycentric now (bug 169), refused on both. Not the UT calls, whose
-       * fallback takes the files' delta t. */
+       * barycentric now (bug 169), refused on both. The UT calls too,
+       * whose fallback took the files' delta t (bug 170). */
       for (k = 0; k < NG; k++) {
         struct ans m[NHCTR], f;
-        if (G[k].kind == NODAPS_UT)
-          continue;
         for (j = 0; j < NHCTR; j++) {
           struct cs c = G[k];
           /* the Moon's mean points geocentric and topocentric read no

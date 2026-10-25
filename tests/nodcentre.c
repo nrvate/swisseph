@@ -34,6 +34,12 @@
  * lunar series' Moon (0.24 deg away at 2000): the EMB 1.3e-7 AU off, the
  * perihelion wobbling 8e-3 deg with the Moon's inequalities, its speed
  * 4.7e-8 deg/day off its positions' rate, the distance's 2.5e-11 AU/day.
+ * UPSTREAM-BUGS 170: swe_nod_aps_ut() took delta t from the bits as given,
+ * where swe_calc_ut() resolves them first: swe_deltat_ex() takes the Swiss
+ * files' tidal term for SEFLG_JPLEPH | SEFLG_SWIEPH, DE431's for de200's
+ * DE200 (the Moon's topocentric osculating points 3.6e-5 deg off the
+ * SEFLG_JPLEPH request's at 1900). (Its fallback, delta t not redone for
+ * the ephemeris that answered, is G133's (h).)
  * UPSTREAM-BUGS 174: the Moon's mean points geocentric and topocentric
  * read the Moon for the save area, which nothing of them uses: refused
  * under the strict setting without the moon files, in an empty directory,
@@ -62,7 +68,8 @@
  *      (de200): the Sun, the Moon, Mars, Saturn and the Earth, mean,
  *      osculating and SE_NODBIT_OSCU_BAR, geocentric, topocentric,
  *      heliocentric and barycentric, 2000 Jul 1.5 and 1900 Jan 0.75, the
- *      return and the four points bit for bit;
+ *      return and the four points bit for bit; and swe_nod_aps_ut() of the
+ *      Moon and Mars, mean and osculating, so (UPSTREAM-BUGS 170);
  *  (c) SEFLG_HELCTR | SEFLG_BARYCTR against SEFLG_BARYCTR, and
  *      SEFLG_TOPOCTR with SEFLG_BARYCTR, SEFLG_HELCTR or both against
  *      SEFLG_TOPOCTR: the Swiss files, Moshier and de200, (b)'s bodies,
@@ -105,16 +112,18 @@
  * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b), (c),
  * (d) 0; (e) 3.2e-10 deg/day, 1.2e-13 AU/day; (f) the node 1.1e-13 deg off
  * the mean node's, the heliocentric and barycentric points 1.6e-8 deg off.
- * 1999 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
+ * 2127 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
  * first check fail (143 deg, 0.97 AU), the 14 of its second and 7 of the
  * third's 14 (the topocentric); before bug 168's, 340 of (b)'s 480 (12
  * deg); before bug 169's, 448 of (c)'s 456 (180 deg: the Sun's
  * topocentric points heliocentric, the Earth's orbit's); before bug 176's,
  * 84 of (d)'s 160, every osculating row that answers (1.75e-4 deg); before
  * bug 180's, (e)'s 78 Moshier rows (4.7e-8 deg/day, 2.5e-11 AU/day);
- * before bug 174's, 114 of (f)'s 390 (144 with bug 170's fix and not
- * 174's) and (d)'s 4 rows of the Moon's mean points (refused strict). The
- * upstream build (SWE_UPSTREAM_COMPAT) fails 1424. Run as
+ * before bug 170's, the 32 UT rows of (b) at 1900 with SEFLG_JPLEPH |
+ * SEFLG_SWIEPH, alone or with SEFLG_MOSEPH (3.6e-5 deg); before bug 174's,
+ * 114 of (f)'s 390 (144 with bug 170's fix and not 174's) and (d)'s 4 rows
+ * of the Moon's mean points (refused strict). The upstream build
+ * (SWE_UPSTREAM_COMPAT) fails 1515. Run as
  *   nodcentre EPHEDIR
  */
 #include <dirent.h>
@@ -241,7 +250,7 @@ static void part_b(void)
   double a[24], b[24], w = 0;
   char sa[AS_MAXCH], sb[AS_MAXCH], what[160];
   int ib, im, ic, ix, id, ut;
-  for (ut = 0; ut < 1; ut++)
+  for (ut = 0; ut < 2; ut++)
     for (ix = 0; ix < 4; ix++)
       for (id = 0; id < 2; id++)
         for (ib = 0; ib < 5; ib++)

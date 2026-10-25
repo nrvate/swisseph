@@ -5488,11 +5488,12 @@ static int32 nodaps_refuse(double *xnasc, double *xndsc, double *xperi, double *
 }
 #endif
 
+/* ephret, if not NULL, gets the ephemeris that answered (bug 170) */
 static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag,
                       int32  method,
                       double *xnasc, double *xndsc, 
                       double *xperi, double *xaphe, 
-                      char *serr)
+                      char *serr, int32 *ephret)
 {
   int ij, i, j;
   int32 iplx;
@@ -6649,6 +6650,18 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     if (xaphe != NULL)
       xaphe[i] = xap[i];
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 170: the ephemeris that answered, the less precise where
+   * the reads differ (the osculating ellipse's, the save area's), as
+   * swe_calc_pctr() returns it (bug 150): the Moon's, from Moshier with
+   * the Moon files alone missing, SEFLG_MOSEPH, as swe_calc() flags it */
+  if (ephret != NULL) {
+    int32 e = (retc0 | retcs) & SEFLG_EPHMASK;
+    *ephret = (e & SEFLG_MOSEPH) ? SEFLG_MOSEPH : (e & SEFLG_SWIEPH) ? SEFLG_SWIEPH : e;
+  }
+#else
+  (void) ephret;
+#endif
   return OK;
 }
 
@@ -6660,7 +6673,7 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
 {
   int32 ret;
   swi_config_hold(ctx);	/* bug 115 */
-  ret = swe_nod_aps_r_body(ctx, tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
+  ret = swe_nod_aps_r_body(ctx, tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr, NULL);
   swi_config_release(ctx);
   return ret;
 }
@@ -6682,10 +6695,38 @@ static int32 swe_nod_aps_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32
                       double *xperi, double *xaphe, 
                       char *serr)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 170: delta t was the asked ephemeris's, taken from the
+   * bits as given. Fallen to Moshier (the fallback allowed), the points
+   * kept the files' delta t, as swe_calc_ut() does not: at 1900 Jan 0.75
+   * -1.9915 s for Moshier's -2.0521 s, Mars's osculating perihelion 2.8e-7
+   * deg off the Moshier request's, the Moon's 1.7e-6. And
+   * swe_deltat_ex() takes SEFLG_SWIEPH with SEFLG_JPLEPH for the Swiss
+   * files' tidal term: JPLEPH | SWIEPH on de200 took DE431's for DE200's,
+   * the Moon's topocentric osculating points 3.6e-5 deg off the JPLEPH
+   * request's. Now as swe_calc_ut(): delta t of the ephemeris the bits
+   * resolve to (bug 168; Swiss without one), and, if another answered, of
+   * that one, the points computed again (its message kept, as there). */
+  double deltat;
+  int32 retval, epheflag, ephused = 0;
+  epheflag = (iflag & SEFLG_JPLEPH) ? SEFLG_JPLEPH : (iflag & SEFLG_SWIEPH) ? SEFLG_SWIEPH
+             : (iflag & SEFLG_MOSEPH) ? SEFLG_MOSEPH : SEFLG_SWIEPH;
+  iflag = (iflag & ~SEFLG_EPHMASK) | epheflag;
+  deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+  retval = swe_nod_aps_r_body(ctx, tjd_ut + deltat, ipl, iflag, method, xnasc, xndsc,
+                              xperi, xaphe, serr, &ephused);
+  if (retval != ERR && ephused != 0 && ephused != epheflag) {
+    deltat = swe_deltat_ex_r(ctx, tjd_ut, (iflag & ~SEFLG_EPHMASK) | ephused, NULL);
+    retval = swe_nod_aps_r_body(ctx, tjd_ut + deltat, ipl, iflag, method, xnasc, xndsc,
+                                xperi, xaphe, NULL, &ephused);
+  }
+  return retval;
+#else
   /*swi_set_tid_acc(ctx, tjd_ut, iflag, 0, serr);*/
   return swe_nod_aps_r(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, serr),
                       ipl, iflag, method, xnasc, xndsc, xperi, xaphe,
                       serr);
+#endif
 }
 
 int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,

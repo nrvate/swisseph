@@ -1318,6 +1318,10 @@ check-closetid: closetid
 # in the barycentric Sun's slot (UPSTREAM-BUGS 168, 177); a topocentric
 # star fallen to Moshier answers as the Moshier request, its site placed
 # by Moshier's delta t (UPSTREAM-BUGS 195).
+# swe_nod_aps()'s fallback answering as the Moshier request: the Sun's
+# geocentric points (167), warm, the frame and site of the ephemeris that
+# answered (168), SEFLG_TOPOCTR | SEFLG_BARYCTR topocentric (169), the UT
+# calls with that ephemeris's delta t (170).
 # Its directories are links in /tmp; each case in a forked process.
 check-fbbary: fbbary
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./fbbary $(EPHE)
@@ -1405,9 +1409,10 @@ check-moonlesstid: moonlesstid
 # their positions (UPSTREAM-BUGS 167); mixed ephemeris bits answered as the
 # ephemeris they resolve to (168), combined centre bits as the centre
 # swe_calc() takes (169) and de200 fallen to Moshier with Moshier's frame
-# bias on its ellipses (176), bit for bit; on Moshier the Earth's and the
-# Sun's osculating apsides' speeds the rates of their positions, the EMB
-# the series' own (180); the Moon's mean points answered under the
+# bias on its ellipses (176), bit for bit, swe_nod_aps_ut()'s delta t of
+# the resolved ephemeris (170); on Moshier the Earth's and the Sun's
+# osculating apsides' speeds the rates of their positions, the EMB the
+# series' own (180); the Moon's mean points answered under the
 # ephemeris asked with files missing, strict or not, as the mean node is
 # (174; /tmp directories of links).
 check-nodcentre: nodcentre

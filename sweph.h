@@ -1443,6 +1443,10 @@ struct epsilon {
  *     the delta t of the ephemeris asked: Aldebaran at 1500, Swiss fallen
  *     to Moshier, 2.0e-8 deg and 1.35e-7 deg/day off the Moshier request
  *     (UPSTREAM-BUGS 195, G133, G24)
+ *   - swe_nod_aps_ut() taking delta t from the ephemeris bits as given and
+ *     keeping it after a fallback: Mars's perihelion at 1900 2.8e-7 deg off
+ *     the Moshier request's, SEFLG_JPLEPH | SEFLG_SWIEPH on de200 the
+ *     Swiss files' tidal term (UPSTREAM-BUGS 170, G143, G133)
  *   - swe_nod_aps() reading the Moon for the save area of the Moon's mean
  *     points geocentric and topocentric, which do not use it: strict
  *     refused without the moon files, in an empty directory or JPL
