@@ -6120,9 +6120,26 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     if ((iflag & SEFLG_HELCTR) && !(iflag & SEFLG_MOSEPH))
       for (i = 0; i <= 5; i++)
         xobs[i] = xsun[i];
+#ifndef SWE_UPSTREAM_COMPAT
+  } else if (ipl == SE_SUN) {
+    /* Upstream bug 167: the Sun's geocentric points are the Earth's
+     * orbit seen from the Sun, negated below, so the observer is the Sun:
+     * the barycentric Sun for the files' points, made barycentric above,
+     * but on Moshier, whose points stay heliocentric, it was the Earth,
+     * as for a planet: the mean perigee at 2000 Jul 1.5 281.4259 deg at
+     * 1.9993 AU, the apogee 191.4583 deg at 0.0531 AU, where the files'
+     * are 282.9417 deg at 0.9833 AU and 102.9417 deg at 1.0167 AU; every
+     * method alike, SEFLG_TOPOCTR the site added. On Moshier it is now the
+     * Sun, the origin: the files' points to Moshier's precision, 1.8e-6
+     * deg for the mean perigee (the files' observer moving with the Sun's
+     * barycentric velocity, aberration that Moshier's lacks). */
+    for (i = 0; i <= 5; i++)
+      xobs[i] = (iflag & SEFLG_MOSEPH) ? 0 : xsun[i];
+#else
   } else if (ipl == SE_SUN && !(iflag & SEFLG_MOSEPH)) {
     for (i = 0; i <= 5; i++)
       xobs[i] = xsun[i];
+#endif
   } else {
     /* barycentric position of observer */
     for (i = 0; i <= 5; i++)
@@ -6274,9 +6291,16 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
           if ((iflag & SEFLG_HELCTR) && !(iflag & SEFLG_MOSEPH))
             for (i = 0; i <= 5; i++)
               xobs2[i] = xsun[i];
+#ifndef SWE_UPSTREAM_COMPAT
+        } else if (ipl == SE_SUN) {
+          /* bug 167: the Sun, Moshier's origin, as above */
+          for (i = 0; i <= 5; i++)
+            xobs2[i] = (iflag & SEFLG_MOSEPH) ? 0 : xsun[i];
+#else
         } else if (ipl == SE_SUN && !(iflag & SEFLG_MOSEPH)) {
           for (i = 0; i <= 5; i++)
             xobs2[i] = xsun[i];
+#endif
         } else {
           /* barycentric position of observer */
           for (i = 0; i <= 5; i++)

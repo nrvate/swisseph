@@ -199,6 +199,7 @@ worst were in code that had never executed even once.
 | 164 | A JPL file whose `swe_set_jpl_file()` failed along the path then set, and a path where it is (or the file installed there and `swe_close()`): no DE number was read, so the path setter and the close read none, and the first UT JPL Moon in AD 1700 is 40.0057507520 deg and the second 40.0039614086, `swe_deltat()` 15.091463 s, where a fresh process given that path and the file answers 40.0039614086 twice and 3.012003 s -- on every thread and context | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 | 165 | With no JPL file set, a JPLEPH delta t knows no DE number and takes the default tidal term, and the calculation after it opens the default file, de431.eph, by its name (or its fallback de406.eph): with a de431.eph that is de200.eph the first UT JPL Moon in AD 1700 40.0057507520 deg and the second 40.0039614086 in a fresh process, the JPLEPH delta t 14.286718 s before a JPL calculation and 3.012003 after one | Correctness (behaviour) | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h` |
 | 166 | Without the moon files the Swiss files' tidal term is the default, -25.80 (DE431's), not the planet files' DE number's (DE441, -25.936): delta t in AD 1000 1463.430567 s for 1474.717432, 0.037 s at 1900, the heliocentric Mars 2.6e-7 deg off at 1900 and 5.8e-5 in AD 1000, the mean apogee 4.9e-8 at 1900 -- on every thread and context | Correctness | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
+| 167 | `swe_nod_aps()` on Moshier takes the Earth for the observer of the Sun's geocentric points, not the Sun: the mean perigee at 2000 Jul 1.5 281.4259 deg at 1.9993 AU, the apogee 191.4583 deg at 0.0531 AU, where the files' are 282.9417 deg at 0.9833 AU and 102.9417 deg at 1.0167 AU; every method, SEFLG_TOPOCTR too | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -11360,6 +11361,67 @@ epoch's there, the path setter reads no DE number and the first delta t
 takes the default term: in AD 1500 291.693033 s, then 294.255183 after a
 Swiss Moon there opened semo_12.se1, the first Moon 158.4001317882 deg for
 EPHEDIR's 158.4005084277 (3.8e-4 deg); before this entry too.
+
+## 167. `swe_nod_aps()` on Moshier sees the Sun's geocentric points from the Earth
+
+**Severity: Correctness (behaviour: a wrong answer, returned OK; the Sun's mean perigee 1.5 deg and 1.02 AU off, its apogee 88.5 deg and 0.96 AU), both builds**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Found by entry 149's work. The Sun's geocentric nodes and apsides are the
+Earth's orbit (`ipli` the Earth) seen from the Sun and negated: the
+points, built heliocentric, are moved to the barycentre by adding the
+barycentric Sun, the observer is the barycentric Sun, and the difference,
+negated, is the Sun's place at its perigee seen from the Earth. On
+Moshier, which serves no barycentric Sun, the points stay heliocentric
+(`!(iflag & SEFLG_MOSEPH)` skips the addition), and the same test sent the
+Sun to the planets' branch: the observer was the Earth, the point the
+vector from the Earth to the Earth's own perihelion, negated. At 2000 Jul
+1.5:
+
+| the Sun, geocentric | Moshier | the files' |
+|---|---|---|
+| mean perigee | 281.4259 deg, 1.9993 AU | 282.9417 deg, 0.9833 AU |
+| mean apogee | 191.4583 deg, 0.0531 AU | 102.9417 deg, 1.0167 AU |
+| osculating perigee | 281.4572 deg, 1.9993 AU | 283.0042 deg, 0.9833 AU |
+
+Every method alike (0, mean, osculating, SE_NODBIT_OSCU_BAR, the focal
+point), SEFLG_TOPOCTR with the site added (the speeds then 1.3e-2 deg/day
+off their positions' rate). Heliocentric and barycentric output, and the
+Earth's points, are not the planets' branch and were right. Both builds.
+
+**Fix, as done here:**
+- On Moshier the observer of the Sun's geocentric points is the Sun, its
+  origin (zero), as it is the barycentric Sun on the files; with
+  SEFLG_SPEED the same for the observer at t - dt the aberration's rate
+  takes.
+- Now the Sun's points are the Earth's heliocentric ones of the same
+  ephemeris and method at their own distance (4.4e-16 AU) in the opposite
+  direction (7.6e-7 deg, the light deflection, which takes the distance),
+  on Moshier as on the files; Moshier's mean points are the files' within
+  2.9e-6 deg and 2.2e-16 AU (the same elements; the files' observer moves
+  with the Sun's barycentric velocity, an aberration Moshier's lacks), its
+  osculating points as close as the Earth's (1.2e-3 deg at 2000, 4.8e-2 at
+  -3000).
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path
+  (`swe_nod_aps()` is not in the bench).
+
+G143 `tests/nodcentre.c` (new): (a) the Swiss files and Moshier, seven
+instants -3000..3000, the six methods, geocentric and topocentric: the
+Sun's perigee and apogee against the Earth's heliocentric points, distance
+within 1e-12 AU, direction within 1e-5 deg; Moshier's mean points against
+the files' within 1e-5 deg and 1e-12 AU; their speeds against five-point
+differences over 2^-6 day at binary instants within 1e-10 deg/day and
+1e-12 AU/day (measured 2.9e-12, 2.9e-14). 357 rows pass; before the fix
+189 fail (the 168 Moshier rows of the first check, 143 deg and 0.97 AU,
+the second's 14 and the topocentric 7 of the third), the upstream build
+273. G133 (h) no longer skips the Sun's geocentric points: the fallback
+answers them as the Moshier request does, bit for bit (8 rows; before the
+fix they fail, the Moshier request from the Earth and the fallback, its
+flag Swiss, from the Sun). 1080 rows pass; the compat build fails 296.
+
+G24 `nodaps_mosh_sun_off`: the Sun's mean perigee on Moshier at 2000 Jul
+1.5, its distance less the Earth's heliocentric perihelion distance: 0
+shipped, 1.02 AU compat.
 
 ## How these were found
 

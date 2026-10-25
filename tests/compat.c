@@ -2034,6 +2034,25 @@ static double nodaps_mosh_bary_ret(void)
                      SE_NODBIT_OSCU, xn, xd, xp, xa, serr);
 }
 
+/* UPSTREAM-BUGS 167: swe_nod_aps() of the Sun on Moshier, geocentric,
+ * mean, at 2000 Jul 1.5: its perigee's distance less the Earth's
+ * heliocentric perihelion distance, AU. The observer was the Earth, as for
+ * a planet, and the perigee came out 1.9993 AU away at 281.4259 deg; seen
+ * from the Sun now, as on the files, at the Earth's 0.9833 AU. */
+static double nodaps_mosh_sun_off(void)
+{
+  double s[24], e[24];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  if (swe_nod_aps(2451727.0, SE_SUN, SEFLG_MOSEPH | SEFLG_SPEED, SE_NODBIT_MEAN,
+                  s, s + 6, s + 12, s + 18, serr) < 0
+      || swe_nod_aps(2451727.0, SE_EARTH, SEFLG_MOSEPH | SEFLG_SPEED | SEFLG_HELCTR, SE_NODBIT_MEAN,
+                     e, e + 6, e + 12, e + 18, serr) < 0)
+    return 1e9;
+  return fabs(s[14] - e[14]);
+}
+
 /* UPSTREAM-BUGS 140: the site's move for a user delta t a quarter ulp of
  * UT1 longer, at TT 2000 Jan 1.5, Zurich, Swiss files: the site as the
  * Sun's geocentric less topocentric true J2000 equatorial ICRS XYZ place,
@@ -4149,7 +4168,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, nodmsun;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4276,6 +4295,7 @@ int main(int argc, char **argv)
   fbmb = fallback_mosh_bary_ret();
   toputr = topo_ut_round_off();
   nodmb = nodaps_mosh_bary_ret();
+  nodmsun = nodaps_mosh_sun_off();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -5179,6 +5199,14 @@ int main(int argc, char **argv)
   else {
     printf("  nod_aps Moshier barycentre %.0f FAIL: expected %s\n",
            nodmb, WANT_DEFECT ? "0" : "< 0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodmsun > 0.5 && nodmsun < 1e9) : (nodmsun < 1e-12))
+    printf("  nod_aps Moshier Sun    %.2e AU OK\n", nodmsun);
+  else {
+    printf("  nod_aps Moshier Sun    %.2e AU FAIL: expected %s\n",
+           nodmsun, WANT_DEFECT ? "> 0.5" : "< 1e-12");
     bad++;
   }
 

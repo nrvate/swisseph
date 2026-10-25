@@ -1351,6 +1351,10 @@ struct epsilon {
  *     -25.80 (DE431's), not the planet files' DE number's (DE441, -25.936):
  *     delta t in AD 1000 11.29 s off, the heliocentric Mars 5.8e-5 deg
  *     there (UPSTREAM-BUGS 166, G142, G24)
+ *   - swe_nod_aps() on Moshier seeing the Sun's geocentric points from the
+ *     Earth, not the Sun: the mean perigee at 2000 Jul 1.5 281.4259 deg at
+ *     1.9993 AU for the files' 282.9417 deg at 0.9833 AU, every method
+ *     (UPSTREAM-BUGS 167, G143)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

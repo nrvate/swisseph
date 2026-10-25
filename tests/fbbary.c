@@ -84,9 +84,9 @@
  *  (h) unchanged: those calls heliocentric, geocentric and with
  *      SEFLG_HELCTR | SEFLG_BARYCTR (heliocentric here): the fallback
  *      answers as the Moshier request does, bit for bit, and SEFLG_HELCTR
- *      | SEFLG_BARYCTR as SEFLG_HELCTR. Not the UT calls, whose fallback
- *      takes the files' delta t, nor the Sun's geocentric points, which the
- *      Moshier request answers seen from the Earth: neither is bug 149's;
+ *      | SEFLG_BARYCTR as SEFLG_HELCTR; the Sun's geocentric points too,
+ *      seen from the Sun on Moshier as on the files (UPSTREAM-BUGS 167).
+ *      Not the UT calls, whose fallback takes the files' delta t;
  *  (i) swe_calc_pctr()'s return flag: the complete directory's the
  *      ephemeris asked; the JPL file alone missing, JPL asked, the
  *      fallback allowed: Mars from Jupiter (SEFLG_SPEED, SEFLG_TRUEPOS,
@@ -97,7 +97,7 @@
  *      Moon SEFLG_MOSEPH within 1e-6 deg of the complete directory's, Mars
  *      from Jupiter its answer bit for bit, strict bug 120's refusal of
  *      the two and the complete directory's answer for the rest.
- * Measured: 1072 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ * Measured: 1080 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
  * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
  * (osculating), swe_calc_pctr()'s Moon 2.1e-7 deg.
  * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
@@ -115,7 +115,10 @@
  * the Moon files missing (entry 108's mass ratio restored), and 6 of
  * Mars from Jupiter in (i) at 1900, 2.1e-11 deg off there (compat's
  * obliquity keyed to the SE_ECL_NUT call at tjd + delta t, whose tidal
- * term the missing Moon file changes).
+ * term the missing Moon file changes). UPSTREAM-BUGS 167 adds the Sun's 8
+ * geocentric rows of (h): they fail before its fix, and in the upstream
+ * build, which fails 296 with them, 288 without, on the tests' compat
+ * objects.
  * Run as
  *   fbbary EPHEDIR
  */
@@ -600,20 +603,15 @@ int main(int argc, char **argv)
       }
       /* (h) the centres Moshier serves, as before: the fallback answers as
        * the Moshier request does, and SEFLG_HELCTR | SEFLG_BARYCTR as
-       * SEFLG_HELCTR. Not the UT calls, whose fallback takes the files'
-       * delta t, nor the Sun's geocentric points, which the Moshier
-       * request answers seen from the Earth and the fallback, its flag
-       * Swiss, from the Sun: neither of these is bug 149's. */
+       * SEFLG_HELCTR; the Sun's geocentric points too, seen from the Sun
+       * on Moshier now (bug 167). Not the UT calls, whose fallback takes
+       * the files' delta t. */
       for (k = 0; k < NG; k++) {
         struct ans m[3], f;
         if (G[k].kind == NODAPS_UT)
           continue;
         for (j = 0; j < 3; j++) {
           struct cs c = G[k];
-          if (j == 1 && c.ipl == SE_SUN) {
-            m[j] = m[0];
-            continue;
-          }
           c.fl = (c.fl & ~(SEFLG_BARYCTR | SEFLG_TOPOCTR)) | HCTR[j];
           child(DIR_, 0, SEFLG_MOSEPH, &c, jd, &m[j]);
           child(DIR_, 1, eph, &c, jd, &f);
