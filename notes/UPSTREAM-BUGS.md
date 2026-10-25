@@ -265,6 +265,8 @@ worst were in code that had never executed even once.
 | 232 | Woolard's nutation evaluates its arguments, revolutions times t, in double: against its formula in mpmath dpsi 8.2e-10 deg off at 1e9 to 1e10 days, 2.1e-7 to 1e11, 3.2e-4 to 1e12 | Correctness | `swephlib.c` |
 | 236 | `swe_gauquelin_sector()` with SEFLG_SIDEREAL sets the body's sidereal place in the tropical house frame (the ARMC and true obliquity of the ecliptic of date): methods 0 and 1 off by the ayanamsa along the ecliptic, Mars at 1950, Zurich, Lahiri, 2.62 sectors off the call without the flag, 1.04 to 4.84 over 1800-2100; methods 2 to 5 never took the flag | Correctness (behaviour) | `swecl.c` |
 | 247 | In a star mode whose star is refused (its ephemeris's range), `swe_get_ayanamsa_ex()` returns -65, neither ERR nor a flag set, with the ayanamsa dpsi, the `_ut` form likewise, `swe_get_ayanamsa()` 0, and the sidereal houses answer OK from it, their speeds within 1/64 day of the range's ends 1447 deg/day off: True Citra at JD 100000 on Moshier, -65 and -0.00425 deg, where the sidereal places refuse | Correctness (behaviour) | `sweph.c`, `swehouse.c` |
+| 234 | The sidereal times are their formulas evaluated in double and then reduced, the seconds by `gmst - 86400 floor(gmst / 86400)`: SEMOD_SIDT_IAU_2006's leaves 0 .. 24 h from J -+2e10 days (-4.55 h at 1.98e10, 1165 h at -6.3e10, -4.9e9 h at the double below 1e12), a sum just under 0 comes back 24 h under every model, and against the formulas in mpmath IAU 1976, IAU 2006 and IERS 2010 are off by 2.9e-9, 2.8e-9 and 2.3e-9 deg at 1e7 days and 0.024, 180 and 180 deg at 1e12, the rotation angle by 2.5e-4 deg there | Correctness (behaviour) | `swephlib.c` |
+| 235 | The long-term sidereal time's rate is a central difference of the precession matrices over -+50 days: low by its truncation, 8.6e-7"/cy, at every date (3.4e-4" short by 400 centuries), and under Vondrak 2011 scattered by their rounding, -+3e-7"/cy, at 1000 to 2000 centuries, so the integral from 400 to 2000 centuries does not converge with its panel count (2.1e-4", 5.9e-8 deg) and the sidereal time there jitters by up to 1.9e-8 deg over consecutive JDs | Correctness | `swephlib.c` |
 
 ---
 
@@ -16911,6 +16913,204 @@ Noticed, not fixed:
   Earth and so the stars from 625000.2 to 2818000.8, and the refusal
   just outside "jd 625000.199000 outside Moshier planet range 625000.50
   .. 2818000.50".
+
+## 234. The sidereal times are their formulas evaluated in double and then reduced: SEMOD_SIDT_IAU_2006's leaves 0 .. 24 h from |J| 2e10 days (1165 h at -6.3e10), every model answers 24 h where the sum falls just under 0, and IAU 2006 and IERS 2010 are 180 deg off their formulas at 1e12
+
+**Severity: Correctness (behaviour: a sidereal time outside 0 .. 24 h, and 24 h for 0, from functions documented to answer 0 .. 24; precision: off the formulas above the residual floor from some 3e6 days out, 180 deg at 1e12), both builds**
+**Where:** `swephlib.c`: `swe_sidtime0_r_body()`, `sidtime_iers2010_deg()`, `sidtime_era_long_deg()`, `sidtime_non_polynomial_part()`; new `sidt_iau_exact()`, `sidtime_iers2010_exact()`, `sidtime_era_long_exact()`, `era_deg_exact()`, `sidt_np_exact()`, `sidt_np_sum()`, `sidt_lin_turns()` and the triple-double helpers `sidt_two_prod()`, `sidt_td_norm()`, `sidt_td_mul()`, `sidt_td_poly()`, `sidt_td_mod()`, `sidt_days()`
+
+Entry 214's first noticed item. `swe_sidtime0_r_body()` evaluated each
+model's formula in double and reduced it afterwards: IAU 1976's and IAU
+2006's polynomials in seconds as they came, IERS 2010's and the long-term
+one's by `swe_degnorm()` of their double sums, and then every model's
+seconds, the equation of the equinoxes added, as `gmst - 86400
+floor(gmst / 86400)`. So:
+
+- IAU 2006's polynomial in T, its T^5 term 1.2e20 s at 2e10 days (an
+  ulp of 4.5 h) and 1.3e29 s at 1e12, less 86400 floor() of itself in
+  double, left 0 .. 24 h from |J| 2e10 days, inside entry 209's bound:
+  -4.55 h at J 1.98e10, 1165.08 h at -6.33e10, 2.4e6 h at 2.5e11,
+  -4.9e9 h at the double below 1e12; and it was coarse from 4e9
+  (22.7466666667 at 3.98e9). IAU 1976 and IERS 2010 stayed in range.
+- A sum just under 0 (a nutation, a longitude's worth of seconds that
+  round there) came back as 86400 s, 24 h, under every model: at JD
+  2451544.5 with IAU 1976, eps 0 and the nutation -99.967794691856923
+  deg, 24.0; G159 (e) finds 10 such of 2005 nutations under the default
+  models, 3 under IAU 1976, 9 under IERS 2010.
+- Each was off its formula by the rounding of its largest terms and of
+  T. Against the formulas in mpmath at 400 bits, from the same doubles
+  (UT, delta t, eps, nutation):
+
+| days from J2000 | 1e7 | 1e9 | 1e10 | 1e12 |
+|---|---|---|---|---|
+| IAU 1976 | 2.9e-9 deg | 1.1e-7 | 2.1e-6 | 0.024 |
+| IAU 2006 | 2.8e-9 | 3.7e-5 | 9.0 | 180 |
+| IERS 2010 | 2.3e-9 | 8.9e-5 | 4.8 | 180 |
+| the rotation angle | 2.4e-9 | | | 2.5e-4 |
+
+The rotation angle is IERS 2010's and the long-term model's (entry 29);
+the long-term one's straight line past 2000 centuries (entry 209) lost
+1.0e-8 deg to rounding at 2e11 .. 1e12, and over 64 consecutive JDs it
+scattered by 1.3e-4 deg at 1e12 (the rotation angle's rounding). Above
+the floor from some 3e6 days (1e-9 deg).
+
+**Fix, as done here:**
+- Past `SIDT_EXACT_JMIN`, 5e5 days from J2000 (some 1370 years), each
+  formula is evaluated from the date exactly: the days from J2000 split
+  exactly into a double-double (TT = UT + delta t with the rounding
+  kept), the polynomials by Horner in triple-double with each decimal
+  constant to 159 bits (from mpmath), products and sums error-free by
+  `fma()`, the rotation angle and the series' thirteen linear arguments
+  in double-double turns, and every part reduced modulo its period (a
+  day of seconds, 1296000", a turn) exactly, `fmod()` of each double
+  before they are summed. The 33-term non-polynomial series is summed in
+  double from its exactly reduced arguments (its terms are 2.6 mas and
+  less). IAU 1976 and IAU 2006: the polynomial at the UT's 0 h and
+  (msday - 1) times the day's seconds, each reduced, plus those seconds
+  (`sidt_iau_exact()`); IERS 2010 (`sidtime_iers2010_exact()`); the
+  long-term one, within the table and integral as before plus the exact
+  rotation angle and series, past 2000 centuries its line `a_far + w_far
+  (T - tf)` in double-double from the exact T (`sidtime_era_long_exact()`).
+  Against mpmath at 36 dates out to 1e12 (G159 (f)), within 1.3e-13 deg
+  (5.3e-14, 1.3e-13 and 1.1e-13 for IAU 1976, IAU 2006, IERS 2010); the
+  probes, the long-term one and the rotation angle with them, within
+  1.9e-13 deg from 5e5 days to 1e12.
+- The reduction to 0 .. 24 h is exact at every date and under every
+  model: `fmod(gmst, 86400)`, plus 86400 if negative, and 0 where that
+  rounds to 86400 (`swe_sidtime0_r_body()`). The houses' ARMC is the
+  sidereal time's, so in 0 .. 360 with it (G159 (e) holds them equal, bit
+  for bit, at 202 dates under the four models).
+- Within 5e5 days nothing changes, bit for bit: 19 model sets over 1850 ..
+  2050 identical before and after. The double forms there are within
+  1.2e-11 deg of the formulas at G159 (f)'s rows (1.7e-10 deg at 5e5
+  days), which is the step where the two forms meet: 1.7e-10 deg, 5.3e-9
+  deg/day on a house speed whose frames straddle it (below the floor; at
+  1e6 days it was 3.5e-10 and 1.1e-8, above it).
+- Cost: past 5e5 days a call at 1e9 days 2.1 µs under the default models
+  (1.7 before), IAU 1976 0.47 (0.03), IAU 2006 1.0 (0.08), IERS 2010 2.3
+  (1.6); within, none. G1's golden rows at -999 and 1 (past 5e5 days)
+  move under the default model, and with entry 235's rate 1300's. `perf stat -e instructions:u` on the bench: houses
+  19599774290 -> 19548971809 (-0.26%), calc-moseph 23407448025 ->
+  23407447474, calc-swieph 12274260309 -> 12274259712.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; upstream's evaluation and its
+  `86400 floor()` under `#else`.
+
+G159 `tests/sidtrange.c`, three new checks. (e): under the default
+models, IAU 1976, IAU 2006 and IERS 2010, at 202 dates (|J| log-uniform
+1e2 .. 1e12, the doubles next inside 1e12, either side, a delta t per
+date) `swe_sidtime()` and `swe_sidtime0()` in [0, 24) and the Placidus
+ARMC in [0, 360) and equal to the sidereal time's (the houses refused
+where delta t takes TT past 1e12, entry 213); at five dates the 401
+nutations about the one that makes `swe_sidtime0()`'s seconds 0 in [0,
+24); 8828 checks. (f): IAU 1976, IAU 2006 and IERS 2010 at 36 dates
+against mpmath, within 1e-12 deg past 5e5 days, 2e-10 within; 108. (g):
+the default sidereal time over 64 consecutive JDs at J2000 -+ 5.1e5 ..
+1e12 days on the line through the first and last within 1e-11 deg; 20.
+Measured: (e) 0 of 8828, (f) 0 of 108 (worst 1.3e-13 deg past, 1.2e-11
+within), (g) 0 of 20 (worst 2.5e-12 deg). Before the fix (e) 26 (the
+day's edge under three models, IAU 2006 out of range at 4 dates), (f) 75
+(IAU 1976 0.049 deg, IAU 2006 163, IERS 2010 160), (g) 20 (1.3e-4 deg);
+the upstream build (e) 19, (f) 83 (its IERS 2010 4.4e-8 deg off within
+5e5 days, in plain double), (g) 16 (2.8e-8 deg). With this fix and not
+entry 235's, (g) fails at -+7.3e7 days, 7.0e-9 and 5.0e-9 deg.
+
+G24 `sidt_formula_off`: IAU 2006 at J 1.78e10, -3.06e10, 1.79e11 and the
+double below -1e12 and IERS 2010 at 5.25e10 (G159 (f)'s rows) off their
+formulas by more than 1e-9 deg or out of range, and IAU 1976 at 2451544.5
+with the nutation that leaves its seconds just under 0: 0 of 6 shipped (6
+of 6 before the fix), 6 of 6 compat.
+
+Noticed, not fixed:
+- RESIDUAL(5.8e-9 deg, at 1e12 days, the input's). With the library's
+  own delta t the default sidereal time over 64 consecutive JDs at 1e12
+  scatters by 3.5e-9 .. 5.8e-9 deg: delta t's own rounding (some 1e-4 day
+  of 2.8e11), which TT carries into the precession; not the sidereal
+  time's.
+
+## 235. The long-term sidereal time's rate is a central difference over -+50 days: low by 8.6e-7"/cy at every date, and under Vondrak 2011 scattered by -+3e-7"/cy at 1000 to 2000 centuries, so the integral there does not converge with its panels (2.1e-4", 5.9e-8 deg) and the sidereal time jitters by 2e-8 deg over consecutive JDs
+
+**Severity: Correctness (precision: 5.9e-8 deg of scatter at 400 .. 2000 centuries, 2e-8 deg over consecutive JDs, and 3.4e-4" accumulated by 400 centuries, above the residual floor), this fork's long-term sidereal time only (entry 29; upstream has no integral)**
+**Where:** `swephlib.c`: `sidt_pra_rate()`
+
+Entry 214's third noticed item. The long-term sidereal time (entry 29)
+integrates the precession in right ascension, the rate `-(dM/dt
+M^T)[1][0]` of the J2000-to-date matrix, by Gauss-Legendre in 1-century
+panels to the table's 400 centuries and 10-century panels to 2000
+(entry 209). `sidt_pra_rate()` took dM/dt as `(M(t + h) - M(t - h)) /
+2h`, h = `SIDT_PRA_DH` = 50 days. Two errors:
+
+- Truncation: for a turn at rate w the difference is sin(w h) / h, low
+  by (w h)^2 / 6 of the rate, 8.6e-7"/cy (1.9e-10 of it) at every date
+  under every model: the accumulated precession 3.4e-4" (9.6e-8 deg)
+  short at 400 centuries (the difference less the analytic rate
+  -8.56e-7"/cy at J2000).
+- Rounding: the matrices carry some 4e-15 of rounding at 1000 to 2000
+  centuries under Vondrak 2011 (1e-16 at J2000), which the difference
+  over 100 days turns into -+3e-7"/cy about the trend (-5.5e-7 ..
+  -1.13e-6 over 12 dates 0.0137 cy apart at 1000 and 2000 centuries;
+  -+4e-9 at J2000). So the integral from 400 to 2000 centuries,
+  7386830.6110", scattered by 2.1e-4" (5.9e-8 deg) over panel counts 16
+  .. 6400 without converging (6400 less 3200 panels -2.0e-4"), and the
+  table's 0 .. 400 by 5.3e-6"; and where a partial panel's Gauss points
+  move with the date, the sidereal time less the IERS 2010 one jittered
+  by 6.4e-10 .. 1.9e-8 deg over 64 consecutive JDs (G39 check 5).
+
+**Fix, as done here:**
+- Under Vondrak 2011, the default and the model the long-term fit is
+  made for, the rate is its matrix's analytic derivative,
+  `swi_precess_matrix_rate()` (the series differentiated term by term,
+  entry 181's), `sum_k (dM/dt)[1][k] M[0][k]`. Under the other models a
+  five-point difference over -+ `SIDT_PRA_DH` and -+ 2 `SIDT_PRA_DH`,
+  `(8 w1 - w2) / 12 h`, whose truncation, (w h)^4 / 30, is 2e-20 of the
+  rate. The analytic rate agrees with a Richardson difference at h =
+  2048 days to some 5e-9"/cy. The Owen hold and the model switch (entries 181, 200) wrap
+  the five matrices as they wrapped the three.
+- Vondrak's integral from 400 to 2000 centuries is now 7386830.61241854",
+  converging with the panel count to within -+1e-8" from 32 panels
+  (16 panels, 100 centuries each, short of it; the library takes 160),
+  1.4e-3" above the old value (the truncation's 8.6e-7"/cy over 1600
+  centuries). The table's 0 .. 400 scatters over panel counts by 6.5e-9"
+  (5.3e-6" before). IAU 1976 and IAU 2006 0 .. 100 centuries scatter by
+  8.9e-7" and 7.7e-7" (7.0e-7" and 5.9e-7" before; below the floor).
+- How the default sidereal time moves (before less after): 0 within 1850
+  .. 2050, where it is IERS 2010's (the splice continuous, 1e-13 deg;
+  G35's steps unchanged, 4e-6" and 2e-6"); outside, the truncation's
+  bias integrated from the splice: -1.2e-10 deg at 1800, -3.5e-10 at 1700,
+  -1.3e-9 at 1300, -4.3e-9 at year 1, -6.6e-9 at -999; +1.2e-10 at 2100,
+  1.1e-9 at 2500, 2.3e-9 at 3000, 2e-8 at 10000, 1.2e-7 at -+50000, 4.9e-7
+  at -+200000, 6.7e-7 at 300000 years. The other precession models with
+  the long-term sidereal time, past their fits (some -+42000 years on),
+  move by up to some 180 deg, where their rates are no precession's.
+- No compat form: the integral is this fork's (entry 29); upstream's
+  long-term sidereal time is entry 29's defect. G24 has no case.
+
+G39 `tests/sidera.c`, two new checks. 5: between 400 and 2000 centuries,
+delta t 0, the default sidereal time less the IERS 2010 one over 64
+consecutive JDs on its straight line within 1e-11 deg at -+600, 605,
+1200, 1205, 1800 and 1805 centuries; 12 dates. 6 (the fork's build): the
+table's rate at its nodes, -+20, 100 and 300 centuries on Vondrak 2011
+and -+20 on IAU 2006 (the sidereal time less IERS 2010's, the IAU 2006
+polynomial and `SIDT_PRA_NUTC` put back, a one-sided cubic derivative
+over quarter centuries), against a five-point difference of
+`swi_precess()` over -+256 days within 1e-7"/cy; 8 nodes. Measured: 5
+worst 1.8e-12 deg, 6 worst 2.2e-8"/cy. Before the fix 5 fails at 12 of
+12 (6.4e-10 .. 1.9e-8 deg) and 6 at 8 of 8 (6.7e-7 .. 9.3e-7"/cy), with
+entry 234 fixed or not; the upstream build fails 5 at 12 of 12, 7.2e-7 ..
+4.1e-6 deg (its long-term sidereal time is entry 29's), and 1 and 2 as
+before. G39's other checks after: the table's end steps 0.000000" (8e-6"
+and 5e-6" before), the 64-JD lines at -999, -13000 and 12000 0.000000,
+0.000001 and 0.000000 mas (0.00046, 0.0033 and 0.0014 before, entry
+234's exact rotation angle); check 2's IAU 2006 integral less its
+polynomial +0.071, +0.018, +0.025 and +0.081 mas at 1500, 1700, 2300 and
+2500 (+0.074, +0.020, +0.023, +0.077 before). G159 (g) at -+7.3e7 days
+(above).
+
+Noticed, not fixed:
+- RESIDUAL(4.8e-5 deg, IAU 2006 precession with the long-term sidereal
+  time, 400 .. 2000 centuries). Models "0,8,8,...,4" over 64 consecutive
+  JDs within 400 .. 2000 centuries jitter by 1.9e-7 .. 4.8e-5 deg (1.3e-7
+  .. 3.4e-5 before): IAU 2006's polynomial matrices past their fit,
+  rounding at the size of their T^5 terms; not the integral's.
 
 ## How these were found
 

@@ -5382,11 +5382,33 @@ static const int stfarg[SIDTNTERM * SIDTNARG] = {
    1,   0,  -2,   0,  -3,   0,   0,   0,   0,   0,   0,   0,   0,   0,
    1,   0,  -2,   0,  -1,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 };
-static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
+#ifndef SWE_UPSTREAM_COMPAT
+/* the series at its arguments delm[] (radians) and T = tt, in degrees:
+ * sidtime_non_polynomial_part()'s and its exact form's (bug 234) */
+static double sidt_np_sum(const double *delm, double tt)
 {
   int i, j;
-  double delm[SIDTNARG];
   double dadd, darg;
+  dadd = -0.87 * sin(delm[4]) * tt;
+  for (i = 0; i < SIDTNTERM; i++) {
+    darg = 0;
+    for (j = 0; j < SIDTNARG; j++) {
+      darg += stfarg[i * SIDTNARG + j] * delm[j];
+    }
+    dadd += stcf[i * 2] * sin(darg) + stcf[i * 2 + 1] * cos(darg);
+  }
+  dadd /= (3600.0 * 1000000.0);
+  return dadd;
+}
+#endif
+static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
+{
+#ifdef SWE_UPSTREAM_COMPAT
+  int i, j;
+  double darg;
+#endif
+  double delm[SIDTNARG];
+  double dadd;
   /* Pure function of tt, and called repeatedly at one instant.
    * See struct sidt_memo. */
   if (ctx->sidt_np.valid && ctx->sidt_np.tt == tt)
@@ -5413,6 +5435,9 @@ static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
   delm[12] = swe_radnorm(5.321159000 +    3.8127774000 * tt);
   /* PA General accumulated precession in longitude. */
   delm[13] = (0.02438175 + 0.00000538691 * tt) * tt;
+#ifndef SWE_UPSTREAM_COMPAT
+  dadd = sidt_np_sum(delm, tt);	/* bug 234: the series, shared */
+#else
   dadd = -0.87 * sin(delm[4]) * tt;
   for (i = 0; i < SIDTNTERM; i++) {
     darg = 0;
@@ -5422,6 +5447,7 @@ static double sidtime_non_polynomial_part(swe_ctx *ctx, double tt)
     dadd += stcf[i * 2] * sin(darg) + stcf[i * 2 + 1] * cos(darg);
   }
   dadd /= (3600.0 * 1000000.0);
+#endif
   ctx->sidt_np.tt = tt;
   ctx->sidt_np.dadd = dadd;
   ctx->sidt_np.valid = TRUE;
@@ -5478,13 +5504,239 @@ static double sidt_deltat(swe_ctx *ctx, double tjd)
 #endif
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 234: the sidereal times were their formulas evaluated in
+ * double and then reduced, IAU 2006's and IAU 1976's seconds as gmst -
+ * 86400 floor(gmst / 86400): from |J| 2e10 days IAU 2006's left 0 .. 24 h,
+ * 1165 h at J -6.3e10, -4.9e9 h at the double below 1e12 (its T^5 term
+ * 1.2e20 s at 2e10 days, an ulp of 4.5 h, 1.3e29 s at 1e12), and a sum
+ * just under 0 came back 24 h under every model. And each was off its
+ * formula by the rounding of its terms and of T: against the formulas in
+ * mpmath, IAU 1976, IAU 2006 and IERS 2010 2.9e-9, 2.8e-9 and 2.3e-9 deg at
+ * 1e7 days, 1.1e-7, 3.7e-5 and 8.9e-5 at 1e9, 2.1e-6, 9.0 and 4.8 at 1e10,
+ * 0.024, 180 and 180 at 1e12; the rotation angle (IERS 2010's and the
+ * long-term one's) 2.4e-9 at 1e7, 2.5e-4 at 1e12; the long-term one's line
+ * past SIDT_PRA_TFAR 1.0e-8 at 2e11 .. 1e12. Past SIDT_EXACT_JMIN days from
+ * J2000 each is now its formula exactly: TT = UT + delta t exactly, the
+ * polynomials in triple-double with each decimal constant to 159 bits
+ * (mpmath), the rotation angle and the series' arguments in double-double,
+ * every part reduced modulo its period exactly (fmod() of each double):
+ * within 1.9e-13 deg of mpmath out to 1e12 days. Within it nothing changes,
+ * bit for bit; the double forms there are within 1.7e-10 deg, the step
+ * where the two meet (5.3e-9 deg/day on a house speed across it). The
+ * reduction to 0 .. 24 h is exact at every date (swe_sidtime0_r_body()). */
+#define SIDT_EXACT_JMIN  5e5	/* days from J2000 */
+/* a b = *p + *e exactly */
+static void sidt_two_prod(double a, double b, double *p, double *e)
+{
+  *p = a * b;
+  *e = fma(a, b, -*p);
+}
+/* the sum of x[0 .. n-1] (overwritten) as the triple-double r[0] + r[1] +
+ * r[2]: three passes of error-free sums, each leaving the sum of what is
+ * below it on top; what is left under r[2] is dropped */
+static void sidt_td_norm(double *x, int n, double *r)
+{
+  int k, i;
+  for (k = 0; k < 3; k++) {
+    for (i = n - 1; i > k; i--)
+      nut_two_sum(x[i - 1], x[i], &x[i - 1], &x[i]);
+    r[k] = k < n ? x[k] : 0;
+  }
+}
+/* r = a b (r may be a or b) */
+static void sidt_td_mul(const double *a, const double *b, double *r)
+{
+  double x[10];
+  sidt_two_prod(a[0], b[0], &x[0], &x[1]);
+  sidt_two_prod(a[0], b[1], &x[2], &x[3]);
+  sidt_two_prod(a[1], b[0], &x[4], &x[5]);
+  x[6] = a[0] * b[2];
+  x[7] = a[1] * b[1];
+  x[8] = a[2] * b[0];
+  x[9] = a[1] * b[2] + a[2] * b[1];
+  sidt_td_norm(x, 10, r);
+}
+/* r = c[0] + c[1] d + ... + c[n] d^n, by Horner's rule */
+static void sidt_td_poly(const double (*c)[3], int n, const double *d, double *r)
+{
+  double x[6];
+  int k, i;
+  for (i = 0; i < 3; i++)
+    r[i] = c[n][i];
+  for (k = n - 1; k >= 0; k--) {
+    sidt_td_mul(r, d, r);
+    for (i = 0; i < 3; i++) {
+      x[2 * i] = r[i];
+      x[2 * i + 1] = c[k][i];
+    }
+    sidt_td_norm(x, 6, r);
+  }
+}
+/* r modulo m, in [0, m): each part's remainder is exact */
+static double sidt_td_mod(const double *r, double m)
+{
+  double s, e, v;
+  nut_two_sum(fmod(r[0], m), fmod(r[1], m), &s, &e);
+  v = fmod(s + (e + fmod(r[2], m)), m);
+  if (v < 0)
+    v += m;
+  return v < m ? v : 0;
+}
+/* (a - J2000) + b days, exactly */
+static void sidt_days(double a, double b, double *d)
+{
+  double x[3];
+  nut_two_sum(a, -J2000, &x[0], &x[1]);
+  x[2] = b;
+  sidt_td_norm(x, 3, d);
+}
+/* each decimal constant's triple-double, in the powers of days its
+ * polynomial takes (mpmath, 400 bits) */
+static const double sidt_era_td[2][3] = {	/* turns */
+  {0.779057273264, 1.6884986507648136e-17, 2.383284983619354e-34},
+  {1.0027378119113546, -1.0179530814959435e-16, -2.687344779154594e-33},
+};
+static const double sidt_76_td[4][3] = {	/* seconds, UT */
+  {24110.54841, 5.78584149479866e-13, 4.753057347912124e-29},
+  {236.55536790872006, -3.0553726616304707e-15, -1.8354539184897207e-32},
+  {6.97891470732778e-11, -3.3401532714305145e-27, -3.287636199603869e-43},
+  {-1.272392251392722e-19, 1.5255448965092985e-36, 1.0863085833334094e-52},
+};
+static const double sidt_76q_td[3][3] = {	/* msday - 1 */
+  {0.002737909350795371, 2.11995608361155e-19, 7.134629288022404e-36},
+  {1.6154895155851343e-15, -3.173973268515901e-32, -1.4633694669174553e-48},
+  {-4.418028650669174e-24, 8.562292976274753e-41, -4.2940965530349493e-57},
+};
+static const double sidt_06_td[6][3] = {	/* seconds, TT */
+  {24110.5493771, -1.2884847819805145e-13, 1.7128454793529688e-30},
+  {0.008418264238193019, -6.028632924834873e-19, 2.508738083019942e-35},
+  {6.954036807321175e-11, -3.4964144826534044e-27, -1.1008001626793536e-43},
+  {-6.004870528346943e-21, -7.943813083389625e-38, 3.5747477729038154e-54},
+  {-1.1221077553648085e-24, -8.056736257387369e-41, -4.718307184208877e-57},
+  {-3.775056320990097e-32, 3.976088748086052e-49, -2.530735395065272e-65},
+};
+static const double sidt_06u_td[3] =	/* seconds per day of UT */
+  {236.5469491410527, 1.0861045368825972e-14, 6.237337648555724e-31};
+static const double sidt_06q_td[5][3] = {	/* msday - 1 */
+  {0.0027379093449686445, 9.923700190041733e-20, -5.098495775833148e-36},
+  {1.609730742435457e-15, -8.736327595581483e-32, 2.998657896565008e-48},
+  {-2.085024489009355e-25, -1.7656026697362194e-41, -1.7042180678799537e-58},
+  {-5.194943311874114e-29, 1.5015437772814608e-45, -4.742246829956034e-62},
+  {-2.1846390746470468e-36, -1.4032584832458064e-52, 1.832526187726046e-69},
+};
+static const double sidt_10_td[6][3] = {	/* arcsec, TT */
+  {0.014506, 2.028377465990161e-19, -7.207600223874791e-36},
+  {0.12627396396988363, 6.646722804060151e-18, -3.7864490719102012e-34},
+  {1.0431055585773108e-09, 2.275569026018491e-26, 5.617120050494864e-43},
+  {-9.029880493754802e-21, 2.538740993380013e-37, 6.631559014748311e-54},
+  {-1.6831503955629322e-23, -7.244176356420076e-40, -3.0745756954567767e-56},
+  {-5.661046153725981e-31, -3.4594205657713163e-48, -2.517233073137932e-64},
+};
+static const double sidt_np_td[SIDTNARG][3][3] = {	/* turns, TT */
+  {{0.37489837794667374, 3.439119735823039e-18, 2.6172790389092188e-37},
+   {0.03629164709341665, 1.799974102075141e-19, -9.264812873530267e-36}, {0, 0, 0}},
+  {{0.993136414880155, -1.6476061469486775e-17, 5.905935074012798e-34},
+   {0.0027377785596865594, 3.134611451784714e-20, 1.526417279532754e-36}, {0, 0, 0}},
+  {{0.25908916487626854, 1.9440159921026023e-17, 1.1665269956657554e-34},
+   {0.03674819511197165, -2.1198705171853525e-18, -5.424263113167588e-35}, {0, 0, 0}},
+  {{0.8273616783289656, 4.3360602192182475e-17, 6.707561138122832e-34},
+   {0.033863191993060524, 2.679934331963035e-18, -5.382516627364864e-35}, {0, 0, 0}},
+  {{0.3473459866775216, -6.767943345981572e-18, -9.477980627385485e-36},
+   {-0.00014709378715744147, -1.2846257965856159e-20, -3.02085661784501e-37}, {0, 0, 0}},
+  {{0.7006969597043852, 5.438505590824272e-17, 2.797189932193765e-33},
+   {0.011367607775178885, -3.0479942202963467e-19, -1.0859009545895816e-36}, {0, 0, 0}},
+  {{0.5054994468125463, 1.1226154214632824e-17, -5.8896164283133446e-34},
+   {0.0044503624363819, 1.206233708119617e-19, 4.812830591548359e-36}, {0, 0, 0}},
+  {{0.2790734680379978, 2.695178898807236e-17, -1.1311102894564153e-33},
+   {0.002737803091984612, 1.7295872692545927e-19, 1.0127681358626867e-35}, {0, 0, 0}},
+  {{0.987314651680174, -3.9843777231703946e-17, -2.4764312748782353e-34},
+   {0.0014556467643080545, -3.1215821550714383e-20, 6.012809078817238e-37}, {0, 0, 0}},
+  {{0.0954207886109802, -5.7194089648233895e-18, 2.9079421139056816e-34},
+   {0.00023080885698951298, -8.00695726015152e-21, 6.162161371303956e-37}, {0, 0, 0}},
+  {{0.13910408722169793, -1.0817504145776726e-17, -3.229578995245464e-34},
+   {9.294348230379469e-05, 6.718596854971454e-22, -3.5916665253205025e-38}, {0, 0, 0}},
+  {{0.8723750141089597, 1.492991625076895e-17, -6.486967109609513e-34},
+   {3.258551968309883e-05, -2.7401985448828704e-22, -1.511452011272052e-38}, {0, 0, 0}},
+  {{0.8468887578279267, -2.621700999025607e-17, 2.158096806453023e-34},
+   {1.6613891036798485e-05, 6.266207629347279e-23, 3.7418934450545384e-39}, {0, 0, 0}},
+  {{0, 0, 0},
+   {1.0624164363397177e-07, 5.5886546668552425e-24, 1.8122602904637134e-40},
+   {6.426572365349692e-16, 4.774450412719676e-32, -1.4978475136029662e-48}},
+};
+/* c[0] + c[1] d modulo 1, in [0, 1): turns, to 1e-12 of a turn and more
+ * past 1e12 days (the product's own error and its last parts are 1e-22) */
+static double sidt_lin_turns(const double (*c)[3], const double *d)
+{
+  double p, e, v;
+  sidt_two_prod(c[1][0], d[0], &p, &e);
+  e += c[1][0] * d[1] + c[1][1] * d[0] + (c[1][0] * d[2] + c[1][1] * d[1] + c[1][2] * d[0]);
+  v = fmod(fmod(p, 1.0) + c[0][0] + (e + c[0][1]), 1.0);
+  if (v < 0)
+    v += 1;
+  return v < 1 ? v : 0;
+}
+/* era_deg() exactly */
+static double era_deg_exact(double tjd)
+{
+  double d[3];
+  sidt_days(tjd, 0, d);
+  return sidt_lin_turns(sidt_era_td, d) * 360;
+}
+/* sidtime_non_polynomial_part() exactly, at TT = J2000 + d days: its
+ * arguments reduced exactly */
+static double sidt_np_exact(const double *d)
+{
+  double delm[SIDTNARG], r[3];
+  int j;
+  for (j = 0; j < SIDTNARG - 1; j++)
+    delm[j] = sidt_lin_turns(sidt_np_td[j], d) * TWOPI;
+  sidt_td_poly(sidt_np_td[j], 2, d, r);	/* p_A, quadratic */
+  delm[j] = sidt_td_mod(r, 1.0) * TWOPI;
+  return sidt_np_sum(delm, (d[0] + d[1] + d[2]) / 36525.0);
+}
+/* sidtime_iers2010_deg() exactly */
+static double sidtime_iers2010_exact(swe_ctx *ctx, double tjd)
+{
+  double d[3], r[3];
+  sidt_days(tjd, sidt_deltat(ctx, tjd), d);
+  sidt_td_poly(sidt_10_td, 5, d, r);
+  return swe_degnorm(era_deg_exact(tjd) + sidt_td_mod(r, 1296000.0) / 3600.0 + sidt_np_exact(d));
+}
+/* IAU 1976's and IAU 2006's mean sidereal time, seconds, exactly, each part
+ * reduced (0 .. 4 days): swe_sidtime0_r_body()'s, jd0 0h UT, secs after */
+static double sidt_iau_exact(swe_ctx *ctx, int iau2006, double jd0, double secs)
+{
+  double du[3] = {jd0 - J2000, 0, 0}, s[3] = {secs, 0, 0}, d[3], r[3], g;
+  if (iau2006) {
+    sidt_days(jd0, sidt_deltat(ctx, jd0), d);
+    sidt_td_poly(sidt_06_td, 5, d, r);
+    g = sidt_td_mod(r, 86400.0);
+    sidt_td_mul(sidt_06u_td, du, r);
+    g += sidt_td_mod(r, 86400.0);
+    sidt_td_poly(sidt_06q_td, 4, d, r);
+  } else {
+    sidt_td_poly(sidt_76_td, 3, du, r);
+    g = sidt_td_mod(r, 86400.0);
+    sidt_td_poly(sidt_76q_td, 2, du, r);
+  }
+  sidt_td_mul(r, s, r);	/* (msday - 1) secs */
+  return g + sidt_td_mod(r, 86400.0) + secs;
+}
+#endif
+
 /* Mean sidereal time, IERS Conventions 2010 (ERA-based, IAU 2006
  * precession), in degrees: the SEMOD_SIDT_IERS_CONV_2010 branch of
  * swe_sidtime0_r() without the equation of the equinoxes. */
 static double sidtime_iers2010_deg(swe_ctx *ctx, double tjd)
 {
   double gmst, dadd;
-  double tt = (tjd + sidt_deltat(ctx, tjd) - J2000) / 36525.0;
+  double tt;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (fabs(tjd - J2000) >= SIDT_EXACT_JMIN)	/* bug 234 */
+    return sidtime_iers2010_exact(ctx, tjd);
+#endif
+  tt = (tjd + sidt_deltat(ctx, tjd) - J2000) / 36525.0;
   gmst = era_deg(tjd);
   gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
   dadd = sidtime_non_polynomial_part(ctx, tt);
@@ -5575,26 +5827,55 @@ static void sidt_pra_matrix(swe_ctx *ctx, double tjd, double m[3][3])
  * other model reads; a join's node has its interval beyond's too
  * (sidt_pra()). The Gauss points of the integral lie 725 days or more from
  * the nodes, so their rates over -+ SIDT_PRA_DH are their own piece's. */
+/* Upstream bug 235: the rate was a central difference of the matrices over
+ * -+ SIDT_PRA_DH, which carried their rounding, some 4e-15 at 1000 to 2000
+ * centuries under Vondrak 2011 (1e-16 at J2000): -+3e-7"/cy about its trend
+ * there (4e-9 at J2000), so the integral from 400 to 2000 centuries
+ * scattered by 2.1e-4" (5.9e-8 deg) across panel counts 16 .. 6400 without
+ * converging, and the sidereal time there by 2e-8 deg over consecutive JDs.
+ * And it was low by its truncation, sin(w h) / h for a turn at rate w,
+ * 8.6e-7"/cy (1.9e-10 of the rate) at every date and under every model: the
+ * accumulated precession 3.4e-4" short at 400 centuries. Now Vondrak 2011's
+ * rate is its matrix's analytic derivative (swi_precess_matrix_rate(), the
+ * series differentiated term by term), and the other models' a five-point
+ * difference over -+ SIDT_PRA_DH and -+ 2 SIDT_PRA_DH, whose truncation,
+ * (w h)^4 / 30, is 2e-20 of the rate: Vondrak's integral to 2000 centuries
+ * converges with the panel count to 2e-8" (6e-12 deg) from 32 panels. */
 static double sidt_pra_rate(swe_ctx *ctx, double tc, int model, double tp)
 {
   double tjd = J2000 + tc * 36525.0, mp[3][3], mm[3][3], m[3][3], w = 0;
+  double m2p[3][3], m2m[3][3], rm[9], rdm[9], w1 = 0, w2 = 0;
   double oht = ctx->owen_hold_t;
   int32 pl = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
   int32 ps = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
-  int k, oh = ctx->owen_hold;
+  int k, oh = ctx->owen_hold, analytic;
   ctx->astro_models[SE_MODEL_PREC_LONGTERM] = model;
   ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = model;
   ctx->owen_hold = 1;
   ctx->owen_hold_t = J2000 + tp * 36525.0;
-  sidt_pra_matrix(ctx, tjd + SIDT_PRA_DH, mp);
-  sidt_pra_matrix(ctx, tjd - SIDT_PRA_DH, mm);
-  sidt_pra_matrix(ctx, tjd, m);
+  /* bug 235: Vondrak's own derivative, else five points */
+  analytic = model == SEMOD_PREC_VONDRAK_2011 && swi_precess_matrix_rate(ctx, tjd, 0, rm, rdm);
+  if (!analytic) {
+    sidt_pra_matrix(ctx, tjd + SIDT_PRA_DH, mp);
+    sidt_pra_matrix(ctx, tjd - SIDT_PRA_DH, mm);
+    sidt_pra_matrix(ctx, tjd + 2 * SIDT_PRA_DH, m2p);
+    sidt_pra_matrix(ctx, tjd - 2 * SIDT_PRA_DH, m2m);
+    sidt_pra_matrix(ctx, tjd, m);
+  }
   ctx->astro_models[SE_MODEL_PREC_LONGTERM] = pl;
   ctx->astro_models[SE_MODEL_PREC_SHORTTERM] = ps;
   ctx->owen_hold = oh;
   ctx->owen_hold_t = oht;
-  for (k = 0; k <= 2; k++)
-    w += (mp[1][k] - mm[1][k]) / (2 * SIDT_PRA_DH) * m[0][k];
+  if (analytic) {
+    for (k = 0; k <= 2; k++)
+      w += rdm[3 + k] * rm[k];	/* (dM/dt)[1][k] M[0][k], per day */
+  } else {
+    for (k = 0; k <= 2; k++) {
+      w1 += (mp[1][k] - mm[1][k]) * m[0][k];
+      w2 += (m2p[1][k] - m2m[1][k]) * m[0][k];
+    }
+    w = (8 * w1 - w2) / (12 * SIDT_PRA_DH);
+  }
   return w * RADTODEG * 3600.0 * 36525.0;
 }
 
@@ -5699,10 +5980,47 @@ static double sidt_pra(swe_ctx *ctx, double tc, int model)
 /* Mean sidereal time, long term, in degrees: ERA(UT1) and the accumulated
  * precession in right ascension of precession model `model`, with the
  * IERS 2010 complementary terms. */
+/* bug 234: the same, exactly: the rotation angle and the series' arguments
+ * (sidtime_iers2010_exact()'s), and past SIDT_PRA_TFAR the precession's
+ * line at T exactly, reduced modulo 1296000" exactly; within it the
+ * table's or the integral's value, as sidt_pra() gives it (there 1e7" at
+ * most, whose rounding and T's are 2e-9") */
+static double sidtime_era_long_exact(swe_ctx *ctx, double tjd, int model)
+{
+  double dt = sidt_deltat(ctx, tjd), d[3], p;
+  double tt = (tjd + dt - J2000) / 36525.0, pra = sidt_pra(ctx, tt, model);
+  sidt_days(tjd, dt, d);
+  if (fabs(tt) <= SIDT_PRA_TFAR) {
+    p = 0.014506 + SIDT_PRA_NUTC * tt + pra;
+  } else {
+    struct sidt_pra_table *pt = NULL;
+    double th = d[0] / 36525.0, tl, tf = tt < 0 ? -SIDT_PRA_TFAR : SIDT_PRA_TFAR, x[6], r[3];
+    int side = tt >= 0, j;
+    for (j = 0; j < 2; j++)	/* sidt_pra() has the far line in it */
+      if (ctx->sidt_pra.slot[j].valid && ctx->sidt_pra.slot[j].prec_model == model)
+        pt = &ctx->sidt_pra.slot[j];
+    tl = (fma(-th, 36525.0, d[0]) + d[1] + d[2]) / 36525.0;	/* T = th + tl */
+    /* a_far + 0.014506 + w_far (T - tf) + SIDT_PRA_NUTC T */
+    nut_two_sum(th, -tf, &x[2], &x[4]);
+    x[4] += tl;
+    sidt_two_prod(pt->w_far[side], x[2], &x[2], &x[3]);
+    x[3] += pt->w_far[side] * x[4];
+    sidt_two_prod(SIDT_PRA_NUTC, th, &x[4], &x[5]);
+    x[5] += SIDT_PRA_NUTC * tl;
+    x[0] = pt->a_far[side];
+    x[1] = 0.014506;
+    sidt_td_norm(x, 6, r);
+    p = sidt_td_mod(r, 1296000.0);
+  }
+  return swe_degnorm(era_deg_exact(tjd) + p / 3600.0 + sidt_np_exact(d));
+}
 static double sidtime_era_long_deg(swe_ctx *ctx, double tjd, int model)
 {
   double gmst, dadd;
-  double tt = (tjd + sidt_deltat(ctx, tjd) - J2000) / 36525.0;
+  double tt;
+  if (fabs(tjd - J2000) >= SIDT_EXACT_JMIN)	/* bug 234 */
+    return sidtime_era_long_exact(ctx, tjd, model);
+  tt = (tjd + sidt_deltat(ctx, tjd) - J2000) / 36525.0;
   gmst = era_deg(tjd);
   gmst += (0.014506 + SIDT_PRA_NUTC * tt + sidt_pra(ctx, tt, model)) / 3600.0;
   dadd = sidtime_non_polynomial_part(ctx, tt);
@@ -5806,8 +6124,14 @@ static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double n
      *  on the IAU 2006 precession */
     gmst = sidtime_iers2010_deg(ctx, tjd);
     gmst = gmst / 15.0 * 3600.0;
+  } else
+#ifndef SWE_UPSTREAM_COMPAT
+  if (fabs(jd0 - J2000) >= SIDT_EXACT_JMIN) {	/* bug 234 */
+    gmst = sidt_iau_exact(ctx, sidt_model == SEMOD_SIDT_IAU_2006, jd0, secs);
+  } else
+#endif
   /* sidt_model == SEMOD_SIDT_IAU_2006, older standards according to precession model */
-  } else if (sidt_model == SEMOD_SIDT_IAU_2006) {
+  if (sidt_model == SEMOD_SIDT_IAU_2006) {
     tt = (jd0 + sidt_deltat(ctx, jd0) - J2000)/36525.0; /* TT in centuries after J2000 */
     gmst = (((-0.000000002454*tt - 0.00000199708)*tt - 0.0000002926)*tt + 0.092772110)*tt*tt + 307.4771013*(tt-tu) + 8640184.79447825*tu + 24110.5493771;
     /* mean solar days per sidereal day at date tu;
@@ -5826,7 +6150,17 @@ static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double n
   eqeq = 240.0 * nut * cos(eps * DEGTORAD);
   gmst = gmst + eqeq  /* + 240.0*tlong */;
   /* Sidereal seconds modulo 1 sidereal day */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 234: exactly, into [0, 86400): floor() of the quotient rounds, and
+   * a sum just under 0 came back 86400 (24 h) */
+  gmst = fmod(gmst, 86400.0);
+  if (gmst < 0)
+    gmst += 86400.0;
+  if (gmst >= 86400.0)
+    gmst = 0;
+#else
   gmst = gmst - 86400.0 * floor( gmst/86400.0 );
+#endif
   /* return in hours */
   gmst /= 3600;
   goto sidtime_done;

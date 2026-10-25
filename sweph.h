@@ -1686,6 +1686,13 @@ struct epsilon {
  *     swe_get_ayanamsa() and _ut() 0, and the sidereal houses OK from it,
  *     their speeds within 1/64 day of the star's range ends 1447 deg/day
  *     off (UPSTREAM-BUGS 247, G164, G24)
+ *   - the sidereal times evaluated in double and reduced by 86400 floor():
+ *     IAU 2006's outside 0 .. 24 h from |J| 2e10 days (1165 h at -6.3e10),
+ *     24 h for a sum just under 0 under every model, IAU 2006 and IERS 2010
+ *     180 deg off their formulas at 1e12 (UPSTREAM-BUGS 234, G159, G24;
+ *     the long-term sidereal time's rate, a central difference of the
+ *     matrices, UPSTREAM-BUGS 235, G39, is this fork's, bug 29, and has no
+ *     upstream form)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

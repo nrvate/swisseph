@@ -870,8 +870,10 @@ check-sidsplice: sidsplice
 
 # G39: the long-term sidereal time is the Earth's rotation angle plus the
 # precession in right ascension: delta t moves it only at the precession
-# rate, it reproduces the IAU 2006 polynomial on the IAU 2006 matrices, and
-# it is continuous where its table ends. Moshier, no fixture.
+# rate, it reproduces the IAU 2006 polynomial on the IAU 2006 matrices, it
+# is continuous where its table ends, smooth over consecutive JDs where its
+# integral runs (400 to 2000 centuries), and the table's rate is the
+# precession's (UPSTREAM-BUGS 235). Moshier, no fixture.
 check-sidera: sidera
 	@env -u SE_EPHE_PATH ./sidera
 
@@ -1567,8 +1569,10 @@ check-nutseries: nutseries
 # past the bound and at no date swe_sidtime(), swe_sidtime0(), swe_azalt()
 # and swe_azalt_rev() answer NaN and the houses refuse, ERR, outputs 0,
 # the range named; the ecliptic forms of swe_azalt() NaN where SE_ECL_NUT
-# refuses; a call's answer independent of the calls before it
-# (UPSTREAM-BUGS 209, 214).
+# refuses; a call's answer independent of the calls before it; every
+# sidereal time and ARMC in range, IAU 1976, IAU 2006 and IERS 2010 on their
+# formulas to 1e-12 deg out to the bound, the default smooth over
+# consecutive JDs (UPSTREAM-BUGS 209, 214, 234).
 check-sidtrange: sidtrange
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./sidtrange $(EPHE)
 

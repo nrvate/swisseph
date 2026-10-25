@@ -4149,6 +4149,44 @@ static double houses_tt_far_answered(void)
   return n;
 }
 
+/* UPSTREAM-BUGS 234: the sidereal times against their formulas in mpmath
+ * (G159 (f)'s rows, delta t set to the row's): IAU 2006 at J 1.78e10,
+ * -3.06e10, 1.79e11 and the double below -1e12 and IERS 2010 at 5.25e10,
+ * eps 23.44, nut -0.004, off by more than 1e-9 deg or outside 0 .. 24 h;
+ * and IAU 1976 at JD 2451544.5 with the nutation that leaves the sidereal
+ * seconds just under 0, which came back 24 h. A fresh context each; the
+ * number of the 6 off. The shipped build has none; upstream all 6. */
+static double sidt_formula_off(void)
+{
+  static const struct { const char *mod; double j, dt, h, nut; } q[6] = {
+    { "0,0,0,0,0,0,0,2", 17805556776.095142, 87904840.98133594, 11.974776920298575, -0.004 },
+    { "0,0,0,0,0,0,0,2", -30611358536.581867, 259929781.75741455, 21.81920083859579, -0.004 },
+    { "0,0,0,0,0,0,0,2", 178544926099.3294, 8841060739.262701, 5.238273846275351, -0.004 },
+    { "0,0,0,0,0,0,0,2", -999995096909.4, 277344236657.1091, 6.930808171502779, -0.004 },
+    { "0,0,0,0,0,0,0,3", 52506786368.41178, 764560041.2218837, 12.834314015153065, -0.004 },
+    { "0,0,0,0,0,0,0,1", 2451544.5, 0, 0, -99.967794691856923 } };
+  int i, n = 0;
+  for (i = 0; i < 6; i++) {
+    char mod[40];
+    double v, d;
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    strcpy(mod, q[i].mod);
+    swe_set_astro_models_r(c, mod, 0);
+    if (i < 5)
+      swe_set_delta_t_userdef_r(c, q[i].dt);
+    v = swe_sidtime0_r(c, q[i].j, i < 5 ? 23.44 : 0, q[i].nut);
+    d = fmod(v - q[i].h, 24);
+    if (d > 12) d -= 24;
+    if (d < -12) d += 24;
+    if (!(v >= 0 && v < 24) || (i < 5 && !(fabs(d) * 15 <= 1e-9)))
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
 /* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
  * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
  * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
@@ -6477,7 +6515,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6653,6 +6691,7 @@ int main(int argc, char **argv)
   dtfar = deltat_far_answered();
   precfar = prec_far_answered();
   housett = houses_tt_far_answered();
+  sidtform = sidt_formula_off();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -8292,6 +8331,14 @@ int main(int argc, char **argv)
   else {
     printf("  refused star ayanamsa  %.0f/3 answered FAIL: expected %s\n",
            staraya, WANT_DEFECT ? "3" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (sidtform == 6) : (sidtform == 0))
+    printf("  sidtime off formula    %.0f/6 OK\n", sidtform);
+  else {
+    printf("  sidtime off formula    %.0f/6 FAIL: expected %s\n",
+           sidtform, WANT_DEFECT ? "6" : "0");
     bad++;
   }
 
