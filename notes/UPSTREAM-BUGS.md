@@ -261,6 +261,7 @@ worst were in code that had never executed even once.
 | 217 | Every precession model but Vondrak 2011 is a polynomial taken at any date within SE_ECL_NUT's bound: the mean obliquity 1.6e51 deg at 1e12 under Laskar 1986, -3.0e9 at 1e8 under Owen 1990, 2.67e10 at -1e8 under SEFLG_JPLHOR_APPROX, the houses and the ayanamsa with it | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `swehouse.c` |
 | 225 | The true node and the osculating apogee with SEFLG_SPEED read the Moon at tjd -+ k 2^-6 day, and a speed epoch past a JPL file's or the Swiss Moon files' span sent the whole call to the next ephemeris, where the call without the flag reads tjd alone: on de200.eph 2^-10 day inside its end the node 260, 2.2e-3 deg off, the apogee 0.0167 deg, strict refused, for 257 and 1; at semo_18's edges with the files of 1800-2400 alike (260, 1.7e-3 deg) | Correctness (behaviour) | `sweph.c` |
 | 226 | `swe_nod_aps()` with SEFLG_SPEED reads the osculating ellipse at tjd -+ k h and the observer at tjd less the light time, and near a span's edge took Moshier's for either silently, or was refused: Pluto's points with the files of 1800-2400 at JD 2378496.625 the node's speed 1.2e-5 deg/day off, nothing noted, strict -1 for 0; Mars's heliocentric node 2^-7 day after the start 5.1e-3 deg/day off; a barycentric ellipse refused under either setting | Correctness (behaviour) | `swecl.c`, `sweph.c` |
+| 231 | With `swe_set_interpolate_nut(TRUE)` the nutation is a quadratic through nodes placed by whichever call found none about it, so an instant's answer depends on the calls before it: SE_ECL_NUT fresh against after a call 0.6 to 1.3 day earlier up to 7.9e-7 deg (2.8 mas), Mars's speed 4.2e-6 deg/day | Correctness (behaviour) | `swephlib.c` |
 
 ---
 
@@ -14949,6 +14950,7 @@ Noticed, not fixed:
   fresh context against after a call 0.6 to 1.3 day earlier, 200
   instants: up to 6.7e-7 deg (2.4 mas) in dpsi and deps, both builds.
   Nodes on a fixed grid of days would make it a function of the instant.
+  Fixed as entry 231.
 
 ## 219. IAU 1980 and 1987's arguments, SEFLG_JPLHOR's IAU 1980's too, are evaluated in double, some 5e13" at 1e9 days: dpsi 1.2e-10 deg off the series at 4e8 to 1e9 days, 9.0e-8 to 1e10, 3.7e-3 to 1e11, 8.2 deg to 1e12
 
@@ -16537,6 +16539,105 @@ Noticed, not fixed:
   central difference of its places over 2^-5 day with the complete
   directory, no edge involved; under SEFLG_NOGDEFL 7e-12 (one-sided, the
   files alone). The light deflection's rate inside the disk.
+
+## 231. With `swe_set_interpolate_nut(TRUE)` the nutation at an instant depends on the calls before it: the nodes are placed by whichever call found none about it, 7.9e-7 deg (2.8 mas) off a fresh context's after a call 0.6 to 1.3 day earlier
+
+**Severity: Correctness (behaviour: the answer depends on an earlier call; SE_ECL_NUT and every place of date with the interpolation on, every model, both builds: dpsi and deps up to 7.9e-7 deg, Mars's longitude speed 4.2e-6 deg/day)**
+**Where:** `swephlib.c`: `swi_nutation()`, `swi_nutation_rate()`, new `nut_intp_day()` and `nut_rate_direct()`; `sweph.h`: `struct interpol`
+
+Entry 218's noticed item. With the interpolation on, `swi_nutation()`
+answered from a quadratic through `calc_nutation()` at t - 1, t and t + 1
+of the call that found no nodes about it (none strictly between the last
+outer two), and that call exactly: an instant's nutation was the series
+on a fresh context and another call's quadratic after a call within a day
+of it. Measured on Moshier, SE_ECL_NUT on a fresh context against one
+that asked 0.6 to 1.3 day earlier, 200 instants 1900-2100, the larger of
+dpsi and deps: 6.15e-7 deg on the default (2000A's grid), 5.54e-7 on IAU
+1980, 6.68e-7 on IAU 2000B, 7.87e-7 on IAU 2000A set explicitly. The rate
+was a central difference of the interpolation over -+1e-4 day whose t + h
+could build nodes of its own: Mars with SEFLG_SPEED 4.2e-6 deg/day off a
+fresh context's speed. Both builds. Over random orders of calls (a call
+at c, then c + x, |x| < 1, 200000 pairs 1800-2100) the quadratic was
+within 3.10 mas of the series in dpsi and 1.31 in deps on the default,
+3.08 and 1.28 on IAU 1980, 3.04 and 1.27 on 2000B.
+
+**Fix, as done here:** the nodes are on a fixed grid, 0h TT of the
+instant's day, d = floor(t - 0.5) + 0.5, and of the next, and the instant,
+in [d, d + 1), is the cubic (Hermite) through the nutation and its rate
+at the two: `calc_nutation()` and `nut_rate_direct()`, the rate that
+`swi_nutation_rate()` gives with the interpolation off (the default's
+grid derivative, the series' own otherwise). A function of the instant
+alone, its value and rate continuous at the nodes.
+- Kept: entries 129's and 134's keys (the model, the JPLHOR bits, the
+  approximation's mode) and the drops at `swe_close()` and with the IERS
+  corrections; entry 146's rule, no nodes both sides of
+  `SEMOD_JPLHORA_3`'s step: the step is 0h TT, so the day it begins takes
+  `calc_nutation()` at the instant, and the day before ends on the step's
+  value on its own side, as `calc_nutation()` takes it there.
+- Past 1e15 days, where the grid's instants are not all exact doubles,
+  and at NaN, the nutation at the instant.
+- A day's nodes are built from those the last day shares: a sweep takes
+  one node, a value and a rate, a day.
+- The rate is the cubic's derivative at the instant, and `calc_nutation()`'s
+  own where the instant takes it (the step's day, on the instant's side
+  as bug 153 has it; past the grid).
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`, upstream's quadratic under `#else`.
+
+Why a cubic: upstream's quadratic on the same grid, nodes d - 1, d and
+d + 1, is a function of the instant too, within 3.13 mas, and continuous,
+but its pieces' rates differ at every 0h TT: Mars's longitude speed
+against a five-point difference of its positions over 2^-6 day across
+0h TT 2.07e-6 deg/day off (IAU 2000B 2.31e-6), at the commonest instants,
+and every speed the library differences across one (the houses' cusp
+speeds, SEFLG_SPEED3) with it.
+- After: 0 differ. The interpolation within 0.076 mas of the series in
+  dpsi and 0.034 in deps, every 1/16 day over 1800-2100 on the default
+  (IAU 1980 0.075 and 0.032, 2000B 0.073 and 0.032), where the quadratic
+  was within 3.1 and 1.3; about 1962's step 1.9e-5". The rate:
+  `swi_nutation_rate()` against five-point differences of `swi_nutation()`
+  over 2^-6 day within a day 3.4e-17 deg/day; Mars's longitude and right
+  ascension speeds (Moshier) within 5.9e-11 in a day's middle and 7.0e-10
+  across 0h TT (the cubic's curvature steps at its nodes).
+- With the interpolation off nothing changes: SE_ECL_NUT, `swi_nutation()`
+  and `swi_nutation_rate()` under the default, IAU 1980, 1987 and 2000A
+  at 3000 instants out to 1e12 days (Woolard at those within 4e8), a
+  third with SEFLG_JPLHOR_APPROX, and the Sun's, the Moon's and Mars's
+  speeds on the files 1800-2100, bit for bit. `perf stat` instructions, `bench` calc-swieph
+  12394742093 before and 12392687742 after, calc-moseph 23422102996 and
+  23421112975. With it on, Mars with SEFLG_SPEED at 20000 instants an hour
+  apart: 11418489988 and 11417553675 on the default, 11196314079 and
+  11177721233 on 2000B; a day apart 17895074103 and 17898336141,
+  12118456205 and 12175190578 (+0.5%: a new day's node is a value and a
+  rate where upstream built three values).
+- G1's rows under the interpolation move: `cov:interpolate_nut` (the Moon
+  at J2000, 3.8e-9 deg; its first call is no longer the series'),
+  `cov:interp_nut[on]` and `[mid]` (1.7e-8 and 1.5e-8 deg); the baseline
+  is the coordinator's.
+
+G122 `tests/nutintp.c`, extended with 21 checks on explicit contexts,
+Moshier, the interpolation on, under the default, IAU 1980 and IAU 2000B:
+SE_ECL_NUT and Mars with SEFLG_SPEED at 40 instants 1900-2100 on a fresh
+context against one that asked 0.6..1.3 day before, and after, bit for
+bit with the return (12 checks); SE_ECL_NUT at 400 instants 1800-2100,
+each after a call within a day of it, against the interpolation off
+within 0.1 mas (3; measured 5.9e-5" and 3.1e-5"); Mars's longitude and
+right ascension speeds against five-point differences of its positions
+over 2^-6 day at 40 binary-fraction instants in a day's middle and 40 at
+or within 2^-5 day of 0h TT, within 1e-8 deg/day (6). Entry 146's scan
+follows the grid: bit for bit with the interpolation off where the
+query's day is the one the step begins, within 0.1 mas elsewhere (3.5 mas
+before, the quadratic's). 371 checks in all, none fail. Before the fix 101
+fail: the 12 orders (SE_ECL_NUT 6.3e-7 deg, Mars 4.2e-6 with its speed),
+the 3 accuracies (2.8 mas) and 86 of the scan's 102 at its new limit
+(1.0 mas); the speeds pass, a fresh context's nodes being about its first
+call. The compat build fails 238: entry 134's 113, entry 146's 104 and
+these 21. G24 `nut_intp_order_off`: SE_ECL_NUT at four instants, fresh
+against after a call 0.9 day earlier, the larger: 0 shipped (1.86e-7 deg
+before the fix), 1.87e-7 compat. G24 `nut_step_intp_off` (entry 146) now
+holds the shipped build within 1e-4": its query at the step - 0.3 after a
+call at + 0.5 is its day's own cubic, nodes on its side, 7.0e-6" (0 by
+146's rule, the series there); compat 1.97e-2". G162, G140, G152, G29,
+G138, G89, G57, G68, G70, G141 and G139 pass.
 
 ## How these were found
 

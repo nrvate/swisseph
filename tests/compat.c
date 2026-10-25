@@ -3388,7 +3388,9 @@ static double nut_jplhor_intp_off(void)
  * switch at 1962 Jan 20 (7.17e-2" in dpsi). On de200 with
  * SEFLG_JPLHOR_APPROX, the interpolation on: dpsi at the switch + 0.3
  * after a call at - 0.5, and at - 0.3 after one at + 0.5, against a
- * context with it off, the larger, arcsec. */
+ * context with it off, the larger, arcsec. Shipped: the first exact, the
+ * second its day's own interpolation, nodes on its side (bug 231),
+ * 7.0e-6"; upstream 1.97e-2". */
 static double nut_step_intp_off(void)
 {
   double x[6], y[6], d = 0, ts = 2437684.5;
@@ -4326,6 +4328,36 @@ static double nan_search_named(void)
       swe_ctx_free(c);
     }
   return n;
+}
+
+/* UPSTREAM-BUGS 231: the interpolation's nodes placed by the call that
+ * found none. The interpolation on, the default model, Moshier: SE_ECL_NUT
+ * at four instants on a fresh context against one that asked 0.9 day
+ * earlier, the largest difference of dpsi and deps, deg. Shipped 0 (the
+ * nodes on 0h TT days); upstream 1.87e-7 (0.67 mas). -1 if a call fails. */
+static double nut_intp_order_off(void)
+{
+  static const double t[4] = { 2433282.5, 2451545.37, 2455000.81, 2460000.13 };
+  double x[6], y[6], r = 0;
+  char serr[AS_MAXCH];
+  int i, k;
+  for (i = 0; i < 4 && r >= 0; i++) {
+    swe_ctx *a = swe_ctx_new(), *b = swe_ctx_new();
+    if (a == NULL || b == NULL)
+      return -1;
+    swe_set_interpolate_nut_r(a, TRUE);
+    swe_set_interpolate_nut_r(b, TRUE);
+    if (swe_calc_r(a, t[i], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0
+        || swe_calc_r(b, t[i] - 0.9, SE_ECL_NUT, SEFLG_MOSEPH, y, serr) < 0
+        || swe_calc_r(b, t[i], SE_ECL_NUT, SEFLG_MOSEPH, y, serr) < 0)
+      r = -1;
+    for (k = 2; k < 4 && r >= 0; k++)
+      if (fabs(x[k] - y[k]) > r)
+        r = fabs(x[k] - y[k]);
+    swe_ctx_free(a);
+    swe_ctx_free(b);
+  }
+  return r;
 }
 
 /* UPSTREAM-BUGS 163: the nutation's rate far from J2000. The Sun's right
@@ -6357,7 +6389,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, nutorder;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6548,6 +6580,7 @@ int main(int argc, char **argv)
   makrcusp = makransky_cusp_off();
   nandate = nan_date_answered();
   nansearch = nan_search_named();
+  nutorder = nut_intp_order_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -7819,11 +7852,11 @@ int main(int argc, char **argv)
     bad++;
   }
 
-  if (WANT_DEFECT ? (nutstep > 1e-2) : (nutstep == 0))
+  if (WANT_DEFECT ? (nutstep > 1e-2) : (nutstep >= 0 && nutstep < 1e-4))
     printf("  nutation across a step %.2e arcsec OK\n", nutstep);
   else {
     printf("  nutation across a step %.2e arcsec FAIL: expected %s\n",
-           nutstep, WANT_DEFECT ? "> 1e-2" : "0");
+           nutstep, WANT_DEFECT ? "> 1e-2" : "< 1e-4");
     bad++;
   }
 
@@ -8056,6 +8089,14 @@ int main(int argc, char **argv)
   else {
     printf("  2000B against SOFA     %.2e rad FAIL: expected %s\n",
            nut00b, WANT_DEFECT ? "> 1e-9" : "< 3e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nutorder > 1e-8) : (nutorder == 0))
+    printf("  nut. interp. call order %.2e deg OK\n", nutorder);
+  else {
+    printf("  nut. interp. call order %.2e deg FAIL: expected %s\n",
+           nutorder, WANT_DEFECT ? "> 1e-8" : "0");
     bad++;
   }
 

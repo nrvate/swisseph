@@ -1668,6 +1668,11 @@ struct epsilon {
  *     Moshier, silently, or refused (strict): Pluto's points with the files
  *     of 1800-2400 at JD 2378496.625 the node's speed 1.2e-5 deg/day off,
  *     strict -1 for 0 (UPSTREAM-BUGS 226, G158, G24)
+ *   - the nutation interpolation (swe_set_interpolate_nut()) a quadratic
+ *     through nodes placed by whichever call found none about it, so an
+ *     instant's nutation depends on the calls before it: SE_ECL_NUT fresh
+ *     against after a call 0.6 to 1.3 day earlier up to 7.9e-7 deg
+ *     (UPSTREAM-BUGS 231, G122, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1964,6 +1969,9 @@ struct interpol {
   int32 nut_model;	/* astro_models[SE_MODEL_NUT] the nodes are of (bug 129) */
   int32 nut_jplhor;	/* their flags' SWI_JPLHOR_FLAGMASK bits (bug 134) */
   int32 nut_jplhora;	/* with SEFLG_JPLHOR_APPROX its mode, defaulted; else 0 (bug 134) */
+  /* bug 231: the nodes at 0h TT tjd_nut0 and tjd_nut2 = tjd_nut0 + 1, the
+   * nutation there (dpsi, deps) and its rate (nut_dpsi0.. unused) */
+  double nut_v[2][2], nut_r[2][2];
 #endif
 };
 

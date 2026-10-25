@@ -131,6 +131,38 @@
  * straddling centres on each model, the default's 2.74e-2" to 6.01e-2",
  * IAU 1980's 2.46e-2" to 5.38e-2". Away from them the answers are bit for
  * bit the tip's. The upstream build fails 131 of 350: 113 and these 18.
+ * (Since UPSTREAM-BUGS 231 the scan takes the nodes of each query's day
+ * and the limit 0.1 mas: below.)
+ *
+ * And the order (UPSTREAM-BUGS 231): the nodes were placed by whichever
+ * call found none about it, t - 1, t and t + 1 of that call, which it
+ * answered exactly, so an instant's nutation depended on the calls before
+ * it. They are at 0h TT of the instant's day and of the next now, and the
+ * nutation the cubic through its values and rates there. On explicit
+ * contexts, Moshier, the interpolation on, under the default, IAU 1980
+ * and IAU 2000B: SE_ECL_NUT and Mars with SEFLG_SPEED at 40 instants
+ * 1900-2100 on a fresh context against one that asked the same 0.6..1.3
+ * day before, and one after, bit for bit with the return; SE_ECL_NUT at
+ * 400 instants 1800-2100, each after a call within a day of it, against
+ * the interpolation off within OR_TOL, 0.1 mas; Mars's speeds in longitude
+ * and right ascension against five-point differences of its positions over
+ * 2^-6 day at 40 instants floor(t * 256) / 256 within a day's middle and
+ * 40 at or within 2^-5 day of 0h TT, where the stencil spans a day's end,
+ * within 1e-8 deg/day. 21 checks, 371 in all. The scan above follows the
+ * grid: bit for bit where the query's day is the one the step begins,
+ * within ST_TOL, 0.1 mas, elsewhere (3.5 mas before, the quadratic's).
+ *
+ * Measured after the fix: the orders 0; the interpolation within 5.9e-5"
+ * in dpsi and 3.1e-5" in deps; the speeds within 5.9e-11 deg/day in a
+ * day's middle and 7.0e-10 about 0h TT (the cubic's curvature steps at its
+ * nodes; upstream's quadratic on the same grid would step the rate there,
+ * 2.3e-6 deg/day off the five-point difference); the scan 0 on the step's
+ * day, 1.9e-5" elsewhere. Before the fix 101 of 371 fail: the 12 orders
+ * (SE_ECL_NUT 6.3e-7 deg, Mars 4.2e-6 with its speed), the 3 accuracies
+ * (2.8 mas) and 86 of the scan's 102 at its new limit (1.0 mas); the
+ * speeds pass, a fresh context's nodes being about its first call. The
+ * upstream build fails 238 of 371: entry 134's 113, entry 146's 104 (its
+ * scan at the new limit) and these 21.
  * Run as
  *   nutintp EPHEDIR
  */
@@ -747,17 +779,18 @@ static void remove_fixtures(void)
 /* The steps of calc_nutation() (UPSTREAM-BUGS 146). With
  * SEFLG_JPLHOR_APPROX, SEMOD_JPLHORA_3 takes IAU 1980 with a fixed offset
  * up to 1962 Jan 20 and the nutation model after it. A scan about it: for
- * each node centre c = TS + i/4 (|i| <= 8), on an explicit context with
- * the interpolation on, a call at c + 500 (the nodes far off), at c (the
- * nodes there), and the queries c + j/4 (|j| <= 3), each against a context
- * with it off: bit for bit, with the return, where nodes at c would lie
- * both sides of the step, and within the interpolation's own accuracy
- * ("about 3 mas"; ST_TOL) elsewhere. And where nothing steps, the same
- * scan within ST_TOL throughout: SEMOD_JPLHORA_2 and no flag at the
- * switch, and SEFLG_JPLHOR at the first and the last day of the
- * corrections (fixture A), which hold their end values beyond them. */
+ * each c = TS + i/4 (|i| <= 8), on an explicit context with the
+ * interpolation on, a call at c + 500 and at c (other days' nodes), and
+ * the queries c + j/4 (|j| <= 3), each against a context with it off: bit
+ * for bit, with the return, where the query's day's nodes (0h TT of it and
+ * of the next, UPSTREAM-BUGS 231) would lie both sides of the step, the
+ * day it begins, and within the interpolation's own accuracy (ST_TOL)
+ * elsewhere. And where nothing steps, the same scan within ST_TOL
+ * throughout: SEMOD_JPLHORA_2 and no flag at the switch, and SEFLG_JPLHOR
+ * at the first and the last day of the corrections (fixture A), which
+ * hold their end values beyond them. */
 #define TSTEP 2437684.5		/* 1962 Jan 20, HORIZONS_TJD0_DPSI_DEPS_IAU1980 */
-#define ST_TOL (3.5e-3 / 3600)	/* deg */
+#define ST_TOL (0.1e-3 / 3600)	/* deg: the day-grid cubic's (UPSTREAM-BUGS 231) */
 #define MOD_1980HA3 "0,0,0,1,0,0,3,0"	/* IAU 1980, SEMOD_JPLHORA_3 */
 struct scen4 {
   const char *mod;
@@ -853,7 +886,7 @@ static int steps(int *n)
     int bad = 0;
     for (i = -8; i <= 8; i++) {
       double c = s->ts + i / 4.0, wc = 0;
-      int straddle = s->step && c - 1.0 <= s->ts && c + 1.0 > s->ts, cbad = 0;
+      int cbad = 0;
       (*n)++;
       if (ci == NULL || ce == NULL) {
         nfail++;
@@ -861,27 +894,29 @@ static int steps(int *n)
       }
       for (j = -3; j <= 3; j++) {
         int same;
-        double w = vs_exact(ci, ce, SE_ECL_NUT, s->fl, c, c + j / 4.0, &same, NULL, NULL);
+        double q = c + j / 4.0, qd = floor(q - 0.5) + 0.5;
+        int straddle = s->step && qd <= s->ts && qd + 1.0 > s->ts;
+        double w = vs_exact(ci, ce, SE_ECL_NUT, s->fl, c, q, &same, NULL, NULL);
         if (w < 0 || (straddle ? !same : w > ST_TOL))
           cbad = 1;
         if (w < 0)
           w = 360;
         if (w > wc)
           wc = w;
+        if (straddle && w > wstr)
+          wstr = w;
+        if (!straddle && w > woff)
+          woff = w;
       }
-      if (straddle && wc > wstr)
-        wstr = wc;
-      if (!straddle && wc > woff)
-        woff = wc;
       if (cbad) {
-        printf("    %s, nodes at %+.2f d%s: %.3e\" off the exact FAIL\n", s->lab, i / 4.0,
-               straddle ? " (both sides)" : "", wc * 3600);
+        printf("    %s, after a call at %+.2f d: %.3e\" off the exact FAIL\n", s->lab, i / 4.0,
+               wc * 3600);
         nfail++;
         bad++;
       }
     }
     if (s->step)
-      printf("    %s: nodes both sides %.3e\", one side %.3e\"%s\n", s->lab,
+      printf("    %s: the day it begins %.3e\", the others %.3e\"%s\n", s->lab,
              wstr * 3600, woff * 3600, bad ? "" : " OK");
     else
       printf("    %s: %.3e\"%s\n", s->lab, woff * 3600, bad ? "" : " OK");
@@ -889,6 +924,146 @@ static int steps(int *n)
       swe_ctx_free(ci);
     if (ce)
       swe_ctx_free(ce);
+  }
+  return nfail;
+}
+
+/* The order (UPSTREAM-BUGS 231): the nodes were placed by whichever call
+ * found none about it, so an instant's nutation depended on the calls
+ * before it. On explicit contexts, Moshier, the interpolation on, under
+ * the default, IAU 1980 and IAU 2000B:
+ *  - SE_ECL_NUT, and Mars with SEFLG_SPEED, at 40 instants 1900-2100, on a
+ *    fresh context against one that asked the same at t - dt, and one at
+ *    t + dt, dt 0.6..1.3 day: bit for bit with the return;
+ *  - SE_ECL_NUT at 400 instants 1800-2100 on one context, each after a
+ *    call at another instant within a day of it, against the interpolation
+ *    off: within OR_TOL;
+ *  - Mars's speed in longitude and right ascension against five-point
+ *    differences of its positions over 2^-6 day at 40 instants
+ *    floor(t * 256) / 256 within a day's middle, and 40 at 0h TT or within
+ *    2^-5 day of it, where the stencil spans a day's end: within 1e-8
+ *    deg/day, a context each. */
+#define OR_TOL (0.1e-3 / 3600)	/* deg */
+static swe_ctx *ctx_or(const char *mod, int intp)
+{
+  char m[40];
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return NULL;
+  strcpy(m, mod);
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_astro_models_r(c, m, 0);
+  swe_set_interpolate_nut_r(c, intp);
+  return c;
+}
+
+static int order(int *n)
+{
+  static const char *mod[3] = { MOD_DEF, MOD_1980, "0,0,0,4,0,0,0,0" };
+  static const char *mn[3] = { "the default", "IAU 1980", "IAU 2000B" };
+  static const int32 pfl[2] = { SEFLG_MOSEPH, SEFLG_MOSEPH | SEFLG_SPEED };
+  static const int ppl[2] = { SE_ECL_NUT, SE_MARS };
+  const double h = 1.0 / 64;
+  char serr[AS_MAXCH];
+  int m, p, dir, i, k, nfail = 0;
+  for (m = 0; m < 3; m++) {
+    /* the order */
+    double wo[4] = { 0, 0, 0, 0 };
+    for (p = 0; p < 2; p++)
+      for (dir = -1; dir <= 1; dir += 2) {
+        double w = 0;
+        int bad = 0;
+        srand(231 + m);
+        for (i = 0; i < 40; i++) {
+          double t = 2415020.5 + 73049.0 * (rand() / (double) RAND_MAX);
+          double dt = 0.6 + 0.7 * (rand() / (double) RAND_MAX), x[6], y[6];
+          swe_ctx *a = ctx_or(mod[m], 1), *b = ctx_or(mod[m], 1);
+          int ra, rb;
+          if (a == NULL || b == NULL)
+            return nfail + 1;
+          ra = swe_calc_r(a, t, ppl[p], pfl[p], x, serr);
+          swe_calc_r(b, t + dir * dt, ppl[p], pfl[p], y, serr);
+          rb = swe_calc_r(b, t, ppl[p], pfl[p], y, serr);
+          if (ra != rb || ra < 0)
+            bad = 1;
+          for (k = 0; k < 6; k++) {
+            if (x[k] != y[k])
+              bad = 1;
+            if (fabs(x[k] - y[k]) > w)
+              w = fabs(x[k] - y[k]);
+          }
+          swe_ctx_free(a);
+          swe_ctx_free(b);
+        }
+        (*n)++;
+        wo[2 * p + (dir > 0)] = bad && w == 0 ? 360 : w;
+        if (bad)
+          nfail++;
+      }
+    printf("    %s, after a call 0.6..1.3 d before, after: SE_ECL_NUT %.3e, %.3e deg,"
+           " Mars %.3e, %.3e deg off a fresh context's%s\n", mn[m], wo[0], wo[1], wo[2], wo[3],
+           wo[0] || wo[1] || wo[2] || wo[3] ? " FAIL" : " OK");
+    /* the accuracy */
+    {
+      double w[2] = { 0, 0 };
+      swe_ctx *ci = ctx_or(mod[m], 1), *ce = ctx_or(mod[m], 0);
+      if (ci == NULL || ce == NULL)
+        return nfail + 1;
+      srand(2310 + m);
+      for (i = 0; i < 400; i++) {
+        double t = 2378496.5 + 109574.0 * (rand() / (double) RAND_MAX), x[6], y[6];
+        double u = 2 * (rand() / (double) RAND_MAX) - 1;
+        if (swe_calc_r(ci, t, SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0
+            || swe_calc_r(ci, t + u, SE_ECL_NUT, SEFLG_MOSEPH, x, serr) < 0
+            || swe_calc_r(ce, t + u, SE_ECL_NUT, SEFLG_MOSEPH, y, serr) < 0)
+          w[0] = 360;
+        for (k = 0; k < 2; k++)
+          if (fabs(x[2 + k] - y[2 + k]) > w[k])
+            w[k] = fabs(x[2 + k] - y[2 + k]);
+      }
+      swe_ctx_free(ci);
+      swe_ctx_free(ce);
+      (*n)++;
+      printf("    %s, interpolated against the series, 1800-2100: dpsi %.3e\", deps %.3e\"%s\n", mn[m],
+             w[0] * 3600, w[1] * 3600, w[0] > OR_TOL || w[1] > OR_TOL ? " FAIL" : " OK");
+      if (w[0] > OR_TOL || w[1] > OR_TOL)
+        nfail++;
+    }
+    /* the rate */
+    for (p = 0; p < 2; p++) {
+      double w = 0;
+      srand(2320 + m);
+      for (i = 0; i < 40; i++) {
+        double t = 2415020.5 + 73049.0 * (rand() / (double) RAND_MAX), d = floor(t - 0.5) + 0.5;
+        int e;
+        if (p == 0)
+          t = d + 0.0625 + 0.875 * (rand() / (double) RAND_MAX);
+        else
+          t = d + (i % 4 == 0 ? 0 : 2 * h * (2 * (rand() / (double) RAND_MAX) - 1));
+        t = floor(t * 256) / 256;
+        for (e = 0; e < 2; e++) {
+          int32 fl = SEFLG_MOSEPH | (e ? SEFLG_EQUATORIAL : 0);
+          double sp[6], x[5][6], fd;
+          swe_ctx *c = ctx_or(mod[m], 1);
+          if (c == NULL)
+            return nfail + 1;
+          if (swe_calc_r(c, t, SE_MARS, fl | SEFLG_SPEED, sp, serr) < 0)
+            w = 360;
+          for (k = 0; k < 5; k++)
+            if (swe_calc_r(c, t + (k - 2) * h, SE_MARS, fl, x[k], serr) < 0)
+              w = 360;
+          swe_ctx_free(c);
+          fd = (8 * (x[3][0] - x[1][0]) - (x[4][0] - x[0][0])) / (12 * h);
+          if (fabs(sp[3] - fd) > w)
+            w = fabs(sp[3] - fd);
+        }
+      }
+      (*n)++;
+      printf("    %s, Mars's speed against its positions' five-point difference, %s: %.3e deg/day%s\n",
+             mn[m], p ? "about 0h TT" : "within a day", w, w > 1e-8 ? " FAIL" : " OK");
+      if (w > 1e-8)
+        nfail++;
+    }
   }
   return nfail;
 }
@@ -980,6 +1155,7 @@ int main(int argc, char **argv)
         }
       }
     nfail += steps(&n);
+    nfail += order(&n);
     remove_fixtures();
   }
   if (nfail)

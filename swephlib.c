@@ -2901,6 +2901,126 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
   return OK;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* the cubic with values f0 and f1 and slopes r0 and r1 (per node step) at
+ * s = 0 and 1, at s; and its derivative there */
+static double hermite_intp(double f0, double r0, double f1, double r1, double s)
+{
+  double df = f1 - f0, c2 = 3.0 * df - 2.0 * r0 - r1, c3 = r0 + r1 - 2.0 * df;
+  return f0 + s * (r0 + s * (c2 + s * c3));
+}
+static double hermite_intp_rate(double f0, double r0, double f1, double r1, double s)
+{
+  double df = f1 - f0, c2 = 3.0 * df - 2.0 * r0 - r1, c3 = r0 + r1 - 2.0 * df;
+  return r0 + s * (2.0 * c2 + 3.0 * s * c3);
+}
+
+static void nut_rate_direct(swe_ctx *ctx, double tjd, int32 iflag, double *rate);
+
+/* Past it the instants of the interpolation's day grid are not all exact
+ * doubles (2^50 = 1.13e15). */
+#define SWI_NUT_INTP_JMAX 1e15
+
+/* Upstream bug 231: with the interpolation on, the nutation was a
+ * quadratic through calc_nutation() at t - 1, t and t + 1 of whichever call
+ * found no nodes about it, so an instant's answer depended on the calls
+ * before it: SE_ECL_NUT fresh against after a call 0.6 to 1.3 day earlier
+ * up to 6.7e-7 deg (2.4 mas) in dpsi and deps, 200 instants 1900-2100 on
+ * IAU 2000B, 7.9e-7 on IAU 2000A, every place of date with it. The nodes
+ * are on a fixed grid now, 0h TT of the instant's day d and of the next,
+ * and the instant, in [d, d + 1), is the cubic through the nutation and
+ * its rate (nut_rate_direct()) at the two: a function of the instant
+ * alone, and smooth, its value and rate continuous at the nodes. Upstream's
+ * quadratic on such a grid, through d - 1, d and d + 1, would step its rate
+ * at every 0h TT: a five-point difference of Mars's longitude over 2^-6
+ * day across one 2.3e-6 deg/day off its speed, 6.2e-10 now. The cubic is
+ * within 0.076 mas of the series in dpsi and 0.034 in deps, every 1/16 day
+ * over 1800-2100, where the quadratic was within 3.1 and 1.3. A day's
+ * nodes are built when an instant of it finds others, from those they
+ * share. The rate is the cubic's derivative at the instant
+ * (swi_nutation_rate()).
+ * This finds the nodes for tjd in ctx->interpol and sets *dx = tjd - d: 1;
+ * 0 where tjd takes calc_nutation() at the instant; ERR. */
+static int nut_intp_day(swe_ctx *ctx, double tjd, int32 iflag, double *dx)
+{
+  double d, tn, v[2][2], r[2][2];
+  int32 jplhor, jplhora;
+  AS_BOOL keyed;
+  int k, j;
+  /* Upstream bug 129: the nodes were kept for their instants alone, and
+   * outlived a change of nutation model: on, the nutation at J2000,
+   * swe_set_astro_models("0,0,0,1") (IAU 1980), and dpsi at J2000 + 0.37
+   * was the default model's -13.926980" for IAU 1980's -13.918339"
+   * (8.6e-3"); after IAU 1980 and swe_close(), which resets the models
+   * and keeps the interpolation, IAU 1980's for the default's (8.7e-3").
+   * They are of the model they were built under now, and another model
+   * builds its own, whatever route set it.
+   * Upstream bug 134: and of the rest calc_nutation() reads, the JPL
+   * Horizons bits of the flags and, with SEFLG_JPLHOR_APPROX, the
+   * approximation's mode. On de200, SE_ECL_NUT at 1950 with
+   * SEFLG_JPLHOR_APPROX, then without it at + 0.37, was the flag's
+   * -3.199992" for -3.261906" (6.2e-2"); with it both times, mode 3 then
+   * 2, mode 3's for mode 2's -3.303681" (0.104"). The nodes of
+   * SEFLG_JPLHOR, of the IERS corrections loaded, go with them at
+   * swe_close() (ctx_release()). */
+  jplhor = iflag & SWI_JPLHOR_FLAGMASK;
+  jplhora = 0;
+  if (jplhor & SEFLG_JPLHOR_APPROX) {
+    jplhora = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+    if (jplhora == 0) jplhora = SEMOD_JPLHORA_DEFAULT;
+  }
+  if (!(fabs(tjd) < SWI_NUT_INTP_JMAX))	/* and NaN */
+    return 0;
+  d = floor(tjd - 0.5) + 0.5;
+  /* Upstream bug 146: the nodes could lie both sides of a step of
+   * calc_nutation(). With SEFLG_JPLHOR_APPROX, SEMOD_JPLHORA_3 takes
+   * IAU 1980 with a fixed offset up to 1962 Jan 20 and the nutation
+   * model after it, a step of 7.17e-2" in dpsi (2.96e-3" in deps) on
+   * the default model: after a call at the step - 0.5 day, dpsi at
+   * + 0.3 was -10.105320" for -10.124814" (1.95e-2"), and 6.93e-2"
+   * at worst within a day of it, where the interpolation is otherwise
+   * within about 3 mas. Where a day's nodes straddle it (the step is at
+   * 0h TT, so the day it begins), the nutation is computed at the
+   * instant, so no set of nodes spans it; the day before has the step's
+   * side at its end, as calc_nutation() takes it. calc_nutation() has no
+   * other step: SEFLG_JPLHOR's IERS corrections hold their end values
+   * beyond the table, SEMOD_JPLHORA_2's offset is constant, and the series
+   * take no date. */
+  if (!(jplhor & SEFLG_JPLHOR) && jplhora == SEMOD_JPLHORA_3
+      && d <= HORIZONS_TJD0_DPSI_DEPS_IAU1980
+      && d + 1.0 > HORIZONS_TJD0_DPSI_DEPS_IAU1980)
+    return 0;
+  *dx = tjd - d;
+  keyed = ctx->interpol.tjd_nut2 == ctx->interpol.tjd_nut0 + 1.0
+          && ctx->interpol.nut_model == ctx->astro_models[SE_MODEL_NUT]
+          && ctx->interpol.nut_jplhor == jplhor
+          && ctx->interpol.nut_jplhora == jplhora;
+  if (keyed && ctx->interpol.tjd_nut0 == d)
+    return 1;
+  for (k = 0; k < 2; k++) {
+    tn = d + k;
+    j = !keyed ? -1 : tn == ctx->interpol.tjd_nut0 ? 0 : tn == ctx->interpol.tjd_nut2 ? 1 : -1;
+    if (j >= 0) {
+      v[k][0] = ctx->interpol.nut_v[j][0];
+      v[k][1] = ctx->interpol.nut_v[j][1];
+      r[k][0] = ctx->interpol.nut_r[j][0];
+      r[k][1] = ctx->interpol.nut_r[j][1];
+    } else {
+      if (calc_nutation(ctx, tn, iflag, v[k]) == ERR)
+        return ERR;
+      nut_rate_direct(ctx, tn, iflag, r[k]);
+    }
+  }
+  ctx->interpol.tjd_nut0 = d;
+  ctx->interpol.tjd_nut2 = d + 1.0;
+  ctx->interpol.nut_model = ctx->astro_models[SE_MODEL_NUT];
+  ctx->interpol.nut_jplhor = jplhor;
+  ctx->interpol.nut_jplhora = jplhora;
+  memcpy(ctx->interpol.nut_v, v, sizeof v);
+  memcpy(ctx->interpol.nut_r, r, sizeof r);
+  return 1;
+}
+#else
 static double quadratic_intp(double ym, double y0, double yp, double x)
 {
   double a, b, c, y;
@@ -2910,80 +3030,41 @@ static double quadratic_intp(double ym, double y0, double yp, double x)
   y = a * x * x + b * x + c;
   return y;
 }
+#endif
 
 int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
 {
   int retc = OK;
-  double dnut[2], dx;
-#ifndef SWE_UPSTREAM_COMPAT
-  int32 jplhor, jplhora;
+  double dx;
+#ifdef SWE_UPSTREAM_COMPAT
+  double dnut[2];
 #endif
   if (!ctx->do_interpolate_nut) {
     retc = calc_nutation(ctx, tjd, iflag, nutlo);
   // from interpolation, with three data points in 1-day steps;
   // maximum error is about 3 mas
   } else {
-    // precalculated data points available
 #ifndef SWE_UPSTREAM_COMPAT
-    /* Upstream bug 129: the nodes were kept for their instants alone, and
-     * outlived a change of nutation model: on, the nutation at J2000,
-     * swe_set_astro_models("0,0,0,1") (IAU 1980), and dpsi at J2000 + 0.37
-     * was the default model's -13.926980" for IAU 1980's -13.918339"
-     * (8.6e-3"); after IAU 1980 and swe_close(), which resets the models
-     * and keeps the interpolation, IAU 1980's for the default's (8.7e-3").
-     * They are of the model they were built under now, and another model
-     * builds its own, whatever route set it.
-     * Upstream bug 134: and of the rest calc_nutation() reads, the JPL
-     * Horizons bits of the flags and, with SEFLG_JPLHOR_APPROX, the
-     * approximation's mode. On de200, SE_ECL_NUT at 1950 with
-     * SEFLG_JPLHOR_APPROX, then without it at + 0.37, was the flag's
-     * -3.199992" for -3.261906" (6.2e-2"); with it both times, mode 3 then
-     * 2, mode 3's for mode 2's -3.303681" (0.104"). The nodes of
-     * SEFLG_JPLHOR, of the IERS corrections loaded, go with them at
-     * swe_close() (ctx_release()). */
-    jplhor = iflag & SWI_JPLHOR_FLAGMASK;
-    jplhora = 0;
-    if (jplhor & SEFLG_JPLHOR_APPROX) {
-      jplhora = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
-      if (jplhora == 0) jplhora = SEMOD_JPLHORA_DEFAULT;
-    }
-    if (tjd < ctx->interpol.tjd_nut2 && tjd > ctx->interpol.tjd_nut0
-        && ctx->interpol.nut_model == ctx->astro_models[SE_MODEL_NUT]
-        && ctx->interpol.nut_jplhor == jplhor
-        && ctx->interpol.nut_jplhora == jplhora) {
+    /* the nodes of tjd's day (upstream bug 231) */
+    retc = nut_intp_day(ctx, tjd, iflag, &dx);
+    if (retc == ERR)
+      return ERR;
+    if (retc == 0)
+      return calc_nutation(ctx, tjd, iflag, nutlo);
+    nutlo[0] = hermite_intp(ctx->interpol.nut_v[0][0], ctx->interpol.nut_r[0][0],
+                            ctx->interpol.nut_v[1][0], ctx->interpol.nut_r[1][0], dx);
+    nutlo[1] = hermite_intp(ctx->interpol.nut_v[0][1], ctx->interpol.nut_r[0][1],
+                            ctx->interpol.nut_v[1][1], ctx->interpol.nut_r[1][1], dx);
+    retc = OK;
 #else
+    // precalculated data points available
     if (tjd < ctx->interpol.tjd_nut2 && tjd > ctx->interpol.tjd_nut0) {
-#endif
       dx = (tjd - ctx->interpol.tjd_nut0) - 1.0;
       nutlo[0] = quadratic_intp(ctx->interpol.nut_dpsi0, ctx->interpol.nut_dpsi1, ctx->interpol.nut_dpsi2, dx);
       nutlo[1] = quadratic_intp(ctx->interpol.nut_deps0, ctx->interpol.nut_deps1, ctx->interpol.nut_deps2, dx);
     } else {
-#ifndef SWE_UPSTREAM_COMPAT
-      /* Upstream bug 146: the nodes could lie both sides of a step of
-       * calc_nutation(). With SEFLG_JPLHOR_APPROX, SEMOD_JPLHORA_3 takes
-       * IAU 1980 with a fixed offset up to 1962 Jan 20 and the nutation
-       * model after it, a step of 7.17e-2" in dpsi (2.96e-3" in deps) on
-       * the default model: after a call at the step - 0.5 day, dpsi at
-       * + 0.3 was -10.105320" for -10.124814" (1.95e-2"), and 6.93e-2"
-       * at worst within a day of it, where the interpolation is otherwise
-       * within about 3 mas. Where the nodes would straddle it, the
-       * nutation is computed at the instant and the nodes are left as they
-       * were, so no set of nodes spans it. calc_nutation() has no other
-       * step: SEFLG_JPLHOR's IERS corrections hold their end values beyond
-       * the table, SEMOD_JPLHORA_2's offset is constant, and the series
-       * take no date. */
-      if (!(jplhor & SEFLG_JPLHOR) && jplhora == SEMOD_JPLHORA_3
-          && tjd - 1.0 <= HORIZONS_TJD0_DPSI_DEPS_IAU1980
-          && tjd + 1.0 > HORIZONS_TJD0_DPSI_DEPS_IAU1980)
-        return calc_nutation(ctx, tjd, iflag, nutlo);
-#endif
       ctx->interpol.tjd_nut0 = tjd - 1.0; // one day earlier
       ctx->interpol.tjd_nut2 = tjd + 1.0; // one day later
-#ifndef SWE_UPSTREAM_COMPAT
-      ctx->interpol.nut_model = ctx->astro_models[SE_MODEL_NUT];
-      ctx->interpol.nut_jplhor = jplhor;
-      ctx->interpol.nut_jplhora = jplhora;
-#endif
       retc = calc_nutation(ctx, ctx->interpol.tjd_nut0, iflag, dnut);
       if (retc == ERR) return ERR;
       ctx->interpol.nut_dpsi0 = dnut[0];
@@ -2997,6 +3078,7 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
       ctx->interpol.nut_dpsi1 = nutlo[0];
       ctx->interpol.nut_deps1 = nutlo[1];
     }
+#endif
   }
   return retc;
 }
@@ -3585,9 +3667,11 @@ static void calc_nutation_rate(swe_ctx *ctx, double J, int32 iflag, double *rate
  * Polaris). The default model's Hermite polynomial is differentiated
  * (nodes cached, no series evaluation); any other model takes its series'
  * own derivative (bug 163), and with the interpolation on (the nutation
- * then a quadratic through day-apart nodes) the central difference of
- * nutation at t - h and t + h. rate[0] is dpsi/dt, rate[1] deps/dt. */
-void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
+ * then a cubic between day-apart nodes) that cubic's derivative (bug
+ * 231). rate[0] is dpsi/dt, rate[1] deps/dt.
+ * This is the rate of calc_nutation(), the nutation the interpolation's
+ * nodes take. */
+static void nut_rate_direct(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
 {
   int nut_model = ctx->astro_models[SE_MODEL_NUT];
   int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
@@ -3595,7 +3679,7 @@ void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
   if (use_grid && nut_model == SEMOD_NUT_IAU_2000A && fabs(tjd) < 1e12
-      && !ctx->do_interpolate_nut && !(iflag & SEFLG_JPLHOR)
+      && !(iflag & SEFLG_JPLHOR)
       && !((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3
            && tjd <= HORIZONS_TJD0_DPSI_DEPS_IAU1980)) {
     double nl[2], d[8];
@@ -3611,7 +3695,7 @@ void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
       rate[0] = d[1];
       rate[1] = d[5];
     }
-  } else if (!ctx->do_interpolate_nut) {
+  } else {
     /* Upstream bug 163: the central difference over -+NUT_SPEED_INTV
      * divided the series' rounding by 2e-4 day: far from J2000 the
      * arguments' last bits, 1.2e-9 deg/day off at |J - J2000| 1e6 to 5.5e6
@@ -3623,32 +3707,31 @@ void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
      * on each side of SEMOD_JPLHORA_3's 1962 step its own model's, as the
      * instant is (bug 153). */
     calc_nutation_rate(ctx, tjd, iflag, rate);
+  }
+}
+
+void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
+{
+  double dx;
+  if (!ctx->do_interpolate_nut) {
+    nut_rate_direct(ctx, tjd, iflag, rate);
+    return;
+  }
+  /* Upstream bug 231: the interpolation's quadratic was differenced over
+   * -+NUT_SPEED_INTV, and t + h could find no nodes and build its own,
+   * about it (bug 153 kept the difference to the instant's side of
+   * SEMOD_JPLHORA_3's step). The nodes are of the instant's day now, and
+   * the rate the derivative of the cubic swi_nutation() answers at the
+   * instant; where that is calc_nutation() at the instant (the day the
+   * 1962 step begins, or past the grid), its own rate there, on the
+   * instant's side of the step as the instant is. */
+  if (nut_intp_day(ctx, tjd, iflag, &dx) == 1) {
+    rate[0] = hermite_intp_rate(ctx->interpol.nut_v[0][0], ctx->interpol.nut_r[0][0],
+                                ctx->interpol.nut_v[1][0], ctx->interpol.nut_r[1][0], dx);
+    rate[1] = hermite_intp_rate(ctx->interpol.nut_v[0][1], ctx->interpol.nut_r[0][1],
+                                ctx->interpol.nut_v[1][1], ctx->interpol.nut_r[1][1], dx);
   } else {
-    /* the interpolation's quadratic, differenced */
-    double a[2], b[2];
-    int side = swi_frame_step_side(ctx, tjd, NUT_SPEED_INTV, iflag, SWI_FRAME_NUT);
-    if (side != 0) {
-      /* Upstream bug 153: within NUT_SPEED_INTV of SEMOD_JPLHORA_3's step
-       * the central difference took its 7.17e-2" in dpsi (the default
-       * model): every speed of date 9.96e-2 deg/day off in longitude there,
-       * 1.09 in Polaris's right ascension. Now the three-point derivative
-       * on t's side, over the instants' exact offsets (t + h is rounded at
-       * the JD's resolution). */
-      double n0[2], ta = tjd + side * NUT_SPEED_INTV, tb = tjd + 2 * side * NUT_SPEED_INTV;
-      double da = ta - tjd, db = tb - tjd;
-      double w0 = -(1 / da + 1 / db), wa = db / (da * (db - da)), wb = -da / (db * (db - da));
-      int i;
-      swi_nutation(ctx, tjd, iflag, n0);
-      swi_nutation(ctx, ta, iflag, a);
-      swi_nutation(ctx, tb, iflag, b);
-      for (i = 0; i <= 1; i++)
-        rate[i] = w0 * n0[i] + wa * a[i] + wb * b[i];
-      return;
-    }
-    swi_nutation(ctx, tjd - NUT_SPEED_INTV, iflag, a);
-    swi_nutation(ctx, tjd + NUT_SPEED_INTV, iflag, b);
-    rate[0] = (b[0] - a[0]) / (2 * NUT_SPEED_INTV);
-    rate[1] = (b[1] - a[1]) / (2 * NUT_SPEED_INTV);
+    nut_rate_direct(ctx, tjd, iflag, rate);
   }
 }
 #endif
