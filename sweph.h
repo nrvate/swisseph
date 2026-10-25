@@ -1202,6 +1202,9 @@ struct swe_ctx {
   int32 sweph_denum_moon;
   int32 jpldenum_cfg;
   int32 last_epheflag;
+  /* The DE number behind the ephemeris that answered this context's last
+   * calculation, for swe_get_denum(); 0 since the files were last closed. */
+  int32 denum_used;
   AS_BOOL geopos_is_set;
   AS_BOOL ayana_is_set;
   AS_BOOL is_old_starfile;

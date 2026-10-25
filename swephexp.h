@@ -883,6 +883,7 @@ ext_def( const char * ) swe_get_current_file_data_r(swe_ctx *ctx, int ifno, doub
 ext_def( int32 ) swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dret, char *serr);
 ext_def( char * ) swe_get_planet_name_r(swe_ctx *ctx, int ipl, char *s);
 ext_def( double ) swe_get_tid_acc_r(swe_ctx *ctx);
+ext_def( int32 ) swe_get_denum_r(swe_ctx *ctx);
 ext_def( int32 ) swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr);
 ext_def( int32 ) swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr);
 ext_def( int32 ) swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret);

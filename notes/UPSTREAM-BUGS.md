@@ -3,6 +3,7 @@
 Bugs found and fixed in a thread-safety fork of Swiss Ephemeris, **each one
 verified still present in upstream** at `3fd0f95` ("with -astorb"), the
 `legacy-master` this fork branched from. Line numbers below are upstream's.
+Entry 45 is in work upstream added after `3fd0f95`, and was verified at `94621ab`, the upstream master merged on 2026-10-25.
 
 This is not a diff of the fork. Most of what the fork changed — explicit
 contexts, a C17 build, a strict ephemeris policy — is a deliberate
@@ -80,6 +81,7 @@ worst were in code that had never executed even once.
 | 42 | The refusals of a date outside a range write its digits in full into 256 bytes: from \|J\| about 1e188 days the message overruns its buffer or the caller's serr | Memory | `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swedate.c`, `swecl.c`, `swephlib.c` |
 | 43 | `swe_sidtime()` reads a nutation `calc_nutation()` left unwritten; SE_ECL_NUT is taken for a body by the rise and set, the Gauquelin sectors, the occultations, `swe_calc_pctr()` and `swe_helio_cross()`, and reads `pla_diam[-1]` | Memory / Correctness | `swephlib.c`, `swecl.c`, `sweph.c` |
 | 44 | The default sidereal time steps 1.908" at 2050 and 0.097" at 1850, and outside 1850-2050 it follows delta t: +328" at year 0, +2379" at -3000 | Correctness | `swephlib.c` |
+| 45 | `swe_get_denum()` (new, 9a8b759) answers the Swiss planet file's DE number whatever the ephemeris, and 431 where it holds none: DE441 for a DE200 or Moshier calculation, DE431 for DE441 files before a planet is asked | Correctness | `sweph.c` |
 
 ---
 
@@ -2465,6 +2467,56 @@ straight line within 0.01 mas (0.0033 mas). Before the fix 25 checks fail:
 the 2000-century bound fails (f) at 10 of 15 dates: 6 hung, -1e300 and -inf
 crashed, -+1e8 took 0.012 s a call; without the rotation angle's form it
 fails (g) at all three (0.33, 1.03, 0.78 mas).
+
+## 45. `swe_get_denum()` names the Swiss planet file's DE number whatever answered, and 431 where it holds none
+
+**Severity: Correctness (a caller reporting which JPL ephemeris its numbers rest on is told DE441 after a DE200 or Moshier calculation, and DE431 for DE441 files before a planet is asked or after `swe_close()`)**
+**Where:** `sweph.c`: `swe_get_denum()` (upstream 9a8b759, 2026-10-19; not in `3fd0f95`, verified at `94621ab`)
+
+Upstream added `swe_get_denum()` for swevents' header, "based on JPL DE%d".
+Its body is `return swi_get_denum(SEI_SUN, 0);`: the internal function with
+flag 0 reads the DE number in the Swiss planet file's slot, and answers
+`SE_DE_NUMBER`, 431, where the slot holds none. So it answers for the Swiss
+planet file whatever the calculation used, and for no file at all with a
+number that looks like a file's. With the shipped DE441 files: 431 before
+any call, 431 after `swe_set_ephe_path()` (the path setter reads the moon
+file, not the planet file), 441 after a Swiss Mars, 441 after a JPL
+`de200.eph` Mars (the Swiss file's number survives the ephemeris switch's
+close), 441 after a Moshier Mars, 431 after `swe_close()`. Upstream's only
+caller, swevents, calls `swe_calc()` first to have something to read.
+
+**Fix, as done here:** `swe_calc_r()`, the fixed-star functions and
+`swe_calc_orbel()` record the DE number of the ephemeris their return flag
+names: the JPL file's (`jpldenum`), the Swiss file's that holds the body
+(the moon file for the Moon, the true node and the osculating apogee; the
+main asteroid file for Chiron to Vesta, Ceres to Vesta by catalogue number
+included; the numbered-asteroid slot for the other asteroids and the
+planetary moons; the planet file otherwise, and for a fixed star), and 404
+for Moshier, the ephemeris its theory was fitted to, which the tidal term
+takes for it too. A call that read no ephemeris (SE_ECL_NUT, the mean node,
+the mean apogee, the interpolated apsides) or failed leaves the record as
+it was, and so does the close an ephemeris switch makes before the next
+calculation; `swe_close()` and a path change clear it. `swe_get_denum_r()`
+answers the record or, before one, the moon file's number that
+`swe_set_ephe_path()` read and published, and 0 when nothing is known,
+where upstream said 431. It holds the configuration, so a new thread's
+first call answers the published number. `swe_get_denum()` is its
+default-context form.
+
+G54 `tests/getdenum.c`: 0 before any call; the moon file's number after the
+path setter, and on a new thread before its first calculation; the planet
+file's after a Swiss Mars; 200 after a de200.eph Mars, unchanged by
+SE_ECL_NUT, a Swiss mean node and a Swiss Mars out of range; 404 after a
+Moshier Mars; 200 and 404 after a JPL and a Moshier fixed star, 200 after a
+JPL `swe_calc_orbel()`; the moon file's after a Moon; a context of its own
+answering for its own JPL Mars while the default context computes a Swiss
+one; 0 after `swe_close()` and after a path with no files; 404 when the
+fallback answers a Swiss request from Moshier. Then on files of mixed
+generations (a crafted DE406 moon file and DE431 main asteroid file beside
+the DE441 planet file, since the shipped files are all DE441): the path
+setter, the Moon and the true node 406, Mars and a fixed star 441, Ceres and
+Ceres as 10001 431, a mean node leaving the answer. 26 checks. Upstream's
+function fails 20 of the 25 it can run (431 or 441 throughout).
 
 ## How these were found
 
