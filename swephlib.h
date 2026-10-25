@@ -160,6 +160,9 @@ extern void swi_ldp_peps(swe_ctx *ctx, double J, double *dpre, double *deps);
 /* nutation */
 extern void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag);
 extern int swi_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo);
+/* SEFLG_JPLHOR_APPROX for SEFLG_JPLHOR without the IERS corrections, as
+ * plaus_iflag() has it */
+extern int32 swi_jplhor_plaus(swe_ctx *ctx, int32 iflag);
 extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 
 extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 

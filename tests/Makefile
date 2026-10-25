@@ -277,7 +277,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse check-gauqflags check-sidplanehouses check-fictnakshatra check-helmemo check-nutspeed check-belowsea check-topopole check-hellt \
+       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse check-gauqflags check-sidplanehouses check-fictnakshatra check-helmemo check-nutspeed check-belowsea check-topopole check-hellt check-eopfollow \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -426,6 +426,9 @@ hellt: hellt.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 topopole: topopole.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+eopfollow: eopfollow.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 # G22: reorder(), swejpl.c's byte-swapping path, which measured 0.00% --
@@ -711,6 +714,16 @@ check-hellt: hellt
 check-topopole: topopole
 	@env -u SE_EPHE_PATH ./topopole
 
+# G50: SEFLG_JPLHOR without the IERS corrections -- on de200, a second thread
+# or a context that never loaded them, a directory without
+# eop_1962_today.txt or with one that breaks off -- answers as
+# SEFLG_JPLHOR_APPROX, as swe_calc() takes it, from the ayanamsa, the
+# sidereal houses and the Gauquelin sectors, which read the missing table and
+# crashed (eopload.c's synthetic DE431 header, with corrections the test
+# writes in $TMPDIR or /tmp).
+check-eopfollow: eopfollow
+	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./eopfollow $(EPHE)
+
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
 	@printf '# fixture: 1620 moved off the built-in 124.00\n1620  200.0\n' \
@@ -814,7 +827,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse gauqflags sidplanehouses fictnakshatra helmemo nutspeed belowsea topopole hellt
+	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse gauqflags sidplanehouses fictnakshatra helmemo nutspeed belowsea topopole hellt eopfollow
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt

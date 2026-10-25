@@ -2314,6 +2314,20 @@ static void calc_nutation_grid(swe_ctx *ctx, double J, double *nutlo)
 }
 #endif
 
+/* SEFLG_JPLHOR as plaus_iflag() gives it to swe_calc(): SEFLG_JPLHOR_APPROX
+ * while no IERS corrections are loaded on this context (eop_dpsi_loaded <=
+ * 0: no swe_set_jpl_file() of a DE >= 403, no eop_1962_today.txt, or one
+ * that broke off). Functions whose flags do not pass plaus_iflag() reach
+ * the corrections' table through calc_nutation(), its only reader, which
+ * takes its flags through this; a caller that sets the obliquity from the
+ * same flags takes them through it too. */
+int32 swi_jplhor_plaus(swe_ctx *ctx, int32 iflag)
+{
+  if ((iflag & SEFLG_JPLHOR) && ctx->eop_dpsi_loaded <= 0)
+    iflag = (iflag & ~SEFLG_JPLHOR) | SEFLG_JPLHOR_APPROX;
+  return iflag;
+}
+
 static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
 {
   int n;
@@ -2322,6 +2336,7 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
   int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   AS_BOOL is_jplhor = FALSE;
   AS_BOOL use_grid = (nut_model == 0);	/* the default, not a chosen model */
+  iflag = swi_jplhor_plaus(ctx, iflag);	/* the corrections' table is read below */
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
 #ifdef SWE_UPSTREAM_COMPAT
   (void) use_grid;

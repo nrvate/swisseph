@@ -76,6 +76,7 @@ worst were in code that had never executed even once.
 | 38 | `calc_dip()` is NaN below sea level: `swe_rise_trans_true_hor()` with horhgt -100 answers two hours after the start, `swe_refrac_extended()` never converts an apparent altitude, `swe_azalt()` refracts a body below the horizon | Correctness | `swecl.c` |
 | 39 | The topocentric observer is placed about the mean pole of date, not the true pole: 200-270 m on the observer, 0.10-0.15" on the topocentric Moon | Correctness | `sweph.c` |
 | 40 | A heliocentric light time is measured from the barycentre on its second pass, not from the Sun: up to 0.84" on Mercury, 2.6" on a fictitious body inside its orbit | Correctness | `sweph.c` |
+| 41 | `swe_get_ayanamsa_ex()`, the sidereal houses and `swe_gauquelin_sector()` with SEFLG_JPLHOR and no IERS corrections loaded read the corrections' table, NULL, and crash | Crash | `swephlib.c`, `swecl.c` |
 
 ---
 
@@ -2247,6 +2248,50 @@ body from an element set written by the test, equals B(t - tau) - S(t)
 built from this library's own geometric barycentric positions, to 0.0001"
 (0.000000" measured; the unfixed library misses on all 51 rows, worst
 2.608").
+
+## 41. `swe_get_ayanamsa_ex()`, its `_ut` form, the sidereal houses and `swe_gauquelin_sector()` with SEFLG_JPLHOR and no IERS corrections loaded read the corrections' table, NULL, and crash
+
+**Severity: Crash (a NULL dereference; with an eop_1962_today.txt that breaks off, a read 2.45e6 doubles before the table)**
+**Where:** `swephlib.c`: `calc_nutation()`; `swecl.c`: `swe_gauquelin_sector_r_body()`
+
+`plaus_iflag()` turns SEFLG_JPLHOR into SEFLG_JPLHOR_APPROX when no
+corrections are loaded (`eop_dpsi_loaded` <= 0: no `swe_set_jpl_file()` of a
+DE >= 403 on the context, no eop_1962_today.txt, or one the loader gave up
+on), so `swe_calc()` never asks the nutation for them without them. Three
+public functions take their flags past it. `swe_get_ayanamsa_ex()` adds the
+nutation of the caller's flags to the ayanamsa; `swe_get_ayanamsa_ex_ut()`
+calls it, and so do the sidereal houses. `swe_gauquelin_sector()`'s tropical
+methods 0 and 1 set the obliquity and the nutation from the caller's flags
+before the body's own `swe_calc()`. With SEFLG_JPLHOR and no corrections
+`calc_nutation()` called `bessel()` on `ctx->dpsi`: NULL (SIGSEGV), or, after
+a file with a day missing (`eop_dpsi_loaded` -2: the table allocated, its end
+never set), at index n - 1 = -2451545.
+
+Measured with Lahiri on de200 at J2000: eight probes crash, with SEFLG_JPLEPH
+| SEFLG_JPLHOR and with SEFLG_SWIEPH | SEFLG_JPLHOR, on the setter's
+thread, on a second thread on the default context and on an explicit context
+given the path alone; and on a synthetic DE431 header at 2000 Jan 7 in a
+directory without the file (-1) and in one whose file has a day missing (-2).
+Every other public function that takes flags was called the same way and
+answers.
+
+**Fix, as done here:** `swi_jplhor_plaus()` takes SEFLG_JPLHOR as
+`plaus_iflag()` does, SEFLG_JPLHOR_APPROX while `eop_dpsi_loaded` <= 0.
+`calc_nutation()`, the only reader of the table, takes its flags through it,
+so every route is covered; the Gauquelin sectors' obliquity takes the flags
+the body's place is computed with through it as well, so the frame and the
+place agree. Each call answers as the same call with SEFLG_JPLHOR_APPROX, the
+warning in serr the one `swe_calc()` writes. The Horizons bits the sidereal
+sectors drop (entry 33) stay dropped. G50 `tests/eopfollow.c`: the eight
+probes (the ayanamsa and its `_ut` form, the ayanamsa on SEFLG_SWIEPH,
+sidereal Placidus and Koch houses, Gauquelin methods 0 and 1 for Mars and
+method 0 for Spica) in six settings without corrections (de200, the same with
+the nutation interpolated, a second thread, an explicit context, and the two
+fixture directories), each call in a forked process returning with no signal,
+bit for bit with its return flag as the same call with SEFLG_JPLHOR_APPROX in
+a fresh one: 48 checks. Before the fix 46 crash (the interpolated houses pass,
+their ayanamsa's nutation interpolated from nodes the houses' own nutation
+without flags had built), after it none fail.
 
 ## How these were found
 

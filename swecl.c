@@ -6846,11 +6846,15 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
     int32 iflag_pl = iflag & (SEFLG_EPHMASK | SEFLG_TOPOCTR | SEFLG_TRUEPOS | SEFLG_NOABERR
                               | SEFLG_NOGDEFL | SEFLG_CENTER_BODY
                               | SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+    int32 iflag_nut;
     if (iflag & SEFLG_SIDEREAL)
       iflag_pl &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+    /* The body's swe_calc() turns SEFLG_JPLHOR into SEFLG_JPLHOR_APPROX
+     * without the IERS corrections; the frame takes the flag so too. */
+    iflag_nut = swi_jplhor_plaus(ctx, iflag_pl);
     t_et = t_ut + swe_deltat_ex_r(ctx, t_ut, iflag, serr);
-    eps = swi_epsiln(ctx, t_et, iflag_pl) * RADTODEG;
-    swi_nutation(ctx, t_et, iflag_pl, nutlo);
+    eps = swi_epsiln(ctx, t_et, iflag_nut) * RADTODEG;
+    swi_nutation(ctx, t_et, iflag_nut, nutlo);
     nutlo[0] *= RADTODEG;
     nutlo[1] *= RADTODEG;
     armc = swe_degnorm(swe_sidtime0_r(ctx, t_ut, eps + nutlo[1], nutlo[0]) * 15 + geopos[0]);
