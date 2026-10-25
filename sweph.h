@@ -1211,6 +1211,11 @@ struct epsilon {
  *     the JPL DE number, swe_get_tid_acc() de200's -23.8946 for the
  *     -25.936 the next swe_deltat() takes, 2.04 arcsec/cty^2
  *     (UPSTREAM-BUGS 138, G132)
+ *   - swe_deltat_ex() with no ephemeris bit taking the tidal term of the
+ *     JPL file the context has open, else the default, not the Swiss
+ *     files' a 0 flag means everywhere else: with de200.eph open 169.4 s
+ *     off in AD 1000, a second thread 4.3 ms from the first in 1950
+ *     (UPSTREAM-BUGS 145, G132)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

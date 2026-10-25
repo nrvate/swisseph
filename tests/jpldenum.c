@@ -25,6 +25,15 @@
  * AD 1800), the getter -25.936 after it: bug 101 has the getter answer
  * the term the next delta t uses. So on every reader.
  *
+ * The defect (UPSTREAM-BUGS 145): calc_deltat() read a flag with no
+ * ephemeris bit as no ephemeris and took the DE number of the JPL file
+ * the context had open, else the default term: swe_deltat_ex(tjd, 0) at
+ * 1950 answered 28.927550 s (de200's) on the thread that set de200.eph
+ * and 28.931886 (-25.80) on a second thread until it opened the file
+ * (4.3 ms), and in AD 1000 1305.30 s or 1463.43, where swe_calc() reads a
+ * 0 flag as the Swiss files (SEFLG_DEFAULTEPH) and every UT function sets
+ * SEFLG_SWIEPH before its delta t: 28.932196 and 1474.72.
+ *
  * The check, each case in a forked, pristine process: the path and
  * swe_set_jpl_file("de200.eph"); the reader computes a JPL Sun at J2000,
  * which opens the file; then the last setter: none, the path again by
@@ -35,21 +44,28 @@
  * adopts it, a thread started after it, and an explicit context given the
  * same calls. The observations: swe_deltat_ex() in AD 1700 with
  * SEFLG_JPLEPH (and its serr), swe_get_tid_acc(), swe_deltat() there and
- * swe_get_tid_acc() again (bug 137); and a TT JPL Sun at J2000, then
+ * swe_get_tid_acc() again (bug 137); a TT JPL Sun at J2000, then
  * swe_get_tid_acc(), swe_deltat() in AD 1800 and swe_get_tid_acc() again
- * (bug 138). Each bit for bit as a fresh process given the same setters
- * on its main thread and nothing else, no Sun: the guess follows the
- * configuration, and a calculation does not choose for it (as G128's
- * closecalc). 4 settings x 4 readers x 2 observations = 32 checks.
+ * (bug 138); and swe_deltat_ex() in 1950 with iflag 0 (and its serr) and
+ * with SEFLG_SWIEPH, the getter, and iflag 0 in AD 1000 (bug 145), where
+ * the first two must also agree. Each bit for bit as a fresh process
+ * given the same setters on its main thread and nothing else, no Sun: the
+ * guess follows the configuration, and a calculation does not choose for
+ * it (as G128's closecalc). 4 settings x 4 readers x 3 observations = 48
+ * checks.
  *
- * Measured before the fixes, 6 of 32 fail. Bug 137's 2: the running
+ * Measured before the fixes, 22 of 48 fail. Bug 137's 2: the running
  * thread after the path again and after the path without the file, delta
  * t 3.012003 s for 14.286718. Bug 138's 4: every reader after the path
- * again, the getter -23.8946 for -25.936 before the delta t. The fix of
- * 137 is in both builds (the adoption is this fork's), 138's in the
- * shipped build only. The compat build (SWE_UPSTREAM_COMPAT) fails 14,
- * with the fixes and without, by the upstream behaviour it restores:
- * bug 137's observation 7 -- its running thread's first delta t reads the
+ * again, the getter -23.8946 for -25.936 before the delta t. Bug 145's
+ * 16: iflag 0 answers 28.927550 s where the reader has de200.eph open
+ * (the setting thread, the running thread and the context after the path
+ * and the file alone), 28.931886 elsewhere, for 28.932196; the new thread
+ * there also differs from the fresh process. The fix of 137 is in both
+ * builds (the adoption is this fork's), 138's and 145's in the shipped
+ * build only. The compat build (SWE_UPSTREAM_COMPAT) fails 30, with the
+ * fixes and without: bug 145's 16, upstream's 0 restored, and 14 by other
+ * upstream behaviour it restores: bug 137's observation 7 -- its running thread's first delta t reads the
  * DE number before the call syncs (bugs 124, 128), 3 cases, and a new
  * thread warns on its first call (bug 110) and guesses from the file it
  * has open (bug 103), 4; with a swe_get_tid_acc() first, which syncs, its
@@ -75,6 +91,8 @@
 
 #define T_1700 2341972.5	/* AD 1700, inside de200.eph */
 #define T_1800 2378496.5	/* AD 1800 */
+#define T_1950 2433282.5	/* AD 1950 */
+#define T_1000 2086308.0	/* AD 1000 */
 #define T_WARM 2451545.0
 #define NV     4
 
@@ -87,9 +105,10 @@ static const char *KN[NK] = {
 enum { R_MAIN, R_RUN, R_NEW, R_CTX, NR };
 static const char *RN[NR] = { "setting thread", "running thread", "new thread",
                               "explicit context" };
-enum { O_DT, O_TT, NO };
+enum { O_DT, O_TT, O_F0, NO };
 static const char *ON[NO] = { "JPLEPH delta t, the tidal term, swe_deltat()",
-                              "a TT JPL Sun, the tidal term, swe_deltat()" };
+                              "a TT JPL Sun, the tidal term, swe_deltat()",
+                              "swe_deltat_ex() with no ephemeris bit" };
 
 struct obs { double v[NV]; char err[AS_MAXCH]; };
 
@@ -196,6 +215,16 @@ static void observe(swe_ctx *c, struct obs *a)
     a->v[1] = tid(c);
     a->v[2] = dt(c, T_1700);
     a->v[3] = tid(c);
+    return;
+  }
+  if (O == O_F0) {		/* bug 145: the default ephemeris, Swiss */
+    a->v[0] = (c != NULL ? swe_deltat_ex_r(c, T_1950, 0, a->err)
+                         : swe_deltat_ex(T_1950, 0, a->err)) * 86400;
+    a->v[1] = (c != NULL ? swe_deltat_ex_r(c, T_1950, SEFLG_SWIEPH, NULL)
+                         : swe_deltat_ex(T_1950, SEFLG_SWIEPH, NULL)) * 86400;
+    a->v[2] = tid(c);
+    a->v[3] = (c != NULL ? swe_deltat_ex_r(c, T_1000, 0, NULL)
+                         : swe_deltat_ex(T_1000, 0, NULL)) * 86400;
     return;
   }
   /* bug 138: a calculation that opens the file does not choose the term
@@ -330,6 +359,12 @@ int main(int argc, char **argv)
           bad++;
           continue;
         }
+        if (O == O_F0 && a.v[0] != a.v[1]) {
+          printf("  %s, %s, %s: FAIL: 0 answers %.6f s, SEFLG_SWIEPH %.6f s\n",
+                 KN[K], ON[O], RN[r], a.v[0], a.v[1]);
+          bad++;
+          continue;
+        }
         if (memcmp(a.v, ref.v, sizeof a.v) == 0 && strcmp(a.err, ref.err) == 0)
           continue;
         printf("  %s, %s, %s: FAIL\n   ", KN[K], ON[O], RN[r]);
@@ -344,9 +379,12 @@ int main(int argc, char **argv)
       if (O == O_DT)
         printf("  %-34s JPLEPH delta t %.6f s, swe_deltat() %.6f s, tidal term %.4f\n",
                KN[K], ref.v[0], ref.v[2], ref.v[1]);
-      else
+      else if (O == O_TT)
         printf("  %-34s after a JPL Sun: tidal term %.4f, swe_deltat() in 1800 %.6f s\n",
                KN[K], ref.v[0], ref.v[1]);
+      else
+        printf("  %-34s flag 0: delta t in 1950 %.6f s, in AD 1000 %.6f s\n",
+               KN[K], ref.v[0], ref.v[3]);
     }
   unlink_all(NOFILE);
   if (bad) {

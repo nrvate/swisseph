@@ -3174,6 +3174,18 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
     retc = swi_get_tid_acc(ctx, tjd, 0, 9999, &denumret, &tid_acc, serr); /* for default tid_acc */
   /* otherwise we use tid_acc consistent with epheflag */
   } else {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 145: a flag with no ephemeris bit named no ephemeris
+     * here, so the term was the JPL file's this context had open (denum
+     * below), else the default: swe_deltat_ex(tjd, 0) at 1950 answered
+     * 28.927550 s (de200's) on the thread that set de200.eph, 28.931886
+     * (-25.80) on a second thread until it opened the file, and neither
+     * the Swiss files' 28.932196 -- the ephemeris swe_calc() reads a 0
+     * flag as (SEFLG_DEFAULTEPH), and swe_calc_ut() and the other UT
+     * functions set before their own delta t. It is that one here too. */
+    if (epheflag == 0)
+      epheflag = SEFLG_SWIEPH;
+#endif
     denum = ctx->jpldenum;
     /* Upstream's line, unchanged. When the moon file is closed this
      * leaves denum 0, and swi_get_tid_acc() resolves the term -- JPL

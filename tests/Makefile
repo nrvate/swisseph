@@ -1445,7 +1445,9 @@ check-sunmemo: sunmemo
 # the setting thread, that running thread, a new thread and an explicit
 # context (UPSTREAM-BUGS 137); and a JPL file a calculation opens leaves
 # the tidal term the guess takes, so swe_get_tid_acc() after a TT JPL Sun
-# answers the term the next swe_deltat() uses (UPSTREAM-BUGS 138).
+# answers the term the next swe_deltat() uses (UPSTREAM-BUGS 138); and
+# swe_deltat_ex() with no ephemeris bit takes the default ephemeris's,
+# the Swiss files', on every thread (UPSTREAM-BUGS 145).
 check-jpldenum: jpldenum
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./jpldenum $(EPHE)
 

@@ -171,6 +171,7 @@ worst were in code that had never executed even once.
 | 134 | The interpolation's nodes are keyed on neither the JPL Horizons flags of the call nor the approximation's mode (`SE_MODEL_JPLHORA_MODE`), nor go with the IERS corrections `swe_close()` frees, and `swe_get_ayanamsa_ex()` takes the nutation kept at its instant whatever flags computed it: another setting's nutation answers there, 6.2e-2" after the flag per call, 0.104" after a change of mode, 0.131" across the corrections | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 137 | A thread that had the JPL file open and adopts another thread's `swe_set_ephe_path()` keeps the closed file's DE number, so its SEFLG_JPLEPH delta t takes that file's tidal term: 3.012003 s in AD 1700 for the 14.286718 of the setting thread and a fresh process, after a path without the file or the same path by another string (this fork's) | Correctness (behaviour) | `sweconfig.c` |
 | 138 | A JPL file a calculation opens sets the automatic tidal term for itself, not for `swe_deltat()`'s guess, which follows the configuration: after the path, de200.eph and the path again by another string, which forgets the JPL DE number, a TT JPL Sun left `swe_get_tid_acc()` at -23.8946 while the next `swe_deltat()` used -25.936 (18.902020 s in 1800) -- on every thread and context | Correctness | `sweph.c` |
+| 145 | `swe_deltat_ex()` with no ephemeris bit in the flag takes the tidal term of the JPL file the context has open, else the default, not the Swiss files' that a 0 flag means to `swe_calc()` and every UT function: at 1950 28.927550 s on the thread that set de200.eph, 28.931886 on a second thread until it opens the file, for 28.932196; 169.4 s in AD 1000; a flag-0 eclipse search 11.3 s off | Correctness | `swephlib.c` |
 
 ---
 
@@ -9204,6 +9205,53 @@ made there. And the getter after a delta t asked with a flag still
 answers that delta t's term (upstream's, and bug 101's "the one the last
 delta t resolved"): after a second UT JPL Moon in this state it is
 -23.8946, and the next `swe_deltat()` takes -25.936.
+
+## 145. `swe_deltat_ex()` with no ephemeris bit takes the tidal term of the JPL file the context has open, else the default, never the Swiss files' that a 0 flag means everywhere else
+
+**Severity: Correctness (returned value: delta t 4.6 ms off in 1950 and 169.4 s in AD 1000 with de200.eph open, 0.31 ms and 11.29 s without; different on two threads, and moved by opening a file; the eclipse and house functions with a flag of 0 the same)**
+**Where:** upstream `swephlib.c` `calc_deltat()` (the flag's ephemeris bits taken as given, `denum = swed.jpldenum`)
+
+Found by entry 134's work. `calc_deltat()` takes the tidal term "consistent
+with epheflag", and with no ephemeris bit in the flag there was none to be
+consistent with: the DE number was the JPL file's this context had open
+(`ctx->jpldenum`, upstream's line), else none, and `swi_get_tid_acc()`
+then answered the default -25.80. So `swe_deltat_ex(tjd, 0)` at 1950 was
+28.927550 s (de200's -23.8946) on the thread that set de200.eph, which
+had opened it, and 28.931886 (-25.80) on a second thread until it opened
+the file (4.3 ms); in AD 1000 1305.30 s and 1463.43. Neither is the term
+of the ephemeris a 0 flag means everywhere else: `swe_calc()` reads it as
+the Swiss files (SEFLG_DEFAULTEPH is SEFLG_SWIEPH), and `swe_calc_ut()`,
+the star and ayanamsa UT functions and `swe_calc_orbel_ut()` set
+SEFLG_SWIEPH before their own delta t, so a caller converting with
+`swe_deltat_ex(tjd, 0)` and calling `swe_calc(tt, ipl, 0)` disagreed with
+`swe_calc_ut(tjd, ipl, 0)`. The functions that pass the caller's flag on
+unchanged took it the same way: `swe_sol_eclipse_when_glob()` from AD
+1000 with a flag of 0 put the maximum 11.281 s off its SEFLG_SWIEPH
+answer, in a program with the path alone; `swe_houses_ex()` there the
+ascendant 3.2e-9 deg. The compat build answers as upstream.
+
+The choice. Not the guess (`swi_guess_ephe_flag()`, bug 132's for the
+functions without a flag): this function takes a flag, and its 0 is the
+default ephemeris's, as in every function the flag goes on to. With
+de200.eph set, a flag of 0 means the Swiss files to `swe_calc()`, and
+answering de200's term would split the two again.
+
+**Fix, as done here** (under `SWE_UPSTREAM_COMPAT`'s `#ifndef`):
+`calc_deltat()` reads a flag with no ephemeris bit as SEFLG_SWIEPH, before
+it picks the DE number. `iflag == -1` is the default term as before. On
+the UT path (one compare): 20000 x 10 `swe_calc_ut()` 20792848981
+instructions before, 20733635298 after; calc-swieph and calc-moseph call
+`swe_calc()` and reach no delta t.
+
+G132 (`tests/jpldenum.c`, entry 137) gains the observation:
+`swe_deltat_ex()` in 1950 with a flag of 0 and its serr, with
+SEFLG_SWIEPH, the getter, and a flag of 0 in AD 1000, the first two equal
+and all bit for bit as the fresh process, for the 4 settings and 4
+readers. 48 pass; before this fix the 16 new ones fail (28.927550 s where
+the reader has de200.eph open, 28.931886 elsewhere, for 28.932196); the
+compat build the same 16, 30 of 48 in all. G24 `dt_flag0_off`, a flag of
+0 in AD 1000 against SEFLG_SWIEPH with de200.eph open: 0 shipped, 169.4 s
+compat (and shipped before the fix). The golden transcript is unchanged.
 
 ## How these were found
 
