@@ -628,6 +628,30 @@ static double far_body_moon_pull_off(void)
   return fabs(x[3] - r);
 }
 
+/* UPSTREAM-BUGS 66: the same on JPL (de200.eph) and Moshier, VEA's
+ * geocentric longitude speed at 2456000.7 (2012), the larger of the two,
+ * deg/day. The Moon's pull reached only the Swiss path (bug 62) before. */
+static double far_body_moon_pull_eph_off(void)
+{
+  double t = floor(2456000.7 * 256) / 256, h = 1.0 / 128, x[6], f[5][6], r, w = 0;
+  const int32 fe[2] = {SEFLG_JPLEPH, SEFLG_MOSEPH};
+  char serr[256];
+  int k, e;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  for (e = 0; e < 2; e++) {
+    swe_calc(t, SE_FICT_OFFSET + 25, fe[e] | SEFLG_SPEED, x, serr);
+    for (k = 0; k < 5; k++)
+      swe_calc(t + (k - 2) * h, SE_FICT_OFFSET + 25, fe[e], f[k], serr);
+    r = (swe_difdeg2n(f[0][0], f[2][0]) - 8 * swe_difdeg2n(f[1][0], f[2][0]) +
+         8 * swe_difdeg2n(f[3][0], f[2][0]) - swe_difdeg2n(f[4][0], f[2][0])) / (12 * h);
+    if (fabs(x[3] - r) > w)
+      w = fabs(x[3] - r);
+  }
+  return w;
+}
+
 /* A topocentric fixed star's deflection by the Sun: the part of it that
  * comes from the observer's site, Regulus near the Sun on 2023-08-10,
  * (topocentric - topocentric NOGDEFL) - (geocentric - geocentric NOGDEFL)
@@ -1045,7 +1069,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1096,6 +1120,7 @@ int main(int argc, char **argv)
   moshs = mosh_speed_off();
   moonpull = far_body_moon_pull_off();
   abr2 = topo_aberr_second_order_off();
+  moonpulle = far_body_moon_pull_eph_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1457,6 +1482,14 @@ int main(int argc, char **argv)
   else {
     printf("  aberr. rate 2nd order  %.2e deg/day FAIL: expected %s\n",
            abr2, WANT_DEFECT ? "> 1e-6" : "< 8e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moonpulle > 1e-5) : (moonpulle < 2e-8))
+    printf("  far body, Moon, JPL/Mosh %.2e deg/day OK\n", moonpulle);
+  else {
+    printf("  far body, Moon, JPL/Mosh %.2e deg/day FAIL: expected %s\n",
+           moonpulle, WANT_DEFECT ? "> 1e-5" : "< 2e-8");
     bad++;
   }
 

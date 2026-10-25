@@ -799,6 +799,8 @@ struct epsilon {
  *   - the aberration rate's Earth, for a far body, left out the Moon's pull
  *     on the Earth: 0.6% of the acceleration, 7.5% of its rate (2.3e-7
  *     deg/day on Nibiru's speed, 6e-7 on VEA's; UPSTREAM-BUGS 62, G61)
+ *   - the same Moon's pull was left out on JPL and Moshier (2e-7 to 6e-7
+ *     deg/day on a far fictitious body's speed; UPSTREAM-BUGS 66, G65)
  *   - a topocentric fixed star's light deflection was made from the
  *     geocenter, the topocentric flag not passed to it (3e-7 to 9e-6 arcsec
  *     5-40 degrees from the Sun; UPSTREAM-BUGS 61, G60)

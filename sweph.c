@@ -4961,6 +4961,13 @@ static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, ch
  * light time (Nibiru, 3.5 days: 7.7e-8 deg/day left with the series to 10
  * days, 7.5e-9 with the whole form past 0.3). Below
  * 1e-3 day (the Moon) the term is under 1e-5 of the rate and is skipped.
+ * Upstream bug 66: bug 62 had the Moon on the Swiss files only; on JPL
+ * and Moshier a far fictitious body kept the Sun-only a' and the 10-day
+ * switch (2e-7 to 5e-7 deg/day). Past 0.3 day of light time the geocentric
+ * Moon at teval is now read there too (swi_pleph J_MOON-J_EARTH; Moshier's
+ * lunar theory), for the whole-form tau (a_Sun + a_m) only: nearer bodies
+ * keep the Sun's a' and pay no read (the missing 7.5% of a' costs
+ * tau omega / 2 * 0.6% < 2e-4 of tau a at 0.3 day).
  * Without the Moon in hand, past 10 days the series itself fails (3.7e-4
  * deg/day at the 462 days of a body 80,000 AU out), and tau a(teval) is
  * taken whole from the Sun's pull, -GM r/r^3: that leaves out the Moon's
@@ -4993,6 +5000,20 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
       jm[i] = gmm * (d[i+3] - 3 * d[i] * dv / (dd * dd)) / (dd * dd * dd);
     }
     have_moon = TRUE;
+  } else if (tau > 0.3) {
+    /* JPL and Moshier have no Moon in the save area: read it, but only
+     * where its pull is taken whole (past the switch below), so the
+     * planets inside 0.3 day of light time pay nothing. */
+    double dm[6];
+    int ie = ctx->pldat[SEI_EARTH].iephe;
+    if ((ie == SEFLG_JPLEPH && swi_pleph(ctx, teval, J_MOON, J_EARTH, dm, NULL) == OK)
+        || (ie == SEFLG_MOSEPH && swi_moshmoon(ctx, teval, NO_SAVE, dm, NULL) == OK)) {
+      const double gmm = GEOGCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT) / EARTH_MOON_MRAT;
+      double dd = sqrt(square_sum(dm));
+      for (i = 0; i <= 2; i++)
+        am[i] = gmm * dm[i] / (dd * dd * dd);
+      have_moon = TRUE;
+    }
   }
   /* Moshier: the Earth is heliocentric already */
   for (i = 0; i <= 5; i++)

@@ -99,6 +99,7 @@ worst were in code that had never executed even once.
 | 67 | The star functions return the caller's flags, and an emptied nutation cache answers for JD 0 | Correctness | `sweph.c`, `sweconfig.c` |
 | 52 | The aberration rate term is first order in v/c | Correctness | `sweph.c` |
 | 56 | The interpolated apsides stop short of their iteration's fixed point | Correctness | `swemmoon.c` |
+| 66 | The Moon's pull on the Earth reaches the aberration rate on the Swiss files only | Correctness | `sweph.c` |
 
 ---
 
@@ -3197,6 +3198,43 @@ The upstream build fails 63 of 68. G24 `intp_fixpoint_off`: the perigee's
 longitude at JD 687314.573 from its fixed point, 3.4e-4 mas shipped,
 1.17e3 compat. Baselines: interpolated-perigee positions move by up to
 1.2", the apogee's by 2.5 mas.
+
+## 66. The Moon's pull on the aberration rate's Earth is on the Swiss files only
+
+**Severity: Correctness (2e-7 to 6e-7 deg/day on a far fictitious body's longitude speed on JPL and Moshier)**
+**Where:** `sweph.c`: `earth_at_lt_sun()`
+
+Entry 62 added the Moon's pull on the Earth to the aberration rate's
+tau a(teval) term from the geocentric Moon in the Swiss save area. JPL
+(`SEFLG_JPLEPH`) and Moshier have no Moon there and kept the Sun-only a' and
+the 10-day switch. Measured on ts20 against five-point differences of the
+same call's positions over 2^-7 day, seven dates, de200.eph (1650..2150) and
+Moshier (-300..+300 years): longitude speed Nibiru 2.2e-7 deg/day
+geocentric (2.3e-7 topocentric) on JPL, 8.2e-8 (8.6e-8) on Moshier; the
+Christ Comet 3.9e-7 and 5.9e-8; Planet 9 3.3e-7 and 1.4e-7; VEA 5.6e-7 and
+5.9e-7; Planet 9's latitude speed on JPL 1.5e-7. Pluto and Harrington, under
+0.3 day of light time, 1.4e-8 to 3.6e-8.
+
+**Fix, as done here:** past a light time of 0.3 day, where the Moon's pull
+is taken whole, the geocentric Moon at teval is read where the save area has
+none: `swi_pleph(J_MOON, J_EARTH)` on JPL, `swi_moshmoon()` (NO_SAVE) on
+Moshier. The same 0.3-day switch as the Swiss path then applies. Nearer
+bodies read nothing and keep the Sun's a' (the Moon's 7.5% of it is
+tau omega / 2 * 0.6% < 2e-4 of tau a at 0.3 day), so the planets Sun to Pluto
+(0.29 day at most) pay one comparison. Measured after: Nibiru 7.4e-9
+geocentric JPL, 2.0e-8 topocentric, Moshier 7.6e-9 and 1.1e-8; the Christ
+Comet, Planet 9, VEA 2.8e-8 or less everywhere. Harrington (light time under
+0.3 day, so unchanged) stays at 1.9e-8 geocentric and 3.5e-8 topocentric on
+JPL, a little above the Swiss 8e-9 for the missing 7.5% of a'. Bench
+calc-swieph/calc-moseph: the bodies never reach the new branch; the runs
+differ by load noise (moseph min 1.055 s after, 1.026 before, load 5-7).
+
+G65 `tests/lunarpulleph.c`: Nibiru, Harrington, the Christ Comet, Planet 9,
+VEA and Pluto, geocentric and topocentric, JPL and Moshier, seven dates each,
+longitude and latitude speeds within 5e-8 deg/day (measured <= 3.6e-8; the
+build before this fix fails 16 of 24 rows at 5.9e-8 to 6.0e-7; the upstream
+build fails them all). G24: `far_body_moon_pull_eph_off`, VEA's longitude
+speed on JPL and Moshier, 4.5e-9 shipped, 3.4e-5 compat.
 
 ## How these were found
 
