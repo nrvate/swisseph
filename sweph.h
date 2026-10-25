@@ -1055,6 +1055,11 @@ struct epsilon {
  *     not the file's EMRAT; swe_get_orbital_elements() with the AA's GMs
  *     and Pluto Mercury's mass (Pluto's a 2.5e-7 off, relative;
  *     UPSTREAM-BUGS 108, G104, G107)
+ *   - (nothing for UPSTREAM-BUGS 106: the bounds on what a file's header,
+ *     the delta-psi table and the star catalogue give as sizes and indexes
+ *     hold in both builds. They refuse only files no valid ephemeris is;
+ *     every distributed file reads bit for bit as before, so no G24 case;
+ *     G103)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

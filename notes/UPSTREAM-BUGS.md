@@ -141,6 +141,7 @@ worst were in code that had never executed even once.
 | 107 | With the files named by `SE_EPHE_PATH`, a first call that reads a file before `swe_calc()` names the path reads it along the compiled default path, and some read it twice: delta t, sidereal time, houses, stars, ayanamsa, eclipses, leap seconds, a JPL file | Correctness, performance | `sweph.c`, `swephlib.c`, `swedate.c` |
 | 108 | `swe_nod_aps()`'s osculating points turned by the frame bias twice and its EMB built with the AA's Earth-Moon ratio; `swe_get_orbital_elements()` takes the AA's GMs and gives Pluto Mercury's mass | Correctness | `swecl.c`, `sweph.c`, `sweph.h` |
 | 110 | A first call warns "Please call swe_set_ephe_path()" whenever it initialises the context, with a path in effect too: `swe_deltat_ex()` and `swe_get_ayanamsa_ex_ut()` answer correctly with the warning in serr, and `swe_calc_orbel()` refuses on it (that refusal this fork's) | Correctness (error reporting) | `sweph.c`, `swephlib.c`, `sweph.h` |
+| 106 | Values read from an ephemeris file's header, and from the delta-psi and fixed-star tables, index and size arrays unchecked: a crafted file writes past `pldat[]`, `rot_back()`'s stack array, `sastnam[]` and `dpsi[]`, or reads past the JPL record | Memory | `sweph.c`, `swejpl.c` |
 
 ---
 
@@ -6042,7 +6043,7 @@ Not this entry's, and left: `read_const()` indexes `pldat[]` with the
 body numbers the file lists, and checks them only against
 `SE_PLMOON_OFFSET`, not `SEI_NPLANETS`. They are covered by the header's
 CRC, so a damaged file cannot reach it; only a crafted file whose CRC was
-recomputed could write past the array.
+recomputed could write past the array. Entry 106 now refuses such a file.
 
 G99 `tests/missfile.c`, extended: (c) a directory with copies of semo_06,
 sepl_12 and seas_00 as semo_12, sepl_18 and seas_06, and a copy of seas_00
@@ -6589,6 +6590,99 @@ with none, the three still warn: 84 pass. Before the fix 9 fail, the compat
 build 15 (entries 98 and 107 restored), the upstream build 24. G24
 `path_warn_first_count`: 0 of 2 shipped, 2 of 2 compat. G106, G102, G82,
 G90 and G24 pass.
+
+## 106. Values read from an ephemeris file's header, and from the delta-psi and fixed-star tables, index and size arrays unchecked: a crafted file writes past `pldat[]`, `rot_back()`'s stack array, `sastnam[]` and `dpsi[]`, or reads past the JPL record
+
+**Severity: Memory (stack and heap writes past arrays, NULL dereferences, out-of-bounds reads; a damaged file is mostly stopped by the header CRC, a crafted one is not)**
+**Where:** `sweph.c`: `read_const()`, `do_fread()`, `sweph()`'s segment load, `load_dpsi_deps()`, `fixstar_cut_string()`, `search_star_in_list()`; `swejpl.c`: `fsizer()`, `state()`
+
+Entry 104's noticed item, and an audit of every reader that takes a size
+or an index from a file. Each was measured with a crafted copy of a real
+file (CRC recomputed where the reader checks one), the copy in a /tmp
+directory of links to the others, under ASan and UBSan:
+
+- `read_const()` used the body numbers a Swiss file lists as `pldat[]`
+  indexes, checked only against `SE_PLMOON_OFFSET`. 500 in sepl_12's list
+  wrote `pldat[500]` of 18 (ASan: SEGV in `read_const()`); 1 wrote the
+  Moon's constants while semo_18 was open, and the Moon's next segment
+  failed "semo_18.se1 is damaged (2)"; 65000 wrote the slot a planetary
+  moon's open file uses.
+- The coefficient count `ncoe` was unbounded: 60 in semo_12 overflowed
+  `rot_back()`'s `x[MAXORD+1][3]` on the stack (ASan: stack-buffer-
+  overflow in `rot_back()`), and `get_new_segment()`'s `longs[]` and
+  `do_fread()`'s 1000-byte `space[]` have the same size behind them; in
+  sepm9501 the call answered (r 1048832, no error).
+- The segment length, index offset and span were used unchecked:
+  Mercury's `dseg` 0 gave a segment number of inf converted to int
+  (UBSan), `lndx0` 0x7fffff00 overflowed `lndx0 + 3 iseg` (UBSan: signed
+  overflow), and a span starting 1000 days late answered from the wrong
+  segment without an error.
+- A body the file does not list (Mercury's entry replaced by Venus) kept
+  the constants of no file, `dseg` 0 (UBSan: inf to int), or those of the
+  file read before.
+- A planetary moon's or asteroid's element line opening with 30 digits:
+  `strncpy()` copied 19 + 31 bytes into `sastnam[41]` (crash); the 30-byte
+  `astnam` was `strlen()`'d without a terminator.
+- `swejpl.c`'s `state()` bounded each body's coefficient count by 18 but
+  not its offset or sub-interval count, and the file-length identity
+  checks only the body with the highest offset: DE200 with the Earth-Moon
+  barycentre's sub-intervals 2 -> 402 and the Moon's 8 -> -492 (15 and 12
+  coefficients, the sum kept) read far past `buf[2500]` (ASan: SEGV in
+  `interp()`). `fsizer()` with no positive offset read `eh_ipt[-3]`.
+- `load_dpsi_deps()`: a line of fewer than ten fields left `cpos[3]`,
+  `[8]` and `[9]` unset (SEGV in `atoi()`), and a table of more than
+  `SWE_DATA_DPSI_DEPS` (36525) days wrote past `dpsi[]` and `deps[]`
+  (ASan: heap-buffer-overflow).
+- `fixstar_cut_string()` trimmed `cpos[1]` for a sefstars.txt line with
+  no comma, NULL (SEGV); the catalogue that then failed to load left
+  `search_star_in_list()` calling `bsearch()` on its NULL table (UBSan).
+
+seorbel.txt's reader writes no fixed array from the file (its name is
+copied bounded).
+
+**Fix, as done here:** every such value is checked against what it indexes
+or sizes before it is used, and a file that fails is refused as entry 104
+refuses one: closed, its own slot cleared, the other files kept. In
+`read_const()`: the file's span finite and ordered ("damaged (0r)"); every
+listed body one that kind of file holds -- the planet file the
+barycentre, Mercury to the solar-system barycentre; the Moon file the
+Moon; the main-asteroid file Chiron to Vesta; a single-body file a number
+above `SE_PLMOON_OFFSET` ("0o"); `ncoe` in 1..MAXORD + 1 ("0p"); per body
+the ten constants finite, `dseg` positive, the body's span covering the
+file's, at most 1e9 segments, `lndx0` non-negative and its index inside
+the file, the elements within 1e8 days and 1e5 deg ("0q"; every
+distributed file is far inside: `|prot|`, `|peri|` < 1.1e4, `|dprot|`,
+`|dperi|` < 710, `|telem|` < 8e6); the element line's number field within
+`sastnam[]` ("0d"); `astnam` terminated. `do_fread()` refuses a reordered
+read larger than its buffer. `sweph()` refuses a body its open file does
+not list ("does not contain body"), checked at a segment load, fresh or
+warm alike, the file left open for the bodies it does list. In
+`swejpl.c` every body's offset, coefficient count and sub-interval count
+must lie inside the record (NOT_AVAILABLE, and the Swiss fallback with its
+warning), and a file with no offsets is refused. `load_dpsi_deps()` skips
+a short line and stops at 36525 days; `fixstar_cut_string()` trims only a
+field that is there, and the star search does not call `bsearch()` on an
+empty table (the answer, not found, as before).
+
+All of it is outside `SWE_UPSTREAM_COMPAT`: it refuses only files no valid
+ephemeris is, and changes nothing else. Every distributed file -- the 152
+sepl/semo/seas files, the 32 planetary-moon files and de200.eph -- opens
+and answers; 3672 fresh calls (18 bodies, four instants in each 600-year
+bucket from -13200 to 17250) are bit for bit as before. So there is no
+G24 case. A segment load costs a scan of the file's body list (at most
+ten); `calc-swieph` in `bench` within its noise (minimum 0.598-0.626 us
+before, 0.598-0.619 after, three runs each).
+
+G103 `tests/hdrbound.c`: the 14 crafted files above, each in a child
+process, the other kinds of file opened first so that a write into their
+slots shows; the call that meets the crafted file must fail with a
+message, and the open bodies' next segments, Mars, and after the JPL and
+table cases the Swiss Mars and the Sun, must answer bit for bit as a fresh
+context on the complete directory. Built with ASan and with UBSan (G25's
+flags). 14 pass in both; before the fix ASan fails 10 and UBSan 13, every
+case in one of them. In the compat build the memory checks hold too; its
+calls after a refusal fail by entry 104's `free_planets()`. G24, G83, G88
+and G99 pass.
 
 ## How these were found
 

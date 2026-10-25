@@ -2324,9 +2324,14 @@ void load_dpsi_deps(swe_ctx *ctx)
   }
   ctx->eop_tjd_beg_horizons = DPSI_DEPS_IAU1980_TJD0_HORIZONS;
   while (fgets(s, AS_MAXCH, fp) != NULL) {
-    swi_cutstr(s, " ", cpos, 16);
+    /* Upstream bug 106: a short line left cpos[3], [8] and [9] unset, and
+     * a file of more than SWE_DATA_DPSI_DEPS days ran past dpsi[], deps[] */
+    if (swi_cutstr(s, " ", cpos, 16) < 10)
+      continue;
     if ((iyear = atoi(cpos[0])) == 0) 
       continue;
+    if (n >= SWE_DATA_DPSI_DEPS)
+      break;
     mjd = atoi(cpos[3]);
     /* is file in one-day steps? */
     if (mjdsv > 0 && mjd - mjdsv != 1) {
@@ -3620,6 +3625,17 @@ again:
 #else
   if (pdp->segp == NULL || tjd < pdp->tseg0 || tjd > pdp->tseg1) {
 #endif
+    /* Upstream bug 106: a file that does not list the body asked for left
+     * it the constants of no file (dseg 0, a segment index of inf) or
+     * those of the file read before. The file answers for the bodies it
+     * lists; this one is refused, fresh or warm alike. */
+    for (i = 0; i < fdp->npl && fdp->ipl[i] != ipli; i++)
+      ;
+    if (i == fdp->npl) {
+      if (serr != NULL)
+        snprintf(serr, AS_MAXCH, "Ephemeris file %.200s does not contain body %d. ", fdp->fnam, ipli);
+      return(ERR);
+    }
     retc = get_new_segment(ctx, tjd, ipl, ifno, serr);
     if (retc != OK)
       return(retc);
@@ -7948,6 +7964,26 @@ return_error_gns:
   return ERR;
 }
 
+/* Upstream bug 106: the body numbers a file lists index pldat[] (SEI_
+ * numbers) or name the numbered asteroid or planetary moon of its slot;
+ * a body that is not this slot's -- out of the array, or another file's --
+ * wrote over other memory or another open file's constants. Every
+ * distributed file lists only its own (sepl 0 and 2-10, semo 1, seas 12-17,
+ * the planetary moons their 9nnn). */
+static AS_BOOL file_may_hold(int ifno, int ipli)
+{
+  switch (ifno) {
+  case SEI_FILE_PLANET:
+    return ipli == SEI_EMB || (ipli >= SEI_MERCURY && ipli <= SEI_SUNBARY);
+  case SEI_FILE_MOON:
+    return ipli == SEI_MOON;
+  case SEI_FILE_MAIN_AST:
+    return ipli >= SEI_CHIRON && ipli <= SEI_VESTA;
+  default:
+    return ipli > SE_PLMOON_OFFSET;
+  }
+}
+
 /* Column offsets into an astorb.dat element line, counted from the end of
  * the MPC number and name, which is variable-length. */
 #define ASTORB_COL_H	35
@@ -8059,6 +8095,11 @@ static int read_const(swe_ctx *ctx, int ifno, char *serr)
     while(isdigit((int) *sp)) sp++;
     sp++;
     i = (int) (sp - s);
+    /* Upstream bug 106: a number field this long copied past sastnam[] */
+    if (lastnam + i >= (int) sizeof(sastnam)) {
+      smsg = "d";
+      goto file_damage;
+    }
     strncpy(sastnam, s, lastnam+i);	// fixed 19-nov-19
     *(sastnam+lastnam+i) = '\0';
     /* save elements, they are required for swe_plan_pheno() */
@@ -8142,6 +8183,10 @@ freord, fendian, ifno, serr);
 fendian, ifno, serr);
   if (retc != OK)
     goto return_error;
+  if (!(fdp->tfstart < fdp->tfend) || !isfinite(fdp->tfstart) || !isfinite(fdp->tfend)) {
+    smsg = "r";	/* upstream bug 106 */
+    goto file_damage;
+  }
   /************************************* 
    * how many planets are in file?     * 
    *************************************/
@@ -8169,6 +8214,11 @@ fendian, ifno, serr);
 freord, fendian, ifno, serr);
   if (retc != OK)
     goto return_error;
+  for (kpl = 0; kpl < nplan; kpl++)
+    if (!file_may_hold(ifno, fdp->ipl[kpl])) {
+      smsg = "o";	/* upstream bug 106 */
+      goto file_damage;
+    }
   /************************************* 
    * asteroid name                     * 
    *************************************/
@@ -8201,6 +8251,7 @@ freord, fendian, ifno, serr);
 	smsg = "k";
         goto file_damage;
       }
+      fdp->astnam[30] = '\0';	/* strlen() below: upstream bug 106 */
     }
     /* in worst case strlen of not null terminated area! */
     i = (int) (strlen(fdp->astnam) - 1);
@@ -8286,6 +8337,12 @@ SEI_CURR_FPOS, freord, fendian, ifno, serr);
 SEI_CURR_FPOS, freord, fendian, ifno, serr);
     if (retc != OK)
       goto return_error;
+    /* Upstream bug 106: rot_back() holds MAXORD + 1 coefficients on the
+     * stack, do_fread() 1000 bytes of reference ellipse */
+    if (pdp->ncoe < 1 || pdp->ncoe > MAXORD + 1) {
+      smsg = "p";
+      goto file_damage;
+    }
     /* rmax = normalisation factor */
     retc = do_fread(ctx, (void *) &lng, 4, 1, 4, fp, SEI_CURR_FPOS, freord,
 fendian, ifno, serr);
@@ -8303,6 +8360,25 @@ fendian, ifno, serr);
 fendian, ifno, serr);
     if (retc != OK)
       goto return_error;
+    /* Upstream bug 106: the segment index, its arithmetic and rot_back()'s
+     * angle reductions within what they can hold: a positive segment
+     * length, the body's span covering the file's, so that every instant
+     * the file answers has a segment, its index inside the file, and the
+     * elements finite and small enough for an int number of turns. Every
+     * distributed file is well inside (lndx0 + 3 (nndx + 1) <= length;
+     * |prot|, |peri| < 1.1e4, |dprot|, |dperi| < 710, |telem| < 8e6). */
+    for (i = 0; i < 10; i++)
+      if (!isfinite(doubles[i]))
+        break;
+    if (i < 10 || !(doubles[2] > 0) || doubles[0] > fdp->tfstart || doubles[1] < fdp->tfend
+        || (doubles[1] - doubles[0] + 0.1) / doubles[2] > 1e9
+        || pdp->lndx0 < 0
+        || pdp->lndx0 + 3.0 * ((doubles[1] - doubles[0] + 0.1) / doubles[2] + 1) > (double) flen
+        || fabs(doubles[3]) > 1e8 || fabs(doubles[4]) > 1e5 || fabs(doubles[5]) > 1e5
+        || fabs(doubles[8]) > 1e5 || fabs(doubles[9]) > 1e5) {
+      smsg = "q";
+      goto file_damage;
+    }
     pdp->tfstart  = doubles[0];
     pdp->tfend    = doubles[1];
     pdp->dseg     = doubles[2];
@@ -8398,6 +8474,12 @@ static int do_fread(swe_ctx *ctx, void *trg, int size, int count, int corrsize, 
     } else
       return(OK);
   } else {
+    /* upstream bug 106: never more than space[] holds */
+    if (totsize < 0 || totsize > (int) sizeof(space)) {
+      if (serr != NULL)
+	snprintf(serr, AS_MAXCH, "Ephemeris file %.220s is damaged (5).", ctx->fidat[ifno].fnam);
+      return(ERR);
+    }
     if (fread((void *) &space[0], (size_t) totsize, 1, fp) == 0) {
       if (serr != NULL) {
 	strcpy(serr, "Ephemeris file is damaged (3). ");
@@ -10126,7 +10208,8 @@ int32 fixstar_cut_string(swe_ctx *ctx, char *srecord, char *star, struct fixed_s
   i = swi_cutstr(s, ",", cpos, 20);
   /* return trad. name, nomeclature name */
   swi_right_trim(cpos[0]);
-  swi_right_trim(cpos[1]);
+  if (i >= 2)	/* a line without a comma left cpos[1] NULL: upstream bug 106 */
+    swi_right_trim(cpos[1]);
   if (i < 14) {
     if (serr != NULL) {
       if (i >= 2) {
@@ -10729,7 +10812,9 @@ static int32 search_star_in_list(swe_ctx *ctx, char *sstar, struct fixed_star *s
       stardatabegp = &(ctx->fixed_stars[ctx->n_fixstars_real]);
       ndata = ctx->n_fixstars_named;
     }
-    stardatap = (struct fixed_star *) bsearch((void *) searchkey,
+    /* Upstream bug 106: a star file that failed to load left no table,
+     * and bsearch() was handed its NULL; the answer, not found, is kept */
+    stardatap = ndata <= 0 ? NULL : (struct fixed_star *) bsearch((void *) searchkey,
 	       (void *) stardatabegp, (size_t) ndata,
 	       sizeof (struct fixed_star),
 	       fstar_node_compare);
