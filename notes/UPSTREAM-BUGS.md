@@ -234,6 +234,8 @@ worst were in code that had never executed even once.
 | 203 | The sidereal houses' ayanamsa takes its nutation with the caller's flags, and with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` (SEFLG_JPLHOR fallen to it too) that nutation steps at 1962 Jan 20 (entry 153), while the houses' side test (entry 187) looked at the precession's and obliquity's models alone: the ayanamsa's difference 1/64 day either side reached across, every sidereal cusp and ascmc speed 6.38e-4 deg/day off its cusps' rate within 1/64 day of the step, every house system, Lahiri, True Citra, the ecliptic of date, de200 and the Swiss files alike | Correctness | `swehouse.c` |
 | 200 | Owen 1990's joins are not held where the model of the instant is taken whole: the true node's and osculating apogee's frame hold (entry 186) took Owen 1990, not the instant's piece (entry 183), so with Owen 1990 chosen their speeds within 1/32 day of the joins at -10000, +6000 and +14000 are 3.4e-6 to 1.1e-5 deg/day off (the apogee's 1.5e-7 to 9.3e-7); and the long-term sidereal time's table (entries 29, 181) gives its nodes half a day from the joins the mean of both pieces' rates, the sidereal time 2.8e-9 deg off the per-piece cubic about +14000 | Correctness | `swephlib.c`, `sweph.c`, `sweph.h` |
 | 202 | `lunar_osc_elem()` leaves Moshier's Moon out of entry 186's frame hold, but its velocity carries the frame's turning (entries 95, 184), which `swi_plan_for_osc_elem()` does not take off, so its true node and osculating apogee move with the precession model's rates: within 1/16 day of a short-term window's edge, with IAU 1976 under Vondrak at J2000 -+ 2 centuries, the node's speed 9.5e-8 and 1.05e-7 deg/day off the side's model's, the apogee's 5.0e-6 and 1.4e-6 | Correctness | `sweph.c` |
+| 206 | Within 2^-9 day of an ephemeris's edge a star with SEFLG_SPEED is refused or answered with Moshier mixed in, where it answers without the flag: `fixstar_obs_rate()` reads the Earth 2^-9 day either side for the aberration's rate. On de200.eph Aldebaran -1 "outside JPL eph. range" 2^-10 day inside either end (1 without the flag; Mars 257 at the end); with the Swiss files of 1800-2400 alone the downgrade's refusal (strict) or Moshier's heliocentric velocity in the acceleration, 6.6e-4 deg/day on the longitude speed (allowed); at a Moon file's end the same through the Moon | Correctness (behaviour) | `sweph.c` |
+| 208 | A fictitious body or `swe_calc_orbel()`'s orbit whose light time leaves the Swiss files' span is answered from Moshier's Sun, 0, taken for the barycentric one, under either setting: the light-time loop's `main_planet_bary()` falls to Moshier on its own and answers OK. Cupido at JD 2378496.6 with the files of 1800-2400 alone 258, 4.33e-3 deg off the complete directory's and the Moshier request's, strict too | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -14273,6 +14275,172 @@ the node 6.7e-2 to 0.12 deg/day off within 1/16 day, the apogee 3.4, and
 "0,9,1" at J2000 - 2 centuries -+ 2^-8 and -+ 2^-14 day against the
 nine-point reference of the side's model alone, the largest: 1.85e-11
 deg/day shipped (9.51e-8 before the fix), 5.47e-5 compat.
+
+## 206. Within 2^-9 day of an ephemeris's edge a star with SEFLG_SPEED is refused, or answered with Moshier's Earth in its aberration's rate, where it answers without the flag
+
+**Severity: Correctness (behaviour: a refusal where the same star answers without SEFLG_SPEED; with the fallback a speed off by 6.6e-4 deg/day)**
+**Where:** `sweph.c`: `fixstar_obs_rate()`, new `fixstar_rate_read()`
+
+Found by entry 198's work (its notes). A star's aberration rate takes the
+Earth's acceleration at tjd from its velocities read at tjd +- 2^-9 day
+(entry 76), by `main_planet_bary()` with the ephemeris that answered at
+tjd. The star reads no other instant: its place, and the call without
+SEFLG_SPEED, need the Earth at tjd alone. Within 2^-9 day of a span's
+edge one of the two reads left it:
+- de200.eph (JD 2305424.5 .. 2513392.5): Aldebaran with SEFLG_JPLEPH |
+  SEFLG_SPEED at 1/1000 day and 2^-10 day inside the end -1, "jd
+  2513392.500977 outside JPL eph. range", under either setting, and 1
+  without SEFLG_SPEED; Mars answers 257 there (its light-time reads go
+  back into the span). The same 2^-10 and 2^-20 day inside the start,
+  where Mars falls to Moshier for its light time (260) and the Moon, its
+  light time 1.3 s, answers 257.
+- The Swiss files of 1800-2400 alone (sepl_18 from JD 2378496.5 to
+  2597651.359): 2^-10 day inside the start and 7.5e-4 inside the end the
+  read fell to Moshier. Strict: the downgrade's refusal ("Swiss (.se1)
+  ephemeris is not available for jd 2378496.5010; ...") where the star
+  answers 2 without the flag. Allowed: 258 with " \nusing Moshier eph.; "
+  noted and Moshier's heliocentric velocity differenced with the files'
+  barycentric one, the acceleration off by the Sun's velocity over
+  2^-8 day, 2.2e-3 AU/day^2 for the Earth's 3.0e-4: Aldebaran's
+  longitude speed -6.867e-4 deg/day for -3.171e-5 (5.9e-4 off at the end).
+- A Moon file's end (semo_18 to JD 2597656.457, sepl_18 and sepl_24
+  there): at JD 2597656.45703125 the read's Moon came from Moshier
+  (entry 120): strict, "Swiss (.se1) Moon file is not available"; allowed,
+  258 noted, 2.4e-9 deg/day.
+
+The upstream build reads the Earth at tjd - 1e-5 day for the rate, and
+always (it sets SEFLG_SPEED for every star), so it refuses the star with
+or without the flag within 1e-5 day after a start: de200.eph 2^-20 day
+in, -1 both. Elsewhere its call with SEFLG_SPEED answers as the one
+without.
+
+**Fix, as done here:**
+- A read is taken only when it answers as the Earth at tjd did: the same
+  ephemeris (not a JPL BEYOND_EPH_LIMITS, not the files fallen to
+  Moshier) and Moshier's Moon exactly when tjd's had it
+  (`fixstar_rate_read()`; the flag `ctx->moshmoon_used` is restored to
+  tjd's, so entry 120's tests see that read alone). Its messages go to a
+  local buffer, so serr is the call's without the flag.
+- With one side outside, the acceleration is the one-sided second-order
+  difference from the side within, (3 v(t) - 4 v(t - h) + v(t - 2h)) / 2h,
+  v(t) the Earth's at tjd already read (truncation h^2/3 a'', 1e-9 of
+  a); elsewhere the central difference as before. Both sides outside, or
+  the second read outside, cannot happen in a span longer than 2^-7 day;
+  it returns the read's error.
+- Now at every edge above the star with SEFLG_SPEED answers with the
+  flag of the call without it plus SEFLG_SPEED, the place bit for bit and
+  the same serr, its speeds within 6.4e-11 deg/day (on the sky) of
+  one-sided five-point differences of its places over 2^-8 day, by all
+  four functions; a pristine process gives the same.
+- Everything else is unchanged: 6120 answers -- Aldebaran, Polaris,
+  Sirius and Spica by `swe_fixstar2()` and `swe_fixstar_ut()` in ten flag
+  sets, Swiss, de200 and Moshier, at twelve instants 1600-2120, seven
+  fictitious bodies and two orbits of `swe_calc_orbel()` -- identical
+  before and after. 20000 calls of `swe_fixstar2()` with SEFLG_SPEED take
+  3.5196e9 instructions for 3.5208e9.
+- Inside `#ifndef SWE_UPSTREAM_COMPAT`, the function being this fork's
+  (entry 76).
+
+Surveyed with it, `swe_calc()`'s planets with SEFLG_SPEED at the same
+edges: each answers from the ephemeris its light-time reads stay in, as
+`main_planet()` decides (Mars 257 at de200's end, 260 at its start; the
+Moon 257 and 258 at the starts), their speeds within the one-sided
+differences' noise (2e-9 deg/day over 2^-10 day, the Moon's 4e-8, 1.4e-9
+geocentric over 2^-7). Not the true node and osculating apogee (noted below).
+
+G158 `tests/spanedge.c` (a): Aldebaran and Polaris by the four functions,
+geocentric, topocentric, equatorial, J2000 and sidereal, both settings, at
+those seven edge instants and at 2000 on de200 and the files: the call
+with SEFLG_SPEED against the call without, the speeds against the places'
+rate, the last call of each process against a pristine one's. 792 rows
+pass; before the fix the 560 at the edges fail, the upstream build 664.
+G24 `star_span_edge_ret`: Aldebaran by `swe_fixstar2()` with SEFLG_JPLEPH |
+SEFLG_SPEED on de200.eph 2^-20 day after its start, the fallback allowed,
+its return: 257 shipped, -1 compat (and shipped before the fix).
+
+Noticed, not fixed:
+- The true node and the osculating apogee with SEFLG_SPEED read the Moon
+  at tjd + 2^-6 day for their speeds (`lunar_osc_elem()`), and within
+  that of de200.eph's end fall to Moshier, where they answer from de200
+  without the flag: at JD 2513392.4990234375 SE_TRUE_NODE 260, 88.4083557
+  deg, for 1 and 88.4061487 (2.2e-3 deg), SE_OSCU_APOG 308.7951857 for
+  308.7784839 (0.0167 deg); strict refused with the flag, answered
+  without.
+- `swe_nod_aps()` with SEFLG_SPEED reads the Earth at tjd less the
+  points' light time for the aberration's rate (by `swe_calc_r()`), and
+  within that of the files' start takes Moshier's: Pluto's osculating
+  points with the files of 1800-2400 alone at JD 2378496.625, the
+  fallback allowed, their places the complete directory's to the bit but
+  the ascending node's speed -2.48353e-2 deg/day for -2.48232e-2 (1.2e-5
+  off; the perihelion's 1.1e-5), nothing noted; strict refused ("not
+  available for jd 2378496.3944") where it answers without the flag. On
+  de200.eph at JD 2305424.625 alike: strict refused, allowed answered
+  with nothing noted.
+- After `swe_calc()` of the Moon with SEFLG_SPEED and of the Sun, both
+  refused under the strict setting without the Moon files (JD 2451545,
+  sepl_18 and seas_18 alone), `swe_fixstar2()` of Aldebaran without
+  SEFLG_SPEED answers 2, no note, where a pristine process refuses it
+  (bug 120's message); with the fallback allowed the Sun after the Moon
+  answers 2 with no note where a pristine process notes Moshier's Moon.
+  The places are the same.
+
+## 208. A fictitious body or `swe_calc_orbel()`'s orbit whose light time leaves the Swiss files is answered from Moshier's Sun, 0, as the barycentric one, under either setting
+
+**Severity: Correctness (behaviour: a wrong place, 4.3e-3 to 8.5e-3 deg, flagged SEFLG_SWIEPH, also under the strict setting)**
+**Where:** `sweph.c`: `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`, new `earth_bary_lt()`
+
+The light-time loop of the fictitious bodies (entry 26's, G27) and of
+this fork's `swe_calc_orbel()` reads the Earth and the barycentric Sun at
+the emission instant by `main_planet_bary()`, which falls from the Swiss
+files to Moshier on its own when the file for that instant is missing and
+answers OK, its Sun 0 (Moshier's origin). `swecalc()` and
+`swe_calc_orbel()` redo the call on Moshier when the loop returns
+NOT_AVAILABLE or BEYOND_EPH_LIMITS, as a planet's light-time read gives
+them, but that read never did. So with the files of 1800-2400 alone,
+within the body's light time of sepl_18's start (JD 2378496.5), the orbit
+was taken about Moshier's origin for the barycentre: Cupido at JD
+2378496.6 (0.23 day) returned 258 under either setting, 325.735184212
+deg, for the complete directory's 325.730858889 and the Moshier
+request's 325.730859123 (4.33e-3 deg); at 2378496.625 Isis 6.97e-3 deg
+off, the orbit with a = 40 AU 8.5e-3, Cupido heliocentric 4.5e-3,
+topocentric alike. A JPL file's BEYOND_EPH_LIMITS reached the redo
+already (de200.eph at JD 2305424.625: 260, strict refused).
+
+The other readers of `main_planet_bary()`: the stars' Earth at tjd falls
+back as `main_planet()` does (entry 198), their rate reads are entry
+206's; `swi_observer_accel_lt()` reads Moshier only, within its 0.3-day
+margin; the compat build's star reads are upstream's. The callers of
+`main_planet()` take the ephemeris it answered with. `swe_nod_aps()`,
+`swe_calc_pctr()` and the observer read through `swe_calc_r()` (or no
+file); `swe_calc_pctr()` there is refused as `swe_calc()` refuses a
+barycentric Moshier request (entry 139).
+
+**Fix, as done here:**
+- The light-time loops read the Earth and the Sun at the emission
+  instant by `earth_bary_lt()`: on the Swiss files `sweplan()`, whose
+  NOT_AVAILABLE the loop returns, so `swecalc()` and `swe_calc_orbel()`
+  do the call again on Moshier (allowed) or refuse it with the
+  downgrade's message (strict), as `swe_calc()` does a planet's light-time
+  read; JPL and Moshier by `main_planet_bary()` as before.
+- Now Cupido, Isis, Poseidon and the orbit there answer bit for bit as
+  the Moshier request, flag SEFLG_MOSEPH, "using Moshier eph." noted, or
+  are refused ("Swiss (.se1) ephemeris is not available for jd
+  2378496.6000; ..."); under SEFLG_TRUEPOS, which reads no other instant,
+  and a day later they answer as the complete directory, both settings.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; the upstream branch's light-time
+  read is untouched. Elsewhere unchanged (entry 206's 6120 answers).
+
+G158 `tests/spanedge.c` (b): Cupido, Isis, Poseidon and an orbit with a =
+40 AU, with and without SEFLG_SPEED, topocentric, heliocentric and
+equatorial, at JD 2378496.6 and 2378496.625 with the files of 1800-2400
+and at JD 2305424.625 on de200.eph: the fallback allowed bit for bit the
+Moshier request's, strict the downgrade's refusal; at JD 2378497.5 and
+under SEFLG_TRUEPOS the complete directory's; in one process Cupido at
+2378496.6, 2378497.5 and 2378496.6 again as pristine processes. 179 rows
+pass; before the fix 80 fail, the upstream build 100 (G158 971 rows, 640
+before, 764 upstream). G24 `fict_lt_edge_off`: Cupido at JD 2378496.6
+with the files of 1800-2400, the fallback allowed, against the Moshier
+request: 0 shipped, 4.32e-3 deg compat (4.33e-3 shipped before the fix).
 
 ## How these were found
 

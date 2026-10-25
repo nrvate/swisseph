@@ -1529,6 +1529,18 @@ struct epsilon {
  *     1.05e-7 and 5.0e-6 deg/day with IAU 1976 under Vondrak (the compat
  *     build's are upstream's, over 0.1 day: 5.5e-5 there) (UPSTREAM-BUGS
  *     202, G155, G24)
+ *   - (nothing for UPSTREAM-BUGS 206: the star's reads of the Earth 2^-9
+ *     day either side of tjd, which left the span within that of its edge,
+ *     are this fork's (entry 76); the compat build reads it at tjd - 1e-5
+ *     day for every star, with or without SEFLG_SPEED, and refuses within
+ *     that after a span's start: Aldebaran on de200.eph 2^-20 day in -1
+ *     both; G158, G24)
+ *   - a fictitious body or swe_calc_orbel()'s orbit whose light time
+ *     leaves the Swiss files answered under either setting from Moshier's
+ *     Sun, 0, as the barycentric one, the light-time read fallen to Moshier
+ *     on its own: Cupido at JD 2378496.6 with the files of 1800-2400 alone
+ *     258, 4.3e-3 deg off the Moshier request (UPSTREAM-BUGS 208, G158,
+ *     G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

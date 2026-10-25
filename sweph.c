@@ -6188,6 +6188,28 @@ static double lt_newton_step(const double *dx, const double *v, double dt, doubl
   double k = r > 0 ? dot_prod(dx, v) / r * AUNIT / CLIGHT / 86400.0 : 0;
   return dt + (dtNew - dt) / (1 + k);
 }
+
+/* Upstream bug 208: the Earth and the Sun at a fictitious body's or an
+ * orbit's light-time instant t were read by main_planet_bary(), which
+ * falls from the Swiss files to Moshier on its own and answers OK: within
+ * the light time of a file's start (1800-2400 alone, Cupido at JD
+ * 2378496.6, 0.23 day), the orbit took Moshier's Sun, 0 there, for the
+ * files' barycentric one, and the call returned 258 under either setting,
+ * 4.33e-3 deg off the complete directory's and the Moshier request's.
+ * Now the ephemeris of the Earth at teval or none: the Swiss files'
+ * NOT_AVAILABLE, as a planet's light-time read gives it, so the call is
+ * done again on Moshier (allowed) or refused with the downgrade's message
+ * (strict), as swe_calc() does a planet's; JPL's BEYOND_EPH_LIMITS did so
+ * already. */
+static int earth_bary_lt(swe_ctx *ctx, double t, int32 epheflag, int32 iflag,
+                         double *xearth, double *xsun, double *xmoon, char *serr)
+{
+  if (epheflag == SEFLG_SWIEPH)
+    return sweplan(ctx, t, SEI_EARTH, SEI_FILE_PLANET, iflag, NO_SAVE, xearth, xearth,
+                   xsun, xmoon, serr);
+  return main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth,
+                          xsun, xmoon, serr);
+}
 #endif
 
 static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, char *serr)
@@ -6357,7 +6379,7 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
      * it. Converged to 1e-12 day, about 26 m of light travel. G27. */
     for (j = 0; j < 10; j++) {
       t = pdp->teval - dt;
-      retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
+      retc = earth_bary_lt(ctx, t, epheflag, iflag, xearth, xsun, xmoon, serr);	/* bug 208 */
       /* Upstream bug 96: the Earth at t as the one at teval moved back */
       earth_place_at_lt(ctx, pdp->teval, t, &have_acc, acc_e, xearth);
       if (swi_osc_el_plan(ctx, t, xx, ipl-SE_FICT_OFFSET, ipli, xearth, xsun, serr) != OK)
@@ -6892,7 +6914,7 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
      * moved by that step, the centre by it and the rounding of t. */
     for (j = 0; j < 10; j++) {
       t = pdp->teval - dt;
-      retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, NULL, xearth, xearth, xsun, xmoon, serr);
+      retc = earth_bary_lt(ctx, t, epheflag, iflag, xearth, xsun, xmoon, serr);	/* bug 208 */
       /* Upstream bug 96: the Earth at t as the one at teval moved back */
       if (iplctr == SE_EARTH)
         earth_place_at_lt(ctx, pdp->teval, t, &have_acc, acc_e, xearth);
@@ -7861,27 +7883,81 @@ static void aberr_light_central(double *xx, const double *xe, const double *xe_m
  * month), on every ephemeris since the Moshier Earth's velocity is smooth
  * (UPSTREAM-BUGS 85; before, its roughness took 2 B - A over 2^-3 day, B
  * the positions' second difference, A the velocities' central one). */
+/* Upstream bug 206: one of fixstar_obs_rate()'s reads of the Earth, OK
+ * only when answered as the Earth at tjd was: by its ephemeris epheflag,
+ * and from Moshier's Moon (bug 120) exactly when that one was (mm).
+ * Otherwise NOT_AVAILABLE, the instant outside what answered at tjd: a
+ * JPL file's span (BEYOND_EPH_LIMITS), the Swiss files' (fallen to
+ * Moshier), a Moon file's. ERR a read error. */
+static int fixstar_rate_read(swe_ctx *ctx, double t, int32 epheflag, int32 iflag,
+                             AS_BOOL mm, double *xa, char *serr)
+{
+  int retc;
+  int32 used = epheflag;
+  ctx->moshmoon_used = FALSE;
+  /* no Sun: these reads are for the Earth's velocity only */
+  retc = main_planet_bary(ctx, t, SEI_EARTH, epheflag, iflag, NO_SAVE, &used, xa, xa,
+                          NULL, NULL, serr);
+  if (retc == BEYOND_EPH_LIMITS
+      || (retc == OK && (used != epheflag || ctx->moshmoon_used != mm)))
+    retc = NOT_AVAILABLE;
+  ctx->moshmoon_used = mm;
+  return retc;
+}
+
 static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int32 epheflag,
                             int32 iflag, int32 siteflag, const double *xe, double *xo_m,
                             double *xo_p, char *serr)
 {
-  int i, k;
-  int32 iephe_used;
+  int i, k, retc, out = -1;
   const double h = 1.0 / 512;
   double xa[2][6], xs[6], ae[3];
+  /* Upstream bug 206: the reads at tjd +- 2^-9 day left the span of the
+   * ephemeris that answered at tjd within 2^-9 day of its edge, and the
+   * star with SEFLG_SPEED was refused where it answers without: on
+   * de200.eph 2^-10 day inside either end Aldebaran -1 ("outside JPL eph.
+   * range"), 1 without the flag, where Mars answers 257 at the end; on
+   * the Swiss files of 1800-2400 alone 2^-10 day inside either end, one
+   * read fallen to Moshier, the downgrade's refusal (strict) where it
+   * answers 2, or (allowed) Moshier's heliocentric velocity differenced
+   * with the files' barycentric one, the acceleration off by the Sun's
+   * velocity over 2h, 2.2e-3 AU/day^2 for the Earth's 3.0e-4: 6.6e-4
+   * deg/day on the longitude speed; and so at a Moon file's end, the
+   * read's Moon Moshier's (refused, or 2.4e-9 deg/day). The star reads
+   * no other instant: it answers as without the flag. Now a read outside
+   * is not taken, the acceleration the one-sided second-order difference
+   * from the side within, (3 v(t) - 4 v(t - h) + v(t - 2h)) / 2h
+   * (truncation h^2/3 a'', 1e-9 of a; central as before elsewhere). */
+  AS_BOOL mm = ctx->moshmoon_used;	/* the Earth at tjd's Moon */
+  char s[AS_MAXCH], *sp = (serr != NULL) ? s : NULL;
   for (k = 0; k < 2; k++) {
-    iephe_used = epheflag;
-    /* no Sun: these reads are for the Earth's velocity only */
-    if (main_planet_bary(ctx, k ? tjd - h : tjd + h, SEI_EARTH, epheflag, iflag, NO_SAVE,
-                         &iephe_used, xa[k], xa[k], NULL, NULL, serr) != OK)
+    *s = '\0';
+    retc = fixstar_rate_read(ctx, k ? tjd - h : tjd + h, epheflag, iflag, mm, xa[k], sp);
+    if (retc == NOT_AVAILABLE && out < 0) {
+      out = k;
+      continue;
+    }
+    if (retc != OK) {
+      if (serr != NULL)
+        strcpy(serr, s);
       return ERR;
-    if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
-      return ERR;
-    if (!(iflag & SEFLG_HELCTR) && swi_refuse_moshmoon(ctx, tjd, serr))	/* bug 120 */
-      return ERR;
+    }
   }
-  for (i = 0; i <= 2; i++)
-    ae[i] = (xa[0][i+3] - xa[1][i+3]) / (2 * h);
+  if (out < 0) {
+    for (i = 0; i <= 2; i++)
+      ae[i] = (xa[0][i+3] - xa[1][i+3]) / (2 * h);
+  } else {
+    /* out 0 (tjd + h outside): v at tjd - h and tjd - 2h; out 1 mirrored */
+    double sg = out ? 1 : -1;
+    *s = '\0';
+    if (fixstar_rate_read(ctx, tjd + sg * 2 * h, epheflag, iflag, mm, xa[out], sp) != OK) {
+      if (serr != NULL)
+        strcpy(serr, s);
+      return ERR;
+    }
+    for (i = 0; i <= 2; i++)
+      ae[i] = sg * (4 * xa[1 - out][i+3] - 3 * xe[i+3] - xa[out][i+3]) / (2 * h);
+  }
   for (i = 0; i <= 2; i++) {
     xo_m[i] = xe[i] - dm * xe[i+3];
     xo_p[i] = xe[i] + dp * xe[i+3];
