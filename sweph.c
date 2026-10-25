@@ -8831,7 +8831,9 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
 	AS_BOOL do_save, double *xobs, char *serr)
 {
   int i;
-  double sidt, delt, tjd_ut, eps, nut, nutlo[2];
+  double sidt, delt, tjd_ut, eps, nut;
+  struct epsilon oectmp;
+  struct nut nuttmp;
   double f = EARTH_OBLATENESS;
   double re = EARTH_RADIUS; 
   double cosfi, sinfi, cc, ss, cosl, sinl, h;
@@ -8847,29 +8849,24 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
    */
   delt = swe_deltat_ex_r(ctx, tjd, iflag, serr);
   tjd_ut = tjd - delt;
-  /* Keyed like every other reader of these caches (swi_check_ecliptic,
-   * swi_check_nutation): the instant AND the flag key. On the instant
-   * alone, a JPLHOR call could reuse an obliquity computed without the
-   * Horizons offsets, or the reverse (2026-09-16 review, F10). */
-  if (ctx->oec.teps == tjd && ctx->nut.tnut == tjd
-      && ctx->oec.epsflag == SWI_EPS_KEY(iflag)
-      && SWI_EPS_KEY(ctx->sp.nut.nutflag) == SWI_EPS_KEY(iflag)) {
-    eps = ctx->oec.eps;
-    nutlo[1] = ctx->nut.nutlo[1];
-    nutlo[0] = ctx->nut.nutlo[0];
-  } else {
-    eps = swi_epsiln(ctx, tjd, iflag);
-    if (!(iflag & SEFLG_NONUT)) 
-      swi_nutation(ctx, tjd, iflag, nutlo);
-  }
-  if (iflag & SEFLG_NONUT) {
-    nut = 0;
-  } else {
-    eps += nutlo[1];
-    nut = nutlo[0];
-  }
-  /* mean or apparent sidereal time, depending on whether or
-   * not SEFLG_NONUT is set */
+  /* The Earth turns about its true pole of date, and the apparent sidereal
+   * time is the angle it has turned through. So the observer is built on
+   * the true equator and equinox of date, whatever frame the caller wants
+   * its answer in: SEFLG_NONUT says how the result is to be expressed, not
+   * where the observer is. (Every caller passes it, because the J2000
+   * vector is what they add to the barycentric Earth.) The obliquity and
+   * the nutation are taken at this instant rather than from the caches,
+   * whose entry may be another instant's. */
+  calc_epsilon(ctx, tjd, iflag, &oectmp);
+  if (swi_nutation(ctx, tjd, iflag, nuttmp.nutlo) == ERR)
+    return ERR;
+  nuttmp.tnut = tjd;
+  nuttmp.snut = sin(nuttmp.nutlo[1]);
+  nuttmp.cnut = cos(nuttmp.nutlo[1]);
+  nut_matrix(&nuttmp, &oectmp);
+  eps = oectmp.eps + nuttmp.nutlo[1];
+  nut = nuttmp.nutlo[0];
+  /* apparent sidereal time */
   sidt = swe_sidtime0_r(ctx, tjd_ut, eps * RADTODEG, nut * RADTODEG);
   sidt *= 15;	/* in degrees */
   /* length of position and speed vectors;
@@ -8907,20 +8904,30 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
   /* to AUNIT */
   for (i = 0; i <= 5; i++)
     xobs[i] /= AUNIT;
-  /* subtract nutation, set backward flag */
-  if (!(iflag & SEFLG_NONUT)) {
-    swi_coortrf2(xobs, xobs, -ctx->nut.snut, ctx->nut.cnut);
-    /* speed of xobs is always required, namely for aberration!!! */
-    /*if (iflag & SEFLG_SPEED)*/
-      swi_coortrf2(xobs+3, xobs+3, -ctx->nut.snut, ctx->nut.cnut);
-    swi_nutate(ctx, xobs, iflag | SEFLG_SPEED, TRUE);
+  /* true equator and equinox of date -> mean equator and equinox of date:
+   * the transposed nutation matrix, as swi_nutate(..., TRUE) applies it,
+   * on the position and on the velocity (the speed of xobs is always
+   * required, namely for aberration). The rotation only: the nutation
+   * rate on a 6378 km vector is micrometres a day. */
+  {
+    double x[6];
+    for (i = 0; i <= 2; i++) {
+      x[i]   = xobs[0] * nuttmp.matrix[i][0] + xobs[1] * nuttmp.matrix[i][1] + xobs[2] * nuttmp.matrix[i][2];
+      x[i+3] = xobs[3] * nuttmp.matrix[i][0] + xobs[4] * nuttmp.matrix[i][1] + xobs[5] * nuttmp.matrix[i][2];
+    }
+    for (i = 0; i <= 5; i++)
+      xobs[i] = x[i];
   }
   /* precess to J2000 */
   swi_precess(ctx, xobs, tjd, iflag, J_TO_J2000);
   /*if (iflag & SEFLG_SPEED)*/
     swi_precess_speed(ctx, xobs, tjd, iflag, J_TO_J2000);
-  /* neglect frame bias (displacement of 45cm) */
-  /* ... */
+  /* The Earth this is added to is ICRS (DE403 and later), and the callers
+   * take the sum back to J2000 with the forward bias, so the site goes in
+   * as ICRS too: J2000 -> ICRS, the 45 cm that used to be neglected (0.3
+   * mas on the Moon). */
+  if (swi_get_denum(ctx, SEI_EARTH, iflag) >= 403)
+    swi_bias(ctx, xobs, tjd, iflag | SEFLG_SPEED, TRUE);
   /* save */
   if (do_save) {
     for (i = 0; i <= 5; i++)
