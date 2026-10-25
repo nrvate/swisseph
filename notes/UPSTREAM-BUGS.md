@@ -102,6 +102,7 @@ worst were in code that had never executed even once.
 | 56 | The interpolated apsides stop short of their iteration's fixed point | Correctness | `swemmoon.c` |
 | 66 | The Moon's pull on the Earth reaches the aberration rate on the Swiss files only | Correctness | `sweph.c` |
 | 69 | The nutation matrix's rate holds the mean obliquity still | Correctness | `sweph.c` |
+| 70 | `swe_nod_aps()`'s apparent speeds are not the rate of the aberration it applies | Correctness | `swecl.c`, `sweph.c` |
 
 ---
 
@@ -3337,6 +3338,56 @@ longitudes within 3e-11 deg/day, latitudes within 5e-12. Before the fix
 `nut_obliq_rate_off`: Polaris Australis's right ascension, the worse of
 1900 and 2000, 6.6e-12 deg/day shipped (2.04e-9 before the fix), 8.2e-9
 compat.
+
+## 70. `swe_nod_aps()`'s apparent speeds are not the rate of the aberration it applies
+
+**Severity: Correctness (1.6e-8 deg/day on Neptune's mean points' geocentric longitude, 5.7e-9 on Mars's; 2.1e-9 AU/day on Neptune's heliocentric distance rate)**
+**Where:** `swecl.c`, `swe_nod_aps_r()`, the aberration of the points (every
+point and method; measured on the planets' mean ones); `sweph.c`,
+`swi_aberr_rate()` (replaced)
+
+The points carry no light time: a point x(t) seen from the observer, then
+aberration A(x, V) by the observer's velocity V(t). Its rate is A's
+derivative along x' and along V' = a, the observer's acceleration. The
+speed was `swi_aberr_light()`'s (the point moved, V held) plus bug 34's
+term tau a, a's part across the line of sight -- A to first order in v/c
+-- with tau a's series taken while the save area held the instant
+t - dt, so without the Moon (bug 62) in the Earth's jerk: tau/2 of the
+Moon's 7.5% of it left in a. Seen from the Sun (heliocentric, and the Sun's
+own points) it was the raw V(t) - V(t - dt), its radial part too, which
+moves the distance rate. Measured with default flags against five-point
+differences of the library's own positions, mean nodes, perihelia and
+aphelia of Mercury..Neptune, thirteen instants -3000..+3000: geocentric
+longitude off by 5.2e-9 (Mercury) to 1.6e-8 (Neptune) deg/day, latitude by
+up to 1.3e-9 (Neptune); heliocentric distance by 1.3e-9 AU/day (Uranus) and
+2.1e-9 (Neptune). With SEFLG_NOABERR the same cases are within 5.3e-10,
+3e-11 and 2.3e-11; the deflection's rate (SEFLG_NOGDEFL) moves nothing.
+
+**Fix, as done here:** the position is `swi_aberr_light()`'s, unchanged to
+the bit (with and without SEFLG_SPEED, every point, method and frame
+compared). The velocity is the central difference of the aberrated place,
+A(x + s x', V + s a) at s = +-2^-6 day, x with its velocity before
+aberration. a is the new `swi_observer_accel_lt()`'s (the Earth's, from
+`earth_at_lt_sun()`'s tau a over tau, plus the site's for SEFLG_TOPOCTR),
+taken after the save area is back at tjd so that the Moon is in it; seen
+from the Sun, V(t) - V(t - dt) over dt. After, same instants: geocentric
+longitude <= 5.3e-10 deg/day (Mercury at -3000, the floor without
+aberration), Neptune 3.5e-10; latitude <= 4.4e-11; distance <= 2.2e-11
+AU/day. The speeds of the other points through the same code move by up to
+2.6e-8 deg/day, toward their positions' rates: the osculating points' (Mars
+geocentric 1.2e-8 to 6.8e-9 deg/day, Pluto 2.1e-8 to 2.0e-9), the Moon's
+heliocentric mean points' distance rate (5.8e-11 to 2.7e-14 AU/day), the
+topocentric mean points' (Neptune 3.2e-8 to 1.6e-9 deg/day).
+
+G69 `tests/nodapsaberr.c`: the fourteen cases of G63 (Mercury..Neptune,
+geocentric and heliocentric) with default flags, seven instants
+-3000..+3000, longitude, latitude and distance speeds within 1e-9, 1e-10
+deg/day and 5e-11 AU/day (measured 5.3e-10, 4.4e-11, 2.2e-11); the build
+before this fix fails 20 of the 42 checks, the upstream build all 42.
+G54's Mars longitude limit is 5e-10 now, from 1e-8 (measured 4.1e-11, from
+5.6e-9). G24 `planet_aberr_rate_off`: Neptune's mean aphelion's
+heliocentric distance rate at J2000 + 100 days, 2.2e-13 AU/day shipped,
+3.3e-9 compat. G42, G47, G54, G63 pass.
 
 ## How these were found
 

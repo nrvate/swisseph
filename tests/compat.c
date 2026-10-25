@@ -798,6 +798,26 @@ static double planet_apsis_rate_off(void)
   return fabs(x[3] - (v[0] - 8 * v[1] + 8 * v[3] - v[4]) / (12 * h));
 }
 
+/* UPSTREAM-BUGS 70: Neptune's mean aphelion, heliocentric, default flags
+ * (aberration seen from the Sun), at J2000 + 100 days: its distance rate
+ * against a five-point difference of its distance over 2^-6 day, AU/day.
+ * Upstream adds the Sun's V(t) - V(t - dt) whole, radial part and all,
+ * ~2e-9 (bug 64's t^2 and t^3 terms vanish near J2000). */
+static double planet_aberr_rate_off(void)
+{
+  double jd = floor((2451545.0 + 100.37) * 256) / 256, h = 1.0 / 64;
+  double x[6], f[5][6], u[6];
+  int32 fl = SEFLG_SWIEPH | SEFLG_HELCTR;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_nod_aps(jd, SE_NEPTUNE, fl | SEFLG_SPEED, SE_NODBIT_MEAN, u, u, u, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_nod_aps(jd + (k - 2) * h, SE_NEPTUNE, fl, SE_NODBIT_MEAN, u, u, u, f[k], serr);
+  return fabs(x[5] - (f[0][2] - 8 * f[1][2] + 8 * f[3][2] - f[4][2]) / (12 * h));
+}
+
 /* UPSTREAM-BUGS 46: Mars's osculating descending node, perihelion and
  * aphelion, geocentric, with and without SEFLG_SPEED: the largest move in
  * longitude or latitude, mas. Upstream's aberration-rate call leaves the
@@ -1125,7 +1145,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1161,6 +1181,7 @@ int main(int argc, char **argv)
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
   apsrate = planet_apsis_rate_off();
+  aberrate = planet_aberr_rate_off();
   nutr = nut_rate_off();
   nutob = nut_obliq_rate_off();
   startd = star_topo_defl_off();
@@ -1420,6 +1441,14 @@ int main(int argc, char **argv)
   else {
     printf("  planet apsis rate      %.2e deg/day FAIL: expected %s\n",
            apsrate, WANT_DEFECT ? "> 1e-6" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (aberrate > 1e-9) : (aberrate < 2e-11))
+    printf("  apsis aberration rate %.2e AU/day OK\n", aberrate);
+  else {
+    printf("  apsis aberration rate %.2e AU/day FAIL: expected %s\n",
+           aberrate, WANT_DEFECT ? "> 1e-9" : "< 2e-11");
     bad++;
   }
 

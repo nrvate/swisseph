@@ -827,6 +827,11 @@ struct epsilon {
  *     out of the body's (4.7e-7 deg/day on a five-point difference of
  *     Mercury's heliocentric places, 3e-8 on its heliocentric speed;
  *     UPSTREAM-BUGS 63, G62)
+ *   - swe_nod_aps()'s apparent points took the aberration's rate to first
+ *     order in v/c, the Earth's jerk without the Moon, and from the Sun the
+ *     raw change of its velocity, radial part too (5.7e-9 deg/day on Mars's
+ *     mean points, 1.6e-8 on Neptune's, 2.1e-9 AU/day on Neptune's
+ *     heliocentric distance rate; UPSTREAM-BUGS 70, G69)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

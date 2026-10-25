@@ -5154,23 +5154,28 @@ static void add_aberr_rate(double *xx, const double *xobs, const double *xobs2)
   }
 }
 
-/* Bug 34's aberration rate for swe_nod_aps(), whose points are not made
- * by these paths: xx the apparent point relative to the observer, with
- * velocity, after aberration; xobs the barycentric observer at teval,
- * xeteval and xsun the barycentric Earth and Sun there, xe the Earth at t,
- * the instant the light left. Adds the term to xx[3..5]. */
-int swi_aberr_rate(swe_ctx *ctx, double teval, double t, int32 iflag, const double *xobs,
-                   const double *xeteval, const double *xsun, const double *xe,
-                   double *xx, char *serr)
+/* For swe_nod_aps() (Upstream bug 70): the observer's barycentric
+ * acceleration at teval, whole, as bug 34's term tau a reads it -- the
+ * Earth's from earth_at_lt_sun() (V(teval) less the velocity it gives, over
+ * tau = teval - t), plus the site's for SEFLG_TOPOCTR. xeteval and xsun
+ * are the barycentric Earth and Sun at teval, xe the Earth at t. The
+ * points there take the aberration's rate from it exactly (second order in
+ * v/c, the radial part included), not from tau a's transverse part. */
+int swi_observer_accel_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
+                          const double *xeteval, const double *xsun, const double *xe,
+                          double *acc, char *serr)
 {
-  double xobs2[6];
+  double xel[6], as[3], tau = teval - t;
+  int i;
+  earth_at_lt_sun(ctx, teval, t, xeteval, xsun, xe, xel);
+  for (i = 0; i <= 2; i++)
+    acc[i] = tau > 0 ? (xeteval[i+3] - xel[i+3]) / tau : 0;
   if (iflag & SEFLG_TOPOCTR) {
-    if (observer_at_lt_sun(ctx, teval, t, iflag, xobs, xeteval, xsun, xe, xobs2, serr) != OK)
+    if (observer_accel(ctx, teval, iflag, as, serr) != OK)
       return ERR;
-  } else {
-    earth_at_lt_sun(ctx, teval, t, xeteval, xsun, xe, xobs2);
+    for (i = 0; i <= 2; i++)
+      acc[i] += as[i];
   }
-  add_aberr_rate(xx, xobs, xobs2);
   return OK;
 }
 

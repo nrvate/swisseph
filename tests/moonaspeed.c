@@ -20,14 +20,15 @@
  * five-point difference of the library's own positions (h = 2^-6 day) at
  * seven binary-fraction instants, 1500..2500. Swiss files. Limits for the
  * Moon 3e-8 deg/day (longitude), 1e-8 (latitude), 2e-10 AU/day (distance);
- * Mars the same but 1e-8 for the longitude (UPSTREAM-BUGS 64 put the
+ * Mars the same but 5e-10 for the longitude (UPSTREAM-BUGS 64 put the
  * elements' t^2 and t^3 terms into the rates; the Mars limits were ten
- * times the Moon's until then, 4.2e-8 deg/day at +-500 years).
+ * times the Moon's until then, 4.2e-8 deg/day at +-500 years; 1e-8 until
+ * UPSTREAM-BUGS 70 made the aberration's rate the derivative, 5.6e-9).
  * Measured here: Moon geocentric lon 9.3e-11, lat 3.9e-11, dist 3.8e-15;
- * Moon heliocentric 7.8e-11, 4.7e-11, 5.8e-11; Mars geocentric lon 5.6e-9
- * (the apparent position's own light-time and aberration, not the
- * elements: G63 on true positions has 1.4e-10), lat 9.8e-11, dist 4.1e-12;
- * Mars heliocentric 4.7e-12, 2.7e-11, 1.2e-10. Before this change: Moon geocentric lon 4.7e-6, lat
+ * Moon heliocentric 6.6e-11, 2.9e-11, 2.7e-14; Mars geocentric lon 4.1e-11,
+ * lat 3.1e-11, dist 1.1e-12; Mars heliocentric 4.8e-12, 2.7e-11, 6.1e-14
+ * (the heliocentric distances 5.8e-11 and 1.2e-10 before bug 70). Before
+ * this change: Moon geocentric lon 4.7e-6, lat
  * 2.1e-5, dist 6.2e-10; heliocentric 2.8e-8, 5.7e-8, 5.6e-10; Mars the same.
  * The upstream build fails all four cases (Moon geocentric 5.2e-6 lon,
  * 5.1 lat; Mars geocentric 4.6e-2 lon, 2.6 lat; the latitude by bug 38).
@@ -56,7 +57,7 @@ int main(int argc, char **argv)
     {SE_MARS, SEFLG_HELCTR, "Mars heliocentric"},
   };
   const double lim[3] = {3e-8, 1e-8, 2e-10}; /* lon, lat deg/day; dist AU/day */
-  const double limM[3] = {1e-8, 1e-8, 2e-10}; /* Mars */
+  const double limM[3] = {5e-10, 1e-8, 2e-10}; /* Mars */
   const double H = 1.0 / 64;
   int p, y, j, k, i, bad = 0;
   swe_ctx *c;

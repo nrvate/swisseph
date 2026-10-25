@@ -5861,7 +5861,16 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
      * aberration 
      *********************/
     if (do_aberr) {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* the point before aberration, for its rate (bug 70); the position
+       * is swi_aberr_light()'s as before */
+      double xab0[6];
+      for (i = 0; i <= 5; i++)
+        xab0[i] = xp[i];
+      swi_aberr_light(xp, xobs, iflag & ~SEFLG_SPEED);
+#else
       swi_aberr_light(xp, xobs, iflag);
+#endif
       /* 
        * Apparent speed is also influenced by
        * the difference of speed of the earth between t and t-dt. 
@@ -5872,15 +5881,12 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
         /* bug 34 here too: for a point seen from the Earth or a site, the
          * observer's velocity now less at t - dt, whole, was a chord for a
          * turning site, radial too and first order only (7e-6 deg/day on
-         * Mercury's points topocentric, 3e-4 on Pluto's); swi_aberr_rate()
-         * is swe_calc()'s term. It needs the Earth and the Sun at tjd,
-         * which the call below replaces in the save area. */
-        double xe0[6], xs0[6];
+         * Mercury's points topocentric, 3e-4 on Pluto's); bug 70 takes
+         * the observer's acceleration from swi_observer_accel_lt(), with
+         * the Earth at t - dt from the call below and the save area at tjd
+         * again after it. */
+        double xe1[6];
         AS_BOOL rate34 = !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)) && ipl != SE_SUN;
-        for (i = 0; i <= 5; i++) {
-          xe0[i] = xear[i];
-          xs0[i] = xsun[i];
-        }
 #endif
         /* get barycentric sun and earth for t-dt into save area */
         if (swe_calc_r(ctx, tjd_et - dt, ipli, iflg0 | (iflag & SEFLG_TOPOCTR), x2, serr) == ERR)
@@ -5908,13 +5914,13 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
             xobs2[i] += xear[i];
         }
 #ifndef SWE_UPSTREAM_COMPAT
-        if (rate34) {
-          if (swi_aberr_rate(ctx, tjd_et, tjd_et - dt, iflag, xobs, xe0, xs0, xear, xp, serr) != OK)
-            return ERR;
-        } else
-#endif
+        /* the Earth at t - dt, for bug 70's acceleration below */
+        for (i = 0; i <= 5; i++)
+          xe1[i] = xear[i];
+#else
         for (i = 3; i <= 5; i++) 
           xp[i] += xobs[i] - xobs2[i];
+#endif
         /* The above call of swe_calc() has destroyed the
          * parts of the save area 
          * (i.e. bary sun, earth nutation matrix!). 
@@ -5943,6 +5949,51 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
 #else
         if (swe_calc_r(ctx, tjd_et, SE_SUN, iflg0 | (iflag & SEFLG_TOPOCTR), x2, serr) == ERR)
           return ERR;
+#endif
+#ifndef SWE_UPSTREAM_COMPAT
+        /* Upstream bug 70: the aberration's rate was swi_aberr_light()'s
+         * (the point moved, the observer's velocity held) plus bug 34's
+         * tau a, a's part across the line of sight -- first order in v/c,
+         * its series for a missing the Moon's jerk (taken before the save
+         * area was back at tjd), and, seen from the Sun (heliocentric, the
+         * Sun's points), the raw xobs - xobs2, radial part and all.
+         * Against the rate of the positions: 5.7e-9 deg/day on Mars's
+         * points' geocentric longitude, 1.6e-8 on Neptune's, 1.3e-9 on its
+         * latitude; heliocentric distance 1.3e-9 AU/day for Uranus, 2.1e-9
+         * for Neptune (2e-11 with SEFLG_NOABERR). Now the central
+         * difference of the aberrated place, A(x + s x', V + s a) at
+         * s = +-2^-6 day: x the point with its velocity, V the observer's
+         * velocity, a its acceleration -- swi_observer_accel_lt()'s, with
+         * the Moon in the save area again, or the Sun's V(t) - V(t - dt)
+         * over dt. The points carry no light time, so that is the
+         * derivative of what they return; the positions are unchanged. */
+        {
+          const double hab = 1.0 / 64;
+          double acc[3], xa[2][6], oa[6], d[2][3];
+          int sg;
+          if (rate34) {
+            if (swi_observer_accel_lt(ctx, tjd_et, tjd_et - dt, iflag, xear, xsun, xe1, acc, serr) != OK)
+              return ERR;
+          } else {
+            for (i = 0; i <= 2; i++)
+              acc[i] = dt > 0 ? (xobs[i+3] - xobs2[i+3]) / dt : 0;
+          }
+          for (sg = 0; sg < 2; sg++) {
+            double s1 = sg ? hab : -hab;
+            for (i = 0; i <= 2; i++) {
+              xa[sg][i] = xab0[i] + s1 * xab0[i+3];
+              xa[sg][i+3] = 0;
+              oa[i] = xobs[i];
+              oa[i+3] = xobs[i+3] + s1 * acc[i];
+              d[sg][i] = xa[sg][i];
+            }
+            swi_aberr_light(xa[sg], oa, iflag & ~SEFLG_SPEED);
+            for (i = 0; i <= 2; i++)
+              d[sg][i] = xa[sg][i] - d[sg][i];
+          }
+          for (i = 0; i <= 2; i++)
+            xp[i+3] = xab0[i+3] + (d[1][i] - d[0][i]) / (2 * hab);
+        }
 #endif
       }
     }

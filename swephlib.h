@@ -170,9 +170,9 @@ extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 #ifndef SWE_UPSTREAM_COMPAT
 extern double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nut);
 extern void swi_ecl_frame_speed(double *xx, double edot);
-extern int swi_aberr_rate(swe_ctx *ctx, double teval, double t, int32 iflag, const double *xobs,
-                          const double *xeteval, const double *xsun, const double *xe,
-                          double *xx, char *serr);
+extern int swi_observer_accel_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
+                                 const double *xeteval, const double *xsun, const double *xe,
+                                 double *acc, char *serr);
 #endif
 
 extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 

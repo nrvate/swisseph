@@ -282,7 +282,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
        check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-moonlt check-jpltdb check-sidsplice check-sidera check-obliq check-nutgrid check-sidnod check-spicarv check-nutspeed check-eopload \
-       check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-moonaspeed check-planetaspeed check-nutrate check-nutobliq check-startopodefl check-starflags check-housespeed check-moshprec check-housefix check-houseresid check-aberrspeed check-intpconv check-ltround \
+       check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-moonaspeed check-planetaspeed check-nodapsaberr check-nutrate check-nutobliq check-startopodefl check-starflags check-housespeed check-moshprec check-housefix check-houseresid check-aberrspeed check-intpconv check-ltround \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -442,6 +442,9 @@ moonaspeed: moonaspeed.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 planetaspeed: planetaspeed.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+nodapsaberr: nodapsaberr.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 nutrate: nutrate.c $(SWEOBJ_STD)
@@ -758,6 +761,12 @@ check-moonaspeed: moonaspeed
 check-planetaspeed: planetaspeed
 	@env -u SE_EPHE_PATH ./planetaspeed $(EPHE)
 
+# G69: the planets' mean nodes' and apsides' apparent speeds (default flags,
+# aberration) are the rates of their positions, Mercury..Neptune,
+# geocentric and heliocentric, -3000..3000 (UPSTREAM-BUGS 70).
+check-nodapsaberr: nodapsaberr
+	@env -u SE_EPHE_PATH ./nodapsaberr $(EPHE)
+
 # G57: the nutation's rate in a speed of date is its rate at the instant, not
 # a backward difference's at t - h/2: planets and Polaris against five-point
 # differences of the same call's positions.
@@ -924,7 +933,7 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed housespeed housefix houseresid starspeed startopodefl starflags nutrate nutobliq orbelspeed fictneg lunarpull lunarpulleph nodaps2 intpaps node3speed moonaspeed planetaspeed ltround moshprec aberrspeed intpconv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid nutspeed sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed housespeed housefix houseresid starspeed startopodefl starflags nutrate nutobliq orbelspeed fictneg lunarpull lunarpulleph nodaps2 intpaps node3speed moonaspeed planetaspeed nodapsaberr ltround moshprec aberrspeed intpconv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
@@ -942,7 +951,7 @@ clean:
         check-samples samples-baseline check-dtmemo check-eopload check-firstcall \
         check-winmacros check-jplreal orderprobe check-pedantic check-jplswap \
         check-ctxfiles check-compat check-jplhor check-hostile \
-        check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-moonaspeed check-planetaspeed check-nutrate check-nutobliq check-startopodefl check-starflags check-housespeed check-moshprec check-housefix check-houseresid check-aberrspeed check-intpconv check-ltround \
+        check-hellt check-topopole check-apogm check-moonspeed check-eclspeed check-nodspeed check-topospeed check-deflspeed check-nodaps2 check-orbelspeed check-fictneg check-lunarpull check-lunarpulleph check-intpaps check-node3speed check-starspeed check-moonaspeed check-planetaspeed check-nodapsaberr check-nutrate check-nutobliq check-startopodefl check-starflags check-housespeed check-moshprec check-housefix check-houseresid check-aberrspeed check-intpconv check-ltround \
         ci-image check-ci clean
 
 # Benchmark for notes/C17_PERFORMANCE.md.
@@ -1127,7 +1136,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg lunarpull lunarpulleph intpaps node3speed starspeed moonaspeed nutrate nutobliq startopodefl starflags housespeed housefix houseresid ltround moshprec aberrspeed intpconv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f dtobs fictlt moonlt jpltdb sidsplice sidera obliq nutgrid sidnod spicarv hellt topopole apogm moonspeed eclspeed nodspeed topospeed deflspeed nodaps2 orbelspeed fictneg lunarpull lunarpulleph intpaps node3speed starspeed moonaspeed planetaspeed nodapsaberr nutrate nutobliq startopodefl starflags housespeed housefix houseresid ltround moshprec aberrspeed intpconv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
