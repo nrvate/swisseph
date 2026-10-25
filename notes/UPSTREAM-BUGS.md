@@ -5537,6 +5537,20 @@ fails). G24 `mosh_geo_lt_jitter`: Waldemath's fourth difference at
 2026-10-24, 2.5e-15 AU shipped, 1.3e-14 before the fix, 1.2e-13 compat.
 G59, G64, G80, G87 pass.
 
+**Not fixed, below the precision floor (1e-9 deg, 1e-8 deg/day):** the
+same two-read difference on the Swiss files and de200. Each file read is
+off by about an ulp of 1 AU, and the largest fourth difference over 2^-10
+day (geocentric J2000 XYZ, nine dates 1800..2150) is 7.2e-15 AU on
+Waldemath, 8.8e-15 on Selena and 7.8e-15 on the Earth-centred orbit on the
+files, 2.1-3.5e-15 on de200. The Moon's place on the files (the geocentric
+Moon read at t, plus the Earth read at t, less the Earth at teval) shows
+6.7e-15 AU (2.5e-12 of its distance; 2.5e-13 true), de200 2.8e-15. The
+nine-point speed residuals over 2^-10 day are 3.3e-9 deg/day on Waldemath
+and 4.4e-9 on the orbit. The same Taylor step, with the Earth's
+acceleration from the Sun's and the Moon's pull, takes all of these down
+to 1.3-3.1e-15 AU and moves no position by more than 1.6e-15 AU (and no
+far body at all). It was measured, then left out under the floor.
+
 ## 89. At the Swiss files' 600-year joins an open file answers past its nominal end, so the answer depends on the file an earlier call left open
 
 **Severity: Correctness (call-order dependence: the barycentric Sun 47.6 mas at 1800.0 + 0.1 day after a call 1.5 days before, 1.03 arcsec at -7800; the Moon 220 mas across a join's light time; Juno 37 km; Vulcan's heliocentric speed at 1800.0 8.2e-7 deg/day)**
@@ -5612,6 +5626,11 @@ coordinate finite. 42684 rows, none differ. ts20 before the fix fails
 `file_join_off`: the barycentric Sun at JD 2378496.6 after a call 1.5 days
 before against alone, 0 shipped, 47.4 mas compat. G24, G62, G70 and G83
 pass; G88 also under ASan and UBSan.
+
+Also gone with it: at exactly JD 2378496.5 a context's first apparent
+Swiss Moon (J2000 ICRS XYZ, no aberration or deflection) was 1.58e-9 AU
+(0.12") from the same call made warm, the emission-instant Earth read from
+the other file; the two now agree bit for bit (found measuring entry 96).
 
 ## 98. A star function as the first call ignores `SE_EPHE_PATH`, and a path change throws away the astronomical models
 
