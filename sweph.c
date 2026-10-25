@@ -238,6 +238,12 @@ char *CALL_CONV swe_version(char *s)
   return s;
 }
 
+int32 CALL_CONV swe_get_denum(void)
+{
+  return swi_get_denum(swi_default_ctx(), SEI_SUN, 0);
+}
+
+
 #ifndef NO_SWE_GLP	// -DNO_SWE_GLP to suppress this function
 #if MSDOS
 HANDLE dllhandle = NULL;        // global used in swe_version
