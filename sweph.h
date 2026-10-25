@@ -887,6 +887,13 @@ struct epsilon {
  *     read, not teval - tau, and the aberration rate term spanned dt, not
  *     tau (1e-8 each); swi_aberr_light()'s shift rate was a backward
  *     difference (1.9e-8; UPSTREAM-BUGS 73, G72)
+ *   - jplplan()'s Earth and Sun answered for whichever ephemeris had filled
+ *     their slots at tjd, so a JPL call after one that fell to Moshier took
+ *     the series' heliocentric Earth (the Moon 160 deg off), and the JPL
+ *     barycentric Sun was read without its slot's ephemeris and finished at
+ *     the Earth slot's instant (JD 0 fresh, another instant warm: 0.11 deg
+ *     sidereal; a heliocentric asteroid after it 0.24 deg; UPSTREAM-BUGS
+ *     84, G83)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

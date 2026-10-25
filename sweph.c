@@ -1043,7 +1043,20 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	  if (retc != OK)
 	    goto sweph_sbar;
 	}
+#ifndef SWE_UPSTREAM_COMPAT
+	/* Upstream bug 84: the Sun was read into its slot without the slot's
+	 * ephemeris, and app_pos_etc_sbar() finishes it at the Earth slot's
+	 * instant, which nothing here set: on a fresh context its speeds
+	 * came back NaN (sidereal, every coordinate), warm from another
+	 * instant the ayanamsa and the ecliptic's turning were taken there
+	 * (0.11 deg sidereal after a call 3000 days on), and a heliocentric
+	 * asteroid after it, its Sun of no ephemeris, kept its barycentric
+	 * place (Pallas 0.24 deg). Read as the Swiss files' branch below
+	 * reads it, with the Earth: both slots at tjd, and JPL's. */
+	retc = jplplan(ctx, tjd, SEI_EARTH, iflag, DO_SAVE, NULL, NULL, NULL, serr);
+#else
 	retc = swi_pleph(ctx, tjd, J_SUN, J_SBARY, psdp->x, serr);
+#endif
 	if (retc == ERR || retc == BEYOND_EPH_LIMITS) {
 	  swi_close_jpl_file(ctx);
 	  ctx->jpl_file_is_open = FALSE;
@@ -2769,7 +2782,17 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
   if (do_earth) {
     /* barycentric earth */
 #ifndef SWE_UPSTREAM_COMPAT
-    if (tjd != pedp->teval) {	/* bug 71 */
+    /* Upstream bug 84: these two caches answered for any ephemeris that
+     * had filled the Earth's and the Sun's slots at tjd, where the
+     * planet's below, sweplan()'s and swi_moshplan()'s check it. free_planets()
+     * runs when the ephemeris ASKED for changes, not when a call answers
+     * from another: a JPL call whose light time leaves the file falls to
+     * Moshier (with swe_set_ephe_fallback(1), or on the way to refusing
+     * it), which leaves its heliocentric Earth in the slot at tjd, and
+     * the next JPL call there took it for the barycentric one: the Moon
+     * 160 deg off, Mercury 0.30 deg, Mars 0.090, Jupiter 0.010, flagged
+     * JPL. Keyed on the ephemeris too. */
+    if (tjd != pedp->teval || pedp->iephe != SEFLG_JPLEPH) {	/* bugs 71, 84 */
 #else
     if (tjd != pedp->teval || tjd == 0) {
 #endif
@@ -2801,7 +2824,7 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
   if (do_sunbary) {
     /* barycentric sun */
 #ifndef SWE_UPSTREAM_COMPAT
-    if (tjd != psdp->teval) {	/* bug 71 */
+    if (tjd != psdp->teval || psdp->iephe != SEFLG_JPLEPH) {	/* bugs 71, 84 */
 #else
     if (tjd != psdp->teval || tjd == 0) {
 #endif
@@ -3627,7 +3650,17 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	for (i = 0; i <= 5; i++) 
 	  xx[i] -= ctx->pldat[SEI_SUNBARY].x[i];
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 84 (latent): JPL and Moshier read no Earth at t for a
+     * heliocentric or barycentric request, and xobs2 was built from the
+     * uninitialised xearth all the same. Only the aberration rate reads
+     * xobs2, and plaus_iflag() turns aberration off for both centres, so
+     * nothing reached a result (bit-identical with the locals poisoned
+     * with NaN); not built where there is no Earth. */
+    if ((iflag & SEFLG_SPEED) && !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))) {
+#else
     if (iflag & SEFLG_SPEED) {
+#endif
       /* observer position for t(light-time) */
       if (iflag & SEFLG_TOPOCTR) {
 #ifndef SWE_UPSTREAM_COMPAT

@@ -1337,6 +1337,29 @@ static double mosh_lt_off(void)
   return fabs(x[5] - (8 * (f[3][2] - f[1][2]) - (f[4][2] - f[0][2])) / (12 * h));
 }
 
+/* UPSTREAM-BUGS 84: the JPL Moon 0.125 day into DE200 after a JPL Pluto,
+ * whose light time leaves the file and falls to Moshier, against the Moon
+ * alone, deg. jplplan() took the series' heliocentric Earth, left in the
+ * slot at that instant, for the barycentric one: 160 deg; keyed on the
+ * ephemeris now, 0. */
+static double jpl_stale_earth_off(void)
+{
+  double t = 2305424.5 + 0.125, x[6], y[6];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  if (swe_calc(t, SE_MOON, SEFLG_JPLEPH, x, serr) < 0)
+    return -1;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  swe_calc(t, SE_PLUTO, SEFLG_JPLEPH, y, serr);
+  if (swe_calc(t, SE_MOON, SEFLG_JPLEPH, y, serr) < 0)
+    return -1;
+  return fabs(swe_difdeg2n(x[0], y[0]));
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -1523,7 +1546,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1596,6 +1619,7 @@ int main(int argc, char **argv)
   pctrsd = pctr_sun_defl_off();
   earthlr = earth_helio_lt_rate_off();
   barysid = bary_sun_sid_off();
+  jplstale = jpl_stale_earth_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2133,6 +2157,14 @@ int main(int argc, char **argv)
   else {
     printf("  JPL bary Sun sidereal  %.2e deg FAIL: expected %s\n",
            barysid, WANT_DEFECT ? "> 0.01" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (jplstale > 1) : (jplstale >= 0 && jplstale < 1e-12))
+    printf("  JPL Moon after Moshier %.2e deg OK\n", jplstale);
+  else {
+    printf("  JPL Moon after Moshier %.2e deg FAIL: expected %s\n",
+           jplstale, WANT_DEFECT ? "> 1" : "0");
     bad++;
   }
 

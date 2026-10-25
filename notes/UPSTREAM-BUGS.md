@@ -116,6 +116,7 @@ worst were in code that had never executed even once.
 | 85 | The Moshier Earth-Moon offset's rate is a difference of rounded arguments | Correctness | `swemplan.c` |
 | 81 | A fictitious body's light-time position is read at the rounded instant, and its elements' large terms are rounded unreduced | Correctness | `sweph.c`, `swemplan.c` |
 | 86 | The JPL barycentric Sun takes its instant of date from the Earth's slot | Correctness | `sweph.c` |
+| 84 | `jplplan()`'s Earth and Sun answer for any ephemeris, and the JPL barycentric Sun is finished at the Earth slot's instant | Correctness | `sweph.c` |
 
 ---
 
@@ -4452,6 +4453,102 @@ checks.
 The build before the fix fails 4 (the first request, of date, sidereal
 speed and longitude); the upstream build fails 162. G24
 `bary_sun_sid_off`: the sidereal longitude, 0 shipped, 0.140 deg compat.
+
+## 84. `jplplan()`'s Earth and Sun answer for any ephemeris, and the JPL barycentric Sun is finished at the Earth slot's instant
+
+**Severity: Correctness (the JPL Moon 160 deg off, Mercury 0.30 deg, after a JPL call that fell to Moshier; a heliocentric asteroid 0.24 deg off after the JPL barycentric Sun; that Sun's sidereal place taken at another instant, 0.11 deg, or at JD 0)**
+**Where:** `sweph.c`: `jplplan()` (upstream 2034, 2056), `swecalc()`'s barycentric Sun (757); latent, `app_pos_etc_plan()` (2701-2707)
+
+Three hygiene defects around the Earth's and the Sun's save-area slots.
+
+- `jplplan()` reuses the Earth and the barycentric Sun in their slots
+  whenever the slot's instant is tjd, whatever ephemeris filled it, where
+  its planet branch, `sweplan()` and `swi_moshplan()` all check the slot's
+  ephemeris too. It leans on `free_planets()`, which `swe_calc()` runs when
+  the ephemeris ASKED for changes; nothing runs it when a call answers from
+  another. A JPL call whose light time leaves the file is redone with
+  Moshier (`main_planet()`'s BEYOND_EPH_LIMITS branch) -- answered with
+  `swe_set_ephe_fallback(1)`, refused without, the slots filled either way
+  -- and leaves the series' heliocentric Earth in the Earth slot at tjd.
+  The next JPL call at that instant took it for the barycentric Earth and
+  returned the result flagged `SEFLG_JPLEPH`. Measured 0.125 day into
+  DE200, after Pluto (light time 0.28 day): the Moon 321.37543 against
+  161.30743 (160.1 deg), Mercury 0.30 deg, Mars 0.090, Jupiter 0.010,
+  with the fallback refused and allowed alike. The other paths that change
+  the answering ephemeris without `free_planets()` cannot reach it: a
+  missing JPL file falls to the Swiss files, whose `sweplan()` checks the
+  slots' ephemeris, as `swi_moshplan()` does; `swe_set_jpl_file()` and
+  `swe_set_ephe_path()` run `free_planets()`; a per-call flag change runs
+  it in `swe_calc()` and the fixed stars' two calculations.
+- `swecalc()`'s barycentric Sun on JPL read the Sun into its slot with
+  `swi_pleph()`, setting the slot's instant but not its ephemeris, and
+  left the Earth slot alone; `app_pos_etc_sbar()` then finishes the Sun
+  through the Earth slot (`SEI_SUN` is `SEI_EARTH`), at that slot's
+  instant. On a fresh context that is the emptied instant: upstream JD 0
+  (the sidereal place 270.004 for 177.493), this fork's `SWI_TJD_NEVER`
+  since entry 71 (every speed NaN, every sidereal coordinate). After a call
+  3000 days on, the ayanamsa and the ecliptic's turning were that day's:
+  177.378, 0.11 deg off, and the longitude speed 6.62412e-2 for 6.62415e-2
+  deg/day. And `sweph()` gives an asteroid read with `DO_SAVE` the Sun
+  slot's ephemeris, which was none, so `app_pos_etc_plan()` neither took
+  the Sun out of a heliocentric asteroid nor measured its light time from
+  the Sun: after the JPL barycentric Sun, heliocentric Pallas 117.18588
+  against 116.95039 (0.24 deg), Juno 0.14, Ceres 0.11, Vesta 0.10, Chiron
+  0.033, Pholus 0.0059. The Swiss files' branch reads both through
+  `sweplan(SEI_EARTH, DO_SAVE)` and has neither problem.
+- Latent: `app_pos_etc_plan()` builds the observer at t - tau for the
+  aberration rate (`xobs2`) from `xearth`, which the JPL and Moshier
+  branches read only for a geocentric or topocentric request; for a
+  heliocentric or barycentric one with `SEFLG_SPEED` it copied
+  uninitialised stack. Only the aberration rate reads `xobs2`, and
+  `plaus_iflag()` turns aberration off for both centres before any path
+  reaches the function, so nothing reached a result: with every working
+  local poisoned with NaN, 5100 requests (25 bodies, 17 flag sets, three
+  ephemerides, fresh, warm and planetocentric) answered bit-identically,
+  and valgrind saw no use (a copy is not a use). This fork's bug 53
+  rewrite of the Moshier branch kept the gap.
+
+**Fix, as done here:** `jplplan()`'s Earth and Sun caches answer only for a
+slot filled from JPL (`iephe == SEFLG_JPLEPH`), as its planet branch does;
+the JPL barycentric Sun is read through `jplplan(SEI_EARTH, DO_SAVE)`, the
+JPL twin of the Swiss branch's `sweplan()` call, so the Earth and the Sun
+are both in their slots at tjd, marked JPL (one Earth read more, on that
+path only); `app_pos_etc_plan()` builds `xobs2` only where there is an
+Earth, geocentric and topocentric. Upstream's code is under
+`SWE_UPSTREAM_COMPAT`. Searched for and not found: a first-call Moshier
+Chiron that moves with `SEFLG_SPEED` (6e-5 mas reported) -- Chiron at
+300 instants 1600-2170 and every body at 60, Swiss, Moshier and DE200, 20
+flag sets, fresh, speed-first and speed-last in one context, and the
+default context's first call in a new process: none differ, on ts20 and,
+for Chiron, just before and after bug 53. Not this entry's,
+and left: the Swiss files run past their nominal 600-year ends (`sepl_12`
+to JD 2378575.7, `seas_12` to 2378857.5, past 1800.0) and an open file is
+kept for any instant it covers, so a context warm from just before a join
+answers just after it from the older file, a fresh one from the newer (JD
+2378496.6, after a call 1.5 days before: the barycentric Sun 47.6 mas,
+Juno 8.7, Chiron 0.67 geocentric; speeds up to 4.7e-3 mas/day where the
+light time crosses the join). calc-swieph and calc-moseph unchanged within
+noise.
+
+G83 `tests/callorder.c`, bit for bit: (1) fresh contexts, with and without
+`SEFLG_SPEED`, 25 bodies x 11 flag sets x Swiss, Moshier and DE200 x four
+instants 1700-2050 away from the joins; (2) fresh against warm from eleven
+earlier calls (the Sun, its barycentric place plain and sidereal, the Moon,
+Mercury, the same body with the speed flag the other way, 1.5 and 3000
+days off, heliocentric Chiron, Jupiter's centre of body, the topocentric
+Moon), with and without speed; (3) the JPL Sun, Moon, Mercury, Mars,
+Jupiter, Chiron and heliocentric Earth 0.125 day into DE200 after a JPL
+Pluto, fallback refused and allowed, against fresh; (4) one instant
+through a sequence of per-call ephemeris switches, barycentric Suns,
+heliocentric asteroids, the fallback toggled and a missing JPL file set and
+replaced, against fresh; every coordinate finite. 20001 rows, none differ.
+The upstream build fails 2027 (1903 of them check 1's, upstream's
+SEFLG_SPEED dependences that earlier entries fixed); ts20 before this fix
+42 (the four fresh NaN speeds, 23 warm rows, 12 after Pluto, 3 in the
+sequence). Each half of the fix is needed: without the ephemeris key 12
+rows fail (check 3), without the barycentric Sun's Earth 18 (its NaN).
+G24 `jpl_stale_earth_off`: the JPL Moon after Pluto against alone, 0 deg
+shipped, 160 compat. G24, G52, G62, G66 and G70 pass.
 
 ## How these were found
 
