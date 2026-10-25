@@ -245,16 +245,16 @@ Ephemeris releases back to 1.67 (March 2005).
 
 - Planets and main asteroids:
   [upstream `ephe/`](https://github.com/aloistr/swisseph/tree/master/ephe)
-- Asteroid files for all numbered asteroids (over 760,000; ~48 GB), and JPL
-  binaries: Alois' public
-  [Dropbox area](https://www.dropbox.com/scl/fo/y3naz62gy6f6qfrhquu7u/h?rlkey=ejltdhb262zglm7eo6yfj2940&dl=0),
-  or <https://ephe.scryr.io/> (web space provided by Phillip McCabe)
+- Asteroid files for all numbered asteroids (over 895,000 as of June 2026;
+  ~48 GB), and JPL binaries: most simply from <https://ephe.scryr.io/> (web
+  space provided by Phillip McCabe), or Alois' public
+  [Dropbox area](https://www.dropbox.com/scl/fo/y3naz62gy6f6qfrhquu7u/h?rlkey=ejltdhb262zglm7eo6yfj2940&dl=0)
 - JPL files direct from JPL:
   <https://www.astro.com/ftp/swisseph/jplfiles/index.htm>, which links the
   files on `ssd.jpl.nasa.gov` and publishes their md5 sums. After download,
   `de441/linux_m13000p17000.441` must be renamed `de441.eph` to be recognised
   (likewise `de431/lnxm13000p17000.431` → `de431.eph`). Both are ~2.6 GB;
-  expect around 0.3 MB/s from JPL, so the Dropbox mirror above is usually
+  expect around 0.3 MB/s from JPL, so the mirrors above are usually
   faster.
 
 **Where the library looks.** `swed.ephepath` defaults to `\sweph\ephe` on

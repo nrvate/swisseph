@@ -238,6 +238,86 @@ char *CALL_CONV swe_version(char *s)
   return s;
 }
 
+/* The DE number of the JPL ephemeris behind the context's last calculation
+ * (swe_calc() and every function that calculates through it, the fixed
+ * stars, swe_calc_orbel()): the JPL file's own, the Swiss files' (the
+ * planet file's, or the moon file's when only the Moon was asked), and 404
+ * for Moshier, the ephemeris its theory was fitted to, which the tidal term
+ * takes for it too. Before one, the Swiss files' that swe_set_ephe_path()
+ * found; 0 when nothing is known.
+ *
+ * Upstream's (9a8b759) read the Swiss planet file's slot whatever the
+ * ephemeris and answered SE_DE_NUMBER, 431, where it was empty: DE441 for
+ * a DE200 or Moshier calculation, DE431 for DE441 files before a planet
+ * was asked (notes/UPSTREAM-BUGS.md 45). */
+int32 CALL_CONV swe_get_denum_r(swe_ctx *ctx)
+{
+  int32 denum;
+  swi_config_hold(ctx);
+  denum = (ctx->denum_used != 0) ? ctx->denum_used : ctx->sweph_denum_moon;
+  swi_config_release(ctx);
+  return denum;
+}
+
+/* Legacy entry point: the process-wide default context. */
+int32 CALL_CONV swe_get_denum(void)
+{
+  return swe_get_denum_r(swi_default_ctx());
+}
+
+/* What swe_get_denum() reports for a calculation of ipl that returned
+ * retflag. Its ephemeris bits name the ephemeris that answered; none, when
+ * the caller named none and the default, the Swiss files, answered, or when
+ * no ephemeris was read at all (the obliquity, and the mean node, the mean
+ * apogee and the interpolated apsides under any flag): then 0, nothing to
+ * report. From the Swiss files, the DE number of the file that holds the
+ * body, or of the planet file. */
+static int32 denum_answered(swe_ctx *ctx, int ipl, int32 iflag, int32 retflag)
+{
+  int32 eph = retflag & SEFLG_EPHMASK;
+  struct file_data *fdp;
+  int ifno = SEI_FILE_PLANET;
+  if (ipl == SE_ECL_NUT || ipl == SE_MEAN_NODE || ipl == SE_MEAN_APOG
+      || ipl == SE_INTP_APOG || ipl == SE_INTP_PERG)
+    return 0;
+  /* the bodies swecalc() takes for others: 134340 is Pluto, and Ceres to
+   * Vesta by catalogue number come from the main asteroid file */
+  if (ipl == SE_AST_OFFSET + 134340)
+    ipl = SE_PLUTO;
+  else if (ipl > SE_AST_OFFSET && ipl <= SE_AST_OFFSET + MPC_VESTA)
+    ipl = SE_CERES + ipl - SE_AST_OFFSET - 1;
+  if (eph == 0 && (iflag & SEFLG_EPHMASK) == 0)
+    eph = SEFLG_SWIEPH;
+  if (eph & SEFLG_MOSEPH)
+    return 404;
+  if (eph & SEFLG_JPLEPH)
+    return ctx->jpldenum;
+  if (!(eph & SEFLG_SWIEPH))
+    return 0;
+  if (ipl == SE_MOON || ipl == SE_TRUE_NODE || ipl == SE_OSCU_APOG)
+    ifno = SEI_FILE_MOON;
+  else if (ipl > SE_PLMOON_OFFSET)
+    ifno = SEI_FILE_ANY_AST;
+  else if (ipl >= SE_CHIRON && ipl <= SE_VESTA)
+    ifno = SEI_FILE_MAIN_AST;
+  fdp = &ctx->fidat[ifno];
+  if (fdp->fptr == NULL)
+    fdp = &ctx->fidat[SEI_FILE_PLANET];
+  if (fdp->fptr == NULL)
+    fdp = &ctx->fidat[SEI_FILE_MOON];
+  return (fdp->fptr != NULL) ? fdp->sweph_denum : 0;
+}
+
+/* After a calculation of ipl (SE_EARTH for a fixed star or a body from
+ * elements: the planet file) that returned retflag. */
+static void denum_record(swe_ctx *ctx, int ipl, int32 iflag, int32 retflag)
+{
+  int32 denum;
+  if (retflag != ERR && (denum = denum_answered(ctx, ipl, iflag, retflag)) != 0)
+    ctx->denum_used = denum;
+}
+
+
 #ifndef NO_SWE_GLP	// -DNO_SWE_GLP to suppress this function
 #if MSDOS
 HANDLE dllhandle = NULL;        // global used in swe_version
@@ -613,6 +693,7 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
   int32 ret;
   swi_config_hold(ctx);
   ret = swe_calc_r_body(ctx, tjd, ipl, iflag, xx, serr);
+  denum_record(ctx, ipl, iflag, ret);
   swi_config_release(ctx);
   return ret;
 }
@@ -824,6 +905,7 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
   int32 ret;
   swi_config_hold(ctx);
   ret = swe_calc_orbel_r_body(ctx, tjd_et, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
+  denum_record(ctx, SE_EARTH, iflag, ret);
   swi_config_release(ctx);
   return ret;
 }
@@ -2051,6 +2133,10 @@ void load_dpsi_deps(swe_ctx *ctx)
 void swi_close_ephe_files(swe_ctx *ctx, AS_BOOL forget_denum)
 {
   int i;
+  /* swe_get_denum()'s record of the last calculation survives the close an
+   * ephemeris switch makes before the next one, which may read nothing */
+  if (forget_denum)
+    ctx->denum_used = 0;
   for (i = 0; i < SEI_NEPHFILES; i++) {
     int32 denum = ctx->fidat[i].sweph_denum;
     if (ctx->fidat[i].fptr != NULL)
@@ -8336,6 +8422,7 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   int32 ret;
   swi_config_hold(ctx);
   ret = swe_fixstar2_r_body(ctx, star, tjd, iflag, xx, serr);
+  denum_record(ctx, SE_EARTH, iflag, ret);
   swi_config_release(ctx);
   return ret;
 }
@@ -9564,6 +9651,7 @@ int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   int32 ret;
   swi_config_hold(ctx);
   ret = swe_fixstar_r_body(ctx, star, tjd, iflag, xx, serr);
+  denum_record(ctx, SE_EARTH, iflag, ret);
   swi_config_release(ctx);
   return ret;
 }

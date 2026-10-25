@@ -3,6 +3,9 @@
 Bugs found and fixed in a thread-safety fork of Swiss Ephemeris, **each one
 verified still present in upstream** at `3fd0f95` ("with -astorb"), the
 `legacy-master` this fork branched from. Line numbers below are upstream's.
+Entries 45 and 46 are in work upstream added after `3fd0f95`, and were
+verified at `94621ab`, the upstream master merged on 2026-10-25; entry 47
+is in both.
 
 This is not a diff of the fork. Most of what the fork changed — explicit
 contexts, a C17 build, a strict ephemeris policy — is a deliberate
@@ -80,6 +83,9 @@ worst were in code that had never executed even once.
 | 42 | The refusals of a date outside a range write its digits in full into 256 bytes: from \|J\| about 1e188 days the message overruns its buffer or the caller's serr | Memory | `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swedate.c`, `swecl.c`, `swephlib.c` |
 | 43 | `swe_sidtime()` reads a nutation `calc_nutation()` left unwritten; SE_ECL_NUT is taken for a body by the rise and set, the Gauquelin sectors, the occultations, `swe_calc_pctr()` and `swe_helio_cross()`, and reads `pla_diam[-1]` | Memory / Correctness | `swephlib.c`, `swecl.c`, `sweph.c` |
 | 44 | The default sidereal time steps 1.908" at 2050 and 0.097" at 1850, and outside 1850-2050 it follows delta t: +328" at year 0, +2379" at -3000 | Correctness | `swephlib.c` |
+| 45 | `swe_get_denum()` (new, 9a8b759) answers the Swiss planet file's DE number whatever the ephemeris, and 431 where it holds none: DE441 for a DE200 or Moshier calculation, DE431 for DE441 files before a planet is asked | Correctness | `sweph.c` |
+| 46 | swevents (8a36c49): the header's "based on JPL DE%d" asks before the run's ephemeris is set, and is appended past `cmdline[1024]` by a long command line; a zero declination is a parabola's root, the Moon's 83 s out | Memory / Correctness | `swevents.c` |
+| 47 | swevents' `dms()` prints a longitude that rounds up to 360 degrees as `znam[12]`, past the twelve signs: the Sun's March equinox under `-dodecl` | Memory | `swevents.c` |
 
 ---
 
@@ -2465,6 +2471,127 @@ straight line within 0.01 mas (0.0033 mas). Before the fix 25 checks fail:
 the 2000-century bound fails (f) at 10 of 15 dates: 6 hung, -1e300 and -inf
 crashed, -+1e8 took 0.012 s a call; without the rotation angle's form it
 fails (g) at all three (0.33, 1.03, 0.78 mas).
+
+## 45. `swe_get_denum()` names the Swiss planet file's DE number whatever answered, and 431 where it holds none
+
+**Severity: Correctness (a caller reporting which JPL ephemeris its numbers rest on is told DE441 after a DE200 or Moshier calculation, and DE431 for DE441 files before a planet is asked or after `swe_close()`)**
+**Where:** `sweph.c`: `swe_get_denum()` (upstream 9a8b759, 2026-10-19; not in `3fd0f95`, verified at `94621ab`)
+
+Upstream added `swe_get_denum()` for swevents' header, "based on JPL DE%d".
+Its body is `return swi_get_denum(SEI_SUN, 0);`: the internal function with
+flag 0 reads the DE number in the Swiss planet file's slot, and answers
+`SE_DE_NUMBER`, 431, where the slot holds none. So it answers for the Swiss
+planet file whatever the calculation used, and for no file at all with a
+number that looks like a file's. With the shipped DE441 files: 431 before
+any call, 431 after `swe_set_ephe_path()` (the path setter reads the moon
+file, not the planet file), 441 after a Swiss Mars, 441 after a JPL
+`de200.eph` Mars (the Swiss file's number survives the ephemeris switch's
+close), 441 after a Moshier Mars, 431 after `swe_close()`. Upstream's only
+caller, swevents, calls `swe_calc()` first to have something to read.
+
+**Fix, as done here:** `swe_calc_r()`, the fixed-star functions and
+`swe_calc_orbel()` record the DE number of the ephemeris their return flag
+names: the JPL file's (`jpldenum`), the Swiss file's that holds the body
+(the moon file for the Moon, the true node and the osculating apogee; the
+main asteroid file for Chiron to Vesta, Ceres to Vesta by catalogue number
+included; the numbered-asteroid slot for the other asteroids and the
+planetary moons; the planet file otherwise, and for a fixed star), and 404
+for Moshier, the ephemeris its theory was fitted to, which the tidal term
+takes for it too. A call that read no ephemeris (SE_ECL_NUT, the mean node,
+the mean apogee, the interpolated apsides) or failed leaves the record as
+it was, and so does the close an ephemeris switch makes before the next
+calculation; `swe_close()` and a path change clear it. `swe_get_denum_r()`
+answers the record or, before one, the moon file's number that
+`swe_set_ephe_path()` read and published, and 0 when nothing is known,
+where upstream said 431. It holds the configuration, so a new thread's
+first call answers the published number. `swe_get_denum()` is its
+default-context form.
+
+G54 `tests/getdenum.c`: 0 before any call; the moon file's number after the
+path setter, and on a new thread before its first calculation; the planet
+file's after a Swiss Mars; 200 after a de200.eph Mars, unchanged by
+SE_ECL_NUT, a Swiss mean node and a Swiss Mars out of range; 404 after a
+Moshier Mars; 200 and 404 after a JPL and a Moshier fixed star, 200 after a
+JPL `swe_calc_orbel()`; the moon file's after a Moon; a context of its own
+answering for its own JPL Mars while the default context computes a Swiss
+one; 0 after `swe_close()` and after a path with no files; 404 when the
+fallback answers a Swiss request from Moshier. Then on files of mixed
+generations (a crafted DE406 moon file and DE431 main asteroid file beside
+the DE441 planet file, since the shipped files are all DE441): the path
+setter, the Moon and the true node 406, Mars and a fixed star 441, Ceres and
+Ceres as 10001 431, a mean node leaving the answer. 26 checks. Upstream's
+function fails 20 of the 25 it can run (431 or 441 throughout).
+
+## 46. swevents' header asks the DE number before the run's ephemeris is set and writes it past `cmdline`, and its zero declination is a parabola's root
+
+**Severity: Memory / Correctness (with a command line of about 1000 characters, an 18-byte write past the global `cmdline[1024]`; the header names DE441 for a Moshier or DE200 run; the Moon's zero declination 83 s out at a 1-day step)**
+**Where:** `swevents.c`: `main()` (upstream 8a36c49, 2026-10-19; not in `3fd0f95`, verified at `94621ab`)
+
+Three faults in one commit:
+- The header line, `sprintf(cmdline + strlen(cmdline), " based on JPL
+  DE%d ", swe_get_denum())`, follows `swe_calc(tjd, SE_SUN, 0, x, serr)`,
+  both before `swe_set_ephe_path(ephepath)`, `swe_set_jpl_file(fname)` and
+  `iflag |= whicheph`. So it asks about the Swiss files on whatever path
+  the library had, under no flag, whatever the run uses: swevents' own
+  default is the JPL file, and `-emos` and `-ejplde200.eph` runs both
+  said DE441 here.
+- The loop before it appends the command line to `cmdline[4 * AS_MAXCH]`
+  while `strlen(cmdline) + strlen(argv[i]) < sizeof(cmdline) - 2`, which
+  can leave three bytes free; the header's 20 characters and its NUL then
+  run up to 18 bytes past the array (ASan: global-buffer-overflow, a write
+  of 21 bytes at its last three).
+- The new zero declination is the root of `find_zero()`'s parabola through
+  the step's three declinations, unrefined, where the declination extrema
+  beside it are refined five times. At swevents' 1-day step the Moon's on
+  2000 Mar 8 came out at 02:48:17 UT for 02:46:54.2 (bisection on
+  `swe_calc()`), 83 s late; the Sun's equinox 0.9 s.
+
+**Fix, as done here:** the path, JPL file and ephemeris flag are set
+before the header, which is asked after the begin date is read, at that
+date, with the run's ephemeris (with `SE_EPHE_FALLBACK=1` a file may serve
+1959 and not 1500). It says "based on the Moshier ephemeris" for Moshier
+and "(no ephemeris: ...)" when the calculation fails, and is appended with
+`snprintf()` into what is left of `cmdline`. Without `-b` the date prompt
+now comes before the header. The zero declination is refined from the
+parabola's root by Newton steps on the declination and its speed, kept
+inside the step whose sign change brackets the crossing: a step that would
+leave it is replaced by the bracket's middle. A first form of this fix,
+four Newton steps unbounded, left the bracket at coarse steps: the Moon at
+a 12-day step printed a 2001 crossing in a run over 2000 and lost one near
+May 1, and Mercury at a 15-day step printed one crossing twice and lost
+another.
+
+G55 `tests/eventsdecl.c`, on swevents built with ASan: (a) the header for
+`-eswe` (DE441), `-emos` (Moshier) and `-ejplde200.eph` (DE200), and at
+1.3.1500, outside DE200, Moshier with the fallback and "(no ephemeris"
+without; (b) a command line filling `cmdline` to three bytes short, run
+clean; (c) the Moon's and the Sun's zero declinations over March 2000 at a
+1-day step, and (d) at coarse steps, the Moon at 12 and 14 days and
+Mercury at 12 and 15: every crossing bisection finds where swevents can
+see, printed once, in order, within 0.6 s (whole seconds are printed, so
+0.5 s is the least possible; 0.50 s measured). 13 checks with bug 47's;
+upstream's swevents fails 11 of the 12 that are this entry's: every header
+but `-eswe`'s, the overflow, and every zero declination (the Moon 82.9 s
+out at a 1-day step, the Sun 0.9 s; at the coarse steps up to 6.6 days).
+
+## 47. swevents prints a longitude that rounds up to 360 degrees as a thirteenth sign
+
+**Severity: Memory (a global-buffer-overflow read in `dms()`; under ASan swevents aborts, without it prints whatever follows `znam[]`, as at the Sun's March equinox of 2002 with `-dodecl`)**
+**Where:** `swevents.c`: `dms()` (in `3fd0f95`; still in `94621ab`)
+
+`dms()` takes the sign as `floor(x / 30)` and, when the seconds round up to
+60, goes round again with the degrees raised by one: 29 Pisces 59'59.5"
+comes back as 360, sign 12, and `znam[12]` is read past the twelve signs.
+Any event printed within half a second of arc below 0 Aries does it. Bug
+46's zero declination makes it common, since the Sun's at the March
+equinox is printed there: `-eswe -p0 -b1.1.2002 -n365 -s1 -dodecl` aborts
+under ASan. swetest's own formatter already folds sign 12 to 0.
+
+**Fix, as done here:** the longitude is reduced modulo 360 before the sign
+is taken, so it prints as 0 Aries 0'0".
+
+G55 (e): the Sun over March 2002 with `-dodecl`, run clean, its equinox
+printed as 0 Aries. It fails without the fix.
 
 ## How these were found
 

@@ -52,6 +52,9 @@
                        of which ephemeris the current call resolved to
     jpl_file_is_open   open-resource state, 10 writers, all compute paths
     jpldenum           read back off the file this thread opened
+    denum_used         written by the calculations, read by
+                       swe_get_denum() -- per-thread record of the DE
+                       number behind the last one
     topd.teval/tjd_ut/xobs[]
                        the computed observer vector, written by
                        swi_get_observer() on every app_pos_etc_* call
