@@ -3313,7 +3313,7 @@ done:
   return iflag;
 }
 
-double CALL_CONV swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *serr)
+static double swe_deltat_ex_r_body(swe_ctx *ctx, double tjd, int32 iflag, char *serr)
 {
   double deltat;
   if (ctx->delta_t_userdef_is_set)
@@ -3324,6 +3324,15 @@ double CALL_CONV swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *se
   return deltat;
 }
 
+double CALL_CONV swe_deltat_ex_r(swe_ctx *ctx, double tjd, int32 iflag, char *serr)
+{
+  double ret;
+  swi_config_hold(ctx);	/* bug 124 */
+  ret = swe_deltat_ex_r_body(ctx, tjd, iflag, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
@@ -3331,7 +3340,7 @@ double CALL_CONV swe_deltat_ex(double tjd, int32 iflag, char *serr)
   return swe_deltat_ex_r(swi_default_ctx(), tjd, iflag, serr);
 }
 
-double CALL_CONV swe_deltat_r(swe_ctx *ctx, double tjd)
+static double swe_deltat_r_body(swe_ctx *ctx, double tjd)
 {
   int32 iflag;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -3339,6 +3348,15 @@ double CALL_CONV swe_deltat_r(swe_ctx *ctx, double tjd)
 #endif
   iflag = swi_guess_ephe_flag(ctx);
   return swe_deltat_ex_r(ctx, tjd, iflag, NULL); /* with default tidal acceleration/default ephemeris */
+}
+
+double CALL_CONV swe_deltat_r(swe_ctx *ctx, double tjd)
+{
+  double ret;
+  swi_config_hold(ctx);	/* bug 124 */
+  ret = swe_deltat_r_body(ctx, tjd);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -4477,7 +4495,7 @@ static double sidt_lterm_offset(swe_ctx *ctx, int ib)
   return ofs;
 }
 #endif
-double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut)
+static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double nut)
 {
   double jd0;    	/* Julian day at midnight Universal Time */
   double secs;   	/* Time of day, UT seconds since UT midnight */
@@ -4581,6 +4599,15 @@ sidtime_done:
   return gmst;
 }
 
+double CALL_CONV swe_sidtime0_r(swe_ctx *ctx, double tjd, double eps, double nut)
+{
+  double ret;
+  swi_config_hold(ctx);	/* bug 124 */
+  ret = swe_sidtime0_r_body(ctx, tjd, eps, nut);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 double CALL_CONV swe_sidtime0(double tjd, double eps, double nut)
@@ -4623,7 +4650,7 @@ void CALL_CONV swe_set_interpolate_nut(AS_BOOL do_interpolate)
  * tjd must be UT !!!
  * for more informsation, see comment with swe_sidtime0()
  */
-double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
+static double swe_sidtime_r_body(swe_ctx *ctx, double tjd_ut)
 {
   int i;
   double eps, nutlo[2] = {0, 0}, tsid;	/* calc_nutation() writes nothing for a model it does not know */
@@ -4637,6 +4664,15 @@ double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
     nutlo[i] *= RADTODEG;
   tsid = swe_sidtime0_r(ctx, tjd_ut, eps + nutlo[1], nutlo[0]);
   return tsid;
+}
+
+double CALL_CONV swe_sidtime_r(swe_ctx *ctx, double tjd_ut)
+{
+  double ret;
+  swi_config_hold(ctx);	/* bug 124 */
+  ret = swe_sidtime_r_body(ctx, tjd_ut);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.

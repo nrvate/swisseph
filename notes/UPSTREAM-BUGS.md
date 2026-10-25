@@ -156,6 +156,7 @@ worst were in code that had never executed even once.
 | 120 | With the Swiss Moon file missing, the Moon and the Earth come from Moshier under a SEFLG_SWIEPH flag, and the strict setting answers | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 115 | A calculation on the default context (this fork's) adopts another thread's setter half-way through: its files closed under it (a crash on the JPL file), one answer from two configurations | Correctness (a crash; wrong answers) | `sweconfig.c`, `sweph.c`, `swecl.c` |
 | 123 | `swe_close()` zeroes the shared configuration's generation, so a running thread misses the close and the publishes after it, and empties it, so a setting the close keeps -- the path, the JPL file, delta t, the nutation interpolation, the lapse rate, the fallback -- goes back to its default at the next setter and never reaches a thread started after it (this fork's) | Correctness (behaviour) | `sweconfig.c`, `sweconfig.h`, `sweph.c` |
+| 124 | The searches, the houses, the sidereal time, `swe_azalt()`, `swe_pheno()`, delta t and the UTC conversions on the default context (this fork's) adopt another thread's setter between two of their calculations, or never: a sidereal Moon crossing 5600 s off, a local eclipse searched at another site from half-way, 3752 s late; another thread's user delta t kept out of the UTC conversions, 22 s | Correctness (behaviour) | `swecl.c`, `swehel.c`, `swehouse.c`, `sweph.c`, `swephlib.c`, `swedate.c` |
 
 ---
 
@@ -7817,9 +7818,10 @@ above 0. A context not yet initialised is not synced by the hold: its
 first `swi_init_swed_if_start()` starts it and syncs regardless of the
 depth (nothing of it is in use), and the depth survives that start's
 memset as `cfg_seen` does. The other public functions -- the eclipse,
-rise and heliacal searches among them -- still sync at each calculation
-they make, each of which is now one configuration; they read no file
-state across those calls. Under `SWE_UPSTREAM_COMPAT`'s `#ifndef`: the
+rise and heliacal searches among them -- were left syncing at each
+calculation they make, so another thread's setter was still adopted
+between two of them: entry 124, where they hold the same way. Under
+`SWE_UPSTREAM_COMPAT`'s `#ifndef`: the
 hold and release are no-ops and every nested sync runs, as before. The
 golden transcript is bit for bit as before (13000 rows); `bench` medians
 within the machine's noise (calc-swieph -4.6..+2.7%, calc-moseph
@@ -7840,6 +7842,104 @@ Not fixed here (entry 116): `swe_set_astro_models()` with a version
 string before 2.01 sets the tidal acceleration and publishes only the
 SID group, so the default context's next sync puts the master's automatic
 one back (the stress program's inherited contexts saw it).
+
+## 124. The searches, the houses and the other public functions that make several calculations (this fork's) adopt another thread's setter between two of them, or never
+
+**Severity: Correctness (behaviour: wrong answers, no error)**
+**Where:** every public `_r` function that makes several calculations:
+`swecl.c` (17), `swehel.c` (5), `swehouse.c` (2), `sweph.c` (12),
+`swephlib.c` (4), `swedate.c` (3); `sweconfig.c`: `swi_config_hold()`'s
+comment
+
+Entry 115 made the calculation entry points sync the shared configuration
+once, at their outermost entry, and hold every nested sync until they
+return. It wrapped only those: `swe_calc_r()`, `swe_calc_ut_r()`, the
+orbital-element calculations, the six star functions, `swe_calc_pctr_r()`,
+the two `swe_get_ayanamsa_ex` functions, `swe_nod_aps_r()` and `_ut_r()`,
+`swe_get_orbital_elements_r()`, `swe_orbit_max_min_true_distance_r()`.
+Every other public function that makes more than one calculation synced
+at each of them, at each `swe_calc()`, `swe_deltat_ex()` with an ephemeris
+flag, `swe_sidtime0()` it reached: the eclipse and occultation searches and
+their `_how` and `_where`, rise, set and transit, the heliacal functions,
+the crossings, the houses, `swe_sidtime()`, `swe_azalt()` and
+`swe_azalt_rev()`, `swe_pheno()`, `swe_time_equ()` and
+`swe_lat_to_lmt()`, `swe_get_ayanamsa()` and `_ut()`, the Gauquelin
+sector. A setter another thread called while one of them ran on its
+default context was adopted between two iterations, and the rest of the
+call ran on the new configuration. Where the call had set something for
+itself -- the observer an eclipse search puts in the context without
+publishing -- the adopted master overwrote it too, and the search went on
+at the master's site.
+
+Measured deterministically by G121, whose calls wait on a FIFO for the
+context's swe_deltat.txt, read at their first delta t, while the main
+thread calls the setter (G112's technique): `swe_sol_eclipse_when_loc()` at
+Zurich from 2003 May 29, `swe_set_topo()` to New York, found the eclipse of
+May 31 with its maximum 3752 s late and its first contact and maximum
+visible (retflag 5010 for 4242), contacts up to 4990 s off, the Sun's
+azimuth 11.2 deg -- neither configuration's answer, the call naming its
+site; a sidereal `swe_mooncross_ut()`, `swe_set_sid_mode()` from Lahiri to
+Fagan-Bradley, 5600 s off (Fagan-Bradley's crossing); sidereal
+`swe_houses_ex2()`, the same setter, 0.883 deg in every cusp;
+`swe_rise_trans()` of the Moon, `swe_set_delta_t_userdef(0.001)`, 1.03 s;
+`swe_sol_eclipse_when_glob()`, `swe_set_astro_models()`, 1.49e-3 s.
+
+Some of these synced nowhere on a context already started, or only after
+reading part of the configuration: `swe_deltat_ex()` with iflag -1 has no
+sync, and so neither had `swe_utc_to_jd()`, `swe_jdet_to_utc()` and
+`swe_jdut1_to_utc()`, which make only those; `swe_deltat_ex()` with a flag
+read the user delta t before the sync in `calc_deltat()`, `swe_sidtime0()`
+its models before its own, `swe_houses()` its delta t, obliquity and
+nutation before the one in `swe_sidtime0()`. On a thread that had
+calculated before, another thread's `swe_set_delta_t_userdef(0.001)`
+stayed out of the UTC conversions for good: TT from `swe_utc_to_jd()`
+22.2 s off, `swe_jdet_to_utc()`'s UTC 22.2 s, `swe_deltat_ex()` 22.6 s
+with -1 and, as the first call to sync, with SEFLG_MOSEPH.
+
+**Fix, as done here:** the same wrapper as entry 115's for each:
+`swe_sol_eclipse_when_glob_r()`, `_when_loc_r()`, `_where_r()`,
+`_how_r()`, `swe_lun_occult_when_glob_r()`, `_when_loc_r()`,
+`_where_r()`, `swe_lun_eclipse_when_r()`, `_when_loc_r()`, `_how_r()`,
+`swe_rise_trans_r()`, `swe_rise_trans_true_hor_r()`, `swe_azalt_r()`,
+`swe_azalt_rev_r()`, `swe_pheno_r()`, `_ut_r()`,
+`swe_gauquelin_sector_r()`; `swe_heliacal_ut_r()`,
+`swe_heliacal_pheno_ut_r()`, `swe_vis_limit_mag_r()`,
+`swe_topo_arcus_visionis_r()`, `swe_heliacal_angle_r()`;
+`swe_houses_r()`, `swe_houses_ex2_r()`; the eight crossings
+(`swe_solcross_r()`, `swe_mooncross_r()`, `swe_mooncross_node_r()`,
+`swe_helio_cross_r()` and their `_ut_r()`), `swe_time_equ_r()`,
+`swe_lat_to_lmt_r()`, `swe_get_ayanamsa_r()`, `_ut_r()`;
+`swe_deltat_ex_r()`, `swe_deltat_r()`, `swe_sidtime0_r()`,
+`swe_sidtime_r()`; `swe_utc_to_jd_r()`, `swe_jdet_to_utc_r()`,
+`swe_jdut1_to_utc_r()`. Each old body is a static `<name>_body()`, and the
+public function calls `swi_config_hold()` first and `swi_config_release()`
+last, so no early return can leave a hold behind. The legacy entry points
+already go through the `_r` functions. Left as they are:
+`swe_houses_ex_r()` and `swe_lmt_to_lat_r()`, whose whole body is one call
+to a held function (`swe_houses_ex2_r()`, `swe_time_equ_r()`);
+`swe_houses_armc_r()`, `swe_houses_armc_ex2_r()` and `swe_house_pos_r()`,
+arithmetic on the caller's ARMC and obliquity that never syncs;
+`swe_refrac()` and `swe_refrac_extended()`, which take no context;
+`swe_split_deg_r()`; the getters (`swe_get_tid_acc_r()`,
+`swe_get_planet_name_r()`, `swe_get_ephe_fallback_r()`,
+`swe_get_astro_models_r()`, `swe_get_current_file_data_r()`), one sync at
+their start or none, then a read. Under `SWE_UPSTREAM_COMPAT` the hold and
+release are entry 115's no-ops, and every nested sync runs as before. The
+golden transcript is bit for bit as before (13000 rows). Instructions
+(`perf stat`, one count each): `swe_calc()` over the planets on the Swiss
+files, calc-swieph's loop, 6141191593 before and 6141191523 after;
+`swe_calc_ut()` over the same, +0.016%; `swe_houses_ex2()` with speeds and
+`swe_rise_trans()` of the Sun, +0.048%.
+
+G121 `tests/searchhold.c`: the five FIFO cases above, each in a forked
+child, each answer bit for bit a fresh context's with the starting
+configuration, and a sixth (`entry`) for the setter made before the calls,
+each of the six answers bit for bit a fresh context's with that user delta
+t. 0 in all six; before the fix 4990 s (and the retflag), 1.49e-3 s,
+5600 s, 1.03 s, 0.883 deg, 22.6 s; the compat build fails all six the same
+way (4990 s, 1.53e-3 s, 5600 s, 1.03 s, 0.883 deg, 22.6 s). G24
+`search_hold_off`: the mooncross case, 0 shipped, 5600 s compat. G2, G4,
+G102, G112, G115 and G24 pass.
 
 ## How these were found
 

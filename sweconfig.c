@@ -607,6 +607,22 @@ void swi_config_sync(swe_ctx *ctx)
  * with the positions of the new path. Each calculation entry syncs once,
  * here, and holds the syncs nested in it until it returns (G112).
  *
+ * Upstream bug 124 (this fork's): that took in the calculation entry
+ * points alone. The other public functions that make several
+ * calculations -- the eclipse, occultation, rise and set and heliacal
+ * searches, the crossings, the houses, the sidereal time, swe_azalt(),
+ * swe_pheno(), delta t and the UTC conversions -- synced at each of
+ * them, or after reading part of the configuration, so a setter another
+ * thread called while one ran was adopted between two iterations: a
+ * sidereal swe_mooncross_ut() 5600 s off after swe_set_sid_mode(),
+ * sidereal swe_houses_ex2() 0.88 deg, swe_sol_eclipse_when_loc()'s
+ * maximum 3752 s late with a contact more after swe_set_topo(), its site
+ * swapped for the master's half-way. The UTC conversions and delta t with
+ * iflag -1 never synced on a started context, and swe_deltat_ex() read
+ * the user delta t before its sync: another thread's
+ * swe_set_delta_t_userdef() stayed out, 22.6 s. They hold the same way
+ * now, so each syncs at its entry (G121).
+ *
  * A context that is not yet initialised is not synced here: its first
  * swi_init_swed_if_start() starts it from scratch and syncs regardless of
  * the hold, as nothing of it is in use yet.

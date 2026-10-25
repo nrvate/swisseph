@@ -1127,6 +1127,13 @@ struct epsilon {
  *     t, interpolation, lapse rate and fallback it keeps survive the next
  *     setter, is in both builds; the master is this fork's, and upstream's
  *     swe_close() keeps those settings on its thread; G120)
+ *   - the searches, the houses, the sidereal time, swe_azalt(),
+ *     swe_pheno(), delta t and the UTC conversions on the default context
+ *     syncing at each calculation they make, or never: another thread's
+ *     setter adopted between two iterations, a sidereal Moon crossing
+ *     5600 s off, a local eclipse searched at the master's site from
+ *     half-way, a user delta t kept out of the UTC conversions, 22 s
+ *     (UPSTREAM-BUGS 124, G121)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

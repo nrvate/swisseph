@@ -2679,6 +2679,76 @@ static double cfg_hold_off(void)
   return r;
 }
 
+/* A sidereal Moshier swe_mooncross_ut() on a worker thread's default
+ * context, swe_set_sid_mode() from Lahiri to Fagan-Bradley called on the
+ * main thread while the call waits for its swe_deltat.txt (a FIFO the main
+ * thread fills only after the setter), against a fresh context under
+ * Lahiri: the crossing's difference, s. Upstream's search adopts the new
+ * mode at its second step and answers Fagan-Bradley's crossing, 5600 s
+ * off (UPSTREAM-BUGS 124). */
+static double search_got;
+static void *search_thread(void *arg)
+{
+  char serr[256];
+  double x[6];
+  (void) arg;
+  swe_calc(2451545.25, SE_SUN, SEFLG_MOSEPH, x, serr);
+  search_got = swe_mooncross_ut(0.0, 2451545.25, SEFLG_MOSEPH | SEFLG_SIDEREAL, serr);
+  return NULL;
+}
+static double search_hold_off(void)
+{
+  static const char *line = "# fixture: the built-in table throughout\n";
+  char dir[] = "/tmp/compatshXXXXXX", fifo[PATH_MAX], reg[PATH_MAX], tmp[PATH_MAX + 8];
+  char serr[256];
+  double want;
+  swe_ctx *c;
+  pthread_t th;
+  FILE *fp;
+  int fd;
+  if (mkdtemp(dir) == NULL)
+    return -1;
+  snprintf(reg, sizeof reg, "%s/swe_deltat.txt", dir);
+  snprintf(fifo, sizeof fifo, "%s/fifo", dir);
+  if (mkdir(fifo, 0700) != 0 || (fp = fopen(reg, "w")) == NULL)
+    return -1;
+  fputs(line, fp);
+  fclose(fp);
+  swe_close();
+  c = swe_ctx_new();
+  swe_set_ephe_path_r(c, dir);
+  swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+  want = swe_mooncross_ut_r(c, 0.0, 2451545.25, SEFLG_MOSEPH | SEFLG_SIDEREAL, serr);
+  swe_ctx_free(c);
+  swe_set_ephe_path(fifo);
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  snprintf(fifo, sizeof fifo, "%s/fifo/swe_deltat.txt", dir);
+  snprintf(tmp, sizeof tmp, "%s.new", fifo);
+  if (mkfifo(fifo, 0600) != 0 || pthread_create(&th, NULL, search_thread, NULL) != 0)
+    return -1;
+  if ((fd = open(fifo, O_WRONLY)) < 0)	/* the worker's search has opened it */
+    return -1;
+  swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+  /* a regular file in its place, for a call that opens it again */
+  if ((fp = fopen(tmp, "w")) == NULL)
+    return -1;
+  fputs(line, fp);
+  fclose(fp);
+  rename(tmp, fifo);
+  if (write(fd, line, strlen(line)) < 0)
+    return -1;
+  close(fd);
+  pthread_join(th, NULL);
+  swe_close();
+  unlink(fifo);
+  unlink(reg);
+  snprintf(fifo, sizeof fifo, "%s/fifo", dir);
+  rmdir(fifo);
+  rmdir(dir);
+  swe_set_ephe_path(EPHE);
+  return fabs(search_got - want) * 86400;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -2911,7 +2981,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3019,6 +3089,7 @@ int main(int argc, char **argv)
   fictstar = fict_star_parse();
   pathset = path_setter_118();
   cfghold = cfg_hold_off();
+  searchhold = search_hold_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   starkept = star_load_kept();
@@ -3861,6 +3932,14 @@ int main(int argc, char **argv)
   else {
     printf("  setter mid-calculation %.2e FAIL: expected %s\n",
            cfghold, WANT_DEFECT ? "> 1e-3" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (searchhold > 100) : (searchhold == 0))
+    printf("  setter mid-search      %.2e s OK\n", searchhold);
+  else {
+    printf("  setter mid-search      %.2e s FAIL: expected %s\n",
+           searchhold, WANT_DEFECT ? "> 100" : "0");
     bad++;
   }
 
