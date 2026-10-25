@@ -3707,7 +3707,13 @@ shift's rate 1.9e-8 (2.8e-8 topo). JPL (de200.eph, 1650..2150): geocentric
 exact UT1 6e-10 (6.2e-7). Every body's speed moves by the TDB rate and
 the shift's rate (Venus 6e-10 deg/day) and every topocentric one by the
 site (Venus 4.8e-9); every apparent position by 2e-12 deg (geocentric) to 9e-12 (topocentric), through
-the observer's velocity in the aberration. Cost: calc-swieph +0.9%
+the observer's velocity in the aberration. The osculating apogee and the
+true node, which `lunar_osc_elem()` builds from the Moon's position and
+velocity, move by up to 9.7e-7 deg (0.0035") with the Moon's velocity, in
+true and no-aberration requests too (swemini's "osc. Apogee" 252.2333404
+-> 252.2333407); barycentric places without speed by 1-2 ulp; on the JPL
+reader only the rates, by 6e-11 to 3.3e-10 of themselves (d(TDB - TT)/dTT;
+G10's positions bit for bit). Found in the G1/G10/G17 re-baseline. Cost: calc-swieph +0.9%
 instructions, +1.1% cycles (median of five, `perf stat`, load 5-6; the
 minimum 0.6% lower), calc-moseph unchanged; a topocentric `swe_calc()` 4%
 fewer instructions than before, the precession matrix no longer computed
@@ -5280,10 +5286,13 @@ J2000. The defect is upstream's.
 
 **Fix, as done here:** `precess_3()` takes J2000 like any other instant,
 the matrix the series gives there; `swi_precess_matrix_rate_eps()` no
-longer excludes it. No caller passes J2000 to `swi_precess()` meaning
-"no rotation": those that want the J2000 frame (`sip->t0 != J2000`,
-`tequ != J2000`, SEFLG_J2000) skip the call. Only J2000 itself changes;
-the bench checksum is identical, calc-swieph and calc-moseph unchanged
+longer excludes it. Those that want the J2000 frame (`sip->t0 != J2000`,
+`tequ != J2000`, SEFLG_J2000) skip the call. One caller did pass J2000
+meaning "no rotation": `swi_get_ayanamsa_ex()` precesses with
+`swi_precess(ctx, x, t0, 0, J2000_TO_J)`, and t0 is J2000 for
+SE_SIDM_J2000 (mode 18), so that ayanamsa now carries the series' 1-uas
+matrix at every date, up to 9.1e-13 deg at -999..3000 (found in the G1
+re-baseline). Otherwise only J2000 itself changes; the bench checksum is identical, calc-swieph and calc-moseph unchanged
 within noise. After: the residuals above 2.9e-15 (Sun), 6.7e-16 (Mars),
 5.3e-15 (Pluto), 7.7e-12 (true node, its neighbourhood's 1.3e-11).
 
@@ -5991,7 +6000,10 @@ Moshier Moon's apparent place by 1.2e-12 deg (rounding at the
 barycentric scale through the light time), its speed by 3.9e-9
 deg/day; nothing else moves (planets, Sun, interpolated apsides, Swiss
 and de200 Moon bit for bit, their true node within 6e-14 deg and
-4e-13 deg/day).
+4e-13 deg/day). The Swiss true node's distance and speeds also move, and
+its longitude by 1-2 ulp: `lunar_osc_elem()` scales the node's distance to
+the osculating ellipse with `ecce` and `ny`, which now come from the
+eccentricity vector (G1: 112 distance, 12 longitude, 120 speed rows).
 Cost: one series evaluation with its rates and three frames where the
 difference took five of each: the `moon` bench 0.90 -> 0.565 s,
 calc-moseph 1.045 -> 0.957 s, calc-swieph unchanged.
