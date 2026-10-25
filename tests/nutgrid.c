@@ -30,7 +30,7 @@
  * deg (3.6 uas), the residual floor. Measured 0.57 uas (1.6e-10 deg; the
  * series' own rounding there, as far from a long double evaluation of
  * it), and 0 beyond 4e8; before the fix 2.4e35 uas, near 1e12. The compat
- * build, whose default is 2000B, fails it too (1.4e10 uas). Past |J| 1e12
+ * build, whose default is 2000B, fails it too (1.25e9 uas). Past |J| 1e12
  * SE_ECL_NUT refuses (UPSTREAM-BUGS 196): the 729 instants there are
  * checked refused, by both contexts, the rest compared as before. Past
  * -3100015.5 .. 8000016.5, the nutation's range (UPSTREAM-BUGS 284), it

@@ -10314,7 +10314,7 @@ G29 `tests/nutgrid.c`, extended: 4000 instants with |J| log-uniform over
 1e7..1e13, either sign, the default against the direct series within 1e-9
 deg (3.6 uas), the residual floor: 0.57 uas in dpsi and 0.21 in deps;
 before the fix 2.4e35 uas, near 1e12. The compat build, whose default is
-2000B, fails it as it does G29's other spans (1.4e10 uas). No G24 case:
+2000B, fails it as it does G29's other spans (1.25e9 uas). No G24 case:
 the compat build has nothing to restore. G32, G57, G50 and G122 pass.
 
 Noticed, not fixed:

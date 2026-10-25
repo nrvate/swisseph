@@ -101,8 +101,10 @@
  * (e) 0 values differ. Before the fix (ts20 0eccce8, -O1): (a) killed by
  * SIGABRT (the True Citra star's range message past its buffer, entry
  * 210, which the refusal now precedes), (b) 273 of 318, (c) killed by
- * SIGSEGV, (d) 694 of 788, (e) passes. The upstream build fails the same:
- * (a) SIGABRT, (b) 3 of 318, (c) SIGSEGV, (d) 694 of 788. Run as
+ * SIGSEGV, (d) 694 of 788, (e) passes. The upstream build (measured at
+ * ts20 d5143d5, its library's sprintf()s bounded since entry 210) fails
+ * (a) 112 of 648 refused, (b) 3 of 318, (c) 61 of 219, (d) 694 of 788;
+ * (e) passes. Run as
  *   farrange EPHEDIR
  */
 #include <float.h>
