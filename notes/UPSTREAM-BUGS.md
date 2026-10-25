@@ -179,6 +179,7 @@ worst were in code that had never executed even once.
 | 142 | `swe_get_ayanamsa_ex()`, its `_ut` form, the sidereal houses and `swe_gauquelin_sector()`'s methods 0 and 1 with SEFLG_JPLHOR and no IERS corrections loaded -- de200, a thread or context that never loaded them, eop_1962_today.txt missing or broken off -- read the corrections' table, NULL, and crash (SIGSEGV), where `swe_calc()` takes the flag as SEFLG_JPLHOR_APPROX | Crash | `swephlib.c`, `swephlib.h`, `sweph.c`, `swecl.c` |
 | 143 | A thread or context that adopts another thread's `swe_set_jpl_file()` (this fork's) -- a thread running across it, one started after it, a context made after it -- never loads the IERS corrections, so its SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX where the setter's does not: dpsi, the ayanamsa and the sidereal houses 4.2e-2" off the setter's on G134's fixtures | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h` |
 | 144 | `swe_set_ephe_path()` keeps the IERS corrections read from the old directory (`load_dpsi_deps()` loads once), and so does a thread adopting the path: after path A, the JPL file, path B and the JPL file again, SEFLG_JPLHOR answers A's dpsi, 0.131" off B's on G134's fixtures, and after path B alone A's for SEFLG_JPLHOR_APPROX's, 4.2e-2" | Correctness (behaviour) | `sweph.c` |
+| 151 | Woolard's nutation (`SEMOD_NUT_WOOLARD`) turns the Moon's mean anomaly at 13255523.59 revolutions a century, 10^4 times its 1325.552359, so its terms in it cycle every 3.97 minutes: dpsi up to 0.236" and deps 0.0226" off the series, the interpolation on it 0.196"; `SE_SIDBIT_PREC_ORIG`'s Newcomb ayanamsas take it | Correctness | `swephlib.c` |
 
 ---
 
@@ -9504,7 +9505,8 @@ Noticed, not fixed:
   times its 1325.552359 (1325r 198 deg 50' 56".79): its five terms in md
   have a period of 3.97 minutes. dpsi up to 0.238" and deps 0.0226" off
   the same series with the right rate (20000 instants 1900-1975), and the
-  interpolation on it 0.151" off away from any step. Both builds.
+  interpolation on it 0.151" off away from any step. Both builds. Fixed
+  as entry 151.
 - The default's grid (`calc_nutation_grid()`) leaves the direct IAU 2000A
   series far inside its guard of |J| < 1e12: worst over instants between
   its nodes 4.5e-10 deg at |J| 5.6e8 (1.5 million years), 8.0e-7 deg at
@@ -9838,6 +9840,86 @@ Noticed, not fixed:
   file and the fixture again, allocates both anew: 589824 bytes more
   mapped each time (two 292200-byte tables). It does not close the file
   when an allocation fails (by reading). Both builds.
+
+## 151. Woolard's nutation turns the Moon's mean anomaly at 10^4 times its rate: its five terms in it cycle every 3.97 minutes, dpsi up to 0.236" off the series
+
+**Severity: Correctness (dpsi up to 0.236" and deps 0.0226" off Woolard's series under `SEMOD_NUT_WOOLARD`, which `SE_SIDBIT_PREC_ORIG` sets for the ayanamsas on Newcomb's precession; the interpolation on it 0.196" off)**
+**Where:** `swephlib.c`: `calc_nutation_woolard()`
+
+Entry 146's noticed item. `calc_nutation_woolard()` turns each mean
+element through its revolutions a Julian century since 1900 Jan 0.5 and
+keeps the fraction: the Sun's longitude 100.0021358, the Moon's
+1336.855231, the Sun's anomaly 99.99736, the node 5.372617, and the Moon's
+anomaly 13255523.59, 10^4 times its 1325.552359. The Explanatory
+Supplement (1961) gives the Moon's mean anomaly from Brown's theory, the
+elements Woolard (1953) used, as 296 deg 06' 16".59 + 1325r 198 deg 50'
+56".79 T + 33".09 T^2 + 0".0518 T^3 (Meeus's 296.104608 + 477198.849108 T
++ 0.009192 T^2 in his Astronomical Formulae for Calculators): 1325.552359
+revolutions, and the code's own 296.105 and .009192 T^2 are its other two
+terms. Cited from memory with high confidence, and held three ways here:
+the anomalistic month, 27.554550 days, is 1325.5524 revolutions a
+century; IAU 1980's rate in this file, 1717915922.633"/cty at J2000
+(1325r 198 deg 52' 02".633), is Brown's carried a century on by its T^2
+and T^3 terms (198 deg 52' 03".13) to 0.5"/cty; and with 1325.552359 the
+series is IAU 1980 less their coefficients' difference to 0.9 mas (below).
+The rate is the decimal point moved four places.
+
+So the terms in the anomaly l -- 0".0675 sin l, -0".0261 sin(2L' + l),
+-0".0149 sin(2L - 2L' + l) and 0".0114 sin(2L' - l) in dpsi, 0".1199
+together, and 0".0113 cos(2L' + l) in deps -- turned with a period of
+36525 / 13255523.59 day, 3.97 minutes. Measured on Moshier over 20000
+instants 1900-2100, against the same series with the right rate: dpsi
+0.236" (twice 0.1199" at most) and deps 0.0226". Against IAU 1980, 0.323"
+and 0.071", where with the right rate the two differ by 0.159" and
+0.050": Woolard's coefficients (the rigid Earth of 1953) are not Wahr's
+(the elastic Earth of IAU 1980), by 50.5 mas over 1900-2100 in the
+18.6-year term (-17.2327 - 0.01737 T from 1900 against -17.1996 -
+0.01742 T from 2000), 45.7 in the semiannual, 23.7 in the fortnightly,
+16.8 in the annual, and IAU 1980's 93 terms this series' 13 leave out
+88.0 mas together: 0.2444" in dpsi and 0.0864" in deps summed. Less that
+difference itself, evaluated on IAU 1980's arguments, Woolard is within
+0.90 mas of IAU 1980 in dpsi and 0.47 mas in deps (0.236" and 0.0228"
+before), the two sets of arguments' difference; so the series' own
+difference from IAU 1980 is tenths of an arcsecond, and what agrees to
+the mas is the series. Over minutes, the second difference of dpsi over
+2^-11 day was up to 0.133" where the series' curvature allows 1.6e-8".
+With the interpolation on, dpsi between its nodes was 0.196" off the
+series (4000 instants; IAU 1980's interpolation 2.5 mas). Both builds;
+upstream's code.
+
+`SE_SIDBIT_PREC_ORIG` sets this model for the ayanamsas on Newcomb's
+precession (Fagan/Bradley, Raman, Krishnamurti, Lahiri 1940, Lahiri
+ICRC), whose true ayanamsa takes its dpsi: all five move with it, by
++0.0806" at 1956 Mar 21 (below).
+
+**Fix, as done here:** 1325.552359 revolutions a century, behind `#ifndef
+SWE_UPSTREAM_COMPAT`, upstream's 13255523.59 under `#else`.
+
+G138 `tests/woolard.c`, Moshier, 4000 instants 1900-2100 at multiples of
+2^-10 day: (a) Woolard against IAU 1980 within 0.25" in dpsi and 0.09" in
+deps, the coefficients' summed difference above with 1 mas for the
+arguments: 0.160" and 0.049"; (b) the second difference of dpsi and deps
+over 2^-11 day within 1e-6", the series' curvature giving at most 1.6e-8"
+and 6.9e-9": 1.5e-8" and 6.7e-9"; (c) the interpolation, dpsi and deps at
+t + 0.37 after a call at t, against the direct value within 3.5 mas,
+G122's: 1.68 mas and 0.73 mas. The compat build fails 5 of 6: (a) dpsi
+0.306" (deps 0.066" passes), (b) 0.133" and 0.0126", (c) 0.197" and
+0.0192". G24 `woolard_md_cycle`: the largest second difference of
+Woolard's dpsi over 2^-11 day at eight instants 1900-2100: 1.29e-8"
+shipped, 9.70e-2" compat. Woolard is not the default: against the tip's
+own G1 transcript one row moves, `cov:nutmodel[5]`, `swe_sidtime()` at
+J2000 under Woolard, by 7.10e-3 s (dpsi 0.1161" there, times cos eps).
+
+Noticed, not fixed:
+- `SE_SIDM_LAHIRI_ICRC`'s t0 value, 23.25 - 0.00464207 at JD 2435553.5
+  (1956 Mar 21), subtracts "nutation according to Woolard 1953" (sweph.h),
+  and 0.00464207 deg = 16.7115" is the defective series' dpsi at that
+  instant to its last digit; the series gives 16.7921" there. Mode 46 |
+  `SE_SIDBIT_PREC_ORIG`'s true ayanamsa at t0 was 23 deg 15' 00".0000, the
+  Calendar Reform Committee's value, and is 23 deg 15' 00".0806 after the
+  fix. 23.25 - 0.00466447 would make it 23 deg 15' again, and move mode
+  46's mean ayanamsa by -0.0806" at every date, with the bit or without.
+  A table value, left for a decision.
 
 ## How these were found
 

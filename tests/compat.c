@@ -3180,6 +3180,33 @@ out:
   return r;
 }
 
+/* UPSTREAM-BUGS 151: Woolard's nutation turned the Moon's mean anomaly at
+ * 10^4 times its rate, a 3.97-minute cycle in its terms (0".12 in dpsi).
+ * The second difference of Woolard's dpsi over 2^-11 day at eight binary
+ * instants 1900-2100, the largest, arcsec: the series' own curvature gives
+ * at most 1.6e-8". */
+static double woolard_md_cycle(void)
+{
+  double x[6], f[3], h = 1.0 / 2048, d = 0;
+  char serr[256];
+  swe_ctx *c = swe_ctx_new();
+  int i, k;
+  if (c == NULL)
+    return -1;
+  swe_set_astro_models_r(c, "0,0,0,5", 0);	/* SEMOD_NUT_WOOLARD */
+  for (i = 0; i < 8; i++) {
+    double t = floor((2415020.3 + i * 9131.7) * 1024) / 1024;
+    for (k = 0; k < 3; k++) {
+      swe_calc_r(c, t + (k - 1) * h, SE_ECL_NUT, SEFLG_MOSEPH, x, serr);
+      f[k] = x[2] * 3600;
+    }
+    if (fabs(f[0] - 2 * f[1] + f[2]) > d)
+      d = fabs(f[0] - 2 * f[1] + f[2]);
+  }
+  swe_ctx_free(c);
+  return d;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3521,7 +3548,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, dtflag0, fbmb, nutstep, toputr, eoppath;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3636,6 +3663,7 @@ int main(int argc, char **argv)
   nutmodel = nut_model_intp_off();
   nutjplhor = nut_jplhor_intp_off();
   nutstep = nut_step_intp_off();
+  woolmd = woolard_md_cycle();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
@@ -4615,6 +4643,14 @@ int main(int argc, char **argv)
   else {
     printf("  IERS corrections kept  %.2e arcsec FAIL: expected %s\n",
            eoppath, WANT_DEFECT ? "> 0.1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (woolmd > 1e-2) : (woolmd < 1e-6))
+    printf("  Woolard minute cycle   %.2e arcsec OK\n", woolmd);
+  else {
+    printf("  Woolard minute cycle   %.2e arcsec FAIL: expected %s\n",
+           woolmd, WANT_DEFECT ? "> 1e-2" : "< 1e-6");
     bad++;
   }
 

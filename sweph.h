@@ -1250,6 +1250,10 @@ struct epsilon {
  *     for B's (0.131"), after path B alone A's for SEFLG_JPLHOR_APPROX's
  *     (UPSTREAM-BUGS 144, G134). A thread adopting the path drops them in
  *     both builds, as above
+ *   - Woolard's nutation turning the Moon's mean anomaly at 13255523.59
+ *     revolutions a century, 10^4 times its 1325.552359: its terms in it
+ *     cycling every 3.97 minutes, dpsi up to 0.236" and deps 0.0226" off
+ *     the series (UPSTREAM-BUGS 151, G138)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

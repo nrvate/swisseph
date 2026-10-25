@@ -2222,7 +2222,19 @@ static int calc_nutation_woolard(double J, double *nutlo)
   a = 99.99736056000026*t;
   b = 360.*(a-(long)a);
   ms = 358.476-.00015*t2+b;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 151: the Moon's mean anomaly turned at 13255523.59
+   * revolutions a century, 10^4 times its 1325.552359, so its five terms
+   * cycled every 3.97 minutes: dpsi up to 0.236" and deps 0.0226" off the
+   * series over 1900-2100, and the interpolation on it 0.196" off. It is
+   * the Explanatory Supplement (1961)'s 1325r 198 deg 50' 56".79 a
+   * century now, the anomalistic month, whose 33".09 T^2 is the .009192
+   * below. Less the two series' coefficients' difference, Woolard is then
+   * within 0.9 mas of IAU 1980 (G138). */
+  a = 1325.552359*t;
+#else
   a = 13255523.59*t;
+#endif
   b = 360.*(a-(long)a);
   md = 296.105+.009192*t2+b;
   a = 5.372616667*t;
