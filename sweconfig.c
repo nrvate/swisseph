@@ -33,6 +33,30 @@ swi_mutex_t swi_gen_fallback_mutex = SWI_MUTEX_INIT;
 
 static swi_mutex_t cfg_mutex = SWI_MUTEX_INIT;
 static struct swe_config cfg_master;
+
+/* A setter merges in its own group only, so every other group of the
+ * master holds whatever the master started with -- and a context adopts
+ * each group it has not claimed. Those groups must therefore hold the
+ * defaults a fresh context has, not zeros: a zero lapse rate (for 0.0065)
+ * and a zero tidal acceleration are not defaults, and an observer "not
+ * set" overwrites the one a calculation has just set for itself. The first
+ * publish after a start or a swi_config_reset() fills the master with
+ * those defaults, under the mutex. */
+static AS_BOOL cfg_master_armed;   /* guarded by cfg_mutex */
+
+static void cfg_defaults(struct swe_config *c)
+{
+  swi_gen_t g = c->generation;
+  memset((void *) c, 0, sizeof *c);
+  c->generation = g;
+  strcpy(c->ephepath, SE_EPHE_PATH);
+  strcpy(c->jplfnam, SE_FNAME_DFT);
+  c->tid_acc = SE_TIDAL_DEFAULT;
+  c->const_lapse_rate = SE_LAPSE_RATE;
+  /* a fresh context's fallback setting is the variable's */
+  c->ephe_fallback = swi_env_ephe_fallback();
+}
+
 /* Validity is "generation != 0" rather than a separate flag: the generation
  * is already read atomically on the fast path, whereas a plain AS_BOOL read
  * outside the mutex is a data race -- ThreadSanitizer caught exactly that. */
@@ -81,6 +105,7 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
   c->is_tid_acc_manual      = ctx->is_tid_acc_manual;
   c->delta_t_userdef_is_set = ctx->delta_t_userdef_is_set;
   c->do_interpolate_nut     = ctx->do_interpolate_nut;
+  c->ephe_fallback          = ctx->ephe_fallback;
   /* generation is owned by the master, not captured from the context */
 }
 
@@ -100,6 +125,8 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  *   do_interpolate_nut-> reset interpol
  *                        (matches swe_set_interpolate_nut)
  *   const_lapse_rate  -> nothing; read directly at its use sites
+ *   ephe_fallback     -> nothing; read at the end of each calculation, and
+ *                        swe_set_ephe_fallback() itself invalidates nothing
  *====================================================================*/
 
 /* Everything a change to delta t makes stale on the thread that made it.
@@ -170,6 +197,7 @@ void swi_invalidate_models(swe_ctx *ctx)
 AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
 {
   AS_BOOL path_changed, geo_changed, model_changed, dt_changed, nut_changed;
+  AS_BOOL fb_changed;
   AS_BOOL any;
 
   path_changed  = (groups & SWI_CFG_PATH)
@@ -200,9 +228,11 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
                     || ctx->delta_t_userdef_is_set != c->delta_t_userdef_is_set));
   nut_changed   = (groups & SWI_CFG_NUT)
                   && (ctx->do_interpolate_nut != c->do_interpolate_nut);
+  fb_changed    = (groups & SWI_CFG_FALLBACK)
+                  && ctx->ephe_fallback != c->ephe_fallback;
 
   any = (path_changed || geo_changed || model_changed || dt_changed
-         || nut_changed
+         || nut_changed || fb_changed
          || ((groups & SWI_CFG_LAPSE)
              && ctx->const_lapse_rate != c->const_lapse_rate));
   if (!any)
@@ -239,6 +269,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     ctx->const_lapse_rate = c->const_lapse_rate;
   if (groups & SWI_CFG_NUT)
     ctx->do_interpolate_nut = c->do_interpolate_nut;
+  if (groups & SWI_CFG_FALLBACK)
+    ctx->ephe_fallback = c->ephe_fallback;
 
   /* --- invalidate what that made stale ------------------------------ */
   if (path_changed) {
@@ -251,6 +283,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     swi_close_ephe_files(ctx, FORGET_DENUM);
     swi_free_fict_lines(ctx);
     ctx->last_epheflag = 0;
+    swi_hel_forget(ctx);	/* a star's magnitude is the path's */
+    swi_fixstar_forget(ctx);	/* and its catalogue, and the star file */
   }
   /* dt_changed is in here for the reason G26 records: the observer is built
    * from UT = TT minus delta t, and topd.teval keys only the instant. The
@@ -319,6 +353,8 @@ static void cfg_merge(struct swe_config *dst, const struct swe_config *src,
     dst->const_lapse_rate = src->const_lapse_rate;
   if (groups & SWI_CFG_NUT)
     dst->do_interpolate_nut = src->do_interpolate_nut;
+  if (groups & SWI_CFG_FALLBACK)
+    dst->ephe_fallback = src->ephe_fallback;
 }
 
 /*======================================================================
@@ -366,6 +402,10 @@ void swi_config_publish(swe_ctx *ctx, int32 groups)
   ctx->cfg_local |= groups;          /* this thread now owns these groups */
   swi_config_capture(ctx, &tmp);
   swi_mutex_lock(&cfg_mutex);
+  if (!cfg_master_armed) {        /* the other groups: the defaults */
+    cfg_defaults(&cfg_master);
+    cfg_master_armed = TRUE;
+  }
   /* merge, do not overwrite: only the groups this setter owns */
   cfg_merge(&cfg_master, &tmp, groups);
   swi_gen_bump(&cfg_master.generation);
@@ -396,6 +436,8 @@ void swi_config_sync(swe_ctx *ctx)
 
   if (ctx->cfg_applying)             /* re-entered from inside a setter */
     return;
+  if (ctx->cfg_hold > 0)             /* inside a call: synced at its entry */
+    return;
   /* Same reasoning as swi_config_publish(): only the default context
    * tracks the master. An explicit context inherits the configuration once,
    * at swe_ctx_new(), and is its own from then on -- otherwise a later
@@ -424,6 +466,58 @@ void swi_config_sync(swe_ctx *ctx)
   swi_config_apply(ctx, &tmp, SWI_CFG_ALL & ~ctx->cfg_local);
   ctx->cfg_applying = FALSE;
   ctx->cfg_seen = g;
+}
+
+/*======================================================================
+ * A call's one configuration.
+ *
+ * The default context adopts the master at swi_init_swed_if_start(), and
+ * one call passes that hook many times: swe_calc_ut() at its delta t and
+ * again at swe_calc(), a topocentric swe_calc() inside itself at the
+ * observer's delta t and sidereal time, a star at the Earth's swe_calc(),
+ * a search at every calculation it makes. A setter another thread called
+ * in between was adopted there, half-way through: swi_config_apply()
+ * closed the JPL file, the Swiss files and the star catalogue the call was
+ * reading and emptied its caches, and the rest of the call ran on the new
+ * configuration. A topocentric JPL Jupiter by swe_calc_ut() while another
+ * thread switched swe_set_jpl_file() crashed in swejpl.c's state() on the
+ * closed file; elsewhere one answer mixed two configurations (a sidereal
+ * swe_mooncross_ut() 5600 s off after swe_set_sid_mode(), a local eclipse
+ * searched at the master's site from half-way). Some calls synced only
+ * after reading part of the configuration, or never: swe_deltat_ex() read
+ * the user delta t before its sync, and the UTC conversions had none.
+ *
+ * So every public function that calculates holds the configuration: its
+ * outermost hold syncs once, at its entry, and the syncs nested in it do
+ * nothing until it returns. A function whose body is one call to a held
+ * function, and arithmetic on the caller's numbers that reads no setting,
+ * need no hold of their own.
+ *
+ * A context not yet initialised -- a thread's default context before its
+ * first call -- is started here, which syncs it, so the call reads nothing
+ * from the unstarted context: before, a new thread's first swe_deltat_ex()
+ * read the user delta t as zeros, 22.6 s off another thread's
+ * swe_set_delta_t_userdef(). It is started before the hold is counted, so
+ * the start's memset never meets a hold in progress. The start is marked
+ * unreported: the first swi_init_swed_if_start() the call reaches answers
+ * 1 for it, as when that one started the context, since the "Please call
+ * swe_set_ephe_path()" warnings of a context's first call key on that.
+ *====================================================================*/
+void swi_config_hold(swe_ctx *ctx)
+{
+  if (ctx->cfg_hold == 0) {
+    if (!ctx->swed_is_initialised) {
+      swi_init_swed_if_start(ctx);
+      ctx->start_unreported = TRUE;
+    } else
+      swi_config_sync(ctx);
+  }
+  ctx->cfg_hold++;
+}
+
+void swi_config_release(swe_ctx *ctx)
+{
+  ctx->cfg_hold--;
 }
 
 /*======================================================================
@@ -461,6 +555,7 @@ void swi_config_reset(swe_ctx *ctx)
 {
   swi_mutex_lock(&cfg_mutex);
   memset((void *) &cfg_master, 0, sizeof(cfg_master));
+  cfg_master_armed = FALSE;       /* the next publish starts from the defaults */
   swi_mutex_unlock(&cfg_mutex);
   ctx->cfg_seen = 0;
   ctx->cfg_local = 0;

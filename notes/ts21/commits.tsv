@@ -1,0 +1,256 @@
+commit	time	phase	bugs	source	subject
+571481b57	10-24_16:02	pre-loop		none	Default nutation: fast at any spacing of instants (G32)
+897045c3e	10-24_16:02	pre-loop		none	swe_sidtime_r: zero the nutation that calc_nutation() may leave unwritten
+28f872dd2	10-24_16:17	pre-loop	23	added	Moon light time: solve the equation, and carry the rounded instant (G33)
+10f07efe8	10-24_16:34	pre-loop	24	added	Read the ephemeris files at TDB, their argument (G34)
+bd6056215	10-24_16:45	pre-loop	25	added	Default sidereal time: splice 1850 and 2050 continuously (G35)
+a11c59e4f	10-24_16:50	pre-loop	26	added	Heliocentric light time: measure from the Sun on every pass (G36)
+9c98d8b5a	10-24_16:52	pre-loop	27	added	Topocentric observer: build the site about the true pole of date (G37)
+e44193b0f	10-24_16:53	pre-loop	28	added	Osculating lunar apogee: the GM of the ephemeris in use (G38)
+ebc045fee	10-24_16:59	pre-loop	28	changed	Re-baseline G1 and G17 for the heliocentric, topocentric and apogee fixes
+1e5683532	10-24_17:13	pre-loop	29	added	Long-term sidereal time: Earth rotation plus precession, not delta t (G39)
+739078100	10-24_17:13	pre-loop		none	ts.20: version bump, and the REVIEW row for what it carries
+427f30cee	10-24_17:23	pre-loop		none	android: link swenut2000a_sparse.h into jni/, where ndk-build looks
+d1cf5c1bd	10-24_17:23	pre-loop		none	tests: spicarv removes its scratch directory with remove(), not system()
+fa1ba6de0	10-24_17:30	pre-loop	30	added	Earth rotation angle from the fraction of the day (UPSTREAM-BUGS 30)
+6454dfddf	10-24_17:37	pre-loop	30	weak	build: no multiply-add contraction (-ffp-contract=off)
+32b3fe648	10-24_17:51	pre-loop	31 32	added	Moon speed: three-point slope at t, light-time rate (UPSTREAM-BUGS 31, 32)
+ec02a1e58	10-24_17:58	pre-loop	33	added	Speeds carry the turning of the ecliptic of date (UPSTREAM-BUGS 33)
+326fcd63a	10-24_18:03	pre-loop	33	weak	swi_obliquity_rate: one new obliquity per call, not two
+c0bacffe6	10-24_18:38	pre-loop	34 35 36	added	fix: analytic topocentric speeds with aberration, exact light-time rate, site turning per TT day (bugs 34-36)
+ab7bc3fb4	10-24_18:38	pre-loop	37 38	added	swe_nod_aps: the ecliptic's turning about the right centre, and the mean apsides' latitude speed (UPSTREAM-BUGS 37, 38)
+d285ec493	10-24_18:42	pre-loop	35	changed	fix: heliocentric and barycentric planet speeds carry their light time's rate (bug 35)
+1271c1bb5	10-24_18:42	pre-loop	31 33	weak	tests/scan: sescan, a by-hand audit of precision loss and speed consistency
+ce4da9000	10-24_18:52	pre-loop	39	added	fix: the light deflection's speed is smooth behind the Sun's disc (bug 39)
+28d4859b7	10-24_20:42	pre-loop	46 47	added	swe_nod_aps: positions independent of SEFLG_SPEED, and SEFLG_J2000 in the J2000 frame (UPSTREAM-BUGS 46, 47)
+d218b0bab	10-24_20:48	pre-loop	34 47	changed	fix: swe_nod_aps topocentric speeds take bug 34's aberration rate; long light times use tau a directly
+61cb26668	10-24_20:49	pre-loop	48	added	fix: a fictitious body's speed is the rate of its position, through its elements' rates (bug 48)
+29cad00f3	10-24_20:49	pre-loop	44 45	added	fix: the interpolated apsides are one position with or without the speed flag, smooth, with their rates (bugs 44, 45)
+e8fd2ac2e	10-24_20:55	pre-loop	44	changed	intp apsides: light time without a velocity, 1.3x upstream instead of 2.7x
+2f39a903f	10-24_20:55	pre-loop	49	added	fix: a fixed star's speeds are the rates of its position (bug 49)
+890505a9f	10-24_20:56	pre-loop	40 41 42 43	added	fix: house cusp speeds are the rate of the cusps in every system (bugs 40-43)
+7155eec14	10-24_20:56	pre-loop	50 51	added	fix: the Moshier ephemeris is smooth at the JD's resolution and its speeds are its rates (bugs 50, 51)
+d324291b3	10-24_21:10	pre-loop	49	changed	precession rate: analytic for the Vondrak series, cheaper than upstream instead of +7%
+0c561d834	10-24_21:10	pre-loop	34	changed	observer acceleration: step back to +-2^-11 day; topocentric speeds 3x better
+2e390626e	10-24_21:12	pre-loop	40 41 42 43 44 45	added	tests: re-baseline G1 for bugs 40-51; UPSTREAM-BUGS 40-51 in numeric order
+8555aa112	10-24_21:33	pre-loop	60	added	Fictitious bodies: a plain negative mean anomaly moves (UPSTREAM-BUGS 60, G59)
+ef0a021ad	10-24_21:36	pre-loop	54	added	SEFLG_SPEED3: the true node and osculating apogee over 2^-9 day, not 0.1
+a46aa4460	10-24_21:37	pre-loop	55	added	swe_nod_aps: mean nodes' and apsides' speeds are rates, not one-day differences (UPSTREAM-BUGS 55, G54)
+b94bb2c70	10-24_21:39	pre-loop	58	added	nutation rate in speeds of date at the instant, not t - h/2 (UPSTREAM-BUGS 58)
+e9da80a0e	10-24_21:40	pre-loop	62	added	earth_at_lt_sun: the aberration rate's Earth carries the Moon's pull (UPSTREAM-BUGS 62, G61)
+3c423b973	10-24_21:42	pre-loop	61	added	fixed stars: topocentric light deflection from the call's own site (UPSTREAM-BUGS 61, G60)
+ede4afa38	10-24_21:42	pre-loop	59	added	swehouse.c: converge Placidus cusps, RADIANS house speeds, sidereal 'i', Sunshine without files (UPSTREAM-BUGS 59, G58)
+0871d47dd	10-24_21:48	pre-loop	68	added	swehouse.c: three house residues -- Sunshine's Sun from the caller's ephemeris, no stale Gauquelin cusps after the Porph
+4a8865244	10-24_21:49	pre-loop	68	changed	swehouse.c: Gauquelin Porphyry fallback clears cusps and speeds 13..36 in swe_houses_r() and swe_houses_armc_ex2_r() too
+509e841e6	10-24_21:50	pre-loop	64	added	swe_nod_aps: the planets' mean points' speeds carry the elements' t^2 and t^3 terms (UPSTREAM-BUGS 64, G63)
+5f20d51a8	10-24_21:51	pre-loop	67	added	Star functions return the flags used; an emptied nutation cache no longer answers for JD 0 (UPSTREAM-BUGS 67, G66)
+8c22754a6	10-24_21:55	pre-loop	52	added	fix: the aberration rate term is exact to second order in v/c (bug 52)
+c8e371021	10-24_21:56	pre-loop	56	added	fix: the interpolated apsides are their iteration's fixed point (bug 56)
+2102e9b57	10-24_21:58	pre-loop	66	added	earth_at_lt_sun: the Moon's pull on the aberration rate's Earth on JPL and Moshier (UPSTREAM-BUGS 66, G65)
+cb30ad731	10-24_22:01	pre-loop	69	added	swi_nutate: the nutation matrix's rate turns with the mean obliquity (UPSTREAM-BUGS 69, G68)
+57e0bc001	10-24_22:03	pre-loop	63	added	app_pos_etc_plan: read a planet at teval - tau itself, and take the heliocentric light-time rate from the barycentric bo
+d50a70a7c	10-24_22:04	pre-loop	70	added	swe_nod_aps: the apparent points' speeds are the rate of the aberration applied to them (UPSTREAM-BUGS 70, G69)
+6b514b758	10-24_22:04	pre-loop	65	added	Kronos' built-in semi-axis is seorbel.txt's, and the Kepler starting guess is what the code means (UPSTREAM-BUGS 65, G64
+f2ce66d6c	10-24_22:06	pre-loop	44 56	changed	docs: the interpolated apsides' cost against upstream, measured (UPSTREAM-BUGS 72)
+b302d77d3	10-24_22:07	pre-loop	66	added	earth_at_lt_sun: the Moon on every light time on JPL and Moshier, and the planets' pull on the Earth (UPSTREAM-BUGS 66 p
+52939aebc	10-24_22:09	pre-loop	76	added	fixstar_obs_ahead: a star's aberration rate takes the Earth's acceleration at t (UPSTREAM-BUGS 76, G75)
+a2d4eba9b	10-24_22:10	pre-loop	66	changed	earth_at_lt_sun: on Moshier, tau a is the acceleration of the Earth the series returns (UPSTREAM-BUGS 66 part 3, G65)
+ec12d0412	10-24_22:13	pre-loop	72	added	fix: the interpolated perigee's light-time estimate takes its two passes (bug 72)
+b826b32f0	10-24_22:14	pre-loop	77	added	swe_calc_pctr: read the bodies at tjd - tau itself, and take the aberration rate as bug 52's exact term with the centre'
+c5dfb07ef	10-24_22:14	pre-loop	75	added	lunar_osc_elem: true node and osculating apogee speeds over the Moon's epochs' real interval, and J2000's obliquity rate
+9cc76faca	10-24_22:15	pre-loop	53	added	fix: Moshier bodies are read at t - tau, not moved back along their velocity (bug 53)
+7ff5d8e40	10-24_22:16	pre-loop	71	added	Instant-keyed caches emptied by an instant no time equals; tjd 0 answers as 1e-9 does (UPSTREAM-BUGS 71, G70)
+4f4f061e9	10-24_22:25	pre-loop	75	changed	lunar_osc_elem: five-point speeds at the step of least error for the true node and osculating apogee (UPSTREAM-BUGS 75, 
+97b70efee	10-24_22:25	pre-loop	76	changed	fixstar_obs_rate: a star's aberration rate from the Earth's acceleration at t, Moshier included, without the third read'
+2fe5b1e54	10-24_22:28	pre-loop	81	added	app_pos_etc_plan_osc: a fictitious body is read at teval - tau, not its rounding (UPSTREAM-BUGS 81, G80)
+b39728fd2	10-24_22:36	pre-loop	77	added	swe_calc_pctr: deflect as seen from the centre, take the light time to its fixed point, give the bias its date (UPSTREAM
+b73844f61	10-24_22:39	pre-loop	85	added	embofs_mosh_rate: the Moshier Earth-Moon offset's rate as the short lunar series' derivative (UPSTREAM-BUGS 85, G84)
+c811216be	10-24_22:41	pre-loop	78	added	app_pos_etc_plan: solve the light time to its fixed point; app_pos_etc_sun/sbar: the Earth's and the Sun's light-time ra
+32702e602	10-24_22:41	pre-loop	78	changed	app_pos_etc_sun: the Swiss files' heliocentric Earth less the Sun at t, not at t - tau (UPSTREAM-BUGS 78 part 2, G77)
+b90546b19	10-24_22:41	pre-loop	78	changed	app_pos_etc_sbar: the barycentric Sun's velocity at t - tau, not teval (UPSTREAM-BUGS 78 part 3, G77)
+cf3360164	10-24_22:46	pre-loop	33 71 86	weak	app_pos_etc_sbar: the barycentric Sun's frame rates at its own instant, not the Earth slot's (UPSTREAM-BUGS 86, part 1)
+b04c7803d	10-24_22:46	pre-loop	73	added	The Moon's speed is the rate of its position: the site's turning, the files' TDB rate, the light-time velocity, the aber
+303aef9fb	10-24_22:48	pre-loop	85	changed	moon_short: exact arguments and the obliquity's turning in the Moshier Earth-Moon offset's rate (UPSTREAM-BUGS 85 part 2
+f6d2e42e7	10-24_22:51	pre-loop	81	added	check_t_terms: an element's linear term reduced exactly before it is added (UPSTREAM-BUGS 81 part 2, G80)
+bf043019d	10-24_22:51	pre-loop	81 85	changed	Light time at its fixed point for the fictitious bodies and swe_calc_orbel() (UPSTREAM-BUGS 81 part 3, G80)
+9e9065fc1	10-24_22:51	pre-loop	78 81 85	changed	fixup! check_t_terms: an element's linear term reduced exactly before it is added (UPSTREAM-BUGS 81 part 2, G80)
+640ef05a8	10-24_22:52	pre-loop	86	added	G85 baryspeed: the JPL barycentric Sun's instant of date, every barycentric body's speed; G51 tightened (UPSTREAM-BUGS 8
+ac77a843d	10-24_22:52	pre-loop	84	added	jplplan(): the Earth and Sun answer only for the JPL file that filled them; the JPL barycentric Sun read with its Earth 
+ce3daa171	10-24_22:53	pre-loop	74	added	deflect_light_from: the deflection's speed is its derivative, not a one-sided step (UPSTREAM-BUGS 74, G73)
+45d055c26	10-24_22:56	pre-loop	79	added	observer_accel: the site's acceleration exact for its turning (UPSTREAM-BUGS 79, G78)
+28dfa2def	10-24_22:56	pre-loop	80	added	swe_nod_aps: the osculating points from the eccentricity vector, their speeds over exact binary steps (UPSTREAM-BUGS 80,
+2f9d1dec1	10-24_22:56	pre-loop	82	added	Heliacal memos keyed on every input and emptied by swe_close (UPSTREAM-BUGS 82, G81)
+02ec81291	10-24_22:56	pre-loop	83	added	Settings made before the first calculation kept; the first heliacal call after a setter works (UPSTREAM-BUGS 83, G82)
+e2b6004d8	10-24_22:58	pre-loop	90	added	SE_ECL_NUT answers the same with SEFLG_SPEED3; jplplan()'s Earth no longer also takes the planet branch; dt initialised 
+79588018c	10-24_23:01	pre-loop	90	changed	SE_ECL_NUT answers the same four angles whatever coordinate flags are given (UPSTREAM-BUGS 90 part 2, G89)
+412200b2e	10-24_23:03	pre-loop	88	added	swe_calc_orbel_r: caches of date brought to tjd, save areas cleared on a change of ephemeris (UPSTREAM-BUGS 88, G87)
+79194c4a7	10-24_23:04	pre-loop	93	added	swe_nod_aps: Moshier's aberration rate takes the Earth's acceleration from its velocities (UPSTREAM-BUGS 93, G92)
+cfb91442c	10-24_23:05	pre-loop	65 69 70	added	notes: restore entries 65, 69 and 70, dropped by the bug 66 part 3 merge, and the duplicated 66 Contents row
+421a9a0dc	10-24_23:07	pre-loop	87	added	Precession at exactly J2000 by the series, not the identity (UPSTREAM-BUGS 87, G86)
+76e520626	10-24_23:08	pre-loop	76	weak	sweph.c: xpo_p initialised in the two star paths, for -flto -Wmaybe-uninitialized
+cddb08150	10-24_23:09	pre-loop	88	changed	G87: the Earth-centred orbit back in the topocentric rows, against a valid reference
+76f2237b2	10-24_23:12	pre-loop	91	added	swi_get_ayanamsa_with_speed: the ayanamsa's speed is its rate, not a backward difference over 0.001 day (UPSTREAM-BUGS 9
+54d5799d7	10-24_23:19	pre-loop	92	added	Star memos emptied with the path, a manual tidal acceleration kept, the observer kept per ephemeris (UPSTREAM-BUGS 92, G
+fd68b0893	10-24_23:21	pre-loop	96	added	Earth-centred fictitious bodies on Moshier: the Earth at t - tau carried from teval, not read again (UPSTREAM-BUGS 96, G
+e359ec84c	10-24_23:24	pre-loop	89	added	sweph(): every Swiss file read from the file of its own instant's 600 years, not whichever an earlier call left open (UP
+189de19f2	10-24_23:26	pre-loop	98	added	Star functions name the path from SE_EPHE_PATH on first use; a path change keeps the astronomical models (UPSTREAM-BUGS 
+65a0d3d64	10-24_23:32	pre-loop	89 96	changed	UPSTREAM-BUGS 96: the files' and the Moon's two-read jitter measured, below the floor
+fd5d52951	10-24_23:33	pre-loop	101	added	swe_get_tid_acc() answers with the value the next delta t uses; G82's SE_EPHE_PATH orders against a path-warmed referenc
+14cecf55a	10-24_23:34	pre-loop	97	added	split_deg_nakshatra: the Sheoran shift for Sheoran alone, not for SE_SIDM_USER (UPSTREAM-BUGS 97, G96)
+30960edf8	10-24_23:35	pre-loop	100	added	sweph(): a missing Swiss file's neighbour that does not hold the instant is closed again, so the Moon falls to Moshier's
+a2131d16f	10-24_23:37	pre-loop	95	added	Moshier Moon velocity from the series' derivative; osculating apogee from the eccentricity vector (UPSTREAM-BUGS 95, G94
+19995e7ac	10-24_23:45	pre-loop	104	added	read_const()/get_new_segment(): a refused Swiss file closed and cleared alone, the other open files and their constants 
+f1682eaa9	10-24_23:51	pre-loop	103	added	Files kept open when nothing changed; swe_deltat()'s ephemeris guessed from the configuration (UPSTREAM-BUGS 103, G102)
+6dfd8f7e0	10-24_23:53	pre-loop	105	added	swe_nod_aps(): osculating ellipses with the ephemeris's own GM, Pluto's own mass (UPSTREAM-BUGS 105, G104); G74's Moshie
+f8aac5530	10-24_23:58	pre-loop	102	added	Moshier's light time sees the Sun move: v_Sun and a_Sun from its own planets (UPSTREAM-BUGS 102, G101)
+198832abe	10-25_00:06	pre-loop	107	added	First calls read their files along the SE_EPHE_PATH path, once (UPSTREAM-BUGS 107, G106)
+afa5f5595	10-25_00:10	pre-loop	108	added	fix: osculating points biased once, EMB from the file's EMRAT, orbital elements with the ephemeris's GMs (bug 108)
+c8b463345	10-25_00:13	pre-loop	110	added	The first call's "Please call swe_set_ephe_path()" warning only when no path is in effect (UPSTREAM-BUGS 110, G109)
+93d682540	10-25_00:15	pre-loop	106	added	read_const(), swejpl.c, the delta-psi and star readers: every size and index a file gives checked against what it indexe
+649122f59	10-25_00:19	pre-loop	112	added	swe_calc_orbel() answers as swe_calc() where the files are missing: no refusal on the path warning, the strict setting a
+f00be0c25	10-25_00:19	pre-loop	111	added	fix: orbital elements' anomalies well conditioned, e from the eccentricity vector, periods from the ellipse's mean motio
+fef95437c	10-25_00:23	pre-loop	81 82 83	changed	UPSTREAM-BUGS 81, 82, 83: the "Not fixed here" notes point to the entries that fixed them
+0dc29607b	10-25_00:25	pre-loop	113	added	seorbel.txt and sefstars.txt readers: a malformed element line refused in bounded time and alone, naming line and field;
+b962846c2	10-25_00:31	pre-loop	114	added	check_t_terms(): a power after T is 1-4 or the field is refused, and every number reads as its value (".0" as 0, not a f
+e5c50424a	10-25_00:41	loop	109	added	fix: Moshier's fictitious bodies, stars and apparent light time see the barycentre (bug 109)
+17368b4b7	10-25_00:42	loop		none	REVIEW: the ts.20 row's gate list is the range G32-G111, its six unused numbers named
+e729a155f	10-25_00:43	loop		none	tests: G53 frees its context; the older gates in .PHONY and nutspeed in check-threadtiers' clean-up
+556c07322	10-25_00:45	loop	73 87 95	changed	UPSTREAM-BUGS 73, 87, 95: what the G1/G10/G17 re-baseline showed each fix moves
+d95f12a0b	10-25_00:49	loop	116	added	swe_set_astro_models() publishes the tidal acceleration a version before 2.01 sets (UPSTREAM-BUGS 116, G113)
+9d97c0a8d	10-25_00:52	loop	100	changed	sweph(): with the neighbour missing too, serr names the instant's own file (entry 100 note, G99 (e))
+7ee4a5387	10-25_00:52	loop	117	added	swecalc: the mean node's and mean apogee's speeds over the step taken, central (UPSTREAM-BUGS 117, G114)
+ac3e717df	10-25_00:53	loop		none	tests/Makefile: NPROC can be capped from the environment or the command line
+0a1febc99	10-25_00:54	loop		none	swejpl.c: the saved geocentric Moon's instant starts at SWI_TJD_NEVER, not 0
+090f01beb	10-25_00:55	loop	121	added	fix: a sefstars.txt that failed to load is kept failed, not reread on every star call (bug 121)
+437932298	10-25_00:56	loop	119	added	Adopted file settings forget the old files' positions and segments (UPSTREAM-BUGS 119, G116)
+0b6f0c5dc	10-25_00:57	loop	82 119	weak	swi_config_apply(): an adopted JPL file change empties the heliacal memos too
+ad56a89dc	10-25_00:58	loop	37 88 101	changed	UPSTREAM-BUGS 37, 88, 101: three 'not fixed here' notes point to the entries that fixed them
+314ff154d	10-25_00:59	loop	118	added	Path and JPL setters: no moon file leaked behind a context's first tidal term, the automatic term resolved for the state
+e1158f3a0	10-25_01:00	loop	122	added	swe_set_ephe_fallback() publishes its setting to the other threads (UPSTREAM-BUGS 122, G119)
+ca6c91061	10-25_01:00	loop	109	changed	fix: a Moshier Moon with the Swiss files' Earth keeps the files' frame (bug 109, mixed case)
+17efc187c	10-25_01:07	loop	120	added	The Swiss Moon file missing: an answer whose Moon or Earth is Moshier's refused when strict, the Moon flagged SEFLG_MOSE
+085152e28	10-25_01:08	loop	120	changed	swi_get_observer(): its delta t no longer empties the call's serr
+4f30ce67c	10-25_01:11	loop	115	added	A calculation finishes with the configuration it started with: one sync at its entry, none from inside it (UPSTREAM-BUGS
+1811f4637	10-25_01:11	loop	120	weak	G115 P9 allows the Moshier Moon fallback for its one calculation
+f48cd8b03	10-25_01:14	loop	106	weak	G19's JPL fixture puts each body after the record's two epochs
+7a3ce7ab6	10-25_01:23	loop	123	added	swe_close() keeps the shared configuration's generation growing and its kept settings (UPSTREAM-BUGS 123, G120)
+63f62f83d	10-25_01:39	loop	124	added	The searches, the houses and every other public function that makes several calculations hold the configuration from the
+2fe022d38	10-25_01:40	loop	126	added	swe_set_interpolate_nut() empties the nutation, observer and positions cached under the old setting (UPSTREAM-BUGS 126, 
+083dcc629	10-25_01:45	loop	125	added	Moshier's light time past a day takes the Sun's own barycentric state at the emission instant (UPSTREAM-BUGS 125, G27, G
+a7ac89a40	10-25_01:47	loop	127	added	swe_close() keeps the observer and the sidereal mode, as the manual says (UPSTREAM-BUGS 127, G123)
+958bd9c64	10-25_02:02	loop	128	added	A thread's first call reads the configuration the main thread set: the hold starts a context not yet initialised (UPSTRE
+76a27898c	10-25_02:05	loop	129	added	A change of nutation model no longer answers from the old model's interpolation nodes, nor a change of model from the to
+010da74c5	10-25_02:06	loop	130	added	swe_calc_orbel() pairs the frame bias as the fictitious bodies do (UPSTREAM-BUGS 130, G126)
+414742a36	10-25_02:14	loop	132	added	The equation of time reads its Sun from the JPL file the configuration sets, as swe_deltat()'s guess does (UPSTREAM-BUGS
+a8e7e99d5	10-25_02:16	loop	133	added	The Sunshine houses' remembered declination survives a context's first start (UPSTREAM-BUGS 133, G129)
+fda56278d	10-25_02:17	loop	131	added	After swe_close() the kept path and JPL file give the first delta t their tidal term (UPSTREAM-BUGS 131, G127)
+17f8a5f7e	10-25_02:24	loop	135	added	swe_calc_orbel() refuses a barycentric Moshier request as swe_calc() does (UPSTREAM-BUGS 135, G126)
+4bed4caf2	10-25_02:25	loop	136	added	swe_calc_orbel()'s elements of the equinox of date are seorbel.txt's JDATE: the equinox at the emission instant, its tur
+410a4c879	10-25_02:31	loop	134	added	The nutation interpolation's nodes are of the call's JPL Horizons flags, the approximation's mode and the IERS correctio
+3efe9b9e7	10-25_02:46	loop	137	added	A thread adopting another's path forgets the closed JPL file's DE number (UPSTREAM-BUGS 137, G132)
+3f06f24e6	10-25_02:46	loop	138	added	A JPL file a calculation opens leaves the tidal term the guess takes (UPSTREAM-BUGS 138, G132)
+f8837a666	10-25_02:46	loop	145	added	swe_deltat_ex() with no ephemeris bit takes the Swiss files' tidal term (UPSTREAM-BUGS 145, G132)
+4fc866978	10-25_02:47	loop	131 134 136	changed	notes: entry 131's noticed paragraph back under 131, entry 134 points to 145
+65f90ca88	10-25_02:48	loop	139	added	A barycentric request fallen to Moshier is refused as Moshier's, not answered with its heliocentric place (UPSTREAM-BUGS
+30694b65e	10-25_02:51	loop	146	added	The nutation interpolation's nodes never lie both sides of SEMOD_JPLHORA_3's step at 1962 Jan 20: the nutation there is 
+6a809244b	10-25_02:53	loop	135 136	changed	swe_calc_orbel()'s fixes for UPSTREAM-BUGS 135 and 136 hold in both builds: the function is this fork's
+26ae9d8b1	10-25_02:54	loop	141	added	swe_calc_orbel() returns swe_calc()'s flags for the same flags: no default ephemeris bit where none was named, SEFLG_RAD
+1b56b3be4	10-25_02:54	loop	140	added	The topocentric site is placed by UT1 = TT - delta t without its rounding: a topocentric place moves with delta t's rate
+d05f2b87c	10-25_02:55	loop	135	weak	fixup! swe_calc_orbel()'s fixes for UPSTREAM-BUGS 135 and 136 hold in both builds: the function is this fork's
+280e81f8a	10-25_02:56	loop	140	weak	G72's header: (b) measures 7.5e-8 since bug 140 removed the site's jitter
+5a9ff4333	10-25_03:04	loop	142	added	SEFLG_JPLHOR without the IERS corrections answers as SEFLG_JPLHOR_APPROX in the ayanamsa, the sidereal houses and the Ga
+8ece6b0d6	10-25_03:04	loop	143	added	A thread or context that adopts another thread's swe_set_jpl_file() loads the IERS corrections its setter loaded (UPSTRE
+1c01d3da1	10-25_03:04	loop	144	added	A path change, set or adopted, drops the IERS corrections read from the old directory; the next swe_set_jpl_file() reads
+c4a3db550	10-25_03:18	loop	151	added	Woolard's nutation turns the Moon's mean anomaly at its anomalistic month, not 10^4 times it (UPSTREAM-BUGS 151, G138)
+be5316a6c	10-25_03:18	loop	152	added	The default nutation's grid gives way to the direct IAU 2000A series past 4e8 days, where it left the series (UPSTREAM-B
+0aa16bde1	10-25_03:20	loop	147	added	A thread adopting another thread's path drops the old directory's tables as the setter does, and the delta-t memo goes w
+3d73ae84a	10-25_03:20	loop	148	added	The path setter reads the kept JPL file's DE number again along the new path (UPSTREAM-BUGS 148, G132)
+5f3fa859f	10-25_03:21	loop	153	added	Across SEMOD_JPLHORA_3's step at 1962 Jan 20 every speed of date is its own side's rate: no rate differences the frame's
+601e7b2c9	10-25_03:22	loop	149	added	swe_nod_aps() with barycentric output on Moshier is refused as swe_calc() refuses it, not answered with Moshier's helioc
+66357c856	10-25_03:23	loop	150	added	swe_calc_pctr() returns the ephemeris its reads answered with, not the caller's flags (UPSTREAM-BUGS 150, G133)
+3d8cd07c7	10-25_03:27	loop	157	added	SE_SIDM_LAHIRI_ICRC's epoch value takes Woolard's dpsi, so the committee's 23 deg 15' holds (UPSTREAM-BUGS 157, G138)
+7e1f45e2f	10-25_03:29	loop	154	added	swe_set_jpl_file() of a file below DE 403, or of one not there, drops the IERS corrections a DE 403 file loaded (UPSTREA
+ff05a4ef7	10-25_03:30	loop	155	added	load_dpsi_deps() frees the tables a load it gave up on left before it allocates again (UPSTREAM-BUGS 155, G134)
+166fd9707	10-25_03:31	loop	156	added	load_dpsi_deps() closes its file on every early return and frees dpsi[] when deps[]'s allocation fails (UPSTREAM-BUGS 15
+62684e661	10-25_03:40	loop	158	added	swe_calc_pctr() tests its centre's read at the light-time instant and refuses the speed it cannot form (UPSTREAM-BUGS 15
+b2456f5df	10-25_03:46	loop	171 172	added	load_dpsi_deps(): an eop_finals.txt that breaks off keeps the corrections up to its gap; a failed allocation is reported
+fe7c56c75	10-25_03:55	loop	161	added	The Horizons approximation's frame bias and offset take the precession's side of the 1962 step and its instant (UPSTREAM
+10526f64d	10-25_03:56	loop	162	added	The Horizons approximation's offset in right ascension turns the velocity as it turns the position (UPSTREAM-BUGS 162, G
+014c9f9eb	10-25_03:58	loop	173	added	The Horizons approximation's offset table is interpolated forwards, not backwards (UPSTREAM-BUGS 173, G141)
+21d78a207	10-25_04:14	loop	164	added	A JPL file swe_set_jpl_file() named where it was not found is read again along a later path and after swe_close() (UPSTR
+18eb6d467	10-25_04:14	loop	165	added	The first JPLEPH delta t with no JPL file set opens the file the calculation would, so a first JPL Moon answers as the s
+dfeedc7d9	10-25_04:15	loop	166	added	Without the moon files the Swiss tidal term is the planet files' DE number's, not the default (UPSTREAM-BUGS 166, G142, 
+250e8d27c	10-25_04:16	loop	167	added	swe_nod_aps() on Moshier sees the Sun's geocentric points from the Sun, not the Earth (UPSTREAM-BUGS 167, G143, G24)
+01bc6404f	10-25_04:16	loop	168	added	swe_nod_aps() takes its frame and site from the ephemeris that answered, its bits resolved as swe_calc()'s (UPSTREAM-BUG
+5dc826e9d	10-25_04:17	loop	169	added	swe_nod_aps() reads the centre bits as swe_calc() reads them (UPSTREAM-BUGS 169, G143, G133, G24)
+a4ab1afaf	10-25_04:20	loop	149	changed	notes: entry 149's warm-fallback node is the previous call's stale Sun; fixed as 168
+1818dd5c6	10-25_04:35	loop	159	added	Across SEFLG_JPLHOR's steps of the precession and obliquity at 1799 and 2202 Jan 1 every speed of date is its own side's
+19cb5bc6d	10-25_04:36	loop	160	added	Across a short-term precession model's window edges every speed of date is its own side's rate (UPSTREAM-BUGS 160, G139,
+ecbfb9f41	10-25_04:36	loop	163	added	The nutation's rate under a model set explicitly or the Horizons flags is each series' own derivative (UPSTREAM-BUGS 163
+b68f3c6dd	10-25_04:39	loop	182	added	The Horizons approximation's obliquity offset table is interpolated forwards too (UPSTREAM-BUGS 182, G141)
+be7511853	10-25_04:52	loop	176	added	swe_nod_aps() biases a fallen request's osculating ellipse by the ephemeris that answered (UPSTREAM-BUGS 176, G143, G24)
+b4b82b57a	10-25_04:53	loop	178	added	swe_nod_aps()'s heliocentric and barycentric points take no aberration or deflection, as swe_calc()'s (UPSTREAM-BUGS 178
+c80d9ae44	10-25_04:53	loop	180	added	swe_nod_aps() on Moshier fits the Earth's ellipse to its series' own Earth-Moon barycentre (UPSTREAM-BUGS 180, G143, G10
+704bd6f44	10-25_05:01	loop	175	added	Without the J2000 files the Swiss DE number is another span's file's, not none (UPSTREAM-BUGS 175, G142, G24)
+2cc2b0941	10-25_05:01	loop	177	added	Moshier saves its Sun, the origin, in the barycentric Sun's slot with its Earth (UPSTREAM-BUGS 177, G133, G24)
+f27367bc7	10-25_05:15	loop	183	added	Across the joins of Owen 1990's pieces every speed of date is its own piece's rate (UPSTREAM-BUGS 183, G139, G24)
+5be6151e8	10-25_05:15	loop	184	added	The Moshier Moon's frame turning keeps to its own side of a precession window's edge (UPSTREAM-BUGS 184, G139, G24)
+ca854455f	10-25_05:16	loop	185	added	The equinox-of-date frame turning of the JDATE bodies and swe_calc_orbel() keeps to its own side of a window's edge (UPS
+090314cf7	10-25_05:16	loop	188	added	The IAU 2000A and 2000B series' arguments past 4e8 days are evaluated in double-double and reduced exactly (UPSTREAM-BUG
+7e45af0ce	10-25_05:20	loop	194	added	The strict test of a Moon from Moshier takes the resolved centre: SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR is re
+cfa8ed38e	10-25_05:21	loop	195	added	A topocentric star fallen to another ephemeris places its site by the delta t of the ephemeris that answered (UPSTREAM-B
+7e139e77a	10-25_05:33	loop	174	added	swe_nod_aps() of the Moon's mean points reads no Moon, so they answer as the mean node does with files missing (UPSTREAM
+f8290edfe	10-25_05:34	loop	170	added	swe_nod_aps_ut() takes delta t as swe_calc_ut() does, redone for the ephemeris that answered (UPSTREAM-BUGS 170, G143, G
+93ea546c8	10-25_05:35	loop	179	added	swe_nod_aps() zeroes its points on every refusal, as swe_calc() does (UPSTREAM-BUGS 179, G143, G24)
+158106781	10-25_05:36	loop	192	added	swe_nod_aps() answers the Sun's and the Earth's heliocentric points without the moon files under the strict setting, whi
+aad0ebcf0	10-25_05:36	loop	193	added	swe_nod_aps() refuses a planet's points seen from the Earth made from Moshier's Moon under the strict setting, as swe_ca
+8057c1a68	10-25_05:39	loop	181	added	The long-term sidereal time across a short-term precession window's edges is each side's own model's (UPSTREAM-BUGS 181,
+55d9f0495	10-25_05:40	loop	187	added	The house speeds across a short-term precession window's edge are each side's own rate (UPSTREAM-BUGS 187, G139, G24)
+09adb9b6c	10-25_05:42	loop	186	added	The true node's and osculating apogee's speeds across a short-term precession window's edge are each side's own rate (UP
+27f84db57	10-25_05:48	loop	197	added	A save-area answer whose Moon is Moshier's takes the strict test with the call's setting (UPSTREAM-BUGS 197, G117, G24)
+58f8f11f8	10-25_05:49	loop	198	added	The star functions fall to Moshier as swe_calc() does when the JPL file's span ends before the instant (UPSTREAM-BUGS 19
+a67593cfd	10-25_05:58	loop	196	added	swe_calc(SE_ECL_NUT) answers |J| up to 1e12 days and refuses beyond and at -+inf and NaN (UPSTREAM-BUGS 196, G152, G29, 
+49d5d399e	10-25_06:02	loop	189	added	swe_get_orbital_elements() on Moshier takes its series' own Earth-Moon barycentre (UPSTREAM-BUGS 189, G107, G24)
+158fcc835	10-25_06:03	loop	190	added	swe_nod_aps() of the Sun with SEFLG_TOPOCTR sees the site's parallax (UPSTREAM-BUGS 190, G143, G24)
+10ad9cdf9	10-25_06:05	loop	191	added	Moshier's Earth is made with the full lunar series' Moon, the Moon's own (UPSTREAM-BUGS 191, G150, G24)
+5646d2897	10-25_06:08	loop	203	added	The sidereal house speeds across SEMOD_JPLHORA_3's 1962 step are each side's own rate (UPSTREAM-BUGS 203, G156, G24)
+41c90a683	10-25_06:19	loop	200 202	added	The frame hold keeps Owen 1990's piece and Moshier's Moon, and the long-term sidereal time's join nodes take each interv
+25f499ca6	10-25_06:21	loop	206 208	added	A star with SEFLG_SPEED at a span's edge answers as without it; a fictitious body or orbit whose light time leaves the S
+973fc0726	10-25_06:33	loop	201	added	swe_nod_aps()'s osculating speeds are a five-point difference, not a three-point one off by its truncation (UPSTREAM-BUG
+82d54b143	10-25_06:34	loop	199	added	swe_nod_aps()'s osculating speeds across a short-term precession window's edge are each side's own rate (UPSTREAM-BUGS 1
+aba2e926a	10-25_06:36	loop	218 219 220	added	SE_ECL_NUT under SEFLG_NONUT answers no nutation at every call; IAU 1980's arguments exact past 4e8 days; IAU 2000B with
+8215e170c	10-25_06:37	loop	209 214	added	The long-term sidereal time costs a bounded time at every date within 1e12 days; past it the houses refuse and swe_sidti
+887873dbf	10-25_06:38	loop	221	added	swe_nod_aps() changes centre in one frame, the ephemeris's (UPSTREAM-BUGS 221, G163, G24)
+0eccce8d9	10-25_06:54	loop	223 224	added	No sidereal output takes the JPL Horizons flags; Makransky's cusps keep their digits near w = 90, 270 (UPSTREAM-BUGS 223
+5b1965023	10-25_06:57	loop	210 211 216	added	fix: absurd dates are refused: no overrun past 1e188, NaN refused, no file name from an overflowed year
+db233f42c	10-25_07:02	loop	205 227	added	With the Moon files missing, a later answer at the instant keeps the computed answer's "using Moshier eph. for moon" and
+b4f9be9fb	10-25_07:02	loop	207	added	A JPL request with SEFLG_JPLHOR_APPROX or SEFLG_JPLHOR that falls to the Swiss files or Moshier answers as that ephemeri
+fd5819046	10-25_07:04	loop	228 229 230	added	swe_nod_aps()'s J2000 speeds across a short-term precession window's edge take the frame's turning on the instant's side
+54a599d0b	10-25_07:09	loop	212 213 215 217	added	The ayanamsa, the houses and delta t refuse dates past 1e12 days and no dates; each precession model answers within its 
+188d99720	10-25_07:12	loop	225 226	added	At a span's edge the true node, the osculating apogee and swe_nod_aps() with SEFLG_SPEED answer as without it (UPSTREAM-
+69c41a0b5	10-25_07:15	loop	66 191	weak	sweph.c: four comments say what the code does now
+a6957e413	10-25_07:24	loop	231	added	The nutation interpolation is a function of the instant: day-grid nodes, a cubic through the nutation and its rate (UPST
+36fea03ec	10-25_07:25	loop	232	added	Woolard's nutation's arguments in double-double past 4e8 days (UPSTREAM-BUGS 232, G162, G24)
+1df58684d	10-25_07:26	loop	236	added	swe_gauquelin_sector() with SEFLG_SIDEREAL answers the sector of the call without it in every method (UPSTREAM-BUGS 236,
+432851cac	10-25_07:28	loop	247	added	A star mode's refused star refuses its ayanamsa, its sidereal places and its sidereal houses together (UPSTREAM-BUGS 247
+e9f32ac9e	10-25_07:39	loop	234 235	added	Sidereal times exact past 5e5 days and in 0..24 h; long-term rate analytic (UPSTREAM-BUGS 234, 235, G159, G39, G24)
+78984d3ff	10-25_07:40	loop	245 246	added	Moshier's true node and osculating apogee under the frame hold read the Moon past the Earth's saved one, and Moshier's a
+3e418069e	10-25_07:42	loop	237 238 243 255	added	LMT and LAT refused with their output 0 past 1e12 days and at no date or longitude; swedate.c refuses NaN and -+inf and 
+6355ebec8	10-25_07:44	loop	249	added	At a span's edge SEFLG_SPEED3 takes its three places from the ephemeris that answers at the instant (UPSTREAM-BUGS 249, 
+2ce2cd4ec	10-25_07:50	loop	254	added	swe_house_pos()'s whole signs and 0 Aries in sidereal charts documented as the tropical houses they answer, with the sid
+6e0c792c3	10-25_08:05	loop	252 253	added	No frame or format flag moves a Gauquelin sector or swetest's house positions; swetest's diff modes and cusps take each 
+bc1a59295	10-25_08:09	loop	250	added	fix: across a join of the Swiss files a speed is the rate of the places on its instant's side (UPSTREAM-BUGS 250)
+140eec4c8	10-25_08:17	loop	239 240 241 242 244 248	added	A refusal is ERR with the outputs 0 and a message naming the caller's input: every refusal zeroes, far searches name the
+752d14af8	10-25_08:19	loop	256 257	added	The long-term sidereal time refused past its precession model's range, Vondrak 2011's line kept; the sidereal times' far
+cdf372b32	10-25_08:20	loop	258 259	added	The Swiss request's Moon fallen to Moshier read at its light-time instant in its instant's side's frame, and a topocentr
+ede2cce9d	10-25_08:24	loop	268 269 270 271 272	added	The houses of the ecliptic of t0 and the solar system plane give the ARMC, sidereal whole signs and the places' precessi
+e8a24aba2	10-25_08:39	loop	273 274 275	added	A Gauquelin sector is seen from geopos and keeps the caller's observer, the Earth has none; swetest's local sky is each 
+1fc11a3b7	10-25_08:57	loop	287 288 289	added	The houses of the ecliptic of t0 continuous across t0, ascmc[8] 0 on the sidereal planes, and swe_house_pos()'s horizon 
+050952bf2	10-25_09:01	loop	264 265	added	The Moon (and an asteroid) within its light time after an ephemeris's start answered whole by the fallback, and SEFLG_SP
+9d96e4c8c	10-25_09:03	loop	267	added	The JPL file's open warning kept where the read that opened the file is dropped at a span's edge (UPSTREAM-BUGS 267, G17
+96547f3f3	10-25_09:07	loop	294 295	added	swetest's cusps' horizon is at the observer's height and their speeds are their own, not the last body's (UPSTREAM-BUGS 
+e85229025	10-25_09:10	loop	260 261 262 263 280 282 286	added	The leap-second dates formed without int overflow, the time zone carried into the date, the UT functions naming the call
+d5143d5cd	10-25_09:12	loop	283 284 285	added	fix: the nutation within -13200 .. +17191, the formula sidereal times' obliquity within its range, a site's sidereal tim
+c7e6c24af	10-25_09:14	loop	152	changed	G161 and G29 headers state the upstream build's failures as measured now
+01d0170ef	10-25_09:17	loop	266 276	added	Speeds across the Swiss files' segment boundaries; SEFLG_SPEED3 over its instants' spacing (UPSTREAM-BUGS 276, 266)
+fd605d3b9	10-25_09:20	loop	277 278 279 281	added	A site's height outside -500 .. 25000 m or NaN refused by every function that takes one, the Sun's orbital elements the 

@@ -119,6 +119,7 @@ struct swe_config {
   AS_BOOL is_tid_acc_manual;
   AS_BOOL delta_t_userdef_is_set;
   AS_BOOL do_interpolate_nut;
+  AS_BOOL ephe_fallback;          /* swe_set_ephe_fallback()            */
 
   /* Bumped on every published change. Compared with != only, so wrapping
    * after 2^32 configuration changes is harmless. Never written by a
@@ -155,7 +156,8 @@ struct swe_config {
 #define SWI_CFG_DELTAT   0x10   /* delta_t_userdef*                      */
 #define SWI_CFG_NUT      0x20   /* do_interpolate_nut                    */
 #define SWI_CFG_LAPSE    0x40   /* const_lapse_rate                      */
-#define SWI_CFG_ALL      0x7f
+#define SWI_CFG_FALLBACK 0x80   /* ephe_fallback                         */
+#define SWI_CFG_ALL      0xff
 
 /* Copy this thread's live configuration out of swed into *c.
  * Does not touch the cache half of topd. */
@@ -199,6 +201,15 @@ extern void swi_config_claim(swe_ctx *ctx, int32 groups);
 /* Fast path for compute entry points: if the master has moved on since
  * this thread last synced, adopt it. One atomic load in the common case. */
 extern void swi_config_sync(swe_ctx *ctx);
+
+/* A call's one configuration. Every public function that calculates calls
+ * swi_config_hold() at its entry and swi_config_release() at its return.
+ * The outermost hold starts a context not yet initialised, or syncs one
+ * already started, and every sync after it does nothing until the matching
+ * release: a call finishes with the configuration it started with, and no
+ * file is closed or cache emptied under it by another thread's setter. */
+extern void swi_config_hold(swe_ctx *ctx);
+extern void swi_config_release(swe_ctx *ctx);
 
 /* One-shot adoption of the published configuration, for swe_ctx_new().
  * swi_config_sync() refuses non-default contexts on purpose; this is the

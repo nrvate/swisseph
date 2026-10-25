@@ -299,8 +299,9 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
   /* tjd beyond ephemeris limits, give some margin for spped at edge */
   if (tjd < MOSHPLEPH_START - 0.3 || tjd > MOSHPLEPH_END + 0.3) {
     if (serr != NULL) {
-      sprintf(s, "jd %f outside Moshier planet range %.2f .. %.2f ",
-		    tjd, MOSHPLEPH_START, MOSHPLEPH_END);
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(s, sizeof s, "jd %s outside Moshier planet range %.2f .. %.2f ",
+		    swi_jd_str(tjd, 6, sjd), MOSHPLEPH_START, MOSHPLEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
     }
@@ -521,7 +522,7 @@ static const double plan_oscu_elem[SE_NFICT_ELEM][8] = {
   {J1900, J1900, 163.7409, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833},/* Cupido Neely */ 
   {J1900, J1900,  27.6496, 50.66744, 0.00245, 148.1796, 161.3339, 1.0500},/* Hades Neely */
   {J1900, J1900, 165.1232, 59.21436, 0.00120, 299.0440,   0.0000, 0.0000},/* Zeus Neely */
-  {J1900, J1900, 169.0193, 64.81960, 0.00305, 208.8801,   0.0000, 0.0000},/* Kronos Neely */ 
+  {J1900, J1900, 169.0193, 64.81690, 0.00305, 208.8801,   0.0000, 0.0000},/* Kronos Neely */ 
   {J1900, J1900, 138.0533, 70.29949, 0.00000,   0.0000,   0.0000, 0.0000},/* Apollon Neely */
   {J1900, J1900, 351.3350, 73.62765, 0.00000,   0.0000,   0.0000, 0.0000},/* Admetos Neely */
   {J1900, J1900,  55.8983, 77.25568, 0.00000,   0.0000,   0.0000, 0.0000},/* Vulcanus Neely */
@@ -623,7 +624,7 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
     M2 = M * RADTODEG;
     if (M2 > 150 && M2 < 210) {
       M2 -= 180;
-      M_180_or_0 = 180;
+      M_180_or_0 = PI;		/* 180 degrees, added to E in radians */
     } else
       M_180_or_0 = 0;
     if (M2 > 330) 
@@ -637,7 +638,8 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
       M2 *= DEGTORAD;
       alpha = (1 - ecce) / (4 * ecce + 0.5);
       beta = M2 / (8 * ecce + 1);
-      zeta = pow(beta + sqrt(beta * beta + alpha * alpha), 1/3);
+      /* the cube root of the starting guess's cubic; 1 / 3 would be 0 */
+      zeta = pow(beta + sqrt(beta * beta + alpha * alpha), 1.0 / 3);
       sigma = zeta - alpha / 2;
       sigma = sigma - 0.078 * sigma * sigma * sigma * sigma * sigma / (1 + ecce);
       E = Msgn * (M2 + ecce * (3 * sigma - 4 * sigma * sigma * sigma))
@@ -755,6 +757,21 @@ static int load_fict_lines(swe_ctx *ctx, char *serr)
   return OK;
 }
 
+/* An epoch or equinox that is a number is a whole finite one, blanks around
+ * it allowed. */
+static int field_number(const char *sp, double *d)
+{
+  char *end;
+  while (*sp == ' ' || *sp == '\t')
+    sp++;
+  *d = strtod(sp, &end);
+  if (end == sp)
+    return 0;
+  while (*end != '\0' && strchr(" \t\r\n", *end) != NULL)
+    end++;
+  return *end == '\0' && isfinite(*d);
+}
+
 /* note: input parameter tjd is required for T terms in elements */
 static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
   double *tjd0, double *tequ,
@@ -802,20 +819,21 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     strcpy(s, ctx->fict_lines[k].s);	/* swi_cutstr() writes into it */
     ncpos = swi_cutstr(s, ",", cpos, 20);
     snprintf(serri, AS_MAXCH, "error in file %.40s, line %7.0f:", SE_FICTFILE, (double) ctx->fict_lines[k].iline);
+    /* every line is one body's, so a short line refuses its own body only */
+    iplan++;
+    if (iplan != ipl)
+      continue;
     if (ncpos < 9) {
       if (serr != NULL) {
         snprintf(serr, AS_MAXCH, "%.200s nine elements required", serri);
       }
       goto return_err;
     }
-    iplan++;
-    if (iplan != ipl)
-      continue;
     elem_found = TRUE;
     /* epoch of elements */
     if (tjd0 != NULL) {
       sp = cpos[0];
-	  for (i = 0; i < 5; i++)
+	  for (i = 0; i < 5 && sp[i] != '\0'; i++)	/* not into the next field */
        sp[i] = tolower(sp[i]);
       if (strncmp(sp, "j2000", 5) == OK)
         *tjd0 = J2000;
@@ -828,8 +846,11 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
           snprintf(serr, AS_MAXCH, "%.200s invalid epoch", serri);
 	}
         goto return_err;
-      } else
-        *tjd0 = atof(sp);
+      } else if (!field_number(sp, tjd0)) {
+        if (serr != NULL)
+          snprintf(serr, AS_MAXCH, "%.200s invalid epoch", serri);
+        goto return_err;
+      }
       tt = tjd - *tjd0;
     }
     /* equinox */
@@ -837,7 +858,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
       sp = cpos[1];
       while(*sp == ' ' || *sp == '\t')
         sp++;
-	  for (i = 0; i < 5; i++)
+	  for (i = 0; i < 5 && sp[i] != '\0'; i++)
        sp[i] = tolower(sp[i]);
       if (strncmp(sp, "j2000", 5) == OK)
         *tequ = J2000;
@@ -852,8 +873,11 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
           snprintf(serr, AS_MAXCH, "%.200s invalid equinox", serri);
 	}
         goto return_err;
-      } else
-        *tequ = atof(sp);
+      } else if (!field_number(sp, tequ)) {
+        if (serr != NULL)
+          snprintf(serr, AS_MAXCH, "%.200s invalid equinox", serri);
+        goto return_err;
+      }
     }
     /* mean anomaly t0 */
     if (mano != NULL) {
@@ -959,9 +983,13 @@ return_err:
 }
 #endif
 
+/* A field is a sum of terms, each a product of numbers and powers of T
+ * (T = t / 36525; a bare T is T1, and T2 to T4 are the powers). ERR for a
+ * field that is empty or has anything else in it. retc is 1 when the field
+ * has additional terms, i.e. a sign. */
 static int check_t_terms(double t, char *sinp, double *doutp)
 {
-  int i, isgn = 1, z;
+  int isgn = 1, z;
   int retc = 0;
   char *sp;
   double tt[5], fac;
@@ -987,25 +1015,37 @@ static int check_t_terms(double t, char *sinp, double *doutp)
 	    isgn = -1;
 	  fac = 1 * isgn;
 	  if (*sp == '\0')
-		return retc;
+		return z == 0 ? ERR : retc;
 	  sp++;
 	} else {
+      char *sp0 = sp;
       while(*sp != '\0' && strchr("* \t", *sp) != NULL)
         sp++;
       if (*sp != '\0' && strchr("tT", *sp) != NULL) {
-		/* a T */
+		/* a T, with the digits of its power 1 to 4 right behind it */
+        long n = 1;
         sp++;
-        if (*sp != '\0' && strchr("+-", *sp))
-		  fac *= tt[0];
-	    else if ((i = atoi(sp)) <= 4 && i >= 0)
-          fac *= tt[i];
-	  } else {
-        /* a number */
-        if (atof(sp) != 0 || *sp == '0')
-          fac *= atof(sp);
+        if (isdigit((unsigned char) *sp)) {
+          n = strtol(sp, &sp, 10);
+          if (n < 1 || n > 4)
+            return ERR;
+        }
+        if (*sp == '.')
+          return ERR;	/* "T2.5", "T.5" */
+        fac *= tt[n];
+	  } else if (*sp != '\0' && strchr("0123456789.", *sp) != NULL) {
+        /* a number: its whole run of digits and points is one number */
+        char *end;
+        double v = strtod(sp, &end);
+        if (end != sp + strspn(sp, "0123456789."))
+          return ERR;	/* ".", "1.2.3", "1e5" */
+        fac *= v;
+        sp = end;
 	  }
-      while (*sp != '\0' && strchr("0123456789.", *sp))
-	    sp++;
+      /* a character no term has is consumed by nothing: refuse it, or the
+       * loop would come back to it for ever */
+      if (sp == sp0)
+        return ERR;
 	}
 	z++;
   }

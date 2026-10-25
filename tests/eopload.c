@@ -63,7 +63,9 @@ static void putd (unsigned char *p, double v) { memcpy(p, &v, 8); }
  *
  * ss[] is chosen to give nseg = 1, which is what keeps the file small.
  * ss[2] must stay in 1..200 or the reader decides the file needs byte
- * reordering. */
+ * reordering. Every offset is at least 3, after the record's two epochs,
+ * and every body ends inside the record: state() refuses a file whose
+ * coefficients do not. */
 static int write_jpl(const char *path)
 {
   unsigned char h[2856];
@@ -83,7 +85,7 @@ static int write_jpl(const char *path)
   putd (h + 2680, 149597870.7);       /* au    */
   putd (h + 2688, 81.3);              /* emrat */
   for (i = 0; i < 12; i++) {
-    put32(h + 2696 + (i * 3 + 0) * 4, 1);
+    put32(h + 2696 + (i * 3 + 0) * 4, 3);   /* after the two epochs */
     put32(h + 2696 + (i * 3 + 1) * 4, ncf);
     put32(h + 2696 + (i * 3 + 2) * 4, na);
   }
@@ -91,7 +93,7 @@ static int write_jpl(const char *path)
   put32(h + 2696 + 31 * 4, ncf);
   put32(h + 2696 + 32 * 4, na);
   put32(h + 2840, 431);               /* numde -- the whole point */
-  put32(h + 2844, 1);                 /* lpt[] -> ipt[36..38], i.e. i = 12 */
+  put32(h + 2844, 3);                 /* lpt[] -> ipt[36..38], i.e. i = 12 */
   put32(h + 2848, ncf);
   put32(h + 2852, na);
 

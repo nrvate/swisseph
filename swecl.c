@@ -109,6 +109,20 @@ static int32 calc_mer_trans(swe_ctx *ctx,
                char *serr); 
 static int32 calc_planet_star(swe_ctx *ctx, double tjd_et, int32 ipl, char *starname, int32 iflag, double *x, char *serr);
 
+/* A negative planet number is no body seen from the Earth: SE_ECL_NUT (-1)
+ * is swe_calc()'s obliquity and nutation, and swe_calc() refuses every other
+ * negative number. The rise and set, the Gauquelin sectors and the
+ * occultations would take them for a place, or index pla_diam[] below its
+ * start. With a star the number is not read. */
+static AS_BOOL ipl_is_no_body(int32 ipl, const char *starname, char *serr)
+{
+  if (ipl >= 0 || (starname != NULL && *starname != '\0'))
+    return FALSE;
+  if (serr != NULL)
+    snprintf(serr, AS_MAXCH, "illegal planet number %d.", ipl);
+  return TRUE;
+}
+
 struct saros_data {int series_no; double tstart;};
 
 // Saros cycle numbers of solar eclipses with date of initial 
@@ -567,7 +581,7 @@ const struct saros_data saros_data_lunar[NSAROS_LUNAR] = {
  * attr[10]	saros series member number
  *         declare as attr[20] at least !
  */
-int32 CALL_CONV swe_sol_eclipse_where_r(swe_ctx *ctx, double tjd_ut, 
+static int32 swe_sol_eclipse_where_r_body(swe_ctx *ctx, double tjd_ut,
                 int32 ifl,
 		double *geopos, 
 		double *attr, 
@@ -583,6 +597,19 @@ int32 CALL_CONV swe_sol_eclipse_where_r(swe_ctx *ctx, double tjd_ut,
     return retflag2;
   attr[3] = dcore[0];
   return retflag;
+}
+
+int32 CALL_CONV swe_sol_eclipse_where_r(swe_ctx *ctx, double tjd_ut,
+                int32 ifl,
+		double *geopos,
+		double *attr,
+		char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_sol_eclipse_where_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -619,7 +646,7 @@ int32 CALL_CONV swe_sol_eclipse_where(
   attr[6]              apparent altitude of object above horizon at tjd
   attr[7]              angular distance of moon from object in degrees
  */
-int32 CALL_CONV swe_lun_occult_where_r(swe_ctx *ctx, double tjd_ut, 
+static int32 swe_lun_occult_where_r_body(swe_ctx *ctx, double tjd_ut,
                 int32 ipl,
                 char *starname,
                 int32 ifl,
@@ -629,7 +656,9 @@ int32 CALL_CONV swe_lun_occult_where_r(swe_ctx *ctx, double tjd_ut,
 {
   int32 retflag, retflag2;
   double dcore[10];
-  if (ipl < 0) ipl = 0;
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
+  if (ipl < 0) ipl = 0;	/* a star: ipl is not read */
   ifl &= SEFLG_EPHMASK; 
   swi_set_tid_acc(ctx, tjd_ut, ifl, 0, serr);
   /* function calls for Pluto with asteroid number 134340
@@ -642,6 +671,21 @@ int32 CALL_CONV swe_lun_occult_where_r(swe_ctx *ctx, double tjd_ut,
     return retflag2;
   attr[3] = dcore[0];
   return retflag;
+}
+
+int32 CALL_CONV swe_lun_occult_where_r(swe_ctx *ctx, double tjd_ut,
+                int32 ipl,
+                char *starname,
+                int32 ifl,
+		double *geopos,
+		double *attr,
+		char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_lun_occult_where_r_body(ctx, tjd_ut, ipl, starname, ifl, geopos, attr, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -825,7 +869,7 @@ iter_where:
     retc |= (SE_ECL_PARTIAL | SE_ECL_NONCENTRAL);
   } else {
     if (serr != NULL)
-      sprintf(serr, "no solar eclipse at tjd = %f", tjd);
+      snprintf(serr, AS_MAXCH, "no solar eclipse at tjd = %f", tjd);
     for (i = 0; i < 2; i++)
       geopos[i] = 0;
     *dcore = 0;
@@ -974,7 +1018,7 @@ static int32 calc_planet_star(swe_ctx *ctx, double tjd_et, int32 ipl, char *star
  *         declare as attr[20] at least !
  * 
  */
-int32 CALL_CONV swe_sol_eclipse_how_r(swe_ctx *ctx, double tjd_ut, 
+static int32 swe_sol_eclipse_how_r_body(swe_ctx *ctx, double tjd_ut,
           int32 ifl,
           double *geopos,
           double *attr, 
@@ -1015,6 +1059,19 @@ int32 CALL_CONV swe_sol_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
       attr[i] = 0;
   }
   return retflag;
+}
+
+int32 CALL_CONV swe_sol_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
+          int32 ifl,
+          double *geopos,
+          double *attr,
+          char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_sol_eclipse_how_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -1115,7 +1172,7 @@ static int32 eclipse_how( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname
   else {
     retc = 0;
     if (serr != NULL)
-      sprintf(serr, "no solar eclipse at tjd = %f", tjd_ut);
+      snprintf(serr, AS_MAXCH, "no solar eclipse at tjd = %f", tjd_ut);
   }
   /*
    * ratio of diameter of moon to that of sun
@@ -1248,7 +1305,7 @@ static int32 eclipse_how( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname
  *         declare as tret[10] at least!
  *
  */
-int32 CALL_CONV swe_sol_eclipse_when_glob_r(swe_ctx *ctx, double tjd_start, int32 ifl, int32 ifltype,
+static int32 swe_sol_eclipse_when_glob_r_body(swe_ctx *ctx, double tjd_start, int32 ifl, int32 ifltype,
      double *tret, int32 backward, char *serr)
 {
   int i, j, k, m, n, o, i1 = 0, i2 = 0;
@@ -1580,6 +1637,16 @@ end_search_global:
    */
 }
 
+int32 CALL_CONV swe_sol_eclipse_when_glob_r(swe_ctx *ctx, double tjd_start, int32 ifl, int32 ifltype,
+     double *tret, int32 backward, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_sol_eclipse_when_glob_r_body(ctx, tjd_start, ifl, ifltype, tret, backward, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_sol_eclipse_when_glob(double tjd_start, int32 ifl, int32 ifltype,
@@ -1643,7 +1710,7 @@ int32 CALL_CONV swe_sol_eclipse_when_glob(double tjd_start, int32 ifl, int32 ifl
  *         declare as tret[10] at least!
  *
  */
-int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl, int32 ifltype,
+static int32 swe_lun_occult_when_glob_r_body(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl, int32 ifltype,
      double *tret, int32 backward, char *serr)
 {
   int i, j, k, m, n, o, i1, i2;
@@ -1664,7 +1731,9 @@ int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32
   int32 iflag, iflagcart;
   AS_BOOL dont_times = FALSE;
   int32 one_try = backward & SE_ECL_ONE_TRY;
-  if (ipl < 0) ipl = 0;
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
+  if (ipl < 0) ipl = 0;	/* a star: ipl is not read */
 /*if (backward & SEI_OCC_FAST)
     dont_times = TRUE; */
   /* function calls for Pluto with asteroid number 134340
@@ -2056,6 +2125,16 @@ end_search_global:
    */
 }
 
+int32 CALL_CONV swe_lun_occult_when_glob_r(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl, int32 ifltype,
+     double *tret, int32 backward, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_lun_occult_when_glob_r_body(ctx, tjd_start, ipl, starname, ifl, ifltype, tret, backward, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_lun_occult_when_glob(
@@ -2098,7 +2177,7 @@ int32 CALL_CONV swe_lun_occult_when_glob(
  * attr[10]	saros series member number
  *         declare as attr[20] at least !
  */
-int32 CALL_CONV swe_sol_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ifl,
+static int32 swe_sol_eclipse_when_loc_r_body(swe_ctx *ctx, double tjd_start, int32 ifl,
      double *geopos, double *tret, double *attr, int32 backward, char *serr)
 {
   int32 retflag = 0, retflag2 = 0;
@@ -2120,6 +2199,16 @@ int32 CALL_CONV swe_sol_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32
   retflag |= (retflag2 & SE_ECL_NONCENTRAL);
   attr[3] = dcore[0];
   return retflag; 
+}
+
+int32 CALL_CONV swe_sol_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ifl,
+     double *geopos, double *tret, double *attr, int32 backward, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_sol_eclipse_when_loc_r_body(ctx, tjd_start, ifl, geopos, tret, attr, backward, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -2158,7 +2247,7 @@ int32 CALL_CONV swe_sol_eclipse_when_loc(double tjd_start, int32 ifl,
  *
  * for all other parameters, see function swe_sol_eclipse_when_loc().
  */
-int32 CALL_CONV swe_lun_occult_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl,
+static int32 swe_lun_occult_when_loc_r_body(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl,
      double *geopos, double *tret, double *attr, int32 backward, char *serr)
 {
   int32 retflag = 0, retflag2 = 0;
@@ -2170,7 +2259,9 @@ int32 CALL_CONV swe_lun_occult_when_loc_r(swe_ctx *ctx, double tjd_start, int32 
       sprintf(serr, "location for occultations must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
   }
-  if (ipl < 0) ipl = 0;
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
+  if (ipl < 0) ipl = 0;	/* a star: ipl is not read */
   if (ipl == SE_AST_OFFSET + 134340)
     ipl = SE_PLUTO;
   ifl &= SEFLG_EPHMASK; 
@@ -2185,6 +2276,16 @@ int32 CALL_CONV swe_lun_occult_when_loc_r(swe_ctx *ctx, double tjd_start, int32 
   retflag |= (retflag2 & SE_ECL_NONCENTRAL);
   attr[3] = dcore[0];
   return retflag; 
+}
+
+int32 CALL_CONV swe_lun_occult_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ipl, char *starname, int32 ifl,
+     double *geopos, double *tret, double *attr, int32 backward, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_lun_occult_when_loc_r_body(ctx, tjd_start, ipl, starname, ifl, geopos, tret, attr, backward, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -2883,7 +2984,7 @@ if (starname == NULL || *starname == '\0') {
  * if a non-zero height above sea is given, atpress is estimated.
  *   geohgt	  height of observer above sea (optional)
  */
-void CALL_CONV swe_azalt_r(swe_ctx *ctx, double tjd_ut,
+static void swe_azalt_r_body(swe_ctx *ctx, double tjd_ut,
       int32  calc_flag,
       double *geopos,
       double atpress,
@@ -2921,6 +3022,19 @@ void CALL_CONV swe_azalt_r(swe_ctx *ctx, double tjd_ut,
   /* xaz[2] = swe_refrac_extended(xaz[2], geopos[2], atpress, attemp, ctx->const_lapse_rate, SE_APP_TO_TRUE, NULL);*/
 }
 
+void CALL_CONV swe_azalt_r(swe_ctx *ctx, double tjd_ut,
+      int32  calc_flag,
+      double *geopos,
+      double atpress,
+      double attemp,
+      double *xin,
+      double *xaz)
+{
+  swi_config_hold(ctx);
+  swe_azalt_r_body(ctx, tjd_ut, calc_flag, geopos, atpress, attemp, xin, xaz);
+  swi_config_release(ctx);
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 void CALL_CONV swe_azalt(
@@ -2947,7 +3061,7 @@ void CALL_CONV swe_azalt(
  *   iflag        either SE_HOR2ECL or SE_HOR2EQU
  *   xin[2]       azimut and true altitude, in degrees 
  */
-void CALL_CONV swe_azalt_rev_r(swe_ctx *ctx, double tjd_ut,
+static void swe_azalt_rev_r_body(swe_ctx *ctx, double tjd_ut,
       int32  calc_flag,
       double *geopos,
       double *xin, 
@@ -2980,6 +3094,17 @@ void CALL_CONV swe_azalt_rev_r(swe_ctx *ctx, double tjd_ut,
     xout[0] = x[0];
     xout[1] = x[1];
   }
+}
+
+void CALL_CONV swe_azalt_rev_r(swe_ctx *ctx, double tjd_ut,
+      int32  calc_flag,
+      double *geopos,
+      double *xin,
+      double *xout)
+{
+  swi_config_hold(ctx);
+  swe_azalt_rev_r_body(ctx, tjd_ut, calc_flag, geopos, xin, xout);
+  swi_config_release(ctx);
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -3105,8 +3230,13 @@ double CALL_CONV swe_refrac(double inalt, double atpress, double attemp, int32 c
   }
 }
 
+/* Initialised first, as the other setters are: the lapse rate is a context
+ * field here, and set before any calculation it was wiped by the first-use
+ * memset (0.05 K/m read as 0.0065, 0.90 deg in the refraction of a Sun near
+ * the dip from 2000 m). */
 void CALL_CONV swe_set_lapse_rate_r(swe_ctx *ctx, double lapse_rate)
 {
+  swi_init_swed_if_start(ctx);
   ctx->const_lapse_rate = lapse_rate;
   swi_config_publish(ctx, SWI_CFG_LAPSE);
 }
@@ -3293,6 +3423,14 @@ static double calc_dip(double geoalt, double atpress, double attemp, double laps
   */
   double krefr = (0.0342 + lapse_rate) / (0.154 * 0.0238);
   double d = 1-1.8480*krefr*atpress/(273.15+attemp)/(273.15+attemp);
+  /* The dip is how far the sea horizon lies below the geometric horizon,
+   * seen from above the sea. Below sea level (the Dead Sea, a basin) there
+   * is no sea horizon: the surrounding terrain is the horizon, and only
+   * swe_rise_trans_true_hor() can be told its height. The ideal horizon is
+   * then the geometric one, as at sea level; the formula's acos() would
+   * be of an argument above 1. */
+  if (geoalt < 0)
+    geoalt = 0;
   /* return -0.03203*sqrt(geoalt)*sqrt(d); */
   /* double a = acos(1/(1+geoalt/EARTH_RADIUS));*/
   return -180.0/PI * acos(1 / (1 + geoalt / EARTH_RADIUS)) * sqrt(d);
@@ -3317,7 +3455,7 @@ static double calc_dip(double geoalt, double atpress, double attemp, double laps
  *         declare as attr[20] at least !
  * 
  */
-int32 CALL_CONV swe_lun_eclipse_how_r(swe_ctx *ctx, double tjd_ut, 
+static int32 swe_lun_eclipse_how_r_body(swe_ctx *ctx, double tjd_ut,
           int32 ifl,
           double *geopos, 
           double *attr, 
@@ -3354,6 +3492,19 @@ int32 CALL_CONV swe_lun_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
   if (xaz[2] <= 0)
     retc = 0;
   return retc;
+}
+
+int32 CALL_CONV swe_lun_eclipse_how_r(swe_ctx *ctx, double tjd_ut,
+          int32 ifl,
+          double *geopos,
+          double *attr,
+          char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_lun_eclipse_how_r_body(ctx, tjd_ut, ifl, geopos, attr, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -3470,7 +3621,7 @@ static int32 lun_eclipse_how(swe_ctx *ctx,
     attr[0] = 0;
   } else {
     if (serr != NULL)
-      sprintf(serr, "no lunar eclipse at tjd = %f", tjd);
+      snprintf(serr, AS_MAXCH, "no lunar eclipse at tjd = %f", tjd);
   }
   attr[8] = attr[0];
   /**************************
@@ -3516,7 +3667,7 @@ static int32 lun_eclipse_how(swe_ctx *ctx,
  * tret[6]	time of penumbral phase begin
  * tret[7]	time of penumbral phase end
  */
-int32 CALL_CONV swe_lun_eclipse_when_r(swe_ctx *ctx, double tjd_start, int32 ifl, int32 ifltype,
+static int32 swe_lun_eclipse_when_r_body(swe_ctx *ctx, double tjd_start, int32 ifl, int32 ifltype,
      double *tret, int32 backward, char *serr)
 {
   int i, j, m, n, o, i1 = 0, i2 = 0;
@@ -3745,6 +3896,16 @@ next_try:
   return retflag;
 }
 
+int32 CALL_CONV swe_lun_eclipse_when_r(swe_ctx *ctx, double tjd_start, int32 ifl, int32 ifltype,
+     double *tret, int32 backward, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_lun_eclipse_when_r_body(ctx, tjd_start, ifl, ifltype, tret, backward, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_lun_eclipse_when(double tjd_start, int32 ifl, int32 ifltype,
@@ -3779,7 +3940,7 @@ int32 CALL_CONV swe_lun_eclipse_when(double tjd_start, int32 ifl, int32 ifltype,
  * attr[10]     saros series member number
  *         declare as attr[20] at least !
  */
-int32 CALL_CONV swe_lun_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ifl, 
+static int32 swe_lun_eclipse_when_loc_r_body(swe_ctx *ctx, double tjd_start, int32 ifl,
      double *geopos, double *tret, double *attr, int32 backward, char *serr)
 {
   int32 retflag = 0, retflag2 = 0, retc;
@@ -3876,6 +4037,16 @@ next_lun_ecl:
   return retflag;
 }
 
+int32 CALL_CONV swe_lun_eclipse_when_loc_r(swe_ctx *ctx, double tjd_start, int32 ifl,
+     double *geopos, double *tret, double *attr, int32 backward, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_lun_eclipse_when_loc_r_body(ctx, tjd_start, ifl, geopos, tret, attr, backward, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_lun_eclipse_when_loc(double tjd_start, int32 ifl, 
@@ -3945,7 +4116,7 @@ static const double mag_elem[NMAG_ELEM][4] = {
                 {5.33, 0.32, 0, 0},     /* Juno */
                 {3.20, 0.32, 0, 0},     /* Vesta */
                 };
-int32 CALL_CONV swe_pheno_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, double *attr, char *serr)
+static int32 swe_pheno_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, double *attr, char *serr)
 {
   int i;
   double xx[6], xx2[6], xxs[6], lbr[6], lbr2[6], dt = 0, dd;
@@ -4256,6 +4427,15 @@ int32 CALL_CONV swe_pheno_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, do
   return iflag;
 }
 
+int32 CALL_CONV swe_pheno_r(swe_ctx *ctx, double tjd, int32 ipl, int32 iflag, double *attr, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_pheno_r_body(ctx, tjd, ipl, iflag, attr, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_pheno(double tjd, int32 ipl, int32 iflag, double *attr, char *serr)
@@ -4263,7 +4443,7 @@ int32 CALL_CONV swe_pheno(double tjd, int32 ipl, int32 iflag, double *attr, char
   return swe_pheno_r(swi_default_ctx(), tjd, ipl, iflag, attr, serr);
 }
 
-int32 CALL_CONV swe_pheno_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, double *attr, char *serr)
+static int32 swe_pheno_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, double *attr, char *serr)
 {
   double deltat;
   int32 retflag = OK;
@@ -4280,6 +4460,15 @@ int32 CALL_CONV swe_pheno_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 ifl
     retflag = swe_pheno_r(ctx, tjd_ut + deltat, ipl, iflag, attr, serr);
   }
   return retflag;
+}
+
+int32 CALL_CONV swe_pheno_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, double *attr, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_pheno_ut_r_body(ctx, tjd_ut, ipl, iflag, attr, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -4511,7 +4700,7 @@ run_rise_again:
  * serr[256]	error string
  * function return value -2 means that the body does not rise or set */
 #define SEFLG_EPHMASK	(SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH)
-int32 CALL_CONV swe_rise_trans_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname,
+static int32 swe_rise_trans_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname,
 	       int32 epheflag, int32 rsmi,
                double *geopos, 
 	       double atpress, double attemp,
@@ -4540,6 +4729,20 @@ int32 CALL_CONV swe_rise_trans_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *s
   return swe_rise_trans_true_hor_r(ctx, tjd_ut, ipl, starname, epheflag, rsmi, geopos, atpress, attemp, 0, tret, serr);
 }
 
+int32 CALL_CONV swe_rise_trans_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname,
+	       int32 epheflag, int32 rsmi,
+               double *geopos,
+	       double atpress, double attemp,
+               double *tret,
+               char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_rise_trans_r_body(ctx, tjd_ut, ipl, starname, epheflag, rsmi, geopos, atpress, attemp, tret, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_rise_trans(
@@ -4555,7 +4758,7 @@ int32 CALL_CONV swe_rise_trans(
 
 /* same as swe_rise_trans(), but allows to define the height of the horizon
  * at the point of the rising or setting (horhgt) */
-int32 CALL_CONV swe_rise_trans_true_hor_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname,
+static int32 swe_rise_trans_true_hor_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname,
 	       int32 epheflag, int32 rsmi,
                double *geopos, 
 	       double atpress, double attemp,
@@ -4590,6 +4793,8 @@ int32 CALL_CONV swe_rise_trans_true_hor_r(swe_ctx *ctx, double tjd_ut, int32 ipl
    * are treated as calls for Pluto as main body SE_PLUTO */
   if (ipl == SE_AST_OFFSET + 134340)
     ipl = SE_PLUTO;
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
   xh[0][0] = 0; /* to shut up mint */
   /* allowing SEFLG_NONUT and SEFLG_TRUEPOS speeds it up */
   iflag &= (SEFLG_EPHMASK | SEFLG_NONUT | SEFLG_TRUEPOS);
@@ -4853,6 +5058,21 @@ nazalt++;
   if (serr)
     sprintf(serr, "rise or set not found for planet %d", ipl);
   return -2; /* no t of rise or set found */
+}
+
+int32 CALL_CONV swe_rise_trans_true_hor_r(swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname,
+	       int32 epheflag, int32 rsmi,
+               double *geopos,
+	       double atpress, double attemp,
+	       double horhgt,
+               double *tret,
+               char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_rise_trans_true_hor_r_body(ctx, tjd_ut, ipl, starname, epheflag, rsmi, geopos, atpress, attemp, horhgt, tret, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -5245,7 +5465,7 @@ static const double plmass[9] = {
   136566000,        /* Pluto */
 };
 static const int ipl_to_elem[15] = {2, 0, 0, 1, 3, 4, 5, 6, 7, 0, 0, 0, 0, 0, 2,};
-int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, 
+static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag,
                       int32  method,
                       double *xnasc, double *xndsc, 
                       double *xperi, double *xaphe, 
@@ -5850,6 +6070,19 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   return OK;
 }
 
+int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag,
+                      int32  method,
+                      double *xnasc, double *xndsc,
+                      double *xperi, double *xaphe,
+                      char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_nod_aps_r_body(ctx, tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag, 
@@ -5861,7 +6094,7 @@ int32 CALL_CONV swe_nod_aps(double tjd_et, int32 ipl, int32 iflag,
   return swe_nod_aps_r(swi_default_ctx(), tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
 }
 
-int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag, 
+static int32 swe_nod_aps_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
                       int32  method,
                       double *xnasc, double *xndsc, 
                       double *xperi, double *xaphe, 
@@ -5871,6 +6104,19 @@ int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 i
   return swe_nod_aps_r(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, serr),
                       ipl, iflag, method, xnasc, xndsc, xperi, xaphe,
                       serr);
+}
+
+int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 iflag,
+                      int32  method,
+                      double *xnasc, double *xndsc,
+                      double *xperi, double *xaphe,
+                      char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_nod_aps_ut_r_body(ctx, tjd_ut, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -6000,7 +6246,7 @@ static int32 get_gmsm(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, doubl
  * dret[15]     perihelion distance
  * dret[16]     aphelion distance
 */
-int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et, 
+static int32 swe_get_orbital_elements_r_body(swe_ctx *ctx, double tjd_et,
   int32 ipl, int32 iflag, 
   double *dret,
   char *serr)
@@ -6187,6 +6433,18 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
 //  printf("cyc=%f, dmot=%f, cyct=%f, cycs=%f\n", dret[10], dret[11], dret[12], dret[13]);
 //  printf("tperi=%f, rperi=%f, raph=%f\n", dret[14], dret[15], dret[16]);
   return OK;
+}
+
+int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
+  int32 ipl, int32 iflag,
+  double *dret,
+  char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_get_orbital_elements_r_body(ctx, tjd_et, ipl, iflag, dret, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -6397,7 +6655,7 @@ static int32 orbit_max_min_true_distance_helio(swe_ctx *ctx, double tjd_et, int 
  * dtrue	true distance (pointer to double)
  * serr	        error string
  */
-int32 CALL_CONV swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
+static int32 swe_orbit_max_min_true_distance_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
 {
   int i, j, k, retval;
   int32 iflagi = (iflag & (SEFLG_EPHMASK | SEFLG_HELCTR | SEFLG_BARYCTR));
@@ -6516,6 +6774,15 @@ int32 CALL_CONV swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, i
   return retval;
 }
 
+int32 CALL_CONV swe_orbit_max_min_true_distance_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_orbit_max_min_true_distance_r_body(ctx, tjd_et, ipl, iflag, dmax, dmin, dtrue, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /* Legacy entry point: the process-wide default context.
  * Kept byte-compatible -- this is the ABI. */
 int32 CALL_CONV swe_orbit_max_min_true_distance(double tjd_et, int32 ipl, int32 iflag, double *dmax, double *dmin, double *dtrue, char *serr)
@@ -6543,7 +6810,7 @@ int32 CALL_CONV swe_orbit_max_min_true_distance(double tjd_et, int32 ipl, int32 
  * serr is pointer to error string, may be NULL
  *
  */
-int32 CALL_CONV swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut,  /* input time (UT) */
+static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input time (UT) */
   int32 ipl,    /* planet number, if planet, or moon;
                  * ipl is ignored if the following parameter (starname) is set*/
   char *starname, /* star name, if star; otherwise NULL or empty */
@@ -6575,6 +6842,8 @@ int32 CALL_CONV swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut,  /* input time
           sprintf(serr, "invalid method: %d", imeth);
     return ERR;
   }
+  if (ipl_is_no_body(ipl, starname, serr))
+    return ERR;
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */
   if (ipl == SE_AST_OFFSET + 134340)
@@ -6583,17 +6852,41 @@ int32 CALL_CONV swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut,  /* input time
    * geometrically from ecl. longitude and latitude 
    */
   if (imeth == 0 || imeth == 1) {
+    /* A sector is the body's place on its diurnal circle, which no zodiac,
+     * frame or form of the place moves: the place is set below, as
+     * ecliptic longitude and latitude in degrees, in the frame of the true
+     * ecliptic of date (the ARMC and the true obliquity). So it is computed
+     * with the flags that choose the body's direction from the observer
+     * and no other: the ephemeris and its Horizons corrections,
+     * SEFLG_TOPOCTR, SEFLG_TRUEPOS, SEFLG_NOABERR, SEFLG_NOGDEFL and
+     * SEFLG_CENTER_BODY. SEFLG_SIDEREAL, SEFLG_NONUT, SEFLG_ICRS,
+     * SEFLG_J2000, SEFLG_EQUATORIAL, SEFLG_RADIANS, SEFLG_XYZ and the
+     * speeds would set another frame's place in this one; SEFLG_HELCTR and
+     * SEFLG_BARYCTR a direction from elsewhere on the observer's sky.
+     * They are ignored, as methods 2 to 5 ignore them. A sidereal place
+     * takes no Horizons corrections (plaus_iflag()), so with SEFLG_SIDEREAL
+     * neither the place nor the frame takes them: every method answers
+     * the sector of the call without SEFLG_SIDEREAL. */
+    int32 iflag_pl = iflag & (SEFLG_EPHMASK | SEFLG_TOPOCTR | SEFLG_TRUEPOS | SEFLG_NOABERR
+                              | SEFLG_NOGDEFL | SEFLG_CENTER_BODY
+                              | SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+    int32 iflag_nut;
+    if (iflag & SEFLG_SIDEREAL)
+      iflag_pl &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
+    /* The body's swe_calc() turns SEFLG_JPLHOR into SEFLG_JPLHOR_APPROX
+     * without the IERS corrections; the frame takes the flag so too. */
+    iflag_nut = swi_jplhor_plaus(ctx, iflag_pl);
     t_et = t_ut + swe_deltat_ex_r(ctx, t_ut, iflag, serr);
-    eps = swi_epsiln(ctx, t_et, iflag) * RADTODEG;
-    swi_nutation(ctx, t_et, iflag, nutlo);
+    eps = swi_epsiln(ctx, t_et, iflag_nut) * RADTODEG;
+    swi_nutation(ctx, t_et, iflag_nut, nutlo);
     nutlo[0] *= RADTODEG;
     nutlo[1] *= RADTODEG;
     armc = swe_degnorm(swe_sidtime0_r(ctx, t_ut, eps + nutlo[1], nutlo[0]) * 15 + geopos[0]);
     if (do_fixstar) {
-      if (swe_fixstar_r(ctx, starname, t_et, iflag, x0, serr) == ERR)
+      if (swe_fixstar_r(ctx, starname, t_et, iflag_pl, x0, serr) == ERR)
 	return ERR;
     } else {
-      if (swe_calc_r(ctx, t_et, ipl, iflag, x0, serr) == ERR)
+      if (swe_calc_r(ctx, t_et, ipl, iflag_pl, x0, serr) == ERR)
 	return ERR;
     }
     if (imeth == 1) 
@@ -6672,6 +6965,17 @@ int32 CALL_CONV swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut,  /* input time
       sprintf(serr, "rise or set not found for planet %d", ipl);
     return ERR;
   }
+}
+
+int32 CALL_CONV swe_gauquelin_sector_r(swe_ctx *ctx, double t_ut, int32 ipl,
+  char *starname, int32 iflag, int32 imeth, double *geopos, double atpress,
+  double attemp, double *dgsect, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_gauquelin_sector_r_body(ctx, t_ut, ipl, starname, iflag, imeth, geopos, atpress, attemp, dgsect, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.

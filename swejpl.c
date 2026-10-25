@@ -73,6 +73,7 @@
 #include "swephexp.h"
 #include "sweph.h"
 #include "swejpl.h"
+#include "swephlib.h"
 
 #if MSDOS
   typedef __int64 off_t64;
@@ -310,6 +311,12 @@ static int32 fsizer(swe_ctx *ctx, char *serr)
       kmx = js->eh_ipt[i * 3];
       khi = i + 1;
     }
+  }
+  /* no body with a positive offset: eh_ipt[khi * 3 - 3] below is eh_ipt[-3] */
+  if (khi == 0) {
+    if (serr != NULL)
+      sprintf(serr, "JPL ephemeris file has no coefficient offsets");
+    return NOT_AVAILABLE;
   }
   if (khi == 12) 
     nd = 2;
@@ -733,6 +740,23 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
 	return NOT_AVAILABLE;
       }
     }
+    /* And the offset and the sub-interval count, which the length identity
+     * below does not bound: interp() reads ncf * na * k doubles from
+     * buf[ipt[i*3] - 1] at sub-intervals 0 to na - 1, so each body that is
+     * there (the planets, the Moon and the Sun always) must have them inside
+     * the record's js->ncoeffs, after its two epochs. A file trading one
+     * body's na for another's keeps its length and reads past buf[]. */
+    for (i = 0; i < 13; ++i) {
+      int32 ncf = ipt[i * 3 + 1], na = ipt[i * 3 + 2], base = ipt[i * 3];
+      if (i > 10 && ncf <= 0)
+	continue;	/* no nutations or librations on the file */
+      if (ncf < 1 || na < 1 || base < 3
+	  || (double) base - 1 + (double) ncf * na * (i == 11 ? 2 : 3) > js->ncoeffs) {
+	if (serr != NULL)
+	  sprintf(serr, "JPL ephemeris file has invalid coefficients for body %d (offset %d, %d x %d)", i, (int) base, (int) ncf, (int) na);
+	return NOT_AVAILABLE;
+      }
+    }
     js->nrl = 0;
     /* is file length correct? */
     /* file length */
@@ -803,7 +827,7 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
       reorder((char *) &ts[2], sizeof(double), 2);
     if (ts[0] != js->eh_ss[0] || ts[3] != js->eh_ss[1]) {
       if (serr != NULL)
-	sprintf(serr, "JPL ephemeris file is corrupt; start/end date check failed. %.1f != %.1f || %.1f != %.1f", ts[0],js->eh_ss[0],ts[3],js->eh_ss[1]);
+	snprintf(serr, AS_MAXCH, "JPL ephemeris file is corrupt; start/end date check failed. %.1f != %.1f || %.1f != %.1f", ts[0],js->eh_ss[0],ts[3],js->eh_ss[1]);
       return NOT_AVAILABLE;
     }
   }
@@ -815,8 +839,10 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
   et_mn += .5;	/* midnight before epoch */
   /*       error return for epoch out of range */
   if (et < js->eh_ss[0] || et > js->eh_ss[1]) {
-    if (serr != NULL) 
-      sprintf(serr,"jd %f outside JPL eph. range %.2f .. %.2f;", et, js->eh_ss[0], js->eh_ss[1]);
+    if (serr != NULL) {
+      char sjd[SWI_JDSTR_LEN];
+      snprintf(serr, AS_MAXCH, "jd %s outside JPL eph. range %.2f .. %.2f;", swi_jd_str(et, 6, sjd), js->eh_ss[0], js->eh_ss[1]);
+    }
     return BEYOND_EPH_LIMITS;
   }
   /*       calculate record # and relative time in interval */
@@ -833,12 +859,12 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
     js->nrl = 0;
     if (FSEEK(js->jplfptr, (off_t64) (nr * ((off_t64) js->irecsz)), 0) != 0) {
       if (serr != NULL)
-	sprintf(serr, "Read error in JPL eph. at %f\n", et);
+	snprintf(serr, AS_MAXCH, "Read error in JPL eph. at %f\n", et);
       return NOT_AVAILABLE;
     }
     if ((int32) fread((void *) buf, sizeof(double), (size_t) js->ncoeffs, js->jplfptr) != js->ncoeffs) {
       if (serr != NULL)
-	sprintf(serr, "Read error in JPL eph. at %f\n", et);
+	snprintf(serr, AS_MAXCH, "Read error in JPL eph. at %f\n", et);
       return NOT_AVAILABLE;
     }
     if (js->do_reorder)

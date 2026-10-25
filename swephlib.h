@@ -160,6 +160,9 @@ extern void swi_ldp_peps(swe_ctx *ctx, double J, double *dpre, double *deps);
 /* nutation */
 extern void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag);
 extern int swi_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo);
+/* SEFLG_JPLHOR_APPROX for SEFLG_JPLHOR without the IERS corrections, as
+ * plaus_iflag() has it */
+extern int32 swi_jplhor_plaus(swe_ctx *ctx, int32 iflag);
 extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 
 extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 
@@ -188,6 +191,10 @@ extern void swi_seed_leap_table(swe_ctx *ctx);
 extern void swi_seed_dt_table(swe_ctx *ctx);
 
 extern int swi_cutstr(char *s, char *cutlist, char *cpos[], int nmax);
+/* A date (or the seconds swe_utc_to_jd() refuses) for an error message, in
+ * s of SWI_JDSTR_LEN bytes */
+#define SWI_JDSTR_LEN	32
+extern char *swi_jd_str(double jd, int fdig, char *s);
 extern char *swi_right_trim(char *s);
 
 extern double swi_kepler(double E, double M, double ecce);

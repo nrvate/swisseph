@@ -277,7 +277,7 @@ check: check-version check-threadshim check-jplreal check-golden check-golden-O2
        check-sunrace check-glprace check-cfgleak check-jplguard \
        check-threads-workaround check-threads \
        check-ctx check-jplcalc check-bridge check-winmacros check-threadtiers \
-       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-eopload \
+       check-build check-ephe-ci check-samples check-dtmemo check-dtobs check-fictlt check-obliq check-nutgrid check-sidnod check-spicarv check-fictstar check-eopload check-housecusps check-firstset check-fbshare check-cfghold check-eclnutspeed check-missfile check-refusedfile check-hdrbound check-hposinhouse check-gauqflags check-sidplanehouses check-fictnakshatra check-helmemo check-nutspeed check-belowsea check-topopole check-hellt check-eopfollow check-datemsg check-eclnutbody check-sidtimeera \
        check-firstcall check-pedantic check-jplswap check-ctxfiles check-compat \
        check-hostile
 
@@ -357,10 +357,87 @@ obliq: obliq.c $(SWEOBJ_STD)
 nutgrid: nutgrid.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
+# -O2, as a release is built: a cost measured at -O0 says little about it.
+nutspeed: nutspeed.c $(SWEOBJ_O2)
+	$(CC) $(CFLAGS_O2) $(WARNFLAGS) $^ -o $@ $(LIBS)
+
 sidnod: sidnod.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 spicarv: spicarv.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+fictstar: fictstar.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+housecusps: housecusps.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+firstset: firstset.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+fbshare: fbshare.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+cfghold: cfghold.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+eclnutspeed: eclnutspeed.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+missfile: missfile.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+refusedfile: refusedfile.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+hdrbound: hdrbound.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+# G40 under the sanitizers, where a removed bound shows as a diagnosed
+# overflow (ASan) or as the arithmetic before it (UBSan: a segment index of
+# inf, an int32 offset overflow), not as silent corruption. Not part of
+# check.
+hdrbound_asan: hdrbound.c $(SWEOBJ_ASAN)
+	$(CC) $(CFLAGS) -fsanitize=address $^ -o $@ $(LIBS)
+
+hdrbound_ubsan: hdrbound.c $(SWEOBJ_UBSAN)
+	$(CC) $(CFLAGS) $(UBSANFLAGS) $^ -o $@ $(LIBS)
+
+hposinhouse: hposinhouse.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+gauqflags: gauqflags.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+sidplanehouses: sidplanehouses.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+fictnakshatra: fictnakshatra.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+helmemo: helmemo.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+belowsea: belowsea.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+hellt: hellt.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+topopole: topopole.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+eopfollow: eopfollow.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+datemsg: datemsg.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+eclnutbody: eclnutbody.c $(SWEOBJ_STD)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+sidtimeera: sidtimeera.c $(SWEOBJ_STD)
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 # G22: reorder(), swejpl.c's byte-swapping path, which measured 0.00% --
@@ -416,14 +493,14 @@ check-jplhor: jplhor
 	 env -u SE_EPHE_PATH ./jplhor $(JPLHOR_DIR) $(JPLHOR_BARE) "$$jf"
 	@rm -rf $(JPLHOR_DIR) $(JPLHOR_BARE)
 
-# G24: the SWE_UPSTREAM_COMPAT switch that lets G8 stay strict.
+# G24: the SWE_UPSTREAM_COMPAT switch that keeps G8's record short.
 #
-# G8 compares against pristine upstream byte for byte, which only works while
-# the fork's deliberate numerical fixes can be switched off for that one
-# build. This asserts the switch in both directions -- the shipped default
-# must NOT carry the defects, and the compat build MUST -- because a switch
-# that has quietly stopped restoring them leaves G8 passing while a fix
-# silently stops shipping.
+# G8 builds the fork with the switch, so the fixes through ts.19 answer as
+# pristine upstream there and G8 records only the later ones. This asserts
+# the switch in both directions -- the shipped default must NOT carry the
+# defects, and the compat build MUST -- because a switch that has quietly
+# stopped restoring them leaves G8 passing while a fix silently stops
+# shipping.
 #
 # Its own object set: the flag changes behaviour, so it cannot share
 # $(SWEOBJ_STD) with everything else.
@@ -494,10 +571,17 @@ check-fictlt: fictlt
 check-obliq: obliq
 	@env -u SE_EPHE_PATH ./obliq
 
-# G29: the default nutation is full IAU 2000A, and its quarter-day grid
-# reproduces the direct series within 0.05 uas. Moshier, no files.
+# G29: the default nutation is full IAU 2000A, and its grid (day-apart nodes,
+# septic Hermite) reproduces the direct series within 0.05 uas. Moshier, no
+# files.
 check-nutgrid: nutgrid
 	@env -u SE_EPHE_PATH ./nutgrid
+
+# G46: the default nutation costs about what IAU 2000B did, at hourly, daily
+# and scattered spacings alike (a ratio to 2000B, so machine speed cancels).
+# Moshier, no files.
+check-nutspeed: nutspeed
+	@env -u SE_EPHE_PATH ./nutspeed
 
 # G30: swe_nod_aps() sets SEFLG_NONUT for a sidereal call, as swe_calc()
 # does, so a sidereal node or apsis is the mean ecliptic of date less the
@@ -509,6 +593,173 @@ check-sidnod: sidnod
 # line carrying SIMBAD's. Moshier; writes and removes .spicarv.d.
 check-spicarv: spicarv
 	@env -u SE_EPHE_PATH ./spicarv
+
+# G32: a malformed seorbel.txt line -- a character no element term has, a
+# non-numeric epoch or equinox, an empty field, too few fields, a power after
+# T outside 1 to 4 -- or a broken sefstars.txt is refused with a message
+# naming the file, line and field, in bounded time (a 5 s alarm per case: the
+# term reader used to loop for ever), and the other bodies and the built-in
+# stars answer. Crafted copies in /tmp.
+check-fictstar: fictstar
+	@env -u SE_EPHE_PATH ./fictstar $(EPHE)
+
+# G33: the cusps and speeds a house call answers: Placidus and Gauquelin
+# cusps converged, the speed of a cusp on an equinox point, RADIANS speeds in
+# radians, sidereal Makransky Sunshine not Treindl's, Sunshine houses without
+# the Swiss files and with the caller's ephemeris, no stale Gauquelin cusps
+# after the Porphyry fallback.
+check-housecusps: housecusps
+	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./housecusps $(EPHE)
+
+# G34: a setting made before the first calculation stays set, and the first
+# heliacal call after a setter works. Every setter and heliacal entry point,
+# each in a forked pristine process: after swe_set_ephe_path(), as the very
+# first call (SE_EPHE_PATH), after swe_close() and re-open, against the same
+# in a context warm from a calculation.
+check-firstset: firstset
+	@env -u SE_EPHE_PATH ./firstset $(EPHE)
+
+# G35: swe_set_ephe_fallback() reaches another thread on the default
+# context, set before or after it starts, SE_EPHE_FALLBACK unset or set --
+# read back, and a Swiss Mars without its file refused or answered from
+# Moshier by it; an explicit context keeps its own.
+check-fbshare: fbshare
+	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./fbshare $(EPHE)
+
+# G36: a call on the default context takes the configuration in effect at
+# its entry and finishes with it: a setter another thread calls while it
+# runs is not adopted half-way (swi_config_hold() at every public entry),
+# and a new thread's first call sees what the main thread set. The file a
+# call reads between its entry and its nested syncs (seorbel.txt,
+# sefstars.txt, swe_deltat.txt) is a FIFO the main thread fills only after
+# the setter, so no timing is involved.
+CFGHOLD_DIR = .cfghold
+check-cfghold: cfghold
+	@rm -rf $(CFGHOLD_DIR) && mkdir -p $(CFGHOLD_DIR)
+	@env -u SE_EPHE_PATH ./cfghold $(EPHE) $(CFGHOLD_DIR)
+	@rm -rf $(CFGHOLD_DIR)
+
+# G37: SE_ECL_NUT answers the same, slot by slot, with no speed flag,
+# SEFLG_SPEED and SEFLG_SPEED3: no three-position speed over its angles, no
+# stale speed slots.
+check-eclnutspeed: eclnutspeed
+	@env -u SE_EPHE_PATH ./eclnutspeed $(EPHE)
+
+# G38: a Swiss file missing whose neighbour does not hold the instant falls
+# back as a missing file does -- no NaN, no stale Moon, a warm context
+# answering as a fresh one. Its directories are links in /tmp.
+check-missfile: missfile
+	@env -u SE_EPHE_PATH ./missfile $(EPHE)
+
+# G39: a Swiss file that is refused -- under another bucket's name, or with
+# a segment that cannot be read -- is closed and cleared alone: the other
+# open files keep their constants, and the path setter survives a refused
+# moon file. Its directories are links and copies in /tmp.
+check-refusedfile: refusedfile
+	@env -u SE_EPHE_PATH ./refusedfile $(EPHE)
+
+# G40: a value read from an ephemeris file's header -- a body number, a
+# coefficient count, a segment length, an index offset, a JPL sub-interval
+# count -- or from the delta-psi table is checked against what it indexes
+# before it is used; the file is refused, alone, and every other answer
+# stays. Crafted copies in /tmp.
+check-hdrbound: hdrbound
+	@env -u SE_EPHE_PATH ./hdrbound $(EPHE)
+
+# G41: swe_house_pos() puts every system's cusps at their numbers and its
+# places in their houses, north and south of the equator and on it:
+# Sripati's houses 12 and 1, the horizon houses south of the equator.
+check-hposinhouse: hposinhouse
+	@env -u SE_EPHE_PATH ./hposinhouse $(EPHE)
+
+# G42: a Gauquelin sector is the body's place on its diurnal circle: with
+# SEFLG_SIDEREAL, a frame or form flag (NONUT, ICRS, J2000, EQUATORIAL,
+# RADIANS, XYZ) or a centre (HELCTR, BARYCTR) methods 0 and 1 answer the
+# call without it, and with a direction flag the place's own sector.
+check-gauqflags: gauqflags
+	@env -u SE_EPHE_PATH ./gauqflags $(EPHE)
+
+# G43: the sidereal houses of the ecliptic of t0 and the solar system plane
+# (and the J2000, J1900 and B1950 modes): ascmc[2] the ARMC, whole signs at
+# sidereal sign starts, no step at t0, ascmc[8] 0.
+check-sidplanehouses: sidplanehouses
+	@env -u SE_EPHE_PATH ./sidplanehouses $(EPHE)
+
+# G44: the built-in fictitious elements, with no seorbel.txt on the path, are
+# seorbel.txt's (Kronos' semi-axis 64.81690, not 64.81960); and
+# swe_split_deg()'s nakshatras are shifted by 3 deg 20' for the Sheoran
+# ayanamsa alone, not for SE_SIDM_USER, whose 255 passed the bit-mask test.
+check-fictnakshatra: fictnakshatra
+	@env -u SE_EPHE_PATH ./fictnakshatra $(EPHE)
+
+# G45: the heliacal memos answer only for what they hold:
+# swe_vis_limit_mag(), swe_heliacal_pheno_ut() and swe_heliacal_ut() in one
+# sequence alternating the atmosphere, eye height, latitude, flags,
+# ephemeris, delta T, swe_close() and star catalogue, against each request
+# in a fresh process; and the four star functions answer Sirius from the
+# catalogue on the path after swe_close() and a path change.
+check-helmemo: helmemo
+	@env -u SE_EPHE_PATH ./helmemo $(EPHE)
+
+# G47: a site below sea level has the dip of sea level, 0: refraction,
+# swe_azalt() and the rising and setting with the horizon at the dip are
+# numbers, as at 0 m.
+check-belowsea: belowsea
+	@env -u SE_EPHE_PATH ./belowsea $(EPHE)
+
+# G48: the topocentric observer turns about the true pole of date: the
+
+# G49: a heliocentric light time is measured from the Sun on every pass of
+# its iteration, for planets and fictitious bodies alike. The reference is
+# B(t - tau) - S(t) from the library's own geometric positions; SWIEPH from
+# $(EPHE) and JPLEPH from its de200.eph, so no fixture beyond ephe/.
+check-hellt: hellt
+	@env -u SE_EPHE_PATH ./hellt $(EPHE)
+
+# G49: the topocentric observer turns about the true pole of date: the
+# geocentric minus the topocentric geometric Moon is the site built from
+# the geodetic coordinates and the apparent sidereal time, to 5 cm.
+# Moshier, no files.
+check-topopole: topopole
+	@env -u SE_EPHE_PATH ./topopole
+
+# G50: SEFLG_JPLHOR without the IERS corrections -- on de200, a second thread
+# or a context that never loaded them, a directory without
+# eop_1962_today.txt or with one that breaks off -- answers as
+# SEFLG_JPLHOR_APPROX, as swe_calc() takes it, from the ayanamsa, the
+# sidereal houses and the Gauquelin sectors, which read the missing table and
+# crashed (eopload.c's synthetic DE431 header, with corrections the test
+# writes in $TMPDIR or /tmp).
+check-eopfollow: eopfollow
+	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./eopfollow $(EPHE)
+
+# G51: a date far outside a range (from 1e188 days, and seconds from 1e232)
+# is named in a message that fits the 256 bytes of serr and keeps the range
+# with it; the Moshier and JPL refusals and swe_utc_to_jd()'s "invalid time"
+# overran their buffers, and a date a little outside a range reads as ever.
+check-datemsg: datemsg
+	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./datemsg $(EPHE)
+
+# G52: swe_sidtime() reads no nutation that calc_nutation() left unwritten
+# (a nutation model it does not know) -- which only gcc's -O3 inlining shows
+# as a warning, the stack slot in a run holding a pointer's bits -- and
+# SE_ECL_NUT, which is swe_calc()'s obliquity and nutation and no body, is
+# refused by the rise and set, the Gauquelin sector, the occultation, centre
+# and crossing functions instead of answered, read out of bounds or searched
+# for ever.
+check-eclnutbody: eclnutbody
+	@$(CC) -std=c17 -O3 -Wall -Wextra -Werror -D_GNU_SOURCE -I.. -c ../swephlib.c -o /dev/null
+	@echo "  swephlib.c at -O3: no nutation read unwritten"
+	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./eclnutbody $(EPHE)
+
+# G53: the default sidereal time is the Earth rotation angle plus the
+# precession in right ascension at every date: delta t moves it only at the
+# precession rate, it is continuous at 1850 and 2050 under any models and
+# where its table and its integral end, it lies on a straight line over
+# consecutive JDs, and a call at any date, NaN and inf included, returns in
+# bounded time (a 10 s alarm each). Moshier, no files.
+check-sidtimeera: sidtimeera
+	@env -u SE_EPHE_PATH ./sidtimeera
 
 check-dtmemo: dtmemo
 	@rm -rf $(DT_DIR) && mkdir -p $(DT_DIR)
@@ -613,18 +864,18 @@ check-ephe-ci: golden jplcalc jplreal baseline.txt
 	@echo "G16 PASS"
 
 clean:
-	rm -f dtobs fictlt obliq nutgrid sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt
+	rm -f eclnutspeed dtobs fictlt obliq nutgrid sidnod spicarv fictstar .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err jplcalc jplreal orderprobe .build.log .jplcalc.txt .jplcalc.err .out-min.txt .jplcalc-min.txt .jplcalc-min.txt.err bench ctxtest jplguard cfgleak threadshim threadshim_tsan .ts_cfg golden golden_O2 golden_tsan sunrace sunrace_tsan glprace glprace_tsan .out.txt .out_O2.txt .setest_now.txt housecusps firstset fbshare cfghold missfile refusedfile hdrbound hdrbound_asan hdrbound_ubsan hposinhouse gauqflags sidplanehouses fictnakshatra helmemo nutspeed belowsea topopole hellt eopfollow datemsg eclnutbody sidtimeera
 	@# golden --threads captures each worker through a temp file and removes
 	@# it; these only survive a crash. golden_* are the SE_DUMP output.
 	rm -f .golden_capture_*.tmp golden_ref.txt golden_thr*.txt
 	rm -rf dtmemo $(DT_DIR) eopload $(EOP_DIR) firstcall jplswap $(JPLSWAP_DIR)
 	rm -rf ctxfiles $(CTXF_DIR) $(CTXF_BARE) compat_default compat_upstream $(OBJ_COMPAT)
-	rm -rf jplhor $(JPLHOR_DIR) $(JPLHOR_BARE)
+	rm -rf jplhor $(JPLHOR_DIR) $(JPLHOR_BARE) $(CFGHOLD_DIR)
 	@# The per-flavour object sets and their .d files. Left behind, a
 	@# `make clean` did not actually get you a clean build.
 	rm -rf $(OBJ_STD) $(OBJ_O2) $(OBJ_ASAN) $(OBJ_TSAN) $(OBJ_UBSAN) hostile
 
-.PHONY: setest-ref check-setest check-threadshim check-threadshim-all \
+.PHONY: setest-ref setest-record check-setest check-threadshim check-threadshim-all \
         check-threadshim-tsan all baseline check check-all check-version check-golden check-golden-O2 check-sunrace check-sunrace-tsan \
         check-glprace check-cfgleak check-jplguard check-threads check-threads-workaround \
         check-build check-ctx check-jplcalc check-threadtiers check-bridge check-ephe-ci \
@@ -815,7 +1066,7 @@ check-threadtiers: baseline.txt
 	  pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
-	rm -f dtobs fictlt obliq nutgrid sidnod spicarv .spicarv.d .pedantic.err samples_obama samples_mini .samples.txt .tiergolden* .tier*.txt .tier*.err; \
+	rm -f .tiergolden* .tier*.txt .tier*.err; \
 	[ $$rc -eq 0 ] && echo "PASS" || { echo "G11 FAIL"; exit 1; }
 
 # G10: numerical regression coverage for the JPL reader.
@@ -897,10 +1148,13 @@ check-build:
 # library's sixth default landed on the canary. Fixed in our copy of the
 # harness, which setest-ref copies over the reference tree too.
 #
-# It IS a strong DIFFERENTIAL gate: whatever it prints must be byte-identical
-# before and after our changes. Usage:
+# It IS a strong DIFFERENTIAL gate: the testcases whose output differs
+# between upstream's library and ours must be exactly those recorded in
+# setest-upstream.baseline, each with the UPSTREAM-BUGS entries that move it
+# (setestcases.py says why testcases and not values). Usage:
 #     make setest-ref REF=origin/legacy-master   # capture reference once
 #     make check-setest               # compare current tree against it
+#     make setest-record              # after a fix that moves testcases
 SETEST_REF ?= /tmp/setest_ref.txt
 REF        ?= origin/legacy-master
 
@@ -929,13 +1183,11 @@ SCRUB = sed -f $(CURDIR)/scrub-ephe.sed
 #
 # Pinned to -O0 for the same reason tests/baseline.txt is: a differential is
 # only meaningful when the only variable is the code.
-# -DSWE_UPSTREAM_COMPAT: build the library the way upstream behaves, so this
-# gate can stay a STRICT byte-for-byte differential even though the fork has
-# deliberately fixed numerical defects. Without it the choice was to filter
-# the affected testcases -- 15 of them across four suites, which hollows the
-# gate out -- or to re-baseline against ourselves and lose the upstream
-# comparison. See sweph.h for what the switch restores, and check-compat,
-# which fails if it ever stops restoring it.
+# -DSWE_UPSTREAM_COMPAT: the fixes through ts.19 sit behind the switch, and
+# the build answers as upstream for them, so they need no record. From ts.20
+# a fix has no switch; the testcases it moves are recorded instead. See
+# sweph.h for what the switch restores, and check-compat, which fails if it
+# ever stops restoring it.
 SETEST_CFLAGS = -O0 -g -fPIC -D_GNU_SOURCE -DSWE_UPSTREAM_COMPAT
 
 setest-ref:
@@ -975,6 +1227,15 @@ check-setest: $(SETEST_REF)
 	 if [ $$lines -lt $(SETEST_MINLINES) ]; then \
 	   echo "G8 FAIL: setest produced only $$lines lines -- it did not run"; \
 	   head -3 .setest_now.txt; exit 1; fi
-	@diff -q $(SETEST_REF) .setest_now.txt >/dev/null \
-	  && echo "G8 PASS: setest output identical to $(REF) ($$(wc -l < .setest_now.txt) lines)" \
-	  || { echo "G8 FAIL: setest output changed"; diff $(SETEST_REF) .setest_now.txt | head -20; exit 1; }
+	@python3 setestcases.py check setest-upstream.baseline $(SETEST_REF) .setest_now.txt \
+	  && echo "G8 PASS: setest differs from $(REF) where setest-upstream.baseline says" \
+	  || { echo "G8 FAIL: see above; after a deliberate change, make setest-record"; exit 1; }
+
+# Rewrite setest-upstream.baseline from the last check-setest run: its lines
+# kept, a new testcase marked '?' until the change that moved it names its
+# UPSTREAM-BUGS entry (check-setest fails while one is unnamed).
+setest-record: $(SETEST_REF)
+	@test -s .setest_now.txt || { echo "run make check-setest first"; exit 1; }
+	@python3 setestcases.py record setest-upstream.baseline $(SETEST_REF) .setest_now.txt > .setest_record.txt
+	@mv .setest_record.txt setest-upstream.baseline
+	@echo "setest-upstream.baseline: $$(grep -vc '^#' setest-upstream.baseline) testcases, $$(grep -c ' ?$$' setest-upstream.baseline) unexplained"

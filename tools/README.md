@@ -8,6 +8,7 @@ re-run and checked, not because they are good.
 |---|---|
 | `fnmap.py FILE [LINE...]` | maps a line number to its enclosing top-level function |
 | `cfgmap.py FIELD...` | for each `swed.<FIELD>`, lists the functions that write and read it |
+| `gen_nut_sparse.py` | writes `swenut2000a_sparse.h`, the nonzero multipliers of each IAU 2000A term, from `swenut2000a.h`; run from the root. Not analysis: its output is compiled in, and the nutspeed gate checks it against the tables |
 
 ## Read this before trusting the output
 

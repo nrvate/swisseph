@@ -54,6 +54,32 @@ worst were in code that had never executed even once.
 | 16 | `swe_pheno(SE_ECL_NUT)` indexes two tables with -1 | Memory | `swecl.c` |
 | 17 | `ipl * 100` overflows int32 for a large negative body number | Robustness | `sweph.c` |
 | 18 | Changing delta t does not invalidate the cached topocentric observer | Correctness | `swephlib.c`, `sweph.c` |
+| 19 | A fictitious body's position depends on SEFLG_SPEED | Correctness | `sweph.c` |
+| 20 | A geocentric fictitious body mixes the dynamical and ICRS frames | Correctness | `swemplan.c`, `sweph.c` |
+| 21 | A sidereal node or apsis carries the nutation in longitude | Correctness | `swecl.c` |
+| 22 | The built-in Spica record's radial velocity is a stale catalogue value | Data | `sweph.c` |
+| 23 | A bad `seorbel.txt` field hangs `swe_calc()`, terms such as "T5" or ".0" are misread, a broken `sefstars.txt` is reported as "star not found" | Correctness / Robustness | `swemplan.c`, `sweph.c` |
+| 24 | Seven house defects: Placidus and Gauquelin cusps not converged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files, Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the speed of a cusp on an equinox point | Correctness | `swehouse.c` |
+| 25 | A setting made before the first calculation is lost; the first heliacal call after a setter fails | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c` |
+| 26 | `swe_set_ephe_fallback()` is never seen by another thread or a new context | Correctness | `sweconfig.c`, `sweph.c` |
+| 27 | A call on the default context adopts another thread's setter half-way through: its files closed under it, two configurations in one answer | Crash / Correctness | `sweconfig.c`, every public calculation |
+| 28 | `swe_calc(SE_ECL_NUT)` with a speed flag differences its angles as a position, reads two doubles never written, and copies stale speed slots | Memory / Correctness | `sweph.c` |
+| 29 | A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read (this fork's) | Correctness | `sweph.c` |
+| 30 | A refused Swiss file empties the constants of every file left open; the path setter crashes on a refused moon file | Correctness / Memory | `sweph.c` |
+| 31 | Values read from an ephemeris file's header and from the delta-psi and fixed-star tables index and size arrays unchecked | Memory | `sweph.c`, `swejpl.c` |
+| 32 | `swe_house_pos()` answers a place in the wrong house: Sripati 1.0 for all of house 12 and half of house 1, the horizon system counted backwards south of the equator | Correctness | `swehouse.c` |
+| 33 | `swe_gauquelin_sector()` methods 0 and 1 moved by SEFLG_SIDEREAL (2.6 sectors) and by the frame, form and centre flags (up to 18.4 sectors) | Correctness | `swecl.c` |
+| 34 | Sidereal houses on the ecliptic of t0 and the solar system plane (J2000, J1900, B1950 always): ascmc[2] the auxiliary ARMC, whole signs off the sidereal signs, a step of 2 dpsi at t0, ascmc[8] not 0 | Correctness | `swehouse.c` |
+| 35 | Kronos' built-in semi-axis has two digits swapped, the Kepler solver's starting guess is wrong, and the nakshatras of `swe_split_deg()` are shifted for `SE_SIDM_USER` | Correctness | `swemplan.c`, `swephlib.c`, `sweph.c` |
+| 36 | The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold | Correctness | `swehel.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
+| 37 | The default nutation (full IAU 2000A) costs 12 to 100 times IAU 2000B's when the calls are a day or more apart: transit, station and return scans, lists of unrelated charts (this fork's) | Performance | `swephlib.c` |
+| 38 | `calc_dip()` is NaN below sea level: `swe_rise_trans_true_hor()` with horhgt -100 answers two hours after the start, `swe_refrac_extended()` never converts an apparent altitude, `swe_azalt()` refracts a body below the horizon | Correctness | `swecl.c` |
+| 39 | The topocentric observer is placed about the mean pole of date, not the true pole: 200-270 m on the observer, 0.10-0.15" on the topocentric Moon | Correctness | `sweph.c` |
+| 40 | A heliocentric light time is measured from the barycentre on its second pass, not from the Sun: up to 0.84" on Mercury, 2.6" on a fictitious body inside its orbit | Correctness | `sweph.c` |
+| 41 | `swe_get_ayanamsa_ex()`, the sidereal houses and `swe_gauquelin_sector()` with SEFLG_JPLHOR and no IERS corrections loaded read the corrections' table, NULL, and crash | Crash | `swephlib.c`, `swecl.c` |
+| 42 | The refusals of a date outside a range write its digits in full into 256 bytes: from \|J\| about 1e188 days the message overruns its buffer or the caller's serr | Memory | `swemplan.c`, `swemmoon.c`, `swejpl.c`, `swedate.c`, `swecl.c`, `swephlib.c` |
+| 43 | `swe_sidtime()` reads a nutation `calc_nutation()` left unwritten; SE_ECL_NUT is taken for a body by the rise and set, the Gauquelin sectors, the occultations, `swe_calc_pctr()` and `swe_helio_cross()`, and reads `pla_diam[-1]` | Memory / Correctness | `swephlib.c`, `swecl.c`, `sweph.c` |
+| 44 | The default sidereal time steps 1.908" at 2050 and 0.097" at 1850, and outside 1850-2050 it follows delta t: +328" at year 0, +2379" at -3000 | Correctness | `swephlib.c` |
 
 ---
 
@@ -1326,6 +1352,1119 @@ the same differenced distance rate to 1e-9 AU/day; with the old value it
 fails by 2.49e-3. The other built-in records (Revati, Pushya, Mula) were
 compared with SIMBAD the same day: Pushya's radial velocity and Mula's are
 current, and Revati (zeta Psc) has no radial velocity in SIMBAD to compare.
+
+## 23. A bad `seorbel.txt` field hangs `swe_calc()`, terms such as "T5" or ".0" are misread, and a broken `sefstars.txt` is reported as "star not found"
+
+**Severity: Correctness (a hang; fictitious-body elements read wrongly without an error, Cupido 1.0° off at J2000; the error that explains a failure lost; a wrong star answered OK)**
+**Where:** `swemplan.c`: `check_t_terms()`, `read_elements_file()`; `sweph.c`: `swe_fixstar2_r()`, `swe_fixstar2_mag_r()`, `load_all_fixed_stars()`, `swi_fixstar_load_record()`
+
+An element field of `seorbel.txt` is a sum of terms, each a product of
+numbers and powers of T. `check_t_terms()` reads it, and:
+
+- a character that is none of sign, blank, `*`, T, digit or point ("12x",
+  "40.99837e0", "0.0046q", "171.4333 * x", "nan") was consumed by no branch
+  and the loop came back to it for ever: `swe_calc()` for that body never
+  returned, in any of the six fields;
+- the power after T was `atoi()`: "T5" to "T9" (and "T12") were ignored, so
+  "163.7409 + 1 * T5" read as 164.7409, "T0" read as T, and "T 2" (`atoi()`
+  skips blanks) as T2 times 2;
+- a number was taken only if `atof()` was not 0 or it began with '0', so
+  ".0" was skipped and the term read with factor 1 ("163.7409 + .0 * T" as
+  "+ T", Cupido 1.0° off at J2000), and "1.2.3" read as 1.2;
+- an empty field was the value 0.
+
+`read_elements_file()` read the epoch and equinox with `atof()` ("2451545.0abc"
+as 2451545, an empty field as JD 0), and a line with fewer than nine fields
+stopped the scan, so every body after it was refused too ("name not found"
+for Hades when Cupido's line was cut).
+
+In `sefstars.txt`, `swe_fixstar2()` and `swe_fixstar2_mag()` dropped
+`load_all_fixed_stars()`'s return: a catalogue line that does not parse, or no
+catalogue, was reported only as "could not find star name aldebaran". A load
+that failed part way kept its table, and the next call's load dropped the
+pointer to it. `swe_fixstar()` and `swe_fixstar_mag()` with `serr` NULL
+answered a star that is not there with the file's last (Gliese 710).
+
+**Fix, as done here:** `check_t_terms()` refuses a field when a pass consumes
+nothing (exactly the case that looped), when it is empty, when a power after T
+is not 1 to 4 ("T0", "T5", "T2.5"; T alone is T1), and when a run of digits
+and points is not one number (".", "1.2.3"); a number is its value by
+`strtod()`. The epoch and equinox are a whole finite number or a name. A short
+line refuses its own body only. All refusals name the file, the line and the
+field ("error in file seorbel.txt, line      28: mean anomaly value
+invalid"). A star not found after the catalogue failed to load is reported
+with the load's error first ("data of star 'Atest,alTes' incomplete; error,
+swe_fixstar(): could not find star name aldebaran"); the reload frees the
+partial table; the record reader returns ERR with `serr` NULL. Every body of
+the distributed `seorbel.txt` (six instants and its names), catalogue stars
+1 to 1141 through `swe_fixstar2()` and `swe_fixstar2_mag()`, and lines 1 to
+1210 through `swe_fixstar()` and `swe_fixstar_mag()` are bit for bit as
+before. G32 `tests/fictstar.c`: 20 cases in child processes under a 5 s alarm.
+
+## 24. Seven house defects: Placidus and Gauquelin cusps not converged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files, Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps after the Porphyry fallback, the speed of a cusp on an equinox point
+
+**Severity: Correctness (up to 1.1e-5 deg on a Placidus cusp; 57.3 times on every RADIANS speed; 41 deg on sidereal Makransky cusps; ERR and Porphyry, 16.7 deg off, for Sunshine houses without files; 6e-6 deg on a Sunshine declination; 24 cusps and 24 speeds left as the caller had them; up to 427 deg/day on a cusp speed at one instant)**
+**Where:** `swehouse.c`: `CalcH()` (Placidus, Gauquelin), `swe_houses_ex2_r()`, `swe_houses_r()`, `swe_houses_armc_ex2_r()`, `sidereal_houses_trad()`
+
+1. The Placidus and Gauquelin cusp is the fixed point of C = Asc1(ra,
+f(C)), iterated until two cusps lie within 1/360000 deg. The last step
+is the error times the iteration's contraction, so the cusp stayed off
+the fixed point by 1.4e-9 deg at 30-40N, 1.8e-8 at 40-50N, 1.3e-7 at
+55-60N, 6.2e-7 at 63-65N, 1.3e-6 at 65-66N and 1.1e-5 within 0.01 deg of
+the polar circle (Placidus and Gauquelin, scanned over ARMCs 7.3 deg apart). The
+cusps of consecutive instants differ by the rate of that error, so a
+speed taken from differences of the returned cusps is off by it.
+2. With `SEFLG_RADIANS`, `swe_houses_ex2()` turned the cusps and ascmc to
+radians and left `cusp_speed` and `ascmc_speed` in deg/day: 57.3 times
+the radian rate.
+3. `sidereal_houses_trad()` took `toupper()` of the house system, so
+sidereal Makransky Sunshine (`'i'`, the one lower-case system the tropical
+path dispatches; the others are upcased with a deprecation warning)
+computed Treindl's `'I'`: 41 deg apart at worst at 60S.
+4. Sunshine houses need the Sun's declination, from `swe_calc_ut()`. With
+no Swiss files for the date, and the ephemeris fallback off (this fork's
+default), it refuses; the houses went to Porphyry and returned ERR (16.7
+deg from the Sunshine cusps), `ascmc[9]` 0.
+5. `swe_houses_ex2_r()` asked the Sun's declination with no ephemeris
+flag, so a `SEFLG_MOSEPH` (or `SEFLG_JPLEPH`) call got the Swiss
+ephemeris' Sun whatever the caller chose: at 2026-07, 47N, the declination
+23.026219549 against Moshier's 23.026225558 (6.0e-6 deg; the cusps 3.8e-6
+deg). `swe_houses_r()` has no `iflag`, so there is nothing to pass there.
+6. A Gauquelin call (36 cusps) that fell back to Porphyry (within the
+polar circle, a negative return) has 12 cusps. Cusps 13..36 and their
+speeds stayed as the caller had them, and with `SEFLG_RADIANS` the
+conversion multiplied them anyway: at 80N arrays prefilled with 7 came
+back 7 in degrees and 0.1222 in radians, 24 cusps and 24 speeds each. In
+the sidereal calls the ayanamsa was subtracted from them as well.
+`swe_houses_r()` and `swe_houses_armc_ex2_r()` left them the same way.
+7. In the Placidus and Gauquelin branches, when the first-guess cusp is on
+the equator (|tan dec| < 1e-10, the cusp at an equinox point; cusps 11, 12,
+2, 3 and sectors 2..9, 29..36) the cusp is the right ascension and its
+speed was set to the ARMC's, 360.99 deg/day. The cusp moves at A_x, the
+rate of Asc1 in the right ascension at the pole height m tan(fi) that the
+semi-arc fraction m gives there (the pole height has a zero derivative on
+the equator): 415 to 788 deg/day at 47N and 60N, up to 427 deg/day from
+what the ARMC's rate gave.
+
+**Fix, as done here:** (1) The stopping step is 1e-12 deg, with an Aitken
+step once the steps are below 1e-3 deg and shrinking by less than 0.9 (the
+remaining error is d r / (1 - r)): about one evaluation of the map more
+per cusp. Plain steps down to 1e-12 would exhaust the 100 iterations a few
+hundred metres short of the polar circle, where the old stop still
+answered; the Aitken step keeps the answers: of 242190 Placidus and
+Gauquelin calls over the last 0.02 deg of latitude before the circle, 9
+(within 65 m of it) go to Porphyry that did not, against 303 with Aitken
+limited to ratios below 0.5. Elsewhere no call changes between OK and
+Porphyry.
+(2) The speeds are converted with the positions. (3) `'i'` is kept as is
+for the call inside, as the tropical path does. (4) and (5) One
+function asks the Sun with the caller's `SEFLG_JPLEPH`, `SEFLG_SWIEPH` and
+`SEFLG_MOSEPH` bits and, on a refusal, again from Moshier: the declination
+is an input to the houses, not an ephemeris position the caller asked for,
+and Moshier's is 0.1" off (cusps 3.8e-6 deg from the Swiss-file call).
+(6) A Gauquelin return below zero zeroes cusps and speeds 13..36 in
+`swe_houses_armc_ex2_r()` (so `swe_houses_r()` and the tropical
+`swe_houses_ex2_r()` too), and the three sidereal paths then keep the 12
+Porphyry cusps only, as that function does, so that they do not subtract
+the ayanamsa from the zeros. (7) The speed is A_x * ARMCS at pole height
+atan(m tan fi).
+
+G33 `tests/housecusps.c`: the cusps of Placidus 11, 12, 2, 3 and
+Gauquelin sectors 2..9, 29..36 satisfy their defining condition (the right
+ascension at the fraction of the cusp's own semi-arc) to 1.1e-13 deg at 47N,
+60N and 65N over 24 ARMCs (3.0e-7 before); the 12 equinox-point cusps are
+within 6.5e-8 deg/day of five-point differences (427 deg/day before);
+RADIANS speeds are the degree speeds times pi/180 to 3.2e-18 (0.98
+before); sidereal `'i'` is the tropical cusps less the ayanamsa (41 deg off
+before); Sunshine houses are OK without files and agree with the
+Swiss-file call to 3.8e-6 deg (ERR, 16.7 deg off before); the MOSEPH call's
+`ascmc[9]` is Moshier's Sun to 1e-12 (the Swiss one before); 0 of 96
+entries 13..36 stale in each of four kinds of call and 0 of 72 from
+`swe_houses_r()` and `swe_houses_armc_ex2_r()` (all stale before).
+
+## 25. A setting made before the first calculation is lost, and the first heliacal call after a setter fails
+
+**Severity: Correctness (a failed call; a lost setting: 22.6 s of delta t, 158 s of delta t in AD 1000, 0.9 deg of refraction)**
+**Where:** `sweconfig.c`, `swi_config_publish()` and `swi_config_reset()`; `swehel.c`, the observer set by `swe_vis_limit_mag()`, `swe_heliacal_pheno_ut()`, `swe_heliacal_ut()` and `Magnitude()`; `swephlib.c`, `swe_set_tid_acc()`, `swe_set_delta_t_userdef()`, `swe_set_interpolate_nut()`; `swecl.c`, `swe_set_lapse_rate()`
+
+On the process-wide default context, `swe_set_ephe_path()` and then
+`swe_vis_limit_mag()` returned ERR, "geographic position has not been
+set", at any instant; the same call again worked, and after any other
+setter, or `swe_close()` and re-open, the next one failed again. So did
+`swe_heliacal_pheno_ut()`. Three causes:
+
+- The fork's shared configuration master started, and `swe_close()`
+  re-armed it, as zeros. A setter merges in its own group only, so the
+  first sync after it adopted every group the context had not claimed as
+  zeros: an observer not set, a lapse rate of 0 for 0.0065, a tidal
+  acceleration of 0. After `swe_set_ephe_path()` alone the Sun from
+  2000 m, 15.75 min before its true rise, was refracted to -1.243 deg
+  where it is -2.215, 0.97 deg; `swe_ctx_new()` inherited the zeros too.
+- `swehel.c` set its observer for the call without syncing first, so the
+  first `swe_calc()` inside the call put the master's "not set" back.
+- `swe_set_tid_acc()`, `swe_set_delta_t_userdef()` and
+  `swe_set_interpolate_nut()` (upstream's too) and the lapse rate (a
+  context field in the fork) did not initialise the context, so set before
+  any calculation they were wiped by its first-use memset:
+  `swe_set_tid_acc(SE_TIDAL_DE200)` as the first call left -25.80, and
+  `swe_deltat()` in AD 1000 was 1463.43 s for 1305.30; a user delta t of
+  86.4 s read back 63.83; the interpolation was lost (8.6e-8 deg of
+  nutation); 0.05 K/m read as 0.0065 (0.90 deg).
+
+**Fix, as done here:** the first publish after a start or a reset fills
+the master with the defaults a fresh context has; `swehel.c` syncs before
+it sets its observer, as `swecl.c` does; the four setters initialise the
+context first. G34 `tests/firstset.c`: every setter and heliacal entry
+point, each in a forked pristine process, after `swe_set_ephe_path()`, as
+the very first call, and after `swe_close()` and re-open, against a warm
+context: 54 scenarios pass, 9 failed before.
+
+Not fixed here, upstream's too: a manual tidal acceleration is reset to
+automatic by every path change, including the implicit one at the first
+calculation when the files are named by `SE_EPHE_PATH`.
+
+## 26. `swe_set_ephe_fallback()` belongs to no configuration group, so another thread never sees it
+
+**Severity: Correctness (a Swiss request without its file refused where the setting allows Moshier, or answered from Moshier where it refuses)**
+**Where:** `sweph.c`, `swe_set_ephe_fallback()`, `swe_get_ephe_fallback()`, `swe_close()`; `sweconfig.c`
+
+The fork's own setting. Every other setter publishes its group to the
+shared configuration, which the other threads on the default context adopt
+at their next sync and a new context inherits; this one wrote the
+context's field and published nothing. With `SE_EPHE_FALLBACK` unset the
+main thread read 1 after `swe_set_ephe_fallback(1)` and a second thread 0,
+and the second thread's Swiss Mars at J2000 without `sepl_18.se1` returned
+-1 where the main thread's returned 4 (Moshier); with the variable set,
+`swe_set_ephe_fallback(0)` left the second thread on Moshier. A context made
+by `swe_ctx_new()` after the setting took the variable's value, and
+`swe_get_ephe_fallback()` as a thread's first call read the context before
+anything had started it: 0 with the variable set.
+
+**Fix, as done here:** the setting is the configuration group
+`SWI_CFG_FALLBACK`, captured, merged, adopted and inherited like the
+others, with no invalidation (the setter invalidates nothing). The master's
+default for it is the variable's, as a fresh context's is, so a setter of
+another group does not turn a thread strict. The getter initialises and
+syncs first. `swe_close()` keeps the context's ownership of the group, as
+it keeps the value. G35 `tests/fbshare.c`: 28 forked scenarios with a
+second thread and explicit contexts, the variable unset and set; 9 failed
+before.
+
+## 27. A call on the default context adopts another thread's setter half-way through
+
+**Severity: Crash (SIGSEGV in `swejpl.c`'s `state()`) and Correctness (wrong answers, no error)**
+**Where:** `sweconfig.c`, `swi_config_sync()`, new `swi_config_hold()`; the public functions that calculate, in `sweph.c`, `swecl.c`, `swehel.c`, `swehouse.c`, `swephlib.c` and `swedate.c`; `swephlib.c`, `swe_get_astro_models()`
+
+The fork's own. The default context adopts the shared configuration at
+`swi_init_swed_if_start()`, and one call passes it many times:
+`swe_calc_ut()` at its delta t and again at `swe_calc()`, a topocentric
+`swe_calc()` at the observer's delta t and sidereal time, a star at the
+Earth's `swe_calc()`, a search at every calculation it makes. A setter
+another thread called in between was adopted there: the files the call
+was reading were closed and its caches emptied, and the rest of the call
+ran on the new configuration. A topocentric JPL Jupiter by `swe_calc_ut()`
+while another thread switched `swe_set_jpl_file()` crashed on the closed
+file. Elsewhere one answer mixed two configurations: a sidereal
+`swe_mooncross_ut()` 5600 s off after `swe_set_sid_mode()`, sidereal houses
+0.883 deg, `swe_sol_eclipse_when_loc()` searched at the master's site from
+half-way (contacts up to 4990 s off, a contact reported visible that is
+not), a fictitious body 0.42 deg/day in its speed after
+`swe_set_astro_models()`. Some calls synced only after reading part of the
+configuration, or never: `swe_deltat_ex()` read the user delta t before
+its sync and the UTC conversions had none, so another thread's
+`swe_set_delta_t_userdef()` stayed out of them (22.6 s); and a thread's
+first call read what came before its first sync from a context nothing
+had started: zeros for the user delta t (22.6 s, and 3.1e-3 deg in
+`swe_calc_ut()`'s Moon), the models in `swe_sidtime0()` (3.1e-7 h) and
+`swe_get_astro_models()`.
+
+**Fix, as done here:** every public function that calculates holds the
+configuration: its old body is a static `<name>_body()`, and the public
+function calls `swi_config_hold()` first and `swi_config_release()` last.
+The outermost hold syncs once, at the entry, and every sync nested in it
+does nothing until it returns; a context not yet initialised it starts,
+which syncs it, and the first `swi_init_swed_if_start()` after that still
+answers 1, so the first-call warnings are unchanged.
+`swe_get_astro_models()` starts and syncs first. 60 functions are held;
+not held are those whose body is one call to a held function
+(`swe_houses_ex()`, `swe_lmt_to_lat()`), the arithmetic on the caller's
+ARMC (`swe_houses_armc()`, `swe_house_pos()`), the setters and the getters.
+G36 `tests/cfghold.c`: 18 cases, each in its own process, every answer
+bit for bit a fresh context's or a fresh process's: four calculations and
+five searches whose file (seorbel.txt, sefstars.txt, swe_deltat.txt) is a
+FIFO the main thread fills only after its setter, so no timing; the UTC
+conversions and delta t after a setter made before them; seven first calls
+on a new thread, and the first-call warning kept. 17 failed before.
+
+`swe_split_deg()` with `SE_SPLIT_DEG_NAKSHATRA` reads the sidereal mode and
+is held too: on a new thread after the main thread's True Sheoran, 10 deg
+came back nakshatra 0, 10 deg 0' where the main thread gives nakshatra 1,
+0 deg 0'. G36's split case.
+
+## 28. `swe_calc(SE_ECL_NUT)` with a speed flag differences its angles as a position, reads two doubles never written, and copies stale speed slots
+
+**Severity: Memory (an uninitialised read) / Correctness (x[3..5] wrong by up to 1.6e-3 deg)**
+**Where:** `sweph.c`: `swe_calc_r()`
+
+SE_ECL_NUT answers four angles: the true and mean obliquity and the
+nutation in longitude and in obliquity. With SEFLG_SPEED3, or with
+SEFLG_SPEED and SEFLG_TOPOCTR (which takes the three-position speed),
+`calc_speed()` differenced them as if they were a position. x[3], the
+nutation in obliquity (-1.6026e-3 deg), came back as the true obliquity's
+rate (-6.06e-6), and x[4] and x[5] as rates (up to 5e-5).
+`denormalize_positions()` read `x0[12]` and `x2[12]`, which nothing writes:
+valgrind counts 1948 errors over a 30-call hostile run, and on a stack that
+leaves NaN there, UBSan stops in `swe_revjul()`. With SEFLG_SPEED alone,
+x[4] and x[5] were copied from the save area SE_ECL_NUT shares with the
+asteroids, so they were stale.
+
+**Fix, as done here:** SE_ECL_NUT never takes the three-position speed, and
+no speed slots are copied for it. Any speed flag answers as none: x[3] is
+the nutation in obliquity, and x[4] = x[5] = 0. G37 `tests/eclnutspeed.c`
+compares the six slots under no speed flag, SPEED and SPEED3 at six epochs,
+on the Swiss files and Moshier, in degrees and radians, and finds 0
+differences. Before the fix it failed by 1.6e-3 deg.
+
+## 29. A missing Swiss file whose neighbour does not hold the instant leaves the neighbour open, and the Moon is never read: NaN fresh, the last read's Moon warm (this fork's)
+
+**Severity: Correctness (with `semo_12.se1` missing, the Moon NaN with no error on a fresh context, 37 deg off warm; the Sun and every geocentric body 6 arcsec apart fresh and warm)**
+**Where:** `sweph.c`: `sweph()`, the neighbour-file lookup (this fork's); the reader it misled is `sweplan()`'s Moon
+
+Upstream has no neighbour lookup: a missing moon file is a closed one, and
+the Moon is Moshier's. This fork's `sweph()`, when the file named for the
+instant is missing, opens the neighbouring 600-year bucket's file, whose data
+runs a little into this bucket, so that a context that had just computed on
+the neighbour and a fresh one answer alike. The range check after it refused
+an instant the neighbour does not hold, and left the file open. For the
+planets and the main asteroids the return value is what the callers look at:
+`main_planet()` falls to Moshier with "using Moshier eph.", an asteroid is an
+error. `sweplan()` reads the Moon to make the Earth from the EMB and takes
+"the moon file is not open" as its sign that there is no moon file and the
+Moshier Moon is to be used. With the neighbour open it went on with a Moon it
+never read: the save area's, empty (NaN) on a fresh context and the last
+read's on a warm one.
+
+Measured with `semo_12.se1` missing, at JD 2159377.5 (1200.0 + 20 days;
+`semo_06`'s data ends at +16): the Moon NaN with flags 0x100 and no error
+fresh, 26.44 deg warm (after the Sun 1.5 days before 1200.0) where Moshier's
+is 349.29; the Sun 307.55655 fresh and 307.55823 warm, 6.0 arcsec apart, and
+Mercury and every body whose Earth comes from that Moon likewise; J2000 XYZ
+the Moon zeros. The same at every instant of the bucket beyond the
+neighbour's overrun, after it or before it (`semo_18` starts 9 days early, so
+1800.0 - 20 days with `semo_12` missing). With both the file and its neighbour missing, serr
+named the neighbour last tried ("semo_06.se1 not found") for a Moon at 1200.
+
+**Fix, as done here:** a neighbour that does not hold the instant is closed
+again, with its bodies' file data, and the instant's own file is reported as
+not found: the state and message of a missing file with no neighbour at all,
+so `sweplan()` takes the Moshier Moon with "using Moshier eph. for moon" and a
+warm context answers as a fresh one. A neighbour that holds the instant still
+answers it. Only the open path is touched; no calculation that finds its file
+is. G38 `tests/missfile.c`, in directories of links in /tmp without
+`semo_12` and without `semo_18`: 16 instants about 600.0, 1200.0 and 1800.0
+(inside and past each neighbour's overrun, both sides), nine bodies, four
+flag sets with speed, 1152 rows. Every answer is an error or finite; a warm
+context equals a fresh one in flags and to 1e-6 AU; an answer is within 60
+arcsec of the complete directory's and says "Moshier" in serr when it is more
+than 0.5 arcsec from it. With `sepl_12` missing the Sun falls to Moshier, and
+with a file and its neighbour missing serr names the file for the instant.
+Before the fix 191 rows fail (7 not finite, 72 warm differ, 112 off or
+unannounced), after it none.
+
+## 30. A refused Swiss file empties the constants of every file left open, so the next calls fail on healthy files; the path setter crashes on a refused moon file
+
+**Severity: Correctness (calls on other bodies fail "file is damaged" until each open file has been reopened) / Memory (`fclose(NULL)`: the path setter segfaults)**
+**Where:** `sweph.c`: `read_const()`'s and `get_new_segment()`'s error exits (upstream); the path setter's moon header read (this fork's)
+
+`read_const()` refuses a file that is not what its name says ("Ephemeris file
+name 'seas_06.se1' wrong; rename 'seas_00.se1'"), is damaged or short;
+`get_new_segment()` refuses one whose segment cannot be read. Both closed the
+file and ran `free_planets()`, which zeroes every body's `plan_data` -- the
+constants (`tfstart`, `dseg`, `lndx0`) of the files that stay open as well.
+The next call on one of those found its file open, skipped `read_const()`,
+and looked up a segment with `dseg` 0: an error, which closes that file and
+runs `free_planets()` again.
+
+Measured with `seas_06.se1` a link to `seas_00.se1`, after Ceres at 600.0 +
+375 days: the Sun at 600.0 + 400 "sepl_06.se1 is damaged (2)", the Moon there
+"semo_06.se1 is damaged (2)", Mars there "sepl_06.se1 is damaged (2)", and
+only Mars 1000 days on answered; a fresh context answers all four. With
+`sepl_18.se1` a copy of `sepl_12.se1`, after the Sun at 1800.0 - 100 and the
+Mercury that met it, the Moon 25 days on failed "22 coefficients instead of
+0" and Mars "semo_12.se1 is damaged (2)".
+
+A related crash: the path setter reads `semo_18.se1`'s header (this fork's
+replacement of upstream's calculation of the Moon at J2000) and on a refusal
+closed the file `read_const()` had already closed, `fclose(NULL)`:
+`swe_set_ephe_path()` segfaults with `semo_18.se1` holding `semo_12`'s data.
+
+**Fix, as done here:** a refusal closes and clears only the refused file: its
+`fidat` slot and its bodies' file data (the part of `plan_data` before
+`teval`), and the slot the numbered asteroids and planetary moons share only
+if this file had begun writing it. The other open files and their constants
+are left as they were, so nothing healthy is reopened and the calls after it
+answer as a fresh context with the same directory does. The general constants
+a refused file may have written (`gcdat`) are read by nothing. The path
+setter no longer closes the file twice.
+
+G39 `tests/refusedfile.c`, in directories in /tmp of links to the complete
+`ephe/` with one fixture each: (a) `seas_06` a copy of `seas_00`, (b)
+`seas_00` with Pallas's segment index overwritten, (c) `sepl_18` a copy of
+`sepl_12`, (d) `semo_12` a copy of `semo_06`. Each meets its refusal, after
+healthy calls that open the other files where the file needs them, and then
+answers the later calls (the Sun, Moon, Mars, Ceres) bit for bit as a fresh
+context does; (e) `semo_18` a copy of `semo_12`: the path setter survives, in
+a child process. Before the fix (a) to (d) fail, (e) crashes.
+
+## 31. Values read from an ephemeris file's header, and from the delta-psi and fixed-star tables, index and size arrays unchecked: a crafted file writes past `pldat[]`, `rot_back()`'s stack array, `sastnam[]` and `dpsi[]`, or reads past the JPL record
+
+**Severity: Memory (stack and heap writes past arrays, NULL dereferences, out-of-bounds reads; a damaged file is mostly stopped by the header CRC, a crafted one is not)**
+**Where:** `sweph.c`: `read_const()`, `do_fread()`, `sweph()`'s segment load, `load_dpsi_deps()`, `fixstar_cut_string()`, `search_star_in_list()`; `swejpl.c`: `fsizer()`, `state()`
+
+An audit of every reader that takes a size or an index from a file. Each was
+measured with a crafted copy of a real file (CRC recomputed where the reader
+checks one), the copy in a /tmp directory of links to the others:
+
+- `read_const()` used the body numbers a Swiss file lists as `pldat[]`
+  indexes, checked only against `SE_PLMOON_OFFSET`. 500 in `sepl_12`'s list
+  wrote `pldat[500]` of 18; 1 wrote the Moon's constants while `semo_18` was
+  open, and the Moon's next segment failed "semo_18.se1 is damaged (2)"; 65000
+  wrote the slot a planetary moon's open file uses.
+- The coefficient count `ncoe` was unbounded: 60 in `semo_12` overflowed
+  `rot_back()`'s `x[MAXORD+1][3]` on the stack (the process died on "stack
+  smashing detected"), and `get_new_segment()`'s `longs[]` and `do_fread()`'s
+  1000-byte `space[]` have the same size behind them; in `sepm9501` the call
+  answered (r 1048832, no error).
+- The segment length, index offset and span were used unchecked: Mercury's
+  `dseg` 0 gave a segment number of inf converted to int, `lndx0` 0x7fffff00
+  overflowed `lndx0 + 3 iseg`, and a span starting 1000 days late answered
+  from the wrong segment without an error.
+- A body the file does not list (Mercury's entry replaced by Venus) kept the
+  constants of no file, `dseg` 0, or those of the file read before.
+- A planetary moon's or asteroid's element line opening with 30 digits:
+  `strncpy()` copied 19 + 31 bytes into `sastnam[41]`; the 30-byte `astnam`
+  was `strlen()`'d without a terminator.
+- `swejpl.c`'s `state()` bounded each body's coefficient count by 18 but not
+  its offset or sub-interval count, and the file-length identity checks only
+  the body with the highest offset: DE200 with the Earth-Moon barycentre's
+  sub-intervals 2 -> 402 and the Moon's 8 -> -492 (15 and 12 coefficients, the
+  sum kept) read far past `buf[2500]` in `interp()`. `fsizer()` with no
+  positive offset read `eh_ipt[-3]`.
+- `load_dpsi_deps()`: a line of fewer than ten fields left `cpos[3]`, `[8]` and
+  `[9]` unset (a crash in `atoi()`), and an `eop_1962_today.txt` of more than
+  `SWE_DATA_DPSI_DEPS` (36525) days wrote past `dpsi[]` and `deps[]`.
+- `fixstar_cut_string()` trimmed `cpos[1]` for a `sefstars.txt` line with no
+  comma, NULL (a crash in `swi_right_trim()`); the catalogue that then failed
+  to load left `search_star_in_list()` calling `bsearch()` on its NULL table.
+
+`seorbel.txt`'s reader writes no fixed array from the file (its name is copied
+bounded).
+
+**Fix, as done here:** every such value is checked against what it indexes or
+sizes before it is used, and a file that fails is refused alone: closed, its own
+slot cleared, the other files kept. In `read_const()`: the
+file's span finite and ordered ("damaged (0r)"); every listed body one that kind
+of file holds -- the planet file the barycentre, Mercury to the solar-system
+barycentre; the Moon file the Moon; the main-asteroid file Chiron to Vesta; a
+single-body file a number above `SE_PLMOON_OFFSET` ("0o"); `ncoe` in 1..MAXORD
++ 1 ("0p"); per body the ten constants finite, `dseg` positive, the body's
+span covering the file's, at most 1e9 segments, `lndx0` non-negative and its
+index inside the file, the elements within 1e8 days and 1e5 deg ("0q"; every
+distributed file is far inside: `|prot|`, `|peri|` < 1.1e4, `|dprot|`,
+`|dperi|` < 710, `|telem|` < 8e6); the element line's number field within
+`sastnam[]` ("0d"); `astnam` terminated. `do_fread()` refuses a reordered read
+larger than its buffer. `sweph()` refuses a body its open file does not list
+("does not contain body"), checked at a segment load, fresh or warm alike. In
+`swejpl.c` every body's offset, coefficient count and sub-interval count must
+lie inside the record (NOT_AVAILABLE, and the fallback with its message), and
+a file with no offsets is refused. `load_dpsi_deps()` skips a short line and
+stops at 36525 days; `fixstar_cut_string()` trims only a field that is there,
+and the star search does not call `bsearch()` on an empty table (the answer,
+not found, as before).
+
+It refuses only files no valid ephemeris is. Every distributed file -- the 153
+sepl/semo/seas files, the 32 planetary-moon files and `de200.eph` --
+opens and answers; 2958 fresh calls (the Sun to Pluto, Chiron to Vesta and
+the 32 moons' bodies, at four instants in each 600-year bucket from -13200 to
+17250, those the files cover) are bit for bit as before. A segment load costs a scan of the file's body list (at most ten).
+
+G40 `tests/hdrbound.c`: the 13 crafted files above (the star line is case F4
+of G32), each in a child process, the other kinds of file opened first so
+that a write into their slots shows; the call that meets the crafted file
+must be refused as the header is read, and the open bodies' next segments,
+Mars, and after the JPL and table cases the Swiss Mars and the Sun, must
+answer bit for bit as a fresh context on the complete directory. All 13 fail
+before the fix. `make hdrbound_asan hdrbound_ubsan` build it under the
+sanitizers, where a removed bound is a diagnosed overflow.
+
+## 32. `swe_house_pos()` answers a place in the wrong house: Sripati ('S') 1.0 for all of house 12 and the first half of house 1, the horizon system ('H') counted the other way from the cusps south of the equator and on it
+
+**Severity: Correctness (a house position up to 11.5 houses off in Sripati, at every date and place; the horizon system's mirrored, house k answered as 13 - k, everywhere south of the equator and on it)**
+**Where:** `swehouse.c`: `swe_house_pos_r()`, cases 'S' and 'H'
+
+- Sripati's cusps are the middles of Porphyry's houses, so a place at
+  Porphyry's position p, 1 .. 13, is at Sripati's p + 0.5, 1.5 .. 13.5, of
+  which 13 .. 13.5 is house 1. The function took `hpos += 0.5; if (hpos >
+  12) hpos = 1;`: all of house 12 and the first half of house 1 answered
+  1.0. At Zurich, UT 2433282.5, a place 1e-4 of the way into house 12
+  answered 1.000000 for 12.000003, house 12's middle (Porphyry's cusp 12)
+  1.0 for 12.5. The exact-cusp test hid it at the cusps.
+- `CalcH()` computes the horizon houses as Campanus's at the co-latitude
+  with the ARMC + 180, the co-latitude 90 - lat north of the equator and
+  -90 - lat south of it and on it. `swe_house_pos()` turned the place by
+  90 - lat everywhere, so south of the equator and on it the houses ran
+  the other way from the cusps: at 33.87S the middles of houses 1 .. 12
+  answered 12.50, 11.52, 10.52 .. 1.48, on the equator 12.56 .. 1.37, at
+  60S alike.
+
+**Fix, as done here:** 'S' wraps by `if (hpos >= 13) hpos -= 12`; 'H' turns
+the place by `CalcH()`'s co-latitude, `geolat > 0 ? 90 - geolat : -90 -
+geolat`. G41 `tests/hposinhouse.c`: at 47.37N, 33.87S, the equator, 60N and
+60S and four dates 1800..2100, in every letter both functions take (A .. Y,
+a .. y), each cusp at its number within 1e-7 house (2.8e-8) and the places
+1e-6, 0.5 and 1 - 1e-6 of the way through each house in it (248 checks);
+Porphyry's cusps at Sripati's middles k + 0.5 within 1e-7 (1.8e-8; 5
+checks). Before the fix 21 of the 253 fail: 'S' and 's' at every latitude,
+'H' and 'h' at 33.87S, the equator and 60S, and all five middles checks
+(0.5 house off). Every other letter passed before.
+
+## 33. `swe_gauquelin_sector()` methods 0 and 1 move with SEFLG_SIDEREAL and with every flag that names the place's frame, form or centre: Mars at 1950, Zurich, Lahiri 2.62 sectors, SEFLG_XYZ 18.3
+
+**Severity: Correctness (a sector, a place on the observer's diurnal circle, moved by flags that do not move the body there: every sidereal request 1.0 to 4.8 sectors off at Zurich, 1800-2100; SEFLG_NONUT, ICRS, J2000, EQUATORIAL, RADIANS, XYZ, HELCTR and BARYCTR up to 18.4 sectors)**
+**Where:** `swecl.c`: `swe_gauquelin_sector_r()`, methods 0 and 1
+
+A Gauquelin sector is the share of its semi-arc a body has run since its
+rising or setting, its place on its diurnal circle, which no zodiac or
+coordinate frame moves. Methods 0 and 1 are `swe_house_pos()` of the body's
+ecliptic longitude and latitude in 'G' (swephprg 16.1), which "requires
+TROPICAL positions"; iflag is documented as "flag for ephemeris and
+SEFLG_TOPOCTR", and methods 2 to 5 pass `swe_rise_trans()` the ephemeris
+bits alone. But methods 0 and 1 computed the body with iflag as given and set
+the place it answered, as longitude and latitude in degrees, in the frame of
+the true ecliptic of date (the ARMC and the true obliquity). Mars at UT
+2433282.5, Zurich (8.55E, 47.37N, 400 m), Swiss files, method 0, 2.6855985
+plain:
+- SEFLG_SIDEREAL (Lahiri) 5.3075799, +2.62 sectors (method 1 +2.69): the
+  sidereal longitude set in the tropical frame, the body moved back by the
+  ayanamsa; up to 3.42 sectors over Mars, the Moon, Spica and the mean node
+  at six dates 1800..2100, in every sidereal setting and on every ephemeris;
+- SEFLG_NONUT -1.14e-4 (the mean place in the true frame), SEFLG_ICRS
+  -1.5e-8, SEFLG_J2000 -0.0875, SEFLG_EQUATORIAL -0.148 (right ascension
+  and declination taken for longitude and latitude), SEFLG_RADIANS +17.8,
+  SEFLG_XYZ +18.3 (method 1 +18.4);
+- SEFLG_HELCTR and SEFLG_BARYCTR +3.88: a direction from the Sun or the
+  barycentre set on the observer's sky.
+
+**Fix, as done here:** methods 0 and 1 compute the place with the flags that
+choose the body's direction from the observer and no other: the ephemeris
+and its Horizons corrections, SEFLG_TOPOCTR, TRUEPOS, NOABERR, NOGDEFL and
+CENTER_BODY. The others are ignored, as methods 2 to 5 ignore them, not
+refused. A sidereal place takes no Horizons corrections, so with
+SEFLG_SIDEREAL neither the place nor the frame takes them, and every method
+answers the sector of the call without SEFLG_SIDEREAL. G42
+`tests/gauqflags.c`, at Zurich, six dates 1800..2100, on de200, the Swiss
+files and Moshier: (a) with SEFLG_SIDEREAL (five sidereal settings, the
+sidereal call also with SEFLG_JPLHOR_APPROX and SEFLG_JPLHOR) the call
+without it, bit for bit, methods 0 to 5 (42 checks); (b) the sidereal method
+1 sector k lies between the sidereal Gauquelin cusps k and k + 1 (9); (c)
+methods 0 and 1 with each frame, form or centre flag on six bases of
+direction flags as the base alone, bit for bit (66); (d) on each base the
+sector is `swe_house_pos()` of the place it gives in the true frame of date
+within 1e-11 (7.1e-15; 15); (e) methods 2 to 5 with each flag as without (4).
+Before the fix the sidereal call with SEFLG_JPLHOR crashed (the frame's
+nutation reads the IERS table, absent); without that case 99 of 136 fail:
+30 of (a) (up to 3.42 sectors), all 9 of (b) (up to 23.0 deg outside), 60 of
+(c) (up to 18.0 sectors; SPEED, SPEED3 and ICRS on de200 pass). The golden
+transcript's sector rows do not move.
+
+## 34. Sidereal houses on the ecliptic of t0 and the solar system plane: ascmc[2] the auxiliary ARMC, whole signs 8.94 deg off the sidereal signs, a step of 2 dpsi at t0, ascmc[8] moved by up to 359 deg
+
+**Severity: Correctness (every house call with SE_SIDBIT_ECL_T0 or SE_SIDBIT_SSY_PLANE, and with the J2000, J1900 and B1950 modes, which always take the first: ascmc[2] 0.0043 to 3.90 deg off; whole signs up to 20.3 deg off; every cusp and ascmc 2 |dpsi| off for some 130 days on one side of t0; ascmc[8] nonzero)**
+**Where:** `swehouse.c`: `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`
+
+These houses are computed by `swe_houses_armc_ex2_r()` in an auxiliary
+frame, the true equator of date and the sidereal plane cut at the
+auxiliary vernal point, at the auxiliary ARMC (armc - dvpx), and moved to
+the sidereal plane by that point's sidereal longitude (dvpxe + ayan_t0, less
+the plane's zero point on the solar system plane). Measured at Zurich
+(47.37N, 8.55E), UT 2378496.5, 2433282.5, 2451545.0 and 2488069.5:
+
+- ascmc[2], documented as the ARMC (swephprg 15.4), was the auxiliary ARMC
+  the loop skipped: 4.27e-3 deg off the tropical call's on the user's
+  ecliptic of 1900 (t0 2415020.0) and J1900, 6.55e-3 on Lahiri's ecliptic of
+  t0, 8.51e-3 J2000, 3.904 on the solar system plane. Given it,
+  `swe_house_pos()` put the sidereal cusps' places (carried to the ecliptic
+  of date) off their numbers in the systems the manual says work there: on
+  the ecliptic of 1900 X 1.42e-4 house to H 3.10e-4, on the solar system
+  plane P 0.184 to C 0.339.
+- Whole signs ('W', 'w') were the auxiliary frame's signs moved by the
+  frames' offset: 30 deg apart but 8.94 deg off a sidereal sign start on the
+  ecliptic of 1900 and Lahiri's, 2.80 J1900 and J2000, 20.3 on the solar
+  system plane, and their speeds the Ascendant's and MC's, 621 to 650
+  deg/day. 0 Aries was set for `hsys == 'N'` only, so 'n' was moved off it,
+  by up to 25.3 deg.
+- dvpxe was `acos()`, 0 .. 180, negative before t0. It is about p (t - t0)
+  + dpsi, so for some 130 days on one side of t0 (where p (t - t0) and dpsi
+  differ in sign) its sign was wrong and every cusp and ascmc 2 |dvpxe|
+  off, a step of 2 dpsi at t0: the cusps against a construction by vectors
+  9.64e-3 deg off just before t0 on the ecliptic of 1900 and J1900, 7.74e-3
+  just after on J2000's, 9.32e-3 before on Lahiri's.
+- The loops that move ascmc ran `i <= SE_NASCMC` and moved ascmc[8], which
+  the manual gives as 0, by the frames' offset: at UT 2433282.5 336.84 deg
+  on the ecliptic of 1900 and Lahiri's, 359.30 J1900, 0.70 J2000, 340.40 on
+  the solar system plane.
+
+**Fix, as done here:** ascmc[2] is the ARMC the function was given (its speed
+was the ARMC's already). Whole signs are computed as equal houses in the
+auxiliary frame and moved; cusp 1 is then floored to its sign, cusp k is
+cusp 1 + 30 (k - 1), their speeds 0. 0 Aries is set for `toupper(hsys) ==
+'N'`. dvpxe is the signed angle from the auxiliary vernal point to t0's
+about the pole of the ecliptic of t0, by `atan2()`, continuous through t0.
+The two loops run `i < SE_NASCMC`. G43 `tests/sidplanehouses.c`, at Zurich:
+(a) six settings (the user's ecliptic of 1900 and solar system plane,
+Lahiri's both, J1900, J2000), four dates, ascmc[2] and its speed the
+tropical call's bit for bit, and for the user settings the carried
+sidereal cusps given ascmc[2] at their numbers in P R C H X within 1e-7
+house (9.26e-9; 16 checks); (b) 'W' 'w' 'N' 'n' 'E' 'A' 'D' 'V' there at
+their definitions within 1e-9 deg (1.1e-13), the whole signs' speeds 0
+(48); (c) the ecliptic of 1900, J1900, J2000 and Lahiri's at TT t0 -+ 2^-20
+.. 200 days, Regiomontanus and Campanus cusps against the vector
+construction within 1e-11 deg (2.3e-13; 4); (d) ascmc[8] and its speed 0,
+ascmc[9] the tropical call's, in 'P' 'I' 'G' 'W' (6). Before the fix 44 of
+the 74 fail: all 16 of (a), 18 of (b) ('W', 'w' and 'n' in each setting),
+all of (c) and (d). The golden transcript's cov:hsys_sid[eclt0] row (Lahiri,
+J2000) moves by 5.0e-13 deg, the `acos()`'s rounding.
+
+## 35. Kronos' built-in semi-axis has two digits swapped, the Kepler solver's starting guess is wrong, and the nakshatras of `swe_split_deg()` are shifted for `SE_SIDM_USER`
+
+**Severity: Correctness (Kronos 0.0086 deg at 1700, 0.0169 deg at 2300 without `seorbel.txt`; every nakshatra split under a user-defined ayanamsa 3 deg 20' early; the starting guess moves no result beyond rounding)**
+**Where:** `swemplan.c`: `plan_oscu_elem[]` (the Neely block), `swi_osc_el_plan()`; `swephlib.c`: `split_deg_nakshatra()`; `sweph.c`: the "call `swe_set_ephe_path()`" warning of `swi_get_ayanamsa_ex()`
+
+Three small defects in three functions, one entry.
+
+Without `seorbel.txt` on the path the fictitious bodies come from a
+built-in table. Its Neely row for Kronos has the semi-axis 64.81960;
+`seorbel.txt` and Witte's original 64.816896 (the non-Neely rows of the same
+table) give 64.81690, and the other fourteen built-in rows agree with the
+file to the last digit, so the value is a swap of two digits. Kronos'
+mean motion was off by 0.0043 deg per century from the 1900 epoch:
+-0.0086 deg at 1700, +0.0169 deg at 2300, 0.0257 deg and 2.8e-3 AU at 2500.
+
+The solver of `swi_osc_el_plan()` for eccentricities above 0.975 (Nibiru,
+the Christ Comet) builds a starting guess near perihelion with
+`zeta = pow(x, 1/3)`, where `1/3` is integer division, so `zeta = pow(x, 0)
+= 1`, and adds 180, not pi, to an angle in radians. `swi_kepler()` converges
+to the same root from either guess, so a result moves only by rounding:
+over 20000 dates 1700 to 2500 (Moshier, geocentric, with speed) Nibiru's
+position by 4.3e-14 deg and 3.4e-13 AU, the Christ Comet's by 1.4e-14 deg
+and 1.1e-12 AU; the speeds by 4e-8 deg/day, which is that rounding read
+through the 5e-7 day step of the deflection's differenced speed (6e-11
+deg/day with `SEFLG_NOGDEFL`).
+
+`split_deg_nakshatra()` moves the place by 3 deg 20' for the Sheoran
+"Vedic" ayanamsa (its 0 Aries is 3 deg 20' of Ashvini), and tested the mode
+as `(sid_mode & SE_SIDM_TRUE_SHEORAN) == SE_SIDM_TRUE_SHEORAN`, a bit mask
+on a mode number. 39 is binary 100111; `SE_SIDM_USER`, 255, has every one
+of those bits, with or without SIDBITs above it. Of the stored modes only
+Sheoran and USER pass. `swe_split_deg(10, SE_SPLIT_DEG_NAKSHATRA)` gave
+Ashvini 10 deg 00' under Fagan/Bradley and Lahiri and Bharani 0 deg 00'
+under 255, 1279 and 2303. The warning in `swi_get_ayanamsa_ex()` tested
+`sip->sid_mode == SE_SIDM_TRUE_SHEORAN` where the rest of its list tests the
+masked `sid_mode`; that changes nothing, since `swe_set_sid_mode()` stores a
+star mode without its SIDBITs, and is made the masked one for the list's
+sake. Every other comparison of a mode number takes `sid_mode %
+SE_SIDBITS` first.
+
+**Fix, as done here:** the semi-axis is 64.81690. The guess is
+`pow(x, 1.0 / 3)` and pi. The Sheoran shift tests the mode itself,
+`sid_mode % SE_SIDBITS == SE_SIDM_TRUE_SHEORAN`. G44 `tests/fictnakshatra.c`:
+the 15 built-in bodies at five dates 1700..2500, heliocentric Moshier, with
+the shipped `seorbel.txt` against an empty directory: 3.6e-15 deg, 5.7e-14
+AU (Kronos 0.0257 deg at 2500 before); and 5 deg and 10 deg split into
+nakshatras under the 47 predefined modes, USER alone and with four SIDBITs,
+Sheoran with a SIDBIT and Lahiri with four: 114 checks pass, the ten USER
+ones failed before. The starting guess is not gated: no public result moves
+beyond rounding.
+
+## 36. The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold
+
+**Severity: Correctness (returned values: 0.67 mag in a limiting magnitude, 0.46 mag in a star's, a day in a heliacal event)**
+**Where:** `swehel.c`: `call_swe_fixstar_mag()`, `kOZ()`, `ka()`, `Deltam()`; `sweph.c`: `swi_close_keep_topo_etc()`, `ctx_release()`, the star functions' memos and catalogue; `sweconfig.c`: `swi_config_apply()`; `sweph.h`: `struct hel_state`
+
+`swehel.c` memoises five results per context (upstream: five pairs of TLS
+statics). Three were keyed on less than their result depends on:
+
+- `kOZ()`, the ozone extinction, on the Sun's altitude and `SunRA()`; it
+  depends on the latitude too.
+- `ka()`, the aerosol extinction, on the same two; it depends on the
+  latitude, eye height, temperature, humidity and visual range (or
+  extinction coefficient).
+- `Deltam()`, the extinction along the line of sight, on those two and the
+  object's altitude; it depends on all of the above, the pressure, and
+  `SE_HELFLAG_HIGH_PRECISION` (through `AppAltfromTopoAlt()`).
+
+So the same instant and place under another atmosphere was answered with
+the previous request's extinction, and so was `SE_HELFLAG_VISLIM_DARK`
+(which fixes the Sun's altitude at -90) at another latitude or eye height.
+Measured with `swe_vis_limit_mag()`, Venus at 2000 Jan 1 12h UT from
+8.55 E 47.37 N, each request right after the one before it against the
+same request in a fresh process: humidity 40 -> 80 % -6.447 for -7.121
+(0.67 mag), temperature 15 -> 30 C 0.62 mag, a visual range of 40 km 0.43,
+an extinction coefficient of 0.25 0.57, 900 mbar 0.53; in the dark sky,
+47 N -> 33 S 0.10, 400 -> 1500 m 0.048, humidity 80 % 0.26; Sirius at
+humidity 80 % 0.25. Nothing emptied them, so the dark-sky answer after
+`swe_close()` was still the one before it (0.26 mag).
+
+`call_swe_fixstar_mag()`'s memo, keyed on the star's name, was not emptied
+by `swe_close()` or a new ephemeris path, so a star kept the magnitude of
+the catalogue it was first read from: Sirius after `swe_close()` and a path
+whose `sefstars.txt` gives it -1.00 was -1.46 in `swe_vis_limit_mag()`'s
+`dret[7]` and `swe_heliacal_pheno_ut()`'s `darr[20]`, and
+`swe_heliacal_ut()`'s end of visibility of its heliacal rising came a day
+early (2451778.67 for 2451779.67). It took the name before the lookup, so
+a failed lookup left the name keyed to the previous star's magnitude, and
+an empty name was a hit on the empty memo; and a hit left `serr` as it was
+where the lookup clears it, so a warning from `ka()` reached
+`swe_vis_limit_mag()`'s `serr` on the second call only.
+
+The star functions of `sweph.c` under it kept memos of their own:
+`swe_fixstar()`'s and `swe_fixstar_mag()`'s last record (`sp.fs1`,
+`sp.fs1mag`), `swe_fixstar2()`'s and `swe_fixstar2_mag()`'s last star
+(`sp.fs2`, `sp.fs2mag`), and the catalogue `swe_fixstar2()` reads into
+memory, which `swe_close()` freed only when it was complete and a path
+change not at all. None of them was emptied by `swe_close()` or a path to
+another `sefstars.txt`, nor by a thread adopting another thread's path. With
+a second catalogue giving Sirius -1.00 mag and 300 mas, all four functions
+still gave -1.46 mag and 2.64 pc (543932 AU) for -1.00 and 3.33 pc (687549
+AU) after `swe_close()` and the path to it, and after a path change alone.
+That also refilled `swehel.c`'s memo with the old magnitude.
+
+`kOZ()`, `ka()` and `Deltam()` took a key of 0 as empty, and a hit dropped
+the warning `ka()` writes for an over-long visual range or an extinction
+coefficient too small for the other terms. The key of 0 is not reachable
+through the public functions: `SunRA()` is never exactly 0. `SunRA()`'s own
+memo, keyed on UT, is complete: `SIMULATE_VICTORVB` (always defined) makes
+it the monthly approximation, a function of UT alone.
+
+**Fix, as done here:** each memo is keyed on every input of its result, has
+a `valid` flag for empty, and keeps what its computation wrote to `serr`
+-- `ka()`'s warning (by number, also in `Deltam()`'s memo, which reaches
+`ka()` on both its branches), the star lookup's `serr` -- to write it again
+on a hit. The star's memo is filled on success only. `swi_hel_forget()`
+empties the four; `swe_close()` and `swe_ctx_free()` (`ctx_release()`),
+every path change (`swi_close_keep_topo_etc()`) and an adopted path
+(`swi_config_apply()`, which also sees a changed JPL file) call it. No
+setter feeds the extinction memos, now that their keys are complete.
+`swi_fixstar_forget()`, called from the same three places, empties the four
+star memos, frees the catalogue and closes the star file, so the next call
+reads the one on the new path.
+
+G45 `tests/helmemo.c`: one sequence of 37 `swe_vis_limit_mag()`,
+`swe_heliacal_pheno_ut()` and `swe_heliacal_ut()` requests alternating the
+atmosphere, eye height, latitude in the dark sky, the high-precision flag,
+the ephemeris (Swiss, Moshier, de200), a user delta T, `swe_close()` and
+two star catalogues, each answer -- return code, every value, `serr` --
+against the same request in a fresh process; all agree within 1e-9. 17 of
+the 37 failed before. The same test asks the four star functions for Sirius
+under the two catalogues, switched by `swe_close()`, by a path alone, and in
+a thread that adopts another thread's path: 24 checks of magnitude and
+distance pass, 12 failed without the emptying.
+
+## 37. The default nutation, full IAU 2000A, costs 12 to 100 times IAU 2000B's when the calls are a day or more apart (this fork's)
+
+**Severity: Performance (a Sun or Moon position with speed 270 to 770 us at daily steps and 470 to 650 us at 30-day steps, against 11 to 24 us under IAU 2000B; `swe_calc(SE_ECL_NUT)` 250 to 390 us against 4 us)**
+**Where:** `swephlib.c`: `calc_nutation_grid()`
+
+Full IAU 2000A costs about 14 times IAU 2000B's per instant (64 us against
+4 us, Moshier, -O2), so the default evaluated it only at nodes a quarter day
+apart, cached, and took a quintic Lagrange polynomial through the six nodes
+around the instant. Calls within a few hours share their nodes and were
+measured that way. An instant a day or more from the last one shares none and
+evaluated the series six times, so a search stepping by days (returns,
+ingresses, transits, stations) or a list of unrelated charts paid for it on
+every call; reported downstream as an astromcp return search that took 0.6 s
+on ts.14 and 6.7 s on ts.19. The Sun with speed as a multiple of the same
+call under IAU 2000B, in one process: hourly 1.6, daily 36, 30-day steps 34,
+scattered over 1800-2100 33; the Moon 1.3, 12, 20, 17.
+
+**Fix, as done here:** the series is evaluated with each term's sine and
+cosine built as products of e^(ik x) powers over its nonzero argument
+multipliers (`swenut2000a_sparse.h`, generated from `swenut2000a.h` by
+`tools/gen_nut_sparse.py`), together with its first three time derivatives:
+23 us an evaluation against 64. The nodes are a day apart, each holding the
+value and the three derivatives, and the septic Hermite polynomial on the two
+nodes around the instant gives the value: no new node while calls stay
+between the same two, one at daily steps, two at a fresh instant. The value
+still depends on the instant alone, never on what the cache held, and is
+nearer the direct series than before: worst 0.0014 uas in longitude and
+0.0006 in obliquity over 1800-2100 and -13000..15000, against 0.018 and
+0.008. Positions move by up to 5e-12 deg and speeds by up to 2.4e-10 deg/day;
+the osculating apogee, derived from differenced positions, by 2.9e-11 deg
+and 9.5e-8 deg/day.
+Now the Sun with speed is 0.65 of IAU 2000B's cost hourly, 2.6 daily, 6.5 at
+30-day steps and 4.4 scattered (the Moon 0.82, 1.8, 3.7, 2.7); a fresh
+instant still costs two nodes of the full series, which 2000B's 77 terms
+never did. G46 `tests/nutspeed.c` checks the generated table against
+`nls[]` and `npl[]`, and the Sun with speed against IAU 2000B at hourly,
+daily and scattered spacings (rounds interleaved, best of fifteen, limits
+1.5, 5 and 8): 0.66, 2.6 and 4.4 now, 1.7, 24 and 33 before the fix.
+
+Past 4e8 days (1.1 million years) the day grid's fit leaves the series fast
+(3.4 deg at 3e9 days, where the old quarter-day grid was 0.75), so the series
+itself is taken there, as for any date the grid does not cover.
+
+## 38. `calc_dip()` is NaN below sea level: `swe_rise_trans_true_hor()` with horhgt -100 answers the time two hours after the start, `swe_refrac_extended()` converts no apparent altitude to a true one, `swe_azalt()` refracts a body below the horizon
+
+**Severity: Correctness (a wrong time returned as a success; the refraction missing from an apparent altitude, 0.58 deg at the horizon; any height from -500 m to just below 0, the range the rise, azalt and eclipse functions accept)**
+**Where:** `swecl.c:3158` (upstream's), `calc_dip()`; reached from `swe_refrac_extended()` and `swe_rise_trans_true_hor()`
+
+The dip of the horizon is `-acos(1 / (1 + h / R)) * sqrt(d)`. For h < 0
+the argument is above 1 and the dip NaN, though `SEI_ECL_GEOALT_MIN` is
+-500 m and the Dead Sea shore is at -430. swephprg documents nothing for it:
+it describes `swe_refrac_extended()` "for altitudes above sea > 0", and
+horhgt -100, the horizon at the dip, is in no document. At -10 m (the
+Netherlands), -430 m (the Dead Sea) and -86 m (Death Valley), 1013.25 hPa,
+10 C, 2026-10-25:
+- `swe_rise_trans_true_hor()` with horhgt -100, the Sun and the Moon, rising
+  and setting, 12 of 12: success, with the time 0.0833 d (two hours) after
+  the start, 0.8 to 22.5 hours from the rising or setting;
+- `swe_refrac_extended()`: dret[3] NaN; an apparent altitude is never
+  converted (`inalt >= NaN` is false), 0 deg answering 0 where sea level
+  answers -0.57634, and 10 deg 10 where it answers 9.91100; a true altitude
+  below the horizon is refracted (-3 answering -1.77881, sea level -3);
+- `swe_azalt()`: the same refracted apparent altitude for a body below the
+  horizon;
+- `swe_rise_trans()`, with its default flags and with every SE_BIT_ option,
+  does not change: its horizon is 0, and the apparent altitude crosses 0 at
+  the same instant with or without the cut below the dip.
+
+**Fix, as done here:** below sea level there is no sea horizon; the terrain
+around is the horizon, which only `swe_rise_trans_true_hor()` can be told.
+`calc_dip()` takes a negative height as 0, the geometric horizon, as at sea
+level. The dip is continuous there (it grows as the square root of the
+height) and unchanged above it. G47 `tests/belowsea.c`, with the five heights
+-500, -430, -86, -10 and -1e-6 m: (a) `swe_refrac_extended()` in both
+directions at 13 altitudes, the answer and dret[0..3] those of 0 m bit for
+bit, the dip 0, and the dips at 1, 10 and 100 m as before (278 checks);
+(b) horhgt -100, the Sun and the Moon, rising and setting, at four sites
+(-10, -430, -86 and -500 m): found, within 2 days after the start, the time
+of horhgt 0.0001 to 1e-9 day, and within 1 s of sea level's (0.054 s worst;
+64); (c) `swe_azalt_r()` over a day, +60 to -60 deg, as at 0 m bit for bit, and
+finite with the pressure estimated (241). Before the fix 232 of the 583 fail
+(190 of (a), 32 of (b), 10 of (c)).
+
+## 39. The topocentric observer is placed about the mean pole of date
+
+**Severity: Correctness (200-270 m on the observer, 0.10-0.15" on the topocentric Moon; every topocentric position, eclipse and occultation geometry)**
+**Where:** `sweph.c`, `swi_get_observer()`
+
+The Earth turns about its true pole of date, and the apparent sidereal time
+is the angle it has turned through, so the geocentric vector of a site is
+built on the true equator and equinox of date and carried from there to
+J2000. `swi_get_observer()` takes `SEFLG_NONUT` to mean something else:
+under it the function uses the MEAN sidereal time and the mean obliquity,
+skips its own nutation step, and precesses the vector to J2000 as if it
+were on the true equator. Every caller in the library passes
+`iflag | SEFLG_NONUT` (the J2000 vector is what they add to the barycentric
+Earth), so the site was always placed relative to the mean pole, which is
+up to 9" (the nutation in obliquity) and 17" x sin(eps) (the nutation in
+longitude) from the pole the Earth actually turns about. 6378 km x that
+angle is 200-270 m (G48: 15-277 m at five sites and five instants
+1800-2100), and 200-270 m seen from the Moon is **0.10-0.15"**: measured
+against Ephemeris Prometheia on the same delta t and against JPL Horizons
+at six sites and six instants 1800-2100, 10-148 mas, every one of them
+explained by the site offset to about 1 mas (2026-10-24). Planets: under
+1 mas. The function also neglected the frame bias ("displacement of
+45cm"), though the Earth the site is added to is ICRS for DE403 and later
+and the callers take the sum back to J2000 with the forward bias: 0.3 mas
+on the Moon.
+
+Found comparing the topocentric Moon with Prometheia and Horizons; the
+recipe above reproduces Swiss's observer to the centimetre from its own
+sidereal time, obliquity and nutation, and the true-pole recipe reproduces
+theirs.
+
+**Fix, as done here:** the observer is built on the true equator and
+equinox of date whatever frame the caller wants its answer in: the
+apparent sidereal time from the true obliquity and the nutation in
+longitude, both computed at this instant rather than taken from the caches,
+the site vector and its velocity rotated by the transposed nutation matrix
+to the mean equator of date, precessed to J2000, and then, when the
+ephemeris is ICRS (`swi_get_denum() >= 403`), taken to ICRS with the
+backward frame bias. `SEFLG_NONUT` no longer says where the observer is.
+G48 `tests/topopole.c`: the geocentric minus the topocentric GEOMETRIC Moon
+(`SEFLG_TRUEPOS`, so no light time enters) in the true equator of date is
+the observer the library used; it must equal the site built from the
+geodetic coordinates, the library's own delta t, true obliquity and
+nutation, and `swe_sidtime0()`, to 5 cm (0.0000 m measured; the unfixed
+library misses on all 25 rows, worst 276.6 m). Moshier, no files. The
+`topd` cache is unchanged: it is keyed by instant and invalidated with delta
+t (entry 18), and the new vector goes through the same `do_save` path.
+
+## 40. A heliocentric light time is measured from the barycentre on its second pass
+
+**Severity: Correctness (up to 0.84" on Mercury, 0.28" on Venus, 2.6" on a fictitious body inside Mercury's orbit; every heliocentric position from the files)**
+**Where:** `sweph.c`, `app_pos_etc_plan()` and `app_pos_etc_plan_osc()`
+
+The light time of a body seen from the Sun is the solution of
+tau = |B(t - tau) - S(t)| / c, the body's barycentric place when the light
+left it against the Sun's when it arrives. `app_pos_etc_plan()` iterates it
+in two passes for the JPL and Swiss files (`niter = 1`). Each pass measures
+the distance of an estimate of the body from `xobs` and reads the body at
+t - dt. For a geocentric request `xobs` is the barycentric Earth and both
+passes subtract it. For a heliocentric one the subtraction is skipped
+(`if (!(iflag & SEFLG_HELCTR) && !(iflag & SEFLG_BARYCTR))` on both loops),
+on the reasoning that `xx` is heliocentric already -- and on the first pass
+it is, the Sun having been taken out above for the `SEFLG_TRUEPOS` answer.
+But every later estimate is formed as `xx0 - dt * v`, and `xx0` is the
+BARYCENTRIC position. So the second pass measures the distance from the
+barycentre, and the light time the function keeps is the barycentric
+distance over c. The Sun sits up to 0.01 AU from the barycentre, so the
+instant the body is read at is off by up to 2.3% of its light time: 0.84"
+on Mercury (2200-01-01), 0.28" on Venus, 0.09" on Mars, 0.016" on Jupiter,
+against JPL Horizons' Sun-centred astrometric places and Ephemeris
+Prometheia, which agree with each other to 0.00001" (2026-10-24). The
+`SEFLG_SPEED` loop has the same skip, so the light-time term of the speed
+carries it too.
+
+`app_pos_etc_plan_osc()`, for a body from orbital elements, sets `xobs` to
+the Sun for a heliocentric request and then skips it in both loops the same
+way, so there the barycentric distance was measured on every pass: 2.6" on
+Vulcan at J2000 (G49), whose light time is 0.00078 d at 19 degrees a day.
+`app_pos_etc_orbel()`, which `swe_calc_orbel()` runs, was written from it
+and has the same two skips.
+
+Found comparing heliocentric Mercury with Horizons and Prometheia; the
+recipe above reproduces Swiss's number from its own barycentric positions
+to roundoff, and the corrected recipe reproduces theirs.
+
+**Fix, as done here:** the loops measure from `xobs` for every centre. In
+`app_pos_etc_plan()` `xobs` is set for a barycentric request (zero) and a
+heliocentric one (the barycentric Sun from the files; zero under Moshier,
+whose stored positions are heliocentric), and the iteration starts from the
+barycentric vector `xx0` so that every pass measures the same quantity. The
+same two skips are removed from `app_pos_etc_plan_osc()` and
+`app_pos_etc_orbel()`, whose `xobs` already is the centre. No new reads of
+the ephemeris. G49 `tests/hellt.c`: the heliocentric astrometric direction
+of Mercury to Pluto under the Swiss files and de200.eph, and of a fictitious
+body from an element set written by the test, equals B(t - tau) - S(t)
+built from this library's own geometric barycentric positions, to 0.0001"
+(0.000000" measured; the unfixed library misses on all 51 rows, worst
+2.608").
+
+## 41. `swe_get_ayanamsa_ex()`, its `_ut` form, the sidereal houses and `swe_gauquelin_sector()` with SEFLG_JPLHOR and no IERS corrections loaded read the corrections' table, NULL, and crash
+
+**Severity: Crash (a NULL dereference; with an eop_1962_today.txt that breaks off, a read 2.45e6 doubles before the table)**
+**Where:** `swephlib.c`: `calc_nutation()`; `swecl.c`: `swe_gauquelin_sector_r_body()`
+
+`plaus_iflag()` turns SEFLG_JPLHOR into SEFLG_JPLHOR_APPROX when no
+corrections are loaded (`eop_dpsi_loaded` <= 0: no `swe_set_jpl_file()` of a
+DE >= 403 on the context, no eop_1962_today.txt, or one the loader gave up
+on), so `swe_calc()` never asks the nutation for them without them. Three
+public functions take their flags past it. `swe_get_ayanamsa_ex()` adds the
+nutation of the caller's flags to the ayanamsa; `swe_get_ayanamsa_ex_ut()`
+calls it, and so do the sidereal houses. `swe_gauquelin_sector()`'s tropical
+methods 0 and 1 set the obliquity and the nutation from the caller's flags
+before the body's own `swe_calc()`. With SEFLG_JPLHOR and no corrections
+`calc_nutation()` called `bessel()` on `ctx->dpsi`: NULL (SIGSEGV), or, after
+a file with a day missing (`eop_dpsi_loaded` -2: the table allocated, its end
+never set), at index n - 1 = -2451545.
+
+Measured with Lahiri on de200 at J2000: eight probes crash, with SEFLG_JPLEPH
+| SEFLG_JPLHOR and with SEFLG_SWIEPH | SEFLG_JPLHOR, on the setter's
+thread, on a second thread on the default context and on an explicit context
+given the path alone; and on a synthetic DE431 header at 2000 Jan 7 in a
+directory without the file (-1) and in one whose file has a day missing (-2).
+Every other public function that takes flags was called the same way and
+answers.
+
+**Fix, as done here:** `swi_jplhor_plaus()` takes SEFLG_JPLHOR as
+`plaus_iflag()` does, SEFLG_JPLHOR_APPROX while `eop_dpsi_loaded` <= 0.
+`calc_nutation()`, the only reader of the table, takes its flags through it,
+so every route is covered; the Gauquelin sectors' obliquity takes the flags
+the body's place is computed with through it as well, so the frame and the
+place agree. Each call answers as the same call with SEFLG_JPLHOR_APPROX, the
+warning in serr the one `swe_calc()` writes. The Horizons bits the sidereal
+sectors drop (entry 33) stay dropped. G50 `tests/eopfollow.c`: the eight
+probes (the ayanamsa and its `_ut` form, the ayanamsa on SEFLG_SWIEPH,
+sidereal Placidus and Koch houses, Gauquelin methods 0 and 1 for Mars and
+method 0 for Spica) in six settings without corrections (de200, the same with
+the nutation interpolated, a second thread, an explicit context, and the two
+fixture directories), each call in a forked process returning with no signal,
+bit for bit with its return flag as the same call with SEFLG_JPLHOR_APPROX in
+a fresh one: 48 checks. Before the fix 46 crash (the interpolated houses pass,
+their ayanamsa's nutation interpolated from nodes the houses' own nutation
+without flags had built), after it none fail.
+
+## 42. The refusals of a date outside a range write its digits in full into 256 bytes: from |J| about 1e188 days the message overruns its buffer or the caller's serr
+
+**Severity: Memory (stack buffer and serr overrun; glibc's fortify aborts at -O2, the stack protector at -O0)**
+**Where:** `swemplan.c`: `swi_moshplan()`; `swemmoon.c`: `swi_moshmoon()`, `swi_mean_node()`, `swi_mean_apog()`; `swejpl.c`: `state()`; `swedate.c`: `swe_utc_to_jd()`; `swecl.c`: the eclipse functions' "no ... eclipse at tjd"
+
+Every refusal of a date outside a body's range printed the date by `%f`
+with `sprintf()`: "jd %f outside Moshier planet range %.2f .. %.2f " into a
+local `char s[AS_MAXCH]` (256 bytes) in `swi_moshplan()`, `swi_moshmoon()`,
+`swi_mean_node()` and `swi_mean_apog()`, copied into serr after, and "jd %f
+outside JPL eph. range" straight into the caller's serr. `%f` writes every
+integer digit, so the message is 256 characters or more (with its NUL past
+256 bytes) from |J| 1e188 (the Moshier planets and Moon), 1e191 (the mean
+apogee), 1e193 (the mean node) and 1e196 (JPL; 360 characters at 1e300).
+Measured, each call in a child process, |J| 1e200, 1e250, 1e300, 1e308 and
+DBL_MAX either sign, Mars, the Moon, the mean node and apogee and Cupido on
+Moshier, `swe_nod_aps()` of the Moon's and Mars's mean points, Spica by
+`swe_fixstar2()` on Moshier and Mars on de200.eph: the 80 calls on Moshier
+died ("stack smashing detected"), the 10 on de200.eph wrote past the 256
+bytes of serr.
+`swe_utc_to_jd()`'s "invalid time: %d:%d:%.2f" took the caller's seconds the
+same way, past serr from 1e232. The eclipse functions' "no solar eclipse at
+tjd = %f" and the JPL reader's read and header errors would overrun likewise,
+behind range tests that refuse such a date first.
+
+**Fix, as done here:** `swi_jd_str()` prints the date: `%f` with the
+message's decimals below 1e15 days, byte for byte what the messages had, and
+`%.10g` from there up and for NaN and infinity ("jd 1e+300 outside Moshier
+planet range 625000.50 .. 2818000.50 "), at most 32 characters, so the range
+stays in the message. The Moshier, mean node, mean apogee and JPL range
+refusals and `swe_utc_to_jd()`'s two "invalid time" messages print the date
+(the seconds) by it, into `snprintf()` with the buffer's size; the messages
+that sit behind range tests are `snprintf()` with AS_MAXCH, the format
+unchanged. G51 `tests/datemsg.c`: the 90 calls above and `swe_utc_to_jd()` at
+those seconds, each in a child process: ERR, a message from "jd " (or
+"invalid time") of under 100 characters that names the range and the date
+as "e+", the bytes past AS_MAXCH untouched; and four dates a little outside a
+range, printed as before: 104 checks. Before the fix 100 fail, after it none.
+
+## 43. `swe_sidtime()` reads a nutation `calc_nutation()` left unwritten, and SE_ECL_NUT is taken for a body: the rise and set, the Gauquelin sectors, the occultations, `swe_calc_pctr()` and `swe_helio_cross()` answer it, two of them from `pla_diam[-1]`, and the crossing does not end
+
+**Severity: Memory (an uninitialised read; an out-of-bounds read, `pla_diam[-1]`); Correctness (an answer for a number that is no body, a hang)**
+**Where:** `swephlib.c`: `swe_sidtime_r_body()`; `swecl.c`: `swe_rise_trans_true_hor_r_body()`, `swe_gauquelin_sector_r_body()`, `swe_lun_occult_where_r_body()`, `swe_lun_occult_when_glob_r_body()`, `swe_lun_occult_when_loc_r_body()`; `sweph.c`: `swe_calc_pctr_r_body()`, `swe_helio_cross_r_body()`, `swe_helio_cross_ut_r_body()`
+
+`calc_nutation()` writes nothing for a nutation model it does not know (the
+caller keeps what it passed in), and `swe_sidtime()` passed it an
+uninitialised local pair and used both elements: its sidereal time was
+whatever the stack held. gcc -O3 with -Wall -Wextra -Werror rejects the read
+as maybe-uninitialized; at -O0 the slot held the bits of a pointer, a
+denormal, and the answer was right by luck.
+
+SE_ECL_NUT (-1) is a `swe_calc()` number, the obliquities and the nutation,
+not a body; `swe_pheno()`, `swe_nod_aps()`, `swe_get_orbital_elements()`
+and `swe_orbit_max_min_true_distance()` refuse it, and `swe_calc()` refuses
+every other negative number. The functions that take a body to a horizon or
+a centre did not. At UT 2433282.5, Zurich, Swiss files: `swe_rise_trans()`
+and `_true_hor()` answered a rise, a set and transits of the angles taken
+for a right ascension and declination, and a rise of the disc's edge read
+`pla_diam[-1]`; `swe_gauquelin_sector()` 16.6929 (method 0) and 17.8208 (1),
+methods 2 to 5 through the same rise; `swe_calc_pctr()` answered it as the
+body or the centre; the three occultation functions set every negative
+number without a star to the Sun and answered its eclipses
+(`swe_lun_occult_when_glob()` 10 at 2433359.147); `swe_helio_cross()` and its
+`_ut` form took the obliquity and its 0.0023 deg/day for a longitude and its
+speed, and the search, with no bound on its steps, did not end in 5 s.
+
+**Fix, as done here:** a negative number with no star is refused before any
+calculation by the rise and set, the Gauquelin sectors (every method), the
+three occultation functions (a star's ipl is not read, and still maps to 0),
+`swe_calc_pctr()` (as the body or the centre) and the two crossings: ERR,
+"illegal planet number -1." (the crossings: "not possible for object -1").
+The sidereal time's pair starts at zero, no nutation, for a model without
+one. The `pla_diam[]` reads of the eclipse and rise code are reached by
+non-negative numbers only. G52 `tests/eclnutbody.c`: -1, -2 and -100 in the
+twelve calls above (the crossings and `swe_calc_pctr()` in child processes,
+the crossings with a 5 s alarm): 36 checks; a star with ipl -1 the star as
+with ipl 0, and the Sun in the occultations still the eclipse of 1999 Aug
+11: 3; the sidereal time under an unknown nutation model the same after two
+dirtyings of the stack and that of no nutation: 2; and `make` compiles
+`swephlib.c` at -O3 with -Werror. Before the fix 18 of the 41 fail and the
+-O3 compile, after it none.
+
+## 44. The default sidereal time steps 1.908" at 2050 and 0.097" at 1850, and outside 1850-2050 it follows delta t: +328" at year 0, +2379" at -3000
+
+**Severity: Correctness (every sidereal time, house cusp and topocentric place before 1850 and after 2050: against the IERS 2010 expression +37" at 1000, +328" at year 0, +795" at -999, +2379" (0.66 deg of RAMC) at -3000, +92" at 3000; a -1.908" step at 2050-01-01 0h UT and -0.097" at 1850-01-01, every cusp with it)**
+**Where:** `swephlib.c`: `sidtime_long_term()` (removed), `swe_sidtime0_r()`, its IERS 2010 rotation angle
+
+`SEMOD_SIDT_LONGTERM`, the default, is the IERS Conventions 2010 sidereal
+time between 1850 and 2050 and `sidtime_long_term()` outside. That took
+sidereal time as the hour angle of the mean Sun plus the mean Earth's
+longitude (Simon et al. 1994) evaluated at TT for the UT instant, so every
+second of delta t moved it by the Sun's mean motion: 4.10" per 100 s at
+every epoch from -50000 to +50000. Sidereal time at a UT1 instant is the
+Earth rotation angle plus the equinox's accumulated precession in right
+ascension, which delta t moves only at the precession rate, 0.00015" per
+100 s (IERS Conventions 2010, eq. 5.30-5.32). With delta t at hours in
+antiquity the default stood off the IERS 2010 expression by the figures
+above. And the two formulas were spliced by constants fitted under the
+delta t of their day: under Espenak-Meeus 2006 they met to 0.0007" at 1850,
+but under Stephenson et al. 2016, the default since 2.06, sidereal time
+stepped by -0.097" across 1850-01-01 0h UT and -1.908" across 2050-01-01,
+and a high-latitude cusp by twice that.
+
+**Fix, as done here:** outside 1850-2050 the default is ERA(UT1) +
+0.014506" + c T + A(T), the IERS 2010 construction with the IAU 2006
+polynomial for the precession in right ascension A replaced by its integral
+from the context's own precession matrices, so it holds as far as the
+precession model does (Vondrak 2011 by default):
+- A is the integral from J2000 of the mean equinox's rotation rate about
+  the mean pole of date, -(dM/dt M^T)[1][0] for M = J2000 -> mean of date;
+  c = -0.003874"/cy is the secular rate of the CIO locator s, which no
+  precession matrix carries. On the IAU 2006 matrices the result is the
+  IAU 2006 polynomial within 0.08 mas over 1500-2500.
+- A is tabulated per context at nodes a century apart to 400 centuries
+  either side, built outward from J2000 as far as asked (struct
+  `sidt_pra_memo`, 26 KB, keyed by value on the two precession models),
+  integrated on each call from the table's end to 2000 centuries (Vondrak
+  2011's published range; at most 160 panels), and past 2000 centuries of
+  TT continued at the rate there, continuous in value and rate. So a call
+  costs a bounded time at any date: integrating on to the date would take
+  1.1 s at J 1e10 and some 140 s at 1e12, and crash at -1e300 and -inf,
+  where TT is NaN, if that were cast to a table index. No float is cast to
+  an int there; a NaN date answers NaN.
+- The 1850 and 2050 offsets are the two formulas' difference at each
+  boundary under the context's models, a few mas, so the splice is
+  continuous under any precession, nutation or delta t model.
+- The Earth rotation angle, which the IERS 2010 sidereal time shares, is
+  formed as the Conventions write it (eq. 5.15): the fraction of the day
+  from the JD itself plus 0.7790572732640 + 0.00273781191135448 (JD -
+  J2000), reduced to a turn before the multiplication by 360. Formed as
+  1.00273781191135448 (JD - J2000) it is 1.1e6 turns at -999, rounded at
+  0.3 mas and to another last bit where the multiply-add fuses (arm64 does
+  by default); with the rotation angle the default at every date, the
+  topocentric Moon's three-point speed made that 1.86e-5 deg/day between a
+  `clang -O2 -mfma -ffp-contract=on` build and the -O0 one at -999, past
+  G1b's 1e-5 (4.7e-6 now, as before the fix).
+- `swe_sidtime0()` with eps = 0 takes the equation of the equinoxes as
+  nut * cos(0) outside 1850-2050 too, as the IERS 2010 branch does; the old
+  formula computed a nutation of its own there.
+
+The new default against the IERS 2010 expression: -1.17" at -999, -0.29" at
+year 1, -0.019" at 1300, -10.1" at -3000, +0.030" at 3000, within 0.001"
+over 1800-2200 (Vondrak 2011 against the IAU 2006 polynomial, which is meant
+for near J2000). In the golden transcript 1,175 rows move: sidereal time by
+-796.10" at -999, -327.89" at year 1, -15.74" at 1300, +1.908" at
+2050-01-01, +1.793" at 2100 and -91.88" at 3000, and every house,
+topocentric and sidereal-time row at those dates with it (993 rows); within
+1850-2050, away from J2000, 182 rows by the rotation angle's rounding alone,
+up to 2.4e-6" of sidereal time, 1.3e-9 deg on a cusp, 1.2e-7 deg/day on a
+topocentric Moon's speed, an ulp of an eclipse time.
+
+G53 `tests/sidtimeera.c`, Moshier: (a) across 1850 and 2050 the step within
+0.001" under the default and four other model sets in turn on one context
+(0.000008" measured); (b) delta t + 100 s moves sidereal time by under
+0.001" at nine epochs from -50000 to +50000 (0.00014 .. 0.00015"); (c) on
+the IAU 2006 precession it is the IERS 2010 expression within 0.2 mas over
+1500-2500 (0.077 mas); (d) no step where the table ends within 0.01"
+(0.000008"); (e) at TT -+2000 centuries no step in the precession part within
+0.5" and its rate over a century either side within 20"/cy (2.7"/cy); (f) at
+J -+1e8, 1e10, 1e12, 1e13, 1e20, 1e300, -+inf and NaN, in a child under a
+10 s alarm, a fresh context's first call within 10 times one that builds the
+table plus 0.05 s (0.030 s against 0.021 at -+1e12), each next call within
+10 times one in the table plus 0.1 ms, and the houses with speeds,
+`swe_azalt()`, `swe_azalt_rev()` and `swe_gauquelin_sector()` returning;
+(g) over 64 consecutive JDs at -999, -13000 and 12000 sidereal time on a
+straight line within 0.01 mas (0.0033 mas). Before the fix 25 checks fail:
+10 of 12 in (a), all of (b) (4.10") and (c) (up to 18.8"). The fix without
+the 2000-century bound fails (f) at 10 of 15 dates: 6 hung, -1e300 and -inf
+crashed, -+1e8 took 0.012 s a call; without the rotation angle's form it
+fails (g) at all three (0.33, 1.03, 0.78 mas).
 
 ## How these were found
 

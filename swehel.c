@@ -337,7 +337,19 @@ static int32 DeterObject(char *ObjectName)
 }
 
 
-/* avoids problems with star name string that may be overwritten by 
+/* The observer for THIS calculation only, as swecl.c's helper of the same
+ * name: synced first, then overridden without publishing. Set under
+ * SWI_CFG_LOCAL alone, the next sync -- the first swe_calc() inside the
+ * call -- adopted the shared configuration over it, so after any setter the
+ * next swe_vis_limit_mag() or swe_heliacal_pheno_ut() failed with
+ * "geographic position has not been set", and the one after it worked. */
+static void set_topo_for_this_call(swe_ctx *ctx, double *dgeo)
+{
+  swi_init_swed_if_start(ctx);
+  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, dgeo[0], dgeo[1], dgeo[2]));
+}
+
+/* avoids problems with star name string that may be overwritten by
    swe_fixstar() */
 static int32 call_swe_fixstar(swe_ctx *ctx, char *star, double tjd, int32 iflag, double *xx, char *serr)
 {
@@ -354,16 +366,30 @@ static int32 call_swe_fixstar_mag(swe_ctx *ctx, char *star, double *mag, char *s
 {
   int32 retval;
   char star2[AS_MAXCH];
+  double dmag = 0;
+  char s[AS_MAXCH];
   /* moved to ctx->hel.starmag (Phase 3c) */
-  /* moved to ctx->hel.starmag (Phase 3c) */
-  if (strcmp(star, ctx->hel.starmag.star_save) == 0) {
+  /* The memo is filled when the lookup succeeds, so a failed one leaves no
+   * name keyed to another star's magnitude, and an empty name is not a hit.
+   * It keeps the lookup's serr, which a lookup clears, to write on a hit. */
+  if (ctx->hel.starmag.valid && strcmp(star, ctx->hel.starmag.star_save) == 0) {
     *mag = ctx->hel.starmag.dmag;
+    if (serr != NULL)
+      strcpy(serr, ctx->hel.starmag.serr_save);
     return OK;
   }
-  strcpy(ctx->hel.starmag.star_save, star);
   strcpy(star2, star);
-  retval = swe_fixstar_mag_r(ctx, star2, &ctx->hel.starmag.dmag, serr);
-  *mag = ctx->hel.starmag.dmag;
+  *s = '\0';
+  retval = swe_fixstar_mag_r(ctx, star2, &dmag, s);
+  if (serr != NULL)
+    strcpy(serr, s);
+  *mag = dmag;
+  if (retval != ERR) {
+    strcpy(ctx->hel.starmag.star_save, star);
+    strcpy(ctx->hel.starmag.serr_save, s);
+    ctx->hel.starmag.dmag = dmag;
+    ctx->hel.starmag.valid = TRUE;
+  }
   return retval;
 }
 
@@ -517,6 +543,19 @@ static int32 RiseSet(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm,
   else
     retval = my_rise_trans(ctx, JDNDaysUT, -1, ObjectName, eventtype, helflag, dgeo, datm, tret, serr);
   return retval;
+}
+
+/* Empty the memos of kOZ(), ka(), Deltam() and the star magnitude: the last
+ * comes from the catalogue on the ephemeris path, and a closed context
+ * answers as a new one. SunRA()'s key, UT, is complete: it is the monthly
+ * approximation (SIMULATE_VICTORVB), so neither the ephemeris nor delta T
+ * reaches it. */
+void swi_hel_forget(swe_ctx *ctx)
+{
+  ctx->hel.starmag.valid = FALSE;
+  ctx->hel.koz.valid = FALSE;
+  ctx->hel.ka.valid = FALSE;
+  ctx->hel.deltam.valid = FALSE;
 }
 
 /*###################################################################
@@ -752,9 +791,12 @@ static double kOZ(swe_ctx *ctx, double AltS, double sunra, double Lat)
   double CHANGEKO, OZ, LT, kOZret;
   /* moved to ctx->hel.koz (Phase 3c) */
   double altslim = 0;
-  if (AltS == ctx->hel.koz.alts_last && sunra == ctx->hel.koz.sunra_last)
+  if (ctx->hel.koz.valid && AltS == ctx->hel.koz.alts_last
+      && sunra == ctx->hel.koz.sunra_last && Lat == ctx->hel.koz.lat_last)
     return ctx->hel.koz.koz_last;
   ctx->hel.koz.alts_last = AltS; ctx->hel.koz.sunra_last = sunra;
+  ctx->hel.koz.lat_last = Lat;
+  ctx->hel.koz.valid = TRUE;
   OZ = 0.031;
   LT = Lat * DEGTORAD;
   /* From Schaefer , Archaeoastronomy, XV, 2000, page 128*/
@@ -807,6 +849,17 @@ static int Sgn(double x)
 ' VR [km]
 ' ka [-]
 */
+/* ka()'s two warnings, by number, so that a memo hit can write them again */
+static void ka_warn(int warn, char *serr)
+{
+  if (serr == NULL || warn == 0)
+    return;
+  if (warn == 1)
+    strcpy(serr, "The provided Meteorological range is too long, when taking into acount other atmospheric parameters"); /* is a warning */
+  else
+    strcpy(serr, "The provided atmosphic coeefficent (ktot) is too low, when taking into acount other atmospheric parameters"); /* is a warning */
+}
+
 static double ka(swe_ctx *ctx, double AltS, double sunra, double Lat, double HeightEye, double TempS, double RH, double VR, char *serr)
 {
   double CHANGEKA, LAMBDA, BetaVr, Betaa, kaact;
@@ -815,9 +868,19 @@ static double ka(swe_ctx *ctx, double AltS, double sunra, double Lat, double Hei
    * lambda eye sensibility changes
    * see extinction section of Vistas in Astronomy page 343 */
   /* moved to ctx->hel.ka (Phase 3c) */
-  if (AltS == ctx->hel.ka.alts_last && sunra == ctx->hel.ka.sunra_last)
+  if (ctx->hel.ka.valid && AltS == ctx->hel.ka.alts_last
+      && sunra == ctx->hel.ka.sunra_last && Lat == ctx->hel.ka.lat_last
+      && HeightEye == ctx->hel.ka.heye_last && TempS == ctx->hel.ka.temps_last
+      && RH == ctx->hel.ka.rh_last && VR == ctx->hel.ka.vr_last) {
+    ka_warn(ctx->hel.ka.warn, serr);
     return ctx->hel.ka.ka_last;
+  }
   ctx->hel.ka.alts_last = AltS; ctx->hel.ka.sunra_last = sunra;
+  ctx->hel.ka.lat_last = Lat; ctx->hel.ka.heye_last = HeightEye;
+  ctx->hel.ka.temps_last = TempS; ctx->hel.ka.rh_last = RH;
+  ctx->hel.ka.vr_last = VR;
+  ctx->hel.ka.warn = 0;
+  ctx->hel.ka.valid = TRUE;
   CHANGEKA = (1 - 0.166667 * mymin(6, mymax(-AltS - 12, 0)));
   LAMBDA = 0.55 + (CHANGEKA - 1) * 0.04;
   if (VR != 0) {
@@ -830,15 +893,15 @@ static double ka(swe_ctx *ctx, double AltS, double sunra, double Lat, double Hei
       Betaa = BetaVr - (kW(HeightEye, TempS, RH) / scaleHwater + kR(AltS, HeightEye) / scaleHrayleigh) * 1000 * astr2tau;
       kaact = Betaa * scaleHaerosol / 1000 * tau2astr;
       if (kaact < 0) {
-	if (serr != NULL)
-	  strcpy(serr, "The provided Meteorological range is too long, when taking into acount other atmospheric parameters"); /* is a warning */
+	ctx->hel.ka.warn = 1;
+	ka_warn(1, serr);
         /* return 0; * return "#HIGHVR"; */
       }
     } else {
       kaact = VR - kW(HeightEye, TempS, RH) - kR(AltS, HeightEye) - kOZ(ctx, AltS, sunra, Lat);
       if (kaact < 0) {
-	if (serr != NULL)
-	  strcpy(serr, "The provided atmosphic coeefficent (ktot) is too low, when taking into acount other atmospheric parameters"); /* is a warning */
+	ctx->hel.ka.warn = 2;
+	ka_warn(2, serr);
         /* return 0; * "#LOWktot"; */
       }
     }
@@ -967,9 +1030,23 @@ static double Deltam(swe_ctx *ctx, double AltO, double AltS, double sunra, doubl
   double AppAltO = AppAltfromTopoAlt(AltO, TempE, PresE, helflag);
   double deltam;
   /* moved to ctx->hel.deltam (Phase 3c) */
-  if (AltS == ctx->hel.deltam.alts_last && AltO == ctx->hel.deltam.alto_last && sunra == ctx->hel.deltam.sunra_last)
+  /* The result depends on the latitude, the eye height, the four datm and,
+   * through AppAltfromTopoAlt(), SE_HELFLAG_HIGH_PRECISION as well as on the
+   * altitudes; ka()'s warning is kept with it. */
+  if (ctx->hel.deltam.valid && AltS == ctx->hel.deltam.alts_last
+      && AltO == ctx->hel.deltam.alto_last && sunra == ctx->hel.deltam.sunra_last
+      && Lat == ctx->hel.deltam.lat_last && HeightEye == ctx->hel.deltam.heye_last
+      && datm[0] == ctx->hel.deltam.datm_last[0] && datm[1] == ctx->hel.deltam.datm_last[1]
+      && datm[2] == ctx->hel.deltam.datm_last[2] && datm[3] == ctx->hel.deltam.datm_last[3]
+      && helflag == ctx->hel.deltam.helflag_last) {
+    ka_warn(ctx->hel.deltam.warn, serr);
     return ctx->hel.deltam.deltam_last;
+  }
   ctx->hel.deltam.alts_last = AltS; ctx->hel.deltam.alto_last = AltO; ctx->hel.deltam.sunra_last = sunra;
+  ctx->hel.deltam.lat_last = Lat; ctx->hel.deltam.heye_last = HeightEye;
+  memcpy(ctx->hel.deltam.datm_last, datm, sizeof ctx->hel.deltam.datm_last);
+  ctx->hel.deltam.helflag_last = helflag;
+  ctx->hel.deltam.valid = TRUE;
   if (staticAirmass == 0) {
     zend = (90 - AppAltO) * DEGTORAD;
     if (zend > PI / 2)
@@ -984,6 +1061,7 @@ static double Deltam(swe_ctx *ctx, double AltO, double AltS, double sunra, doubl
     deltam = kt(ctx, AltS, sunra, Lat, HeightEye, datm[1], datm[2], datm[3], 4, serr) * Airmass(AppAltO, datm[0]);
   }
   ctx->hel.deltam.deltam_last = deltam;
+  ctx->hel.deltam.warn = ctx->hel.ka.warn;	/* both branches reach ka() */
   return deltam;
 }
 
@@ -1044,7 +1122,7 @@ static int32 Magnitude(swe_ctx *ctx, double JDNDaysUT, double *dgeo, char *Objec
     iflag |= SEFLG_NONUT|SEFLG_TRUEPOS;
   if (Planet != -1) {
     /**dmag = Phenomena(JDNDaysUT, Lat, Longitude, HeightEye, TempE, PresE, ObjectName, 4);*/
-    SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, dgeo[0], dgeo[1], dgeo[2]));
+    set_topo_for_this_call(ctx, dgeo);
     if (swe_pheno_ut_r(ctx, JDNDaysUT, Planet, iflag, x, serr) == ERR)
       return ERR;
     *dmag = x[4];
@@ -1349,7 +1427,7 @@ static char *tolower_string_star(char *str)
  *  |1  OK, scotopic vision
  *  |2  OK, near limit photopic/scotopic
 */
-int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr)
+static int32 swe_vis_limit_mag_r_body(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr)
 {
   int32 retval = OK, i, scotopic_flag = 0;
   double AltO, AziO, AltM, AziM, AltS, AziS;
@@ -1366,7 +1444,7 @@ int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, do
   swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   sunra = SunRA(ctx, tjdut, helflag, serr);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, dgeo[0], dgeo[1], dgeo[2]));
+  set_topo_for_this_call(ctx, dgeo);
   if (ObjectLoc(ctx, tjdut, dgeo, datm, ObjectName, 0, helflag, &AltO, serr) == ERR)
     return ERR;
   if (AltO < 0) {
@@ -1428,6 +1506,15 @@ int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, do
   return retval;
 }
 
+int32 CALL_CONV swe_vis_limit_mag_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, char *ObjectName, int32 helflag, double *dret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_vis_limit_mag_r_body(ctx, tjdut, dgeo, datm, dobs, ObjectName, helflag, dret, serr);
+  swi_config_release(ctx);
+  return ret;
+}
+
 /*###################################################################
 ' Magn [-]
 ' age [Year]
@@ -1486,7 +1573,7 @@ static int32 TopoArcVisionis(swe_ctx *ctx, double Magn, double *dobs, double Alt
   return OK;
 }
 
-int32 CALL_CONV swe_topo_arcus_visionis_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
+static int32 swe_topo_arcus_visionis_r_body(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
 {
   double sunra;
   swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
@@ -1495,6 +1582,15 @@ int32 CALL_CONV swe_topo_arcus_visionis_r(swe_ctx *ctx, double tjdut, double *dg
     return ERR;
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
   return TopoArcVisionis(ctx, mag, dobs, alt_obj, azi_obj, alt_moon, azi_moon, tjdut, azi_sun, sunra, dgeo[1], dgeo[2], datm, helflag, dret, serr);
+}
+
+int32 CALL_CONV swe_topo_arcus_visionis_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_topo_arcus_visionis_r_body(ctx, tjdut, dgeo, datm, dobs, helflag, mag, azi_obj, alt_obj, azi_sun, azi_moon, alt_moon, dret, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -1587,7 +1683,7 @@ static int32 HeliacalAngle(swe_ctx *ctx, double Magn, double *dobs, double AziO,
   return OK;
 }
 
-int32 CALL_CONV swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
+static int32 swe_heliacal_angle_r_body(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
 {
   if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
     if (serr != NULL)
@@ -1597,6 +1693,15 @@ int32 CALL_CONV swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, d
   swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
   return HeliacalAngle(ctx, mag, dobs, azi_obj, alt_moon, azi_moon, tjdut, azi_sun, dgeo, datm, helflag, dret, serr);
+}
+
+int32 CALL_CONV swe_heliacal_angle_r(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_heliacal_angle_r_body(ctx, tjdut, dgeo, datm, dobs, helflag, mag, azi_obj, azi_sun, azi_moon, alt_moon, dret, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -1761,7 +1866,7 @@ static void strcpy_VBsafe(char *sout, char *sin)
 '28=CVAact [deg] 'new
 '29=MSk [-]
 */
-int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
+static int32 swe_heliacal_pheno_ut_r_body(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
 {
   /* darr is caller-allocated and this function writes darr[0..30], so the
    * only thing that can be checked here is that the documented minimum in
@@ -1793,7 +1898,7 @@ int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *
   strcpy_VBsafe(ObjectName, ObjectNameIn);
   tolower_string_star(ObjectName);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, dgeo[0], dgeo[1], dgeo[2]));
+  set_topo_for_this_call(ctx, dgeo);
   retval = ObjectLoc(ctx, JDNDaysUT, dgeo, datm, "sun", 1, helflag, &AziS, serr);
   if (retval == OK)
     retval = ObjectLoc(ctx, JDNDaysUT, dgeo, datm, "sun", 0, helflag, &AltS, serr);
@@ -1972,6 +2077,15 @@ output_heliacal_pheno:
   darr[26] = elong;
   darr[27] = illum;
   return OK;
+}
+
+int32 CALL_CONV swe_heliacal_pheno_ut_r(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *darr, char *serr)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_heliacal_pheno_ut_r_body(ctx, JDNDaysUT, dgeo, datm, dobs, ObjectNameIn, TypeEvent, helflag, darr, serr);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.
@@ -3074,7 +3188,7 @@ static int32 heliacal_ut(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, doub
 '                   dret[2]: end of visibility (Julian day number; 0 if SE_HELFLAG_AV)
 ' see http://www.iol.ie/~geniet/eng/atmoastroextinction.htm
 */
-int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
+static int32 swe_heliacal_ut_r_body(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
 {
   int32 retval, Planet;
   /* serr starts empty because it is read as well as written: the Moon
@@ -3104,7 +3218,7 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
   strcpy_VBsafe(ObjectName, ObjectNameIn);
   tolower_string_star(ObjectName);
   default_heliacal_parameters(datm, dgeo, dobs, helflag);
-  SWI_CFG_LOCAL(ctx, swe_set_topo_r(ctx, dgeo[0], dgeo[1], dgeo[2]));
+  set_topo_for_this_call(ctx, dgeo);
   Planet = DeterObject(ObjectName);
   if (Planet == SE_SUN) {
     if (serr_ret != NULL) {
@@ -3206,6 +3320,15 @@ int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *d
   if (serr_ret != NULL && *serr != '\0')
     strcpy(serr_ret, serr);
   return retval;
+}
+
+int32 CALL_CONV swe_heliacal_ut_r(swe_ctx *ctx, double JDNDaysUTStart, double *dgeo, double *datm, double *dobs, char *ObjectNameIn, int32 TypeEvent, int32 helflag, double *dret, char *serr_ret)
+{
+  int32 ret;
+  swi_config_hold(ctx);
+  ret = swe_heliacal_ut_r_body(ctx, JDNDaysUTStart, dgeo, datm, dobs, ObjectNameIn, TypeEvent, helflag, dret, serr_ret);
+  swi_config_release(ctx);
+  return ret;
 }
 
 /* Legacy entry point: the process-wide default context.

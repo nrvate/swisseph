@@ -594,7 +594,8 @@ jobs:
   # pass/fail: t.exp was generated against the JPL ephemeris (de431.eph),
   # which this repo does not ship, so ~2730 assertions fail and the binary
   # aborts in suite_08_eclipses on pristine 3fd0f95 too. What must hold is
-  # that its output is byte-identical before and after our changes.
+  # that the testcases whose output differs from 3fd0f95's are exactly the
+  # ones tests/setest-upstream.baseline records, each with its fix.
   # ---------------------------------------------------------------------
   setest-differential:
     name: linux / setest differential

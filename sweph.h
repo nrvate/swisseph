@@ -65,7 +65,7 @@
 /* Fork version. Upstream is 2.10.03; the "-ts.N" suffix marks the
  * thread-safe fork, so swe_version() cannot report a number that
  * implies upstream behaviour this library no longer has. */
-#define SE_VERSION      "2.10.03-ts.19" 
+#define SE_VERSION      "2.10.03-ts.20" 
 
 #define J2000           2451545.0  	/* 2000 January 1.5 */
 #define B1950           2433282.42345905  	/* 1950 January 0.923 */
@@ -915,6 +915,34 @@ struct sidt_memo {
   AS_BOOL valid;
 };
 
+/* The precession in right ascension accumulated since J2000, the part of
+ * the long-term sidereal time that is not Earth rotation (swephlib.c,
+ * sidt_pra()): the integral of the mean-of-date frame's rotation about its
+ * pole, from the context's own precession model, at nodes
+ * SWI_SIDT_PRA_STEP centuries apart on each side of J2000, with the rate at
+ * each node, for a cubic Hermite polynomial between two; and, per side, the
+ * integral to SIDT_PRA_TFAR and the rate there, which carry it past that.
+ * Built outward from J2000 as far as asked, once per precession model.
+ * Keyed by value on the two precession models swi_precess() reads (the only
+ * inputs the integral has), two slots: get_aya_correction() overrides
+ * astro_models[] mid-calculation without a configuration change (see
+ * struct nut_memo), so no generation could key it. */
+#define SWI_SIDT_PRA_STEP   1.0	/* centuries */
+#define SWI_SIDT_PRA_NODES  400	/* per side: +-400 centuries */
+struct sidt_pra_table {
+  int32 prec_long, prec_short;
+  int nnode[2];		/* nodes computed, [0] before J2000, [1] after */
+  double a[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec */
+  double w[2][SWI_SIDT_PRA_NODES + 1];	/* arcsec per century */
+  double a_far[2], w_far[2];	/* at SIDT_PRA_TFAR, each side */
+  AS_BOOL far_valid[2];
+  AS_BOOL valid;
+};
+struct sidt_pra_memo {
+  struct sidt_pra_table slot[2];
+  int next;
+};
+
 /* Vondrak's ten periodic terms in swi_ldp_peps() (swephlib.c).
  *
  * SEMOD_PREC_DEFAULT is SEMOD_PREC_VONDRAK_2011, so swi_epsiln() lands on
@@ -978,12 +1006,14 @@ struct nut_memo {
 };
 
 /* The default nutation's grid (swephlib.c, calc_nutation): full IAU 2000A
- * evaluated at quarter-day nodes, cached direct-mapped by node index. The
- * values depend on the series alone, so nothing invalidates them. */
+ * and its first three derivatives at nodes SWI_NUT_GRID_STEP days apart,
+ * cached direct-mapped by node index. The values depend on the series
+ * alone, so nothing invalidates them. */
+#define SWI_NUT_GRID_STEP 1.0
 #define SWI_NUT_GRID_SLOTS 512
 struct nut_grid_slot {
-  double k;		/* node index: the node is at k / 4 days */
-  double v[2];		/* dpsi, deps there */
+  double k;		/* node index: the node is at k * SWI_NUT_GRID_STEP days */
+  double v[8];		/* dpsi and its first three derivatives; the same for deps */
   AS_BOOL valid;
 };
 
@@ -1062,12 +1092,24 @@ struct moon_state {
  * instant, so neither could have been switched back on without moving
  * results.
  */
+/* Each memo but SunRA()'s is keyed on every input of its result (the fields
+ * after each first line) and is empty by its `valid` flag, not by a key of 0.
+ * Each keeps what its computation wrote to serr (ka()'s warning; the star
+ * lookup's clearing), to write it again on a hit. SunRA()'s key, UT, is
+ * complete: it is the monthly approximation of the Sun's right ascension,
+ * a function of UT alone. swi_hel_forget() empties the others. */
 struct hel_state {
-  struct { double dmag; char star_save[AS_MAXCH]; }        starmag;
+  struct { double dmag; char star_save[AS_MAXCH];
+           char serr_save[AS_MAXCH]; int valid; }          starmag;
   struct { double tjdlast, ralast; }                       sunra;
-  struct { double koz_last, alts_last, sunra_last; }       koz;
-  struct { double alts_last, sunra_last, ka_last; }        ka;
-  struct { double alts_last, alto_last, sunra_last, deltam_last; } deltam;
+  struct { double koz_last, alts_last, sunra_last;
+           double lat_last; int valid; }                   koz;
+  struct { double alts_last, sunra_last, ka_last;
+           double lat_last, heye_last, temps_last, rh_last, vr_last;
+           int warn, valid; }                              ka;
+  struct { double alts_last, alto_last, sunra_last, deltam_last;
+           double lat_last, heye_last, datm_last[4];
+           int32 helflag_last; int warn, valid; }          deltam;
 };
 
 /* Memo caches for sweph.c.
@@ -1117,6 +1159,10 @@ struct swe_ctx {
   swi_gen_t cfg_seen;      /* master generation this context last adopted  */
   int32     cfg_local;     /* groups this context set itself and now owns  */
   AS_BOOL   cfg_applying;  /* re-entrancy guard while a setter is applying */
+  int32     cfg_hold;      /* depth of the calls holding the configuration */
+  /* swi_config_hold() started this context, and no swi_init_swed_if_start()
+   * has answered 1 for that start yet */
+  AS_BOOL   start_unreported;
   AS_BOOL ephe_path_is_set;
   /* May a calculation quietly finish on a weaker ephemeris than the caller
    * asked for? FALSE by default in this fork -- see swe_set_ephe_fallback().
@@ -1194,6 +1240,7 @@ struct swe_ctx {
   AS_BOOL do_interpolate_nut;
   struct interpol interpol;
   struct sidt_memo sidt_np;	/* see struct sidt_memo */
+  struct sidt_pra_memo sidt_pra;	/* see struct sidt_pra_memo */
   struct ldp_peps_memo ldp_peps;	/* see struct ldp_peps_memo */
   struct nut_memo nut_np;	/* see struct nut_memo */
   struct nut_grid_slot nut_grid[SWI_NUT_GRID_SLOTS];
@@ -1291,6 +1338,15 @@ extern TLS struct swe_ctx swed;
  * converted incrementally: a function that has been given a `ctx` parameter
  * is called with swi_default_ctx() until its callers have one of their own. */
 extern swe_ctx *swi_default_ctx(void);
+
+/* Empty the heliacal memos (struct hel_state; swehel.c). The star
+ * magnitude's comes from the catalogue on the ephemeris path, so a close
+ * and a new path call it. */
+extern void swi_hel_forget(swe_ctx *ctx);
+/* Empty the fixed-star memos and the star catalogue read into memory
+ * (sweph.c), and close the star file: the catalogue is the path's. Called
+ * where swi_hel_forget() is. */
+extern void swi_fixstar_forget(swe_ctx *ctx);
 
 /* Shared configuration layer. Included here, after struct sid_data and
  * SEI_NMODELS, because struct swe_config embeds both. */
