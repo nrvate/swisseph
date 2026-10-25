@@ -204,6 +204,8 @@ extern int swi_observer_accel_lt(swe_ctx *ctx, double teval, double t, int32 ifl
 extern int swi_observer_accel_fwd(swe_ctx *ctx, double teval, int32 epheflag, int32 iflag,
                                   int mm, AS_BOOL sun, const double *x0, double *acc,
                                   char *serr);
+/* a join of the Swiss files between t0 and t1 (UPSTREAM-BUGS 250) */
+extern AS_BOOL swi_file_join_between(swe_ctx *ctx, double t0, double t1);
 #endif
 
 extern void swi_mean_lunar_elements(swe_ctx *ctx, double tjd, 

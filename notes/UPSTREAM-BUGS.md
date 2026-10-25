@@ -277,6 +277,7 @@ worst were in code that had never executed even once.
 | 254 | `swe_house_pos()` of a tropical place answers the tropical house in whole signs ('W') and 0 Aries ('N'), where the manual counts every system as giving the sidereal house with the traditional method: Lahiri at Zurich, 1800-2100, a sidereal cusp's tropical place 0.298 house off its number in 'W', up to 0.842 in 'N'; the function takes no date or ayanamsa, so a documented limitation | Correctness (documented limitation) | `swehouse.c`, `swephexp.h` |
 | 252 | `swe_gauquelin_sector()` methods 0 and 1 set the place the body's call answered with every flag in the frame of the true ecliptic of date: the flags that name the place's frame or form (SEFLG_NONUT, ICRS, J2000, EQUATORIAL, RADIANS, XYZ) and the centre (HELCTR, BARYCTR) moved the sector, Mars at 1950, Zurich, method 0, NONUT -1.14e-4 sector, J2000 -0.0875, EQUATORIAL -0.148, RADIANS +17.8, XYZ +18.3, HELCTR and BARYCTR +3.88; methods 2 to 5 take the ephemeris alone | Correctness (behaviour) | `swecl.c` |
 | 253 | swetest's house positions (-fg, -fG, -fj) are `swe_house_pos()` of the place it printed: with -sid the sidereal place in the tropical frame (Mars at 1.1.1950 0h UT, Zurich, 'G', 5.3075773 for 2.6855985), with -j2000, -nonut, -hel, -bary, -icrs and -i's forms the place of that frame or form; in the diff modes the position of the difference or midpoint set off against the second body's (Mars - Sun, 'P', -15.306 deg for -100.930); the cusps' those of the cusps printed (sidereal house 1 at 330.07 deg) | Correctness (behaviour, program) | `swetest.c` |
+| 250 | At a join of the Swiss files (every 600 years, where each instant's read comes from its own file, entry 89, and the two files' places step: Mars 6.3e-8 deg at JD 2378496.5, the Earth's velocity 2.1e-9 AU/day, Chiron 1.3e-7 AU) a speed whose reads straddle the join takes the step for motion: 2^-7 day after the 1800 join the true node 4.5e-6 deg/day off its places' rate, the osculating apogee 1.5e-5, `swe_nod_aps()`'s osculating points up to 1.3e-2 (Chiron's node; Mars's heliocentric node 7.8e-5), the Sun's mean perigee 1.4e-7; within the light time after it the Sun's apparent speed 1.2e-7, Mercury's 1.7e-7, the Moon's 1.0e-5; Aldebaran 1.7e-7, Mars from Jupiter 1.0e-7 | Correctness | `sweph.c`, `swecl.c`, `swephlib.h` |
 
 ---
 
@@ -17996,6 +17997,140 @@ Noticed, not fixed:
   79.0773. The cusps' are taken from the printed cusp with xobl[0]: with
   -sid1 the Ascendant's ZD 69.0860 for 90.0000 and its RA 171.39 for
   192.69, where a planet's RA with -sid1 is the mean equator's (183.03).
+
+## 250. Across a join of the Swiss files a speed takes the two files' step for motion where its reads straddle the join
+
+**Severity: Correctness (a speed off its places' rate within its stencil's reach of a 600-year file join, up to 1.3e-2 deg/day; the places are right)**
+**Where:** `sweph.c`: new `swi_file_join_between()` and `osc_span_joins()`, `lunar_osc_elem()`, `earth_at_lt_sun()`, `app_pos_etc_moon()`, `fixstar_obs_rate()`, `swe_calc_pctr_r_body()`; `swecl.c`: `swe_nod_aps_r_body()`; `swephlib.h`
+
+Noticed by entry 226's work. Every instant is read from the file of its
+own 600-year bucket (entry 89), so at a join (1 January of a year
+divisible by 600, Julian before 1600; sepl, semo and seas join at the
+same instants) the places step from one file's fit to the other's: at JD
+2378496.5 (sepl_12 / sepl_18) the Earth 1.6e-9 AU and 2.1e-9 AU/day,
+the barycentric Sun 2.5e-9 AU/day, Mars 3.8e-9 AU (6.3e-8 deg; its
+heliocentric osculating node 4.2e-6 deg), Pluto 7.2e-8 AU, Chiron (seas)
+1.3e-7 AU and 3.4e-8 AU/day, the Moon (semo) 5.7e-12 AU. A speed formed
+from reads at other instants than its place's took the step for motion
+wherever those reads straddled the join. Against one-sided five-point
+differences of the places on the instant's side, at the 1800 join, deg/day:
+- The true node's and the osculating apogee's five Moon epochs 2^-6 day
+  apart (`lunar_osc_elem()`, entry 201): 2^-7 day after the join the
+  node 4.46e-6 off (SEFLG_TRUEPOS 4.47e-6), the apogee 1.49e-5; at the
+  join, the apparent Moon read before it, the node 5.2e-6.
+- `swe_nod_aps()`'s osculating ellipse at tjd + k 2^-5 day (the Moon's
+  2^-6), 2^-7 day after the join: Mars's heliocentric node 7.85e-5,
+  geocentric 5.4e-4, its heliocentric perihelion 3.26e-3; the Earth's and
+  the Sun's (SEFLG_NOGDEFL) perihelion 7.5e-4; Pluto's 6.36e-3, Ceres's
+  node 2.74e-3, Chiron's 1.33e-2; the Moon's apsides 1.51e-5; the
+  distances' rates up to 2.3e-3 AU/day. Pluto's points under
+  SE_NODBIT_MEAN (osculating) 2^-10 day after 1.3e-5.
+- `swe_nod_aps()`'s aberration rate, the observer read at tjd less the
+  points' light time: 2^-10 day after the join the Sun's mean perigee
+  (SEFLG_NOGDEFL) 1.41e-7, Mars's mean node 1.31e-8; Pluto's points 2^-3
+  day after 2.9e-9.
+- `swe_calc()`'s aberration rate, V(t) - V(t - tau) of the Earth read
+  across the join, within the light time after it: the Sun 2^-10 day
+  after 1.23e-7, Mercury 1.74e-7, Mars 4.96e-8, Jupiter 2^-8 after
+  2.96e-8, Chiron 2^-6 after 1.02e-8, Pluto and Cupido 2^-4 after 1.8e-9
+  and 1.9e-9; the Moon within its 1.3 s, where no difference resolves
+  it: the aberration's share of its speed jumps 9.06e-6 in longitude and
+  5.0e-6 in latitude off its line through the join (the velocity step
+  over the distance, 1.04e-5 expected), 7.5e-7 at 2400, 3.9e-6 at 1200.
+- A star's aberration rate, the Earth's velocities at tjd -+ 2^-9 day
+  (entry 206): Aldebaran within 2^-10 day either side 1.68e-7.
+- `swe_calc_pctr()`'s centre acceleration, a parabola through the
+  centre's velocities at tjd - d, tjd and tjd + 2^-10: Mars from Jupiter
+  2^-11 day before the join 9.96e-8, the Moon from Mars 6.2e-9.
+The upstream build reads across the joins the same way through its own
+stencils: Chiron's node above 1.26e-4.
+
+**Fix, as done here:** a join is a model step, and a speed is the rate
+of the places on its instant's own side of it.
+- `swi_file_join_between(t0, t1)`: TRUE if the planet files
+  `swi_gen_filename()` names for the two instants differ (FALSE at once
+  where an open file's nominal span holds both, as nearly always; FALSE
+  past entry 216's bound and for NaN). It holds at every join, whether
+  the files there agree or not.
+- The true node and the osculating apogee: after tjd's read, a main slot
+  whose Moon instant (less the light time) lies across a join from tjd's
+  is skipped as one past a span (entry 225), and the extra epochs on
+  tjd's side make the speed one-sided.
+- `swe_nod_aps()`'s ellipse: an epoch across a join from tjd is skipped
+  as one past the span (entry 226's replacement epochs, all on tjd's
+  side: the joins are 600 years apart); its aberration rate, the light-
+  time read across a join, is taken after tjd as at a span's start
+  (`swi_observer_accel_fwd()`).
+- `swe_calc()` (planets, fictitious bodies, the Moon geocentric and
+  topocentric): where a join lies between t and teval, the Earth's
+  velocity at t is V(teval) - tau a(teval), a the one-sided second-order
+  difference of the velocities after teval over 2^-9 day (entry 226's;
+  the gravitational sum the function takes past 0.3 day of light time
+  left the Moon's 9.9e-9 at the join of AD 13200). The Moon's geocentric path takes its Earth through the
+  same function (the read itself elsewhere, the light time under 1e-3
+  day). A read refused there leaves the chord.
+- A star: an Earth read across a join from tjd is not taken, the
+  acceleration entry 206's one-sided difference from tjd's side.
+- `swe_calc_pctr()`: a join between t and tjd, or tjd and tjd + 2^-10,
+  makes the centre's acceleration the one-sided second-order difference
+  over 2^-10 day on tjd's side.
+- Now at the 1800 join: the true node 4.9e-9 (TRUEPOS 1.8e-12), at the
+  join 2.6e-9, the apogee 2.0e-7 (its reference's noise); Mars's
+  heliocentric node 2.5e-12, geocentric 9e-12, perihelion 1.6e-12, the
+  Earth's and the Sun's 1.6e-12, Pluto's 2.8e-13, Ceres's 3.9e-13,
+  Chiron's 8e-13, the Moon's apsides 1.5e-9, the distances' rates 1e-12
+  AU/day, Pluto's points under SE_NODBIT_MEAN 1.3e-10; the Sun's mean
+  perigee 1.0e-11, Mars's mean node 1.7e-11, Pluto's points 2^-3 day
+  after 1.4e-11; the Sun 5.7e-10, Mercury 7.7e-10, Mars 2.4e-10,
+  Jupiter 5.4e-11, Chiron 3.2e-12, Pluto 1.4e-12, Cupido 1.8e-12; the
+  Moon's aberration share 1.7e-9 off its line (2400 3.3e-10, 1200
+  5.5e-10, 13200 3.5e-10); Aldebaran 6e-12 and 9e-12; Mars from Jupiter
+  3.1e-10, the Moon from Mars 3.2e-10.
+- Elsewhere unchanged: 37232 answers (22 bodies by `swe_calc()` under
+  nine flag sets, nine by `swe_nod_aps()` under its three methods and
+  five flag sets, three stars, five `swe_calc_pctr()` pairs; 104 dates
+  1200-2290, among them 1 and 0.3 day before and 0.5 and 1 after six
+  joins) bit for bit before and after. 6000 x 10 `swe_calc()` calls with
+  SEFLG_SPEED take 6.21362e9 instructions for 6.20931e9 on the Swiss
+  files (+0.07%), 1.173375e10 for 1.173147e10 on Moshier (+0.02%).
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; the compat build reads across
+  the joins as upstream does.
+
+G166 `tests/joinspeed.c`: at the 50 joins -12600..16800 (each confirmed a
+change of file name), with the complete directory, (a) the true node and
+the osculating apogee, (b) `swe_nod_aps()`'s osculating points (Mars,
+Saturn's barycentric ellipse, the Sun, the Earth, the Moon, Ceres,
+Chiron), (c) its mean points, (d) `swe_calc()` within the light time
+after the join, (e) the Moon's aberration share, (f) two stars, (g)
+`swe_calc_pctr()`, each against its places' one-sided five-point
+difference on the instant's side, not crossing the step, the call bit
+for bit a fresh context's and its place the call's without SEFLG_SPEED:
+4698 rows pass, within 6.1e-7 deg/day (the apogee; the planets' points
+2.6e-8, the mean points 2.2e-9, `swe_calc()` 2.7e-9, the Moon's share
+1.9e-9, the stars 6.2e-11, `swe_calc_pctr()` 3.1e-9; the distances
+3.6e-12 AU/day), the same rows 0.5, 3 and -3 days off the joins too.
+ts20 before the fix fails 4150 rows, the upstream build 4530.
+G24 `join_node_rate_off`: Chiron's heliocentric osculating ascending
+node 2^-12 day after the 1800 join, its longitude speed against the
+forward five-point difference of its places over 2^-5 day: 7.3e-12
+deg/day shipped, 1.26e-4 compat (1.33e-2 shipped before the fix).
+
+Noticed, not fixed:
+- The Swiss files' segment boundaries inside a file are model steps of
+  the same size, which this rule does not reach (it is the joins'): the
+  Earth 1-7e-9 AU and the barycentric Sun 2-11e-9 at every yearly EMB
+  segment boundary (entry 102's), the Moon 3e-12-1.5e-11 AU (1e-7 to
+  3.6e-7 deg) at every 27.55-day one. Within the stencil's reach of one
+  the speeds are off as at a join (against one-sided references that do
+  not cross it): at JD 2451562.2258 (J2000 + 17.23) the true node up to
+  8.1e-4 deg/day, the osculating apogee 9.2e-3; at sepl_12's last EMB
+  boundary (JD 2378495.5759, 0.92 day before the 1800 join) 2^-7 day
+  either side Mars's heliocentric osculating node 1.3e-4, its perihelion
+  3.0e-3, the Earth's perihelion 2.3e-3; at semom36's first Moon boundary
+  (JD 406158.4657) the true node 3.1e-4, the apogee 6.2e-4. Before and
+  after alike.
+- Below the floor: the Moon's apparent aberration share at the 1800 join
+  1.7e-9 deg/day off its line now (the other joins 2e-10 to 6e-10).
 
 ## How these were found
 

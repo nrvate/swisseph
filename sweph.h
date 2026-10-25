@@ -1735,6 +1735,11 @@ struct epsilon {
  *     frame: Mars at 1950, Zurich, SEFLG_NONUT -1.14e-4 sector, J2000
  *     -0.0875, EQUATORIAL -0.148, RADIANS +17.8, XYZ +18.3, HELCTR and
  *     BARYCTR +3.88 off the call without (UPSTREAM-BUGS 252, G167, G24)
+ *   - speeds whose reads straddle a join of the Swiss files taking the two
+ *     files' step for motion: 2^-7 day after the 1800 join the true node
+ *     4.5e-6 deg/day off its places' rate, Chiron's heliocentric
+ *     osculating node 1.3e-2 (the compat build's stencil 1.3e-4), the Sun
+ *     within its light time 1.2e-7 (UPSTREAM-BUGS 250, G166, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

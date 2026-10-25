@@ -6228,6 +6228,21 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
         rosc[i] = (tjd_et - (t - bb)) + (kh - bb);
       }
       if (istart != iend && i != 2) {
+        /* Upstream bug 250: and across a join of the Swiss files, where
+         * the two files' places step (Mars 6.3e-8 deg at JD 2378496.5, its
+         * heliocentric node 4.2e-6), the difference took the step for the
+         * orbit's motion: 2^-7 day after that join Mars's heliocentric
+         * node 7.8e-5 deg/day off its places' one-sided rate, its
+         * perihelion 3.3e-3, Pluto's 6.4e-3, Chiron's node (seas) 1.3e-2,
+         * the Moon's apsides (semo) 1.5e-5. A join is a model step: the
+         * epochs across it are skipped as those past a span, and the
+         * speed is the rate of the places on tjd's side. (The extra
+         * epochs are on that side: the joins are 600 years apart.) */
+        if (kk < 5 && !(retc0 & (SEFLG_JPLEPH | SEFLG_MOSEPH))	/* the Swiss files */
+            && swi_file_join_between(ctx, t, tjd_et)) {
+          oscout |= koff[i] < 0 ? 1 : 2;
+          goto osc_next;
+        }
         /* bug 226: a read for the speed alone, skipped past the span of
          * tjd's ephemeris (an extra one past it too: no span is so short) */
         if ((o = nodaps_osc_read(ctx, t, ipli, iflJ2000, retc0 & SEFLG_EPHMASK, xpos[i], &retx,
@@ -6908,6 +6923,15 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
           return ERR;
         lt_out = pedp->teval == tjd_et - dt
                  && (pedp->iephe != e0 || (rate34 && (ctx->moshmoon_earth_t == pedp->teval) != mm0));
+        /* Upstream bug 250: and so when a join of the Swiss files lies
+         * between, whose two files' velocities step (the Earth's 2.1e-9
+         * AU/day at JD 2378496.5, the barycentric Sun's 2.5e-9), divided
+         * by dt into the acceleration: the Sun's mean perigee 2^-10 day
+         * after that join 1.4e-7 deg/day off its places' rate, Mars's mean
+         * node 1.3e-8. A join is a model step: the rate is then the one
+         * after tjd, as at a span's start (1.0e-11 and 1.7e-11 now). */
+        if (!lt_out && e0 == SEFLG_SWIEPH && swi_file_join_between(ctx, tjd_et - dt, tjd_et))
+          lt_out = TRUE;
 #else
         if (swe_calc_r(ctx, tjd_et - dt, ipli, iflg0 | (iflag & SEFLG_TOPOCTR), x2, serr) == ERR)
           return ERR;

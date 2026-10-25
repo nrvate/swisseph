@@ -4450,6 +4450,28 @@ static AS_BOOL file_answers(const struct file_data *f, double tjd)
   return f->fptr != NULL && tjd >= f->tfstart && tjd <= f->tfend
     && tjd >= f->tnom0 && tjd < f->tnom1;
 }
+
+/* Upstream bug 250: TRUE if a join of the Swiss files lies between t0 and
+ * t1 -- the 600-year files swi_gen_filename() names for the two differ,
+ * sepl, semo and seas alike, so that each instant's read comes from its
+ * own file (bug 89) and the places step between them. FALSE at once where
+ * the nominal span of an open file holds both, as nearly always. */
+AS_BOOL swi_file_join_between(swe_ctx *ctx, double t0, double t1)
+{
+  char s0[AS_MAXCH], s1[AS_MAXCH];
+  int i;
+  for (i = 0; i <= SEI_FILE_MAIN_AST; i++) {
+    const struct file_data *f = &ctx->fidat[i];
+    if (f->fptr != NULL && t0 >= f->tnom0 && t0 < f->tnom1 && t1 >= f->tnom0 && t1 < f->tnom1)
+      return FALSE;
+  }
+  /* no file is named past bug 216's bound, nor for NaN */
+  if (!(fabs(t0) <= SWI_FILENAME_JMAX && fabs(t1) <= SWI_FILENAME_JMAX))
+    return FALSE;
+  swi_gen_filename(t0, SEI_SUNBARY, s0);
+  swi_gen_filename(t1, SEI_SUNBARY, s1);
+  return strcmp(s0, s1) != 0;
+}
 #endif
 
 /* 
@@ -7634,6 +7656,28 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
   int i, have_moon = FALSE;
   for (i = 0; i <= 5; i++)
     xout[i] = xe[i];
+  /* Upstream bug 250: the Earth at t is read from the file of its own
+   * instant (bug 89), and where a join of the Swiss files lies between t
+   * and teval, V(teval) - V(t) took the two files' velocity step (the
+   * Earth's 2.1e-9 AU/day at JD 2378496.5) for tau a: within the light
+   * time after that join every apparent speed was off its places' rate by
+   * the step over the distance, the Sun's 1.2e-7 deg/day, Mercury's
+   * 1.7e-7, Mars's 5.0e-8, Jupiter's 3.0e-8, the Moon's 1.0e-5 (its 1.3
+   * s). A join is a model step: there tau a is taken on teval's side, a
+   * the Earth's acceleration at teval from its velocities after it (bug
+   * 226's one-sided difference over 2^-9 day; the Sun's 5.7e-10 now, the
+   * Moon's 1.7e-9, where the gravitational sum below left the Moon's
+   * 9.9e-9 at the join of AD 13200). A read refused there leaves the
+   * chord. */
+  if (tau > 0 && ctx->pldat[SEI_EARTH].iephe == SEFLG_SWIEPH
+      && swi_file_join_between(ctx, t, teval)) {
+    double acc[3];
+    if (swi_observer_accel_fwd(ctx, teval, SEFLG_SWIEPH, SEFLG_SWIEPH, -1, FALSE, xeteval, acc,
+                               NULL) == OK)
+      for (i = 0; i <= 2; i++)
+        xout[i+3] = xeteval[i+3] - tau * acc[i];
+    return;
+  }
   if (tau < 1e-3)
     return;
   /* the Moon's pull on the Earth, a_m = GM_m d/|d|^3, and its rate: from
@@ -8284,7 +8328,12 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
    * no other instant: it answers as without the flag. Now a read outside
    * is not taken, the acceleration the one-sided second-order difference
    * from the side within, (3 v(t) - 4 v(t - h) + v(t - 2h)) / 2h
-   * (truncation h^2/3 a'', 1e-9 of a; central as before elsewhere). */
+   * (truncation h^2/3 a'', 1e-9 of a; central as before elsewhere).
+   * Upstream bug 250: and so a read across a join of the Swiss files,
+   * whose two files' velocities step (the Earth's 2.1e-9 AU/day at JD
+   * 2378496.5), divided by 2h into the acceleration: within 2^-9 day of
+   * that join Aldebaran's speed 1.7e-7 deg/day off its places' rate. A
+   * join is a model step: the rate is the one on tjd's side. */
   AS_BOOL mm = ctx->moshmoon_used;	/* the Earth at tjd's Moon */
   char s[AS_MAXCH], *sp = (serr != NULL) ? s : NULL;
   /* Upstream bug 246: and an Earth made from Moshier's Moon (Moshier's, or
@@ -8306,6 +8355,11 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
     if (k == out)
       continue;
     *s = '\0';
+    if (out < 0 && epheflag == SEFLG_SWIEPH
+        && swi_file_join_between(ctx, k ? tjd - h : tjd + h, tjd)) {
+      out = k;
+      continue;
+    }
     retc = fixstar_rate_read(ctx, k ? tjd - h : tjd + h, epheflag, iflag, mm, xa[k], sp);
     if (retc == NOT_AVAILABLE && out < 0) {
       out = k;
@@ -9368,8 +9422,15 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
       for (i = 0; i <= 5; i++)
 	xobs2[i] = xs[i];
     } else {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* bug 250: the Earth read at t, but across a join of the Swiss
+       * files its velocity V(teval) - tau a(teval) (earth_at_lt_sun());
+       * else the read itself, the light time being under 1e-3 day */
+      earth_at_lt(ctx, pedp->teval, t, pedp->x, xe, xobs2);
+#else
       for (i = 0; i <= 5; i++)
 	xobs2[i] = xe[i];
+#endif
     }
 #ifndef SWE_UPSTREAM_COMPAT
     /* Upstream bug 73: the aberration rate term xobs - xobs2 is tau a, and
@@ -10739,6 +10800,25 @@ static int osc_span_extend(swe_ctx *ctx, struct osc_span *o, double tjd, int32 i
   o->holdx = osc_frame_hold(ctx, tjd, iflag, 2 * intv, npt);
   return OK;
 }
+
+/* Upstream bug 250: the Swiss Moon files' places step at their joins
+ * (semo_12 / semo_18 at JD 2378496.5), and a speed read across one from
+ * tjd's took the step for the Moon's motion: 2^-7 day after that join the
+ * true node's speed 4.5e-6 deg/day off its places' one-sided rate, the
+ * osculating apogee's 1.5e-5. A join is a model step: after tjd's read
+ * (the last of the main ones), the main slots whose Moon, at its own
+ * instant tr[] (less the light time), was read across a join from tjd's
+ * are skipped as those past a span, so the speed is the one-sided rate of
+ * the places on the side of tjd's read. */
+static void osc_span_joins(swe_ctx *ctx, struct osc_span *o, const double *tr)
+{
+  int k, i;
+  for (k = 0; k < o->nmain; k++) {
+    i = o->ord[k];
+    if (i != 2 && swi_file_join_between(ctx, tr[i], tr[2]))
+      o->out |= o->off[i] < 0 ? 1 : 2;
+  }
+}
 #endif
 
 /* lunar osculating elements, i.e.
@@ -10841,6 +10921,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   int32 speedf1, speedf2;
 #ifndef SWE_UPSTREAM_COMPAT
   double rr[5] = {0, 0, 0, 0, 0};
+  double tr[5] = {0, 0, 0, 0, 0};	/* bug 250: each slot's Moon's instant */
   AS_BOOL hold = FALSE;		/* bug 186 */
   int32 held[2];
   struct osc_span osp;		/* bug 225 */
@@ -11016,6 +11097,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	t = tjd + osp.off[i] * speed_intv;
 	rr[i] = osc_round_err(tjd, osp.off[i] * speed_intv, t);	/* bug 75 */
 	osc_span_save(&osp, i, serr);
+	tr[i] = t;		/* bug 250 */
 #else
       for (k = kstart; k < npt; k++) {
 	i = ord[k];
@@ -11030,6 +11112,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	  retc = swemoon(ctx, t-dt, iflag | SEFLG_SPEED, NO_SAVE, xpos[i], serr);/**/
 #ifndef SWE_UPSTREAM_COMPAT
 	  rr[i] += osc_round_err(t, -dt, t - dt);
+	  tr[i] = t - dt;
 #endif
 	  if (retc == ERR)
 	    return(ERR);
@@ -11062,6 +11145,8 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 #ifndef SWE_UPSTREAM_COMPAT
 	if (osc_span_hold(&osp, k, hold))
 	  swi_frame_model_release(ctx, held);
+	if (i == 2 && (iflag & SEFLG_SPEED))
+	  osc_span_joins(ctx, &osp, tr);	/* bug 250 */
 	if (i == 2 && osc_span_extend(ctx, &osp, tjd, iflag, speed_intv, npt, serr) != OK)
 	  return ERR;
 #endif
@@ -15242,12 +15327,32 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
      * off by d h a'''/6 */
     if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_NOABERR)) {
       double xp[6], tp = tjd + 1.0 / 1024, d = tjd - t, h;
-      if (swe_calc_r(ctx, tp, iplctr, iflag2, xp, serr) == ERR)
-        return ERR;
-      h = tp - tjd;
-      for (i = 0; i <= 2; i++)
-        xctra[i] = ((xp[i+3] - xxctr[i+3]) * (d / h)
-                    + (xxctr[i+3] - xxctr2[i+3]) * (h / d)) / (d + h);
+      /* Upstream bug 250: across a join of the Swiss files, between t
+       * and tjd or tjd and tp, the parabola took the two files' velocity
+       * step for the centre's acceleration: Mars from Jupiter 2^-11 day
+       * before the sepl_12 / sepl_18 join (JD 2378496.5) 1.0e-7 deg/day
+       * off its places' rate. A join is a model step: there the
+       * acceleration is the one-sided second-order difference on tjd's
+       * side, sg (4 v(tjd + sg h) - 3 v0 - v(tjd + 2 sg h)) / 2h, h =
+       * 2^-10 day (truncation h^2/3 a''). */
+      int sg = 0, k;
+      if (!(ephe_used & (SEFLG_JPLEPH | SEFLG_MOSEPH)))
+        sg = swi_file_join_between(ctx, t, tjd) ? 1 : swi_file_join_between(ctx, tjd, tp) ? -1 : 0;
+      if (sg != 0) {
+        double xq[2][6], hh = 1.0 / 1024;
+        for (k = 0; k < 2; k++)
+          if (swe_calc_r(ctx, tjd + sg * (k + 1) * hh, iplctr, iflag2, xq[k], serr) == ERR)
+            return ERR;
+        for (i = 0; i <= 2; i++)
+          xctra[i] = sg * (4 * xq[0][i+3] - 3 * xxctr[i+3] - xq[1][i+3]) / (2 * hh);
+      } else {
+        if (swe_calc_r(ctx, tp, iplctr, iflag2, xp, serr) == ERR)
+          return ERR;
+        h = tp - tjd;
+        for (i = 0; i <= 2; i++)
+          xctra[i] = ((xp[i+3] - xxctr[i+3]) * (d / h)
+                      + (xxctr[i+3] - xxctr2[i+3]) * (h / d)) / (d + h);
+      }
     }
 #endif
 #ifndef SWE_UPSTREAM_COMPAT
