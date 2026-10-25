@@ -1239,7 +1239,10 @@ check-closesurvive: closesurvive
 # G126: swe_calc_orbel() turns the frame bias as the fictitious bodies do:
 # its places against the same elements from a seorbel.txt, every centre and
 # frame, on the Swiss files, de200, Moshier and SE_TEST_DE4 as G104, and its
-# geocentric place its heliocentric less the Earth (UPSTREAM-BUGS 130).
+# geocentric place its heliocentric less the Earth (UPSTREAM-BUGS 130);
+# Moshier's barycentre refused as swe_calc() refuses it, and with the files
+# missing, strict and with the fallback, its answers and refusals
+# swe_calc()'s (UPSTREAM-BUGS 135).
 check-orbelbias: orbelbias
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./orbelbias $(EPHE) "$${SE_TEST_DE4:-}"
 

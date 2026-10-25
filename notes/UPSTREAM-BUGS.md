@@ -166,6 +166,7 @@ worst were in code that had never executed even once.
 | 132 | `swe_time_equ()`, `swe_lmt_to_lat()` and `swe_lat_to_lmt()` take the JPL Sun only when this context has the JPL file open: after `swe_set_jpl_file()` a new thread, a thread that computed before it and a context made after it answer from the Swiss files, E 1.19e-8 day (1.03 ms) off at J2000, 1.17e-7 day in 1800, and after `swe_close()` a JPLEPH calculation moves them to the JPL file while `swe_deltat()` stays Swiss | Correctness (behaviour) | `sweph.c` |
 | 133 | The Sunshine houses' remembered declination, set by `swe_houses_armc()` before a context's first start, is wiped by the start's memset, which leaves 0 for 99, "none yet" (this fork's): a recall with 99 after the first calculation answers with declination 0, cusp 3 6.71 deg off | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 131 | After `swe_close()` without the path again, the kept path's first delta t takes the default tidal term (-25.80) until a file opens: 1463.43 s in AD 1000 for 1474.72, the first UT Moon there 1.6e-3 deg off the second, with de200.eph 14.29 s in AD 1700 for 3.01 -- on the closing thread, every thread and context adopting the close and an explicit context closed by `swe_close_r()` | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
+| 135 | `swe_calc_orbel()` (this fork's) answers a barycentric Moshier request, which `swe_calc()` refuses: the heliocentric place under a return flag with SEFLG_BARYCTR set, 5.7e-3 AU off the barycentric one (0.29 deg at a = 1.2 AU) | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -8500,9 +8501,10 @@ Left as they are:
   rates, the same before the fix and on de200. Below the floor, not
   fixed.
 - Moshier with SEFLG_BARYCTR: `swe_calc()` refuses it, and
-  `swe_calc_orbel()` answers it with the heliocentric place, 5.7e-3 AU
+  `swe_calc_orbel()` answered it with the heliocentric place, 5.7e-3 AU
   off the Swiss barycentric one, returning SEFLG_BARYCTR. A matter apart,
-  not fixed here; G126 leaves that centre out on Moshier.
+  not fixed here: entry 135, which made G126 check that centre on Moshier
+  as a refusal.
 
 G126 `tests/orbelbias.c`. Check 1: `swe_calc_orbel()` against `swe_calc()`
 of the same elements, written to a seorbel.txt in a temp dir (each with
@@ -8774,6 +8776,63 @@ observed in TT for this, now takes the sidereal readers' ayanamsa in AD
 1000 by `swe_get_ayanamsa_ex_ut()` first, before any file opens: 84 pass;
 48 fail before this fix (3.3e-9 deg), 78 compat. G120, G115, G106, G82,
 G100, the delta-t memo, G119, cfgleak, G2 and check-ctx pass.
+
+## 135. `swe_calc_orbel()` answers a barycentric Moshier request, which `swe_calc()` refuses (this fork's)
+
+**Severity: Correctness (behaviour: an answer where `swe_calc()` refuses, the heliocentric place labelled barycentric, 5.7e-3 AU off the barycentric one)**
+**Where:** `sweph.c`: `swe_calc_orbel_r()` (and through it `swe_calc_orbel_ut_r()`)
+
+Found by entry 130's work. `swecalc()` refuses every barycentric Moshier
+request: "barycentric Moshier positions are not supported.", -1. Moshier
+serves heliocentric places only, the Sun its origin. `swe_calc_orbel()`
+does its own ephemeris setup and never passes through `swecalc()`, so it
+answered. Its observer for SEFLG_BARYCTR is the origin, which on Moshier
+is the Sun, so the place was the heliocentric one, under a return flag
+with SEFLG_BARYCTR set (18180 with SEFLG_SPEED):
+
+- an orbit with a = 1.2 AU at 2000 Jul 1.5: 167.8283 deg, Moshier's
+  heliocentric longitude to the last digit, where the Swiss files'
+  barycentric one is 168.1189 deg, 0.29 deg and 5.7e-3 AU away;
+- the same for an orbit about the Earth (279.418 against 279.049 deg).
+
+With the files missing the two functions already agreed, as entries 112
+and 120 have them follow each other: under the strict setting both refuse
+a Swiss or JPL request for the missing files, and with the fallback
+allowed both answer it from Moshier (below). Only a request that named
+Moshier itself differed.
+
+**Fix, as done here:** `swecalc()`'s test and message in
+`swe_calc_orbel_r()`, on the flags as `plaus_iflag()` leaves them (the
+ephemeris bits' precedence, so SEFLG_SWIEPH | SEFLG_MOSEPH is a Swiss
+request; SEFLG_TOPOCTR clears SEFLG_BARYCTR). Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, although the function is the fork's: its compat
+build keeps the answer its copy of the fictitious path gave, as for
+entries 88 and 130.
+
+Left as it is, not this entry's: with the fallback allowed, a Swiss or JPL
+barycentric request that falls to Moshier is answered by `swe_calc()`
+itself with Moshier's heliocentric place under SEFLG_BARYCTR | SEFLG_MOSEPH
+(Mars at 2000 Jul 1.5: 7.2e-3 AU, 0.24 deg off the files' barycentric Mars,
+0 from Moshier's heliocentric one), and `swe_calc_orbel()` answers as it
+does, bit for bit in flag and message. A defect of `swe_calc()`'s
+fallback, measured here and not fixed.
+
+G126 `tests/orbelbias.c` (entry 130's gate) now checks that centre:
+- check 1, Moshier's barycentre, 60 rows an orbit, is refused by both with
+  `swe_calc()`'s message;
+- a new check 3 takes the files missing (the element file's temp dir
+  alone), strict and with the fallback: each orbit at each date, Moshier,
+  Swiss and JPL, geocentric, heliocentric and barycentric, 360 calls. Each
+  has `swe_calc()`'s return flag and message for the same elements from
+  seorbel.txt, and where both answer the same place, within 1.7e-13 deg
+  and 1.0e-11 deg/day; 160 are refused by both.
+
+Before the fix G126 fails 5 (each orbit's Moshier barycentre, answered
+18180, and check 3 by its 40 such calls); after, it passes. The compat
+build fails 26, its 20 of entry 130 and these 6.
+
+G24 `orbel_mosh_bary_ret`: `swe_calc_orbel()` of the a = 1.2 AU orbit,
+Moshier, barycentric, at 2000 Jul 1.5: -1 shipped, 18180 compat.
 
 ## How these were found
 

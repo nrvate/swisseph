@@ -897,6 +897,20 @@ static int32 swe_calc_orbel_r_body(swe_ctx *ctx, double tjd_et, const double *el
 #endif
   iflag = plaus_iflag(ctx, iflag, -1, tjd_et, serr);
 #ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 135 (this fork's swe_calc_orbel()): swecalc() refuses
+   * every barycentric Moshier request, and this function, which does not
+   * pass through it, answered: the heliocentric place (Moshier's origin is
+   * the Sun) under a return flag with SEFLG_BARYCTR set, 5.7e-3 AU off the
+   * Swiss files' barycentric one, 0.29 deg at a = 1.2 AU. Refused now with
+   * swecalc()'s message, on the same normalised flags (plaus_iflag(): the
+   * ephemeris bits' precedence, SEFLG_TOPOCTR over SEFLG_BARYCTR). A
+   * Swiss or JPL request that falls to Moshier is answered as swe_calc()
+   * answers it. G126. */
+  if ((iflag & SEFLG_BARYCTR) && (iflag & SEFLG_MOSEPH)) {
+    if (serr != NULL)
+      strcpy(serr, "barycentric Moshier positions are not supported.");
+    goto return_error;
+  }
   /* Upstream bug 88 (this fork's swe_calc_orbel()): the obliquity and
    * nutation caches of date were never brought to tjd here, as swecalc()
    * does for every body: app_pos_rest() took ctx->oec and ctx->nut as the

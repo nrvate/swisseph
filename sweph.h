@@ -1186,6 +1186,10 @@ struct epsilon {
  *     de200.eph 14.29 s in AD 1700 for 3.01 (UPSTREAM-BUGS 131, G127).
  *     The threads and contexts adopting the close read them again in the
  *     shipped build only, as the closing one does
+ *   - swe_calc_orbel() (this fork's) answering a barycentric Moshier
+ *     request, which swe_calc() refuses: the heliocentric place under
+ *     SEFLG_BARYCTR, 5.7e-3 AU off the barycentric one (UPSTREAM-BUGS 135,
+ *     G126)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

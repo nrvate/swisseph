@@ -1931,6 +1931,22 @@ static double orbel_bias_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 135: swe_calc_orbel() of an orbit with a = 1.2 AU on
+ * Moshier, barycentric, at J2000 + 182 days: the return. swe_calc()
+ * refuses every barycentric Moshier request; the orbel path, which does not
+ * pass through swecalc(), answered the heliocentric place under a flag
+ * with SEFLG_BARYCTR set (18180), 5.7e-3 AU off the Swiss barycentric
+ * one. */
+static double orbel_mosh_bary_ret(void)
+{
+  double el[6] = {40, 1.2, 0.2, 30, 80, 12}, x[6];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  return swe_calc_orbel(2451727.0, el, SE_SUN, SE_ORBEL_EQ_J2000, 0,
+                        SEFLG_MOSEPH | SEFLG_SPEED | SEFLG_BARYCTR, x, serr);
+}
+
 /* UPSTREAM-BUGS 86: the JPL barycentric Sun's sidereal (Lahiri) longitude,
  * right after a request for Mars ten years on, against its tropical
  * longitude less the ayanamsa at its own date, deg. The Sun is answered in
@@ -3223,7 +3239,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3340,6 +3356,7 @@ int main(int argc, char **argv)
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
   orbelbias = orbel_bias_off();
+  orbelmb = orbel_mosh_bary_ret();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
@@ -4182,6 +4199,14 @@ int main(int argc, char **argv)
   else {
     printf("  orbel frame bias       %.2e AU FAIL: expected %s\n",
            orbelbias, WANT_DEFECT ? "> 1e-8" : "< 1e-14");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbelmb == 18180) : (orbelmb < 0))
+    printf("  orbel Moshier barycentre %.0f OK\n", orbelmb);
+  else {
+    printf("  orbel Moshier barycentre %.0f FAIL: expected %s\n",
+           orbelmb, WANT_DEFECT ? "18180" : "< 0");
     bad++;
   }
 

@@ -14,29 +14,46 @@
  * Earth-centred orbit's heliocentric one by the whole Earth's turn, and
  * with SEFLG_ICRS the body itself stayed unturned from every centre.
  *
- * Two checks, no golden file:
+ * And (UPSTREAM-BUGS 135): swe_calc() refuses every barycentric Moshier
+ * request ("barycentric Moshier positions are not supported."), in
+ * swecalc(), which swe_calc_orbel() does not pass through: it answered the
+ * heliocentric place, Moshier's origin being the Sun, under a return flag
+ * with SEFLG_BARYCTR set (18180 with SEFLG_SPEED), 5.7e-3 AU off the Swiss
+ * barycentric place, 0.29 deg at a = 1.2 AU.
+ *
+ * Three checks, no golden file:
  *   1. swe_calc_orbel() against swe_calc() of the same elements written
  *      to a seorbel.txt in a temp dir (as G27 does): four orbits (a =
  *      1.2 AU; 30 AU on the B1950 equinox; 80000 AU circular; 0.01 AU
  *      about the Earth), five dates 1700-2150 spread over the year, the
- *      four centres (geo, topo, helio, bary; Moshier's barycentre, which
- *      swe_calc() refuses, left out), twelve flag sets (ecliptic of date
- *      with and without speed, J2000, ICRS, equatorial, equatorial XYZ
- *      J2000 and ICRS, ecliptic XYZ, true J2000 XYZ, no aberration or
+ *      four centres (geo, topo, helio, bary), twelve flag sets (ecliptic
+ *      of date with and without speed, J2000, ICRS, equatorial, equatorial
+ *      XYZ J2000 and ICRS, ecliptic XYZ, true J2000 XYZ, no aberration or
  *      deflection, no nutation, sidereal), on the Swiss files, de200 and
- *      Moshier, and a DE4xx JPL file if one is named: 240 rows an orbit, 180
- *      on Moshier. Each element set is written with the date as its epoch
- *      and its mean anomaly as M0 + n T, n the two-body motion of this
- *      library's KGAUSS (KGAUSS_EARTH), so the two paths evaluate the same
- *      orbit to the last bit at the date and move it alike over the light
- *      time. Positions within 1e-11 deg, speeds 1e-10 deg/day (distances
- *      and XYZ as their angle, d / r).
+ *      Moshier, and a DE4xx JPL file if one is named: 240 rows an orbit,
+ *      180 on Moshier, whose 60 barycentric ones both refuse with
+ *      swe_calc()'s message. Each element set is written with the date as
+ *      its epoch and its mean anomaly as M0 + n T, n the two-body motion of
+ *      this library's KGAUSS (KGAUSS_EARTH), so the two paths evaluate
+ *      the same orbit to the last bit at the date and move it alike over
+ *      the light time. Positions within 1e-11 deg, speeds 1e-10 deg/day
+ *      (distances and XYZ as their angle, d / r).
  *   2. the frame: the geocentric true J2000 equatorial XYZ place and
  *      velocity of each Sun-centred orbit equal its heliocentric ones less
  *      swe_calc()'s heliocentric Earth, the barycentric ones the
  *      heliocentric plus swe_calc()'s barycentric Sun, and the Earth-centred
  *      orbit's heliocentric ones its geocentric plus the Earth, to 1e-14 of
  *      the distance (AU, AU/day; of 1 AU below it).
+ *   3. the files missing (the temp dir alone on the path), strict and
+ *      with the fallback allowed: each orbit at each date, Moshier, Swiss
+ *      and JPL, geocentric, heliocentric and barycentric, with speed: 360
+ *      calls, the same return flag and message as swe_calc() of the same
+ *      elements, and where both answer the same place (the limits of 1).
+ *      Strict, Swiss and JPL are refused by both for the missing files and
+ *      Moshier's barycentre for itself; with the fallback both answer from
+ *      Moshier, barycentric requests included (the heliocentric place
+ *      under SEFLG_BARYCTR, swe_calc()'s own answer there), and refuse
+ *      only Moshier's barycentre asked for as such.
  *
  * Measured before the fix, on the Swiss files, Moshier and DE431 alike:
  * check 1 off by 1.1e-5 to 1.45e-5 deg geocentric and topocentric at a =
@@ -55,6 +72,14 @@
  * with a bias (de200 passes), and check 1 on every orbit and ephemeris,
  * by 0.02 to 0.04 deg (its own light-time and speed defects, G27's and
  * G48's) or by an infinity on the first call (bug 88's zero obliquity).
+ * Before bug 135's fix the Moshier barycentre, 60 rows an orbit in check
+ * 1 and 40 in check 3, was answered (18180) where swe_calc() refuses: 5
+ * failures, the rest passing. After: 240 refused by both in check 1, and
+ * check 3's 360 calls agree with swe_calc() (160 refused by both), places
+ * within 1.7e-13 deg and 1.0e-11 deg/day. The upstream build, whose
+ * swe_calc_orbel() keeps answering there as its fictitious path's copy
+ * did, fails 26 (each orbit's Moshier barycentre besides the 20 above,
+ * and check 3 by it and bug 88's infinity).
  * Run as
  *   orbelbias EPHEDIR [DE4XX_FILE]
  * DE4XX_FILE a path to a JPL file of DE number 403 or above (SE_TEST_DE4
@@ -150,20 +175,27 @@ static void Leg(int32 eph, const char *name, int *bad)
   char serr[256], serr2[256];
   for (ib = 0; ib < NB; ib++) {
     double wp = 0, wv = 0, wf = 0, wfv = 0;
-    int nrow = 0, nerr = 0;
+    int nrow = 0, nerr = 0, nref = 0, nbary = 0;
     for (id = 0; id < ND; id++) {
       double xg[6], xh[6], xb[6], xe[6], xs[6], r;
       for (ic = 0; ic < 4; ic++)
         for (ifl = 0; ifl < nfl; ifl++) {
           int32 fl = eph | fls[ifl] | ctrs[ic], r1, r2;
           double xo[6], xf[6];
-          /* swe_calc() refuses Moshier's barycentre, which
-           * swe_calc_orbel() answers (a matter apart) */
-          if ((eph & SEFLG_MOSEPH) && ctrs[ic] == SEFLG_BARYCTR)
-            continue;
           *serr = *serr2 = '\0';
           r1 = Orbel(ib, id, fl, xo, serr);
           r2 = swe_calc(JD[id], SE_FICT_OFFSET + ib * ND + id, fl, xf, serr2);
+          /* Moshier's barycentre: swe_calc() refuses it, and so must
+           * swe_calc_orbel(), with the same message (bug 135) */
+          if ((eph & SEFLG_MOSEPH) && ctrs[ic] == SEFLG_BARYCTR) {
+            nref++;
+            if (r1 >= 0 || r2 >= 0 || strcmp(serr, serr2) != 0) {
+              if (nbary++ == 0)
+                printf("    %s jd %.1f flags %d: orbel %d \"%s\", seorbel.txt %d \"%s\"\n",
+                       bname[ib], JD[id], fl, r1, serr, r2, serr2);
+            }
+            continue;
+          }
           if (r1 < 0 || r2 < 0) {
             if (nerr++ == 0)
               printf("    %s jd %.1f flags %d: orbel %d \"%s\", seorbel.txt %d \"%s\"\n",
@@ -210,6 +242,13 @@ static void Leg(int32 eph, const char *name, int *bad)
     }
     printf("  %-6s %-12s %3d rows: vs seorbel.txt %.1e deg %.1e deg/day;"
            " geo/helio/bary %.1e %.1e of r\n", name, bname[ib], nrow, wp, wv, wf, wfv);
+    if (nref)
+      printf("  %-6s %-12s %3d barycentric rows refused by both, %d not\n",
+             name, bname[ib], nref - nbary, nbary);
+    if (nbary) {
+      printf("    FAIL: Moshier's barycentre answered, or refused otherwise than by swe_calc()\n");
+      (*bad)++;
+    }
     if (nerr) {
       printf("    FAIL: %d calls refused by one path only, or failed\n", nerr);
       (*bad)++;
@@ -222,6 +261,56 @@ static void Leg(int32 eph, const char *name, int *bad)
       printf("    FAIL: the geocentric place is not the heliocentric less the Earth (1e-14)\n");
       (*bad)++;
     }
+  }
+}
+
+/* check 3: the files missing (the element file's directory alone), strict
+ * and with the fallback allowed: swe_calc_orbel() answers or refuses as
+ * swe_calc() does for the same flags, with the same return flag, message
+ * and place (bugs 112, 120 and 135) */
+static void MissLeg(const char *dir, int *bad)
+{
+  static const int32 ephs[] = {SEFLG_MOSEPH, SEFLG_SWIEPH, SEFLG_JPLEPH};
+  static const int32 ctrs[] = {0, SEFLG_HELCTR, SEFLG_BARYCTR};
+  int fb0 = swe_get_ephe_fallback(), fb, ie, ic, ib, id, nrow = 0, nfail = 0, nref = 0;
+  double wp = 0, wv = 0;
+  char serr[256], serr2[256];
+  swe_close();
+  swe_set_ephe_path(dir);
+  for (fb = 0; fb < 2; fb++) {
+    swe_set_ephe_fallback(fb);
+    for (ib = 0; ib < NB; ib++)
+      for (id = 0; id < ND; id++)
+        for (ie = 0; ie < 3; ie++)
+          for (ic = 0; ic < 3; ic++) {
+            int32 fl = ephs[ie] | ctrs[ic] | SEFLG_SPEED, r1, r2;
+            double xo[6], xf[6];
+            *serr = *serr2 = '\0';
+            r1 = Orbel(ib, id, fl, xo, serr);
+            r2 = swe_calc(JD[id], SE_FICT_OFFSET + ib * ND + id, fl, xf, serr2);
+            nrow++;
+            if (r1 != r2 || strcmp(serr, serr2) != 0) {
+              if (nfail++ == 0)
+                printf("    %s jd %.1f flags %d fallback %d: orbel %d \"%s\", seorbel.txt %d \"%s\"\n",
+                       bname[ib], JD[id], fl, fb, r1, serr, r2, serr2);
+              continue;
+            }
+            if (r1 < 0)
+              nref++;
+            else
+              Diff(fl, xo, xf, &wp, &wv);
+          }
+  }
+  swe_set_ephe_fallback(fb0);
+  printf("  files missing, strict and fallback: %d rows (%d refused by both), %d otherwise than"
+         " swe_calc(); places %.1e deg %.1e deg/day\n", nrow, nref, nfail, wp, wv);
+  if (nfail) {
+    printf("    FAIL: a return or message not swe_calc()'s for the same flags\n");
+    (*bad)++;
+  }
+  if (nref == nrow || wp > 1e-11 || wv > 1e-10) {
+    printf("    FAIL: not the same elements' places from seorbel.txt (1e-11, 1e-10)\n");
+    (*bad)++;
   }
 }
 
@@ -271,6 +360,7 @@ int main(int argc, char **argv)
     Leg(SEFLG_JPLEPH, "DE4xx", &bad);
   } else
     printf("  DE4xx leg SKIPPED: no JPL file named (SE_TEST_DE4=<path to a DE >= 403 file>)\n");
+  MissLeg(dir, &bad);
   swe_close();
   unlink(file);
   rmdir(dir);
