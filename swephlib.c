@@ -3112,6 +3112,109 @@ static int frame_models(swe_ctx *ctx, double J, int32 iflag, int which)
   return k;
 }
 
+/* Upstream bug 215: delta t took any date: swe_deltat_ex() answered 0 at
+ * NaN with no message, inf or NaN at -+1e300 and -+inf, and past |J| 1e12
+ * days Stephenson's parabola alone (2.8e13 days at 1e13, 2.8e27 at 1e20),
+ * which the UT functions added to the date, and at a NaN TT the mean
+ * node, the eclipse functions, the meridian transit and the time equation
+ * crashed or hung. Refused now as SE_ECL_NUT refuses (bug 196): NaN, and
+ * serr saying so; the UT functions refuse a NaN delta t. */
+int swi_deltat_range(double tjd, const char *what, char *serr)
+{
+  if (tjd >= -SWI_ECL_NUT_JMAX && tjd <= SWI_ECL_NUT_JMAX)
+    return OK;
+  if (serr != NULL)
+    snprintf(serr, AS_MAXCH, "%s %.10g outside the delta t range %g .. %g",
+             what, tjd, -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+  return ERR;
+}
+
+/* Upstream bug 217: every precession model but Vondrak 2011 is a
+ * polynomial in T, and the obliquity and frame of date took them at any
+ * date the nutation's bound (bug 196) let through: as the default
+ * short-term model, their mean obliquity left 22..25 deg at -3.7e6 days
+ * (Simon 1994, -14700) to -1.1e7 (Owen 1990, -33900) and +8.8e6 (Simon,
+ * +19300) to +1.6e7 (Owen, +39200), and 0..180 deg at -8.0e6 (Simon) to
+ * -2.3e7 (Bretagnon 2003), +1.4e7 (IAU 2006) to +3.1e7 (Williams 1994,
+ * back inside near 7.5e7); SE_ECL_NUT answered 1.6e51 deg at 1e12 under
+ * Laskar 1986, 3.5e46 under Owen, -1.9e26 under IAU 2006, and the houses
+ * and the ayanamsa took the same swi_epsiln() and swi_precess(). None is
+ * published as valid there: Laskar 1986 (A&A 157, 59) over 10000 years,
+ * and Simon 1994 and Williams 1994 keep its terms past T^4; the IAU
+ * models, 1976 to 2006, and Bretagnon 2003 "valid only for a few
+ * centuries" (Vondrak et al. 2011, A&A 534, A22); Newcomb's 1895
+ * polynomials likewise. So each answers over the widest range of any
+ * body, the mean node's and the DE431/DE441 files', MOSHNDEPH_START ..
+ * MOSHNDEPH_END (-13200 .. +17191), where every position the library
+ * computes in its frame lies and every one's mean obliquity is within
+ * 22..25 deg; Owen 1990 (Ph.D. dissertation, 1990) over its own five
+ * Chebyshev pieces, wider: |tau| <= 1 about -14000 .. +18000, 40
+ * centuries each side, -18000 .. +22000. Their matrices are built from
+ * angles and stay rotations at any date (4.4e-16 off orthonormal at most
+ * to 1e12). Vondrak 2011, a cubic and periodic terms fitted over -+200
+ * millennia, has an obliquity that stays bounded (64.6 deg at 4e8, 90 at
+ * 1e40), which keeps the nutation's bound, as entry 196 chose; but its
+ * precession matrix, from two pole vectors, is a rotation only near its
+ * fit: 4.4e-16 off orthonormal to 5800 centuries either side, then 0.14
+ * at -7300, 1.4 at -9100, 0.97 at +11400, 7.6e20 at 1e12 days. Its
+ * precession answers over the fit's published span, -+2000 centuries,
+ * where bug 209's sidereal time stops its integral (SIDT_PRA_TFAR) for
+ * the same reason, J2000 -+ 73050000 days. The model is the one
+ * swi_epsiln() and swi_precess() take at J under iflag
+ * (frame_eps_model(), frame_prec_model()): SEFLG_JPLHOR's Owen 1990
+ * outside 1799 .. 2202, SEMOD_JPLHORA_2's IAU 1976 obliquity, a
+ * short-term model within its window. */
+#define SWI_OWEN_JD_START  (-3392455.5 - 40 * 36525.0)	/* -18000 */
+#define SWI_OWEN_JD_END    (8295544.5 + 40 * 36525.0)	/* +22000 */
+static void get_precession_model(int precmod, int32 iflag, char *s);
+#define SWI_VONDRAK_JD_START  (J2000 - 2000 * 36525.0)	/* -198000 */
+#define SWI_VONDRAK_JD_END    (J2000 + 2000 * 36525.0)	/* +202000 */
+static int frame_model_range(int m, int prec, double J, const char *what,
+                             char *serr)
+{
+  double a = MOSHNDEPH_START, b = MOSHNDEPH_END;
+  char s[80];	/* get_precession_model()'s names, iflag 0: 36 at most */
+  if (m > SEMOD_NPREC)	/* a piece of Owen 1990 (bug 183): the model */
+    m = SEMOD_PREC_OWEN_1990;
+  if (m == SEMOD_PREC_VONDRAK_2011) {
+    if (!prec)	/* its obliquity: the nutation's bound */
+      return OK;
+    a = SWI_VONDRAK_JD_START;
+    b = SWI_VONDRAK_JD_END;
+  }
+  if (m == SEMOD_PREC_OWEN_1990) {
+    a = SWI_OWEN_JD_START;
+    b = SWI_OWEN_JD_END;
+  }
+  if (J >= a && J <= b)
+    return OK;
+  if (serr != NULL) {
+    *s = '\0';
+    get_precession_model(m, 0, s);
+    snprintf(serr, AS_MAXCH, "%s %.10g outside the %.60s precession model's range %.10g .. %.10g",
+             what, J, s, a, b);
+  }
+  return ERR;
+}
+
+int swi_frame_range(swe_ctx *ctx, double J, int32 iflag, int which,
+                    const char *what, char *serr)
+{
+  if (!(J >= -SWI_ECL_NUT_JMAX && J <= SWI_ECL_NUT_JMAX)) {
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "%s %.10g outside the obliquity and nutation range %g .. %g",
+               what, J, -SWI_ECL_NUT_JMAX, SWI_ECL_NUT_JMAX);
+    return ERR;
+  }
+  if ((which & SWI_FRAME_EPS)
+      && frame_model_range(frame_eps_model(ctx, J, iflag), 0, J, what, serr) == ERR)
+    return ERR;
+  if ((which & SWI_FRAME_PREC)
+      && frame_model_range(frame_prec_model(ctx, J, iflag), 1, J, what, serr) == ERR)
+    return ERR;
+  return OK;
+}
+
 /* Upstream bug 153: with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3 (the
  * default mode), swi_precess(), swi_epsiln() and calc_nutation() take
  * SEFLG_JPLHOR's models (IAU 1976, IAU 1980 plus a fixed offset) up to
@@ -4169,9 +4272,28 @@ done:
   return iflag;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* swe_deltat_ex_r() without its date bound (bug 215), under the caller's
+ * hold: for the house speeds' frames 1/64 day about a date within it */
+double swi_deltat_nobound(swe_ctx *ctx, double tjd, int32 iflag)
+{
+  double deltat;
+  if (ctx->delta_t_userdef_is_set)
+    return ctx->delta_t_userdef;
+  calc_deltat(ctx, tjd, iflag, &deltat, NULL);
+  return deltat;
+}
+#endif
+
 static double swe_deltat_ex_r_body(swe_ctx *ctx, double tjd, int32 iflag, char *serr)
 {
   double deltat;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 215 (swi_deltat_range()): before the caller's value too, for the
+   * date is no date */
+  if (swi_deltat_range(tjd, "jd", serr) == ERR)
+    return NAN;
+#endif
   if (ctx->delta_t_userdef_is_set)
     return ctx->delta_t_userdef;
   if (serr != NULL)
@@ -5202,13 +5324,26 @@ static double era_deg(double tjd)
 #endif
 }
 
+/* delta t for the sidereal time at UT tjd, by swe_sidtime0_r_body() */
+static double sidt_deltat(swe_ctx *ctx, double tjd)
+{
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 215: swe_deltat_ex_r() is NaN past |J| 1e12, where
+   * swi_sidtime0() answers for the house speeds' frames HOUSE_SPEED_DT
+   * about a date within it (bug 214): delta t there as before */
+  return swi_deltat_nobound(ctx, tjd, -1);
+#else
+  return swe_deltat_ex_r(ctx, tjd, -1, NULL);
+#endif
+}
+
 /* Mean sidereal time, IERS Conventions 2010 (ERA-based, IAU 2006
  * precession), in degrees: the SEMOD_SIDT_IERS_CONV_2010 branch of
  * swe_sidtime0_r() without the equation of the equinoxes. */
 static double sidtime_iers2010_deg(swe_ctx *ctx, double tjd)
 {
   double gmst, dadd;
-  double tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
+  double tt = (tjd + sidt_deltat(ctx, tjd) - J2000) / 36525.0;
   gmst = era_deg(tjd);
   gmst += (0.014506 + tt * (4612.156534 +  tt * (1.3915817 + tt * (-0.00000044 + tt * (-0.000029956 + tt * -0.0000000368))))) / 3600.0;
   dadd = sidtime_non_polynomial_part(ctx, tt);
@@ -5426,7 +5561,7 @@ static double sidt_pra(swe_ctx *ctx, double tc, int model)
 static double sidtime_era_long_deg(swe_ctx *ctx, double tjd, int model)
 {
   double gmst, dadd;
-  double tt = (tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL) - J2000) / 36525.0;
+  double tt = (tjd + sidt_deltat(ctx, tjd) - J2000) / 36525.0;
   gmst = era_deg(tjd);
   gmst += (0.014506 + SIDT_PRA_NUTC * tt + sidt_pra(ctx, tt, model)) / 3600.0;
   dadd = sidtime_non_polynomial_part(ctx, tt);
@@ -5518,7 +5653,7 @@ static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double n
   if (long_era) {
     /* bug 181: the precession model of the instant, TT, as swi_precess()
      * chooses it */
-    int pm = frame_chosen_model(ctx, tjd + swe_deltat_ex_r(ctx, tjd, -1, NULL));
+    int pm = frame_chosen_model(ctx, tjd + sidt_deltat(ctx, tjd));
     if (pm > SEMOD_NPREC)	/* a piece of Owen 1990 (bug 183): its table is */
       pm = SEMOD_PREC_OWEN_1990;	/* Owen's, each interval its piece's (bug 200) */
     gmst = (sidtime_era_long_deg(ctx, tjd, pm) / 15.0
@@ -5532,7 +5667,7 @@ static double swe_sidtime0_r_body(swe_ctx *ctx, double tjd, double eps, double n
     gmst = gmst / 15.0 * 3600.0;
   /* sidt_model == SEMOD_SIDT_IAU_2006, older standards according to precession model */
   } else if (sidt_model == SEMOD_SIDT_IAU_2006) {
-    tt = (jd0 + swe_deltat_ex_r(ctx, jd0, -1, NULL) - J2000)/36525.0; /* TT in centuries after J2000 */
+    tt = (jd0 + sidt_deltat(ctx, jd0) - J2000)/36525.0; /* TT in centuries after J2000 */
     gmst = (((-0.000000002454*tt - 0.00000199708)*tt - 0.0000002926)*tt + 0.092772110)*tt*tt + 307.4771013*(tt-tu) + 8640184.79447825*tu + 24110.5493771;
     /* mean solar days per sidereal day at date tu;
      * for the derivative of gmst, we can assume UT1 =~ TT */

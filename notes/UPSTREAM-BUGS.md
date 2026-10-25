@@ -255,6 +255,10 @@ worst were in code that had never executed even once.
 | 228 | `swe_nod_aps()` under SEFLG_J2000 gives its points' velocity the frame's turning as a difference of the rotation from the ecliptic of date over -+1 day, which within a day of a short-term precession window's edge reached across it: every point, mean and osculating, 2.9e-5 to 1.05e-4 deg/day off with IAU 1976 under Vondrak ("0,9,1") at J2000 -+ 2 centuries (the Moon's mean node 7.99e-5 at every instant there), 7.1e-3 to 1.9e-2 with IAU 2006 at -+ 75 | Correctness | `swecl.c` |
 | 229 | `swe_nod_aps()`'s frame hold (entry 199) left Moshier's Moon out, whose velocity carries the frame's turning of its epoch's own side (entries 95, 184): within 1/32 day of a short-term window's edge, with IAU 1976 under Vondrak at J2000 - 2 centuries, its apsides' longitude speeds 1.01e-5 deg/day off, their latitude's 8.4e-7 (declination's 3.5e-6), its nodes' 1.9e-7; at + 2 2.8e-6 and 2.1e-7 | Correctness | `swecl.c` |
 | 230 | `swe_nod_aps()`'s sidereal points (the traditional method) take the ayanamsa off the longitude and not its rate off the speed: every point's longitude speed 3.83e-5 deg/day off under Lahiri, 1.38e-4 geocentric under True Citra; the Moon's mean node at J2000 -5.29538e-2 deg/day where `swe_calc()`'s sidereal SE_MEAN_NODE gives -5.29920e-2 | Correctness (behaviour) | `swecl.c` |
+| 212 | `swe_get_ayanamsa_ex()` and its `_ut` form take any date and t0 and answer OK flags: Lahiri 121.4 deg at 1e12, 1.17e10 at 1e20, NaN from 1e84, at -+inf and NaN and of a t0 of NaN; and on the default Vondrak 2011 past its fit's -+2000 centuries, where its precession matrix stops being a rotation (0.14 off at -7300 centuries, 7.6e20 at 1e12) | Correctness (behaviour) | `sweph.c`, `swephlib.c`, `swehouse.c` |
+| 213 | The houses take the obliquity and nutation at a TT that SE_ECL_NUT refuses, from UT 8.13e11 where delta t takes TT past 1e12: Placidus at UT 9e11 ERR "within polar circle" with its cusps filled; under a polynomial precession model at any date; sidereal, the ayanamsa past its range | Correctness (behaviour) | `swehouse.c`, `swephlib.c` |
+| 215 | Delta t takes any date: `swe_deltat_ex()` 0 at NaN with no message, inf or NaN at -+1e300 and -+inf, Stephenson's parabola past 1e12 days; and the UT functions compute at a NaN TT, the mean node, the eclipse functions, the meridian transit and the time equation crashing | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `swecl.c`, `swehel.c` |
+| 217 | Every precession model but Vondrak 2011 is a polynomial taken at any date within SE_ECL_NUT's bound: the mean obliquity 1.6e51 deg at 1e12 under Laskar 1986, -3.0e9 at 1e8 under Owen 1990, 2.67e10 at -1e8 under SEFLG_JPLHOR_APPROX, the houses and the ayanamsa with it | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `swehouse.c` |
 
 ---
 
@@ -16128,6 +16132,217 @@ longitude's speed against a five-point difference over 2^-5 day of its
 positions: 4.46e-13 deg/day shipped (3.82e-5 before the fix), 3.82e-5
 compat. G139, G155, G143, G146, G47, G69, G78, G79, G92, G104, G90 and
 G163 pass.
+
+## 212. `swe_get_ayanamsa_ex()` and its `_ut` form take any date and t0 and answer OK flags: Lahiri 121.4 deg at 1e12, 1.17e10 at 1e20, NaN from 1e84 and at -+inf and NaN; and on the default Vondrak 2011 past its fit, from matrices that are no rotations
+
+**Severity: Correctness (behaviour: a value, or NaN, answered with OK flags where no ayanamsa is defined; the sidereal places and houses with it)**
+**Where:** `sweph.c`: new `swi_ayanamsa_range()`, `swe_get_ayanamsa_ex_r()`, `get_ayanamsa()`, `swe_get_ayanamsa_ex_ut_r()`, `swe_get_ayanamsa_r()`, `swe_get_ayanamsa_ut_r()`; `swephlib.c`: new `frame_model_range()`, `swi_frame_range()`; `swehouse.c`: `swe_houses_ex2_r()`
+
+The ayanamsa took any date, the instant's and the sidereal mode's t0.
+Measured on Moshier, Lahiri, a fresh context, the default models (ts20
+0eccce8):
+- `swe_get_ayanamsa_ex()` 121.375 deg at J 1e12, -1257.02 at 1e13,
+  1.17253e10 at 1e20 (the nutation added), NaN at 1e84, -+1e300, +inf and
+  NaN, each with the flags (4, OK); `swe_get_ayanamsa()` 36.88 from 1e12
+  to 1e20, NaN from 1e84.
+- a user t0 of NaN: NaN at J2000 with OK flags, and sidereal Mars NaN with
+  them (65604).
+- the default precession, Vondrak 2011, is a fit over -+200 millennia
+  (Vondrák, Capitaine & Wallace 2011, A&A 534, A22: "a few tenths of a
+  degree at the ends"). Its matrix, `pre_pmat()`'s, is built from two pole
+  vectors, and measured (the largest |P P^T - I|) it is a rotation to
+  4.4e-16 out to 5800 centuries either side, then 0.14 off at -7300
+  centuries, 1.4 at -9100, 0.97 at +11400, 7.6e20 at J 1e12. The ayanamsa
+  went on through it: 33.16 deg at J2000 + 1e4 centuries, 40.27 at -1e4,
+  35.27 at +3e5 (J 1.1e10), sidereal Placidus at UT 1e9 cusp 1 128.47.
+  The polynomial models' matrices are built from angles and stay
+  rotations at any date (4.4e-16 to 1e12); their angles are entry 217's.
+
+**Fix, as done here:**
+- `swi_ayanamsa_range()`: the instant and t0 (TT; a UT t0 through delta
+  t, itself within its bound, entry 215) within SE_ECL_NUT's bound (|J|
+  <= 1e12, entry 196) and their precession model's range, the
+  precession's and the obliquity's (`swi_frame_range()`, the model
+  `swi_precess()` and `swi_epsiln()` take at that date). Vondrak 2011's
+  precession: its published span, J2000 -+ 2000 centuries (-70598455 ..
+  75501545), where entry 209 stops the sidereal time's integral for the
+  same reason; its obliquity, bounded at any date (64.6 deg at 4e8, 90 at
+  1e40), keeps the nutation's bound, so SE_ECL_NUT and the tropical houses
+  answer to 1e12 under it. The polynomial models' ranges: entry 217.
+- `swe_get_ayanamsa_ex()` refuses outside, and `get_ayanamsa()` (so the
+  sidereal places and houses): ERR, the ayanamsa 0 (its rate too), serr
+  "jd 1e+13 outside the obliquity and nutation range -1e+12 .. 1e+12",
+  "jd 367701545 outside the Vondrák 2011 precession model's range
+  -70598455 .. 75501545", "t0 ..." for the epoch. The `_ut` form refuses
+  a NaN delta t (entry 215). `swe_get_ayanamsa()` and
+  `swe_get_ayanamsa_ut()` answer NaN.
+- Within the house speeds' step of the range's end, the sidereal houses'
+  stencil on t's side, as at a model step (entry 187): across it the
+  refused ayanamsa's 0 put the cusp speeds 2.0e3 to 5.6e3 deg/day off.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+
+G161 `tests/farrange.c` (a): the two forms at 15 dates past 1e12 and no
+dates, five sidereal modes, two flag sets, and t0 of NaN, -+inf, -+1e13 in
+TT and UT, sidereal Mars and houses with them: 648 of 648 refused (before,
+killed by SIGABRT, entry 210's range message of the True Citra star past
+its buffer, which the refusal now precedes); (d) Vondrak's ends, the
+doubles next outside, J2000 - 1e4 centuries, 1e9, a t0 past it, the
+sidereal houses' speeds 0.001 day inside each end and at Laskar 1986's.
+G24 `aya_far_answered`: Lahiri at 1e13, -1e13, 1e20, inf, NaN, J2000 -+
+1e4 centuries, `swe_get_ayanamsa()` at two of them and a t0 of NaN,
+answered: 0 of 10 shipped, 10 of 10 compat.
+
+## 213. The houses take the obliquity and nutation at a TT that SE_ECL_NUT refuses: Placidus at UT 9e11 (TT 1.13e12) ERR "within polar circle" with its cusps filled; under a polynomial precession model at any date
+
+**Severity: Correctness (behaviour: a misleading error with filled cusps, from an obliquity past the bound or its model's range)**
+**Where:** `swehouse.c`: new `house_range()`, `swe_houses_r()`'s and `swe_houses_ex2_r()`'s bodies, `house_frame_at()`; `swephlib.c`: new `swi_deltat_nobound()`, `sidt_deltat()`
+
+Entry 209 refuses a UT past 1e12 days, but delta t (Stephenson's parabola,
+2.82e11 days at UT 1e12) takes the TT past the bound from UT 8.13e11, and
+the houses took `swi_epsiln()` and `swi_nutation()` there as no SE_ECL_NUT
+would: Placidus at 50 N at UT 9e11 ERR "within polar circle, switched to
+Porphyry", cusp 1 124.357; `swe_houses()` at UT 8.2e11 the same. Under a
+polynomial precession model (entry 217) at any date: Laskar 1986 at UT
+-1e8 the same ERR, cusp 1 53.21, from a mean obliquity of 1.9e11 deg.
+Sidereal, the ayanamsa past its range (entry 212): Lahiri at UT 1e9 ERR,
+cusp 1 128.47.
+`swe_houses_armc*()` and `swe_house_pos()` take no date.
+
+**Fix, as done here:**
+- `house_range()`, before anything is computed in `swe_houses_r()` (so
+  `swe_houses()` and `swe_houses_ex()`) and `swe_houses_ex2_r()`: the TT
+  within SE_ECL_NUT's bound and the obliquity model's range
+  (`swi_frame_range()`), and sidereal, `swi_ayanamsa_range()`. ERR,
+  cusp[0..12] (0..36 Gauquelin), ascmc[0..9] and their speeds 0, serr
+  (`swe_houses_ex2()`) "jd 1.128387233e+12 outside the obliquity and
+  nutation range -1e+12 .. 1e+12", or the model's range. `swe_houses()`
+  keeps its contract, ERR and no serr.
+- The speeds' frames 1/64 day about a date within the bound take delta t
+  without it (`swi_deltat_nobound()`, and `sidt_deltat()` in the sidereal
+  time, as entry 214's `swi_sidtime0()`): at UT -1e12 (TT -7.2e11) the
+  tropical house speeds as before, not NaN through entry 215's bound.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+
+G161 (b): Placidus, Koch and Gauquelin, with and without speeds, tropical
+and sidereal, `swe_houses()` and `swe_houses_ex()`, at the 15 dates, UT
+1e12 and 8.2e11, and sidereal at UT -1e12: 318 of 318 refused, and at UT
+-1e12 tropical answered, every output finite (before 273 of 318). G159
+(b) now expects the houses, and the azimuth's ecliptic forms, refused
+where TT is past the bound or the model's range: 450 of its 660 dates by
+models (before, and upstream, 210 of 660 as expected). G24
+`houses_tt_far_answered`: Placidus at UT 9e11, Koch at 8.2e11, sidereal
+Lahiri at UT 1e9 and with a t0 of NaN, answered: 0 of 4 shipped, 4 of 4
+compat.
+
+## 215. Delta t takes any date: `swe_deltat_ex()` 0 at NaN with no message, inf or NaN at -+1e300 and -+inf, Stephenson's parabola past 1e12 days; and the UT functions compute at a NaN TT
+
+**Severity: Correctness (behaviour: a value for no date, and a NaN TT computed on: the mean node, the eclipse functions, the meridian transit and the time equation crashed)**
+**Where:** `swephlib.c`: new `swi_deltat_range()`, `swe_deltat_ex_r()`; `sweph.c`: `swe_calc_ut_r()`, `swe_calc_orbel_ut_r()`, `swe_fixstar_ut_r()`, `swe_fixstar2_ut_r()`, `swe_get_ayanamsa_ex_ut_r()`, `swe_time_equ_r()`; `swecl.c`: `eclipse_where()`, `eclipse_how()`, `lun_eclipse_how()`, `swe_pheno_ut_r()`, `swe_nod_aps_ut_r()`, `swe_rise_trans_true_hor_r()`, `swe_gauquelin_sector_r()`; `swehel.c`: `SunRA()`, `ObjectLoc()`, `heliacal_ut_arc_vis()`
+
+Measured, Moshier: `swe_deltat_ex()` 0 at NaN, serr empty; 2.82e13 days
+at 1e13, 2.82e27 at 1e20, 2.82e155 at 1e84, inf at 1e300 and inf, NaN at
+-1e300 (`swe_deltat()` inf there). The UT functions added it: past the
+bound a TT far past any date's, and at -1e300, -inf and NaN a NaN TT
+(upstream: NaN plus 0 at NaN), on which the mean node, the eclipse
+functions, `swe_rise_trans()`'s meridian transit and `swe_time_equ()`
+crashed (SIGSEGV) and the rest computed.
+
+**Fix, as done here:**
+- `swe_deltat_ex()` and `swe_deltat()` answer NaN past |J| 1e12, at -+inf
+  and NaN, with serr "jd nan outside the delta t range -1e+12 .. 1e+12",
+  before a user delta t too (the date is none); within, as before.
+- The UT functions above refuse a NaN delta t: ERR, their outputs 0, serr
+  delta t's; `swe_time_equ()` before its sidereal time.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+
+G161 (c): delta t at the 15 dates, with a user delta t too, NaN and named,
+`swe_deltat()` NaN, finite at -+1e12 and the doubles inside; 25 UT
+functions and modes at 7 dates where delta t is NaN, ERR: 219 of 219 and
+4 of 4 (before killed by SIGSEGV). G24 `deltat_far_answered`: at NaN,
+-+1e13, 1e300, inf and `swe_deltat()` at 1e13, answered: 0 of 6 shipped, 6
+of 6 compat.
+
+## 217. Every precession model but Vondrak 2011 is a polynomial taken at any date SE_ECL_NUT's bound lets through: the mean obliquity 1.6e51 deg at 1e12 under Laskar 1986, -3.0e9 at 1e8 under Owen 1990, 2.67e10 at -1e8 under SEFLG_JPLHOR_APPROX
+
+**Severity: Correctness (behaviour: values far past any model's meaning answered as values)**
+**Where:** `swephlib.c`: new `frame_model_range()`, `swi_frame_range()`; `sweph.c`: `swecalc()` (SE_ECL_NUT), `swi_ayanamsa_range()`; `swehouse.c`: `house_range()`
+
+Entry 196 bounded SE_ECL_NUT at |J| 1e12, the long-term model's, Vondrak
+2011's, whose obliquity stays bounded there. The other ten precession
+models are polynomials in T, and as the long-term model their mean
+obliquity left 22..25 deg at -3.7e6 days (Simon 1994, -14700) to -1.1e7
+(Owen 1990, -33900) and +8.8e6 (Simon, +19300) to +1.6e7 (Owen, +39200),
+and 0..180 deg at -8.0e6 (Simon) to -2.3e7 (Bretagnon 2003) and +1.4e7
+(IAU 2006) to +3.1e7 (Williams 1994). SE_ECL_NUT answered the mean
+obliquity 1.61e51 deg at 1e12 under Laskar 1986, 1.6e21 at -+1e9, 2.07e6
+at -1e8 under IAU 2006, -3.05e9 at 1e8 under Owen 1990; with SEFLG_JPLEPH
+| SEFLG_JPLHOR_APPROX (Owen 1990 before 1799 under SEMOD_JPLHORA_3) 2.67e10
+at -1e8; and the houses (entry 213) and the ayanamsa (entry 212) took the
+same `swi_epsiln()` and `swi_precess()`. None is published as valid there:
+Laskar 1986 (A&A 157, 59) over 10000 years, Simon 1994 and Williams 1994
+keeping its terms past T^4; the IAU models, 1976 to 2006, and Bretagnon
+2003 "valid only for a few centuries around J2000.0" (Vondrák et al.
+2011); Newcomb's polynomials likewise; Owen 1990 (Ph.D. dissertation,
+University of Florida) over its five Chebyshev pieces.
+
+**Fix, as done here:**
+- `frame_model_range()`: each polynomial model answers over the widest
+  range of any body, the mean node's and the DE431/441 files',
+  MOSHNDEPH_START .. MOSHNDEPH_END (-3100015.5 .. 8000016.5, -13200 ..
+  +17191), where every position the library computes lies and every
+  model's mean obliquity is within 22..25 deg (22.35 to 24.35 measured
+  over each range); Owen 1990 over its pieces, |tau| <= 1 about -14000 ..
+  +18000 and 40 centuries beyond each, -4853455.5 .. 9756544.5 (-18000 ..
+  +22000). Vondrak 2011: its obliquity to the nutation's bound, its
+  precession entry 212's -+2000 centuries. The model is the one
+  `swi_epsiln()` and `swi_precess()` take at the date under the flags:
+  SEFLG_JPLHOR's Owen 1990 outside 1799 .. 2202, SEMOD_JPLHORA_2's IAU
+  1976 obliquity, a short-term model within its window.
+- `swi_frame_range()`: SE_ECL_NUT's bound, then the obliquity's model and
+  (for the ayanamsa) the precession's. SE_ECL_NUT refuses outside, after
+  the flags are resolved and before the caches: ERR, its outputs 0, serr
+  "jd 1000000000 outside the Laskar 1986 precession model's range
+  -3100015.5 .. 8000016.5"; the houses and the ayanamsa through entries
+  213 and 212. The bodies are untouched: each one's range lies within
+  every model's.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`.
+- Within the ranges nothing changes, bit for bit: 43685 lines, seventeen
+  model sets at 40 dates within -+1.1e7 days and ten far ones (SE_ECL_NUT
+  with four flag sets, `swe_calc_ut()`, the stars, `swe_pheno_ut()`,
+  `swe_nod_aps_ut()`, rising and transit, the eclipse functions,
+  `swe_gauquelin_sector()`, `swe_time_equ()`, the houses tropical and
+  sidereal with speeds, eight sidereal modes' ayanamsa in its four forms,
+  sidereal Mars, delta t, `swe_sidtime()` and `swe_sidtime0()` under four
+  sidereal time models to -+1e12): 1073 differ from ts20 0eccce8's, every
+  one a refusal at a date outside its range. Cost, `perf stat -e
+  instructions`, bench one repetition: calc-moseph 23421838393 before,
+  23420669221 after; calc-swieph 12390061125, 12389463608 (-0.005% each).
+
+G161 (d): SE_ECL_NUT under the ten polynomial models at their ranges'
+ends answered within 22..25 deg, the doubles next outside, -+1e9 and
+-+1e12 refused; the default and Vondrak to -+1e12 answered; Horizons
+approximation and SEMOD_JPLHORA_2 cases; the ayanamsa and the houses at
+Laskar 1986's end; 64 instants across each range within 22..25 deg: 788
+of 788 (before 694). G152 (b) now takes the polynomial models within
+their ranges to G161; G162 (b) takes the Horizons approximation's
+nutation past 4e8 days from `swi_nutation()`, the positions', SE_ECL_NUT
+refusing there (Owen 1990's range). G24 `prec_far_answered`: SE_ECL_NUT
+under Laskar at -+1e9, IAU 2006 at -1e8, Owen at 1e8, and Placidus under
+Laskar at UT -1e8, answered: 0 of 5 shipped, 5 of 5 compat. G161, G24,
+G152, G90, G45, G67, G58, G29, G139, G140, G70, G39, G159, G162, G164
+and G156 pass.
+
+Noticed, not fixed:
+- BEHAVIOUR. `swe_get_ayanamsa_ex()` in a star mode whose star fails
+  returns -65 (neither ERR nor flags) with the ayanamsa dpsi: True Citra
+  at JD 100000 on Moshier, -65, -0.00425 deg, serr the Moshier range.
+- BEHAVIOUR. The eclipse and occultation searches ('when' functions)
+  compute their lunation count K by an int cast at far starts: refused
+  with "jd 6634702579155901" from a start near 1e12;
+  `swe_lun_occult_when_glob()` at -+1e300 aborts (fortify, entry 210's
+  area) and at NaN hangs.
+- BEHAVIOUR. `swe_jdut1_to_utc()` and `swe_jdet_to_utc()` answer the year
+  INT_MIN far out (entry 216's area).
 
 ## How these were found
 

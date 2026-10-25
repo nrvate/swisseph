@@ -1642,6 +1642,20 @@ struct epsilon {
  *   - swe_nod_aps()'s sidereal speeds (the traditional method) without the
  *     ayanamsa's rate: 3.83e-5 deg/day off under Lahiri, 1.38e-4 under True
  *     Citra (UPSTREAM-BUGS 230, G154, G24)
+ *   - the ayanamsa taking any date and t0 and answering OK: Lahiri
+ *     1.17e10 deg at 1e20, NaN from 1e84 and of a t0 of NaN, and on the
+ *     default Vondrak 2011 past its fit's -+2000 centuries, from matrices
+ *     no longer rotations (UPSTREAM-BUGS 212, G161, G24)
+ *   - the houses taking the obliquity and nutation at a TT SE_ECL_NUT
+ *     refuses: Placidus at 50 N at UT 9e11 (TT 1.13e12) ERR "within polar
+ *     circle" with its cusps filled (UPSTREAM-BUGS 213, G161, G24)
+ *   - delta t taking any date: 0 at NaN with no message, Stephenson's
+ *     parabola past 1e12 days, inf or NaN at -+1e300; and the UT
+ *     functions computing at a NaN TT (UPSTREAM-BUGS 215, G161, G24)
+ *   - the polynomial precession models taken at any date: SE_ECL_NUT's
+ *     mean obliquity 1.6e51 deg at 1e12 under Laskar 1986, -3.0e9 at 1e8
+ *     under Owen 1990, and the houses and the ayanamsa with them
+ *     (UPSTREAM-BUGS 217, G161, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1773,6 +1787,11 @@ extern int32 swi_get_tid_acc(swe_ctx *ctx, double tjd_ut, int32 iflag, int32 den
 extern int32 swi_get_ayanamsa_ex(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr);
 extern int32 swi_get_ayanamsa_ex_ut(double tjd_ut, int32 iflag, double *daya, char *serr);
 extern int32 swi_get_ayanamsa_with_speed(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr);
+#ifndef SWE_UPSTREAM_COMPAT
+/* OK, or ERR with serr: the ayanamsa's instant and the sidereal mode's t0
+ * outside the frame's ranges (UPSTREAM-BUGS 212) */
+extern int swi_ayanamsa_range(swe_ctx *ctx, double tjd_et, int32 iflag, char *serr);
+#endif
 
 extern double swi_armc_to_mc(double armc, double eps);
 
@@ -1982,7 +2001,8 @@ struct sidt_splice_memo {
 /* |J| past which SE_ECL_NUT refuses a date, days (UPSTREAM-BUGS 196), and
  * with it the functions that take one and compute the obliquity, the
  * nutation or the sidereal time: the houses refuse it (209), swe_sidtime(),
- * swe_sidtime0(), swe_azalt() and swe_azalt_rev() answer NaN (214) */
+ * swe_sidtime0(), swe_azalt() and swe_azalt_rev() answer NaN (214); delta
+ * t answers NaN (215), the ayanamsa refuses it (212) */
 #define SWI_ECL_NUT_JMAX 1e12
 #endif
 

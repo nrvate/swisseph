@@ -903,6 +903,15 @@ static int32 swe_calc_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 if
     iflag |= SEFLG_SWIEPH;
   }
   deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 215: delta t is NaN past |J| 1e12 and at -+inf and NaN,
+   * and so the TT; refused, serr from delta t, not computed at NaN */
+  if (isnan(deltat)) {
+    for (retval = 0; retval < 6; retval++)
+      xx[retval] = 0;
+    return ERR;
+  }
+#endif
   retval = swe_calc_r(ctx, tjd_ut + deltat, ipl, iflag, xx, serr);
   /* if ephe required is not ephe returned, adjust delta t: */
   if ((retval & SEFLG_EPHMASK) != epheflag) {
@@ -1199,6 +1208,13 @@ static int32 swe_calc_orbel_ut_r_body(swe_ctx *ctx, double tjd_ut, const double 
     iflag |= SEFLG_SWIEPH;
   }
   deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (isnan(deltat)) {	/* bug 215, as swe_calc_ut_r() */
+    for (retval = 0; retval < 6; retval++)
+      xx[retval] = 0;
+    return ERR;
+  }
+#endif
   retval = swe_calc_orbel_r(ctx, tjd_ut + deltat, el, iplctr, equinox, equinoxJd, iflag, xx, serr);
   /* if ephe required is not ephe returned, adjust delta t: */
   if ((retval & SEFLG_EPHMASK) != epheflag) {
@@ -1255,6 +1271,16 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
    * iflag plausible?                       * 
    ******************************************/
   iflag = plaus_iflag(ctx, iflag, ipl, tjd, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 217: the mean obliquity of every precession model but
+   * Vondrak 2011 is a polynomial, answered at any date within bug 196's
+   * bound: 1.6e51 deg at 1e12 under Laskar 1986, -1.9e26 under IAU 2006,
+   * 3.5e46 under Owen 1990. Refused outside the model's range (see
+   * swi_frame_range()), with the flags resolved, before the caches. */
+  if (ipl == SE_ECL_NUT
+      && swi_frame_range(ctx, tjd, iflag, SWI_FRAME_EPS, "jd", serr) == ERR)
+    return ERR;
+#endif
   /****************************************** 
    * which ephemeris is wanted, which is used?
    * Three ephemerides are possible: MOSEPH, SWIEPH, JPLEPH.
@@ -5651,12 +5677,47 @@ void CALL_CONV swe_set_sid_mode(int32 sid_mode, double t0, double ayan_t0)
   swe_set_sid_mode_r(swi_default_ctx(), sid_mode, t0, ayan_t0);
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 212: the ayanamsa took any date, the instant's and the
+ * sidereal mode's t0, and answered OK: swe_get_ayanamsa_ex() with Lahiri
+ * 121.4 deg at 1e12, 1.17e10 deg at 1e20 (it adds dpsi), NaN from 1e84,
+ * at -+1e300, -+inf and NaN; a user t0 of NaN or inf NaN at J2000, and
+ * the sidereal positions with it. On the default Vondrak 2011 it answered
+ * past the fit's -+2000 centuries too, by matrices that stop being
+ * rotations (0.14 off orthonormal at -7300 centuries, 7.6e20 at 1e12):
+ * Lahiri 40.3 deg at -1e4 centuries, 35.3 at 3e5. Now both dates within
+ * the obliquity's and nutation's bound and the precession model's range,
+ * the precession's and the obliquity's (bug 217: Vondrak's precession
+ * J2000 -+ 2000 centuries, the polynomials -13200 .. +17191, Owen 1990
+ * -18000 .. +22000); a t0 in UT within delta t's (bug 215). The flags as
+ * get_ayanamsa() takes them. */
+int swi_ayanamsa_range(swe_ctx *ctx, double tjd_et, int32 iflag, char *serr)
+{
+  struct sid_data *sip = &ctx->sidd;
+  double t0 = sip->t0;
+  iflag = (plaus_iflag(ctx, iflag, -1, tjd_et, NULL) & SEFLG_EPHMASK) | SEFLG_NONUT;
+  if (swi_frame_range(ctx, tjd_et, iflag, SWI_FRAME_PREC | SWI_FRAME_EPS, "jd", serr) == ERR)
+    return ERR;
+  if (sip->t0_is_UT) {
+    if (swi_deltat_range(t0, "t0", serr) == ERR)
+      return ERR;
+    t0 += swe_deltat_ex_r(ctx, t0, iflag, NULL);
+  }
+  return swi_frame_range(ctx, t0, iflag, SWI_FRAME_PREC | SWI_FRAME_EPS, "t0", serr);
+}
+#endif
+
 static int32 swe_get_ayanamsa_ex_r_body(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya, char *serr)
 {
   struct nut nuttmp;
   struct nut *nutp = &nuttmp;	/* dummy assign, to silence gcc warning */
   int32 retval;
 #ifndef SWE_UPSTREAM_COMPAT
+  /* bug 212: ERR and 0, before the nutation is added */
+  if (swi_ayanamsa_range(ctx, tjd_et, iflag, serr) == ERR) {
+    *daya = 0;
+    return ERR;
+  }
   /* Upstream bug 223: the nutation added here took the JPL Horizons flags,
    * which the ayanamsa's precession never takes (swi_get_ayanamsa_ex()
    * keeps the ephemeris bits alone) and plaus_iflag() drops from every
@@ -5838,6 +5899,14 @@ static int32 get_ayanamsa(swe_ctx *ctx, double tjd_et, int32 iflag, double *daya
   }
   if (!ctx->ayana_is_set)
     SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 212, for the sidereal positions and houses too */
+  if (swi_ayanamsa_range(ctx, tjd_et, iflag, serr) == ERR) {
+    if (dspeed != NULL)
+      *dspeed = 0;
+    return ERR;
+  }
+#endif
   if (sid_mode == SE_SIDM_TRUE_CITRA) {
     strcpy(star, "Spica"); /* Citra */
     if ((retflag = swe_fixstar_r(ctx, star, tjd_et, iflag_true, x, serr)) == ERR) {
@@ -6105,6 +6174,13 @@ static int32 swe_get_ayanamsa_ex_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 if
     iflag |= SEFLG_SWIEPH;
   }
   deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 215: no delta t, no TT; serr says why (bug 212) */
+  if (isnan(deltat)) {
+    *daya = 0;
+    return ERR;
+  }
+#endif
   // swe... includes nutation, unless SEFLG_NONUT
   retflag = swe_get_ayanamsa_ex_r(ctx, tjd_ut + deltat, iflag, daya, serr);
   /* if ephe required is not ephe returned, adjust delta t: */
@@ -6144,6 +6220,11 @@ static double swe_get_ayanamsa_r_body(swe_ctx *ctx, double tjd_et)
   swi_init_swed_if_start(ctx);	/* bug 103: the guess reads the configuration */
 #endif
   iflag = swi_guess_ephe_flag(ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 212: no error to return */
+  if (swi_ayanamsa_range(ctx, tjd_et, iflag, NULL) == ERR)
+    return NAN;
+#endif
   // swi... function never includes nutation
   swi_get_ayanamsa_ex(ctx, tjd_et, iflag, &daya, NULL);
   return daya;
@@ -6173,7 +6254,17 @@ static double swe_get_ayanamsa_ut_r_body(swe_ctx *ctx, double tjd_ut)
   swi_init_swed_if_start(ctx);	/* bug 103: the guess reads the configuration */
 #endif
   iflag = swi_guess_ephe_flag(ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+  {
+    /* bugs 212, 215: no error to return; delta t NaN past its range */
+    double tjd_et = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL);
+    if (swi_ayanamsa_range(ctx, tjd_et, 0, NULL) == ERR)
+      return NAN;
+    swi_get_ayanamsa_ex(ctx, tjd_et, 0, &daya, NULL);
+  }
+#else
   swi_get_ayanamsa_ex(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL), 0, &daya, NULL);
+#endif
   return daya;
 }
 
@@ -12829,6 +12920,13 @@ static int32 swe_fixstar2_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int
     iflag |= SEFLG_SWIEPH;
   }
   deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (isnan(deltat)) {	/* bug 215, as swe_calc_ut_r() */
+    for (retflag = 0; retflag < 6; retflag++)
+      xx[retflag] = 0;
+    return ERR;
+  }
+#endif
   /* if ephe required is not ephe returned, adjust delta t: */
   retflag = swe_fixstar2_r(ctx, star, tjd_ut + deltat, iflag, xx, serr);
   if (retflag != ERR && (retflag & SEFLG_EPHMASK) != epheflag) {
@@ -13617,8 +13715,19 @@ static int32 swe_time_equ_r_body(swe_ctx *ctx, double tjd_ut, double *E, char *s
 {
   int32 retval;
   double t, dt, x[6];
+#ifndef SWE_UPSTREAM_COMPAT
+  double sidt;
+  int32 iflag = SEFLG_EQUATORIAL;
+  /* Upstream bug 215: past delta t's range, before the sidereal time */
+  if (swi_deltat_range(tjd_ut, "jd", serr) == ERR) {
+    *E = 0;
+    return ERR;
+  }
+  sidt = swe_sidtime_r(ctx, tjd_ut);
+#else
   double sidt = swe_sidtime_r(ctx, tjd_ut);
   int32 iflag = SEFLG_EQUATORIAL;
+#endif
   iflag = plaus_iflag(ctx, iflag, -1, tjd_ut, serr);
 #ifndef SWE_UPSTREAM_COMPAT
   if (swi_init_swed_if_start(ctx) == 1 && !(iflag & SEFLG_MOSEPH) && serr != NULL
@@ -14470,6 +14579,13 @@ static int32 swe_fixstar_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int3
     iflag |= SEFLG_SWIEPH;
   }
   deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (isnan(deltat)) {	/* bug 215, as swe_calc_ut_r() */
+    for (retflag = 0; retflag < 6; retflag++)
+      xx[retflag] = 0;
+    return ERR;
+  }
+#endif
   /* if ephe required is not ephe returned, adjust delta t: */
   retflag = swe_fixstar_r(ctx, star, tjd_ut + deltat, iflag, xx, serr);
   if (retflag != ERR && (retflag & SEFLG_EPHMASK) != epheflag) {

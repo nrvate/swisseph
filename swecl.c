@@ -763,6 +763,10 @@ static int32 eclipse_where( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starna
   iflag2 = iflag | SEFLG_RADIANS;
   iflag  = iflag | SEFLG_XYZ;
   deltat = swe_deltat_ex_r(ctx, tjd_ut, ifl, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (isnan(deltat))	/* bug 215: no delta t, serr says why */
+    return ERR;
+#endif
   tjd = tjd_ut + deltat;
   /* moon in cartesian coordinates */
   if ((retc = swe_calc_r(ctx, tjd, SE_MOON, iflag, rm, serr)) == ERR)
@@ -1105,6 +1109,10 @@ static int32 eclipse_how( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname
   geopos[1] = geolat;
   geopos[2] = geohgt;
   te = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, ifl, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (isnan(te))	/* bug 215: no delta t, serr says why */
+    return ERR;
+#endif
   set_topo_for_this_call(ctx, geolon, geolat, geohgt);
   if (calc_planet_star(ctx, te, ipl, starname, iflag, ls, serr) == ERR)
     return ERR;
@@ -3593,6 +3601,10 @@ static int32 lun_eclipse_how(swe_ctx *ctx,
   iflag = SEFLG_SPEED | SEFLG_EQUATORIAL | ifl;
   iflag  = iflag | SEFLG_XYZ;
   deltat = swe_deltat_ex_r(ctx, tjd_ut, ifl, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (isnan(deltat))	/* bug 215: no delta t, serr says why */
+    return ERR;
+#endif
   tjd = tjd_ut + deltat;
   /* moon in cartesian coordinates */
   if (swe_calc_r(ctx, tjd, SE_MOON, iflag, rm, serr) == ERR)
@@ -4506,6 +4518,13 @@ static int32 swe_pheno_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 i
     iflag |= SEFLG_SWIEPH;
   }
   deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (isnan(deltat)) {	/* bug 215, as swe_calc_ut_r() */
+    for (retflag = 0; retflag < 20; retflag++)
+      attr[retflag] = 0;
+    return ERR;
+  }
+#endif
   retflag = swe_pheno_r(ctx, tjd_ut + deltat, ipl, iflag, attr, serr);
   /* if ephe required is not ephe returned, adjust delta t: */
   if ((retflag & SEFLG_EPHMASK) != epheflag) {
@@ -4836,6 +4855,13 @@ static int32 swe_rise_trans_true_hor_r_body(swe_ctx *ctx, double tjd_ut, int32 i
       sprintf(serr, "location for swe_rise_trans() must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
     return ERR;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 215: no delta t, serr says why; the meridian transits too */
+  if (isnan(tjd_et)) {
+    *tret = 0;
+    return ERR;
+  }
+#endif
   // if horhgt == -100, set horhgt = dip of horizon, i.e. refracted height
   // of ocean if visible at horizon.
   if (horhgt == -100) {
@@ -7068,6 +7094,11 @@ static int32 swe_nod_aps_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32
              : (iflag & SEFLG_MOSEPH) ? SEFLG_MOSEPH : SEFLG_SWIEPH;
   iflag = (iflag & ~SEFLG_EPHMASK) | epheflag;
   deltat = swe_deltat_ex_r(ctx, tjd_ut, iflag, serr);
+  if (isnan(deltat)) {	/* bug 215, as swe_calc_ut_r() */
+    for (retval = 0; retval < 6; retval++)
+      xnasc[retval] = xndsc[retval] = xperi[retval] = xaphe[retval] = 0;
+    return ERR;
+  }
   retval = swe_nod_aps_r_body(ctx, tjd_ut + deltat, ipl, iflag, method, xnasc, xndsc,
                               xperi, xaphe, serr, &ephused);
   if (retval != ERR && ephused != 0 && ephused != epheflag) {
@@ -8007,6 +8038,13 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
 #endif
     t_et = t_ut + swe_deltat_ex_r(ctx, t_ut, iflag, serr);
 #ifndef SWE_UPSTREAM_COMPAT
+    /* bug 215: no delta t, serr says why; the body is not computed at
+     * NaN. Its date bounds the frame's: every body's range lies within
+     * every model's (bug 217) */
+    if (isnan(t_et)) {
+      *dgsect = 0;
+      return ERR;
+    }
     /* Upstream bug 223: the house frame's obliquity and nutation took the
      * JPL Horizons flags as given, where the body's own call drops them
      * (plaus_iflag(): every request on the Swiss files or Moshier, every

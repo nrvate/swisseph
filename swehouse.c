@@ -139,6 +139,11 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
 			   const struct house_rates *hr);
 static int sunshine_solution_makransky(double ramc, double lat, double ecl, struct houses *hsp);
 static int sunshine_solution_treindl(double ramc, double lat, double ecl, struct houses *hsp);
+#ifndef SWE_UPSTREAM_COMPAT
+static int house_range(swe_ctx *ctx, double tjde, int32 iflag, int ito,
+                       double *cusp, double *ascmc, double *cusp_speed,
+                       double *ascmc_speed, char *serr);
+#endif
 
 /* housasp.c 
  * cusps are returned in double cusp[13],
@@ -164,6 +169,12 @@ static int swe_houses_r_body(swe_ctx *ctx, double tjd_ut,
   int i, retc = 0;
   double armc, eps, nutlo[2];
   double tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, -1, NULL);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 213: ERR, as for its own reasons, and the outputs 0 */
+  if (house_range(ctx, tjde, 0, toupper(hsys) == 'G' ? 36 : 12,
+                  cusp, ascmc, NULL, NULL, NULL) == ERR)
+    return ERR;
+#endif
   eps = swi_epsiln(ctx, tjde, 0) * RADTODEG;
   swi_nutation(ctx, tjde, 0, nutlo);
   for (i = 0; i < 2; i++)
@@ -326,7 +337,9 @@ static void house_frame_at(swe_ctx *ctx, double tjd_ut, int32 iflag, double geol
 {
   int i;
   double eps_mean;
-  f->tjde = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL);
+  /* bug 215: as the sidereal time below, t -+ HOUSE_SPEED_DT may lie past
+   * delta t's bound t is within */
+  f->tjde = tjd_ut + swi_deltat_nobound(ctx, tjd_ut, iflag);
   eps_mean = swi_epsiln(ctx, f->tjde, 0) * RADTODEG;
   swi_nutation(ctx, f->tjde, 0, f->nutlo);
   for (i = 0; i < 2; i++)
@@ -473,6 +486,41 @@ static void houses_less_rate(int hsys, int retc, double rate, double *cusp_speed
     }
   }
 }
+
+/* Upstream bug 213: the houses took the obliquity and nutation at their
+ * TT from swi_epsiln() and swi_nutation(), not through SE_ECL_NUT and its
+ * refusal (bug 196); bug 209 refuses a UT past |J| 1e12, but from UT
+ * 8.13e11 the TT is past it (1.13e12 at UT 9e11): Placidus at 50 N
+ * answered there, ERR "within polar circle" with its cusps filled; under
+ * a polynomial precession model they took its obliquity anywhere, up to
+ * 1.6e51 deg (bug 217; Laskar 1986 at UT -1e8 the same ERR and cusps), and
+ * the sidereal houses the ayanamsa outside its range (bug 212: Lahiri at
+ * UT 1e9, past Vondrak 2011's precession). Refused now: the TT within
+ * the obliquity's and nutation's bound and the model's range
+ * (swi_frame_range(), the model swi_epsiln(tjde, 0) takes); sidereal, the
+ * ayanamsa's instant and t0 within theirs (swi_ayanamsa_range()). ERR,
+ * cusp[0..ito], ascmc[0..9] and the speeds 0, serr naming the range;
+ * before anything is computed or the sidereal time read. */
+static int house_range(swe_ctx *ctx, double tjde, int32 iflag, int ito,
+                       double *cusp, double *ascmc, double *cusp_speed,
+                       double *ascmc_speed, char *serr)
+{
+  int i;
+  if (swi_frame_range(ctx, tjde, 0, SWI_FRAME_EPS, "jd", serr) == OK
+      && (!(iflag & SEFLG_SIDEREAL) || swi_ayanamsa_range(ctx, tjde, iflag, serr) == OK))
+    return OK;
+  for (i = 0; i <= ito; i++) {
+    cusp[i] = 0;
+    if (cusp_speed != NULL)
+      cusp_speed[i] = 0;
+  }
+  for (i = 0; i < 10; i++) {
+    ascmc[i] = 0;
+    if (ascmc_speed != NULL)
+      ascmc_speed[i] = 0;
+  }
+  return ERR;
+}
 #endif
 
 /* 
@@ -522,6 +570,12 @@ static int swe_houses_ex2_r_body(swe_ctx *ctx, double tjd_ut,
     ito = 12;
   if ((iflag & SEFLG_SIDEREAL) && !ctx->ayana_is_set)
     SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 213 (house_range()) */
+  if (house_range(ctx, tjde, iflag, ito, cusp, ascmc, cusp_speed, ascmc_speed,
+                  serr) == ERR)
+    return ERR;
+#endif
   eps_mean = swi_epsiln(ctx, tjde, 0) * RADTODEG;
   swi_nutation(ctx, tjde, 0, nutlo);
   for (i = 0; i < 2; i++)
@@ -558,12 +612,22 @@ static int swe_houses_ex2_r_body(swe_ctx *ctx, double tjd_ut,
     double tp = tjd_ut + HOUSE_SPEED_DT, tm = tjd_ut - HOUSE_SPEED_DT;
     /* bug 187: the stencil on t's side of a step of the frame's models,
      * found at the frames' own TT, which delta t moves */
-    double hd = fmax(tp + swe_deltat_ex_r(ctx, tp, iflag, NULL) - tjde,
-                     tjde - (tm + swe_deltat_ex_r(ctx, tm, iflag, NULL)));
+    double hd = fmax(tp + swi_deltat_nobound(ctx, tp, iflag) - tjde,
+                     tjde - (tm + swi_deltat_nobound(ctx, tm, iflag)));
     hr.side = swi_frame_step_side(ctx, tjde, hd, 0, SWI_FRAME_PREC | SWI_FRAME_EPS);
     /* No test of the nutation's model: the house frames take no flags, and
      * since bug 223 neither does the sidereal houses' ayanamsa, whose
      * SEFLG_JPLHOR_APPROX step at 1962 Jan 20 bug 203 tested for here. */
+    /* Upstream bug 212: within hd of the ayanamsa's range (house_range()
+     * let t through), the other side's ayanamsa is refused, 0: the
+     * stencil on t's side, as at a step */
+    if (hr.side == 0 && (iflag & SEFLG_SIDEREAL)
+        && !(sip->sid_mode & (SE_SIDBIT_ECL_T0 | SE_SIDBIT_SSY_PLANE))) {
+      if (swi_ayanamsa_range(ctx, tjde + hd, iflag, NULL) == ERR)
+        hr.side = -1;
+      else if (swi_ayanamsa_range(ctx, tjde - hd, iflag, NULL) == ERR)
+        hr.side = 1;
+    }
     if (hr.side != 0) {
       tm = tjd_ut + hr.side * HOUSE_SPEED_DT;
       tp = tjd_ut + 2 * hr.side * HOUSE_SPEED_DT;

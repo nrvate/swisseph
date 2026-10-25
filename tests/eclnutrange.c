@@ -22,21 +22,24 @@
  * SEFLG_MOSEPH | SEFLG_JPLHOR_APPROX; SEFLG_MOSEPH | SEFLG_NONUT; on a
  * fresh context, then again on it: ERR, the six outputs 0 (filled with 7
  * before), serr naming the range. And swe_calc_ut() at UT 1e12 (TT
- * 1.28e12), 1e13, -inf and NaN. 1384 calls.
+ * 1.28e12), 1e13, -inf and NaN, the last three refused by delta t's own
+ * bound since (bug 215, G161). 1384 calls.
  *
  * Check (b): answered. +-1e12, the doubles next to them inside and 40
  * instants with |J| log-uniform over 1e7..1e12, either sign, under the
- * six nutation models and the eleven long-term precession models and the
- * default, with SEFLG_MOSEPH, SEFLG_SWIEPH and SEFLG_MOSEPH |
- * SEFLG_JPLHOR_APPROX: OK and the four finite. 9504 calls.
+ * six nutation models and the default precession model and Vondrak 2011
+ * named, with SEFLG_MOSEPH, SEFLG_SWIEPH and SEFLG_MOSEPH |
+ * SEFLG_JPLHOR_APPROX: OK and the four finite. 1584 calls. (The other ten
+ * long-term models, polynomials, answer within their own ranges since bug
+ * 217, which G161 checks.)
  *
  * Check (c): a refusal leaves nothing behind. SE_ECL_NUT at J2000 and at
  * 1e12 after refusals at 1e13, -1e300 and NaN on the same context, against
  * a fresh context, the default models: bit for bit.
  *
- * Measured: (a) 1384 of 1384 refused, (b) 9504 of 9504 finite (the largest
- * |dpsi| 125 deg; the mean obliquity, a polynomial in T under every model
- * but Vondrak 2011, up to 1.6e51 deg), (c) 0 values differ. Before the
+ * Measured: (a) 1384 of 1384 refused, (b) 1584 of 1584 finite (the largest
+ * |dpsi| 125 deg, the mean obliquity 76.4 deg; under the polynomial
+ * models, before bug 217, up to 1.6e51 deg), (c) 0 values differ. Before the
  * fix (a) fails, 0 of 1384 refused, every date answered with its flags,
  * and (b) and (c) pass; the upstream build fails the same. Run as
  *   eclnutrange EPHEDIR
@@ -50,11 +53,13 @@
 
 static const char *MOD[6] = { "0,0,0,0", "0,0,0,1", "0,0,0,2", "0,0,0,3", "0,0,0,4", "0,0,0,5" };
 
-/* refused as swe_calc() refuses: ERR, the outputs 0, the range named */
+/* refused as swe_calc() refuses: ERR, the outputs 0, the range named (or
+ * delta t's, for swe_calc_ut() past its bound, bug 215) */
 static int refused(int32 r, const double *x, const char *serr)
 {
   int k;
-  if (r != ERR || strstr(serr, "outside the obliquity and nutation range") == NULL)
+  if (r != ERR || (strstr(serr, "outside the obliquity and nutation range") == NULL
+                   && strstr(serr, "outside the delta t range") == NULL))
     return 0;
   for (k = 0; k < 6; k++)
     if (x[k] != 0)
@@ -139,7 +144,7 @@ int main(int argc, char **argv)
     tin[i] = (i & 1 ? -1 : 1) * pow(10.0, 7.0 + 5.0 * (rand() / (double) RAND_MAX));
   for (f = 0; f < 3; f++)
     for (m = 0; m < 6; m++)
-      for (p = 0; p <= 11; p++) {
+      for (p = 0; p <= 9; p += 9) {	/* the default; Vondrak 2011 named */
         swe_ctx *c = swe_ctx_new();
         swe_set_ephe_path_r(c, argv[1]);
         snprintf(mod, sizeof mod, "0,%d,0,%d", p, m);

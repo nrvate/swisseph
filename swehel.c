@@ -612,7 +612,12 @@ static double SunRA(swe_ctx *ctx, double JDNDaysUT, int32 helflag, char *serr)
     int32 iflag = epheflag | SEFLG_EQUATORIAL;
     iflag |= SEFLG_NONUT | SEFLG_TRUEPOS;
     tjd_tt = JDNDaysUT + swe_deltat_ex_r(ctx, JDNDaysUT, epheflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* bug 215: no delta t, as when the Sun is refused */
+    if (!isnan(tjd_tt) && swe_calc_r(ctx, tjd_tt, SE_SUN, iflag, x, serr) != ERR) {
+#else
     if (swe_calc_r(ctx, tjd_tt, SE_SUN, iflag, x, serr) != ERR) {
+#endif
       ctx->hel.sunra.ralast = x[0];
       ctx->hel.sunra.tjdlast = JDNDaysUT;
       return ctx->hel.sunra.ralast;
@@ -737,6 +742,10 @@ static int32 ObjectLoc(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *dat
   if (Angle < 5) iflag = iflag | SEFLG_TOPOCTR;
   if (Angle == 7) Angle = 0;
   tjd_tt = JDNDaysUT + swe_deltat_ex_r(ctx, JDNDaysUT, epheflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (isnan(tjd_tt))	/* bug 215: no delta t, serr says why */
+    return ERR;
+#endif
   Planet = DeterObject(ObjectName);
   if (Planet != -1) {
     if (swe_calc_r(ctx, tjd_tt, Planet, iflag, x, serr) == ERR)
@@ -2403,6 +2412,12 @@ static int32 heliacal_ut_arc_vis(swe_ctx *ctx, double JDNDaysUTStart, double *dg
 	  goto swe_heliacal_err;
 	/* determine time compensation to get Sun's altitude at heliacal rise */
 	tjd_tt = tret + swe_deltat_ex_r(ctx, tret, epheflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+	if (isnan(tjd_tt)) {	/* bug 215 */
+	  retval = ERR;
+	  goto swe_heliacal_err;
+	}
+#endif
 	if ((retval = swe_calc_r(ctx, tjd_tt, SE_SUN, iflag, x, serr)) == ERR)
 	  goto swe_heliacal_err;
 	xin[0] = x[0];
@@ -2418,6 +2433,12 @@ static int32 heliacal_ut_arc_vis(swe_ctx *ctx, double JDNDaysUTStart, double *dg
 	/* determine appr.time when sun is at the wanted Sun's altitude */
 	JDNarcvisUT = tret - Tdelta / 24;
 	tjd_tt = JDNarcvisUT + swe_deltat_ex_r(ctx, JDNarcvisUT, epheflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+	if (isnan(tjd_tt)) {	/* bug 215 */
+	  retval = ERR;
+	  goto swe_heliacal_err;
+	}
+#endif
 	/* determine Sun's position */
 	if ((retval = swe_calc_r(ctx, tjd_tt, SE_SUN, iflag, x, serr)) == ERR)
 	  goto swe_heliacal_err;
@@ -2510,6 +2531,12 @@ static int32 heliacal_ut_arc_vis(swe_ctx *ctx, double JDNDaysUTStart, double *dg
       OudeDatum = JDNarcvisUT;
       JDNarcvisUT = JDNarcvisUT - direct;
       tjd_tt = JDNarcvisUT + swe_deltat_ex_r(ctx, JDNarcvisUT, epheflag, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+      if (isnan(tjd_tt)) {	/* bug 215 */
+	retval = ERR;
+	goto swe_heliacal_err;
+      }
+#endif
       if (Planet != -1) {
 	if ((retval = swe_calc_r(ctx, tjd_tt, Planet, iflag, x, serr)) == ERR)
 	  goto swe_heliacal_err;

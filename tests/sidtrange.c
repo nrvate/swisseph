@@ -40,7 +40,12 @@
  * with speeds not refused, its cusps, ascmc and speeds finite;
  * swe_azalt() SE_EQU2HOR and swe_azalt_rev() SE_HOR2EQU finite; their
  * ecliptic forms finite where TT is within the bound and all NaN where it
- * is past (SE_ECL_NUT refuses there). 660 dates by models.
+ * is past (SE_ECL_NUT refuses there). Where TT is past the bound or, under
+ * a polynomial precession model, past the model's range (UPSTREAM-BUGS
+ * 213, 217: every date here under the ten, |J| 3e7 and more; under the
+ * other five sets UT 1e12 and the double next inside, TT 1.28e12), the
+ * houses refuse, ERR with serr naming the range and the cusps 0, and the
+ * ecliptic forms are NaN. 660 dates by models, 450 of them refusing.
  *
  * Check (c): past the bound and at no date. 21 dates (|J| the double past
  * 1e12, 1.5e12, 1e13, 1e20, 1e84, 1e200, 1e300, 1e308, DBL_MAX and inf,
@@ -62,15 +67,18 @@
  * 1e12 0.031 s against the table's 0.022, a call there 1.0e-4 s against
  * 2.6e-5 (the nutation's arguments in double-double past 4e8 days, bug
  * 188);
- * (b) 660 of 660 answered; (c) 273 of 273 refused or NaN; (d) 0 differ.
+ * (b) 660 of 660 as expected; (c) 273 of 273 refused or NaN; (d) 0 differ.
  * Before the fix (-O2): (a) 0 of 14, 12 hung and +-1e8 at 9.5e-3 s a call;
  * (b) 126 of 660, the twelve long-term sidereal time contexts hung and the
  * ecliptic forms turned by 0 at UT 1e12 under the other three; (c) 50 of
  * 273, 6 dates hung (+-1e12 next, +-1.5e12, +-1e13), 5 crashed (-1e200,
- * -1e300, -1e308, -DBL_MAX, -inf), the rest answered; (d) hung. The
- * upstream build fails (b), 630 of 660, the ecliptic forms answered where
- * TT is past 1e12 (its SE_ECL_NUT answers there), and (c), 86 of 273, the
- * NaN of 1e84 and beyond its only no-answers; (a) and (d) pass. Run as
+ * -1e300, -1e308, -DBL_MAX, -inf), the rest answered; (d) hung. Before
+ * bugs 213 and 217, (b) 210 of 660, the houses and ecliptic forms answered
+ * past the models' ranges and the houses at TT past 1e12. The upstream
+ * build fails (b), 210 of 660, the same and the ecliptic forms answered
+ * where TT is past 1e12 (its SE_ECL_NUT answers there), and (c), 86 of
+ * 273, the NaN of 1e84 and beyond its only no-answers; (a) and (d) pass.
+ * Run as
  *   sidtrange EPHEDIR
  */
 #include <float.h>
@@ -189,15 +197,21 @@ static int answered_under(double m)
   for (i = 0; i < 44; i++) {
     double t = TB[i], s, s0, cu[13], a[10], cs[13], as[10], x[6];
     double tt = t + swe_deltat_ex_r(c, t, -1, NULL);
-    int r, past = !(tt >= -1e12 && tt <= 1e12), ok = 1;
+    /* TT past the bound, or past a polynomial precession model's range
+     * (UPSTREAM-BUGS 217: Owen 1990's pieces, the others the widest body
+     * range), where SE_ECL_NUT and the houses refuse */
+    int poly = m >= 1 && m <= 11 && m != 9;
+    double lo = m == 10 ? -4853455.5 : -3100015.5, hi = m == 10 ? 9756544.5 : 8000016.5;
+    int r, past = !(tt >= -1e12 && tt <= 1e12) || (poly && !(tt >= lo && tt <= hi)), ok = 1;
     s = swe_sidtime_r(c, t);
     s0 = swe_sidtime0_r(c, t, 23.44, -0.004);
     if (!isfinite(s) || !isfinite(s0))
       ok = 0;
     serr[0] = '\0';
     r = swe_houses_ex2_r(c, t, SEFLG_SPEED, 50, 10, 'P', cu, a, cs, as, serr);
-    if ((r < 0 && strstr(serr, "outside the obliquity") != NULL)
-        || !fin(cu + 1, 12) || !fin(a, 8) || !fin(cs + 1, 12) || !fin(as, 8))
+    if (past ? !(r == ERR && strstr(serr, "outside the") != NULL && cu[1] == 0 && as[0] == 0)
+        : ((r < 0 && strstr(serr, "outside the") != NULL)
+           || !fin(cu + 1, 12) || !fin(a, 8) || !fin(cs + 1, 12) || !fin(as, 8)))
       ok = 0;
     swe_azalt_r(c, t, SE_EQU2HOR, geo, 0, 10, xin, x);
     if (!fin(x, 3)) ok = 0;
@@ -366,7 +380,8 @@ int main(int argc, char **argv)
     bb += r < 0 ? 44 : r;
     nb += 44;
   }
-  printf("  (b) %d of %d dates by models answered\n", nb - bb, nb);
+  printf("  (b) %d of %d dates by models as expected (answered; the houses and the ecliptic"
+         " forms refused where TT is past the bound or the model's range)\n", nb - bb, nb);
 
   /* (c) */
   for (i = 0; i < 10; i++)

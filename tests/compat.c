@@ -4010,6 +4010,143 @@ static double sidt_far_answered(void)
   return n;
 }
 
+/* UPSTREAM-BUGS 212: the ayanamsa past its dates, Moshier, a fresh context
+ * each: swe_get_ayanamsa_ex() Lahiri at 1e13, -1e13, 1e20, inf and NaN, and
+ * on the default Vondrak 2011 at J2000 -+ 1e4 centuries (its precession's
+ * fit -+2000), the number answered with the flags; swe_get_ayanamsa() at
+ * 1e13 and J2000 + 1e4 centuries, not NaN; and swe_get_ayanamsa_ex() at
+ * J2000 with a user t0 of NaN, with the flags. The shipped build answers
+ * none of 10; upstream all 10. */
+static double aya_far_answered(void)
+{
+  static const double tq[7] = { 1e13, -1e13, 1e20, INFINITY, NAN,
+                                2451545.0 + 1e4 * 36525.0, 2451545.0 - 1e4 * 36525.0 };
+  double d[2];
+  char serr[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 10; i++) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    if (i < 7) {
+      swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+      if (swe_get_ayanamsa_ex_r(c, tq[i], SEFLG_MOSEPH, d, serr) >= 0)
+        n++;
+    } else if (i < 9) {
+      swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+      if (!isnan(swe_get_ayanamsa_r(c, tq[i == 7 ? 0 : 5])))
+        n++;
+    } else {
+      swe_set_sid_mode_r(c, SE_SIDM_USER, NAN, 0);
+      if (swe_get_ayanamsa_ex_r(c, 2451545.0, SEFLG_MOSEPH, d, serr) >= 0)
+        n++;
+    }
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 215: swe_deltat_ex() at NaN, 1e13, -1e13, 1e300 and inf,
+ * Moshier, a fresh context each, and swe_deltat() at 1e13: the number
+ * answered, not NaN with serr naming delta t's range (swe_deltat(): not
+ * NaN). The shipped build answers none of 6; upstream all 6 (0 at NaN, no
+ * message; Stephenson's parabola; inf). */
+static double deltat_far_answered(void)
+{
+  static const double tq[5] = { NAN, 1e13, -1e13, 1e300, INFINITY };
+  char serr[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 6; i++) {
+    swe_ctx *c = swe_ctx_new();
+    double d;
+    if (c == NULL)
+      return -1;
+    serr[0] = '\0';
+    if (i < 5) {
+      d = swe_deltat_ex_r(c, tq[i], SEFLG_MOSEPH, serr);
+      if (!(isnan(d) && strstr(serr, "outside the delta t range") != NULL))
+        n++;
+    } else if (!isnan(swe_deltat_r(c, 1e13))) {
+      n++;
+    }
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 217: SE_ECL_NUT outside its precession model's range,
+ * Moshier, a fresh context each: Laskar 1986 at -+1e9 days, IAU 2006 at
+ * -1e8, Owen 1990 at 1e8 (each as the long-term model); and Placidus at
+ * 50 N with speeds under Laskar 1986 at UT -1e8. The number answered (the
+ * houses: not ERR with every cusp 0). The shipped build answers none of
+ * 5; upstream all 5 (the mean obliquity -1.04e7, 1.03e7 deg ...). */
+static double prec_far_answered(void)
+{
+  static const double tq[4] = { 1e9, -1e9, -1e8, 1e8 };
+  static const char *const md[5] = { "0,2,0,0", "0,2,0,0", "0,8,0,0", "0,10,0,0", "0,2,0,0" };
+  double x[6], cu[13], a[10], cs[13], as[10];
+  char serr[AS_MAXCH], mod[16];
+  int i, n = 0;
+  for (i = 0; i < 5; i++) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    strcpy(mod, md[i]);
+    swe_set_astro_models_r(c, mod, 0);
+    if (i < 4) {
+      if (swe_calc_r(c, tq[i], SE_ECL_NUT, SEFLG_MOSEPH, x, serr) >= 0)
+        n++;
+    } else {
+      cu[1] = 7;
+      if (!(swe_houses_ex2_r(c, -1e8, SEFLG_MOSEPH, 50, 10, 'P', cu, a, cs, as, serr) == ERR
+            && cu[1] == 0))
+        n++;
+    }
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 213: the houses whose own dates bug 209 lets through, a
+ * fresh context each, Moshier, latitude 50: swe_houses_ex2() Placidus at
+ * UT 9e11 (TT 1.13e12) and swe_houses() Koch at UT 8.2e11 (TT 1.01e12),
+ * sidereal Lahiri Placidus at UT 1e9 (past Vondrak 2011's precession) and
+ * at J2000 with a user t0 of NaN: the number answered, not ERR with every
+ * cusp 0. The shipped build answers none of 4; upstream all 4 (OK, or ERR
+ * "within polar circle" with its cusps filled). */
+static double houses_tt_far_answered(void)
+{
+  double cu[13], a[10];
+  char serr[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 4; i++) {
+    swe_ctx *c = swe_ctx_new();
+    int r;
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, EPHE);
+    cu[1] = 7;
+    if (i == 0) {
+      r = swe_houses_ex2_r(c, 9e11, SEFLG_MOSEPH, 50, 10, 'P', cu, a, NULL, NULL, serr);
+    } else if (i == 1) {
+      r = swe_houses_r(c, 8.2e11, 50, 10, 'K', cu, a);
+    } else {
+      if (i == 2)
+        swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+      else
+        swe_set_sid_mode_r(c, SE_SIDM_USER, NAN, 0);
+      r = swe_houses_ex2_r(c, i == 2 ? 1e9 : 2451545.0, SEFLG_MOSEPH | SEFLG_SIDEREAL, 50, 10, 'P',
+                           cu, a, NULL, NULL, serr);
+    }
+    if (!(r == ERR && cu[1] == 0))
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
 /* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
  * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
  * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
@@ -6163,7 +6300,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6333,6 +6470,10 @@ int main(int argc, char **argv)
   eclnutfar = ecl_nut_far_answered();
   housefar = houses_far_answered();
   sidtfar = sidt_far_answered();
+  ayafar = aya_far_answered();
+  dtfar = deltat_far_answered();
+  precfar = prec_far_answered();
+  housett = houses_tt_far_answered();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -7888,6 +8029,38 @@ int main(int argc, char **argv)
   else {
     printf("  NaN, inf search        %.0f/15 invalid date FAIL: expected %s\n",
            nansearch, WANT_DEFECT ? "0" : "15");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (ayafar == 10) : (ayafar == 0))
+    printf("  ayanamsa past its range %.0f/10 answered OK\n", ayafar);
+  else {
+    printf("  ayanamsa past its range %.0f/10 answered FAIL: expected %s\n",
+           ayafar, WANT_DEFECT ? "10" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (dtfar == 6) : (dtfar == 0))
+    printf("  delta t past 1e12      %.0f/6 answered OK\n", dtfar);
+  else {
+    printf("  delta t past 1e12      %.0f/6 answered FAIL: expected %s\n",
+           dtfar, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (precfar == 5) : (precfar == 0))
+    printf("  past the model's range %.0f/5 answered OK\n", precfar);
+  else {
+    printf("  past the model's range %.0f/5 answered FAIL: expected %s\n",
+           precfar, WANT_DEFECT ? "5" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (housett == 4) : (housett == 0))
+    printf("  houses, TT past range  %.0f/4 answered OK\n", housett);
+  else {
+    printf("  houses, TT past range  %.0f/4 answered FAIL: expected %s\n",
+           housett, WANT_DEFECT ? "4" : "0");
     bad++;
   }
 

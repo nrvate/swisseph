@@ -255,9 +255,13 @@ static int probe_c(int k, int warm)
   case 5: r = swe_fixstar2_r(c, star, T, SEFLG_SWIEPH | SEFLG_SPEED, x, SERR); break;
   default: r = swe_nod_aps_r(c, T, SE_JUPITER, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_MEAN, x, b, p, q, SERR); break;
   }
+  /* the UT call past 1e12 or non-finite: delta t's own refusal (bug 215)
+   * comes first */
   if (isnan(T) || fabs(T) > 7.8e11 || k == 4)
     return !(r == ERR && zero(x, 6) && serr_kept()
-             && strstr(SERR, "outside the range the Swiss Ephemeris files are named for") != NULL);
+             && (strstr(SERR, "outside the range the Swiss Ephemeris files are named for") != NULL
+                 || (k == 4 && !(fabs(T) <= 1e12)
+                     && strstr(SERR, "outside the delta t range") != NULL)));
   /* the bound itself: refused by the files as before, Mars by the file
    * named for it */
   return !(r == ERR && zero(x, 6) && SERR[0] != '\0'
