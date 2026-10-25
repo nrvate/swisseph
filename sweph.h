@@ -1235,6 +1235,11 @@ struct epsilon {
  *     swe_calc() makes it, the caller's coordinate bits and no default
  *     ephemeris bit where none was named, is this fork's function, active
  *     in both builds; G126)
+ *   - (nothing for UPSTREAM-BUGS 142: SEFLG_JPLHOR without the IERS
+ *     corrections taken as SEFLG_JPLHOR_APPROX by swe_get_ayanamsa_ex(),
+ *     so the sidereal houses, swe_gauquelin_sector() and calc_nutation()
+ *     itself, which crashed on the missing table, is in both builds, a
+ *     crash's fix; G134)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

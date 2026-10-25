@@ -176,6 +176,7 @@ worst were in code that had never executed even once.
 | 146 | The nutation interpolation's nodes lie both sides of `SEMOD_JPLHORA_3`'s step at 1962 Jan 20 under SEFLG_JPLHOR_APPROX (7.17e-2" in dpsi on the default model): dpsi and every place of date within a day of it interpolated across it, 1.95e-2" off the exact nutation at the switch + 0.3 after a call at - 0.5, 6.93e-2" at worst, where the interpolation is otherwise within about 3 mas | Correctness | `swephlib.c` |
 | 140 | The topocentric site is placed by UT1 = TT - delta t rounded to a double, 2^-31 day: a staircase in delta t whose rate leaves out delta t's, which the site's velocity carries -- the topocentric speed of an orbit 0.01 AU from the Earth 1.8e-8 to 4.7e-8 deg/day off five-point differences of its positions (2.8e-7 on de200), the topocentric Moon's 2.5e-7, on `swe_calc_orbel()` and seorbel.txt alike | Correctness | `sweph.c` |
 | 141 | `swe_calc_orbel()` (this fork's) returns SEFLG_SWIEPH where no ephemeris was named (18178 for `swe_calc()`'s 18176 with SEFLG_BARYCTR and SEFLG_SPEED) and drops SEFLG_RADIANS with SEFLG_XYZ (4354 for 12546): not `swe_calc()`'s return flag for the same flags, the answer the same | Correctness (behaviour) | `sweph.c` |
+| 142 | `swe_get_ayanamsa_ex()`, its `_ut` form, the sidereal houses and `swe_gauquelin_sector()`'s methods 0 and 1 with SEFLG_JPLHOR and no IERS corrections loaded -- de200, a thread or context that never loaded them, eop_1962_today.txt missing or broken off -- read the corrections' table, NULL, and crash (SIGSEGV), where `swe_calc()` takes the flag as SEFLG_JPLHOR_APPROX | Crash | `swephlib.c`, `swephlib.h`, `sweph.c`, `swecl.c` |
 
 ---
 
@@ -8573,7 +8574,7 @@ Noticed, not fixed:
   `swe_houses_ex2()` with `SEFLG_JPLHOR` and no corrections loaded (de200,
   or a thread that never called `swe_set_jpl_file()`) crash: their flags
   skip `plaus_iflag()`, and `calc_nutation()` calls `bessel()` on
-  `ctx->dpsi`, NULL (SIGSEGV at J2000). Both builds.
+  `ctx->dpsi`, NULL (SIGSEGV at J2000). Both builds. Entry 142.
 - A second thread on the default context never loads the corrections
   (`load_dpsi_deps()` runs in `swe_set_jpl_file()` alone), so its
   `SEFLG_JPLHOR` becomes `SEFLG_JPLHOR_APPROX` ("you did not call
@@ -9651,6 +9652,73 @@ the same before and after. Before the fix check 5 fails in both builds,
 the compat build fails 53 (54 before), the others its copy of upstream's
 fictitious path's (entry 130's guard, G27's light time, entry 88's first
 call).
+
+## 142. `swe_get_ayanamsa_ex()`, its `_ut` form, the sidereal houses and `swe_gauquelin_sector()` with SEFLG_JPLHOR and no IERS corrections loaded read the corrections' table, NULL, and crash
+
+**Severity: Crash (a NULL dereference; with an eop_1962_today.txt that breaks off, a read 2.45e6 doubles before the table), both builds**
+**Where:** `swephlib.c`: `calc_nutation()`; `sweph.c`: `swe_get_ayanamsa_ex_r_body()`; `swecl.c`: `swe_gauquelin_sector_r_body()`
+
+Entry 134's noticed item. `plaus_iflag()` turns SEFLG_JPLHOR into
+SEFLG_JPLHOR_APPROX when no corrections are loaded (`eop_dpsi_loaded` <=
+0: no `swe_set_jpl_file()` of a DE >= 403 on this context, no
+eop_1962_today.txt, or one the loader gave up on), so `swe_calc()` never
+asks `calc_nutation()` for them without them. Three public functions take
+their flags past it to the nutation: `swe_get_ayanamsa_ex()` adds the
+nutation of the caller's flags to `swi_get_ayanamsa_ex()`'s value (which
+does take them through `plaus_iflag()`, and drops the Horizons bits);
+`swe_get_ayanamsa_ex_ut()` calls it, and so do the sidereal houses in the
+default sidereal frame (`sidereal_houses_trad()`); `swe_gauquelin_sector()`'s
+methods 0 and 1 take the obliquity and the nutation with them before the
+body's own `swe_calc()`. With SEFLG_JPLHOR and no corrections
+`calc_nutation()` called `bessel()` on `ctx->dpsi`: NULL (SIGSEGV), or,
+after a file with a day missing (`eop_dpsi_loaded` -2: the table
+allocated, its end never set), at index n - 1 = -2451545. Measured with
+Lahiri on de200 at J2000: each of the eight probes below crashes, with
+SEFLG_JPLEPH | SEFLG_JPLHOR and with SEFLG_SWIEPH | SEFLG_JPLHOR, the
+interpolation on or off, on the setter's thread, on a second thread on
+the default context and on an explicit context given the path alone; and
+on G19's synthetic DE431 header at 2000 Jan 7 in a directory without the
+file (-1) and in one whose file has a day missing (-2). Both builds. The
+other public functions that take flags were called the same way and
+answer: `swe_calc()` and its `_ut` and `_pctr` forms, the four star
+functions, `swe_nod_aps()` (which drops the Horizons bits), the eclipse,
+occultation, rise and set, crossing and heliacal functions, `swe_pheno()`,
+`swe_orbit_max_min_true_distance()`, `swe_get_orbital_elements()`,
+`swe_deltat_ex()`, Gauquelin's method 2 (rise and set); `swe_sidtime()` and the
+tropical houses take their nutation with no flags.
+
+**Fix, as done here:** `swi_jplhor_plaus()` (`swephlib.c`) takes
+SEFLG_JPLHOR as `plaus_iflag()` does -- SEFLG_JPLHOR_APPROX while
+`eop_dpsi_loaded` <= 0 -- and the nutation `swe_get_ayanamsa_ex()` adds
+and the obliquity and nutation of `swe_gauquelin_sector()`'s methods 0 and
+1 take their flags through it, so each answers as the same call with
+SEFLG_JPLHOR_APPROX, the frame `swe_calc()` gives the flag there. The
+warning in serr is the one their own `plaus_iflag()` or `swe_calc()`
+writes ("you did not call swe_set_jpl_file(); default to
+SEFLG_JPLHOR_APPROX"). `calc_nutation()` takes its flags through it too,
+where the table is read, so that no other route reaches the table
+empty. In both builds, as entry 104's crash fix: nothing upstream
+answered changes. One flag test in `calc_nutation()`; `perf stat`
+instructions, `swe_calc()` of the ten bodies with speed at 5000 instants
+on the Swiss files: 2902077905 before, 2902101848 after (+0.0008%), the
+answers the same.
+
+G134 `tests/eopfollow.c`: eight probes -- `swe_get_ayanamsa_ex()` and
+`swe_get_ayanamsa_ex_ut()` with SEFLG_JPLEPH, `swe_get_ayanamsa_ex()` with
+SEFLG_SWIEPH, `swe_houses_ex2()` sidereal Placidus with the speeds,
+`swe_houses_ex()` sidereal Koch, `swe_gauquelin_sector()` methods 0 and 1
+for Mars and 0 for Spica -- in six settings without corrections: de200 at
+J2000, the same interpolated, a second thread making the call after the
+main thread set de200, an explicit context given the path alone, and the
+fixture header in the directory without the file and in the one with a
+day missing, made in $TMPDIR. Each call in a forked process must return
+with no signal, bit for bit with its return flag as the same call with
+SEFLG_JPLHOR_APPROX in a fresh one. 48 checks; before the fix all 48
+crash. The upstream build crashed in 46, the interpolated houses passing
+there: their ayanamsa's nutation is interpolated from the nodes the
+houses' own nutation of no flags builds just before (entry 134's unkeyed
+nodes); after the fix it passes all 48. No G24 case: the fix is in both
+builds.
 
 ## How these were found
 

@@ -2593,6 +2593,22 @@ static void calc_nutation_grid(swe_ctx *ctx, double J, double *nutlo, double *dn
 }
 #endif
 
+/* Upstream bug 142: SEFLG_JPLHOR as plaus_iflag() gives it to swe_calc():
+ * SEFLG_JPLHOR_APPROX when no IERS corrections are loaded. The functions
+ * whose flags skip plaus_iflag() -- swe_get_ayanamsa_ex() and its _ut
+ * form, so the sidereal houses, and swe_gauquelin_sector() -- passed the
+ * flag on, and calc_nutation() read the corrections' table: NULL on de200
+ * or a thread that never loaded them (SIGSEGV at J2000), and with a file
+ * that broke off (eop_dpsi_loaded -2) 2.45e6 doubles before it. Those
+ * functions take it so now, and calc_nutation() itself, where the table
+ * is read. In both builds: a crash. */
+int32 swi_jplhor_plaus(swe_ctx *ctx, int32 iflag)
+{
+  if ((iflag & SEFLG_JPLHOR) && ctx->eop_dpsi_loaded <= 0)
+    iflag = (iflag & ~SEFLG_JPLHOR) | SEFLG_JPLHOR_APPROX;
+  return iflag;
+}
+
 static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
 {
   int n;
@@ -2601,6 +2617,7 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
   int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
   AS_BOOL is_jplhor = FALSE;
   AS_BOOL use_grid = (nut_model == 0);	/* the default, not a chosen model */
+  iflag = swi_jplhor_plaus(ctx, iflag);	/* bug 142: the table read below */
   if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
 #ifdef SWE_UPSTREAM_COMPAT
   (void) use_grid;

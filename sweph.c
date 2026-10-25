@@ -5120,6 +5120,13 @@ static int32 swe_get_ayanamsa_ex_r_body(swe_ctx *ctx, double tjd_et, int32 iflag
   struct nut nuttmp;
   struct nut *nutp = &nuttmp;	/* dummy assign, to silence gcc warning */
   int32 retval = swi_get_ayanamsa_ex(ctx, tjd_et, iflag, daya, serr);
+  /* Upstream bug 142: the nutation took SEFLG_JPLHOR without the IERS
+   * corrections, which swi_get_ayanamsa_ex()'s plaus_iflag() turns into
+   * SEFLG_JPLHOR_APPROX, and read their table, NULL: on de200, the
+   * ayanamsa, its _ut form and the sidereal houses with SEFLG_JPLEPH |
+   * SEFLG_JPLHOR crashed (SIGSEGV at J2000). As swe_calc() takes it now
+   * (swi_jplhor_plaus()), the warning in serr as there. Both builds. */
+  iflag = swi_jplhor_plaus(ctx, iflag);
   if (!(iflag & SEFLG_NONUT)) {
 #ifndef SWE_UPSTREAM_COMPAT
     /* Upstream bug 134: the nutation kept at the instant was taken for

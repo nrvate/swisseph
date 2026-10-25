@@ -7334,9 +7334,17 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
    * geometrically from ecl. longitude and latitude 
    */
   if (imeth == 0 || imeth == 1) {
+    int32 iflag_nut;
     t_et = t_ut + swe_deltat_ex_r(ctx, t_ut, iflag, serr);
-    eps = swi_epsiln(ctx, t_et, iflag) * RADTODEG;
-    swi_nutation(ctx, t_et, iflag, nutlo);
+    /* Upstream bug 142: the obliquity and the nutation took SEFLG_JPLHOR
+     * without the IERS corrections, which the body's swe_calc() turns into
+     * SEFLG_JPLHOR_APPROX, and the nutation read their table, NULL: on
+     * de200 methods 0 and 1 with SEFLG_JPLEPH | SEFLG_JPLHOR crashed
+     * (SIGSEGV at J2000), for a planet or a star. They take the flag as
+     * that swe_calc() does now. Both builds. */
+    iflag_nut = swi_jplhor_plaus(ctx, iflag);
+    eps = swi_epsiln(ctx, t_et, iflag_nut) * RADTODEG;
+    swi_nutation(ctx, t_et, iflag_nut, nutlo);
     nutlo[0] *= RADTODEG;
     nutlo[1] *= RADTODEG;
     armc = swe_degnorm(swe_sidtime0_r(ctx, t_ut, eps + nutlo[1], nutlo[0]) * 15 + geopos[0]);
