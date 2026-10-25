@@ -12006,7 +12006,23 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
    * compute UT from ET. this UT will be slightly different
    * from the user's UT, but this difference is extremely small.
    */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* swe_deltat_ex_r() empties its serr first, and this runs in the middle
+   * of a calculation: a topocentric request with SEFLG_SPEED, whose second
+   * observer comes after the files are read, lost the call's notes ("using
+   * Moshier eph. for moon", Mars at 1500 without semo_12, fallback allowed:
+   * return 0x8102 and an empty serr). Its own message is appended instead. */
+  {
+    char sdt[AS_MAXCH];
+    *sdt = '\0';
+    delt = swe_deltat_ex_r(ctx, tjd, iflag, sdt);
+    if (serr != NULL && *sdt != '\0' && strstr(serr, sdt) == NULL
+        && strlen(serr) + strlen(sdt) < AS_MAXCH)
+      strcat(serr, sdt);
+  }
+#else
   delt = swe_deltat_ex_r(ctx, tjd, iflag, serr);
+#endif
   tjd_ut = tjd - delt;
 #ifndef SWE_UPSTREAM_COMPAT
   /* The Earth turns about its TRUE pole of date, and the apparent sidereal

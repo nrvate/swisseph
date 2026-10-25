@@ -7644,9 +7644,15 @@ entry's):
   Moon is Moshier's is 0.29 deg off the files' and the SEFLG_MOSEPH one
   (1776: 4.679 against 4.392 deg). The Moshier branch of
   `app_pos_etc_moon()` forms it heliocentric while the observer is the
-  files' barycentric Sun.
+  files' barycentric Sun. Fixed by bug 109's mixed-case commit, which this
+  entry's branch predated: G108 (5) holds it to 1e-11 deg.
 - **The note is lost.** A topocentric call with SEFLG_SPEED loses serr's
-  "using Moshier eph. for moon" note.
+  "using Moshier eph. for moon" note. Fixed since: `swi_get_observer()`
+  computed its delta t with the call's serr, and `swe_deltat_ex_r()` empties
+  its serr first; the second observer, after the files are read, wiped the
+  note (Mars at 1500 without semo_12, fallback allowed: 0x8102, empty serr).
+  Its message is appended instead; G117's topocentric Mars row now requires
+  the note.
 
 ## How these were found
 

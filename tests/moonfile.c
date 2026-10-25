@@ -33,9 +33,8 @@
  *      orbit keep SEFLG_SWIEPH (their bodies and the EMB are the files';
  *      only the Earth's Moon offset, 1/82 of the Moon's error, is
  *      Moshier's) and say "Moshier" in serr, within 1e-6 deg of the
- *      complete directory's (the heliocentric Moon's place, and the
- *      topocentric Mars's note, are not checked: two defects of the
- *      fallback path that are not this entry's, see rgDep);
+ *      complete directory's (the heliocentric Moon's place is G108 (5)'s
+ *      to check, see rgDep);
  *  (d) the complete directory: every call of (a) answers with the flag
  *      asked.
  * A refusal is ret < 0 with "Moshier" in serr (this entry's message, or
@@ -61,12 +60,11 @@
 
 enum { CALC, CALC_UT, STAR2, STAR, ORBEL_E, ORBEL_S };
 /* moon: 1 the Moon, its place Moshier's with the fallback; 2 the Moon, its
- * flag only (heliocentric, the fallback's place is 0.29 deg off, not this
- * entry's: Moshier's heliocentric Earth less the files' barycentric Sun);
+ * flag only (heliocentric: the fallback's place is the Moshier Moon with
+ * the files' Earth, G108 (5), not Moshier's own heliocentric Moon);
  * 0 a body seen from the Earth, Swiss and noted; 3 the same, its note not
- * required (topocentric with SEFLG_SPEED loses serr's note, not this
- * entry's); -1 no check of the flag (the true node goes to Moshier
- * itself) */
+ * required (unused since topocentric speeds keep the note); -1 no check of
+ * the flag (the true node goes to Moshier itself) */
 static const struct { const char *sz; int kind, ipl; int32 fl; int moon; } rgDep[] = {
   {"Moon, Swiss", CALC, SE_MOON, SEFLG_SWIEPH | SEFLG_SPEED, 1},
   {"Moon, no ephemeris flag", CALC, SE_MOON, SEFLG_SPEED, 1},
@@ -74,7 +72,7 @@ static const struct { const char *sz; int kind, ipl; int32 fl; int moon; } rgDep
   {"Moon, heliocentric", CALC, SE_MOON, SEFLG_SWIEPH | SEFLG_HELCTR, 2},
   {"Sun", CALC, SE_SUN, SEFLG_SWIEPH | SEFLG_SPEED, 0},
   {"Mars", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, 0},
-  {"Mars, topocentric", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_SPEED, 3},
+  {"Mars, topocentric", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_SPEED, 0},
   {"Earth, heliocentric", CALC, SE_EARTH, SEFLG_SWIEPH | SEFLG_HELCTR, 0},
   {"true node", CALC, SE_TRUE_NODE, SEFLG_SWIEPH | SEFLG_SPEED, -1},
   {"Aldebaran, swe_fixstar2()", STAR2, 0, SEFLG_SWIEPH | SEFLG_SPEED, 0},
