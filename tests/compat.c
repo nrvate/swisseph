@@ -29,6 +29,7 @@
 #include <sys/wait.h>
 #include <pthread.h>
 #include "swephexp.h"
+#include "sweph.h"	/* ctx->jpldenum: de200 read as DE 431 (de200_as_431()) */
 
 #ifdef EXPECT_COMPAT
 # define WANT_DEFECT 1
@@ -4803,14 +4804,35 @@ out:
   return r;
 }
 
+/* de200.eph opened in c and read as DE 431, as G141 (jplhorbias.c) does:
+ * the frame bias and the Horizons offset are rotations, whatever the
+ * coefficients, and no JPL file of DE 403 or later ships. The models (or
+ * NULL) after the file, which resets them in the compat build. 0, or -1
+ * if the file did not open as DE 200. */
+static int de200_as_431(swe_ctx *c, const char *models)
+{
+  double x[6];
+  char serr[AS_MAXCH], m[40];
+  swe_set_jpl_file_r(c, "de200.eph");
+  if (models != NULL) {
+    strcpy(m, models);
+    swe_set_astro_models_r(c, m, 0);
+  }
+  if (swe_calc_r(c, 2451545.0, SE_MARS, SEFLG_JPLEPH, x, serr) < 0 || c->jpldenum != 200)
+    return -1;
+  c->jpldenum = 431;
+  return 0;
+}
+
 /* UPSTREAM-BUGS 161: SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3, the frame
  * bias and the Horizons offset in right ascension against the side of the
  * step at 1962 Jan 20 that the precession and nutation take, deg. star 0:
  * Mars 2^-8 day after the step, inside its light time, against
  * SEMOD_JPLHORA_1 (the chosen models, the bias and the offset throughout),
- * on the Swiss files (DE 431) that SEFLG_JPLEPH falls to with the JPL file
- * missing and the fallback allowed: upstream gives the bias the instant
- * read, 1.23e-5. star 1: barycentric Polaris on de200 (the bias whatever the
+ * on de200 read as DE 431 (de200_as_431(); the Swiss files that SEFLG_JPLEPH
+ * fell to with the JPL file missing, before UPSTREAM-BUGS 207 dropped the
+ * Horizons bits there): upstream gives the bias the instant read, 1.23e-5.
+ * star 1: barycentric Polaris on de200 (the bias whatever the
  * DE number) at the step against 2^-20 day before it less its motion:
  * upstream's bias starts at the step, 4.92e-5. -1 if a call fails. */
 /* UPSTREAM-BUGS 173: barycentric Polaris on de200 with SEFLG_JPLHOR_APPROX
@@ -4889,11 +4911,8 @@ static double jplhora_bias_side_off(int star)
     y[0] += y[3] * e;
     y[1] += y[4] * e;
   } else {
-    swe_set_ephe_fallback_r(c, 1);
-    swe_set_ephe_fallback_r(c1, 1);
-    swe_set_jpl_file_r(c, "de-none.eph");
-    swe_set_jpl_file_r(c1, "de-none.eph");
-    swe_set_astro_models_r(c1, m1, 0);
+    if (de200_as_431(c, NULL) != 0 || de200_as_431(c1, m1) != 0)
+      goto out;
     fx = swe_calc_r(c, ts + 1.0 / 256, SE_MARS, ja, x, serr);
     fy = swe_calc_r(c1, ts + 1.0 / 256, SE_MARS, ja, y, serr);
   }
@@ -4909,9 +4928,9 @@ out:
 
 /* UPSTREAM-BUGS 162: SEFLG_JPLHOR_APPROX's offset in right ascension turns
  * the position about the pole and not the velocity. True Mars, J2000
- * equatorial cartesian (no frame rate in it), on the Swiss files (DE 431)
- * that SEFLG_JPLEPH falls to with the JPL file missing and the fallback
- * allowed, at a binary instant in 2000: the velocity against a five-point
+ * equatorial cartesian (no frame rate in it), on de200 read as DE 431
+ * (de200_as_431(); the Swiss files before UPSTREAM-BUGS 207, as above), at
+ * a binary instant in 2000: the velocity against a five-point
  * difference of the positions over 2^-6 day, the largest component,
  * AU/day; upstream 4.57e-9. -1 if a call fails. */
 static double jplhora_vel_off(void)
@@ -4927,8 +4946,10 @@ static double jplhora_vel_off(void)
   if (c == NULL)
     return -1;
   swe_set_ephe_path_r(c, EPHE);
-  swe_set_ephe_fallback_r(c, 1);
-  swe_set_jpl_file_r(c, "de-none.eph");
+  if (de200_as_431(c, NULL) != 0) {
+    swe_ctx_free(c);
+    return -1;
+  }
   rf = swe_calc_r(c, t, SE_MARS, fl | SEFLG_SPEED, x, serr);
   for (k = 0; k < 5 && rf >= 0; k++)
     if (k != 2 && swe_calc_r(c, t + (k - 2) * h, SE_MARS, fl, f[k], serr) < 0)
@@ -5464,6 +5485,27 @@ static double moshmoon_hit_note(int slot)
   return n;
 }
 
+/* UPSTREAM-BUGS 207: Mars at 1500 Jan 5 with SEFLG_JPLEPH |
+ * SEFLG_JPLHOR_APPROX | SEFLG_SPEED on de200.eph, outside the file's span,
+ * the fallback allowed, its return: the request fell to Moshier and kept
+ * the Horizons bit, 524548, a flag no request returns (its place 3.5e-4
+ * deg off the Moshier request's); 260 now, the Moshier request's. */
+static double jplhor_fallen_ret(void)
+{
+  double x[6];
+  char serr[AS_MAXCH];
+  swe_ctx *c;
+  int32 r = -2;
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, EPHE);
+    swe_set_jpl_file_r(c, "de200.eph");
+    swe_set_ephe_fallback_r(c, 1);
+    r = swe_calc_r(c, 2268923.5, SE_MARS, SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX | SEFLG_SPEED, x, serr);
+    swe_ctx_free(c);
+  }
+  return r;
+}
+
 /* UPSTREAM-BUGS 198: Aldebaran by swe_fixstar2() with SEFLG_JPLEPH |
  * SEFLG_SPEED on de200.eph at 1500, outside the file's span, the fallback
  * allowed, its return: the star functions returned the JPL read's
@@ -5978,7 +6020,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6124,6 +6166,7 @@ int main(int argc, char **argv)
   nodframe = nodaps_frame_off();
   mmhitnote = moshmoon_hit_note(0);
   mmslotnote = moshmoon_hit_note(1);
+  horfall = jplhor_fallen_ret();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -6970,6 +7013,15 @@ int main(int argc, char **argv)
   else {
     printf("  semo missing, after the Moon noted %.0f FAIL: expected %s\n",
            mmslotnote, WANT_DEFECT ? "0" : "2");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (horfall == (SEFLG_MOSEPH | SEFLG_JPLHOR_APPROX | SEFLG_SPEED))
+                  : (horfall == (SEFLG_MOSEPH | SEFLG_SPEED)))
+    printf("  JPLHOR_APPROX fallen to Moshier %.0f OK\n", horfall);
+  else {
+    printf("  JPLHOR_APPROX fallen to Moshier %.0f FAIL: expected %s\n",
+           horfall, WANT_DEFECT ? "524548" : "260");
     bad++;
   }
 

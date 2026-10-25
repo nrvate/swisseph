@@ -236,6 +236,7 @@ worst were in code that had never executed even once.
 | 202 | `lunar_osc_elem()` leaves Moshier's Moon out of entry 186's frame hold, but its velocity carries the frame's turning (entries 95, 184), which `swi_plan_for_osc_elem()` does not take off, so its true node and osculating apogee move with the precession model's rates: within 1/16 day of a short-term window's edge, with IAU 1976 under Vondrak at J2000 -+ 2 centuries, the node's speed 9.5e-8 and 1.05e-7 deg/day off the side's model's, the apogee's 5.0e-6 and 1.4e-6 | Correctness | `sweph.c` |
 | 205 | With the Moon files missing and the fallback allowed, a second answer at the instant from the save area returns an empty serr where the computed answer says "using Moshier eph. for moon" after the file search's message: Mars at 1500 asked twice, every call the area answers, and under both settings Mars heliocentric and Jupiter barycentric with their resolved flags | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 206 | Within 2^-9 day of an ephemeris's edge a star with SEFLG_SPEED is refused or answered with Moshier mixed in, where it answers without the flag: `fixstar_obs_rate()` reads the Earth 2^-9 day either side for the aberration's rate. On de200.eph Aldebaran -1 "outside JPL eph. range" 2^-10 day inside either end (1 without the flag; Mars 257 at the end); with the Swiss files of 1800-2400 alone the downgrade's refusal (strict) or Moshier's heliocentric velocity in the acceleration, 6.6e-4 deg/day on the longitude speed (allowed); at a Moon file's end the same through the Moon | Correctness (behaviour) | `sweph.c` |
+| 207 | A JPL request with SEFLG_JPLHOR_APPROX or SEFLG_JPLHOR that falls to the Swiss files or Moshier keeps the Horizons bit and frame, a flag no request returns: Mars at 1500 on de200.eph 524548, 3.5e-4 deg off the Moshier request (260); with the JPL file missing 524546 against 258; the four star functions and `swe_calc_pctr()` so; under SEMOD_JPLHORA_2 `swe_calc_ut()` and the _ut stars SEFLG_ICRS too, 131332 | Correctness (behaviour) | `sweph.c` |
 | 208 | A fictitious body or `swe_calc_orbel()`'s orbit whose light time leaves the Swiss files' span is answered from Moshier's Sun, 0, taken for the barycentric one, under either setting: the light-time loop's `main_planet_bary()` falls to Moshier on its own and answers OK. Cupido at JD 2378496.6 with the files of 1800-2400 alone 258, 4.33e-3 deg off the complete directory's and the Moshier request's, strict too | Correctness (behaviour) | `sweph.c` |
 | 199 | `swe_nod_aps()`'s osculating nodes' and apsides' speeds put each epoch of their difference into the frame of date at that epoch, so within the stencil of a short-term precession window's edge the difference took the frame's step: with IAU 1976 under Vondrak ("0,9,1") on JPL and the Swiss files the Moon's points 5.99e-3 deg/day off at J2000 - 2 centuries and 6.49e-3 at + 2, the planets' up to 1.69e-2 (Uranus's); with IAU 2006 ("0,9,8") at -+ 75 centuries the Moon's 7.9, Mars's 8.1, Jupiter's 41.5 | Correctness | `swecl.c` |
 | 201 | `swe_nod_aps()`'s osculating nodes' and apsides' speeds (entry 80) are a three-point difference over 2^-6 day (the Moon 2^-11), off by h^2 / 6 of the point's third derivative where a near-circular orbit's apsides turn fast, and over the Moon's short step by its points' noise: against nine-point differences of the positions, 1800-2100, Neptune's heliocentric perihelion 5.3e-7 deg/day off in 1815, Uranus's 4.2e-8, the Earth's 3.5e-8, Jupiter's 2.2e-8, the Moon's geocentric apsides 7.9e-8 and nodes 1.6e-8, the distances' speeds 1.2e-8 AU/day | Correctness | `swecl.c` |
@@ -14485,6 +14486,95 @@ Noticed, not fixed:
   (bug 120's message); with the fallback allowed the Sun after the Moon
   answers 2 with no note where a pristine process notes Moshier's Moon.
   The places are the same.
+
+## 207. A JPL request with SEFLG_JPLHOR_APPROX or SEFLG_JPLHOR that falls to the Swiss files or Moshier keeps the Horizons bit and frame
+
+**Severity: Correctness (behaviour: a return flag no request returns, and the place 3.5e-4 deg off the request of the ephemeris that answered)**
+**Where:** `sweph.c`: `swe_calc_r_body()`, `swe_calc_ut_r_body()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `swe_fixstar2_ut_r_body()`, `swe_fixstar_ut_r_body()`, `swe_calc_pctr_r_body()`
+
+`plaus_iflag()` keeps SEFLG_JPLHOR_APPROX and SEFLG_JPLHOR for a JPL
+request only (SEFLG_JPLHOR becomes SEFLG_JPLHOR_APPROX without the IERS
+corrections; SEFLG_ICRS is added for SEFLG_JPLHOR and for
+SEMOD_JPLHORA_2's SEFLG_JPLHOR_APPROX), and the manual has the Horizons
+mode "together with an original JPL ephemeris file" (swephprg, 2.10's
+notes). Its comment says "only with JPL and Swiss Ephemeeris", but its
+code drops the bits for the Swiss files too: a fresh Swiss or Moshier
+request with them answers 258 or 260, the bits gone. So the bit has no
+legitimate place on another ephemeris's answer.
+
+A JPL request that fell went on with them. With the fallback allowed:
+- Mars at 1500 Jan 5 (JD 2268923.5) with SEFLG_JPLEPH |
+  SEFLG_JPLHOR_APPROX | SEFLG_SPEED on de200.eph (1600-2170) returned
+  524548 (SEFLG_MOSEPH | SEFLG_JPLHOR_APPROX | SEFLG_SPEED), 3.52e-4 deg
+  off the Moshier request's 260; SEFLG_JPLHOR the same (524548, the IERS
+  corrections unloaded below DE 403); with the JPL file missing 524546,
+  as far off the Swiss request's 258.
+- Aldebaran by the four star functions (since entry 198 they fall to
+  Moshier there) 524548, 3.53e-4 deg off; at 2000 with the JPL file
+  missing 524546, 1.4e-5 deg off the Swiss request.
+- `swe_calc_pctr()` of Mars from Jupiter, the JPL file missing, 524546,
+  3.52e-4 deg off.
+- Under SEMOD_JPLHORA_2 `swe_calc_ut()` and the _ut star functions add
+  SEFLG_ICRS before `swe_calc()`, so the fallen request kept it: Mars
+  131332 (SEFLG_ICRS | 260), 1.87e-6 deg off; `swe_calc()` itself 655620.
+- Under the strict setting the request is refused, with the downgrade's
+  message, as without the bit: unchanged.
+- `swe_nod_aps()`, `swe_calc_orbel()` and the fictitious bodies drop the
+  bits themselves: unchanged.
+Upstream the same (the compat build).
+
+**Fix, as done here:**
+- `swe_calc_r_body()`: when `swecalc()` answered with another ephemeris
+  than JPL (its flag before entry 120's Moon relabel) and the request has
+  a Horizons bit, the answer is that ephemeris's request (the caller's
+  flags with its ephemeris bit), its return and place; the message the
+  fallen call's ("outside JPL eph. range ... using Moshier eph."), or the
+  second call's on an error.
+- `fixstar_calc_from_struct()` and `swi_fixstar_calc_from_record()`: the
+  same where entry 198 takes the ephemeris that answered.
+- `swe_calc_pctr_r_body()`: the same with the Swiss files (its
+  barycentric reads fall to the files only, entry 139; a Moon of
+  Moshier's flags them Moshier, entry 150).
+- `swe_calc_ut_r_body()`, `swe_fixstar2_ut_r_body()`,
+  `swe_fixstar_ut_r_body()`: SEFLG_ICRS as the caller gave it under a
+  Horizons bit; `swe_calc()` adds it again for a JPL answer.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`. A JPL answer is unchanged: 7020
+  answers (G157's 26 calls with SEFLG_JPLEPH and none, SEFLG_JPLHOR_APPROX,
+  SEFLG_JPLHOR, SEFLG_JPLHOR_APPROX | SEFLG_ICRS or SEFLG_ICRS, the
+  three SEMOD_JPLHORA models, both settings, on
+  de200.eph at 2000 Jul 1.5, J2000 and 1500, without a JPL file, and on
+  G19's DE 431 header, which answers nowhere) before and after: only
+  the fallen requests with a Horizons bit differ, bit for bit. The hot path's cost: one
+  `perf stat -e instructions` count of `bench --rep 1`, calc-swieph
+  12,391,074,232 before and 12,392,381,801 after, calc-moseph
+  23,421,913,149 and 23,422,266,558.
+- G24's `jplhora_bias_side_off()` and `jplhora_vel_off()` (entries 161,
+  162) asked a fallen Horizons request on the Swiss files ("de-none.eph")
+  for a DE 431 model, which no request has; they now read de200.eph as
+  DE 431 (`de200_as_431()`), a JPL answer: shipped 0 deg and 1.05e-12
+  AU/day (1.06e-12 before), compat 1.23e-5 deg and 4.57e-9 AU/day, as
+  before.
+
+G157 `tests/horfall.c` (new): five directories (de200.eph outside its
+span, falling to Moshier; no JPL file, Swiss; no ephemeris file, Moshier;
+no JPL file and no Moon file; G19's DE 431 header with an
+eop_1962_today.txt, so that SEFLG_JPLHOR keeps itself and SEFLG_ICRS), 26
+calls (`swe_calc()` of Mars in nine flag sets, the Sun, the Moon, Ceres,
+Cupido; `swe_calc_ut()`; the four star functions; `swe_nod_aps()` and
+`swe_nod_aps_ut()`; `swe_calc_pctr()`; `swe_calc_orbel()`), each with
+SEFLG_JPLHOR_APPROX and SEFLG_JPLHOR: (a) allowed, under the three
+SEMOD_JPLHORA models, bit for bit the request of the ephemeris that
+answered, no Horizons bit in the return; (b) strict, refused with the
+message of the request without the bit; (c) one context, the JPL request,
+that ephemeris's, the JPL request again, and a JPL request within
+de200's span before and after, each a fresh context's. 3848 rows pass;
+before the fix 1200 fail, all of (a) (524548 for 260, 524546 for 258,
+655620 under SEMOD_JPLHORA_2; up to 5.1e-4 deg, Mars equatorial); the
+compat build 1766 (1350 of (a), with entries 139's and 198's defects,
+416 of (c), its caches'). G24 `jplhor_fallen_ret`: Mars at 1500 Jan 5
+with SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX | SEFLG_SPEED on de200.eph, the
+fallback allowed: 260 shipped, 524548 compat (and shipped before the
+fix).
 
 ## 208. A fictitious body or `swe_calc_orbel()`'s orbit whose light time leaves the Swiss files is answered from Moshier's Sun, 0, as the barycentric one, under either setting
 

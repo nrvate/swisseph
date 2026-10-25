@@ -363,6 +363,10 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
   struct save_positions *sd;
   double x[6], *xs, x0[24], x2[24];
   double dt;
+#ifndef SWE_UPSTREAM_COMPAT
+  int ipl0 = ipl;	/* bug 207: the body asked */
+  int32 fell = 0;	/* bug 207: the ephemeris swecalc() answered with */
+#endif
   if (serr != NULL) 
     *serr = '\0';
 #ifdef TRACE
@@ -713,6 +717,7 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 #endif
   }
 #ifndef SWE_UPSTREAM_COMPAT
+  fell = sd->iflgsave & SEFLG_EPHMASK;	/* bug 207, at the end */
   /* Upstream bug 139: with the fallback allowed, a Swiss or JPL barycentric
    * request whose files are missing fell to Moshier past swecalc()'s
    * refusal of a barycentric Moshier one, and was answered with Moshier's
@@ -822,6 +827,24 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * do not pass through here; they carry the same check themselves.) */
   if (swi_refuse_downgrade(ctx, epheflag, iflag & SEFLG_EPHMASK, tjd, serr))
     goto return_error;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 207: a JPL request with SEFLG_JPLHOR_APPROX or
+   * SEFLG_JPLHOR that fell to the Swiss files or Moshier kept the Horizons
+   * bits and was answered in the Horizons frame on that ephemeris: Mars at
+   * 1500 on de200.eph 524548 (SEFLG_MOSEPH | SEFLG_JPLHOR_APPROX |
+   * SEFLG_SPEED), 3.5e-4 deg off the Moshier request, and with the JPL file
+   * missing 524546, as far off the Swiss one; a flag no request returns,
+   * plaus_iflag() dropping the bits without SEFLG_JPLEPH. Now, the
+   * fallback allowed, the answer of the request of the ephemeris that
+   * answered, flag and place; the message the fallen call's. */
+  if ((iflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX)) && fell != 0 && fell != SEFLG_JPLEPH) {
+    char serr2[AS_MAXCH];
+    int32 r = swe_calc_r_body(ctx, tjd, ipl0, (iflgsave & ~SEFLG_EPHMASK) | fell, xx, serr2);
+    if (r == ERR && serr != NULL)
+      strcpy(serr, serr2);
+    return r;
+  }
+#endif
 #ifdef TRACE
   trace_swe_calc(2, tjd, ipl, iflag, xx, serr);
 #endif
@@ -859,7 +882,21 @@ static int32 swe_calc_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 if
   double deltat;
   int32 retval = OK;
   int32 epheflag = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 icrs_asked = iflag & SEFLG_ICRS;	/* bug 207 */
+#endif
   iflag = plaus_iflag(ctx, iflag, ipl, tjd_ut, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 207: SEFLG_ICRS as the caller gave it. plaus_iflag()
+   * adds it for SEFLG_JPLHOR and SEMOD_JPLHORA_2's SEFLG_JPLHOR_APPROX,
+   * which a request fallen from the JPL file drops (swe_calc() answers it
+   * as the request of the ephemeris that answered), and with it here that
+   * request took SEFLG_ICRS: under SEMOD_JPLHORA_2 Mars at 1500 on
+   * de200.eph 131332, 1.9e-6 deg off the Moshier request. swe_calc() adds
+   * it again for a JPL answer. */
+  if (iflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
+    iflag = (iflag & ~SEFLG_ICRS) | icrs_asked;
+#endif
   epheflag = iflag & SEFLG_EPHMASK;
   if (epheflag == 0) {
     epheflag = SEFLG_SWIEPH;
@@ -12201,6 +12238,21 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
      * off it at 2000). */
     if (ephe_used != epheflag)
       iflag = (iflag & ~SEFLG_EPHMASK) | ephe_used;
+    /* Upstream bug 207: and a JPL request with SEFLG_JPLHOR_APPROX or
+     * SEFLG_JPLHOR, which only a JPL request keeps (plaus_iflag()), went
+     * on in the Horizons frame: Aldebaran at 1500 on de200.eph fallen to
+     * Moshier 524548, 3.5e-4 deg off the Moshier request, at 2000 with the
+     * JPL file missing 524546, 1.4e-5 deg off the Swiss one. Now the star
+     * of that ephemeris's request, from the top; the message the fallen
+     * call's. */
+    if (ephe_used != epheflag && (iflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))) {
+      char serr2[AS_MAXCH];
+      retc = fixstar_calc_from_struct(ctx, stardata, tjd, (iflgsave & ~SEFLG_EPHMASK) | ephe_used,
+                                      star, xx, serr2);
+      if (retc == ERR && serr != NULL)
+        strcpy(serr, serr2);
+      return retc;
+    }
 #endif
   }
 #ifndef SWE_UPSTREAM_COMPAT
@@ -12762,7 +12814,15 @@ static int32 swe_fixstar2_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int
   double deltat;
   int32 retflag;
   int32 epheflag = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 icrs_asked = iflag & SEFLG_ICRS;	/* bug 207 */
+#endif
   iflag = plaus_iflag(ctx, iflag, -1, tjd_ut, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 207: SEFLG_ICRS as the caller gave it, as in swe_calc_ut() */
+  if (iflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
+    iflag = (iflag & ~SEFLG_ICRS) | icrs_asked;
+#endif
   epheflag = iflag & SEFLG_EPHMASK;
   if (epheflag == 0) {
     epheflag = SEFLG_SWIEPH;
@@ -14017,6 +14077,15 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
      * answered, as in fixstar_calc_from_struct() */
     if (ephe_used != epheflag)
       iflag = (iflag & ~SEFLG_EPHMASK) | ephe_used;
+    /* Upstream bug 207: and without the Horizons bits, as there */
+    if (ephe_used != epheflag && (iflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))) {
+      char serr2[AS_MAXCH];
+      retc = swi_fixstar_calc_from_record(ctx, srecord, tjd, (iflgsave & ~SEFLG_EPHMASK) | ephe_used,
+                                          star, xx, serr2);
+      if (retc == ERR && serr != NULL)
+        strcpy(serr, serr2);
+      return retc;
+    }
 #endif
   }
 #ifndef SWE_UPSTREAM_COMPAT
@@ -14386,7 +14455,15 @@ static int32 swe_fixstar_ut_r_body(swe_ctx *ctx, char *star, double tjd_ut, int3
   double deltat;
   int32 retflag;
   int32 epheflag = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 icrs_asked = iflag & SEFLG_ICRS;	/* bug 207 */
+#endif
   iflag = plaus_iflag(ctx, iflag, -1, tjd_ut, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 207: SEFLG_ICRS as the caller gave it, as in swe_calc_ut() */
+  if (iflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
+    iflag = (iflag & ~SEFLG_ICRS) | icrs_asked;
+#endif
   epheflag = iflag & SEFLG_EPHMASK;
   if (epheflag == 0) {
     epheflag = SEFLG_SWIEPH;
@@ -14530,6 +14607,9 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
   double *xs;
   int i, j, niter;
   int32 iflag2, epheflag, retc;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 iflgsave = iflag;	/* bug 207 */
+#endif
   struct epsilon *oe;
   if (ipl == iplctr) {
     if (serr != NULL) 
@@ -14555,6 +14635,21 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
     return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
   ephe_used = pctr_ephe_lower(ephe_used, retc);
+  /* Upstream bug 207: a JPL request with SEFLG_JPLHOR_APPROX or
+   * SEFLG_JPLHOR whose reads fell to the Swiss files went on in the
+   * Horizons frame: Mars from Jupiter at 1500, the JPL file missing,
+   * 524546 and 3.5e-4 deg off the Swiss request. Now that request's answer
+   * (its barycentric reads fall to the files only, bug 139; a Moon of
+   * Moshier's flags them Moshier, bug 150); the message the fallen
+   * call's. */
+  if (ephe_used != SEFLG_JPLEPH && (iflag & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))) {
+    char serr2[AS_MAXCH];
+    retc = swe_calc_pctr_r_body(ctx, tjd, ipl, iplctr, (iflgsave & ~SEFLG_EPHMASK) | SEFLG_SWIEPH,
+                                xxret, serr2);
+    if (retc == ERR && serr != NULL)
+      strcpy(serr, serr2);
+    return retc;
+  }
 #endif
   for (i = 0; i <= 5; i++) {
     xx0[i] = xx[i];

@@ -1542,6 +1542,12 @@ struct epsilon {
  *     day for every star, with or without SEFLG_SPEED, and refuses within
  *     that after a span's start: Aldebaran on de200.eph 2^-20 day in -1
  *     both; G158, G24)
+ *   - a JPL request with SEFLG_JPLHOR_APPROX or SEFLG_JPLHOR fallen to
+ *     the Swiss files or Moshier keeping the Horizons bit and frame, a flag
+ *     no request returns: Mars at 1500 on de200.eph 524548, 3.5e-4 deg off
+ *     the Moshier request's 260; the star functions and swe_calc_pctr()
+ *     so, and SEFLG_ICRS kept by swe_calc_ut() and the _ut stars under
+ *     SEMOD_JPLHORA_2 (UPSTREAM-BUGS 207, G157, G24)
  *   - a fictitious body or swe_calc_orbel()'s orbit whose light time
  *     leaves the Swiss files answered under either setting from Moshier's
  *     Sun, 0, as the barycentric one, the light-time read fallen to Moshier
