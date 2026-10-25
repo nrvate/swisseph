@@ -227,7 +227,7 @@ static double meff(double r);
 static void denormalize_positions(double *x0, double *x1, double *x2);
 static void calc_speed(double *x0, double *x1, double *x2, double dt);
 static int32 plaus_iflag(swe_ctx *ctx, int32 iflag, int32 ipl, double tjd, char *serr);
-static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, int32 iflag, 
+static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, double tdate, int32 iflag, 
     double *xx, double *x2000, struct epsilon *oe, char *serr);
 static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *serr);
 static void free_planets(swe_ctx *ctx);
@@ -3723,10 +3723,12 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
   } else {
     oe = &ctx->oec2000;
   }
-  return app_pos_rest(ctx, pdp, iflag, xx, xxsv, oe, serr);
+  return app_pos_rest(ctx, pdp, pdp->teval, iflag, xx, xxsv, oe, serr);
 }
 
-static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, int32 iflag, 
+/* tdate: the instant the place is of, for the frame's and the ayanamsa's
+ * rates; pdp->teval, except for the barycentric Sun (bug 86). */
+static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, double tdate, int32 iflag, 
                         double *xx, double *x2000, 
                         struct epsilon *oe, char *serr) 
 {
@@ -3758,7 +3760,7 @@ static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, int32 iflag,
   /* the ecliptic of date turns as its obliquity changes (bug 33); J2000's
    * does not */
   if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
-    swi_ecl_frame_speed(xx, swi_obliquity_rate(ctx, pdp->teval, iflag,
+    swi_ecl_frame_speed(xx, swi_obliquity_rate(ctx, tdate, iflag,
                                                !(iflag & SEFLG_NONUT)));
 #endif
   /* now we have ecliptic cartesian coordinates */
@@ -3784,7 +3786,7 @@ static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, int32 iflag,
        * Therefore current values are saved... */
       for (i = 0; i < 24; i++)
         xxsv[i] = pdp->xreturn[i];
-      if (swi_get_ayanamsa_with_speed(ctx, pdp->teval, iflag, daya, serr) == ERR)
+      if (swi_get_ayanamsa_with_speed(ctx, tdate, iflag, daya, serr) == ERR)
         return ERR;
       /* ... and restored */
       for (i = 0; i < 24; i++)
@@ -4632,7 +4634,7 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
     oe = &ctx->oec;
   } else
     oe = &ctx->oec2000;
-  return app_pos_rest(ctx, pdp, iflag, xx, xxsv, oe, serr);
+  return app_pos_rest(ctx, pdp, pdp->teval, iflag, xx, xxsv, oe, serr);
 }
 
 /* The two-body state of caller-supplied orbital elements at one instant
@@ -5002,7 +5004,7 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
     oe = &ctx->oec;
   } else
     oe = &ctx->oec2000;
-  return app_pos_rest(ctx, pdp, iflag, xx, xxsv, oe, serr);
+  return app_pos_rest(ctx, pdp, pdp->teval, iflag, xx, xxsv, oe, serr);
 }
 
 /* influence of precession on speed 
@@ -6262,7 +6264,7 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
     oe = &ctx->oec;
   } else
     oe = &ctx->oec2000;
-  return app_pos_rest(ctx, pedp, iflag, xx, xxsv, oe, serr);
+  return app_pos_rest(ctx, pedp, pedp->teval, iflag, xx, xxsv, oe, serr);
 }
 
 
@@ -6567,7 +6569,7 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
     oe = &ctx->oec;
   } else
     oe = &ctx->oec2000;
-  return app_pos_rest(ctx, pdp, iflag, xx, xxsv, oe, serr);
+  return app_pos_rest(ctx, pdp, pdp->teval, iflag, xx, xxsv, oe, serr);
 }
 
 /* transforms the position of the barycentric sun:
@@ -6631,7 +6633,11 @@ static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr)
       xx[i] = 0;
   /* ICRS to J2000 */
   if (!(iflag & SEFLG_ICRS) && swi_get_denum(ctx, SEI_SUN, iflag) >= 403) {
+#ifndef SWE_UPSTREAM_COMPAT
+    swi_bias(ctx, xx, psbdp->teval, iflag, FALSE);	/* bug 86 */
+#else
     swi_bias(ctx, xx, psdp->teval, iflag, FALSE);
+#endif
   }/**/
   /* save J2000 coordinates; required for sidereal positions */
   for (i = 0; i <= 5; i++)
@@ -6646,7 +6652,17 @@ static int app_pos_etc_sbar(swe_ctx *ctx, int32 iflag, char *serr)
     oe = &ctx->oec;
   } else
     oe = &ctx->oec2000;
-  return app_pos_rest(ctx, psdp, iflag, xx, xxsv, oe, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 86: psdp is the Earth's slot, which holds the result but
+   * whose instant is the barycentric Sun's only on the Swiss files: on JPL
+   * only the Sun's slot is filled, so the bias, the ayanamsa and (fork) the
+   * ecliptic's turning were taken at whatever instant the Earth's slot last
+   * held -- JD 0 in a fresh context, NaN since its empty mark is
+   * SWI_TJD_NEVER. They are taken at the Sun's instant. */
+  return app_pos_rest(ctx, psdp, psbdp->teval, iflag, xx, xxsv, oe, serr);
+#else
+  return app_pos_rest(ctx, psdp, psdp->teval, iflag, xx, xxsv, oe, serr);
+#endif
 }
 
 /* transforms position of mean lunar node or apogee:
@@ -6718,7 +6734,7 @@ static int app_pos_etc_mean(swe_ctx *ctx, int ipl, int32 iflag, char *serr)
     oe = &ctx->oec2000;
   } else
     oe = &ctx->oec;
-  return app_pos_rest(ctx, pdp, iflag, xx, xxsv, oe, serr);
+  return app_pos_rest(ctx, pdp, pdp->teval, iflag, xx, xxsv, oe, serr);
 }
 
 /* fetch chebyshew coefficients from sweph file for
