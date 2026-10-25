@@ -1797,6 +1797,7 @@ static int calc_nutation_iau1980(swe_ctx *ctx, double J, double *nutlo)
  */
 
 #include "swenut2000a.h"
+#include "swenut2000a_sparse.h"
 static int calc_nutation_iau2000ab(swe_ctx *ctx, double J, double *nutlo) 
 {
   int i, j, k, inls;
@@ -2059,38 +2060,256 @@ done:
 #define SWI_NUT_NO_MEMO(iflag)	((iflag) & (SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX))
 
 #ifndef SWE_UPSTREAM_COMPAT
-/* The DEFAULT nutation: full IAU 2000A, interpolated. The series is
- * evaluated only at quarter-day nodes, cached, and a quintic Lagrange
- * polynomial through the six nodes around J gives the value. Measured
- * against the direct series (G29): within 1 microarcsecond. The direct
- * series costs about 14 times IAU 2000B per instant; the grid pays for one
- * node per quarter day of span, whatever the number of instants or bodies.
- * Half-day nodes measured 1.15 microarcseconds worst; a quarter day is the
- * sixth power of two better, for twice the nodes. */
+/* One term of the series: sin and cos of its angle phi, and phi's first
+ * three derivatives in T. */
+struct nut_term {
+  double s, c;
+  double p1, p2, p3;
+};
+/* Add (a + bT) sin phi, or (a + bT) cos phi, and its first three
+ * derivatives in T, to f[0..3]. */
+static void nut_add_sin(const struct nut_term *t, double a, double b, double T, double *f)
+{
+  double A = a + b * T, p1 = t->p1;
+  double s1 = t->c * p1, s2 = -t->s * p1 * p1 + t->c * t->p2;
+  double s3 = -t->c * p1 * p1 * p1 - 3 * t->s * p1 * t->p2 + t->c * t->p3;
+  f[0] += A * t->s;
+  f[1] += b * t->s + A * s1;
+  f[2] += 2 * b * s1 + A * s2;
+  f[3] += 3 * b * s2 + A * s3;
+}
+static void nut_add_cos(const struct nut_term *t, double a, double b, double T, double *f)
+{
+  double A = a + b * T, p1 = t->p1;
+  double c1 = -t->s * p1, c2 = -t->c * p1 * p1 - t->s * t->p2;
+  double c3 = t->s * p1 * p1 * p1 - 3 * t->c * p1 * t->p2 - t->s * t->p3;
+  f[0] += A * t->c;
+  f[1] += b * t->c + A * c1;
+  f[2] += 2 * b * c1 + A * c2;
+  f[3] += 3 * b * c2 + A * c3;
+}
+
+/* e^(i k x) for k = -n..n into e[n + k], from one sin and cos: the series
+ * takes every term's angle as an integer combination of a few arguments,
+ * so its sines and cosines are products of these. */
+static void nut_powers(double x, int n, double (*e)[2])
+{
+  int k;
+  e[n][0] = 1.0;
+  e[n][1] = 0.0;
+  e[n + 1][0] = cos(x);
+  e[n + 1][1] = sin(x);
+  for (k = 2; k <= n; k++) {
+    e[n + k][0] = e[n + k - 1][0] * e[n + 1][0] - e[n + k - 1][1] * e[n + 1][1];
+    e[n + k][1] = e[n + k - 1][0] * e[n + 1][1] + e[n + k - 1][1] * e[n + 1][0];
+  }
+  for (k = 1; k <= n; k++) {
+    e[n - k][0] = e[n + k][0];
+    e[n - k][1] = -e[n + k][1];
+  }
+}
+
+/* Full IAU 2000A with its first three time derivatives, for the grid: the
+ * same series, arguments and P03 terms as calc_nutation_iau2000ab(), summed
+ * in the same order. Each term's sine and cosine come from products of the
+ * powers above, one factor per nonzero multiplier (swenut2000a_sparse.h),
+ * rather than from sin() and cos() of a reduced angle, which is what made
+ * the direct series cost 14 times 2000B; it agrees with the direct series
+ * to rounding (G29). out[] is dpsi and its first three derivatives, then
+ * the same for deps: radians, per day. */
+static void calc_nutation_2000a_derivs(double J, double *out)
+{
+  static const double ls_c[5][5] = {	/* Simon et al. (1994), arcsec */
+    { 485868.249036, 1717915923.2178,  31.8792,  0.051635, -0.00024470},
+    {1287104.79305,   129596581.0481,  -0.5532,  0.000136, -0.00001149},
+    { 335779.526232, 1739527262.8478, -12.7512, -0.001037,  0.00000417},
+    {1072260.70369,  1602961601.2090,  -6.3706,  0.006593, -0.00003169},
+    { 450160.398036,   -6962890.5431,   7.4722,  0.007702, -0.00005939}};
+  static const double pl_c[13][2] = {	/* MHB2000 and Souchay et al. (1999), rad */
+    {2.35555598, 8328.6914269554}, {6.24006013, 628.301955},
+    {1.627905234, 8433.466158131}, {5.198466741, 7771.3771468121},
+    {2.18243920, -33.757045},      {4.402608842, 2608.7903141574},
+    {3.176146697, 1021.3285546211}, {1.753470314, 628.3075849991},
+    {6.203480913, 334.0612426700}, {0.599546497, 52.9690962641},
+    {0.874016757, 21.3299104960},  {5.481293871, 7.4781598567},
+    {5.321159000, 3.8127774000}};
+  /* the P03 terms (Capitaine et al. 2005), microarcseconds, on F, D and
+   * Omega: Omega, 2F-2D+2Omega, 2F+2Omega, 2Omega */
+  static const int pk[4][3] = {{0, 0, 1}, {2, -2, 2}, {2, 0, 2}, {0, 0, 2}};
+  static const double pa[4][4] = {	/* psi sin a, b; eps cos a, b */
+    {-8.1, 47.8, 0.0, -25.6}, {-0.6, 3.7, 0.0, -1.6},
+    {0.0, 0.6, 0.0, 0.0}, {0.0, -0.6, 0.0, 0.0}};
+  double T = (J - J2000) / 36525.0;
+  double la[5], lr1[5], lr2[5], lr3[5], pa_[14], pr1[14], pr2[14];
+  double els[5][2 * NUT_LS_KMAX + 1][2], epl[14][2 * NUT_PL_KMAX + 1][2];
+  double psi[4] = {0, 0, 0, 0}, eps[4] = {0, 0, 0, 0};
+  double ppsi[4] = {0, 0, 0, 0}, peps[4] = {0, 0, 0, 0};
+  double cpsi[4] = {0, 0, 0, 0}, ceps[4] = {0, 0, 0, 0};
+  struct nut_term t;
+  int i, j;
+  /* luni-solar arguments and their first three derivatives in T */
+  for (j = 0; j < 5; j++) {
+    const double *c = ls_c[j];
+    la[j] = swe_degnorm((c[0] + T * (c[1] + T * (c[2] + T * (c[3] + T * c[4])))) / 3600.0) * DEGTORAD;
+    lr1[j] = (c[1] + T * (2 * c[2] + T * (3 * c[3] + T * 4 * c[4]))) / 3600.0 * DEGTORAD;
+    lr2[j] = (2 * c[2] + T * (6 * c[3] + T * 12 * c[4])) / 3600.0 * DEGTORAD;
+    lr3[j] = (6 * c[3] + T * 24 * c[4]) / 3600.0 * DEGTORAD;
+    nut_powers(la[j], NUT_LS_KMAX, els[j]);
+  }
+  /* Each term adds U = (a + bT) sin phi + c cos phi to dpsi and
+   * W = (d + eT) cos phi + g sin phi to deps. With u, w the terms and v, x
+   * their derivatives in phi, and primes derivatives in T:
+   *   U'   = b sin + v phi'
+   *   U''  = 2b phi' cos - u phi'^2 + v phi''
+   *   U''' = 3b (-sin phi'^2 + cos phi'') - v phi'^3 - 3u phi' phi'' + v phi'''
+   * and W likewise, with cos for sin and -sin for cos. */
+  for (i = NLS - 1; i >= 0; i--) {
+    const struct nut_sparse *sp = &nut_ls_sparse[i];
+    const int32 *cl = &cls[i * 6];
+    double z0 = 1.0, z1 = 0.0, p1 = 0.0, p2 = 0.0, p3 = 0.0;
+    double s, c, A, D, u, v, w, x, q1, q2;
+    for (j = 0; j < sp->n; j++) {
+      int a = sp->j[j], k = sp->k[j];
+      const double *e = els[a][NUT_LS_KMAX + k];
+      double r = z0 * e[0] - z1 * e[1];
+      z1 = z0 * e[1] + z1 * e[0];
+      z0 = r;
+      p1 += k * lr1[a];
+      p2 += k * lr2[a];
+      p3 += k * lr3[a];
+    }
+    s = z1;
+    c = z0;
+    q1 = p1 * p1;
+    q2 = q1 * p1;
+    A = cl[0] + cl[1] * T;
+    D = cl[3] + cl[4] * T;
+    u = A * s + cl[2] * c;
+    v = A * c - cl[2] * s;
+    w = D * c + cl[5] * s;
+    x = -D * s + cl[5] * c;
+    psi[0] += u;
+    psi[1] += cl[1] * s + v * p1;
+    psi[2] += 2 * cl[1] * c * p1 - u * q1 + v * p2;
+    psi[3] += 3 * cl[1] * (-s * q1 + c * p2) - v * q2 - 3 * u * p1 * p2 + v * p3;
+    eps[0] += w;
+    eps[1] += cl[4] * c + x * p1;
+    eps[2] += -2 * cl[4] * s * p1 - w * q1 + x * p2;
+    eps[3] += 3 * cl[4] * (-c * q1 - s * p2) - x * q2 - 3 * w * p1 * p2 + x * p3;
+  }
+  /* planetary arguments: linear, and the accumulated precession */
+  for (j = 0; j < 13; j++) {
+    pa_[j] = swe_radnorm(pl_c[j][0] + pl_c[j][1] * T);
+    pr1[j] = pl_c[j][1];
+    pr2[j] = 0.0;
+  }
+  pa_[13] = (0.02438175 + 0.00000538691 * T) * T;
+  pr1[13] = 0.02438175 + 2 * 0.00000538691 * T;
+  pr2[13] = 2 * 0.00000538691;
+  for (j = 0; j < 14; j++)
+    nut_powers(pa_[j], NUT_PL_KMAX, epl[j]);
+  /* constant amplitudes: P sin phi + Q cos phi, R sin phi + S cos phi; no
+   * argument has a third derivative */
+  for (i = NPL - 1; i >= 0; i--) {
+    const struct nut_sparse *sp = &nut_pl_sparse[i];
+    const int16 *ic = &icpl[i * 4];
+    double z0 = 1.0, z1 = 0.0, p1 = 0.0, p2 = 0.0, s, c, u, v, w, x, q1, q2;
+    for (j = 0; j < sp->n; j++) {
+      int a = sp->j[j], k = sp->k[j];
+      const double *e = epl[a][NUT_PL_KMAX + k];
+      double r = z0 * e[0] - z1 * e[1];
+      z1 = z0 * e[1] + z1 * e[0];
+      z0 = r;
+      p1 += k * pr1[a];
+      p2 += k * pr2[a];
+    }
+    s = z1;
+    c = z0;
+    q1 = p1 * p1;
+    q2 = q1 * p1;
+    u = ic[0] * s + ic[1] * c;
+    v = ic[0] * c - ic[1] * s;
+    w = ic[2] * s + ic[3] * c;
+    x = ic[2] * c - ic[3] * s;
+    ppsi[0] += u;
+    ppsi[1] += v * p1;
+    ppsi[2] += -u * q1 + v * p2;
+    ppsi[3] += -v * q2 - 3 * u * p1 * p2;
+    peps[0] += w;
+    peps[1] += x * p1;
+    peps[2] += -w * q1 + x * p2;
+    peps[3] += -x * q2 - 3 * w * p1 * p2;
+  }
+  for (i = 0; i < 4; i++) {
+    const int *m = pk[i];
+    double x = m[0] * la[2] + m[1] * la[3] + m[2] * la[4];
+    t.s = sin(x);
+    t.c = cos(x);
+    t.p1 = m[0] * lr1[2] + m[1] * lr1[3] + m[2] * lr1[4];
+    t.p2 = m[0] * lr2[2] + m[1] * lr2[3] + m[2] * lr2[4];
+    t.p3 = m[0] * lr3[2] + m[1] * lr3[3] + m[2] * lr3[4];
+    nut_add_sin(&t, pa[i][0], pa[i][1], T, cpsi);
+    nut_add_cos(&t, pa[i][2], pa[i][3], T, ceps);
+  }
+  /* to radians, and from per century to per day */
+  for (j = 0; j < 4; j++) {
+    double f = DEGTORAD / pow(36525.0, j);
+    out[j] = (psi[j] * O1MAS2DEG + ppsi[j] * O1MAS2DEG + cpsi[j] / (3600.0 * 1000000.0)) * f;
+    out[4 + j] = (eps[j] * O1MAS2DEG + peps[j] * O1MAS2DEG + ceps[j] / (3600.0 * 1000000.0)) * f;
+  }
+}
+
+/* The DEFAULT nutation: full IAU 2000A, interpolated. The series and its
+ * first three derivatives are evaluated at nodes SWI_NUT_GRID_STEP days
+ * apart and cached, and the septic Hermite polynomial that matches the
+ * value and the three derivatives at the two nodes around J gives the value.
+ * An instant needs only the two nodes it lies between, and takes from the
+ * series only those the cache does not hold: none while the calls stay
+ * within one day, one at daily steps, two at an instant far from the last.
+ * A grid that needed more nodes to an instant (a Lagrange polynomial
+ * through six nodes a quarter day apart did) pays for several evaluations,
+ * each about 14 times the cost of 2000B, whenever the calls are a day or
+ * more apart: a search stepping by days, a list of unrelated charts
+ * (tests/nutspeed.c holds the cost). The value depends on J alone, never on
+ * what the cache held. Its distance from the direct series: tests/nutgrid.c. */
 static void calc_nutation_grid(swe_ctx *ctx, double J, double *nutlo)
 {
-  double x = J * 4.0, k0 = floor(x), u = x - k0, w[6];
+  /* septic Hermite basis on [0, 1], for f0, h f0', h^2 f0'', h^3 f0''' and
+   * then the same at 1: the coefficients of s^4..s^7. Below s^4 the basis
+   * is the Taylor series at 0. */
+  static const double B[8][4] = {
+    {-35, 84, -70, 20}, {-20, 45, -36, 10},
+    {-5, 10, -7.5, 2}, {-2.0 / 3, 1, -2.0 / 3, 1.0 / 6},
+    {35, -84, 70, -20}, {-15, 39, -34, 10},
+    {2.5, -7, 6.5, -2}, {-1.0 / 6, 0.5, -0.5, 1.0 / 6}};
+  double h = SWI_NUT_GRID_STEP, x = J / h, k0 = floor(x), s = x - k0;
+  double s2 = s * s, s3 = s2 * s, s4 = s3 * s, s5 = s4 * s, s6 = s5 * s, s7 = s6 * s;
+  double H[8], hm[4] = {1.0, h, h * h, h * h * h};
+  const double *v[2];
   int j, m;
-  nutlo[0] = nutlo[1] = 0.0;
-  for (j = 0; j < 6; j++) {
-    /* Lagrange weight of node offset j-2 at u, nodes at -2..3 */
-    w[j] = 1.0;
-    for (m = 0; m < 6; m++)
-      if (m != j)
-	w[j] *= (u - (m - 2)) / (double) (j - m);
-  }
-  for (j = 0; j < 6; j++) {
-    double k = k0 + (j - 2);
+  for (j = 0; j < 2; j++) {
+    double k = k0 + j;
     long long ik = (long long) k;
     int slot = (int) (((ik % SWI_NUT_GRID_SLOTS) + SWI_NUT_GRID_SLOTS) % SWI_NUT_GRID_SLOTS);
     struct nut_grid_slot *ps = &ctx->nut_grid[slot];
     if (!ps->valid || ps->k != k) {
-      calc_nutation_iau2000ab(ctx, k * 0.25, ps->v);
+      calc_nutation_2000a_derivs(k * h, ps->v);
       ps->k = k;
       ps->valid = TRUE;
     }
-    nutlo[0] += w[j] * ps->v[0];
-    nutlo[1] += w[j] * ps->v[1];
+    v[j] = ps->v;
+  }
+  for (m = 0; m < 8; m++)
+    H[m] = B[m][0] * s4 + B[m][1] * s5 + B[m][2] * s6 + B[m][3] * s7;
+  H[0] += 1.0;
+  H[1] += s;
+  H[2] += 0.5 * s2;
+  H[3] += s3 / 6.0;
+  for (j = 0; j < 2; j++) {
+    double r = 0.0;
+    for (m = 0; m < 4; m++)
+      r += H[m] * hm[m] * v[0][4 * j + m] + H[4 + m] * hm[m] * v[1][4 * j + m];
+    nutlo[j] = r;
   }
 }
 #endif
@@ -2142,7 +2361,10 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
 #ifndef SWE_UPSTREAM_COMPAT
     /* The grid indexes nodes as integers, so a non-finite or absurd J
      * (G25's hostile walk) takes the direct series, which copes. */
-    if (use_grid && nut_model == SEMOD_NUT_IAU_2000A && fabs(J) < 1e12)
+    /* The day grid's Hermite fit holds the series to 0.0014 uas within
+     * 4e8 days (1.1 million years); past that it leaves the series fast
+     * (3.4 deg at 3e9 days), so the series itself is taken there. */
+    if (use_grid && nut_model == SEMOD_NUT_IAU_2000A && fabs(J) < 4e8)
       calc_nutation_grid(ctx, J, nutlo);
     else
 #endif

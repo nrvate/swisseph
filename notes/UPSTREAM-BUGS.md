@@ -68,6 +68,7 @@ worst were in code that had never executed even once.
 | 34 | Sidereal houses on the ecliptic of t0 and the solar system plane (J2000, J1900, B1950 always): ascmc[2] the auxiliary ARMC, whole signs off the sidereal signs, a step of 2 dpsi at t0, ascmc[8] not 0 | Correctness | `swehouse.c` |
 | 35 | Kronos' built-in semi-axis has two digits swapped, the Kepler solver's starting guess is wrong, and the nakshatras of `swe_split_deg()` are shifted for `SE_SIDM_USER` | Correctness | `swemplan.c`, `swephlib.c`, `sweph.c` |
 | 36 | The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold | Correctness | `swehel.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
+| 37 | The default nutation (full IAU 2000A) costs 12 to 100 times IAU 2000B's when the calls are a day or more apart: transit, station and return scans, lists of unrelated charts (this fork's) | Performance | `swephlib.c` |
 
 ---
 
@@ -2033,6 +2034,49 @@ the 37 failed before. The same test asks the four star functions for Sirius
 under the two catalogues, switched by `swe_close()`, by a path alone, and in
 a thread that adopts another thread's path: 24 checks of magnitude and
 distance pass, 12 failed without the emptying.
+
+## 37. The default nutation, full IAU 2000A, costs 12 to 100 times IAU 2000B's when the calls are a day or more apart (this fork's)
+
+**Severity: Performance (a Sun or Moon position with speed 270 to 770 us at daily steps and 470 to 650 us at 30-day steps, against 11 to 24 us under IAU 2000B; `swe_calc(SE_ECL_NUT)` 250 to 390 us against 4 us)**
+**Where:** `swephlib.c`: `calc_nutation_grid()`
+
+Full IAU 2000A costs about 14 times IAU 2000B's per instant (64 us against
+4 us, Moshier, -O2), so the default evaluated it only at nodes a quarter day
+apart, cached, and took a quintic Lagrange polynomial through the six nodes
+around the instant. Calls within a few hours share their nodes and were
+measured that way. An instant a day or more from the last one shares none and
+evaluated the series six times, so a search stepping by days (returns,
+ingresses, transits, stations) or a list of unrelated charts paid for it on
+every call; reported downstream as an astromcp return search that took 0.6 s
+on ts.14 and 6.7 s on ts.19. The Sun with speed as a multiple of the same
+call under IAU 2000B, in one process: hourly 1.6, daily 36, 30-day steps 34,
+scattered over 1800-2100 33; the Moon 1.3, 12, 20, 17.
+
+**Fix, as done here:** the series is evaluated with each term's sine and
+cosine built as products of e^(ik x) powers over its nonzero argument
+multipliers (`swenut2000a_sparse.h`, generated from `swenut2000a.h` by
+`tools/gen_nut_sparse.py`), together with its first three time derivatives:
+23 us an evaluation against 64. The nodes are a day apart, each holding the
+value and the three derivatives, and the septic Hermite polynomial on the two
+nodes around the instant gives the value: no new node while calls stay
+between the same two, one at daily steps, two at a fresh instant. The value
+still depends on the instant alone, never on what the cache held, and is
+nearer the direct series than before: worst 0.0014 uas in longitude and
+0.0006 in obliquity over 1800-2100 and -13000..15000, against 0.018 and
+0.008. Positions move by up to 5e-12 deg and speeds by up to 2.4e-10 deg/day;
+the osculating apogee, derived from differenced positions, by 2.9e-11 deg
+and 9.5e-8 deg/day.
+Now the Sun with speed is 0.65 of IAU 2000B's cost hourly, 2.6 daily, 6.5 at
+30-day steps and 4.4 scattered (the Moon 0.82, 1.8, 3.7, 2.7); a fresh
+instant still costs two nodes of the full series, which 2000B's 77 terms
+never did. G46 `tests/nutspeed.c` checks the generated table against
+`nls[]` and `npl[]`, and the Sun with speed against IAU 2000B at hourly,
+daily and scattered spacings (rounds interleaved, best of fifteen, limits
+1.5, 5 and 8): 0.66, 2.6 and 4.4 now, 1.7, 24 and 33 before the fix.
+
+Past 4e8 days (1.1 million years) the day grid's fit leaves the series fast
+(3.4 deg at 3e9 days, where the old quarter-day grid was 0.75), so the series
+itself is taken there, as for any date the grid does not cover.
 
 ## How these were found
 

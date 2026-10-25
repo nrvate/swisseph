@@ -978,12 +978,14 @@ struct nut_memo {
 };
 
 /* The default nutation's grid (swephlib.c, calc_nutation): full IAU 2000A
- * evaluated at quarter-day nodes, cached direct-mapped by node index. The
- * values depend on the series alone, so nothing invalidates them. */
+ * and its first three derivatives at nodes SWI_NUT_GRID_STEP days apart,
+ * cached direct-mapped by node index. The values depend on the series
+ * alone, so nothing invalidates them. */
+#define SWI_NUT_GRID_STEP 1.0
 #define SWI_NUT_GRID_SLOTS 512
 struct nut_grid_slot {
-  double k;		/* node index: the node is at k / 4 days */
-  double v[2];		/* dpsi, deps there */
+  double k;		/* node index: the node is at k * SWI_NUT_GRID_STEP days */
+  double v[8];		/* dpsi and its first three derivatives; the same for deps */
   AS_BOOL valid;
 };
 
