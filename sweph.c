@@ -5260,13 +5260,22 @@ void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward)
      * Upstream bug 58: the angles' rates were a backward difference over h,
      * the rate at t - h/2, 6.5e-10 deg/day off in every longitude speed
      * of date (2.7e-8 in Polaris's right ascension). Now swi_nutation_rate(),
-     * the polynomial's own derivative or a central difference. */
+     * the polynomial's own derivative or a central difference.
+     * Upstream bug 69: the mean obliquity was held, but N turns with it too:
+     * R1(-eps - deps) and R1(eps) do not cancel when dpsi != 0, and w
+     * left out eps' (e1 - R1(-eps - deps) R3(-dpsi) e1) = eps' (1 - cos
+     * dpsi, -sin dpsi cos(eps + deps), -sin dpsi sin(eps + deps)), 3e-11
+     * deg/day, 2e-9 in the right ascension of a star near the pole
+     * (Polaris 1.9e-9, Polaris Australis 2.0e-9). Now in w, eps' the mean
+     * obliquity's rate kept beside the angles' (nut.deps0). */
     {
       double w[3], wm[3], et = ctx->oec.eps + ctx->nut.nutlo[1];
-      double dpsi = ctx->nut.dnut[0];
-      w[0] = ctx->nut.dnut[1];
-      w[1] = -dpsi * sin(et);
-      w[2] = dpsi * cos(et);
+      double dpsi = ctx->nut.dnut[0], psi = ctx->nut.nutlo[0];
+      double de0 = ctx->nut.deps0;
+      double sp = sin(psi), se = sin(et), ce = cos(et);
+      w[0] = ctx->nut.dnut[1] + de0 * (1 - cos(psi));
+      w[1] = -dpsi * se - de0 * sp * ce;
+      w[2] = dpsi * ce - de0 * sp * se;
       if (backward) {
         for (i = 0; i <= 2; i++)
           wm[i] = -(w[0] * ctx->nut.matrix[i][0] + w[1] * ctx->nut.matrix[i][1]
@@ -8154,6 +8163,8 @@ void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
     ctx->nut.dnut_ok = FALSE;
     if (iflag & SEFLG_SPEED) {
       swi_nutation_rate(ctx, tjd, iflag, ctx->nut.dnut);
+      /* Upstream bug 69: the matrix turns with the mean obliquity too. */
+      ctx->nut.deps0 = swi_obliquity_rate(ctx, tjd, iflag, FALSE);
       ctx->nut.dnut_ok = TRUE;
     }
 #else

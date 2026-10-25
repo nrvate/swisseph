@@ -100,6 +100,7 @@ worst were in code that had never executed even once.
 | 52 | The aberration rate term is first order in v/c | Correctness | `sweph.c` |
 | 56 | The interpolated apsides stop short of their iteration's fixed point | Correctness | `swemmoon.c` |
 | 66 | The Moon's pull on the Earth reaches the aberration rate on the Swiss files only | Correctness | `sweph.c` |
+| 69 | The nutation matrix's rate holds the mean obliquity still | Correctness | `sweph.c` |
 
 ---
 
@@ -2797,7 +2798,8 @@ ecliptic and equatorial, seven dates 1900-2100, speed of date less NONUT
 against five-point differences over 2^-8 day: the planets <= 1.7e-11
 deg/day (<= 7.3e-10 upstream), Polaris's longitude 6.7e-11 (6.9e-10),
 its right ascension 1.9e-9 (2.65e-8; the remainder is the mean obliquity's
-turning inside the nutation matrix, ~3e-11 deg/day times 82, left alone).
+turning inside the nutation matrix, ~3e-11 deg/day times 82, left alone;
+done in entry 69).
 The upstream build fails all 12. G24 `nut_rate_off`: Polaris's right
 ascension at J2000, 1.0e-9 deg/day shipped, 1.04e-8 compat. G32 (default
 against 2000B: daily 1.95, scattered 3.20, limits 5 and 8), G49, G41, G29
@@ -3235,6 +3237,55 @@ longitude and latitude speeds within 5e-8 deg/day (measured <= 3.6e-8; the
 build before this fix fails 16 of 24 rows at 5.9e-8 to 6.0e-7; the upstream
 build fails them all). G24: `far_body_moon_pull_eph_off`, VEA's longitude
 speed on JPL and Moshier, 4.5e-9 shipped, 3.4e-5 compat.
+
+## 69. The nutation matrix's rate holds the mean obliquity still
+
+**Severity: Correctness (2.0e-9 deg/day in the right ascension speed of a star near the pole; 4e-10 in the ecliptic longitude speed near the ecliptic's pole; 2e-11 in every latitude and declination speed of date)**
+**Where:** `sweph.c`: `swi_nutate()`, `swi_check_nutation()`
+
+Entry 49 put the nutation's own turning into the velocity as w x x, w
+the angular velocity of N = R1(-eps - deps) R3(-dpsi) R1(eps) from the
+angles' rates (entry 58 made those the rates at t): w = deps' e1 + dpsi'
+(0, -sin(eps + deps), cos(eps + deps)), the mean obliquity eps held. It
+moves, 3.6e-7 deg/day, and R1(-eps - deps) and R1(eps) do not cancel
+when dpsi != 0: w left out eps' (e1 - R1(-eps - deps) R3(-dpsi) e1) =
+eps' (1 - cos dpsi, -sin dpsi cos(eps + deps), -sin dpsi sin(eps +
+deps)), up to eps' x 8e-5 rad = 3e-11 deg/day. Measured as G57 does
+(speed of date less the NONUT speed, against the five-point difference of
+the same two calls' positions) over 2^-6 day, seven dates 1900-2100:
+Polaris's right ascension 1.88e-9, Polaris Australis's 2.04e-9 (times
+1/cos(declination)), delta Dor's ecliptic longitude 4.06e-10, 42 Dra's
+1.96e-10, the polar stars' other longitudes ~7e-11, latitudes and
+declinations of the planets and stars 1.3e-11 to 2.8e-11. The same
+1.88e-9 over 2^-8 and 2^-6 day: not the reference's noise. The rate of
+N by a central difference of its nine entries (40 digits, eps, deps and
+dpsi all moving, dpsi = 8e-5) agrees with the w below to 1e-30 rad/day;
+the old w is short by 4.6e-13 rad/day, eps' sin(dpsi) cos(eps + deps).
+
+**Fix, as done here:** w gains the eps' terms above. eps' is the mean
+obliquity's rate from `swi_obliquity_rate()` (its one-day difference of
+`swi_epsiln()`), taken once per fresh instant in `swi_check_nutation()`
+beside the angles' rates and kept as `nut.deps0`. Positions unchanged.
+Measured after: Polaris's right ascension 1.1e-11, Polaris Australis's
+1.2e-11, delta Dor's ecliptic longitude 1.2e-11, 42 Dra's 8.6e-12, every
+latitude and declination <= 1.2e-12 (the difference's own rounding:
+Polaris's right ascension 6.2e-11 over 2^-8 day, 1.1e-11 over 2^-6 and
+2^-5); the planets' longitudes 1e-12..5e-12, unchanged. bench
+calc-swieph/calc-moseph no slower (min of 3x7: 0.553/1.038 s against
+0.553/1.029). G57's Polaris
+right ascension 1.82e-9 -> 6.2e-11 (its limit 3e-9 kept), G24
+`nut_rate_off` 1.0e-9 -> 5.75e-11; G49's angles 3.9e-11 -> 1.9e-11, its
+XYZ rates 7.0e-13 -> 1.8e-13 of the distance per day; G41 within
+2e-11 either way (Aldebaran's latitude 7.2e-12 -> 1.3e-12).
+
+G68 `tests/nutobliq.c`: Polaris, Polaris Australis, delta Dor, 42 Dra,
+the Sun, Mars, Saturn and Pluto, ecliptic and equatorial, longitude and
+latitude, the nutation's share over 2^-6 day at seven dates: 32 checks,
+longitudes within 3e-11 deg/day, latitudes within 5e-12. Before the fix
+20 of 32 failed; the upstream build fails all 32 (bug 58 besides). G24
+`nut_obliq_rate_off`: Polaris Australis's right ascension, the worse of
+1900 and 2000, 6.6e-12 deg/day shipped (2.04e-9 before the fix), 8.2e-9
+compat.
 
 ## How these were found
 

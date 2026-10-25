@@ -818,6 +818,10 @@ struct epsilon {
  *     (apogee) of an iteration that converges only linearly, up to 1.21"
  *     (perigee) and 2.5 mas (apogee) short of its fixed point
  *     (UPSTREAM-BUGS 56, G55)
+ *   - swi_nutate()'s rate of the nutation matrix held the mean obliquity
+ *     still, which N = R1(-eps - deps) R3(-dpsi) R1(eps) turns with when
+ *     dpsi != 0: 3e-11 deg/day, 2.0e-9 in a polar star's right ascension
+ *     (UPSTREAM-BUGS 69, G68)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -954,6 +958,7 @@ struct nut {
   double snut, cnut;	/* sine and cosine of nutation in obliquity */
   double matrix[3][3];	
   double dnut[2];	/* rate of nutlo, rad/day, when dnut_ok */
+  double deps0;		/* rate of the mean obliquity the matrix holds, rad/day, when dnut_ok */
   int dnut_ok;
 };
 

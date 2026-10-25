@@ -608,6 +608,43 @@ static double nut_rate_off(void)
   return fabs(xa[3] - xb[3] - (8 * (q[3] - q[1]) - (q[4] - q[0])) / (12 * h));
 }
 
+/* The mean obliquity's turning inside the nutation matrix: Polaris
+ * Australis's right ascension speed minus the same with NONUT, against a
+ * five-point difference of the same two calls' positions over 2^-6 day,
+ * the worse of 1900 and 2000, deg/day. The rate of N = R1(-eps - deps)
+ * R3(-dpsi) R1(eps) held eps, and eps' dpsi, 3e-11 deg/day, is 2e-9 in a
+ * right ascension near the pole (UPSTREAM-BUGS 69); upstream has bug 58's
+ * backward difference besides. */
+static double nut_obliq_rate_off(void)
+{
+  static const double date[2] = {2415020.3, 2451545.0};
+  double h = 1.0 / 64, worst = 0;
+  int32 fl = SEFLG_SWIEPH | SEFLG_EQUATORIAL;
+  char serr[256], s[64];
+  int d, k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (d = 0; d < 2; d++) {
+    double t = floor(date[d] * 256) / 256, xa[6], xb[6], q[5], err;
+    strcpy(s, "Polaris Australis");
+    swe_fixstar2(s, t, fl | SEFLG_SPEED, xa, serr);
+    strcpy(s, "Polaris Australis");
+    swe_fixstar2(s, t, fl | SEFLG_SPEED | SEFLG_NONUT, xb, serr);
+    for (k = 0; k < 5; k++) {
+      double ya[6], yb[6], df;
+      strcpy(s, "Polaris Australis");
+      swe_fixstar2(s, t + (k - 2) * h, fl, ya, serr);
+      strcpy(s, "Polaris Australis");
+      swe_fixstar2(s, t + (k - 2) * h, fl | SEFLG_NONUT, yb, serr);
+      df = ya[0] - yb[0];
+      q[k] = df - 360 * floor(df / 360 + 0.5);
+    }
+    err = fabs(xa[3] - xb[3] - (8 * (q[3] - q[1]) - (q[4] - q[0])) / (12 * h));
+    if (err > worst) worst = err;
+  }
+  return worst;
+}
+
 /* UPSTREAM-BUGS 62: VEA (seorbel.txt's set 26, 80,000 AU, 462 days of light
  * time): its geocentric longitude speed against a five-point difference of
  * its longitude, deg/day. The aberration rate there is tau times the
@@ -1069,7 +1106,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1106,6 +1143,7 @@ int main(int argc, char **argv)
   moonpspd = moon_perigee_speed_off();
   apsrate = planet_apsis_rate_off();
   nutr = nut_rate_off();
+  nutob = nut_obliq_rate_off();
   startd = star_topo_defl_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
@@ -1370,6 +1408,14 @@ int main(int argc, char **argv)
   else {
     printf("  nutation rate          %.2e deg/day FAIL: expected %s\n",
            nutr, WANT_DEFECT ? "> 5e-9" : "< 3e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nutob > 1e-9) : (nutob < 1e-10))
+    printf("  nutation's obliquity   %.2e deg/day OK\n", nutob);
+  else {
+    printf("  nutation's obliquity   %.2e deg/day FAIL: expected %s\n",
+           nutob, WANT_DEFECT ? "> 1e-9" : "< 1e-10");
     bad++;
   }
 

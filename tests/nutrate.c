@@ -16,9 +16,10 @@
  * Polaris (swe_fixstar2()) the same way, on its raw right ascension, at
  * seven dates 1900-2100 and instants that are multiples of 2^-8 day, the
  * step. Within 2e-10 deg/day (measured <= 1.7e-11 for the planets, 6.7e-11
- * for Polaris's longitude); Polaris's right ascension within 3e-9 (measured
- * 1.9e-9: the mean obliquity's turning inside the nutation matrix, about
- * 3e-11 deg/day times 1/cos(declination) = 82, not this bug's). The upstream
+ * for Polaris's longitude); Polaris's right ascension within 3e-10
+ * (measured 6.2e-11, the reference's rounding times 1/cos(declination) = 82;
+ * it was 1.9e-9 until the mean obliquity's turning entered the nutation
+ * matrix's rate, entry 69). The upstream
  * build fails 12 of 12: the planets and Polaris's longitude by 6.5e-10 to
  * 6.9e-10, Polaris's right ascension by 2.65e-8. Run as
  *   nutrate EPHEDIR
@@ -78,7 +79,7 @@ int main(int argc, char **argv)
       }
       printf("  %-8s %-10s worst %.2e deg/day\n", p == 5 ? "Polaris" : swe_get_planet_name(pl[p], serr),
              e ? "equatorial" : "ecliptic", worst);
-      if (worst > (p == 5 && e ? 3e-9 : 2e-10)) {
+      if (worst > (p == 5 && e ? 3e-10 : 2e-10)) {
         printf("    FAIL: the nutation's rate in the speed is not the rate of the position\n");
         bad++;
       }
