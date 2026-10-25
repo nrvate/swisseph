@@ -804,6 +804,31 @@ int32 CALL_CONV swe_calc_orbel_r(swe_ctx *ctx, double tjd_et, const double *el,
     iflag |= SEFLG_SWIEPH;
   }
   iflag = plaus_iflag(ctx, iflag, -1, tjd_et, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 88 (this fork's swe_calc_orbel()): the obliquity and
+   * nutation caches of date were never brought to tjd here, as swecalc()
+   * does for every body: app_pos_rest() took ctx->oec and ctx->nut as the
+   * last swe_calc() left them, another instant's, and as a context's first
+   * call none at all -- zeros out (sin eps = cos eps = 0), with no error. */
+  if ((iflag & SEFLG_SIDEREAL) && !ctx->ayana_is_set)
+    SWI_CFG_LOCAL(ctx, swe_set_sid_mode_r(ctx, SE_SIDM_FAGAN_BRADLEY, 0, 0));
+  swi_check_ecliptic(ctx, tjd_et, iflag);
+  swi_check_nutation(ctx, tjd_et, iflag);
+  /* and the save areas were kept across a change of ephemeris, which
+   * swe_calc_r() clears: on Moshier the barycentric Sun is the origin, but
+   * a Swiss or JPL Sun left in SEI_SUNBARY was added to the orbit, 0.009
+   * AU on a SEFLG_TRUEPOS position, its velocity 2.4e-3 deg/day on the
+   * speed of an orbit with a = 0.137 AU. */
+  if (ctx->last_epheflag != epheflag) {
+    free_planets(ctx);
+    if (ctx->jpl_file_is_open) {
+      swi_close_jpl_file(ctx);
+      ctx->jpl_file_is_open = FALSE;
+    }
+    swi_close_ephe_files(ctx, KEEP_DENUM);
+    ctx->last_epheflag = epheflag;
+  }
+#endif
   retc_orbel:;
   /* Earth (and through it the Sun) with speeds, saved as any swe_calc()
    * of the Earth would save them; app_pos_etc_orbel reads the saved

@@ -1246,11 +1246,10 @@ static double vulcan_true_jitter_off(void)
 }
 
 /* UPSTREAM-BUGS 81 part 3: swe_calc_orbel()'s position for an orbit with
- * a = 0.137 AU (Vulcan's), default flags, with SEFLG_SPEED against without
- * it, nine dates 1800-2335, deg. The light time was a straight line, and
- * the orbit was read at t - tau only for the speed. (A call to swe_calc()
- * first: swe_calc_orbel() as a context's first call answers zeros, a
- * separate defect.) */
+ * a = 0.137 AU (Vulcan's), equatorial J2000 XYZ (which needs no obliquity,
+ * so compat's first-call defect, bug 88, does not hide it), with
+ * SEFLG_SPEED against without it, nine dates 1800-2335, AU. The light time was a straight line, and
+ * the orbit was read at t - tau only for the speed. */
 static double orbel_lt_flag_off(void)
 {
   double w = 0, a[6], b[6], el[6] = {10, 0.13744, 0.019, 30, 47, 7.5};
@@ -1258,16 +1257,33 @@ static double orbel_lt_flag_off(void)
   int k, i;
   swe_close();
   swe_set_ephe_path(EPHE);
-  swe_calc(2451545.0, SE_SUN, SEFLG_SWIEPH, a, serr);
   for (k = 0; k < 9; k++) {
     double t = floor((2378496.5 + k * 24413.7 + 0.137) * 256) / 256;
-    swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, SEFLG_SWIEPH, a, serr);
-    swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, SEFLG_SWIEPH | SEFLG_SPEED, b, serr);
-    for (i = 0; i < 2; i++)
+    int32 fl = SEFLG_SWIEPH | SEFLG_EQUATORIAL | SEFLG_J2000 | SEFLG_NONUT | SEFLG_XYZ;
+    swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl, a, serr);
+    swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl | SEFLG_SPEED, b, serr);
+    for (i = 0; i < 3; i++)
       if (fabs(a[i] - b[i]) > w)
         w = fabs(a[i] - b[i]);
   }
   return w;
+}
+
+/* UPSTREAM-BUGS 88: swe_calc_orbel() as a context's first call, its
+ * ecliptic longitude against the same call made after a swe_calc() at
+ * another instant, deg. The caches of date were never brought to tjd, so
+ * the first call answered zeros and a later one from another instant's
+ * obliquity and nutation. */
+static double orbel_first_call_off(void)
+{
+  double a[6], b[6], el[6] = {10, 0.13744, 0.019, 30, 47, 7.5}, t = 2458850.5;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, SEFLG_SWIEPH, a, serr);
+  swe_calc(t - 3000.5, SE_MARS, SEFLG_SWIEPH, b, serr);
+  swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_J2000, 0, SEFLG_SWIEPH, b, serr);
+  return fabs(swe_difdeg2n(a[0], b[0]));
 }
 
 /* UPSTREAM-BUGS 77: swe_calc_pctr()'s distance rate of Mercury seen from
@@ -1736,7 +1752,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1808,6 +1824,7 @@ int main(int argc, char **argv)
   waldlr = waldemath_lt_round_off();
   vulcj = vulcan_true_jitter_off();
   orbellt = orbel_lt_flag_off();
+  orbel1st = orbel_first_call_off();
   moshlt = mosh_lt_off();
   pctrsd = pctr_sun_defl_off();
   earthlr = earth_helio_lt_rate_off();
@@ -2333,11 +2350,19 @@ int main(int argc, char **argv)
     bad++;
   }
 
-  if (WANT_DEFECT ? (orbellt > 1e-7) : (orbellt == 0))
-    printf("  orbel, light time flag  %.2e deg     OK\n", orbellt);
+  if (WANT_DEFECT ? (orbellt > 1e-8) : (orbellt == 0))
+    printf("  orbel, light time flag  %.2e AU      OK\n", orbellt);
   else {
-    printf("  orbel, light time flag  %.2e deg     FAIL: expected %s\n",
-           orbellt, WANT_DEFECT ? "> 1e-7" : "0");
+    printf("  orbel, light time flag  %.2e AU      FAIL: expected %s\n",
+           orbellt, WANT_DEFECT ? "> 1e-8" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbel1st > 1) : (orbel1st == 0))
+    printf("  orbel, first call       %.2e deg     OK\n", orbel1st);
+  else {
+    printf("  orbel, first call       %.2e deg     FAIL: expected %s\n",
+           orbel1st, WANT_DEFECT ? "> 1" : "0");
     bad++;
   }
 

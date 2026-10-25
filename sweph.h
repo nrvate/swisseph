@@ -961,6 +961,11 @@ struct epsilon {
  *     for -1.6026e-3 deg), x[4], x[5] nonzero, uninitialised reads
  *     (UPSTREAM-BUGS 90, G89); with SEFLG_EQUATORIAL or SEFLG_XYZ it read the
  *     asteroids' save area, the last such body's coordinates
+ *   - swe_calc_orbel() never brought the obliquity and nutation caches to
+ *     tjd nor cleared the save areas on a change of ephemeris: zeros as a
+ *     context's first call, another instant's frame of date (1.8e-5
+ *     deg/day), a Swiss Sun added on Moshier (2.4e-3 deg/day; UPSTREAM-BUGS
+ *     88, G87)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

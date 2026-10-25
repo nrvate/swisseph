@@ -115,6 +115,7 @@ worst were in code that had never executed even once.
 | 78 | The planets' light time is solved along a straight line, and the Earth's and the Sun's light times have no rate | Correctness | `sweph.c` |
 | 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, its aberration rate is the centre's whole velocity change over the light time, it deflects as seen from the Earth, and its light time stops short of its fixed point | Correctness | `sweph.c` |
 | 85 | The Moshier Earth-Moon offset's rate is a difference of rounded arguments | Correctness | `swemplan.c` |
+| 88 | `swe_calc_orbel()` answers from caches of another instant and save areas of another ephemeris, and nothing on a context's first call (this fork's) | Correctness | `sweph.c` |
 | 81 | A fictitious body's light-time position is read at the rounded instant, and its elements' large terms are rounded unreduced | Correctness | `sweph.c`, `swemplan.c` |
 | 86 | The JPL barycentric Sun takes its instant of date from the Earth's slot | Correctness | `sweph.c` |
 | 84 | `jplplan()`'s Earth and Sun answer for any ephemeris, and the JPL barycentric Sun is finished at the Earth slot's instant | Correctness | `sweph.c` |
@@ -4334,7 +4335,8 @@ flags as the return value and no error, until some `swe_calc()` has run; its
 speeds are off five-point differences of its positions by 8e-8 deg/day in
 the ecliptic of date with SEFLG_TRUEPOS (1.8e-12 in J2000), by 1.07e-6
 heliocentric apparent in J2000 (the heliocentric light-time rate), and by
-2.45e-3 deg/day on Moshier heliocentric (SEFLG_TRUEPOS, J2000).
+2.45e-3 deg/day on Moshier heliocentric (SEFLG_TRUEPOS, J2000). Fixed as
+entry 88, where the 1.07e-6 turns out to be the probe's, not the function's.
 
 Not fixed here: at exactly tjd = 2451545.0 every body's latitude of date
 (planets too; Mars 1.5e-10, the Sun 2.7e-10 deg in a fourth difference) is
@@ -4953,6 +4955,70 @@ valgrind 0 errors. The upstream build and ts20 before this fix fail 118 of
 slot difference with SPEED3 or EQUATORIAL after Cupido, 0 shipped, 78.5 deg compat. G53, G76, G83
 and G24 pass; `-Og -Wall -Wextra -Werror` builds every file, default and
 compat.
+
+## 88. `swe_calc_orbel()` answers from caches of another instant and save areas of another ephemeris, and nothing on a context's first call
+
+**Severity: Correctness (this fork's function: zeros or garbage with no error as a context's first call; 1.8e-5 deg/day on a latitude speed of date and the frame of date of another instant; 0.009 AU and 2.4e-3 deg/day on Moshier after a Swiss or JPL call)**
+**Where:** `sweph.c`: `swe_calc_orbel_r()`
+
+Found as entry 81's part 3 left it. `swe_calc_orbel_r()` set up what
+swecalc() sets up for any body except two things.
+
+1. **The caches of date.** swecalc() calls `swi_check_ecliptic()` and
+   `swi_check_nutation()` for tjd (and sets the default ayanamsa for
+   SEFLG_SIDEREAL); this function did not, and `app_pos_rest()` rotated with
+   `ctx->oec`, `ctx->oec2000` and `ctx->nut` as the last `swe_calc()` left
+   them. As a context's first call those were empty, sin eps = cos eps = 0:
+   the ecliptic answer was zeros, XYZ (0.17, -0, 0), the return value the
+   flags and no error (283 deg off a warm call, 4.6 AU in heliocentric
+   J2000 XYZ, 82.5 deg sidereal). After a `swe_calc()` at another instant,
+   the frame of date was that instant's: an orbit with a = 0.137 AU off its
+   positions' rate by 8.7e-7 deg/day in longitude and 1.8e-5 in latitude,
+   when each call follows a `swe_calc()` 1000 days away (the 8e-8 of entry
+   81's note, after one call at J2000).
+2. **The save areas across a change of ephemeris.** `swe_calc_r()` frees
+   them when the ephemeris differs from the last call's; this function did
+   not. Moshier has no barycentric Sun, the origin is the Sun, and
+   SEI_SUNBARY is never written under it, so a Swiss or JPL Sun left there
+   was added to the orbit: 0.009 AU on a SEFLG_TRUEPOS position, its
+   velocity 2.4e-3 deg/day on the heliocentric speed and 5.6e-4 on the
+   geocentric one (a = 0.137 AU).
+
+Entry 81's 1.07e-6 deg/day on the heliocentric apparent J2000 speed is not
+this function's: it was one date, 1800.0 (2378496.5, where sepl_12.se1
+ends and sepl_18.se1 begins), with the probe's stencil across it; the speed
+there is right against a stencil on either side (1.8e-11 over 2^-6..2^-8
+day). (The fictitious bodies' own heliocentric apparent speed at exactly
+that instant is 8.2e-7 deg/day off, at any step, Swiss only, and right
+0.25 day either side: not fixed here.)
+
+**Fix, as done here:** after `plaus_iflag()`, the default ayanamsa for a
+sidereal request, `swi_check_ecliptic()` and `swi_check_nutation()` for
+tjd, and on a change of ephemeris the same `free_planets()` and file
+closing `swe_calc_r()` does. A context's first call now answers as a warm
+one, bit for bit (Swiss, Moshier, JPL, ecliptic, equator, XYZ, heliocentric
+J2000, sidereal, topocentric with speed). Speeds against five-point
+differences over 2^-7 day, nine dates 1800..2150, four orbits (a = 0.137,
+0.387 and 5.2 AU about the Sun, 0.0068 about the Earth), each call after a
+`swe_calc()` 1000 days away: geocentric <= 1.6e-9 deg/day on the files
+(Moshier 5.1e-9, its Earth's own noise), heliocentric and barycentric <=
+3.8e-11, topocentric 2.7e-9; the distance rates <= 4.6e-11 of the distance
+per day. A body 0.0068 AU away is 2.9e-7 deg/day off topocentrically, in
+swe_calc() (Waldemath) as here, the site's velocity 1.3e-7 of itself off:
+not this function's, left out of the gate and not fixed.
+
+G87 `tests/orbelcalc.c`: (1) eight first calls against the same call
+warm, after a `swe_calc()` at another instant, equal to the bit; (2) the
+speeds of the four orbits against five-point differences over 2^-7 day,
+Swiss, Moshier and de200, geocentric, true, J2000, equator of date,
+heliocentric, barycentric and topocentric (29 rows), within 5e-9 deg/day
+(Moshier 2e-8). The build before the fix fails 20 of the 37 checks (all
+eight first calls; twelve speed rows of date, 8.7e-7 / 1.8e-5 deg/day); the
+SWE_UPSTREAM_COMPAT build fails 33. G24 `orbel_first_call_off`: the first
+call's longitude against a warm one, 0 shipped, 76.8 deg before the fix
+and compat. G24 `orbel_lt_flag_off` (entry 81 part 3) no longer warms the
+context: it compares equatorial J2000 XYZ, which needs no obliquity, 0 AU
+shipped, 3.1e-7 AU compat. G48, G62, G76, G77, G80 pass.
 
 ## How these were found
 
