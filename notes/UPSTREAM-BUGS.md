@@ -264,6 +264,7 @@ worst were in code that had never executed even once.
 | 231 | With `swe_set_interpolate_nut(TRUE)` the nutation is a quadratic through nodes placed by whichever call found none about it, so an instant's answer depends on the calls before it: SE_ECL_NUT fresh against after a call 0.6 to 1.3 day earlier up to 7.9e-7 deg (2.8 mas), Mars's speed 4.2e-6 deg/day | Correctness (behaviour) | `swephlib.c` |
 | 232 | Woolard's nutation evaluates its arguments, revolutions times t, in double: against its formula in mpmath dpsi 8.2e-10 deg off at 1e9 to 1e10 days, 2.1e-7 to 1e11, 3.2e-4 to 1e12 | Correctness | `swephlib.c` |
 | 236 | `swe_gauquelin_sector()` with SEFLG_SIDEREAL sets the body's sidereal place in the tropical house frame (the ARMC and true obliquity of the ecliptic of date): methods 0 and 1 off by the ayanamsa along the ecliptic, Mars at 1950, Zurich, Lahiri, 2.62 sectors off the call without the flag, 1.04 to 4.84 over 1800-2100; methods 2 to 5 never took the flag | Correctness (behaviour) | `swecl.c` |
+| 247 | In a star mode whose star is refused (its ephemeris's range), `swe_get_ayanamsa_ex()` returns -65, neither ERR nor a flag set, with the ayanamsa dpsi, the `_ut` form likewise, `swe_get_ayanamsa()` 0, and the sidereal houses answer OK from it, their speeds within 1/64 day of the range's ends 1447 deg/day off: True Citra at JD 100000 on Moshier, -65 and -0.00425 deg, where the sidereal places refuse | Correctness (behaviour) | `sweph.c`, `swehouse.c` |
 
 ---
 
@@ -16341,7 +16342,7 @@ and G156 pass.
 Noticed, not fixed:
 - BEHAVIOUR. `swe_get_ayanamsa_ex()` in a star mode whose star fails
   returns -65 (neither ERR nor flags) with the ayanamsa dpsi: True Citra
-  at JD 100000 on Moshier, -65, -0.00425 deg, serr the Moshier range.
+  at JD 100000 on Moshier, -65, -0.00425 deg, serr the Moshier range. Fixed as entry 247.
 - BEHAVIOUR. The eclipse and occultation searches ('when' functions)
   compute their lunation count K by an int cast at far starts: refused
   with "jd 6634702579155901" from a start near 1e12;
@@ -16831,6 +16832,85 @@ Noticed, not fixed:
   method: the tropical place of a sidereal cusp lands 0.298 house off in
   'W' (the tropical signs' boundaries) and up to 0.842 in 'N' (the
   ayanamsa / 30 deg).
+
+## 247. In a star mode whose star is refused, `swe_get_ayanamsa_ex()` returns -65, neither ERR nor a flag set, with the ayanamsa dpsi, and the sidereal houses answer OK from it: True Citra at JD 100000 on Moshier, -65 and -0.00425 deg, where the sidereal places refuse
+
+**Severity: Correctness (behaviour: a refusal answered as a value; every mode whose ayanamsa is a star's place, outside the range of the star's ephemeris -- Moshier's, or the Swiss files missing -- the ayanamsa, its `_ut` form, `swe_get_ayanamsa()`, the sidereal houses and, within 1/64 day of the range's ends, their speeds)**
+**Where:** `sweph.c`: `swe_get_ayanamsa_ex_r_body()`, `swe_get_ayanamsa_ex_ut_r_body()`, `swe_get_ayanamsa_r_body()`, `swe_get_ayanamsa_ut_r_body()`; `swehouse.c`: `sidereal_houses_trad()`
+
+Entry 217's noticed item. The twelve star modes (True Citra, Revati,
+Pushya, Sheoran, Mula, the four Galactic Centre and three Galactic Equator
+modes) take the ayanamsa from `swe_fixstar()`, which needs the Earth: on
+Moshier it refuses outside TT 625000.2 .. 2818000.8 ("jd ... outside
+Moshier planet range"), on the Swiss files with none found ("SwissEph
+file 'seplm48.se1' not found" at JD 100000). `get_ayanamsa()` returns
+ERR with the ayanamsa 0 and the star's message. But
+`swe_get_ayanamsa_ex()` went on: it added the nutation to the 0 and
+cleared SEFLG_NONUT from the return, ERR & ~SEFLG_NONUT. Measured at JD
+100000, each of the twelve modes alike:
+- `swe_get_ayanamsa_ex()`: -65, the ayanamsa -0.004255 deg (dpsi), serr
+  the star's; with SEFLG_NONUT it was ERR and 0 already;
+- `_ut()` at UT 100000: -65, -0.004311, and its TT taken again from a
+  delta t of the flags -65 (100001.473549 for Moshier's 100001.458223);
+- `swe_get_ayanamsa()` and `_ut()` (no error to return), the Swiss files
+  missing: 0, where entry 212's refusals answer NaN;
+- the sidereal places refuse, ERR, 0 and the star's message: the mean
+  node and the mean apogee, which answer there tropically (95.95 and
+  334.33 deg), sidereal ERR;
+- `sidereal_houses_trad()` overwrote the ayanamsa's return with the
+  houses': the sidereal houses OK, every cusp the tropical one less dpsi
+  (Placidus cusp 1 243.283246), serr empty;
+- within 1/64 day (the speeds' stencil) of the star's range ends, the
+  sidereal house speeds took the refused side's dpsi as its ayanamsa:
+  True Citra on Moshier at TT 625000.203125 every cusp's and ascmc's speed
+  1447 deg/day off, at 2818000.79296875 1212.
+
+**Fix, as done here:** behind `#ifndef SWE_UPSTREAM_COMPAT`:
+- `swe_get_ayanamsa_ex()` returns ERR on the star's refusal, before the
+  nutation: the ayanamsa 0, serr the star's. Its `_ut` form returns
+  there, with no delta t taken from a refusal's flags.
+- `swe_get_ayanamsa()` and `_ut()` answer NaN, as for entry 212's ranges.
+- The traditional sidereal houses refuse as the ayanamsa does, in
+  `house_range()`'s form (entry 213): ERR, cusp[0..ito], ascmc[0..9] and
+  the speeds 0, serr the ayanamsa's. Their speeds, where a stencil side's
+  ayanamsa is refused, take its rate from t's other side, three points as
+  at a model step (entry 187): 8.4e-10 and 4.9e-10 deg/day off the
+  ayanamsa's one-sided five-point rate at the two instants above; refused
+  as at t if that side is too. The ecliptic of t0's and the solar system
+  plane's houses take no star (a star mode keeps no SIDBIT, entry 97).
+- So within a star mode the ayanamsa, the sidereal places and the
+  sidereal houses refuse together, with the same message.
+- After: elsewhere bit for bit against the tip with entry 236: 28800
+  sidereal `swe_houses_ex2()` calls with speeds (Placidus, Koch, equal,
+  whole signs, Regiomontanus, Campanus, Gauquelin, Alcabitius, Makransky,
+  0 Aries; with and without SEFLG_NONUT; Lahiri, Fagan/Bradley, True
+  Citra, True Revati, Mula Wilhelm, Galactic Equator IAU 1958, Lahiri on
+  the ecliptic of t0 and the solar system plane; 60 dates 1800..2100;
+  de200, the Swiss files and Moshier) and the ayanamsa, its `_ut` form
+  and the legacy forms there, values, returns and serr.
+- Cost: none (a test of a return on each path; no hot path).
+
+G164 `tests/sidhorflag.c` (f): each star mode at JD 100000 on Moshier and
+on the Swiss files with none found: the ayanamsa and its `_ut` form ERR, 0
+and the message the sidereal mean node refuses with at that TT; the
+sidereal Placidus and Gauquelin houses at UT 100000, with speeds and
+without, ERR, every output 0, serr the `_ut` form's; with no files the
+legacy forms NaN: 12 checks. (g): True Citra on Moshier 2^-8 day inside
+each end of its star's range (found by bisection), the sidereal speeds of
+Placidus, Koch, equal and Gauquelin, cusps and ascmc, against the
+tropical ones less the ayanamsa's rate within 1e-8 deg/day: 2 checks.
+Before the fix 14 of G164's 353 fail (all of (f); (g) 1447 and 1212
+deg/day), after 0. The upstream build fails 223 of 353: entry 236's 209
+and these 14. G24 `star_aya_refused`: True Citra at JD 100000 on Moshier,
+of the ayanamsa's return other than ERR, its value other than 0 and the
+sidereal Placidus houses answering: 0 of 3 shipped, 3 of 3 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR (message only). Moshier's planets answer 0.3 day beyond the
+  range their refusal names: Mars at TT 625000.49 and 2818000.79 OK, the
+  Earth and so the stars from 625000.2 to 2818000.8, and the refusal
+  just outside "jd 625000.199000 outside Moshier planet range 625000.50
+  .. 2818000.50".
 
 ## How these were found
 

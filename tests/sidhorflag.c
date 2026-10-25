@@ -1,6 +1,7 @@
 /* sidhorflag.c -- G164: the JPL Horizons flags reach no sidereal output,
  * and the Gauquelin sectors' frame takes them as the body's place does;
- * SEFLG_SIDEREAL moves no Gauquelin sector.
+ * SEFLG_SIDEREAL moves no Gauquelin sector; a refused star refuses its
+ * ayanamsa, the sidereal places and the sidereal houses alike.
  *
  * The defect (UPSTREAM-BUGS 223): plaus_iflag() drops SEFLG_JPLHOR and
  * SEFLG_JPLHOR_APPROX from every sidereal place, from every request off a
@@ -86,7 +87,32 @@
  * fail: 30 of (d), methods 0 and 1, 72 of 72 calls each, up to 3.42
  * sectors (methods 2 to 5 pass), and all 9 of (e), every place outside
  * its sector, by up to 23.0 deg. The upstream build fails 209 of the 339:
- * the 170 above and these 39. Run as
+ * the 170 above and these 39.
+ *
+ * The defect (UPSTREAM-BUGS 247): in a mode whose ayanamsa is a star's
+ * place, a refused star (its ephemeris's range) left swe_get_ayanamsa_ex()
+ * adding the nutation to the 0 and clearing SEFLG_NONUT from ERR: -65 and
+ * dpsi, -0.00425 deg at JD 100000 on Moshier, where the sidereal places
+ * refuse with the star's message; the sidereal houses took that ayanamsa,
+ * OK, and within 1/64 day of the star's range ends their speeds took the
+ * refused side's: 1447 deg/day off. Check (f), each of the 12 star modes at
+ * JD 100000 on Moshier and on the Swiss files with none found: the
+ * ayanamsa and its _ut form ERR, 0, serr the message the sidereal mean
+ * node (which answers there tropically) refuses with at that TT; the
+ * sidereal houses at UT 100000, Placidus and Gauquelin, with speeds and
+ * without, ERR, every output 0, serr the _ut form's; with no files
+ * swe_get_ayanamsa() and _ut() NaN, as bug 212's refusals. 12 checks.
+ * Check (g): True Citra on Moshier at TT 2^-8 day (the grid's) inside each
+ * end of its star's range, found by bisection: the sidereal speeds of
+ * Placidus, Koch, equal and Gauquelin, cusps and ascmc but the ARMC, the
+ * tropical ones less the ayanamsa's rate (a five-point one-sided difference
+ * over 2^-12 day inside), within 1e-8 deg/day. 2 checks.
+ *
+ * Measured: (f) all refuse alike, (g) 8.4e-10 and 4.9e-10 deg/day. Before
+ * the fix 14 of the 353 fail: all of (f) (-65, -0.004255; _ut -65,
+ * -0.004311; the houses OK; with no files the legacy forms 0) and both of
+ * (g), 1447 and 1212 deg/day. The upstream build fails 223 of 353: the
+ * 209 above and these 14. Run as
  *   sidhorflag EPHEDIR
  */
 #include <math.h>
@@ -560,6 +586,161 @@ static int check_e(void)
   return 0;
 }
 
+/* the 12 modes the ayanamsa takes from a star */
+static const struct {
+  int32 sid;
+  const char *name;
+} STARM[] = {
+  { SE_SIDM_TRUE_CITRA, "True Citra" }, { SE_SIDM_TRUE_REVATI, "True Revati" },
+  { SE_SIDM_TRUE_PUSHYA, "True Pushya" }, { SE_SIDM_TRUE_SHEORAN, "True Sheoran" },
+  { SE_SIDM_TRUE_MULA, "True Mula" }, { SE_SIDM_GALCENT_0SAG, "Galactic Centre 0 Sag" },
+  { SE_SIDM_GALCENT_COCHRANE, "Galactic Centre Cochrane" },
+  { SE_SIDM_GALCENT_RGILBRAND, "Galactic Centre Gil Brand" },
+  { SE_SIDM_GALCENT_MULA_WILHELM, "Galactic Centre Mula Wilhelm" },
+  { SE_SIDM_GALEQU_IAU1958, "Galactic Equator IAU 1958" },
+  { SE_SIDM_GALEQU_TRUE, "Galactic Equator true" }, { SE_SIDM_GALEQU_MULA, "Galactic Equator Mula" },
+};
+#define NSTARM ((int) (sizeof STARM / sizeof STARM[0]))
+
+/* the houses at UT tu refuse with serr s0: ERR, every output 0 */
+static int houses_refuse(swe_ctx *c, double tu, int32 fl, int hs, int speeds, const char *s0)
+{
+  double cu[37], am[10], cs[37], as[10];
+  char serr[256] = "";
+  int i, ito = hs == 'G' ? 36 : 12, ok;
+  for (i = 0; i < 37; i++)
+    cu[i] = cs[i] = 7;
+  for (i = 0; i < 10; i++)
+    am[i] = as[i] = 7;
+  ok = swe_houses_ex2_r(c, tu, fl | SEFLG_SIDEREAL, 47.37, 8.55, hs, cu, am, speeds ? cs : NULL,
+                        speeds ? as : NULL, serr) == ERR && strcmp(serr, s0) == 0;
+  for (i = 0; i <= ito; i++)
+    ok = ok && cu[i] == 0 && (!speeds || cs[i] == 0);
+  for (i = 0; i < 10; i++)
+    ok = ok && am[i] == 0 && (!speeds || as[i] == 0);
+  return ok;
+}
+
+/* in a star mode whose star is refused (JD 100000: Moshier's range; the
+ * Swiss files missing), the ayanamsa and its _ut form ERR, 0 and the
+ * star's message, the one the sidereal places refuse with (the mean node,
+ * which answers there tropically); the sidereal houses ERR with it, every
+ * output 0; swe_get_ayanamsa() and _ut() NaN */
+static int check_f(void)
+{
+  char nofiles[600];
+  int m, n0 = n, b0 = bad;
+  snprintf(nofiles, sizeof nofiles, "%s/no-such-dir-g164", EPH);
+  for (m = 0; m < NSTARM; m++) {
+    int e, ok = 1, h, ok0;
+    for (e = 0; e < 2; e++) {
+      const double t = 100000;
+      int32 fl = e == 0 ? SEFLG_MOSEPH : SEFLG_SWIEPH;
+      double a = 7, au = 7, x[6], xu[6];
+      char sa[256] = "", su[256] = "", sx[256] = "", sxu[256] = "";
+      int32 ra, rau, rx, rxu;
+      swe_ctx *c = swe_ctx_new();
+      if (c == NULL)
+        return -1;
+      swe_set_ephe_path_r(c, e == 0 ? EPH : nofiles);
+      swe_set_sid_mode_r(c, STARM[m].sid, 0, 0);
+      ok0 = ok;
+      ra = swe_get_ayanamsa_ex_r(c, t, fl, &a, sa);
+      rau = swe_get_ayanamsa_ex_ut_r(c, t, fl, &au, su);
+      rx = swe_calc_r(c, t, SE_MEAN_NODE, fl | SEFLG_SIDEREAL, x, sx);
+      rxu = swe_calc_ut_r(c, t, SE_MEAN_NODE, fl | SEFLG_SIDEREAL, xu, sxu);
+      ok = ok && ra == ERR && a == 0 && rau == ERR && au == 0 && rx == ERR && rxu == ERR
+           && *sa != '\0' && strcmp(sa, sx) == 0 && strcmp(su, sxu) == 0;
+      for (h = 0; h < 4; h++)
+        ok = ok && houses_refuse(c, t, fl, h & 1 ? 'G' : 'P', h & 2, su);
+      if (e == 1)
+        ok = ok && isnan(swe_get_ayanamsa_r(c, t)) && isnan(swe_get_ayanamsa_ut_r(c, t));
+      if (ok0 && !ok)
+        printf("    FAIL %s, %s, JD %.0f: ayanamsa %d %.6f [%s], _ut %d %.6f [%s], mean node"
+               " %d [%s]\n", STARM[m].name, e ? "Swiss, no files" : "Moshier", t, ra, a, sa,
+               rau, au, su, rx, sx);
+      swe_ctx_free(c);
+    }
+    n++;
+    if (!ok)
+      bad++;
+  }
+  printf("  (f) refused stars refuse the ayanamsa, the places and the houses alike: %d checks,"
+         " %d fail\n", n - n0, bad - b0);
+  return 0;
+}
+
+/* the sidereal house speeds 2^-8 day inside each end of True Citra's
+ * star on Moshier (found by bisection), whose stencil reaches past it:
+ * the tropical speeds less the ayanamsa's rate (a five-point one-sided
+ * difference over 2^-12 day inside), within 1e-8 deg/day, Placidus, Koch,
+ * equal and Gauquelin, the cusps and ascmc but the ARMC */
+static int check_g(void)
+{
+  static const int HS[4] = { 'P', 'K', 'E', 'G' };
+  swe_ctx *c = swe_ctx_new();
+  int k, j, i, n0 = n, b0 = bad;
+  char serr[256];
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPH);
+  swe_set_sid_mode_r(c, SE_SIDM_TRUE_CITRA, 0, 0);
+  for (k = 0; k < 2; k++) {
+    double in = k == 0 ? 1e6 : 2.5e6, out = k == 0 ? 6e5 : 2.9e6, te, tu, a[5], ad, w = 0;
+    double h = 1.0 / 4096, s = k == 0 ? 1 : -1;
+    int32 r;
+    for (i = 0; i < 64; i++) {
+      double mid = (in + out) / 2;
+      /* < 0: upstream's refusal is -65 (bug 247) */
+      if (swe_get_ayanamsa_ex_r(c, mid, SEFLG_MOSEPH, &a[0], serr) < 0)
+        out = mid;
+      else
+        in = mid;
+    }
+    te = floor(in * 256) / 256 + s / 256;
+    tu = te - swe_deltat_ex_r(c, te, SEFLG_MOSEPH, NULL);
+    tu = te - swe_deltat_ex_r(c, tu, SEFLG_MOSEPH, NULL);
+    te = tu + swe_deltat_ex_r(c, tu, SEFLG_MOSEPH, NULL);
+    for (i = 0; i < 5; i++)
+      if (swe_get_ayanamsa_ex_r(c, te + s * i * h, SEFLG_MOSEPH, &a[i], serr) < 0) {
+        swe_ctx_free(c);
+        return -1;
+      }
+    ad = s * (-25 * a[0] + 48 * a[1] - 36 * a[2] + 16 * a[3] - 3 * a[4]) / (12 * h);
+    ad *= 1 + (swe_deltat_ex_r(c, tu + 1.0 / 64, SEFLG_MOSEPH, NULL)
+               - swe_deltat_ex_r(c, tu - 1.0 / 64, SEFLG_MOSEPH, NULL)) * 32;
+    for (j = 0; j < 4; j++) {
+      double ct[37], at[10], cts[37], ats[10], cs[37], as[10], css[37], ass[10];
+      int ito = HS[j] == 'G' ? 36 : 12;
+      r = swe_houses_ex2_r(c, tu, SEFLG_MOSEPH, 47.37, 8.55, HS[j], ct, at, cts, ats, serr);
+      if (r == ERR
+          || swe_houses_ex2_r(c, tu, SEFLG_MOSEPH | SEFLG_SIDEREAL, 47.37, 8.55, HS[j], cs, as,
+                              css, ass, serr) == ERR) {
+        printf("    FAIL sidereal houses '%c' %s refused at TT %.8f: %s\n", HS[j],
+               k ? "below the end" : "above the start", te, serr);
+        w = 1e99;
+        continue;
+      }
+      for (i = 1; i <= ito; i++)
+        w = fmax(w, fabs(css[i] - (cts[i] - ad)));
+      for (i = 0; i < 8; i++)
+        if (i != 2)
+          w = fmax(w, fabs(ass[i] - (ats[i] - ad)));
+    }
+    n++;
+    if (!(w <= 1e-8)) {
+      bad++;
+      printf("    FAIL sidereal house speeds 2^-8 day %s True Citra's star, TT %.8f: %.3e"
+             " deg/day off\n", k ? "below the end of" : "above the start of", te, w);
+    } else
+      printf("    TT %.8f, 2^-8 day %s: speeds within %.1e deg/day\n", te,
+             k ? "below the star's end" : "above the star's start", w);
+  }
+  swe_ctx_free(c);
+  printf("  (g) sidereal house speeds at a star's ends: %d checks, %d fail\n", n - n0, bad - b0);
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   int r;
@@ -569,7 +750,8 @@ int main(int argc, char **argv)
   }
   EPH = argv[1];
   printf("G164: the JPL Horizons flags reach no sidereal output, and Gauquelin's frame takes"
-         " them as the place does;\n      SEFLG_SIDEREAL moves no Gauquelin sector\n");
+         " them as the place does;\n      SEFLG_SIDEREAL moves no Gauquelin sector; a refused star"
+         " refuses its ayanamsa, places and houses\n");
   r = check_a();
   if (r == 0)
     r = check_b();
@@ -579,6 +761,10 @@ int main(int argc, char **argv)
     r = check_d();
   if (r == 0)
     r = check_e();
+  if (r == 0)
+    r = check_f();
+  if (r == 0)
+    r = check_g();
   if (r < 0) {
     printf("G164 FAIL: ERROR\n");
     return 1;

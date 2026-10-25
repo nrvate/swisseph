@@ -5731,6 +5731,16 @@ static int32 swe_get_ayanamsa_ex_r_body(swe_ctx *ctx, double tjd_et, int32 iflag
    * corrections' table cannot arise here. */
   iflag &= ~(SEFLG_JPLHOR | SEFLG_JPLHOR_APPROX);
   retval = swi_get_ayanamsa_ex(ctx, tjd_et, iflag, daya, serr);
+  /* Upstream bug 247: a star mode whose star is refused (its ephemeris's
+   * range: True Citra at JD 100000 on Moshier, "outside Moshier planet
+   * range") went on to add the nutation to the 0 left and cleared
+   * SEFLG_NONUT from ERR: -65, neither ERR nor a flag set, and the
+   * ayanamsa dpsi, -0.00425 deg, where the sidereal places refuse with
+   * the star's message. ERR now, the ayanamsa 0, serr the star's. */
+  if (retval == ERR) {
+    *daya = 0;
+    return ERR;
+  }
 #else
   retval = swi_get_ayanamsa_ex(ctx, tjd_et, iflag, daya, serr);
   /* Upstream bug 142: the nutation took SEFLG_JPLHOR without the IERS
@@ -6183,6 +6193,11 @@ static int32 swe_get_ayanamsa_ex_ut_r_body(swe_ctx *ctx, double tjd_ut, int32 if
 #endif
   // swe... includes nutation, unless SEFLG_NONUT
   retflag = swe_get_ayanamsa_ex_r(ctx, tjd_ut + deltat, iflag, daya, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 247: refused, not an ephemeris to take delta t from */
+  if (retflag == ERR)
+    return ERR;
+#endif
   /* if ephe required is not ephe returned, adjust delta t: */
   if ((retflag & SEFLG_EPHMASK) != epheflag) {
     deltat = swe_deltat_ex_r(ctx, tjd_ut, retflag, serr);
@@ -6226,7 +6241,13 @@ static double swe_get_ayanamsa_r_body(swe_ctx *ctx, double tjd_et)
     return NAN;
 #endif
   // swi... function never includes nutation
+#ifndef SWE_UPSTREAM_COMPAT
+  /* bug 247: a refused star, as bug 212's range: NaN, not its 0 */
+  if (swi_get_ayanamsa_ex(ctx, tjd_et, iflag, &daya, NULL) == ERR)
+    return NAN;
+#else
   swi_get_ayanamsa_ex(ctx, tjd_et, iflag, &daya, NULL);
+#endif
   return daya;
 }
 
@@ -6260,7 +6281,9 @@ static double swe_get_ayanamsa_ut_r_body(swe_ctx *ctx, double tjd_ut)
     double tjd_et = tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL);
     if (swi_ayanamsa_range(ctx, tjd_et, 0, NULL) == ERR)
       return NAN;
-    swi_get_ayanamsa_ex(ctx, tjd_et, 0, &daya, NULL);
+    /* bug 247, as swe_get_ayanamsa() */
+    if (swi_get_ayanamsa_ex(ctx, tjd_et, 0, &daya, NULL) == ERR)
+      return NAN;
   }
 #else
   swi_get_ayanamsa_ex(ctx, tjd_ut + swe_deltat_ex_r(ctx, tjd_ut, iflag, NULL), 0, &daya, NULL);

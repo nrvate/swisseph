@@ -521,6 +521,23 @@ static int house_range(swe_ctx *ctx, double tjde, int32 iflag, int ito,
   }
   return ERR;
 }
+
+/* bug 247: the outputs of refused houses, 0 as house_range() leaves them */
+static void houses_refused(int ito, double *cusp, double *ascmc, double *cusp_speed,
+                           double *ascmc_speed)
+{
+  int i;
+  for (i = 0; i <= ito; i++) {
+    cusp[i] = 0;
+    if (cusp_speed != NULL)
+      cusp_speed[i] = 0;
+  }
+  for (i = 0; i < 10; i++) {
+    ascmc[i] = 0;
+    if (ascmc_speed != NULL)
+      ascmc_speed[i] = 0;
+  }
+}
 #endif
 
 /* 
@@ -1088,6 +1105,7 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
   int ihs = toupper(hsys);
   int ihs2 = ihs;
 #ifndef SWE_UPSTREAM_COMPAT
+  char saya[AS_MAXCH] = "";
   /* Upstream bug 59: toupper() made sidereal Makransky ('i', the one
    * lower-case system, as swe_houses_armc_ex2_r() keeps it) Treindl's 'I'. */
   if (hsys == 'i')
@@ -1096,13 +1114,32 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
   (void) nutl;	/* unused */
 // ay = swe_get_ayanamsa(tjde);
 //fprintf(stderr, "ay=%f\n", ay);
+#ifndef SWE_UPSTREAM_COMPAT
+  retc = swe_get_ayanamsa_ex_r(ctx, tjde, iflag, &ay, saya);
+#else
   retc = swe_get_ayanamsa_ex_r(ctx, tjde, iflag, &ay, NULL);
+#endif
 //fprintf(stderr, "ay=%f\n", ay);
 //fprintf(stderr, "nutl=%f\n", nutl);
   if (ihs == 'G')
     ito = 36;
   else
     ito = 12;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 247: a star mode's refused ayanamsa (True Citra at JD
+   * 100000 on Moshier, Spica "outside Moshier planet range") was taken as
+   * a value, its return overwritten: the houses OK, every cusp the
+   * tropical one less the dpsi left in the ayanamsa (-0.00425 deg), where
+   * the sidereal places refuse. Refused as the ayanamsa is, as bug 213's
+   * house_range() refuses: ERR, the cusps, ascmc and speeds 0, serr the
+   * star's. */
+  if (retc == ERR) {
+    houses_refused(ito, cusp, ascmc, cusp_speed, ascmc_speed);
+    if (serr != NULL)
+      strcpy(serr, saya);
+    return ERR;
+  }
+#endif
   if (ihs == 'W')  /* whole sign houses: treat as 'E' and fix later */
     ihs2 = 'E';
 //fprintf(stderr, "armc=%f\n", armc);
@@ -1139,10 +1176,30 @@ static int sidereal_houses_trad(swe_ctx *ctx, double tjde,
    * (326-555 deg/day where they stand still). The rate is a difference
    * of the ayanamsa over the frame's TT either side. */
   if (hr != NULL) {
-    double ayp, aym;
-    swe_get_ayanamsa_ex_r(ctx, hr->p.tjde, iflag, &ayp, NULL);
-    swe_get_ayanamsa_ex_r(ctx, hr->m.tjde, iflag, &aym, NULL);
-    houses_less_rate(ihs2, retc, house_rate(hr, aym, ay, ayp, TRUE), cusp_speed, ascmc_speed);
+    double ayp, aym, rate;
+    int32 rp = swe_get_ayanamsa_ex_r(ctx, hr->p.tjde, iflag, &ayp, NULL);
+    int32 rm = swe_get_ayanamsa_ex_r(ctx, hr->m.tjde, iflag, &aym, NULL);
+    if (rp != ERR && rm != ERR) {
+      rate = house_rate(hr, aym, ay, ayp, TRUE);
+    } else {
+      /* Upstream bug 247: within the stencil of the star's range end the
+       * refused side's ayanamsa was taken as a value (dpsi; 0 now): every
+       * cusp's and ascmc's speed 1447 deg/day off (True Citra on Moshier,
+       * TT 2^-8 day inside its star's start, 625000.2). The rate from t's
+       * other side, three points as at a model step (bug 187): 8.4e-10
+       * deg/day off the ayanamsa's; refused if that side is too */
+      int sd = hr->side != 0 ? -hr->side : (rm == ERR ? 1 : -1);
+      double a1, a2, h = HOUSE_SPEED_DT;
+      if (swe_get_ayanamsa_ex_r(ctx, tjde + sd * h, iflag, &a1, saya) == ERR
+          || swe_get_ayanamsa_ex_r(ctx, tjde + 2 * sd * h, iflag, &a2, saya) == ERR) {
+        houses_refused(ito, cusp, ascmc, cusp_speed, ascmc_speed);
+        if (serr != NULL)
+          strcpy(serr, saya);
+        return ERR;
+      }
+      rate = (4 * swe_difdeg2n(a1, ay) - swe_difdeg2n(a2, ay)) / (2 * sd * h);
+    }
+    houses_less_rate(ihs2, retc, rate, cusp_speed, ascmc_speed);
   }
   if ((ihs == 'W' || ihs == 'N') && cusp_speed != NULL) {
     for (i = 1; i <= ito; i++)

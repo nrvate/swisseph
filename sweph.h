@@ -1680,6 +1680,12 @@ struct epsilon {
  *     the body's sidereal place in the tropical house frame: Mars at 1950,
  *     Zurich, Lahiri, 2.62 sectors off the call without the flag
  *     (UPSTREAM-BUGS 236, G164, G24)
+ *   - a star mode's refused star: swe_get_ayanamsa_ex() returning -65,
+ *     neither ERR nor a flag set, with the ayanamsa dpsi (True Citra at
+ *     JD 100000 on Moshier, -0.00425 deg), its _ut form likewise,
+ *     swe_get_ayanamsa() and _ut() 0, and the sidereal houses OK from it,
+ *     their speeds within 1/64 day of the star's range ends 1447 deg/day
+ *     off (UPSTREAM-BUGS 247, G164, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
