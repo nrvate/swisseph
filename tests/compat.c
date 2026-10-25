@@ -500,6 +500,47 @@ static double star_dist_rate_off(void)
   return fabs(x[5] - (8 * (f[3][2] - f[1][2]) - (f[4][2] - f[0][2])) / (12 * h));
 }
 
+/* The flags swe_fixstar2() returns against swe_calc()'s for Mars, sidereal
+ * and heliocentric Moshier: the bits that differ, counted. Upstream returns
+ * the caller's iflag, without NONUT (1) and NOABERR|NOGDEFL (2)
+ * (UPSTREAM-BUGS 67). */
+static double star_ret_flags_off(void)
+{
+  static const int32 set[2] = {SEFLG_SWIEPH | SEFLG_SIDEREAL, SEFLG_HELCTR | SEFLG_MOSEPH};
+  double x[6];
+  char serr[256], s[64];
+  int k, n = 0;
+  int32 a, b, d;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 2; k++) {
+    strcpy(s, "Spica");
+    a = swe_fixstar2(s, 2460000.3, set[k], x, serr);
+    b = swe_calc(2460000.3, SE_MARS, set[k], x, serr);
+    for (d = a ^ b; d; d &= d - 1)
+      n++;
+  }
+  return n;
+}
+
+/* The sidereal ayanamsa at tjd = 0 against tjd = 1e-9, deg: upstream's
+ * emptied nutation cache (tnut 0) answers for JD 0 with zero angles
+ * (UPSTREAM-BUGS 67). */
+static double ayanamsa_jd0_off(void)
+{
+  double a0, a1;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  swe_get_ayanamsa_ex(0.0, SEFLG_SWIEPH | SEFLG_SIDEREAL, &a0, serr);
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  swe_get_ayanamsa_ex(1e-9, SEFLG_SWIEPH | SEFLG_SIDEREAL, &a1, serr);
+  return fabs(a0 - a1);
+}
+
 /* The SEFLG_SPEED3 speed of the osculating apogee, Moshier, year 2800,
  * against a five-point difference of its longitude over 2^-5 day, deg/day.
  * Upstream takes it over +-0.1 day, and the h^2 term is 1.5e-3
@@ -962,7 +1003,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -992,6 +1033,8 @@ int main(int argc, char **argv)
   intpsf = intp_speedflag_off();
   intprough = intp_rough_off();
   stardd = star_dist_rate_off();
+  sflags = star_ret_flags_off();
+  ayajd0 = ayanamsa_jd0_off();
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
   apsrate = planet_apsis_rate_off();
@@ -1202,6 +1245,22 @@ int main(int argc, char **argv)
   else {
     printf("  star distance rate     %.2e AU/day FAIL: expected %s\n",
            stardd, WANT_DEFECT ? "> 1e-4" : "< 1e-5");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (sflags > 2.5) : (sflags < 0.5))
+    printf("  star returned flags    %.0f bits off OK\n", sflags);
+  else {
+    printf("  star returned flags    %.0f bits off FAIL: expected %s\n",
+           sflags, WANT_DEFECT ? "3" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (ayajd0 > 1e-4) : (ayajd0 < 1e-7))
+    printf("  ayanamsa at JD 0       %.2e deg OK\n", ayajd0);
+  else {
+    printf("  ayanamsa at JD 0       %.2e deg FAIL: expected %s\n",
+           ayajd0, WANT_DEFECT ? "> 1e-4" : "< 1e-7");
     bad++;
   }
 

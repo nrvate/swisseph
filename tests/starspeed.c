@@ -23,14 +23,14 @@
  * equatorial, XYZ, equatorial XYZ), swe_fixstar2() and swe_fixstar(), all
  * against five-point differences of the same call's positions over 2^-8
  * day at instants that are multiples of it. Per flag set and function: the
- * angular speeds, longitude times cos(latitude), within 1e-8 deg/day
- * (measured <= 6.6e-10, which is the nutation's rate, a backward
- * difference over 1e-4 day); the distance rate within 1e-12 of the
- * distance per day (measured <= 1.7e-13, the reference's own noise); XYZ
- * rates within 1.7e-10 of the distance per day, 1e-8 deg/day (measured
- * 1.1e-11). The upstream build fails all 36: the distance rate by 4.9e-10
- * of the distance per day, swe_fixstar()'s sidereal speed by 3.8e-5
- * deg/day, and, with bug 33's turning restored too, 1e-5 of date. Run as
+ * angular speeds, longitude times cos(latitude), within 2e-10 deg/day
+ * (measured <= 4.0e-11, the five-point reference's own noise; it was
+ * 6.6e-10 while the nutation's rate was a backward difference, UPSTREAM-BUGS
+ * 58, and the limit 1e-8); the distance rate within 1e-12 of the distance
+ * per day (measured <= 1.7e-13, likewise); XYZ rates within 1.7e-11 of the
+ * distance per day (measured 7e-13). The upstream build fails all 36: the
+ * distance rate by 4.9e-10 of the distance per day, swe_fixstar()'s
+ * sidereal speed by 3.8e-5 deg/day, and, with bug 33's turning restored too, 1e-5 of date. Run as
  *   starspeed EPHEDIR
  */
 #include <math.h>
@@ -103,14 +103,14 @@ int main(int argc, char **argv)
       if (xyz) {
         printf("  %-10s %-12s XYZ rates %.2e of the distance per day\n",
                set[k].n, old ? "swe_fixstar" : "swe_fixstar2", rel);
-        if (rel > 1.7e-10) {
+        if (rel > 1.7e-11) {
           printf("    FAIL: an XYZ speed is not the rate of the position\n");
           bad++;
         }
       } else {
         printf("  %-10s %-12s angles %.2e deg/day, distance %.2e of it per day\n",
                set[k].n, old ? "swe_fixstar" : "swe_fixstar2", ang, rel);
-        if (ang > 1e-8) {
+        if (ang > 2e-10) {
           printf("    FAIL: an angular speed is not the rate of the position\n");
           bad++;
         }

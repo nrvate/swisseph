@@ -1477,6 +1477,9 @@ static void ctx_init_defaults(swe_ctx *ctx)
   strcpy(ctx->jplfnam, SE_FNAME_DFT);
   ctx->const_lapse_rate = SE_LAPSE_RATE;   /* calloc leaves 0.0, not 0.0065 */
   ctx->saved_sundec     = 99;              /* "no Sunshine memo yet" */
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->nut.tnut         = SWI_NUT_NEVER;   /* calloc leaves 0: a valid instant (bug 67) */
+#endif
   ctx->tid_acc          = SE_TIDAL_DEFAULT;
   ctx->is_tid_acc_manual = FALSE;
   /* Strict by default, and stated rather than left to calloc: a caller who
@@ -1598,6 +1601,9 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
   memset((void *) &ctx->nut, 0, sizeof(struct nut));
   memset((void *) &ctx->nut2000, 0, sizeof(struct nut));
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->nut.tnut = SWI_NUT_NEVER;	/* Upstream bug 67 */
+#endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
   swi_close_jpl_file(ctx);
@@ -1653,6 +1659,9 @@ static void ctx_release(swe_ctx *ctx)
   memset((void *) &ctx->nut, 0, sizeof(struct nut));
   memset((void *) &ctx->nut2000, 0, sizeof(struct nut));
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->nut.tnut = SWI_NUT_NEVER;	/* Upstream bug 67 */
+#endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
   swi_close_jpl_file(ctx);
@@ -7826,10 +7835,15 @@ int swi_plan_for_osc_elem(swe_ctx *ctx, int32 iflag, double tjd, double *xx)
   if (!(iflag & SEFLG_NONUT)) {
     if (tjd == ctx->nut.tnut) {
       nutp = &ctx->nut;
+    /* Upstream bug 67: ctx->nut2000 is never filled and ctx->nutv no longer
+     * is (bug 58); their tnut of 0 matched tjd = 0 (nutv) and J2000
+     * (nut2000) with a zero matrix. Neither is read now. */
+#ifdef SWE_UPSTREAM_COMPAT
     } else if (tjd == J2000) {
       nutp = &ctx->nut2000;
     } else if (tjd == ctx->nutv.tnut) {
       nutp = &ctx->nutv;
+#endif
     } else {
       nutp = &nuttmp;
       swi_nutation(ctx, tjd, iflag, nutp->nutlo);
@@ -8081,7 +8095,10 @@ void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
    * asked for. calc_nutation() already declines its own memo for these
    * flags -- SWI_NUT_NO_MEMO -- and this is the same argument one level up. */
   if (!(iflag & SEFLG_NONUT)
-	&& (tjd != ctx->nut.tnut || tjd == 0
+	&& (tjd != ctx->nut.tnut
+#ifdef SWE_UPSTREAM_COMPAT
+	|| tjd == 0	/* upstream bug 67: an emptied cache has tnut 0 */
+#endif
 	|| (!speedf1 && speedf2)
 	|| SWI_EPS_KEY(ctx->sp.nut.nutflag) != SWI_EPS_KEY(iflag))) {
     swi_nutation(ctx, tjd, iflag, ctx->nut.nutlo);
@@ -8473,6 +8490,9 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   double dm = tjd - (tjd - dt), dp = (tjd + dt) - tjd;
 #endif
   int32 epheflag, iflgsave;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 ephe_used = 0;	/* the ephemeris that answered, 0: none consulted */
+#endif
   struct epsilon *oe = &ctx->oec2000;
   iflgsave = iflag;
   iflag |= SEFLG_SPEED; /* we need this in order to work correctly */
@@ -8570,6 +8590,9 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     }
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+    ephe_used = iephe_used;
+#endif
   }
   /************************************
    * observer: geocenter or topocenter
@@ -8749,6 +8772,13 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
     for (i = 3; i <= 5; i++)
       xx[i] = 0;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 67: the flags used, as swe_calc() returns them: a
+   * substituted ephemeris (swe_set_ephe_fallback) replaces the ephemeris
+   * bits. The public star functions return this value, not the caller's. */
+  if (ephe_used != 0 && ephe_used != epheflag)
+    iflag = (iflag & ~SEFLG_EPHMASK) | ephe_used;
+#endif
   /* if no ephemeris has been specified, do not return chosen ephemeris */
   if ((iflgsave & SEFLG_EPHMASK) == 0)
     iflag = iflag & ~SEFLG_DEFAULTEPH;
@@ -8757,7 +8787,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
    * when the caller asked for it; swi_fixstar_calc_from_record() and
    * swe_calc() keep it. Only what the caller did not ask for goes. (The
    * public wrappers return their own iflag and use this value for the
-   * error test only.) */
+   * error test only; bug 67 makes them return it.) */
   if (!(iflgsave & SEFLG_SPEED))
     iflag = iflag & ~SEFLG_SPEED;
 #else
@@ -8981,7 +9011,12 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
 #ifdef TRACE
   trace_swe_fixstar(2, star, tjd, iflag, xx, serr);
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 67: the flags used, not the caller's iflag (swe_calc()). */
+  return retc;
+#else
   return iflag;
+#endif
   return_err:
   for (i = 0; i <= 5; i++)
     xx[i] = 0;
@@ -9902,6 +9937,9 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   double dm = tjd - (tjd - dt), dp = (tjd + dt) - tjd;
 #endif
   int32 epheflag, iflgsave;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 ephe_used = 0;	/* the ephemeris that answered, 0: none consulted */
+#endif
   // char s[AS_MAXCH];
   struct epsilon *oe = &ctx->oec2000;
   iflgsave = iflag;
@@ -9997,6 +10035,9 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     }
     if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
       return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+    ephe_used = iephe_used;
+#endif
   }
   /************************************
    * observer: geocenter or topocenter
@@ -10191,6 +10232,13 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     for (i = 3; i <= 5; i++)
       xx[i] = 0;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 67: the flags used, as swe_calc() returns them: a
+   * substituted ephemeris (swe_set_ephe_fallback) replaces the ephemeris
+   * bits. The public star functions return this value, not the caller's. */
+  if (ephe_used != 0 && ephe_used != epheflag)
+    iflag = (iflag & ~SEFLG_EPHMASK) | ephe_used;
+#endif
   /* if no ephemeris has been specified, do not return chosen ephemeris */
   if ((iflgsave & SEFLG_EPHMASK) == 0)
     iflag = iflag & ~SEFLG_DEFAULTEPH;
@@ -10261,7 +10309,12 @@ int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
 #ifdef TRACE
   trace_swe_fixstar(2, star, tjd, iflag, xx, serr);
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 67: the flags used, not the caller's iflag (swe_calc()). */
+  return retc;
+#else
   return iflag;
+#endif
   return_err:
   for (i = 0; i <= 5; i++)
     xx[i] = 0;

@@ -96,6 +96,7 @@ worst were in code that had never executed even once.
 | 59 | Four small house defects: Placidus cusps unconverged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files | Correctness | `swehouse.c` |
 | 68 | Three house residues: Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps 13..36 after the Porphyry fallback, ARMC's rate for a Placidus cusp on an equinox point | Correctness | `swehouse.c` |
 | 64 | The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms | Correctness | `swecl.c` |
+| 67 | The star functions return the caller's flags, and an emptied nutation cache answers for JD 0 | Correctness | `sweph.c`, `sweconfig.c` |
 
 ---
 
@@ -3019,6 +3020,61 @@ the longitude, 1e-8 (measured 5.6e-9, 9.8e-11 latitude, 1.2e-10 distance).
 G24 `planet_apsis_rate_off`: Jupiter's mean aphelion's heliocentric
 longitude speed at -3000, 2.1e-12 deg/day shipped, 3.8e-6 compat. G42, G47,
 G54 pass; G1 rows of the planets' mean points' speeds move.
+
+## 67. The star functions return the caller's flags, and an emptied nutation cache answers for JD 0
+
+**Severity: Correctness (a returned value: the flags used are not reported; 4.2e-4 deg in the sidereal ayanamsa at exactly tjd = 0)**
+**Where:** `sweph.c`: `swe_fixstar2_r()`, `swe_fixstar_r()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`, `swi_check_nutation()`, `swi_plan_for_osc_elem()`; `sweconfig.c`: `swi_invalidate_models()`; `sweph.h`: `SWI_NUT_NEVER`
+
+Three small things, the first two left open at entries 61 and 58.
+
+(1) `swe_fixstar2()`, `swe_fixstar()` and their `_ut` forms returned the
+caller's own `iflag`, and used the inner functions' value for the error
+test only. `swe_calc()` returns the flags it used: NONUT added for a
+sidereal request (0x40), NOABERR and NOGDEFL for heliocentric Moshier
+(0x600), and the ephemeris bits of a substituted ephemeris. Measured over
+twelve flag sets and the four functions, 14 of 48 returns differed from
+`swe_calc()`'s for Mars with the same flags, and the four of the JPL
+request answered by the Swiss ephemeris (fallback allowed) named JPL.
+`swe_fixstar_ut()`'s own check of the ephemeris returned could therefore
+never fire.
+
+(2) `ctx->nut.tnut = 0` marked the nutation cache empty (a closed library,
+a model change, a new context), and 0 is also JD 0 (-4712): a request at
+exactly tjd = 0 found the empty cache's zero angles. `ctx->nutv` (no longer
+filled since entry 58) and `ctx->nut2000` (never filled) had the same tnut
+of 0 and were read by `swi_plan_for_osc_elem()` for tjd = 0 and J2000.
+`swi_check_nutation()` guarded its own reader with `tjd == 0`; the others
+did not. Measured: `swe_get_ayanamsa_ex()` at tjd = 0, sidereal, default
+flags, after `swe_close()`: 291.345410209, the NONUT value, against
+291.345832639 at tjd = 1e-9 (4.22e-4 deg, the nutation in longitude).
+`swe_calc()` itself at tjd = 0 was right (the guard), as were the
+osculating elements (the cache was filled by the call's own planet
+position first), so (2) is a latent hazard with one measured case.
+
+(3) `tests/starspeed.c`'s header said the 6.6e-10 deg/day measured there was
+the nutation's backward difference; entry 58 removed that. Re-measured: 4.0e-11
+deg/day (angles), 1.7e-13 (distance rate), 7e-13 (XYZ).
+
+**Fix, as done here:** (1) the two public functions return the inner
+value; `fixstar_calc_from_struct()` and `swi_fixstar_calc_from_record()`
+put the ephemeris that answered (`main_planet_bary()`'s `iephe_used`) into
+the ephemeris bits, as `swe_calc()` does. (2) An empty nutation cache is
+`tnut = SWI_NUT_NEVER` (-1e300): set at context creation, at both clearing
+sites and in `swi_invalidate_models()`; `swi_check_nutation()` no longer
+needs `tjd == 0`; `swi_plan_for_osc_elem()` no longer reads `nutv` or
+`nut2000`. (3) The comment says what is measured, and the gate's limits are
+2e-10 deg/day (was 1e-8) and 1.7e-11 (was 1.7e-10) for XYZ.
+
+G66 `tests/starflags.c`: the four star functions against `swe_calc()` and
+`swe_calc_ut()` over twelve flag sets, flags equal and ephemeris bits equal,
+the JPL row proven to have fallen back; the ayanamsa at tjd 0 against 1e-9
+(1.1e-13 deg) and against NONUT (4.22e-4). The upstream build fails 20
+(14 flag rows, 4 ephemeris-bit rows, 2 ayanamsa). G24 `star_ret_flags_off`:
+0 bits off `swe_calc()`'s shipped, 3 compat; `ayanamsa_jd0_off`: 1.1e-13
+deg shipped, 4.2e-4 compat. G1: none of its 90 star rows moves (all
+rf=258 both ways: flags used equal flags asked); the golden transcript is
+byte-identical before and after. G49, G57, G60 unchanged.
 
 ## How these were found
 

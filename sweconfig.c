@@ -153,7 +153,11 @@ void swi_invalidate_deltat(swe_ctx *ctx)
  * swi_force_app_pos_etc() clears pldat/nddat/savedat but not this. */
 void swi_invalidate_models(swe_ctx *ctx)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->nut.tnut = SWI_NUT_NEVER;
+#else
   ctx->nut.tnut = 0;
+#endif
   ctx->nutv.tnut = 0;
   /* Same story one function along: swi_check_ecliptic() keys the obliquity
    * on tjd alone -- oec on `teps != tjd`, oec2000 on `teps != J2000` -- and

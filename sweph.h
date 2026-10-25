@@ -805,6 +805,9 @@ struct epsilon {
  *   - the planets' mean nodes' and apsides' speeds used the linear terms of
  *     their elements' polynomials only (4e-6 deg/day on Jupiter's aphelion
  *     at +-3000 years, 4.2e-8 on Mars at +-500; UPSTREAM-BUGS 64, G63)
+ *   - the star functions returned the caller's flags, not the flags used,
+ *     and an emptied nutation cache (tnut 0) answered for JD 0 (4.2e-4 deg
+ *     in the ayanamsa; UPSTREAM-BUGS 67, G66)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -929,6 +932,12 @@ extern int32 swi_get_denum(swe_ctx *ctx, int32 ipli, int32 iflag);
 
 
 /* nutation */
+/* Upstream bug 67: tnut == 0 is also JD 0 (-4712), so an emptied or
+ * never-filled cache, or ctx->nutv/nut2000 (no longer filled since bug 58),
+ * matched a request at exactly tjd = 0 (or J2000, for nut2000) and gave a
+ * zero nutation matrix or angles: swe_get_ayanamsa_ex() at tjd 0 lacked the
+ * nutation, 4.2e-4 deg. An empty cache is now tnut = SWI_NUT_NEVER. */
+#define SWI_NUT_NEVER (-1.0e300)
 struct nut {
   double tnut;
   double nutlo[2];	/* nutation in longitude and obliquity */
