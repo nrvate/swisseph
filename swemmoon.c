@@ -1592,7 +1592,7 @@ int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli)
 
 /* The apsis after npass of the iteration's passes, for an estimate of its
  * distance: the distance is stationary there, so one pass (four lunar
- * evaluations of the full iteration's fifteen or twenty) puts it within
+ * evaluations of the full iteration's sixteen or twenty-two) puts it within
  * ~1 km (bug 44's light time). */
 int swi_intp_apsides_est(swe_ctx *ctx, double J, double *pol, int ipli, int npass)
 {

@@ -2236,10 +2236,39 @@ distance over c, taken from the first passes of the iteration at t
 two passes put the perigee's within 4 km and one the apogee's within 1
 km (20000 dates, -10000..+12000), at most 0.0013 mas of position. The
 speed is the difference over +-2^-8 day about t - tau (bug 45), times 1 -
-dtau/dt, dtau/dt = rdot / c. Cost at -O2, against upstream: 1.3x without
-the flag (perigee 62 -> 82 us, apogee 53 -> 69), 1.03-1.13x with it
-(182 -> 205, 153 -> 157). A first version took X(t) - tau V(t), which
-needs the velocity, three apsides, on every call: 2.7x without the flag.
+dtau/dt, dtau/dt = rdot / c.
+
+Cost, in instructions per `swe_calc()` (`perf stat -e instructions:u`,
+gcc -O2 with LTO, 2000 calls less a run of none; timings on the loaded
+machine were not reliable). An apsis is lunar-series evaluations,
+~42,000 instructions each: upstream takes 18 (perigee) and 15 (apogee),
+three times that with SEFLG_SPEED. The estimate of tau adds 4, one pass
+for both apsides (`intp_apsides()` compares the SEI_ index with
+SE_INTP_PERG, so the perigee's second pass is never taken; it would add
+3 more and move the perigee by at most 0.0049 mas, 3000 dates
+-3000..+3000); entry 45 adds 2 to the perigee, entry 56 2 more and 1 to
+the apogee. Shipped (e8fd2ac, this fix and entry 45; then c8e3710, entry
+56), against the compat build, at instants 0.01 day apart:
+
+| | upstream | e8fd2ac | c8e3710 | lunar evaluations |
+|---|---|---|---|---|
+| perigee | 0.78e6 | 1.01e6 (1.30x) | 1.10e6 (1.41x) | 18 -> 24 -> 26 |
+| apogee | 0.66e6 | 0.81e6 (1.23x) | 0.85e6 (1.29x) | 15 -> 19 -> 20 |
+| perigee, SEFLG_SPEED | 2.31e6 | 2.70e6 (1.17x) | 2.95e6 (1.28x) | 54 -> 64 -> 70 |
+| apogee, SEFLG_SPEED | 1.94e6 | 2.07e6 (1.07x) | 2.20e6 (1.13x) | 45 -> 49 -> 52 |
+
+At instants a day or more apart every `swe_calc()` of this build, of any
+body, also evaluates a node of its default nutation (IAU 2000A on a
+grid, ~0.33e6 instructions a node; upstream's whole mean-apogee call,
+2000B included, is 0.03e6), which is not the apsides' work: there the
+shipped perigee is 1.43e6 against 0.78e6 at daily steps (1.83x), 1.55e6
+at instants 1.37 day apart (1.99x; 1.47e6, 1.88x, at e8fd2ac), the
+apogee 1.18e6 (1.80x) and 1.31e6 (1.99x). Best of five timings, 0.01 day
+apart, c8e3710 against compat: perigee 87 against 65 us, apogee 66
+against 55. Nothing in the rise is work done twice: it is the evaluation
+count above, each one the price of a fix. A first version took
+X(t) - tau V(t), which needs the velocity, three apsides (60
+evaluations), on every call: 3.2x without the flag (2.52e6).
 
 G46 `tests/intpaps.c` (a), (b): the position with and without the flag,
 six flag sets, identical (upstream 140 mas, angle plus distance); the
@@ -3229,9 +3258,11 @@ Newton passes, max over the same 20000 dates: 0.0036 mas (perigee),
 are still identical with and without SEFLG_SPEED and as smooth (64
 consecutive JDs at 200 epochs: rms 2.4e-4 -> 2.6e-4 mas on the perigee,
 2.1e-4 the apogee; worst 2.6e-3..3.2e-3 mas before and after). Lunar
-evaluations: 22 for the perigee (20 before), 16 for the apogee (15);
-instructions per `swe_calc()` +5.7% (perigee, 1.47e6 -> 1.55e6), +3.3%
-(apogee), +8% and +5% with SEFLG_SPEED. The positions move by up to 1.2"
+evaluations per iteration: 22 for the perigee (20 before), 16 for the
+apogee (15), besides entry 44's 4 for the light time; instructions per
+`swe_calc()` at instants 1.37 day apart +5.7% (perigee, 1.47e6 ->
+1.55e6), +3.4% (apogee, 1.26e6 -> 1.31e6), +8% and +5% with SEFLG_SPEED
+(entry 44 has the cost against upstream). The positions move by up to 1.2"
 (perigee) and 2.5 mas (apogee), the perigee's speed by up to 2e-4
 deg/day (the rate of what moved).
 
