@@ -1340,7 +1340,10 @@ check-woolard: woolard
 # Jan 1, the Sun, Moon, Mars, Polaris, sidereal Mars, the topocentric Moon
 # and Mars under SEFLG_SPEED3 against five-point differences on the
 # instant's side; SEFLG_JPLHOR's own steps at 1799 and 2202 Jan 1 in the
-# precession's and obliquity's rates themselves (UPSTREAM-BUGS 159).
+# precession's and obliquity's rates themselves (UPSTREAM-BUGS 159); a
+# short-term precession model's window edges, on de200 at J2000 - 2
+# centuries and in the rates themselves at -+ 2 and -+ 75 (UPSTREAM-BUGS
+# 160).
 check-framestep: framestep
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./framestep $(EPHE)
 

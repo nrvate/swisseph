@@ -1,6 +1,7 @@
 /* framestep.c -- G139: across the steps of the frame's models every speed of
  * date is the rate of its own side's model: SEMOD_JPLHORA_3's at 1962 Jan
- * 20, SEFLG_JPLHOR's at 1799 Jan 1 and 2202 Jan 1.
+ * 20, SEFLG_JPLHOR's at 1799 Jan 1 and 2202 Jan 1, and the edges of a
+ * short-term precession model's window.
  *
  * The defect (UPSTREAM-BUGS 153): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), the precession, the mean obliquity
@@ -29,14 +30,30 @@
  * models are differenced), the obliquity's from the day before, SPEED3's
  * within 1e-4 day.
  *
+ * The defect (UPSTREAM-BUGS 160): a short-term precession model chosen with
+ * swe_set_astro_models() holds within its window, IAU 1976 and 2000 within
+ * 2 centuries of J2000, IAU 2006 within 75 (the edge's instant inside), and
+ * the long-term model outside: with IAU 1976 and Vondrak ("0,9,1") the
+ * precession steps by 0.53" at J2000 - 2 centuries and 0.57" at + 2, the
+ * mean obliquity by 3.4 and 81.6 mas; with IAU 2006 at -+ 75 centuries the
+ * precession by 42" and 107", the obliquity by 68" and 53". The same rates
+ * reached across: the
+ * precession's within a day inside the window (Vondrak's own rate holds
+ * outside, unless the long-term model is another one differenced too),
+ * the obliquity's the day before the edge, SPEED3's within 1e-4 day.
+ *
  * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
  * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
- * difference after the step too), at 1799 Jan 1 the default models; the
- * Sun, the Moon, Mars, Polaris (swe_fixstar2()), sidereal Mars (Lahiri;
- * swe_calc() drops the Horizons flags for it, so it has no step), the
- * topocentric Moon at Zurich, and Mars under SEFLG_SPEED3; ecliptic and
- * equatorial, longitude and latitude speeds, at 105 instants across (step -
- * 2, step + 2]: every 1/16 day, and the step -+ 2^-k for k = 7..26. The
+ * difference after the step too), at 1799 Jan 1 the default models; and
+ * without the flag IAU 1976's window at J2000 - 2 centuries ("0,9,1",
+ * with the IERS 2010 sidereal time throughout, so that the long-term
+ * sidereal time's own reach across the edge stays out of the topocentric
+ * Moon); the Sun, the Moon, Mars, Polaris (swe_fixstar2()), sidereal Mars
+ * (Lahiri; swe_calc() drops the Horizons flags for it, so it has no step
+ * at 1962 and 1799), the topocentric Moon at Zurich, and Mars under
+ * SEFLG_SPEED3; ecliptic and equatorial, longitude and latitude speeds, at
+ * 105 instants across (step - 2, step + 2]: every 1/16 day, and the step
+ * -+ 2^-k for k = 7..26. The
  * reference is a five-point difference of the same call's positions over
  * 2^-6 day, centred where its points lie on the instant's side of the step,
  * else one-sided on that side (t, t -+ h, ..., t -+ 4h). The topocentric
@@ -45,7 +62,7 @@
  * the instants where that lies on their side (the one-sided ones carry the
  * diurnal parallax's curvature, 3e-6 at five points over 2^-8). Each
  * setting, body and frame is judged on the worst of its two speeds over
- * three spans, the day before the step, the day after it and the rest: 126
+ * three spans, the day before the step, the day after it and the rest: 168
  * checks, within 1e-8 deg/day, SEFLG_SPEED3 within 1e-5 (its own three
  * places over 1e-4 day are 1.3e-6 off everywhere).
  *
@@ -54,26 +71,40 @@
  * (swi_precess_speed() of a unit vector of date) and the mean obliquity's
  * (swi_obliquity_rate()), against five-point differences of swi_precess()
  * and swi_epsiln() over 2^-6 day on the instant's side, at the same 105
- * instants about 1799 Jan 1 and 2202 Jan 1, the worst over the three spans:
- * 12 checks within 1e-8 deg/day. It calls the fork's own functions and is
- * left out of the upstream build.
+ * instants about 1799 Jan 1 and 2202 Jan 1, the worst over the three spans;
+ * and without the flag at the short-term windows' edges, IAU 1976 ("0,9,1")
+ * at J2000 -+ 2 centuries, IAU 2000 ("0,9,6") at + 2, IAU 2006 ("0,9,8")
+ * at -+ 75, IAU 1976 within IAU 2006 long-term ("0,8,1", differenced on
+ * both sides) at - 2, and IAU 1976 at + 2 with SEFLG_JPLHOR_APPROX, whose
+ * mode 3 takes the chosen models after 1962: 54 checks within 1e-8
+ * deg/day. It calls the fork's own functions and is left out of the
+ * upstream build.
  *
- * Measured after the fix: (a) within 2.0e-9 (the Moon's one-sided
- * reference at 1799; Polaris's right ascension 1.45e-9 at 1962, the
- * topocentric Moon 9.6e-10, the others 7e-11), SPEED3 1.41e-6; (b) within
- * 3.7e-12. Before the fix of bug 153, 38 of the first 84 checks fail:
- * every body but sidereal Mars on the day before the step under both
- * settings and on the day after under the second, and SPEED3 on both days
- * under both, by 1.57e-5 to 1.09 deg/day. Before the fix of bug 159, 24 of
+ * Measured after the fix: (a) within 2.4e-9 (the Moon's one-sided
+ * reference at J2000 - 2 centuries, 2.0e-9 at 1799; Polaris's right
+ * ascension 1.45e-9 at 1962, the topocentric Moon 9.6e-10, the others
+ * 7e-11), SPEED3 1.41e-6; (b) within 8.5e-12. Before the fix of bug 153,
+ * 38 of the first 84 checks fail: every body but sidereal Mars on the day
+ * before the step under both settings and on the day after under the
+ * second, and SPEED3 on both days under both, by 1.57e-5 to 1.09 deg/day.
+ * Before the fix of bug 159, 24 of
  * the 42 at 1799 fail, every body but sidereal Mars on both days (the
  * Sun's latitude speed 5.0e-6 deg/day off, Polaris's right ascension
  * 5.6e-6, SPEED3 8.9e-3), and 6 of (b)'s 12: the precession's rate 2.8e-7
  * and 1.0e-6 on both days, the obliquity's 4.9e-6 and 5.5e-6 the day
- * before. The upstream build fails 120 of (a)'s 126: its nutation rate, a
- * backward difference, reaches across the 1962 step just after it (0.200
- * deg/day, Polaris's right ascension 2.14), and its own speeds are off
- * elsewhere by the defects earlier entries fixed (the topocentric Moon
- * 4e-3, sidereal Mars 5e-7); only SPEED3 away from the step passes. Run as
+ * before. Before the fix of bug 160, 22 of the 42 at J2000 - 2 centuries
+ * fail, every body on the day after (inside the window, the precession's,
+ * 6.5e-6 to 8.7e-5 deg/day) and in the ecliptic on the day before (the
+ * obliquity's, 6.5e-7 to 9.3e-7), SPEED3 0.80 to 0.83 on both, and 15 of
+ * (b)'s 42 at the windows: the precession's rate 2.6e-6 to 1.5e-2
+ * deg/day, the obliquity's 4.5e-7 to 1.9e-2. The upstream build fails 160
+ * of (a)'s 168: its nutation rate, a backward difference, reaches across
+ * the 1962 step just after it (0.200 deg/day, Polaris's right ascension
+ * 2.14), its ayanamsa rate, a backward difference too, across the window's
+ * edge (sidereal Mars 0.160), its SPEED3 2.48 there, and its own speeds
+ * are off elsewhere by the defects earlier entries fixed (the topocentric
+ * Moon 4e-3, sidereal Mars 5e-7); only SPEED3 away from the steps passes.
+ * Run as
  *   framestep EPHEDIR
  */
 #include <math.h>
@@ -85,18 +116,23 @@
 #include "swephlib.h"
 #endif
 
-#define FL (SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX)
-
 /* check (a)'s settings: the step, whether its own instant is the left
- * side's model (at or before it) or the right side's, the models */
+ * side's model (at or before it) or the right side's, the flags with
+ * SEFLG_JPLEPH, the models */
 static const struct {
   double ts;
   int left;
+  int32 fl;
   const char *mod;
 } SET[] = {
-  { 2437684.5, 1, "0,0,0,0,0,0,0,0" },	/* HORIZONS_TJD0_DPSI_DEPS_IAU1980 */
-  { 2437684.5, 1, "0,8,8,4,0,0,0,0" },
-  { 2378131.5, 1, "0,0,0,0,0,0,0,0" },	/* SEFLG_JPLHOR's 1799 Jan 1 */
+  /* HORIZONS_TJD0_DPSI_DEPS_IAU1980 */
+  { 2437684.5, 1, SEFLG_JPLHOR_APPROX, "0,0,0,0,0,0,0,0" },
+  { 2437684.5, 1, SEFLG_JPLHOR_APPROX, "0,8,8,4,0,0,0,0" },
+  /* SEFLG_JPLHOR's 1799 Jan 1 */
+  { 2378131.5, 1, SEFLG_JPLHOR_APPROX, "0,0,0,0,0,0,0,0" },
+  /* IAU 1976's short-term window, J2000 - 2 centuries; the sidereal
+   * time the IERS 2010 formula's throughout */
+  { 2378495.0, 0, 0, "0,9,1,0,0,0,0,3" },
 };
 #define NSET ((int) (sizeof SET / sizeof SET[0]))
 
@@ -105,12 +141,14 @@ static const char *BN[NB] = { "Sun", "Moon", "Mars", "Polaris", "sidereal Mars",
   "topocentric Moon", "Mars SPEED3" };
 static const char *RN[3] = { "day before", "day after", "outside" };
 
-/* the step in use */
+/* the step and flags in use */
 static double TS;
 static int LEFT;
+static int32 FL;
 
 /* the place at t, in degrees, and its speeds; the flags returned checked to
- * be the Horizons approximation's on de200 (but for sidereal Mars) */
+ * be de200's, with the Horizons approximation where asked (but for
+ * sidereal Mars) */
 static int place(swe_ctx *c, int b, double t, int32 xf, double *x)
 {
   char serr[256] = "", s[SE_MAX_STNAME * 2 + 1];
@@ -130,7 +168,7 @@ static int place(swe_ctx *c, int b, double t, int32 xf, double *x)
     break;
   }
   if (rf < 0 || !(rf & SEFLG_JPLEPH)
-      || (b != B_SIDMARS && !(rf & SEFLG_JPLHOR_APPROX))) {
+      || (b != B_SIDMARS && (rf & SEFLG_JPLHOR_APPROX) != (FL & SEFLG_JPLHOR_APPROX))) {
     printf("  ERROR %s at %.8f: flags 0x%x %s\n", BN[b], t, (unsigned) rf, serr);
     return -1;
   }
@@ -301,6 +339,7 @@ int main(int argc, char **argv)
     swe_ctx *c = swe_ctx_new();
     TS = SET[m].ts;
     LEFT = SET[m].left;
+    FL = SEFLG_JPLEPH | SET[m].fl;
     nq = instants(tq);
     strcpy(mod, SET[m].mod);
     swe_set_ephe_path_r(c, argv[1]);
@@ -342,31 +381,54 @@ int main(int argc, char **argv)
   }
 #ifndef SWE_UPSTREAM_COMPAT
   {
-    /* check (b): SEFLG_JPLHOR's own steps, both Owen's at their instant */
-    static const double tb[2] = { 2378131.5, 2525323.5 };
-    static const int lb[2] = { 1, 0 };
+    /* check (b): the rates themselves */
+    static const struct {
+      double ts;
+      int left;
+      int32 fl;
+      const char *mod;
+    } SB[] = {
+      /* SEFLG_JPLHOR's own steps, both Owen's at their instant */
+      { 2378131.5, 1, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0" },
+      { 2525323.5, 0, SEFLG_JPLHOR, "0,0,0,0,0,0,0,0" },
+      /* the short-term windows' edges, the window's at its instant: IAU
+       * 1976 and 2000 at J2000 -+ 2 centuries, IAU 2006 at -+ 75; with a
+       * long-term model differenced too (IAU 2006, "0,8,1"); and under
+       * SEMOD_JPLHORA_3 after 1962 */
+      { 2378495.0, 0, 0, "0,9,1,0,0,0,0,0" },
+      { 2524595.0, 1, 0, "0,9,1,0,0,0,0,0" },
+      { 2524595.0, 1, 0, "0,9,6,0,0,0,0,0" },
+      { -287830.0, 0, 0, "0,9,8,0,0,0,0,0" },
+      { 5190920.0, 1, 0, "0,9,8,0,0,0,0,0" },
+      { 2378495.0, 0, 0, "0,8,1,0,0,0,0,0" },
+      { 2524595.0, 1, SEFLG_JPLHOR_APPROX, "0,9,1,0,0,0,0,0" },
+    };
     static const char *gn[2] = { "precession", "obliquity" };
-    swe_ctx *c = swe_ctx_new();
     int g;
-    for (m = 0; m < 2; m++) {
-      TS = tb[m];
-      LEFT = lb[m];
-      printf("  (b) SEFLG_JPLHOR, step JD %.1f: worst |rate - reference|, deg/day, %s / %s / %s\n",
-             TS, RN[0], RN[1], RN[2]);
+    for (m = 0; m < (int) (sizeof SB / sizeof SB[0]); m++) {
+      char mod[40];
+      swe_ctx *c = swe_ctx_new();
+      strcpy(mod, SB[m].mod);
+      swe_set_astro_models_r(c, mod, 0);
+      TS = SB[m].ts;
+      LEFT = SB[m].left;
+      printf("  (b) flags 0x%x, models %s, step JD %.1f: worst |rate - reference|, deg/day,"
+             " %s / %s / %s\n", (unsigned) SB[m].fl, SB[m].mod, TS, RN[0], RN[1], RN[2]);
       for (g = 0; g < 2; g++) {
         double w[3];
-        check_b(c, g, SEFLG_JPLHOR, w);
+        check_b(c, g, SB[m].fl, w);
         printf("    %-16s      %.2e  %.2e  %.2e\n", gn[g], w[0], w[1], w[2]);
         for (k = 0; k < 3; k++) {
           n++;
           if (!(w[k] <= 1e-8)) {
             bad++;
-            printf("    FAIL SEFLG_JPLHOR %s, %s: %.2e > 1e-8\n", gn[g], RN[k], w[k]);
+            printf("    FAIL flags 0x%x, models %s, %s, %s: %.2e > 1e-8\n",
+                   (unsigned) SB[m].fl, SB[m].mod, gn[g], RN[k], w[k]);
           }
         }
       }
+      swe_ctx_free(c);
     }
-    swe_ctx_free(c);
   }
 #endif
   if (bad) {

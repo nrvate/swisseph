@@ -203,6 +203,7 @@ worst were in code that had never executed even once.
 | 168 | `swe_nod_aps()` takes its frame and site from the caller's ephemeris bits, not from the ephemeris that answered or as `swe_calc()` resolves them: warm, a request fallen to Moshier adds an earlier call's Swiss Sun (Mars's node at 1500 0.13 deg off Moshier's, the Moon's heliocentric 0.40 deg), the site takes the files' delta t (2.9e-4 deg on the Moon's topocentric perigee); SEFLG_SWIEPH with SEFLG_MOSEPH, answered from the files, takes Moshier's frame (0.108 deg), SEFLG_JPLEPH with SEFLG_MOSEPH Moshier's frame bias (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
 | 169 | `swe_nod_aps()` reads the centre bits otherwise than `swe_calc()`: SEFLG_HELCTR with SEFLG_BARYCTR answers heliocentric (Mars's node 49.5625 deg for `swe_calc()`'s barycentric 49.6398), SEFLG_TOPOCTR with SEFLG_HELCTR heliocentric, SEFLG_TOPOCTR with SEFLG_BARYCTR the barycentric points less the site's offset (1.2e-3 deg off the barycentric node), where `swe_calc()` answers topocentric | Correctness (behaviour) | `swecl.c` |
 | 159 | SEFLG_JPLHOR's precession and obliquity step at 1799 Jan 1 and 2202 Jan 1 (IAU 1976 within, Owen 1990 outside; 17.6 and 19.8 mas in the mean obliquity), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across, under SEFLG_JPLHOR and (at 1799) SEFLG_JPLHOR_APPROX: every speed of date 2.8e-7 to 1.0e-6 deg/day off for a day either side, the Sun's latitude 5.0e-6 the day before, Polaris's right ascension 5.6e-6, SEFLG_SPEED3 8.9e-3 | Correctness | `swephlib.c`, `sweph.c` |
+| 160 | A short-term precession model the caller chooses (IAU 1976 or 2000 within 2 centuries of J2000, IAU 2006 within 75) steps to the long-term one at its window's edges (0.53" with IAU 1976 under Vondrak, 107" with IAU 2006 at 75 centuries), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across: every speed of date 8.0e-5 deg/day off within a day inside the window, latitudes 9.3e-7 the day before, SEFLG_SPEED3 0.80; with IAU 2006 1.5e-2 | Correctness | `swephlib.c` |
 
 ---
 
@@ -11643,6 +11644,139 @@ Noticed, not fixed:
   1799-2202) and with Owen 1990 chosen: the obliquity's 2.6e-8 deg/day the
   day before -10000, the precession's 9.8e-9 and 1.1e-8 either side of
   +6000 and +14000; SEFLG_SPEED3 some 1.2e-4 within 1e-4 day.
+
+## 160. A short-term precession model the caller chooses steps to the long-term one at its window's edges, and the frame's rates difference the two across: with IAU 1976 at J2000 -+ 2 centuries every speed of date 8.0e-5 deg/day off within a day inside the window, SEFLG_SPEED3 0.80; with IAU 2006 at -+ 75 centuries 1.5e-2
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()` and a different long-term model: every speed of date off within a day of the window's edges, by the precession's difference inside the window, 6.1e-5 deg/day in its own rate with IAU 1976 and Vondrak, 1.5e-2 with IAU 2006 at 75 centuries; latitudes by the obliquity's the day before each edge, 9.3e-7 to 1.9e-2; SEFLG_SPEED3 0.80 to 0.86 within 1e-4 day)**
+**Where:** `swephlib.c`: `swi_frame_step_side()`'s models (`frame_chosen_model()`), which `sweph.c`'s `swi_precess_speed()`, `swi_obliquity_rate()`, `swi_get_observer()` and `swe_calc()`'s SEFLG_SPEED3 consult
+
+Entry 153's noticed item. `swi_precess()` and `swi_epsiln()` take a
+short-term model within its window -- IAU 1976 and IAU 2000 for |T| <=
+`PREC_IAU_1976_CTIES`, `PREC_IAU_2000_CTIES` = 2 centuries of J2000, IAU
+2006 within `PREC_IAU_2006_CTIES` = 75, the edge's own instant inside --
+and the long-term model outside (a long-term IAU 1976 or IAU 2000 wins
+over a later short-term model, which then never holds). Measured between
+the instant and 2^-20 day either side, less the motion: with IAU 1976
+short and the default Vondrak long ("0,9,1") the precession matrix steps
+by 529 mas at J2000 - 2 centuries (JD 2378495) and 572 mas at + 2
+(2524595), the mean obliquity by 3.36 and 81.57 mas; with IAU 2006 short
+("0,9,8") at -+ 75 centuries (JD -287830, 5190920) the precession by
+42.3" and 107.4", the obliquity by 68.5" and 53.4". The rates entry 153
+made keep to one side were told of no such step:
+- the precession's, entry 49's (P(t + 1) - P(t - 1)) / 2, taken where
+  the model is not Vondrak's: inside the window, and outside too when the
+  long-term model is another (IAU 2006 long, IAU 1976 short, "0,8,1",
+  both sides); within a day of the edge its rate (`swi_precess_speed()`
+  of a unit vector of date against five-point differences of
+  `swi_precess()` on the instant's side) 6.1e-5 deg/day off at - 2 and
+  6.9e-5 at + 2 with "0,9,1", 2.6e-6 with IAU 2000 ("0,9,6"), 3.9e-3 and
+  1.5e-2 at -+ 75 with "0,9,8"; the site's precession in right ascension
+  the same;
+- the obliquity's, eps(t + 1) - eps(t), the day before each edge: 9.3e-7
+  and 2.3e-5 deg/day with "0,9,1", 1.4e-6 and 3.0e-6 with "0,9,6", 1.9e-2
+  and 1.5e-2 with "0,9,8";
+- SEFLG_SPEED3's three places within 1e-4 day either side.
+The nutation does not step there. With SEFLG_JPLHOR_APPROX under
+`SEMOD_JPLHORA_3` the window holds after 1962 (+ 2 centuries) and the
+same rates reached across it; before 1962 SEFLG_JPLHOR's models hold
+(entry 159), so - 2 centuries is not a step there. On de200 with "0,9,1"
+at J2000 - 2 centuries (sidereal time the IERS 2010 formula's, see
+below), against five-point differences of the positions over 2^-6 day on
+the instant's side: within the day after the edge (inside) the Sun's
+speeds 8.73e-5 deg/day off, the Moon's 8.04e-5, Mars's 8.27e-5,
+Polaris's 7.80e-5 in the ecliptic and 7.11e-5 in right ascension, the
+topocentric Moon's 8.04e-5, sidereal Mars's 8.27e-5 (its ayanamsa's rate,
+which precesses with no flags, too); within the day before, the ecliptic
+latitudes 6.5e-7 to 9.3e-7; SEFLG_SPEED3 0.799 and 0.826 either side. On
+the Swiss files at + 2 centuries the same, the planets' and the Moon's
+8.4e-5 to 9.4e-5 within the day before (inside), Polaris's right
+ascension 2.24e-3, SEFLG_SPEED3 0.864.
+
+**Fix, as done here:** `swi_frame_step_side()` (entry 159) takes the
+chosen precession and obliquity as `swi_precess()` and `swi_epsiln()`
+choose them (`frame_chosen_model()`, in their order of tests: the short-
+term model within its window, a long-term IAU 1976 or 2000 first,
+SEMOD_JPLHORA_2's obliquity IAU 1976 throughout), so each window's edges
+are steps with the window's inclusive side, and nothing where the two
+models are one (IAU 1976 within IAU 1976, or IAU 2000 short under IAU
+1976 long). The test reaches the models only when the short-term model is
+IAU 1976, 2000 or 2006 (or the flags take SEFLG_JPLHOR's models); the
+default models and flags return 0 after reading two model numbers and two
+flag bits. Behind `#ifndef SWE_UPSTREAM_COMPAT`, as entry 153's.
+- After, on de200 at J2000 - 2 centuries: the Sun within 1.8e-11 deg/day,
+  Mars 1.6e-11, Polaris 6.9e-11 in right ascension, the Moon 2.4e-9 (the
+  one-sided reference's truncation; 3.7e-10 away from the edge), the
+  topocentric Moon 6.1e-10, sidereal Mars 2.6e-11; SEFLG_SPEED3 1.24e-6,
+  its own; on the Swiss files at + 2 centuries likewise (the Moon 9.0e-9,
+  the one-sided reference on the files' Moon, 1.7e-9 centred). The rates
+  themselves within 8.5e-12 deg/day of the five-point differences at
+  every edge and setting above.
+
+G139 `tests/framestep.c`, extended: check (a) takes de200 with "0,9,1" at
+J2000 - 2 centuries, no Horizons flag and the IERS 2010 sidereal time
+(the long-term sidereal time reaches across the edge on its own, below),
+the same seven bodies and two frames over the three spans, 42 checks;
+check (b) the precession's and obliquity's rates at "0,9,1" -+ 2
+centuries, "0,9,6" + 2, "0,9,8" -+ 75, "0,8,1" - 2 and "0,9,1" + 2 with
+SEFLG_JPLHOR_APPROX, 42 checks. 222 checks; before the fix 37 fail: at
+J2000 - 2 centuries 22 of 42 (every body the day after, the ecliptic
+the day before, SPEED3 both), in (b) 15 of 42 (the precession's 2.6e-6
+to 1.5e-2 deg/day, the obliquity's 4.5e-7 to 1.9e-2). The upstream build
+fails 160 of (a)'s 168, at the window by its own speed defects and its
+backward ayanamsa rate across the edge (sidereal Mars 0.160 deg/day the
+day after), its SPEED3 2.48. G24 `prec_window_speed_off`: Mars's
+ecliptic speeds on de200 with "0,9,1" at J2000 - 2 centuries -+ 0.5 day
+and -+ 2^-14 day against the five-point difference on its side, the
+largest: 1.16e-11 deg/day shipped (7.99e-5 before the fix), 1.57e-5
+compat.
+
+Noticed, not fixed (each found checking which rates see these steps; the
+first five reach across the windows' edges by differences that do not
+consult `swi_frame_step_side()`):
+- The Moshier Moon's frame turning (entry 95's R(t -+ 1) x, of the
+  ecliptic of date to the J2000 equator): with "0,9,1" at J2000 + 2
+  centuries on Moshier the Moon's speed 8.7e-5 deg/day off within a day
+  either side, the topocentric Moon's 8.8e-5.
+- The JDATE fictitious bodies' frame turning (entry 48, `swi_osc_el_plan()`)
+  and `swe_calc_orbel()`'s of SE_ORBEL_EQ_DATE (entry 136), the same
+  difference over -+ 1 day: with "0,9,1" at J2000 - 2 centuries Selena's
+  speed 8.0e-5 deg/day off the day before (inside, the light time moves the
+  step by 3e-4 day), Vulcan's 1.3e-5; `swe_calc_orbel()` of an Earth orbit
+  0.053 AU, its speed 8.0e-5 deg/day off the default models' within a day
+  either side, 1.7e-14 beyond.
+- The true node's and osculating apogee's speeds, five places of date over
+  the Moon's epochs (entry 75): on de200 with "0,9,1" within 2^-7 day of
+  J2000 - 2 centuries 2.9e-3 and 6.0e-3 deg/day off.
+- The houses' speeds, from the ARMC and true obliquity HOUSE_SPEED_DT =
+  1/64 day of UT either side (entry 42; the sidereal houses' frames and
+  ayanamsa the same, entry 43): on de200 with "0,9,1" within 1/64 day of J2000
+  - 2 centuries (in UT), against five-point differences of the cusps over
+  2^-12 day, the MC's ecliptic speed 9.1e-4 deg/day off, the second cusp's
+  8.8e-3, the Ascendant's 1.1e-2.
+- BEHAVIOUR. The long-term sidereal time (entry 29, outside 1850-2050)
+  integrates the precession in right ascension from the matrices' rate,
+  a central difference over -+ 50 days (`sidt_pra_rate()`), at nodes 1
+  century apart: the window's edges fall on nodes (-+ 2, -+ 75
+  centuries), whose rate takes the step over 100 days, some 176"/cy, and
+  the cubic Hermite carries it a century either side, and through the
+  1850 splice's offset (`sidt_lterm_offset()`, at - 1.5 centuries) to
+  every date before. With "0,9,1" the sidereal time against "0,9,9" is
+  +24.0" before 1700, +50.5" at 1776, +16.7" at 1804 and -4.5" at 1831,
+  -22.0" at 2215 (IAU 2000, "0,9,6": -1.9" at 1776), where the two
+  models' rates in right ascension, some 0.3"/cy apart, account for under
+  1" over the window. The topocentric Moon's speed takes it, 1.7e-8
+  deg/day off a day or two from the edge (6e-10 with the IERS 2010
+  sidereal time). G139's window takes the IERS 2010 sidereal time.
+- BEHAVIOUR. SEFLG_JPLHOR_APPROX's offsets in the mean obliquity
+  (`swi_epsiln()`, `dcor_eps_jpl[]`) and in right ascension
+  (`swi_approx_jplhor()`, `dcor_ra_jpl[]`) interpolate their yearly table
+  with the sign reversed, (t - t0) (d[t0] - d[t1]) + d[t0]: each year
+  starts at d[t0] and ends at 2 d[t0] - d[t1], so they step by 2 (d[t1] -
+  d[t0]) at every node, the obliquity by up to 0.44 mas (1972, JD
+  2441499.0), and the obliquity's rate takes the step within a day before
+  each (1.2e-7 deg/day). The obliquity's under the Vondrak model with
+  SEMOD_JPLHORA_1, and with SEMOD_JPLHORA_3 after 1962; the right
+  ascension's wherever `swi_approx_jplhor()` applies. Upstream's.
 
 ## How these were found
 

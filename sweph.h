@@ -1311,6 +1311,12 @@ struct epsilon {
  *     the precession's 2.8e-7 and 1.0e-6 deg/day either side, the
  *     obliquity's 4.9e-6 and 5.5e-6 the day before, SEFLG_SPEED3 8.9e-3
  *     (UPSTREAM-BUGS 159, G139)
+ *   - the speeds of date across a short-term precession model's window
+ *     edges (IAU 1976 or 2000 at J2000 -+ 2 centuries, IAU 2006 at -+ 75),
+ *     taking this fork's rates that difference the short- and long-term
+ *     models across them: 8.0e-5 deg/day within a day inside the window
+ *     with IAU 1976 and Vondrak, the obliquity's 2.3e-5 the day before,
+ *     SEFLG_SPEED3 0.80 (UPSTREAM-BUGS 160, G139)
  *   - swe_nod_aps() with barycentric output on Moshier, asked for or fallen
  *     to, answering Moshier's heliocentric points, returned OK: Mars's
  *     osculating node 0.077 deg off the files' barycentric one, the Moon's

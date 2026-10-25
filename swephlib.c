@@ -2835,17 +2835,49 @@ static AS_BOOL frame_is_jplhor(swe_ctx *ctx, double J, int32 iflag)
  * the nutation's (calc_nutation(), whose flags go through
  * swi_jplhor_plaus() first). Under SEFLG_JPLHOR's models the precession
  * and obliquity are IAU 1976's within 1799-2202 and Owen's outside, the
- * nutation IAU 1980's with the IERS corrections or a fixed offset. */
+ * nutation IAU 1980's with the IERS corrections or a fixed offset. The
+ * chosen precession and obliquity are the short-term model's within its
+ * window (IAU 1976 and 2000 within 2 centuries of J2000, IAU 2006 within
+ * 75) and the long-term one's outside, in the order the two functions
+ * test them, so that a long-term IAU 1976 or 2000 wins over a later
+ * short-term model and no step is seen where the model is the same. */
+static int frame_chosen_model(swe_ctx *ctx, double J)
+{
+  double T = (J - J2000) / 36525.0;
+  int prec_model = ctx->astro_models[SE_MODEL_PREC_LONGTERM];
+  int prec_model_short = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
+  if (prec_model == 0) prec_model = SEMOD_PREC_DEFAULT;
+  if (prec_model_short == 0) prec_model_short = SEMOD_PREC_DEFAULT_SHORT;
+  if (prec_model_short == SEMOD_PREC_IAU_1976 && fabs(T) <= PREC_IAU_1976_CTIES)
+    return SEMOD_PREC_IAU_1976;
+  if (prec_model == SEMOD_PREC_IAU_1976)
+    return SEMOD_PREC_IAU_1976;
+  if (prec_model_short == SEMOD_PREC_IAU_2000 && fabs(T) <= PREC_IAU_2000_CTIES)
+    return SEMOD_PREC_IAU_2000;
+  if (prec_model == SEMOD_PREC_IAU_2000)
+    return SEMOD_PREC_IAU_2000;
+  if (prec_model_short == SEMOD_PREC_IAU_2006 && fabs(T) <= PREC_IAU_2006_CTIES)
+    return SEMOD_PREC_IAU_2006;
+  return prec_model;
+}
 static int frame_prec_model(swe_ctx *ctx, double J, int32 iflag)
 {
   if (frame_is_jplhor(ctx, J, iflag))
     return (J > SWI_JPLHOR_IAU1976_T0 && J < SWI_JPLHOR_IAU1976_T1)
            ? SEMOD_PREC_IAU_1976 : SEMOD_PREC_OWEN_1990;
-  return 0;	/* the chosen models */
+  return frame_chosen_model(ctx, J);
 }
 static int frame_eps_model(swe_ctx *ctx, double J, int32 iflag)
 {
-  return frame_prec_model(ctx, J, iflag);
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+  if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
+  if (frame_is_jplhor(ctx, J, iflag))
+    return (J > SWI_JPLHOR_IAU1976_T0 && J < SWI_JPLHOR_IAU1976_T1)
+           ? SEMOD_PREC_IAU_1976 : SEMOD_PREC_OWEN_1990;
+  /* SEMOD_JPLHORA_2: IAU 1976's obliquity throughout */
+  if ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_2)
+    return SEMOD_PREC_IAU_1976;
+  return frame_chosen_model(ctx, J);
 }
 static int frame_nut_model(swe_ctx *ctx, double J, int32 iflag)
 {
@@ -2878,14 +2910,28 @@ static int frame_models(swe_ctx *ctx, double J, int32 iflag, int which)
  * and at 1799 with SEFLG_JPLHOR_APPROX under SEMOD_JPLHORA_3). Each model
  * of `which` (SWI_FRAME_PREC, _EPS, _NUT) is compared at t and t -+ h as
  * the model chooses it, so each step has its own inclusive side.
+ * Upstream bug 160: and a short-term precession model the caller chooses
+ * (swe_set_astro_models()) holds within its window, IAU 1976 and 2000
+ * within 2 centuries of J2000, IAU 2006 within 75, the long-term model
+ * outside: with IAU 1976 short and the default Vondrak long ("0,9,1"), at
+ * J2000 -+ 2 centuries the precession steps by 0.53" and 0.57", the mean
+ * obliquity by 3.4 and 81.6 mas, and the rates reached across: every speed
+ * of date 8.0e-5 deg/day off within a day inside the window, SEFLG_SPEED3
+ * 0.80 within 1e-4 day; IAU 2006 at 75 centuries, 42" and 1.07e2", 1.5e-2
+ * deg/day. Those steps are the precession's and the obliquity's too.
  * Returns -1 when t + h takes another model than t (difference backward),
  * +1 when t - h does (forward), 0 when neither does. */
 int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which)
 {
   int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE], k;
+  int prec_model_short = ctx->astro_models[SE_MODEL_PREC_SHORTTERM];
   if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
   if (!(iflag & SEFLG_JPLHOR)
-      && !((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3))
+      && !((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3)
+      && !((which & (SWI_FRAME_PREC | SWI_FRAME_EPS))
+           && (prec_model_short == SEMOD_PREC_IAU_1976
+               || prec_model_short == SEMOD_PREC_IAU_2000
+               || prec_model_short == SEMOD_PREC_IAU_2006)))
     return 0;
   k = frame_models(ctx, t, iflag, which);
   if (frame_models(ctx, t + h, iflag, which) != k)
