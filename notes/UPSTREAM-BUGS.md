@@ -91,6 +91,7 @@ worst were in code that had never executed even once.
 | 54 | `SEFLG_SPEED3` takes the true node's and osculating apogee's speeds over 0.1 day | Correctness | `sweph.c` |
 | 55 | The mean nodes' and apsides' speeds are one-day differences | Correctness | `swecl.c`, `swemmoon.c` |
 | 58 | The nutation's rate in every speed of date is a backward difference | Correctness | `sweph.c`, `swephlib.c` |
+| 62 | The aberration rate's Earth leaves out the Moon's pull | Correctness | `sweph.c` |
 
 ---
 
@@ -2794,6 +2795,50 @@ ascension at J2000, 1.0e-9 deg/day shipped, 1.04e-8 compat. G32 (default
 against 2000B: daily 1.95, scattered 3.20, limits 5 and 8), G49, G41, G29
 unchanged. bench calc-swieph/calc-moseph no slower (min of 7: 1.23/1.06 s
 against 1.40/1.22 s for the commit before).
+
+## 62. The aberration rate's Earth leaves out the Moon's pull
+
+**Severity: Correctness (2.3e-7 deg/day on Nibiru's longitude speed, 6e-7 on VEA's, 3e-7 on Planet 9's and the Christ Comet's; 1e-7 to 3e-8 on the farther planets' latitude speeds)**
+**Where:** `sweph.c`: `earth_at_lt_sun()`
+
+Entry 34's aberration-rate term needs tau a(teval), the light time times
+the observer's acceleration. Its Earth was V(teval) - V(t) from two
+ephemeris reads plus tau^2 a'/2 with a' the rate of the Sun's pull alone
+(light time under 10 days), and, past 10 days, tau a(teval) whole from
+the Sun's pull, -GM r / r^3. Both left out the Moon's pull on the Earth,
+GM_m d / |d|^3: 0.6% of a, and 7.5% of a' (the reads carry it below 10
+days, but only as a midpoint value; the series for its 27-day period fails
+by tau omega / 3 = 8% per day of light time). Measured on ts20 against
+five-point differences of the same call's positions over 2^-7 day, seven
+dates -300..+300 years, Swiss files: Nibiru 2.0e-7 deg/day geocentric
+(1.9e-7 topocentric), the Christ Comet 3.8e-7, Planet 9 3.2e-7, VEA 5.1e-7,
+Harrington 6.8e-8; Pluto 2.1e-8, Neptune 1.5e-8, Saturn through Pluto's
+latitude speeds 4e-10 to 5e-9 and the Witte planets 2e-8.
+
+**Fix, as done here:** the geocentric Moon at teval is in the save area
+(`sweplan()` left it there with its velocity for the Earth), so the Moon's
+pull a_m = GM_m d / |d|^3 (GM_m = GEOGCONST / EARTH_MOON_MRAT) and its rate
+come with no further ephemeris read. The rate joins a' below the switch;
+past it tau (a_Sun + a_m)(teval) is taken whole. The switch is a light time
+of 0.3 day when the Moon is in hand (scanned 0.05, 0.3, 0.8, 1.5 days: 0.3
+and 0.8 leave every body within 1e-8 deg/day, 0.05 is no better than 0.3 on
+planets and 0.3 is a little better than 0.8 on Apollon's latitude), and
+stays at 10 days without it. JPL and Moshier have no Moon in the save area
+and are unchanged (the JPL Earth is the real one, the difference of its
+reads carries the Moon; its a' still lacks 7.5%, as before). Measured after: Nibiru 7.5e-9
+geocentric, 1.1e-8 topocentric; Christ Comet 8.4e-9 and 2.1e-8; Planet 9
+8.6e-9 and 2.2e-8; VEA 8.7e-9 and 1.8e-8; Harrington 8e-9; Pluto 5.4e-9 and
+1.5e-8; no body of the 36 scanned (planets, Chiron, Pholus, Ceres, fictitious
+bodies in seorbel.txt) is worse by more than the reference's noise. No extra read: bench
+calc-swieph 0.703-0.721 s after (three runs, machine loaded), 0.746 before
+(one run); calc-moseph does not take the new branch.
+
+G61 `tests/lunarpull.c`: Nibiru, the Christ Comet, Planet 9, VEA, Saturn and
+Pluto, geocentric and topocentric (Zurich), seven dates, longitude and
+latitude speeds within 5e-8 deg/day (measured <= 2.3e-8; the build before
+this fix fails the eight far-body rows at 1.9e-7 to 5.1e-7; the upstream
+build fails all twelve). G24: `far_body_moon_pull_off`, VEA's longitude
+speed, 2.7e-9 shipped, 3.4e-5 compat.
 
 ## How these were found
 

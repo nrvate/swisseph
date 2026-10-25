@@ -552,6 +552,26 @@ static double nut_rate_off(void)
   return fabs(xa[3] - xb[3] - (8 * (q[3] - q[1]) - (q[4] - q[0])) / (12 * h));
 }
 
+/* UPSTREAM-BUGS 62: VEA (seorbel.txt's set 26, 80,000 AU, 462 days of light
+ * time): its geocentric longitude speed against a five-point difference of
+ * its longitude, deg/day. The aberration rate there is tau times the
+ * Earth's acceleration, from the Sun's pull alone, and upstream has none at
+ * all (bug 34); the Moon's 0.6% of it is 6e-7 deg/day on its own. */
+static double far_body_moon_pull_off(void)
+{
+  double t = floor(2456000.7 * 256) / 256, h = 1.0 / 128, x[6], f[5][6], r;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_FICT_OFFSET + 25, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_calc(t + (k - 2) * h, SE_FICT_OFFSET + 25, SEFLG_SWIEPH, f[k], serr);
+  r = (swe_difdeg2n(f[0][0], f[2][0]) - 8 * swe_difdeg2n(f[1][0], f[2][0]) +
+       8 * swe_difdeg2n(f[3][0], f[2][0]) - swe_difdeg2n(f[4][0], f[2][0])) / (12 * h);
+  return fabs(x[3] - r);
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -810,7 +830,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, hspd, hsid, moshr, moshs, n3spd, moonpspd;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -851,6 +871,7 @@ int main(int argc, char **argv)
   hsid = house_speed_off(1);
   moshr = mosh_rough();
   moshs = mosh_speed_off();
+  moonpull = far_body_moon_pull_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1140,6 +1161,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier speed          %.2e deg/day FAIL: expected %s\n",
            moshs, WANT_DEFECT ? "> 1e-6" : "< 1e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moonpull > 1e-5) : (moonpull < 2e-8))
+    printf("  far body, Moon's pull  %.2e deg/day OK\n", moonpull);
+  else {
+    printf("  far body, Moon's pull  %.2e deg/day FAIL: expected %s\n",
+           moonpull, WANT_DEFECT ? "> 1e-5" : "< 2e-8");
     bad++;
   }
 

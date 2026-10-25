@@ -784,6 +784,9 @@ struct epsilon {
  *     over 1e-4 day, the rate at t - h/2: 6.5e-10 deg/day in every
  *     longitude speed of date, 2.7e-8 in a polar star's right ascension
  *     (UPSTREAM-BUGS 58, G57)
+ *   - the aberration rate's Earth, for a far body, left out the Moon's pull
+ *     on the Earth: 0.6% of the acceleration, 7.5% of its rate (2.3e-7
+ *     deg/day on Nibiru's speed, 6e-7 on VEA's; UPSTREAM-BUGS 62, G61)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

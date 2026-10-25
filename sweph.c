@@ -4946,13 +4946,24 @@ static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, const double *u
  * Earth at teval, -GM (v/r^3 - 3 r (r.v)/r^5), from the heliocentric state
  * alone: not from the two reads' positions, which can disagree with their
  * velocities by 1e-9 AU across a segment of the Swiss files (at -3001 and
- * 3000), 3e-6 deg/day once divided by tau. The Moon's part of a', 7.5%,
- * is left out. Below 1e-3 day (the Moon) the term is under 1e-5 of the
- * rate and is skipped. Past 10 days the series itself fails (3.7e-4
+ * 3000), 3e-6 deg/day once divided by tau.
+ * Upstream bug 62: both leave out the Moon's pull on the Earth, 0.6% of a
+ * and 7.5% of a' (the difference of the reads carries it below 10 days,
+ * but not at tau a(teval)): 2.3e-7 deg/day on Nibiru's speed, 6e-7 on VEA's.
+ * The Moon's pull, GM_m d/|d|^3 with d the geocentric Moon, comes from the
+ * save area (the Moon sweplan() left there at teval, with its velocity; no
+ * extra read; Swiss files only, JPL and Moshier have no Moon there and keep
+ * the Sun's pull alone). It joins a' (the Moon's rate, 7.5%) and, with it,
+ * tau a(teval) is taken whole from the Sun's and Moon's pulls past a light
+ * time of 0.3 day rather than 10: the Moon's period is 27 days, and the
+ * series tau^2 a'/2 for its part fails by tau omega / 3 = 8% per day of
+ * light time (Nibiru, 3.5 days: 7.7e-8 deg/day left with the series to 10
+ * days, 7.5e-9 with the whole form past 0.3). Below
+ * 1e-3 day (the Moon) the term is under 1e-5 of the rate and is skipped.
+ * Without the Moon in hand, past 10 days the series itself fails (3.7e-4
  * deg/day at the 462 days of a body 80,000 AU out), and tau a(teval) is
  * taken whole from the Sun's pull, -GM r/r^3: that leaves out the Moon's
- * 0.6% of a, which the difference of the reads carries below 10 days,
- * where it matters more than the series' (tau omega)^2 / 6.
+ * 0.6% of a, which the difference of the reads carries below 10 days.
  * xsun is the barycentric Sun at teval (unused on Moshier, whose Earth is
  * heliocentric); NULL leaves the plain difference. Sets xout to xe with
  * the velocity the term should read. */
@@ -4960,12 +4971,28 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
                             const double *xsun, const double *xe, double *xout)
 {
   const double gm = HELGRAVCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT);
+  const struct plan_data *pmdp = &ctx->pldat[SEI_MOON];
   double tau = teval - t, r[6], rr, rv = 0, jerk;
-  int i;
+  double am[3] = {0, 0, 0}, jm[3] = {0, 0, 0};
+  int i, have_moon = FALSE;
   for (i = 0; i <= 5; i++)
     xout[i] = xe[i];
   if (tau < 1e-3)
     return;
+  /* the Moon's pull on the Earth, a_m = GM_m d/|d|^3, and its rate */
+  if (pmdp->teval == teval && pmdp->iephe == SEFLG_SWIEPH
+      && ctx->pldat[SEI_EARTH].iephe == SEFLG_SWIEPH) {
+    const double gmm = GEOGCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT) / EARTH_MOON_MRAT;
+    const double *d = pmdp->x;
+    double dd = sqrt(square_sum(d)), dv = 0;
+    for (i = 0; i <= 2; i++)
+      dv += d[i] * d[i+3];
+    for (i = 0; i <= 2; i++) {
+      am[i] = gmm * d[i] / (dd * dd * dd);
+      jm[i] = gmm * (d[i+3] - 3 * d[i] * dv / (dd * dd)) / (dd * dd * dd);
+    }
+    have_moon = TRUE;
+  }
   /* Moshier: the Earth is heliocentric already */
   for (i = 0; i <= 5; i++)
     r[i] = xeteval[i];
@@ -4976,15 +5003,15 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
       r[i] -= xsun[i];
   }
   rr = sqrt(square_sum(r));
-  if (tau > 10) {
+  if (tau > (have_moon ? 0.3 : 10)) {
     for (i = 0; i <= 2; i++)
-      xout[i+3] = xeteval[i+3] + tau * gm * r[i] / (rr * rr * rr);
+      xout[i+3] = xeteval[i+3] + tau * (gm * r[i] / (rr * rr * rr) - am[i]);
     return;
   }
   for (i = 0; i <= 2; i++)
     rv += r[i] * r[i+3];
   for (i = 0; i <= 2; i++) {
-    jerk = -gm * (r[i+3] - 3 * r[i] * rv / (rr * rr)) / (rr * rr * rr);
+    jerk = -gm * (r[i+3] - 3 * r[i] * rv / (rr * rr)) / (rr * rr * rr) + jm[i];
     xout[i+3] -= tau * tau / 2 * jerk;
   }
 }
