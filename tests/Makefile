@@ -33,8 +33,10 @@ ifeq ($(LTO),1)
   endif
 endif
 LIBS     = -lm -ldl -lpthread
-# Cores available for the sub-makes and loops that build several times over.
-NPROC   := $(shell nproc 2>/dev/null || echo 4)
+# Cores available for the sub-makes and loops that build several times over;
+# `NPROC=4 make ...` (or in the environment) caps it -- a command-line -jN
+# does not, as the MAKEFLAGS line below would override it.
+NPROC   ?= $(shell nproc 2>/dev/null || echo 4)
 # Parallel by default. The gates are independent targets and the object sets
 # below are per-flavour, so there is nothing to serialise; the two temp files
 # that used to be shared -- check-golden's and check-jplcalc's output -- are
