@@ -854,11 +854,54 @@ static double house_speed_off(int sidereal)
   return worst;
 }
 
+/* UPSTREAM-BUGS 59, the four small house defects, as the number present
+ * (0..4): the Placidus cusp speed at 60N against a five-point difference
+ * (> 1e-6 deg/day), the SEFLG_RADIANS cusp speed left in degrees, sidereal
+ * Makransky ('i') equal to Treindl's ('I') and Sunshine houses failing
+ * without the Swiss files. *placid gets the Placidus error, deg/day. */
+static int house_fix_off(double *placid)
+{
+  const double jd = 2461223.5 + 0.3125, h = 1.0 / 4096;
+  double cusp[13], ascmc[10], cs[13], as[10], csr[13], f[4], c2[13], c3[13];
+  char serr[256];
+  int k, n = 0;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 4; k++) {
+    static const int off[4] = {-2, -1, 1, 2};
+    swe_houses_ex(jd + off[k] * h, 0, 60, 8.55, 'P', cusp, ascmc);
+    f[k] = cusp[11];
+  }
+  swe_houses_ex2(jd, 0, 60, 8.55, 'P', cusp, ascmc, cs, as, NULL);
+  *placid = fabs(cs[11] - (8 * (swe_difdeg2n(f[2], f[1])) - swe_difdeg2n(f[3], f[0])) / (12 * h));
+  if (*placid > 1e-6)
+    n++;
+  swe_houses_ex2(jd, SEFLG_RADIANS, 60, 8.55, 'P', cusp, ascmc, csr, as, NULL);
+  if (fabs(csr[11] - cs[11]) < 1e-9 * fabs(cs[11]))
+    n++;
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  swe_houses_ex(floor((2461000.5 + 5.0 / 48 + 200) * 256) / 256, SEFLG_SIDEREAL, -60, 8.55, 'i', c2, ascmc);
+  swe_houses_ex(floor((2461000.5 + 5.0 / 48 + 200) * 256) / 256, SEFLG_SIDEREAL, -60, 8.55, 'I', c3, ascmc);
+  swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+  for (k = 1; k <= 12; k++)
+    if (fabs(swe_difdeg2n(c2[k], c3[k])) > 1)
+      break;
+  if (k > 12)
+    n++;
+  swe_close();
+  swe_set_ephe_path("/nonexistent-ephe-dir");
+  if (swe_houses_ex2(jd, 0, 47, 8.55, 'I', cusp, ascmc, NULL, NULL, serr) < 0)
+    n++;
+  swe_close();
+  return n;
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp;
+  int hfix;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -898,6 +941,7 @@ int main(int argc, char **argv)
   fictneg = fict_negative_mano_off();
   hspd = house_speed_off(0);
   hsid = house_speed_off(1);
+  hfix = house_fix_off(&hfixp);
   moshr = mosh_rough();
   moshs = mosh_speed_off();
   moonpull = far_body_moon_pull_off();
@@ -1182,6 +1226,14 @@ int main(int argc, char **argv)
   else {
     printf("  sidereal house speeds  %.2e deg/day FAIL: expected %s\n",
            hsid, WANT_DEFECT ? "> 2e-5" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (hfix == 4) : (hfix == 0))
+    printf("  house defects (59)     %d/4, Placidus %.2e deg/day OK\n", hfix, hfixp);
+  else {
+    printf("  house defects (59)     %d/4, Placidus %.2e deg/day FAIL: expected %s\n",
+           hfix, hfixp, WANT_DEFECT ? "4/4" : "0/4");
     bad++;
   }
 

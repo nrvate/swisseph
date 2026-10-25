@@ -93,6 +93,7 @@ worst were in code that had never executed even once.
 | 58 | The nutation's rate in every speed of date is a backward difference | Correctness | `sweph.c`, `swephlib.c` |
 | 62 | The aberration rate's Earth leaves out the Moon's pull | Correctness | `sweph.c` |
 | 61 | A topocentric fixed star is deflected from the geocenter | Correctness | `sweph.c` |
+| 59 | Four small house defects: Placidus cusps unconverged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files | Correctness | `swehouse.c` |
 
 ---
 
@@ -2140,8 +2141,8 @@ systems <= 2e-9 (Q at 85N 4e-8), Placidus and Gauquelin within 1e-9 of
 the converged cusp's rate. The Placidus iteration stops at 1/360000 deg
 and leaves the cusps 3.5e-8 deg off the fixed point; differences of the
 returned cusps carry that error's rate, 2e-8 of the speed at 60N (1.1e-5
-deg/day), which tightening the iteration removes (not done: it moves
-positions). Positions do not move.
+deg/day), which tightening the iteration removes (entry 59). Positions do
+not move.
 
 G45; G24 `house_speed_off(0)` (Koch cusp 11).
 
@@ -2887,6 +2888,51 @@ off by <= 4.3e-11 arcsec, effect 3e-7 to 9e-6; and the position after other
 topocentric calls equal to the bit. The upstream build fails all 16 of
 the first (off by 100%). G24 `star_topo_defl_off`: Regulus's site-dependent
 deflection 7.4e-6 arcsec shipped, 5e-11 compat.
+
+## 59. Four small house defects: Placidus cusps unconverged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files
+
+**Severity: Correctness (1.1e-5 deg/day on a Placidus cusp speed at 60N; 57.3 times on every RADIANS speed; 41 deg on sidereal Makransky cusps; ERR and Porphyry for Sunshine houses)**
+**Where:** `swehouse.c`: `CalcH()` (Placidus, Gauquelin; `VERY_SMALL_PLAC_ITER`), `swe_houses_ex2_r()`, `sidereal_houses_trad()`, `swe_houses_r()`
+
+1. The Placidus and Gauquelin cusp is the fixed point of C = Asc1(ra,
+f(C)), iterated until two cusps lie within 1/360000 deg. The last step
+is the error times the iteration's contraction, so the cusp stayed up to
+3.5e-8 deg off the fixed point at 47-60N (4.5e-6 at 65N, where the
+contraction nears 1). Differences of the returned cusps carry the rate
+of that error, 2.6e-6 deg/day over the G58 cases and 1.1e-5 at 60N,
+against `PlacDer()`'s exact rate (entry 41).
+2. With `SEFLG_RADIANS`, `swe_houses_ex2()` turned the cusps and ascmc to
+radians and left `cusp_speed` and `ascmc_speed` in deg/day.
+3. `sidereal_houses_trad()` took `toupper()` of the house system, so
+sidereal Makransky Sunshine (`'i'`, the one lower-case system the tropical
+path dispatches; the others are upcased with a deprecation warning)
+computed Treindl's `'I'`: 41 deg apart at worst at 60S.
+4. Sunshine houses need the Sun's declination, from `swe_calc_ut()`. With
+no Swiss files for the date, and the ephemeris fallback off (this fork's
+default), it refuses; the houses went to Porphyry and returned ERR (16.7
+deg from the Sunshine cusps), `ascmc[9]` 0.
+
+**Fix, as done here:** (1) the stopping step is 1e-12 deg, with an
+Aitken step once the steps are below 1e-3 deg and shrinking by less than
+half (the remaining error is d r / (1 - r)): 3-6 evaluations of the map
+per cusp against 2-4. Positions move by up to 1.9e-8 deg at 45-50N,
+5.3e-7 at 60-65N and 4.5e-6 at 65-70N (over latitudes 70S-70N, 12 ARMCs,
+Placidus and Gauquelin); no call changes between OK and Porphyry.
+`swe_houses_ex` Placidus: 4.85 us at 47N and 5.79 at 60N before, 5.54 and
+6.67 after (+14%, -O2, best of 8). (2) The speeds are converted with the
+positions. (3) `'i'` is kept as is for the tropical call inside. (4) On a
+refusal the Sun is asked again with `SEFLG_MOSEPH`: the declination is an
+input to the houses, not an ephemeris position the caller asked for, and
+Moshier's is 0.1" off (cusps 3.8e-6 deg from the Swiss-file call).
+
+G58 `tests/housefix.c`: Placidus and Gauquelin speeds against five-point
+differences, worst 3.1e-9 deg/day (2.6e-6 with the old stopping rule
+alone, 24 in the upstream build, which has entry 41 as well); RADIANS speeds
+2.3e-18 relative to degrees times pi/180 (0.98); sidereal `'i'` 0 from the
+tropical cusps less the ayanamsa (41 deg); Sunshine houses OK without files
+(ERR). The upstream build fails all four (251 failures). G24
+`house_fix_off`: 0/4 defects shipped, 4/4 compat (Placidus cusp 11 at 60N:
+7.4e-10 deg/day shipped, 1.25 compat).
 
 ## How these were found
 

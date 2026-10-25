@@ -763,6 +763,12 @@ struct epsilon {
  *     ARMC at a constant rate, the obliquity held still (6e-5 deg/day on
  *     the ARMC); sidereal speeds without the ayanamsa's rate
  *     (UPSTREAM-BUGS 40-43, G45)
+ *   - swe_houses_ex2(): Placidus and Gauquelin cusps iterated to 1/360000
+ *     deg only (3.5e-8 deg off, 1.1e-5 deg/day in their differences at
+ *     60N); SEFLG_RADIANS left the cusp and ascmc speeds in deg/day;
+ *     sidereal Makransky 'i' computed Treindl's 'I'; Sunshine houses
+ *     returned ERR and Porphyry without the Swiss files (UPSTREAM-BUGS
+ *     59, G58)
  *   - the Moshier series formed their arguments as freq * T and reduced
  *     them after, rounding at more time than the JD resolves (Mercury
  *     3.9e-3 mas, the Moon 0.011 mas between consecutive JDs at -3000);
