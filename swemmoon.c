@@ -1476,7 +1476,26 @@ static double intp_aps_eval(swe_ctx *ctx, const double *m, const double *sp,
 
 /* Calculate geometric coordinates of true interpolated Moon apsides
  */
+#ifndef SWE_UPSTREAM_COMPAT
+static int intp_apsides_n(swe_ctx *ctx, double J, double *pol, int ipli, int npass);
 int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli)
+{
+  return intp_apsides_n(ctx, J, pol, ipli, -1);
+}
+
+/* The apsis after npass of the iteration's passes, for an estimate of its
+ * distance: the distance is stationary there, so one pass (four lunar
+ * evaluations of the full iteration's fifteen or twenty) puts it within
+ * ~1 km (bug 44's light time). */
+int swi_intp_apsides_est(swe_ctx *ctx, double J, double *pol, int ipli, int npass)
+{
+  return intp_apsides_n(ctx, J, pol, ipli, npass);
+}
+
+static int intp_apsides_n(swe_ctx *ctx, double J, double *pol, int ipli, int npass)
+#else
+int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli)
+#endif
 {
 double dd;
 double rsv[3];
@@ -1549,7 +1568,7 @@ for (iii= 0; iii<=niter; iii++) {/**/
  sp[0] = sM; sp[1] = sVe; sp[2] = sEa; sp[3] = sMa; sp[4] = sJu; sp[5] = sSa;
  f[0] = fNF; f[1] = fD; f[2] = fLP; f[3] = fM; f[4] = fVe; f[5] = fEa;
  f[6] = fMa; f[7] = fJu; f[8] = fSa;
- if (iii == niter) {
+ if (iii == niter || iii == npass) {
    intp_aps_eval(ctx, m4, sp, f, 0, pol);
    break;
  }

@@ -827,6 +827,9 @@ extern int swi_mean_apog(swe_ctx *ctx, double jd, double *x, char *serr);
 extern int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpm, char *serr) ;
 extern int swi_moshmoon2(swe_ctx *ctx, double jd, double *x);
 extern int swi_intp_apsides(swe_ctx *ctx, double J, double *pol, int ipli);
+#ifndef SWE_UPSTREAM_COMPAT
+extern int swi_intp_apsides_est(swe_ctx *ctx, double J, double *pol, int ipli, int npass);
+#endif
 
 /* planets, s. moshplan.c */
 extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr);

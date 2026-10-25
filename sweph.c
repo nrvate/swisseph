@@ -7339,41 +7339,51 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
    * coordinate never had it: the position depended on the speed flag, the
    * perigee by 111 mas (tau v, tau = 1.2 s, v up to 2.3 deg/day), the
    * apogee by 13. The apsis, like the osculating one built from the Moon
-   * at t - tau, is seen at t - tau: X(t) - tau V(t), for every flag set
-   * (TRUEPOS aside), off by tau^2 A / 2 ~ 4e-4 mas, and its rate is
-   * V (1 - dtau/dt) - tau A, dtau/dt = rdot / c. V and A come from the
-   * three positions, always computed.
+   * at t - tau, is seen at t - tau: it is now computed there, for every
+   * flag set (TRUEPOS aside). tau is the apsis's distance over c, from the
+   * first passes of the iteration at t (swi_intp_apsides_est()): the
+   * distance is stationary at the apsis, so two passes put the perigee's
+   * within 4 km and one the apogee's within 1 km over 20000 dates
+   * -10000..+12000, at most 0.0013 mas of position (one pass would leave
+   * the perigee 83 km, 0.026 mas). A call without the speed flag costs
+   * 1.3 of upstream's, not the 2.7 that the three apsides of a velocity
+   * for tau V cost.
    * Upstream bug 45: the speed was the difference over +-0.1 day, off by
-   * the h^2 term, 1.1e-4 deg/day on the perigee. The three positions are
-   * now 2^-8 day apart, where that term (1.7e-7) and the positions' noise
-   * over 2h (0.0018 mas, 7e-8) balance: 2.1e-7 deg/day. */
+   * the h^2 term, 1.1e-4 deg/day on the perigee. It is now the three
+   * positions 2^-8 day apart about t - tau, where that term (1.7e-7) and
+   * the positions' noise over 2h (0.0018 mas, 7e-8) balance, times
+   * 1 - dtau/dt: the rate of the position returned, within 2.1e-7 deg/day
+   * of a five-point difference. */
   {
     const double h = INTP_APS_SPEED_INTV;
-    double r, rdot, tau, taudot, v[3], a[3];
-    for (i = 0; i < 3; i++) {
-      swi_intp_apsides(ctx, tjd + (i - 1) * h, xpos[i], ipl);
-      swi_polcart(xpos[i], xpos[i]);
-    }
-    for (i = 0; i < 3; i++) {
-      v[i] = (xpos[2][i] - xpos[0][i]) / (2 * h);
-      a[i] = (xpos[2][i] + xpos[0][i] - 2 * xpos[1][i]) / (h * h);
-      xx[i] = xpos[1][i];
-      xx[i+3] = v[i];
+    double tlt = tjd, taudot = 0, est[3], r, rdot;
+    if (!(iflag & SEFLG_TRUEPOS)) {
+      swi_intp_apsides_est(ctx, tjd, est, ipl, ipl == SE_INTP_PERG ? 2 : 1);
+      tlt = tjd - est[2] * AUNIT / CLIGHT / 86400.0;
     }
     memset((void *) ndp->xreturn, 0, 24 * sizeof(double));
-    if (!(iflag & SEFLG_TRUEPOS)) {
-      r = sqrt(square_sum(xx));
-      rdot = (xx[0] * v[0] + xx[1] * v[1] + xx[2] * v[2]) / r;
-      tau = r * AUNIT / CLIGHT / 86400.0;
-      taudot = rdot * AUNIT / CLIGHT / 86400.0;
+    if (iflag & SEFLG_SPEED) {
       for (i = 0; i < 3; i++) {
-        xx[i] -= tau * v[i];
-        xx[i+3] = (v[i] - tau * a[i]) * (1 - taudot);
+        swi_intp_apsides(ctx, tlt + (i - 1) * h, xpos[i], ipl);
+        swi_polcart(xpos[i], xpos[i]);
       }
-    }
-    if (!(iflag & SEFLG_SPEED))
+      for (i = 0; i < 3; i++) {
+        xx[i] = xpos[1][i];
+        xx[i+3] = (xpos[2][i] - xpos[0][i]) / (2 * h);
+      }
+      if (!(iflag & SEFLG_TRUEPOS)) {
+        r = sqrt(square_sum(xx));
+        rdot = (xx[0] * xx[3] + xx[1] * xx[4] + xx[2] * xx[5]) / r;
+        taudot = rdot * AUNIT / CLIGHT / 86400.0;
+        for (i = 3; i < 6; i++)
+          xx[i] *= 1 - taudot;
+      }
+    } else {
+      swi_intp_apsides(ctx, tlt, xx, ipl);
+      swi_polcart(xx, xx);
       for (i = 3; i < 6; i++)
         xx[i] = 0;
+    }
   }
 #else
   /*********************************************

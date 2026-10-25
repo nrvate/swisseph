@@ -2255,16 +2255,22 @@ The intended position is the light-time corrected one: the code gates the
 step on SEFLG_TRUEPOS, and the osculating apogee, which the interpolated
 one smooths, is built from the Moon at t - tau.
 
-**Fix, as done here:** the three positions of the speed are always
-computed, and the apsis is X(t) - tau V(t) in all three coordinates for
-every flag set but TRUEPOS (off from X(t - tau) by tau^2 A / 2, 4e-4
-mas); its rate V (1 - dtau/dt) - tau A, dtau/dt = rdot / c. The position
-is the same with and without SEFLG_SPEED, to the bit. The cost without
-the flag is three apsides instead of one (75 to ~200 us).
+**Fix, as done here:** the apsis is computed at t - tau, as the osculating
+one is, for every flag set but TRUEPOS, with and without SEFLG_SPEED, so
+the position is the same either way, to the bit. tau is the apsis's
+distance over c, taken from the first passes of the iteration at t
+(`swi_intp_apsides_est()`): the distance is stationary at the apsis, so
+two passes put the perigee's within 4 km and one the apogee's within 1
+km (20000 dates, -10000..+12000), at most 0.0013 mas of position. The
+speed is the difference over +-2^-8 day about t - tau (bug 45), times 1 -
+dtau/dt, dtau/dt = rdot / c. Cost at -O2, against upstream: 1.3x without
+the flag (perigee 62 -> 82 us, apogee 53 -> 69), 1.03-1.13x with it
+(182 -> 205, 153 -> 157). A first version took X(t) - tau V(t), which
+needs the velocity, three apsides, on every call: 2.7x without the flag.
 
 G46 `tests/intpaps.c` (a), (b): the position with and without the flag,
 six flag sets, identical (upstream 140 mas, angle plus distance); the
-cartesian position less the TRUEPOS one is -tau V within 1.9e-3 mas (the
+cartesian position less the TRUEPOS one is -tau V within 3.4e-3 mas (the
 frame's turning over tau; upstream 120 mas). G24 `intp_speedflag_off`:
 0 shipped, 107 mas compat. Baselines: every interpolated-apsis position
 without SEFLG_SPEED moves by tau V, with it by tau V_x.

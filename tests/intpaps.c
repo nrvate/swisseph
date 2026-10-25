@@ -10,7 +10,8 @@
  *   x -= tau v, with v the speed -- zero without SEFLG_SPEED -- and from
  *   the second coordinate on. The position depended on the speed flag
  *   (the perigee by 111 mas, the apogee by 13) and the x coordinate never
- *   had the correction. Now X(t) - tau V(t), V always computed.
+ *   had the correction. Now the apsis at t - tau, tau from the first
+ *   passes of its iteration, for every flag set.
  *
  * - swi_intp_apsides() finds the apsis as the vertex of parabolas through
  *   three lunar distances 5 deg, 0.5 deg, ... 1.8" apart, and at the small
@@ -28,9 +29,9 @@
  * to 1e-6 mas (measured: identical); (b) the cartesian position less the
  * TRUEPOS one is -tau V, V a five-point difference of the TRUEPOS
  * positions, with and without the speed flag, within 0.01 mas (measured
- * <= 1.9e-3: the ecliptic's and the nutation's turning over tau, which V
+ * <= 3.4e-3: the ecliptic's and the nutation's turning over tau, which V
  * carries and the correction, made in the mean ecliptic of date, does
- * not); (c) the longitude and latitude over 64 consecutive representable
+ * not, tau^2 A / 2 and tau's estimate); (c) the longitude and latitude over 64 consecutive representable
  * JDs lie on a line within 0.01 mas (measured <= 1.8e-3); (d) the
  * longitude, latitude and distance speeds (right ascension, declination;
  * default, EQUATORIAL, TRUEPOS, Lahiri; SEFLG_SPEED and SEFLG_SPEED3)
