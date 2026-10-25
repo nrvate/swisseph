@@ -1186,15 +1186,6 @@ struct epsilon {
  *     de200.eph 14.29 s in AD 1700 for 3.01 (UPSTREAM-BUGS 131, G127).
  *     The threads and contexts adopting the close read them again in the
  *     shipped build only, as the closing one does
- *   - swe_calc_orbel() (this fork's) answering a barycentric Moshier
- *     request, which swe_calc() refuses: the heliocentric place under
- *     SEFLG_BARYCTR, 5.7e-3 AU off the barycentric one (UPSTREAM-BUGS 135,
- *     G126)
- *   - swe_calc_orbel() (this fork's) with elements of the equinox of date
- *     holding that equinox at the observation instant through the light
- *     time and leaving its turning out of the speed: 1.9e-2 deg at a =
- *     80000 AU, 3.5e-7 deg at 1.2 AU, 4.0e-5 to 8.8e-5 deg/day off the
- *     same elements as a JDATE body (UPSTREAM-BUGS 136, G126)
  *   - the nodes kept across the JPL Horizons flags of a call, the
  *     approximation's mode (1.03e-1" in dpsi) and, under SEFLG_JPLHOR,
  *     the IERS corrections swe_close() frees, and swe_get_ayanamsa_ex()

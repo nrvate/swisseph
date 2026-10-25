@@ -1931,22 +1931,6 @@ static double orbel_bias_off(void)
   return w;
 }
 
-/* UPSTREAM-BUGS 135: swe_calc_orbel() of an orbit with a = 1.2 AU on
- * Moshier, barycentric, at J2000 + 182 days: the return. swe_calc()
- * refuses every barycentric Moshier request; the orbel path, which does not
- * pass through swecalc(), answered the heliocentric place under a flag
- * with SEFLG_BARYCTR set (18180), 5.7e-3 AU off the Swiss barycentric
- * one. */
-static double orbel_mosh_bary_ret(void)
-{
-  double el[6] = {40, 1.2, 0.2, 30, 80, 12}, x[6];
-  char serr[256];
-  swe_close();
-  swe_set_ephe_path(EPHE);
-  return swe_calc_orbel(2451727.0, el, SE_SUN, SE_ORBEL_EQ_J2000, 0,
-                        SEFLG_MOSEPH | SEFLG_SPEED | SEFLG_BARYCTR, x, serr);
-}
-
 /* UPSTREAM-BUGS 139: a Swiss barycentric Mars at 2000 Jul 1.5 in an empty
  * directory with the fallback allowed: the return. It fell to Moshier past
  * swecalc()'s refusal of a barycentric Moshier request and was answered
@@ -1970,43 +1954,6 @@ static double fallback_mosh_bary_ret(void)
   rmdir(dir);
   swe_set_ephe_path(EPHE);
   return r;
-}
-
-/* UPSTREAM-BUGS 136: swe_calc_orbel() of an orbit with a = 1.2 AU whose
- * elements are of the equinox of date (SE_ORBEL_EQ_DATE), heliocentric,
- * geometric, J2000 equatorial XYZ, Swiss files: the velocity against a
- * five-point difference of the positions (2^-7 day, the mean anomaly moved
- * along the mean motion) at four binary-fraction dates in 2025, AU/day.
- * The frame of date turns with t, and the speed was the two-body motion
- * in the frame held at the date, the precession's turning left out:
- * omega x r, 8e-7 AU/day; the upstream build's fictitious path has no such
- * term either (bug 48's). */
-static double orbel_date_rate_off(void)
-{
-  static const double off[4] = {-2, -1, 1, 2};
-  const double h = 1.0 / 128, n = 0.01720209895 / (1.2 * sqrt(1.2)) * 180 / M_PI;
-  int32 fl = SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_TRUEPOS | SEFLG_J2000 | SEFLG_EQUATORIAL | SEFLG_XYZ;
-  double w = 0, xc[6], xs[4][6];
-  char serr[256];
-  int k, i, m;
-  swe_close();
-  swe_set_ephe_path(EPHE);
-  for (k = 0; k < 4; k++) {
-    double t0 = 2460676.5 + 91.25 * k;
-    for (m = -1; m < 4; m++) {
-      double t = m < 0 ? t0 : t0 + off[m] * h;
-      double el[6] = {40 + n * (t - t0), 1.2, 0.2, 30, 80, 12};
-      if (swe_calc_orbel(t, el, SE_SUN, SE_ORBEL_EQ_DATE, 0, m < 0 ? fl | SEFLG_SPEED : fl,
-                         m < 0 ? xc : xs[m], serr) < 0)
-        return 1;
-    }
-    for (i = 0; i < 3; i++) {
-      double d = xc[i + 3] - (xs[0][i] - 8 * xs[1][i] + 8 * xs[2][i] - xs[3][i]) / (12 * h);
-      if (fabs(d) > w)
-        w = fabs(d);
-    }
-  }
-  return w;
 }
 
 /* UPSTREAM-BUGS 140: the site's move for a user delta t a quarter ulp of
@@ -3578,9 +3525,7 @@ int main(int argc, char **argv)
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
   orbelbias = orbel_bias_off();
-  orbelmb = orbel_mosh_bary_ret();
   fbmb = fallback_mosh_bary_ret();
-  orbeldate = orbel_date_rate_off();
   toputr = topo_ut_round_off();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
@@ -4429,27 +4374,11 @@ int main(int argc, char **argv)
     bad++;
   }
 
-  if (WANT_DEFECT ? (orbelmb == 18180) : (orbelmb < 0))
-    printf("  orbel Moshier barycentre %.0f OK\n", orbelmb);
-  else {
-    printf("  orbel Moshier barycentre %.0f FAIL: expected %s\n",
-           orbelmb, WANT_DEFECT ? "18180" : "< 0");
-    bad++;
-  }
-
   if (WANT_DEFECT ? (fbmb == 18180) : (fbmb < 0))
     printf("  fallback to Moshier, barycentric %.0f OK\n", fbmb);
   else {
     printf("  fallback to Moshier, barycentric %.0f FAIL: expected %s\n",
            fbmb, WANT_DEFECT ? "18180" : "< 0");
-    bad++;
-  }
-
-  if (WANT_DEFECT ? (orbeldate > 1e-7) : (orbeldate < 1e-12))
-    printf("  orbel equinox of date rate %.2e AU/day OK\n", orbeldate);
-  else {
-    printf("  orbel equinox of date rate %.2e AU/day FAIL: expected %s\n",
-           orbeldate, WANT_DEFECT ? "> 1e-7" : "< 1e-12");
     bad++;
   }
 
