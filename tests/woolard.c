@@ -32,7 +32,15 @@
  *      and deps at t + 0.37 after a call at t, its nodes t - 1, t, t + 1,
  *      against the direct value within 3.5 mas, the interpolation's own
  *      (G122's limit; IAU 1980's is 2.5 mas here).
- * Six checks, each the worst over the instants. Measured: (a) 0.160" and
+ *  (d) SE_SIDM_LAHIRI_ICRC (UPSTREAM-BUGS 157), the Calendar Reform
+ *      Committee's ayanamsa, true 23 deg 15' 00" on 1956 Mar 21 (JD
+ *      2435553.5): with SE_SIDBIT_PREC_ORIG (Newcomb's precession,
+ *      Woolard's nutation) the true ayanamsa there within 1e-9 deg of
+ *      23.25. Its mean value had been taken as 23.25 less this series'
+ *      broken dpsi, 16.7115" for Woolard's 16.792088": with the series
+ *      fixed it measured 23 deg 15' 0.0806" (2.24e-5 deg); now 0. The
+ *      upstream build passes (d): its constant and its series agree.
+ * Six checks, each the worst over the instants, and (d). Measured: (a) 0.160" and
  * 0.049"; (b) 1.5e-8" and 6.7e-9"; (c) 1.68 mas and 0.73 mas. The upstream
  * build fails 5 of 6: (a) dpsi 0.306" (deps 0.066" passes), (b) 0.133"
  * and 0.0126", (c) 0.197" and 0.0192". Run as
@@ -93,6 +101,20 @@ int main(void)
            w[j][0], w[j][1], lim[j][0], lim[j][1], fail ? "  FAIL" : "");
     for (k = 0; k < 2; k++)
       if (w[j][k] > lim[j][k]) bad++;
+  }
+  {
+    double at = 0;
+    char serr[256];
+    swe_ctx *cs = swe_ctx_new();
+    if (cs == NULL)
+      return 1;
+    swe_set_sid_mode_r(cs, SE_SIDM_LAHIRI_ICRC | SE_SIDBIT_PREC_ORIG, 0, 0);
+    if (swe_get_ayanamsa_ex_r(cs, 2435553.5, SEFLG_MOSEPH, &at, serr) < 0)
+      return 1;
+    printf("  %-24s true ayanamsa at 1956 Mar 21 - 23.25: %.3e deg (limit 1e-9)%s\n",
+           "Lahiri ICRC, PREC_ORIG", at - 23.25, fabs(at - 23.25) > 1e-9 ? "  FAIL" : "");
+    if (fabs(at - 23.25) > 1e-9) bad++;
+    swe_ctx_free(cs);
   }
   swe_ctx_free(cw);
   swe_ctx_free(ci);

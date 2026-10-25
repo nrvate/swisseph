@@ -3219,6 +3219,25 @@ out:
   return r;
 }
 
+/* UPSTREAM-BUGS 157: SE_SIDM_LAHIRI_ICRC's mean ayanamsa at its epoch, JD
+ * 2435553.5, with SE_SIDBIT_PREC_ORIG, less upstream's 23.25 - 0.00464207,
+ * arcsec. Upstream subtracted 16.7115", the dpsi of a Woolard series whose
+ * Moon's anomaly ran 10^4 times too fast (bug 151); Woolard's is 16.792088"
+ * there, so the true ayanamsa is the committee's 23 deg 15' again: -0.0806
+ * shipped, 0 compat. */
+static double lahiri_icrc_t0_off(void)
+{
+  double a = 0;
+  char serr[256];
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return 1e9;
+  swe_set_sid_mode_r(c, SE_SIDM_LAHIRI_ICRC | SE_SIDBIT_PREC_ORIG, 0, 0);
+  swe_get_ayanamsa_ex_r(c, 2435553.5, SEFLG_MOSEPH | SEFLG_NONUT, &a, serr);
+  swe_ctx_free(c);
+  return (a - (23.25 - 0.00464207)) * 3600;
+}
+
 /* UPSTREAM-BUGS 151: Woolard's nutation turned the Moon's mean anomaly at
  * 10^4 times its rate, a 3.97-minute cycle in its terms (0".12 in dpsi).
  * The second difference of Woolard's dpsi over 2^-11 day at eight binary
@@ -3696,7 +3715,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3813,6 +3832,7 @@ int main(int argc, char **argv)
   nutjplhor = nut_jplhor_intp_off();
   nutstep = nut_step_intp_off();
   woolmd = woolard_md_cycle();
+  icrct0 = lahiri_icrc_t0_off();
   framestep = jplhora_step_speed_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
@@ -4819,6 +4839,14 @@ int main(int argc, char **argv)
   else {
     printf("  IERS corrections kept  %.2e arcsec FAIL: expected %s\n",
            eoppath, WANT_DEFECT ? "> 0.1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (fabs(icrct0) < 1e-6) : (icrct0 < -0.08 && icrct0 > -0.081))
+    printf("  Lahiri ICRC epoch value %.4f arcsec OK\n", icrct0);
+  else {
+    printf("  Lahiri ICRC epoch value %.4f arcsec FAIL: expected %s\n",
+           icrct0, WANT_DEFECT ? "0" : "-0.0806");
     bad++;
   }
 

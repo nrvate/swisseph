@@ -186,6 +186,7 @@ worst were in code that had never executed even once.
 | 153 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, the precession's, the obliquity's, the nutation's and the topocentric site's rates and SEFLG_SPEED3 difference the frame's models across their step at 1962 Jan 20 (0.113" of precession, 7.17e-2" of dpsi): every speed of date 1.57e-5 deg/day off for a day before it (Polaris's right ascension 1.31e-4), 9.96e-2 within 1e-4 day (1.09), SEFLG_SPEED3 5.75e-2 either side | Correctness | `sweph.c`, `swephlib.c` |
 | 149 | `swe_nod_aps()` with barycentric output on Moshier, asked for or fallen to, answers Moshier's heliocentric points, returned OK: Mars's osculating node 0.077 deg off the files' barycentric one, the Moon's mean node 0.37 deg, the Sun's mean perigee 0.40 deg; every method and body class but the SE_NODBIT_OSCU_BAR ellipse beyond 6 AU | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 | 150 | `swe_calc_pctr()` returns the caller's flags, not the ephemeris that answered: with the fallback allowed and the JPL file alone missing Mars from Jupiter returns 257 (SEFLG_JPLEPH) with the Swiss answer bit for bit, and with the Moon files missing the Moon from Mars 258 (SEFLG_SWIEPH) with Moshier's Moon | Correctness (behaviour) | `sweph.c` |
+| 157 | `SE_SIDM_LAHIRI_ICRC`'s mean ayanamsa at its epoch is 23.25 deg less 0.00464207 deg (16.7115"), the broken Woolard series' dpsi there (entry 151), not Woolard's 16.792088": with the series fixed, mode 46 with `SE_SIDBIT_PREC_ORIG` gives a true ayanamsa of 23 deg 15' 0.0806" on 1956 Mar 21 for the Calendar Reform Committee's 23 deg 15' 00" | Correctness | `sweph.h` |
 
 ---
 
@@ -10099,7 +10100,7 @@ Noticed, not fixed:
   Calendar Reform Committee's value, and is 23 deg 15' 00".0806 after the
   fix. 23.25 - 0.00466447 would make it 23 deg 15' again, and move mode
   46's mean ayanamsa by -0.0806" at every date, with the bit or without.
-  A table value, left for a decision.
+  Fixed as entry 157.
 
 ## 152. The default nutation's grid leaves the IAU 2000A series far inside its guard of 1e12 days: 2.3e-9 deg at |J| 6e8, 1.3e-4 deg at 1e9, 7 deg at 3e9, answered by `swe_calc(SE_ECL_NUT)`
 
@@ -10588,6 +10589,41 @@ G104, G126, G2, check-ctx and G24 pass.
 G24 `pctr_ephe_ret`: Mars from Jupiter at 2000 Jul 1.5, JPL asked,
 de999.eph named and missing, the fallback allowed: 258 shipped, 257
 compat.
+
+## 157. `SE_SIDM_LAHIRI_ICRC`'s epoch value subtracts the broken Woolard series' dpsi: with entry 151 fixed its true ayanamsa on 1956 Mar 21 is 23 deg 15' 0.0806", not the committee's 23 deg 15'
+
+**Severity: Correctness (mode 46's ayanamsa 0.0806" large at every date, with `SE_SIDBIT_PREC_ORIG` or without)**
+**Where:** `sweph.h`: `ayanamsa[]`, mode 46
+
+Entry 151's noticed item. Mode 46 is the Indian Calendar Reform
+Committee's ayanamsa, defined as a true ayanamsa of 23 deg 15' 00" on
+1956 Mar 21 (JD 2435553.5) with Newcomb's precession and Woolard's (1953)
+nutation. The table holds the mean ayanamsa, so its t0 value is 23.25 deg
+less the nutation in longitude at the epoch; sweph.h's comment says so
+("nutation according to Woolard 1953"). The value subtracted, 0.00464207
+deg = 16.7115", is what `calc_nutation_woolard()` gave there with the
+Moon's mean anomaly turning 10^4 times too fast, to its last digit; the
+series with the right rate gives 16.792088" (0.0046644689480 deg). Before
+entry 151 the two errors cancelled: mode 46 | `SE_SIDBIT_PREC_ORIG`'s true
+ayanamsa at t0 was 23 deg 15' 00".0000. After it, 23 deg 15' 0.0806".
+
+Fix (behind `#ifndef SWE_UPSTREAM_COMPAT`; the compat build keeps both the
+series and the constant): t0's value is 23.25 - 0.0046644689480, Woolard's
+dpsi at the epoch as `calc_nutation_woolard()` now computes it. The true
+ayanamsa at t0 is 23.25 again to 4.3e-14 deg, and every date's mean
+ayanamsa of mode 46 is 0.0806" (2.24e-5 deg) smaller, with the bit or
+without. The definition, not the old number, is the reference: the old
+number held only because the series was wrong.
+
+G138 `tests/woolard.c` (d): a context with `SE_SIDM_LAHIRI_ICRC |
+SE_SIDBIT_PREC_ORIG`, `swe_get_ayanamsa_ex_r()` at 2435553.5 on Moshier,
+within 1e-9 deg of 23.25: -4.263e-14 deg. Before the fix 2.24e-5 deg. The
+upstream build passes (d): its constant and its series agree with each
+other.
+
+G24 `lahiri_icrc_t0_off`: mode 46 | `SE_SIDBIT_PREC_ORIG`, the mean
+ayanamsa at t0 (SEFLG_NONUT) less 23.25 - 0.00464207, in arcseconds:
+-0.0806 shipped, 0.0000 compat.
 
 ## How these were found
 

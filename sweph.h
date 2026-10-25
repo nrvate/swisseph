@@ -640,7 +640,18 @@ static const struct aya_init ayanamsa[SE_NSIDM_PREDEF] = {
       true ayanamshas. A deviation of around 0.1" remains,
       for unknown reasons. The difference between Lahiri (1) and
       Lahiri ICRC (45) amounts to 1.1". */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 157: 0.00464207 deg (16.7115") is what calc_nutation_woolard()
+ * gave at the epoch with the Moon's mean anomaly 10^4 times too fast (bug
+ * 151), not Woolard's nutation: the true ayanamsa there, with
+ * SE_SIDBIT_PREC_ORIG (Newcomb, Woolard), came out 23 deg 15' 0.0806" once
+ * the series was fixed. Woolard's dpsi at JD 2435553.5 is 16.792088"; the
+ * committee's 23 deg 15' 00" holds again, and every date's ayanamsa of this
+ * mode is 0.0806" smaller. */
+{2435553.5, 23.25 - 0.0046644689480, FALSE, SEMOD_PREC_NEWCOMB}, // 46: SE_SIDM_LAHIRI_ICRC
+#else
 {2435553.5, 23.25 - 0.00464207, FALSE, SEMOD_PREC_NEWCOMB}, // 46: SE_SIDM_LAHIRI_ICRC
+#endif
 /*************************/
     };
 
@@ -1254,6 +1265,10 @@ struct epsilon {
  *     revolutions a century, 10^4 times its 1325.552359: its terms in it
  *     cycling every 3.97 minutes, dpsi up to 0.236" and deps 0.0226" off
  *     the series (UPSTREAM-BUGS 151, G138)
+ *   - SE_SIDM_LAHIRI_ICRC's mean ayanamsa at its epoch, 23.25 - 0.00464207
+ *     deg, the subtracted 16.7115" being that broken Woolard's dpsi there:
+ *     with Woolard fixed the true ayanamsa at the epoch is 23 deg 15'
+ *     0.0806" for the committee's 23 deg 15' (UPSTREAM-BUGS 157, G138)
  *   - (nothing for UPSTREAM-BUGS 152: the default nutation's grid, which
  *     left the IAU 2000A series past 5e8 days and now gives way to it at
  *     4e8, is this fork's; the compat build's default, 2000B, is computed
