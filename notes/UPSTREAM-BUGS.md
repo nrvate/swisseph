@@ -115,6 +115,7 @@ worst were in code that had never executed even once.
 | 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, its aberration rate is the centre's whole velocity change over the light time, it deflects as seen from the Earth, and its light time stops short of its fixed point | Correctness | `sweph.c` |
 | 85 | The Moshier Earth-Moon offset's rate is a difference of rounded arguments | Correctness | `swemplan.c` |
 | 81 | A fictitious body's light-time position is read at the rounded instant, and its elements' large terms are rounded unreduced | Correctness | `sweph.c`, `swemplan.c` |
+| 86 | The JPL barycentric Sun takes its instant of date from the Earth's slot | Correctness | `sweph.c` |
 
 ---
 
@@ -4386,6 +4387,71 @@ backward difference, entry 51). G24 `mosh_earth_rough_off`: the
 acceleration in 2000, 5.0e-9 shipped, 2.6e-3 compat;
 `mosh_earth_vbias_off`: the velocity's bias in 1900, 2.7e-14 AU/day
 shipped (1.87e-13 after the first part), 3.4e-8 compat.
+
+## 86. The JPL barycentric Sun takes its instant of date from the Earth's slot
+
+**Severity: Correctness (the JPL barycentric Sun's latitude speed of date off by up to 1.9e-5 deg/day, NaN as a context's first request; its sidereal longitude off by the ayanamsa's change since another request's date, 0.14 deg ten years on)**
+**Where:** `sweph.c`: `app_pos_etc_sbar()`, `app_pos_rest()`
+
+The barycentric Sun is answered in the Earth's slot (`pldat[SEI_EARTH]`,
+whose `xreturn` `swe_calc()` reads), and `app_pos_etc_sbar()` passed that
+slot's instant to `swi_bias()` and to `app_pos_rest()`, which takes the
+ecliptic of date's turning (entry 33), the ayanamsa and, in the bias, the
+JPL Horizons mode from it. On the Swiss files `sweplan()` has just filled
+the Earth's slot for the Sun's instant. On JPL only the Sun's slot
+(`SEI_SUNBARY`) is read, so the instant was whatever the Earth's slot last
+held: JD 0 in a fresh context, then (since entry 71's empty mark
+SWI_TJD_NEVER) a NaN speed, or the instant of the last request that read
+the Earth. Measured on de200, against five-point differences over 2^-6
+day at binary-fraction instants: the latitude speed of date 1.03e-5
+deg/day at seven dates 1968-2000 (1.85e-5 at eight dates 1925-2075, each
+right after a request for Mars ten years on), the longitude 2.8e-7; with
+SEFLG_NONUT the mean obliquity's rate alone, at another date, 5.9e-12. The
+sidereal (Lahiri) longitude after that Mars request was the tropical less
+the ayanamsa ten years on, 0.140 deg off, and its speed 3.8e-5 deg/day.
+J2000 and equatorial places and the Swiss files were unaffected. Found by
+entry 78's agent.
+
+**Fix, as done here:** `app_pos_rest()` takes the instant explicitly;
+every caller passes its slot's instant as before, and `app_pos_etc_sbar()`
+the Sun's (`psbdp->teval`), as it already did for the precession; the bias
+takes the Sun's instant too. The compat build passes the Earth slot's, as
+upstream. After: the JPL Sun's latitude speed 9.2e-13 deg/day, longitude
+2.8e-11 (seven dates); over G85's eight dates and four frames <= 1.6e-12,
+sidereal 5.6e-11 (the ayanamsa's rate, the same on every body), its first
+request 1.2e-13, its sidereal longitude exact. Swiss results do not move
+(the two instants are equal there). Every barycentric body was checked on
+JPL and the Swiss files, of date, without nutation, J2000, equatorial and
+sidereal: the Earth, Moon, Mercury, Mars, Jupiter, Pluto and Chiron within
+4.2e-12 deg/day (5.7e-11 sidereal), the Sun on the files 9.7e-10, their
+own (the same with SEFLG_TRUEPOS). Moshier refuses SEFLG_BARYCTR.
+
+The second part of this item, `swi_aberr_light()`'s rate of the shift
+along the body's motion as a backward difference over 1e-4 day, was
+already done by entry 73 (the derivative of A(u) along the velocity, v
+held). Measured here before and after that entry, the geocentric
+aberration's part of a speed (the residual against a five-point
+difference with aberration less that without, Sun, Mercury, Venus, Mars,
+Jupiter, Ceres, ten dates -2900..2900): angles 1.3-2.7e-10 -> 0.9-2.5e-11
+deg/day, the distance rate 1.8-4.3e-12 -> 0.4-2.1e-13 of the distance per
+day; the geocentric Moon 1.77e-8 -> 2.7e-11 deg/day with entry 73's other
+causes. Nothing of it is left: an independent analytic version written
+here gave the same numbers. The topocentric residual, 3-9.6e-10 deg/day
+before and after, is not the aberration's directional rate. G51's
+geocentric angle limit goes from 5e-9 to 1e-10 and its distance limit
+from 1e-11 to 5e-13; the build before entry 73 fails 12 of its 20 checks
+there.
+
+G85 `tests/baryspeed.c`: the barycentric Sun, Earth, Moon, Mercury, Mars,
+Jupiter, Pluto and Chiron on JPL and the Swiss files, five frames, eight
+dates 1925-2075, each speed taken after a request ten years on: angles
+within 2e-11 deg/day, 2e-10 sidereal, 2e-9 for the Sun on the files,
+distance rates within 5e-11 of the distance per day; the JPL Sun's first
+request within 2e-9 and its sidereal longitude within 1e-9 deg: 162
+checks.
+The build before the fix fails 4 (the first request, of date, sidereal
+speed and longitude); the upstream build fails 162. G24
+`bary_sun_sid_off`: the sidereal longitude, 0 shipped, 0.140 deg compat.
 
 ## How these were found
 

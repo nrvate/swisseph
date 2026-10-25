@@ -1217,6 +1217,28 @@ static double earth_helio_lt_rate_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 86: the JPL barycentric Sun's sidereal (Lahiri) longitude,
+ * right after a request for Mars ten years on, against its tropical
+ * longitude less the ayanamsa at its own date, deg. The Sun is answered in
+ * the Earth's slot, whose instant on JPL was the Mars request's: 0.14 deg
+ * upstream and before the fix, 0 after. */
+static double bary_sun_sid_off(void)
+{
+  double t = 2451545.25, xs[6], xt[6], z[6], aya = 0, d;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+  swe_get_ayanamsa_ex(t, SEFLG_JPLEPH, &aya, serr);
+  swe_calc(t + 3652.5, SE_MARS, SEFLG_JPLEPH, z, serr);
+  swe_calc(t, SE_SUN, SEFLG_JPLEPH | SEFLG_BARYCTR | SEFLG_SIDEREAL, xs, serr);
+  swe_calc(t, SE_SUN, SEFLG_JPLEPH | SEFLG_BARYCTR, xt, serr);
+  d = fabs(swe_difdeg2n(xs[0], swe_degnorm(xt[0] - aya)));
+  swe_set_sid_mode(SE_SIDM_FAGAN_BRADLEY, 0, 0);
+  return d;
+}
+
 /* UPSTREAM-BUGS 36: the topocentric Moon at -999, true positions, the
  * site turning per UT day instead of per TT day */
 static double topo_moon_ancient_off(void)
@@ -1501,7 +1523,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1573,6 +1595,7 @@ int main(int argc, char **argv)
   moshlt = mosh_lt_off();
   pctrsd = pctr_sun_defl_off();
   earthlr = earth_helio_lt_rate_off();
+  barysid = bary_sun_sid_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2102,6 +2125,14 @@ int main(int argc, char **argv)
   else {
     printf("  Earth helio, lt rate   %.2e deg/day FAIL: expected %s\n",
            earthlr, WANT_DEFECT ? "> 1e-6" : "< 5e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (barysid > 0.01) : (barysid < 1e-9))
+    printf("  JPL bary Sun sidereal  %.2e deg OK\n", barysid);
+  else {
+    printf("  JPL bary Sun sidereal  %.2e deg FAIL: expected %s\n",
+           barysid, WANT_DEFECT ? "> 0.01" : "< 1e-9");
     bad++;
   }
 

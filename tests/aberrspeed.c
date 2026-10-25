@@ -22,9 +22,13 @@
  * of it, with and without SEFLG_NOABERR; the difference of the two
  * residuals is the aberration's own, free of the ephemeris' speed noise
  * (3e-8 deg/day on Mars, the same in both). Longitude times cos(latitude)
- * and latitude within 5e-9 deg/day (measured <= 3.3e-9, Jupiter's
- * topocentric longitude; the Sun's <= 1e-9); the distance rate within
- * 1e-11 of the distance per day (measured <= 5.4e-12, as before).
+ * and latitude within 5e-9 deg/day topocentric (measured <= 9.6e-10) and
+ * 1e-10 geocentric (<= 2.5e-11); the distance rate within 5e-13 of the
+ * distance per day (<= 2.1e-13). The geocentric and distance limits were
+ * 5e-9 and 1e-11 until swi_aberr_light()'s rate along the body's motion
+ * was made analytic (UPSTREAM-BUGS 73, measured in 86): its backward
+ * difference over 1e-4 day left 1.3-2.2e-10 deg/day geocentric and
+ * 3.2-4.3e-12 of the distance per day, which these limits fail.
  * Saturn and beyond are left out: the Moon's pull's rate on the Earth,
  * left out of earth_at_lt_sun()'s light-time series, gives tau j / 2c
  * there, a lunar-month wave of 1.2e-8 deg/day on Neptune. Before the fix
@@ -106,11 +110,11 @@ int main(int argc, char **argv)
       else
         printf("  %-13s             angles %.2e deg/day, distance %.2e of it per day\n",
                set[k].n, ang, rel);
-      if (ang > 5e-9) {
+      if (ang > ((fl & SEFLG_TOPOCTR) ? 5e-9 : 1e-10)) {
         printf("    FAIL: the aberration's part of an angular speed is not its rate\n");
         bad++;
       }
-      if (rel > 1e-11) {
+      if (rel > 5e-13) {
         printf("    FAIL: the aberration's part of the distance rate is not its rate\n");
         bad++;
       }

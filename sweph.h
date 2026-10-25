@@ -923,6 +923,12 @@ struct epsilon {
  *     along a straight line, reading the orbit at t - tau only with
  *     SEFLG_SPEED (1.6e-5 deg for a = 0.137 AU; UPSTREAM-BUGS 81 part 3,
  *     G80)
+ *   - app_pos_etc_sbar() took the barycentric Sun's instant of date from
+ *     the Earth's slot, which holds its result but on JPL another
+ *     request's instant: its latitude speed of date off by up to 1.9e-5
+ *     deg/day (NaN as a context's first request) and its sidereal
+ *     longitude by the ayanamsa's change since then (0.14 deg ten years
+ *     on; UPSTREAM-BUGS 86, G85)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
