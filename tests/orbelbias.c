@@ -29,6 +29,13 @@
  * equinox at the observation instant through its light-time loop and left
  * the turning out of the speed.
  *
+ * And (UPSTREAM-BUGS 140, in the observer every topocentric place shares):
+ * the site was placed by UT1 = TT - delta t rounded to a double, 2^-31
+ * day there, so its position was a staircase in delta t, its rate between
+ * the steps the rotation's without delta t's, which the velocity carries:
+ * the Earth-centred orbit's topocentric speed was off five-point
+ * differences of its positions by d delta t / dt of the site's velocity.
+ *
  * And (UPSTREAM-BUGS 141): the return flag was the flags the Earth's
  * computation left, where swe_calc() returns its answer's flags with the
  * caller's coordinate bits, and without the default ephemeris's bit when
@@ -75,10 +82,9 @@
  *      binary-fraction instant near each date, the mean anomaly moved along
  *      the mean motion, six flag sets (ecliptic of date, J2000, equatorial,
  *      ecliptic XYZ true, no aberration or deflection, sidereal), every
- *      centre but Moshier's barycentre and, about the Earth, the
- *      topocentric one (a residual of its own, 1.8e-8 to 4.6e-8 deg/day on
- *      every equinox and on the seorbel.txt path alike): within 1e-8
- *      deg/day (distances and XYZ as their angle).
+ *      centre but Moshier's barycentre, the topocentric one about the
+ *      Earth included: within 1e-8 deg/day (distances and XYZ as their
+ *      angle).
  *   5. the return flag, files present: swe_calc_orbel() and
  *      swe_calc_orbel_ut() return what swe_calc() and swe_calc_ut() of the
  *      same elements return, with the same message, for check 1's twelve
@@ -130,7 +136,15 @@
  * with SEFLG_XYZ | SEFLG_RADIANS (32 of them among those) return without
  * SEFLG_RADIANS (4354 for 12546 with SEFLG_SWIEPH | SEFLG_SPEED); the UT
  * function, whose delta t names the ephemeris as swe_calc_ut() does, only
- * the latter. The upstream build fails 54 then, 53 after.
+ * the latter. The upstream build fails 54 then, 53 after. Before bug
+ * 140's fix check 4 about the Earth, topocentric, fails on every
+ * ephemeris: 4.7e-8 deg/day on the Swiss files, 4.6e-8 on Moshier, 2.8e-7
+ * on de200 (a step of the staircase inside the stencil at 1700), the
+ * seorbel.txt path the same; after, within 2.4e-9 (1.5e-9 de200, 1.6e-9
+ * Moshier), check 4's worst 4.0e-9 (the 1.2 AU orbit). The upstream
+ * build, whose observer keeps the rounding (the fix is guarded), still
+ * fails 53, its orbit of date about the Earth by 3.4e-4 deg/day in check
+ * 4 with the topocentric rows (9.3e-5 without).
  * Run as
  *   orbelbias EPHEDIR [DE4XX_FILE]
  * DE4XX_FILE a path to a JPL file of DE number 403 or above (SE_TEST_DE4
@@ -360,17 +374,16 @@ static void Leg(int32 eph, const char *name, int *bad)
       (*bad)++;
     }
     /* check 4: elements of date, the speed the rate of the positions
-     * (bug 136); every centre but Moshier's barycentre, and but the
-     * topocentric one about the Earth, whose speed has a residual of its
-     * own on every equinox and on the seorbel.txt path alike */
+     * (bug 136); every centre but Moshier's barycentre, the topocentric
+     * one about the Earth included (bug 140: the site placed by a rounded
+     * UT1) */
     if (B[ib].eq == SE_ORBEL_EQ_DATE) {
       double w5 = 0;
       int n5row = 0, n5err = 0;
       for (id = 0; id < ND; id++)
         for (ic = 0; ic < 4; ic++)
           for (ifl = 0; ifl < n5; ifl++) {
-            if (((eph & SEFLG_MOSEPH) && ctrs[ic] == SEFLG_BARYCTR)
-                || (B[ib].geo && ctrs[ic] == SEFLG_TOPOCTR))
+            if ((eph & SEFLG_MOSEPH) && ctrs[ic] == SEFLG_BARYCTR)
               continue;
             if (FivePoint(ib, id, eph | f5[ifl] | ctrs[ic], &w5, serr) < 0) {
               if (n5err++ == 0)

@@ -1234,6 +1234,12 @@ struct epsilon {
  *     equinox of date at the emission instant under light time, as
  *     upstream's JDATE branch reads them, and that frame's turning in the
  *     speed, are this fork's function, active in both builds; G126)
+ *   - the topocentric site placed by UT1 = TT - delta t rounded to a
+ *     double, 2^-31 day: a staircase in delta t, whose rate leaves out
+ *     delta t's that the site's velocity carries, the topocentric speed of
+ *     an orbit 0.01 AU from the Earth 1.8e-8 to 4.7e-8 deg/day off its
+ *     positions' five-point rate, the topocentric Moon's 2.5e-7
+ *     (UPSTREAM-BUGS 140, G126)
  *   - (nothing for UPSTREAM-BUGS 141: swe_calc_orbel()'s return flag as
  *     swe_calc() makes it, the caller's coordinate bits and no default
  *     ephemeris bit where none was named, is this fork's function, active

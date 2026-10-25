@@ -2009,6 +2009,43 @@ static double orbel_date_rate_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 140: the site's move for a user delta t a quarter ulp of
+ * UT1 longer, at TT 2000 Jan 1.5, Zurich, Swiss files: the site as the
+ * Sun's geocentric less topocentric true J2000 equatorial ICRS XYZ place,
+ * its displacement against -v 2^-33 day, v the site's velocity, relative.
+ * UT1 = TT - delta t is a double, 2^-31 day apart there, and the site was
+ * placed by it rounded: a quarter ulp did not move it (1); the rounding
+ * recovered, it moves by its velocity over the 2^-33 day (0). */
+static double topo_ut_round_off(void)
+{
+  double xs[2][6], v[3], d = 0, e = 0;
+  int32 fl = SEFLG_SWIEPH | SEFLG_TRUEPOS | SEFLG_J2000 | SEFLG_EQUATORIAL | SEFLG_XYZ
+             | SEFLG_ICRS | SEFLG_SPEED;
+  char serr[256];
+  int k, i;
+  for (k = 0; k < 2; k++) {
+    double xg[6], xt[6];
+    swe_close();
+    swe_set_ephe_path(EPHE);
+    swe_set_topo(8.55, 47.37, 400);
+    swe_set_delta_t_userdef(1.0 / 2048 + (k ? ldexp(1, -33) : 0));
+    if (swe_calc(2451545.0, SE_SUN, fl, xg, serr) < 0
+        || swe_calc(2451545.0, SE_SUN, fl | SEFLG_TOPOCTR, xt, serr) < 0) {
+      swe_set_delta_t_userdef(SE_DELTAT_AUTOMATIC);
+      return -1;
+    }
+    for (i = 0; i < 6; i++)
+      xs[k][i] = xg[i] - xt[i];
+  }
+  swe_set_delta_t_userdef(SE_DELTAT_AUTOMATIC);	/* swe_close() keeps it */
+  for (i = 0; i < 3; i++) {
+    v[i] = -xs[0][i + 3] * ldexp(1, -33);
+    d += (xs[1][i] - xs[0][i] - v[i]) * (xs[1][i] - xs[0][i] - v[i]);
+    e += v[i] * v[i];
+  }
+  return sqrt(d / e);
+}
+
 /* UPSTREAM-BUGS 86: the JPL barycentric Sun's sidereal (Lahiri) longitude,
  * right after a request for Mars ten years on, against its tropical
  * longitude less the ayanamsa at its own date, deg. The Sun is answered in
@@ -3422,7 +3459,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, dtflag0, fbmb, nutstep;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, dtflag0, fbmb, nutstep, toputr;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3544,6 +3581,7 @@ int main(int argc, char **argv)
   orbelmb = orbel_mosh_bary_ret();
   fbmb = fallback_mosh_bary_ret();
   orbeldate = orbel_date_rate_off();
+  toputr = topo_ut_round_off();
   starkept = star_load_kept();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
@@ -4412,6 +4450,14 @@ int main(int argc, char **argv)
   else {
     printf("  orbel equinox of date rate %.2e AU/day FAIL: expected %s\n",
            orbeldate, WANT_DEFECT ? "> 1e-7" : "< 1e-12");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (toputr > 0.9) : (toputr >= 0 && toputr < 0.05))
+    printf("  site at UT1's rounding %.2e OK\n", toputr);
+  else {
+    printf("  site at UT1's rounding %.2e FAIL: expected %s\n",
+           toputr, WANT_DEFECT ? "> 0.9" : "< 0.05");
     bad++;
   }
 

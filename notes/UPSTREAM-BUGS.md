@@ -174,6 +174,7 @@ worst were in code that had never executed even once.
 | 145 | `swe_deltat_ex()` with no ephemeris bit in the flag takes the tidal term of the JPL file the context has open, else the default, not the Swiss files' that a 0 flag means to `swe_calc()` and every UT function: at 1950 28.927550 s on the thread that set de200.eph, 28.931886 on a second thread until it opens the file, for 28.932196; 169.4 s in AD 1000; a flag-0 eclipse search 11.3 s off | Correctness | `swephlib.c` |
 | 139 | With the fallback allowed, a Swiss or JPL barycentric request whose files are missing is answered from Moshier, which refuses it asked for itself: Moshier's heliocentric place under SEFLG_BARYCTR and SEFLG_MOSEPH, Mars 0.24 deg and 7.2e-3 AU off the files' barycentric one, the Moon 0.37 deg; `swe_calc_orbel()`, `swe_calc_pctr()` and `swe_nod_aps()`'s barycentric ellipse alike | Correctness (behaviour) | `sweph.c` |
 | 146 | The nutation interpolation's nodes lie both sides of `SEMOD_JPLHORA_3`'s step at 1962 Jan 20 under SEFLG_JPLHOR_APPROX (7.17e-2" in dpsi on the default model): dpsi and every place of date within a day of it interpolated across it, 1.95e-2" off the exact nutation at the switch + 0.3 after a call at - 0.5, 6.93e-2" at worst, where the interpolation is otherwise within about 3 mas | Correctness | `swephlib.c` |
+| 140 | The topocentric site is placed by UT1 = TT - delta t rounded to a double, 2^-31 day: a staircase in delta t whose rate leaves out delta t's, which the site's velocity carries -- the topocentric speed of an orbit 0.01 AU from the Earth 1.8e-8 to 4.7e-8 deg/day off five-point differences of its positions (2.8e-7 on de200), the topocentric Moon's 2.5e-7, on `swe_calc_orbel()` and seorbel.txt alike | Correctness | `sweph.c` |
 | 141 | `swe_calc_orbel()` (this fork's) returns SEFLG_SWIEPH where no ephemeris was named (18178 for `swe_calc()`'s 18176 with SEFLG_BARYCTR and SEFLG_SPEED) and drops SEFLG_RADIANS with SEFLG_XYZ (4354 for 12546): not `swe_calc()`'s return flag for the same flags, the answer the same | Correctness (behaviour) | `sweph.c` |
 
 ---
@@ -9067,7 +9068,9 @@ of the 0.01 AU orbit is 1.8e-8 to 4.6e-8 deg/day off five-point
 differences of its positions. It holds flat over steps 2^-8..2^-12 day,
 on every equinox (J2000 too) and on the seorbel.txt path alike, at the tip
 before this change. A residual above the floor, measured and recorded
-here, not fixed.
+here, not fixed. Fixed as entry 140: the observer's site placed by a
+rounded UT1, a staircase in delta t; G126's check 4 now takes that
+centre too.
 
 G126 `tests/orbelbias.c` (entries 130 and 135) gains four orbits, the
 first four with their elements of the equinox of date (JDATE in the
@@ -9516,6 +9519,87 @@ Noticed, not fixed:
   `NUT_SPEED_INTV` (1e-4 day) of it the nutation's rate, a central
   difference there, takes its 7.17e-2" step: the speed 9.96e-2 deg/day
   off at the switch - 2^-16 and - 2^-14 day.
+
+## 140. The topocentric site is placed by UT1 = TT - delta t rounded to a double: a staircase in delta t, whose rate leaves out delta t's that the velocity carries, 1.8e-8 to 4.7e-8 deg/day on an orbit 0.01 AU from the Earth
+
+**Severity: Correctness (speeds against their positions' rate: 1.8e-8 to 4.7e-8 deg/day on the Earth-centred orbit, 2.8e-7 on de200; the topocentric Moon 2.5e-7 to 4.3e-7; places 6 mm at the site, up to 9e-10 deg on the Moon)**
+**Where:** `sweph.c`: `swi_get_observer()`
+
+Recorded by entry 136 as a residual of the 0.01 AU orbit about the Earth:
+its topocentric speed 1.8e-8 to 4.6e-8 deg/day off five-point differences
+of its positions, flat over steps 2^-8..2^-12 day, on every equinox and on
+the seorbel.txt path alike. Not the light time, the focus or the diurnal
+aberration's rate: with SEFLG_TRUEPOS, where the Earth cancels and only
+the two-body orbit less the site is left, it was the same 4.5e-8; with a
+user delta t of 2^-11 day, exact and constant, 2.3e-9. The site itself:
+
+- `swi_get_observer()` takes UT1 as tjd - delta t, a double: 2^-31 day
+  (40 us) apart at JD 2.4e6. Delta t changes by 3e-9 to 4e-8 of a day a
+  day, so over a five-point stencil (2^-8 day at h = 2^-10) by less than
+  an ulp: the rounded UT1 follows TT with delta t frozen, and steps by an
+  ulp every ulp / (d delta t / dt), 18 minutes to 3.5 hours. The site was a
+  staircase in delta t, steps of 8.5e-14 AU (13 mm at 47 N).
+- Its velocity carries the rotation per TT day, (1 - d delta t / dt)
+  (entry 36). So against five-point differences of the positions it was
+  off by -d delta t / dt of itself: 1.13e-8, -3.76e-8, -8.2e-9, 3.3e-9
+  relative (1700, 1900, 2000, 2025) for d delta t / dt of -1.12e-8,
+  3.77e-8, 8.25e-9, -3.23e-9; at 2150 -6.1e-8 for 2.2e-8, and on de200 at
+  1700 -2.7e-7 for -8.2e-9: a step inside the stencil.
+- On the 0.01 AU orbit (the site's motion 1.0 deg/day of its topocentric
+  one): 4.4e-8 deg/day Swiss, 4.5e-8 Moshier, 2.6e-7 de200 over eleven
+  flag sets, J2000 and of date, `swe_calc_orbel()` and seorbel.txt alike.
+- Every topocentric place has the site: the topocentric Moon's speed
+  against five-point differences at Zurich, ten epochs -2900..2900, 2.5e-7,
+  2.7e-7 and 4.3e-7 deg/day at steps 2^-8, 2^-9 and 2^-10 day; G72's (b)
+  2.51e-7, G43's Moon 1.28e-7.
+- The place: up to half an ulp of UT1 off, 6 mm at 47 N, 2.4e-10 deg on
+  the 0.01 AU orbit and up to 9e-10 on the Moon, below the position
+  floor; the speeds' are above it.
+
+**Fix, as done here:** the rounding of tjd - delta t is recovered exactly
+(Knuth's two-sum: bb = tjd_ut - tjd, err = (tjd - (tjd_ut - bb)) + (-delt
+- bb)) and the site's sidereal time moved by err at the rotation's rate,
+360 x 1.00273781191135448 deg a day (the precession in right ascension's
+1e-7 of it is 1e-14 deg over the 2.3e-10 day). Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, inside the true-pole block (entry 27) where the
+site's sidereal time is taken; the compat build places upstream's site.
+Six operations a topocentric observer; the benches make no topocentric
+call.
+
+After: the site's velocity agrees with five-point differences of its
+positions within 4.9e-11 of itself (8.9e-15 AU/day). The 0.01 AU orbit's
+topocentric speed within 2.3e-9 deg/day on the Swiss files, 9.2e-10 on
+de200, 1.3e-9 on Moshier, at 2^-10 day, both equinoxes, `swe_calc_orbel()`
+and seorbel.txt alike (2^-8: 1.2e-8, the difference's truncation; 2^-9
+1.8e-9; 2^-12 1.5e-8, the positions' rounding over the step). The
+topocentric Moon: 4.5e-8, 6.3e-9 and 8.5e-9 deg/day at 2^-8, 2^-9 and
+2^-10 day; G72's (b) 7.46e-8 (its 2^-8 day's truncation), (c) 1.06e-8 as
+before; G43's Moon 4.59e-8 at Zurich, 1.98e-8 at 70 N.
+
+G1 moves 236 of its 13000 rows against the tip before this change, all
+through the observer: topo (180) by up to 8.5e-10 deg in place and
+4.6e-9 deg/day in speed; the local eclipse and occultation times by an ulp
+of the JD (4.66e-10 day); helpheno and vislim by up to 1.5e-9;
+cov:lun_occult_where's place by 5.2e-8 deg; solecl_where[5] and
+solecl_how_max[5] attr[0] by 5.0e-7, a near-central eclipse whose Moon-Sun
+separation at the maximum found is the search's own residual, 2.56e-6 deg
+before, 2.83e-6 after.
+
+G126 `tests/orbelbias.c` (entries 130, 135, 136, 141): check 4 takes the
+topocentric centre about the Earth back, 120 rows on the Swiss files and
+de200, 90 on Moshier. Before the fix 3 failures, 4.7e-8 deg/day Swiss,
+2.8e-7 de200, 4.6e-8 Moshier; after it passes, check 4 within 4.0e-9 (the
+1.2 AU orbit). The compat build fails 53 as before, that orbit's check 4
+now 3.4e-4 deg/day with its topocentric rows.
+
+G24 `topo_ut_round_off`: the site (the Sun's geocentric less topocentric
+true J2000 equatorial ICRS XYZ place) at TT 2000 Jan 1.5, Zurich, Swiss
+files, with a user delta t of 2^-11 day and 2^-11 + 2^-33 (a quarter ulp
+of UT1): its displacement against -v 2^-33 day, relative. 1.73e-3
+shipped, 1.00 compat and before the fix (the quarter ulp rounded away).
+
+G126, G87, G107, G48, G27, G65, G80, G95, G43, G99, G72 and G24 (both
+ways) pass; G1 moves as above.
 
 ## 141. `swe_calc_orbel()` returns SEFLG_SWIEPH where no ephemeris was named, and drops SEFLG_RADIANS with SEFLG_XYZ: not `swe_calc()`'s return flag (this fork's)
 

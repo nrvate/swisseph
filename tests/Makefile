@@ -1256,10 +1256,11 @@ check-closesurvive: closesurvive
 # missing, strict and with the fallback, its answers and refusals
 # swe_calc()'s (UPSTREAM-BUGS 135); elements of the equinox of date as
 # seorbel.txt's JDATE, at the emission instant and with the frame's turning
-# in the speed, against five-point differences too (UPSTREAM-BUGS 136); the
-# return flag swe_calc()'s for the same flags, no ephemeris bit and
-# SEFLG_XYZ | SEFLG_RADIANS included, through both functions
-# (UPSTREAM-BUGS 141).
+# in the speed, against five-point differences too (UPSTREAM-BUGS 136), the
+# Earth-centred orbit's topocentric one included, its site placed by UT1
+# unrounded (UPSTREAM-BUGS 140); the return flag swe_calc()'s for the same
+# flags, no ephemeris bit and SEFLG_XYZ | SEFLG_RADIANS included, through
+# both functions (UPSTREAM-BUGS 141).
 check-orbelbias: orbelbias
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./orbelbias $(EPHE) "$${SE_TEST_DE4:-}"
 

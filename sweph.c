@@ -12463,6 +12463,22 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
   /* apparent sidereal time */
   sidt = swe_sidtime0_r(ctx, tjd_ut, eps * RADTODEG, nut * RADTODEG);
   sidt *= 15;	/* in degrees */
+  /* Upstream bug 140: UT1 = TT - delta t is rounded to a double, 2^-31
+   * day (40 us) apart at JD 2.4e6, so the site placed by it was a
+   * staircase in delta t: steps of 8.5e-14 AU (13 mm at 47 N) every ulp /
+   * (d delta t / dt), minutes to hours apart, and between them the
+   * rotation's rate without delta t's, which the velocity carries (bug
+   * 36). Against five-point differences of the positions the site's
+   * velocity was off by d delta t / dt of itself (3.8e-8 in 1900), the
+   * topocentric speed of an orbit 0.01 AU from the Earth by 1.8e-8 to
+   * 4.7e-8 deg/day (2.8e-7 on de200 at 1700, a step inside the stencil),
+   * on swe_calc_orbel() and seorbel.txt alike, and the topocentric Moon's
+   * by 2.5e-7 (G72). The rounding is recovered exactly (Knuth's two-sum)
+   * and the site turned by it at the rotation's rate. G126. */
+  {
+    double bb = tjd_ut - tjd, ut_err = (tjd - (tjd_ut - bb)) + (-delt - bb);
+    sidt += ut_err * 360.0 * 1.00273781191135448;
+  }
 #else
   double nutlo[2];
   /* Keyed like every other reader of these caches (swi_check_ecliptic,
