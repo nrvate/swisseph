@@ -4903,14 +4903,16 @@ if (1) {
  * had no such term at all (3.2e-4 deg/day topocentric). Which is why
  * swe_calc() computed every topocentric speed with aberration from three
  * positions instead. The observer's own part is now tau a(t), a = the site's
- * acceleration by a central difference of its velocity over +-0.001 day
- * ((omega h)^2 / 6 = 7e-6 of it), less its part along the line of sight u:
+ * acceleration by a central difference of its velocity over +-2^-11 day
+ * ((omega h)^2 / 6 = 1.6e-6 of it, a binary step so t +- h is exact; a
+ * step of 2^-8 day cost 1e-4, 2e-8 deg/day on topocentric latitude
+ * speeds), less its part along the line of sight u:
  * aberration keeps the distance to first order in v/c (|A(u, V)| = |u| +
  * O(v^2)), so only a's transverse part turns the apparent place. */
 static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, const double *u,
                           double *acc, char *serr)
 {
-  const double h = 1.0 / 256;
+  const double h = 1.0 / 2048;
   double xp[6], xm[6], ru, au = 0;
   int i;
   if (swi_get_observer(ctx, tjd + h, iflag | SEFLG_NONUT, NO_SAVE, xp, serr) != OK

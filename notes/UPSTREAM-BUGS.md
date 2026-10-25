@@ -1889,8 +1889,14 @@ with it:
 
 **Fix, as done here:** the observer's part is the Earth's plus the
 site's. The site's is tau times its acceleration at t, a central
-difference of `swi_get_observer()`'s velocity over +-0.001 day
-(`observer_accel()`, `observer_at_lt()`); the Earth's keeps the
+difference of `swi_get_observer()`'s velocity over +-2^-11 day
+(`observer_accel()`, `observer_at_lt()`; truncation (omega h)^2/6 =
+1.6e-6 of it. Bug 49's commit had set +-2^-8 day, whose 1e-4 put 2e-8
+deg/day on every topocentric latitude speed and doubled the longitude
+residual. The step was corrected afterwards: topocentric latitude speeds
+of the planets went from 2e-8 to 6-9e-9 deg/day and the Sun's from
+1.5e-8 to 6e-10, against five-point differences over 2^-9 day, -2900..
+2900); the Earth's keeps the
 difference of the two ephemeris reads, plus tau^2 a'/2 with a' the
 rate of the Sun's pull at t from the heliocentric state alone
 (`earth_at_lt()`). Not from the two reads' positions: across a segment
