@@ -1541,6 +1541,11 @@ struct epsilon {
  *     on its own: Cupido at JD 2378496.6 with the files of 1800-2400 alone
  *     258, 4.3e-3 deg off the Moshier request (UPSTREAM-BUGS 208, G158,
  *     G24)
+ *   - swe_nod_aps()'s osculating speeds a three-point difference over 2^-6
+ *     day (the Moon 2^-11), off by its truncation where the points turn
+ *     fast: Neptune's heliocentric perihelion in 1815 5.3e-7 deg/day, the
+ *     Moon's apsides 7.9e-8 (the compat build's are upstream's, over 1e-3
+ *     day per AU: 2.0e-6 there) (UPSTREAM-BUGS 201, G154, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

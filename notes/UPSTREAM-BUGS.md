@@ -236,6 +236,7 @@ worst were in code that had never executed even once.
 | 202 | `lunar_osc_elem()` leaves Moshier's Moon out of entry 186's frame hold, but its velocity carries the frame's turning (entries 95, 184), which `swi_plan_for_osc_elem()` does not take off, so its true node and osculating apogee move with the precession model's rates: within 1/16 day of a short-term window's edge, with IAU 1976 under Vondrak at J2000 -+ 2 centuries, the node's speed 9.5e-8 and 1.05e-7 deg/day off the side's model's, the apogee's 5.0e-6 and 1.4e-6 | Correctness | `sweph.c` |
 | 206 | Within 2^-9 day of an ephemeris's edge a star with SEFLG_SPEED is refused or answered with Moshier mixed in, where it answers without the flag: `fixstar_obs_rate()` reads the Earth 2^-9 day either side for the aberration's rate. On de200.eph Aldebaran -1 "outside JPL eph. range" 2^-10 day inside either end (1 without the flag; Mars 257 at the end); with the Swiss files of 1800-2400 alone the downgrade's refusal (strict) or Moshier's heliocentric velocity in the acceleration, 6.6e-4 deg/day on the longitude speed (allowed); at a Moon file's end the same through the Moon | Correctness (behaviour) | `sweph.c` |
 | 208 | A fictitious body or `swe_calc_orbel()`'s orbit whose light time leaves the Swiss files' span is answered from Moshier's Sun, 0, taken for the barycentric one, under either setting: the light-time loop's `main_planet_bary()` falls to Moshier on its own and answers OK. Cupido at JD 2378496.6 with the files of 1800-2400 alone 258, 4.33e-3 deg off the complete directory's and the Moshier request's, strict too | Correctness (behaviour) | `sweph.c` |
+| 201 | `swe_nod_aps()`'s osculating nodes' and apsides' speeds (entry 80) are a three-point difference over 2^-6 day (the Moon 2^-11), off by h^2 / 6 of the point's third derivative where a near-circular orbit's apsides turn fast, and over the Moon's short step by its points' noise: against nine-point differences of the positions, 1800-2100, Neptune's heliocentric perihelion 5.3e-7 deg/day off in 1815, Uranus's 4.2e-8, the Earth's 3.5e-8, Jupiter's 2.2e-8, the Moon's geocentric apsides 7.9e-8 and nodes 1.6e-8, the distances' speeds 1.2e-8 AU/day | Correctness | `swecl.c` |
 
 ---
 
@@ -14441,6 +14442,126 @@ pass; before the fix 80 fail, the upstream build 100 (G158 971 rows, 640
 before, 764 upstream). G24 `fict_lt_edge_off`: Cupido at JD 2378496.6
 with the files of 1800-2400, the fallback allowed, against the Moshier
 request: 0 shipped, 4.32e-3 deg compat (4.33e-3 shipped before the fix).
+
+## 201. `swe_nod_aps()`'s osculating speeds are a three-point difference, off by its truncation where the points turn fast: Neptune's heliocentric perihelion 5.3e-7 deg/day, the Moon's apsides 7.9e-8
+
+**Severity: Correctness (SE_NODBIT_OSCU and SE_NODBIT_OSCU_BAR, and SE_NODBIT_MEAN for Pluto and the asteroids, with SEFLG_SPEED: the four points' speeds off their positions' rate by up to 5.3e-7 deg/day (Neptune's heliocentric perihelion in 1815), 4.2e-8 for Uranus's, 3.5e-8 for the Earth's (2.1e-8 the Sun's geocentric perigee), 2.2e-8 Jupiter's, 2.0e-8 Saturn's, 1.3e-8 Venus's, 1.2e-8 Mercury's, 7.9e-8 for the Moon's geocentric apsides and 1.6e-8 for its nodes; the distances' speeds up to 1.2e-8 AU/day)**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, the osculating points
+
+Entry 186's noticed item asked why Mars's osculating ascending node's
+speed was 2.2e-5 deg/day off a nine-point difference over 2^-3 day 305
+days past J2000 - 2 centuries, away from any edge. Not reproduced: at JD
+2378800 (TS + 305, 1800 Oct 31) and the instants within 1/8 day of it, on
+the Swiss files and de200, under "0,9,1" and "0,1,1", ecliptic and
+equatorial, Mars's points are within 3.8e-10 deg/day of that reference
+(7.3e-10 for 5 days either side), the Moon's nodes 1.7e-8 and apsides
+4.5e-8 (4.4e-11, 8.6e-10 and 2.2e-9 after the fix below). Over the two
+years after the edge that reference fails in two ways where the speed
+does not, and a 2.2e-5 is one of their tails:
+- within a day of a point's passage behind the Sun: a node lies in the
+  ecliptic, so it crosses the disc near its centre, where the deflection
+  (m(r) / r, entry 39) turns in hours. Mars's descending node on 1800 Nov
+  10, its ascending node on 1800 May 8 and 1801 May 9: 8.1e-3, 3.3e-3 and
+  3.2e-3 deg/day off the 2^-3 reference, 1.7e-6 half a day out, which
+  nine-point references over 2^-12 and 2^-14 day take to within 1.4e-9 of
+  the speed (shorter ones meet the points' noise); geocentric only, and
+  de200 the same (7.4e-3);
+- within half a day of the Swiss files' segment joints, where the points
+  jump: at the barycentric Sun's joint, JD 2378860.840 (1800 Dec 31),
+  Mars's heliocentric node by 1.07e-4 deg and its perihelion by 4.2e-4
+  (the Sun's velocity, which the osculating ellipse amplifies): 2.8e-4 to
+  2.5e-3 deg/day off the 2^-3 reference within half a day, within 8.5e-9
+  of references over 2^-6 to 2^-12 day that stay on one side; at Mars's
+  own joint, JD 2378686.476 (1800 Jul 9), likewise (3.3e-4 to 6.9e-4); at
+  the Moon's (every 27.55 days, 1800 Oct 22.2) its points 2.0e-3.
+The speed's own method is off elsewhere, by less. The points' speeds are a
+central difference of the points at tjd -+ h (entry 80: h = 2^-6 day for
+the planets and the Earth's orbit, 2^-11 for the Moon), off by h^2 / 6 of
+the point's third derivative, and a near-circular orbit's apsides turn
+fast: Neptune's heliocentric perihelion moves at 0.107 deg/day at the end
+of 1815, its third derivative 1.3e-2 deg/day^3. Over the Moon's 2^-11 day
+the truncation is 5e-9 and the rest the points' noise over 2 h (its
+apsides amplify its velocity's rounding by 1 / e). Measured against
+nine-point central differences of the positions over 2^-4 and 2^-5 day
+that agree within 3e-10 deg/day (the Moon's also 2^-5 and 2^-6), at 1125
+dates 1800-2100 97.31 days apart, the Swiss files, default models,
+ecliptic of date, the worst of the longitude's and latitude's speeds:
+- heliocentric: Neptune's perihelion 2.2e-7 (5.3e-7 at G154's 1815 date,
+  whose references agree within 3e-9), Uranus's 4.2e-8, the Earth's
+  3.5e-8, Jupiter's 2.2e-8, Saturn's 2.0e-8, Venus's 1.3e-8, Mercury's
+  1.2e-8, Pluto's 9.7e-9, Mars's 6.6e-9; the nodes up to 2.7e-8
+  (Uranus's);
+- geocentric: the same through the planets (Neptune's 2.2e-7, Uranus's
+  4.2e-8), the Sun's perigee 2.1e-8, the Moon's apsides 7.9e-8, its nodes
+  1.6e-8; de200 7.8e-8 and 1.6e-8, Moshier 6.8e-8 and 1.7e-8;
+- the distances' speeds up to 1.2e-8 AU/day (Neptune's points).
+
+**Fix, as done here:** the five-point difference over tjd + k h, k = -2..2
+(the middle instant tjd itself, so the positions are unchanged bit for bit:
+every row of 60 dates 1600-1994, 12 bodies, 13 flag sets, the four
+methods, with and without SEFLG_SPEED), exact but for a binade's rounding,
+which is taken back to first order as `lunar_osc_elem()` takes it (entry
+75): the slope times 1 + D[r], r each instant's rounding by two-sum. The
+step is the one of least truncation plus noise: 2^-5 day for the planets
+and the Earth's orbit (1.0e-10 deg/day heliocentric at those dates; at
+2^-6 2.8e-9, the points' noise, Neptune's), 2^-6 for the Moon (3.1e-9
+geocentric; 1.8e-8 at 2^-5, its truncation), as `lunar_osc_elem()`'s
+Moon on the files. The mean points (but Pluto's and the asteroids', which
+are osculating) are unchanged bit for bit. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, with entry 80's instants; the compat build keeps
+upstream's difference over 1e-3 day per AU (1e-4 for the Moon).
+- After, the same survey: heliocentric within 9.8e-11 deg/day (Neptune's
+  perihelion), the Moon's 8.7e-12; geocentric within 7.6e-10 for the
+  planets but Pluto's aphelion in 1812, 7.7e-9 (below), the Moon's apsides
+  3.1e-9 (1.7e-9 against references over 2^-5 and 2^-6 day), its nodes
+  8.0e-10 (Moshier's 8.4e-10); de200 and Moshier the same (the Moon's
+  2.7e-9 and 2.7e-9); the distances within 2.0e-11 AU/day (Neptune's, the
+  references' noise).
+- Cost: `perf stat -e instructions:u`, 20000 `swe_nod_aps()` osculating
+  calls with speeds, Mars and the Moon alternately on the Swiss files
+  1452..2400, 22157083812 before, 23826307724 after (+7.5%: two more
+  epochs, each a `swe_calc()` read; not on `swe_calc()`'s path).
+
+G154 `tests/nodaposcrate.c`, check (b): the Sun's, the Moon's and
+Mercury's to Pluto's osculating points, geocentric and heliocentric, at
+eleven dates of that survey where the three-point speeds were worst
+(1808-2096), the longitude's, latitude's and distance's speeds against a
+nine-point difference over 2^-4 day (the Moon 2^-5), counted where it
+agrees with the one over half the step within 3e-9 deg/day (3 of 220 do
+not: points behind the Sun): 20 checks within 1e-8 deg/day and 5e-11
+AU/day. After within 2.3e-9 for the Moon, 1.3e-9 for the planets but
+Pluto's geocentric aphelion's 7.7e-9, the distances 2.0e-11; before the
+fix 18 of 20 fail (Neptune's 5.3e-7, the Moon's 7.9e-8, the distances
+1.2e-8 AU/day); the upstream build all 20 (2.9e-5 deg/day, 7.9e-5 AU/day,
+its noisier points not counted on 57 of 220). G24 `nodaps_osc_rate_off`:
+Neptune's heliocentric perihelion at JD 2384338.59765625 and the Moon's
+geocentric perigee at JD 2395431.9375, the longitude's speed against
+those references, the larger: 9.63e-10 deg/day shipped (5.33e-7 before the
+fix), 2.02e-6 compat. G79, G47, G69, G78, G92, G104, G143, G146 and G74
+pass.
+
+Noticed, not fixed:
+- RESIDUAL (7.7e-9 deg/day). Pluto's geocentric osculating aphelion at JD
+  2382878.94921875 (1812 Jan 1): its longitude's speed 7.71e-9 deg/day
+  off its positions' rate, which every reference from 2^-3 to 2^-8 day
+  gives within 1e-10; with SEFLG_NOABERR or SEFLG_TRUEPOS 2.3e-12. It is
+  the aberration's rate (entry 70's), -9.0553e-5 deg/day where the
+  positions' is -9.0545e-5 (8.5e-5 of it); before this fix the
+  three-point truncation (+8.1e-9) hid it (4.2e-10). The other points
+  there within 1.7e-10.
+- BEHAVIOUR. `swe_nod_aps()`'s sidereal speeds (the traditional
+  algorithm) are the tropical ones without nutation: the ayanamsa is
+  subtracted from the longitude (`swi_get_ayanamsa_ex()`) but not its
+  rate from the speed, so every point's longitude speed is 3.82e-5
+  deg/day (Lahiri's rate) off its positions' rate, mean and osculating:
+  the Moon's mean node at J2000 -5.29538e-2 deg/day where
+  `swe_calc(SE_MEAN_NODE, SEFLG_SIDEREAL)` gives -5.29920e-2.
+  `swi_get_ayanamsa_with_speed()` (entry 91) would take it.
+- The Swiss files' segment joints above make the osculating points jump
+  (1.07e-4 deg on Mars's node at the barycentric Sun's joint), so within a
+  stencil of one (2^-4 day for the planets, 2^-5 for the Moon now, 2^-6
+  and 2^-11 before) the speed is a difference across the jump: the files'
+  velocities at their joints, not this code's.
 
 ## How these were found
 

@@ -4125,6 +4125,61 @@ static double node_mosh_window_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 201: swe_nod_aps()'s osculating speeds against their
+ * positions' rate where the points turn fast: Neptune's heliocentric
+ * perihelion at JD 2384338.59765625 (1815) and the Moon's geocentric
+ * perigee at JD 2395431.9375 (1846), the longitude's speed on the Swiss
+ * files against a nine-point central difference of the positions over
+ * 2^-4 day (the Moon 2^-5), the larger, deg/day. The shipped build took a
+ * three-point difference over 2^-6 day (2^-11 for the Moon), off by h^2 / 6
+ * of the third derivative: 5.3e-7 and 7.9e-8; upstream's over 1e-3 day
+ * per AU (1e-4 for the Moon). -1 if a call fails. */
+static double nodaps_osc_rate_off(void)
+{
+  static const struct {
+    double t, h;
+    int ipl, pt;
+    int32 fl;
+  } C[2] = {
+    { 2384338.59765625, 1.0 / 16, SE_NEPTUNE, 2, SEFLG_HELCTR },
+    { 2395431.9375, 1.0 / 32, SE_MOON, 2, 0 },
+  };
+  const double c9[4] = { 4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280 };
+  double r = 0;
+  char serr[256];
+  int i, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  for (i = 0; i < 2 && r >= 0; i++) {
+    double x[4][6], p[2][4][6], d = 0;
+    int32 fl = SEFLG_SWIEPH | C[i].fl;
+    if (swe_nod_aps_r(c, C[i].t, C[i].ipl, fl | SEFLG_SPEED, SE_NODBIT_OSCU,
+                      x[0], x[1], x[2], x[3], serr) < 0) {
+      r = -1;
+      break;
+    }
+    for (k = 1; k <= 4; k++) {
+      if (swe_nod_aps_r(c, C[i].t + k * C[i].h, C[i].ipl, fl, SE_NODBIT_OSCU,
+                        p[0][0], p[0][1], p[0][2], p[0][3], serr) < 0
+          || swe_nod_aps_r(c, C[i].t - k * C[i].h, C[i].ipl, fl, SE_NODBIT_OSCU,
+                           p[1][0], p[1][1], p[1][2], p[1][3], serr) < 0) {
+        r = -1;
+        break;
+      }
+      d += c9[k - 1] * swe_difdeg2n(p[0][C[i].pt][0], p[1][C[i].pt][0]);
+    }
+    if (r < 0)
+      break;
+    d /= C[i].h;
+    if (fabs(x[C[i].pt][3] - d) > r)
+      r = fabs(x[C[i].pt][3] - d);
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 187: the house speeds across a short-term precession
  * window's edge. Equal houses' Ascendant speed at Zurich on the Swiss files
  * under IAU 1976 and Vondrak ("0,9,1"), delta t 2^-11 day, at J2000 - 2
@@ -5476,7 +5531,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5643,6 +5698,7 @@ int main(int argc, char **argv)
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
+  nodosc5 = nodaps_osc_rate_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -7038,6 +7094,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier node at window %.2e deg/day FAIL: expected %s\n",
            nodmoshwin, WANT_DEFECT ? "> 1e-5" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodosc5 > 1e-8) : (nodosc5 >= 0 && nodosc5 < 5e-9))
+    printf("  osc. points' speeds    %.2e deg/day OK\n", nodosc5);
+  else {
+    printf("  osc. points' speeds    %.2e deg/day FAIL: expected %s\n",
+           nodosc5, WANT_DEFECT ? "> 1e-8" : "< 5e-9");
     bad++;
   }
 

@@ -5519,17 +5519,22 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
 #endif
   double t = (tjd_et - J2000) / 36525, dt;
   double x[6], xx[24], *xp, xobs[6], x2000[6]; 
-  double xpos[3][6], xnorm[6];
+#ifndef SWE_UPSTREAM_COMPAT
+# define NODAPS_NOSC 5	/* the osculating points' epochs (bug 201) */
+#else
+# define NODAPS_NOSC 3
+#endif
+  double xpos[NODAPS_NOSC][6], xnorm[6];
   double xposm[6];
-  double xn[3][6], xs[3][6];
-  double xq[3][6], xa[3][6];
+  double xn[NODAPS_NOSC][6], xs[NODAPS_NOSC][6];
+  double xq[NODAPS_NOSC][6], xa[NODAPS_NOSC][6];
   double xobs2[6], x2[6];
   double *xna, *xnd, *xpe, *xap;
   double incl, sema, ecce, parg, ea, vincl, vsema, vecce;
 #ifdef SWE_UPSTREAM_COMPAT
   double pargx, eax, pp, sinE;
 #else
-  double dtosc = 0, tosc[3] = {0, 0, 0};
+  double dtosc = 0, rosc[NODAPS_NOSC] = {0, 0, 0, 0, 0};
 #endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *psbdp = &ctx->pldat[SEI_SUNBARY];
@@ -5948,7 +5953,11 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
 #endif
     if (iflag & SEFLG_SPEED) {
       istart = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+      iend = 4;		/* bug 201: five points */
+#else
       iend = 2;
+#endif
     } else {
       istart = iend = 0;
       dt = 0;
@@ -5966,21 +5975,37 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * difference by 2e-10 deg/day and the points' rounding adds about as
      * much (Neptune's 7e-10 at -3000), and 2^-11 for the Moon, whose
      * perigee turns too fast for more (4e-8 deg/day there, against 5e-7 at
-     * 2^-9 and 1.7e-7 at 2^-13). */
-    dtosc = ipli == SE_MOON ? 1.0 / 2048 : 1.0 / 64;
+     * 2^-9 and 1.7e-7 at 2^-13).
+     * Upstream bug 201: and a three-point difference is off by h^2 / 6 of
+     * the point's third derivative, which a near-circular orbit's apsides
+     * make large, and over the Moon's 2^-11 day by its points' noise over
+     * 2 h: against nine-point differences of the positions over 2^-4 day
+     * (the Moon 2^-5), at 1125 dates 1800-2100 on the Swiss files,
+     * Neptune's heliocentric perihelion 5.3e-7 deg/day off in 1815 (it
+     * turns at 0.1 deg/day there, its third derivative 1.3e-2 deg/day^3),
+     * Uranus's 4.2e-8, the Earth's 3.5e-8, Jupiter's and Saturn's 2.2e-8
+     * and 2.0e-8, Venus's and Mercury's 1.3e-8 and 1.2e-8, the Moon's
+     * geocentric apsides 7.9e-8 and its nodes 1.6e-8 (7.8e-8 and 6.8e-8 on
+     * de200 and Moshier). Now the five-point difference over tjd + k h, k = -2..2, exact
+     * but for a binade's rounding, which is taken back to first order as in
+     * lunar_osc_elem() (bug 75): h = 2^-5 day for the planets (1.0e-10
+     * deg/day heliocentric; 2.8e-9 at 2^-6, the points' noise) and 2^-6 for
+     * the Moon (3.1e-9 geocentric; 1.8e-8 at 2^-5, its truncation). */
+    dtosc = ipli == SE_MOON ? 1.0 / 64 : 1.0 / 32;
 #endif
     for (i = istart, t = tjd_et - dt; i <= iend; i++, t += dt) {
       if (istart == iend)
         t = tjd_et;
 #ifndef SWE_UPSTREAM_COMPAT
-      /* bug 46 as well: the middle instant, tjd - dt + dt, is tjd rounded
-       * twice; the points without SEFLG_SPEED are at tjd itself */
-      if (i == 1)
-        t = tjd_et;
-      /* bug 80: the outer instants tjd -+ a binary step, exact (above) */
-      if (istart != iend)
-        t = tjd_et + (i - 1) * dtosc;
-      tosc[i] = t;
+      /* bug 46 as well: the middle instant is tjd itself, as are the points
+       * without SEFLG_SPEED; bugs 80 and 201: the others tjd + k h, and
+       * rosc[i] what rounding took from them, exact (two-sum) */
+      if (istart != iend) {
+        double bb, kh = (i - 2) * dtosc;
+        t = tjd_et + kh;
+        bb = t - tjd_et;
+        rosc[i] = (tjd_et - (t - bb)) + (kh - bb);
+      }
       if ((retx = swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr)) == ERR)
         return ERR;
 #else
@@ -6145,15 +6170,18 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     for (i = 0; i <= 2; i++) {
       if (iflag & SEFLG_SPEED) {
 #ifndef SWE_UPSTREAM_COMPAT
-        double dd = tosc[2] - tosc[0];
-        xpe[i] = xq[1][i];
-        xpe[i+3] = (xq[2][i] - xq[0][i]) / dd;
-        xap[i] = xa[1][i];
-        xap[i+3] = (xa[2][i] - xa[0][i]) / dd;
-        xna[i] = xn[1][i];
-        xna[i+3] = (xn[2][i] - xn[0][i]) / dd;
-        xnd[i] = xs[1][i];
-        xnd[i+3] = (xs[2][i] - xs[0][i]) / dd;
+        /* bug 201: the five-point difference, times 1 + D[rosc] for the
+         * instants' rounding: x(tk - r) = x(tk) - v r (bug 75) */
+        double f = (1 + (8 * (rosc[3] - rosc[1]) - (rosc[4] - rosc[0])) / (12 * dtosc))
+                   / (12 * dtosc);
+        xpe[i] = xq[2][i];
+        xpe[i+3] = (8 * (xq[3][i] - xq[1][i]) - (xq[4][i] - xq[0][i])) * f;
+        xap[i] = xa[2][i];
+        xap[i+3] = (8 * (xa[3][i] - xa[1][i]) - (xa[4][i] - xa[0][i])) * f;
+        xna[i] = xn[2][i];
+        xna[i+3] = (8 * (xn[3][i] - xn[1][i]) - (xn[4][i] - xn[0][i])) * f;
+        xnd[i] = xs[2][i];
+        xnd[i+3] = (8 * (xs[3][i] - xs[1][i]) - (xs[4][i] - xs[0][i])) * f;
 #else
         xpe[i] = xq[1][i];
         xpe[i+3] = (xq[2][i] - xq[0][i]) / dt / 2;
