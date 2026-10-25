@@ -185,6 +185,7 @@ worst were in code that had never executed even once.
 | 148 | After `swe_set_ephe_path()` forgets the DE number of the JPL file whose name it keeps, the first JPLEPH delta t takes the default tidal term until a calculation opens the file: after the path, de200.eph and the path again by another string, the first UT JPL Moon in AD 1700 40.0057507520 deg and the second 40.0039614086 (1.79e-3 deg), `swe_deltat()`'s guess Swiss, where a fresh process given that path and de200.eph answers 40.0039614086 both times -- on every thread and context | Correctness (behaviour) | `sweph.c` |
 | 153 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, the precession's, the obliquity's, the nutation's and the topocentric site's rates and SEFLG_SPEED3 difference the frame's models across their step at 1962 Jan 20 (0.113" of precession, 7.17e-2" of dpsi): every speed of date 1.57e-5 deg/day off for a day before it (Polaris's right ascension 1.31e-4), 9.96e-2 within 1e-4 day (1.09), SEFLG_SPEED3 5.75e-2 either side | Correctness | `sweph.c`, `swephlib.c` |
 | 149 | `swe_nod_aps()` with barycentric output on Moshier, asked for or fallen to, answers Moshier's heliocentric points, returned OK: Mars's osculating node 0.077 deg off the files' barycentric one, the Moon's mean node 0.37 deg, the Sun's mean perigee 0.40 deg; every method and body class but the SE_NODBIT_OSCU_BAR ellipse beyond 6 AU | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
+| 150 | `swe_calc_pctr()` returns the caller's flags, not the ephemeris that answered: with the fallback allowed and the JPL file alone missing Mars from Jupiter returns 257 (SEFLG_JPLEPH) with the Swiss answer bit for bit, and with the Moon files missing the Moon from Mars 258 (SEFLG_SWIEPH) with Moshier's Moon | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -9410,6 +9411,7 @@ Left as it is, not this entry's:
 - `swe_calc_pctr()` returns the caller's flags: with the fallback allowed
   and only the JPL file missing, Mars from Jupiter returns 257
   (SEFLG_JPLEPH) with the Swiss answer bit for bit. Measured, not fixed.
+  Fixed as entry 150: the ephemeris that answered.
 
 G133 `tests/fbbary.c`: links to sefstars.txt and seorbel.txt alone, each
 case in a forked process, 2000 Jul 1.5 and 1900 Jan 0.75, Swiss and JPL:
@@ -10498,6 +10500,94 @@ G24 pass.
 
 G24 `nodaps_mosh_bary_ret`: `swe_nod_aps()` of Mars, Moshier,
 barycentric, osculating, at 2000 Jul 1.5: -1 shipped, 0 compat.
+
+## 150. `swe_calc_pctr()` returns the caller's flags, not the ephemeris that answered
+
+**Severity: Correctness (behaviour: a return flag naming an ephemeris that did not answer; with the fallback allowed, SEFLG_JPLEPH on the Swiss answer bit for bit, SEFLG_SWIEPH on a Moon from Moshier)**
+**Where:** `sweph.c`: `swe_calc_pctr_r_body()`
+
+Found by entry 139's work. `swe_calc_pctr()` reads the centre and the body
+with `swe_calc()`, barycentric, and returned its own flags as
+`plaus_iflag()` left them, whatever those calls had answered with.
+`swephexp.h`: "The ephemeris actually used is reported in the return flag
+either way"; the manual has `swe_calc()` say so in its return value. With
+the fallback allowed, at 2000 Jul 1.5:
+- the JPL file alone missing, JPL asked: Mars from Jupiter returned 257
+  (SEFLG_JPLEPH | SEFLG_SPEED), with SEFLG_TRUEPOS 1553, with SEFLG_BARYCTR
+  1793, each the Swiss request's answer bit for bit; the Moon from Mars
+  and Mars from the Moon alike;
+- the Moon files alone missing, Swiss: the Moon from Mars 258
+  (SEFLG_SWIEPH) with Moshier's Moon on the files' Earth, 8.2e-8 deg in
+  longitude off the complete directory's (2.1e-7 deg in longitude and
+  latitude at 1900), where `swe_calc()` of that Moon says SEFLG_MOSEPH
+  (entry 120); Mars from the Moon alike.
+Strict, every one is refused for its files, as before. A barycentric read
+cannot fall to Moshier at all since entry 139, so no other substitution
+reaches it. Both builds returned so.
+
+**The right answer.** The ephemeris the reads answered with. The centre
+and the body can differ: the Moon from Mars above, the Moon from Moshier
+and Mars from the files. Not refused: the caller allowed the substitution
+and each read is an answer `swe_calc()` gives. The lower one, Moshier
+below Swiss below JPL: the answer is the body less the centre, each whole,
+so it is no better than the worse of them. Entry 120 keeps SEFLG_SWIEPH on
+a planet whose Earth has a Moshier Moon because only 1/82 of that Moon's
+error reaches it (3.4e-8 deg); here the Moon enters whole, as in its own
+flag.
+
+**Fix, as done here:** the centre's and the body's reads at tjd and, with
+light time, at the emission instant fold their returned ephemeris, the
+less precise kept (`pctr_ephe_lower()`), and the return carries it in
+place of the caller's. The Sun read for the deflection and the centre's
+read for its acceleration are of the same files and not counted (entry
+120's rule: a small part does not relabel the answer). Under the strict
+setting nothing changes: no read substitutes. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`: upstream returns the caller's flags. No cost on the
+bench (`swe_calc_pctr()` is not in it).
+
+The other functions that return flags after `swe_calc()`, checked with
+the JPL file alone missing (JPL asked) and the Moon files alone missing
+(Swiss), the fallback allowed:
+- `swe_pheno()`, `swe_pheno_ut()`: the first call's ephemeris, which the
+  later calls then use: SEFLG_SWIEPH for the JPL request, SEFLG_MOSEPH for
+  the Moon without its files. Right.
+- `swe_fixstar()`, `swe_fixstar2()` and their UT forms: the Earth's
+  ephemeris (entry 67's `ephe_used`): SEFLG_SWIEPH. Right.
+- `swe_get_ayanamsa_ex()` (and `_ut`): the star modes the star's
+  ephemeris (SEFLG_SWIEPH); the precession modes read no ephemeris and
+  return the one asked, as `swe_calc()` does for the mean node. Right.
+- `swe_nod_aps()` (and `_ut`), `swe_get_orbital_elements()`,
+  `swe_orbit_max_min_true_distance()`: OK or ERR, no ephemeris bits, as the
+  manual has them. Nothing claimed.
+- the eclipse and occultation functions: their retflag is the eclipse
+  type (SE_ECL_*), never ephemeris bits. Nothing claimed.
+- `swe_calc_orbel()` (this fork's): not checked here (entry 141's).
+
+Noticed, not fixed (not this entry's): the light-time read of the centre
+overwrites `retc` before it is tested, so its failure is not seen (only
+the body's read after it is): the aberration rate then takes a zeroed
+centre. Not reached in any measured case; both reads use the same files.
+
+G133 `tests/fbbary.c` (i), at its two instants: the complete directory's
+the ephemeris asked; JPL asked, the JPL file alone missing, the fallback
+allowed: Mars from Jupiter (SEFLG_SPEED, SEFLG_TRUEPOS, SEFLG_BARYCTR), the
+Moon from Mars and Mars from the Moon SEFLG_SWIEPH, the Swiss request's
+return and answer bit for bit, strict the downgrade's refusal; Swiss, the
+Moon files alone missing, the fallback allowed: the two Moon cases
+SEFLG_MOSEPH within 1e-6 deg (2.1e-7) of the complete directory, Mars
+from Jupiter its answer bit for bit, strict entry 120's refusal of the two
+and the complete directory's answer for the rest. 1072 checks pass.
+Before the fix 24 of (i) fail (20 JPL, 4 Moon). The compat build fails
+296: entry 149's 262 (G133 there), these 24, entry 120's 4 strict answers
+of the Moon cases, and 6 of Mars from Jupiter at 1900 with the Moon files
+missing, 2.1e-11 deg off (the compat build keys its obliquity to the
+SE_ECL_NUT call at tjd + delta t, whose tidal term the missing Moon file
+changes; check-compat's "swe_calc_pctr drift"). G99, G117, G76, G47, G92,
+G104, G126, G2, check-ctx and G24 pass.
+
+G24 `pctr_ephe_ret`: Mars from Jupiter at 2000 Jul 1.5, JPL asked,
+de999.eph named and missing, the fallback allowed: 258 shipped, 257
+compat.
 
 ## How these were found
 

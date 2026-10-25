@@ -13792,6 +13792,23 @@ int32 CALL_CONV swe_fixstar_mag(char *star, double *mag, char *serr)
 }
 
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 150: the less precise of the ephemeris a, the reads so far
+ * (0: none yet), and the one retflag says answered -- Moshier below Swiss
+ * below JPL */
+static int32 pctr_ephe_lower(int32 a, int32 retflag)
+{
+  int32 b = retflag & SEFLG_EPHMASK;
+  if (a == 0)
+    return b;
+  if ((a | b) & SEFLG_MOSEPH)
+    return SEFLG_MOSEPH;
+  if ((a | b) & SEFLG_SWIEPH)
+    return SEFLG_SWIEPH;
+  return a;
+}
+#endif
+
 static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 iplctr, int32 iflag, double *xxret, char *serr)
 {
   double t = 0, dt = 0, daya[2], dtsave_for_defl = 0;
@@ -13799,6 +13816,7 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
 #ifndef SWE_UPSTREAM_COMPAT
   double xctra[3] = {0, 0, 0}, xsunb[6] = {0, 0, 0, 0, 0, 0};
   AS_BOOL do_defl;
+  int32 ephe_used;
 #endif
   double *xs;
   int i, j, niter;
@@ -13820,9 +13838,15 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
   retc = swe_calc_r(ctx, tjd, iplctr, iflag2, xxctr, serr);
   if (retc == ERR) 
     return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+  ephe_used = pctr_ephe_lower(0, retc);	/* bug 150 */
+#endif
   retc = swe_calc_r(ctx, tjd, ipl, iflag2, xx, serr);
   if (retc == ERR) 
     return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+  ephe_used = pctr_ephe_lower(ephe_used, retc);
+#endif
   for (i = 0; i <= 5; i++) {
     xx0[i] = xx[i];
     //xx[i] -= xxctr[i];
@@ -13890,7 +13914,15 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
         xxsp[i] = xx0[i] - xx[i] - xxsp[i];
     }
     retc = swe_calc_r(ctx, t, iplctr, iflag2, xxctr2, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+    if (retc != ERR)
+      ephe_used = pctr_ephe_lower(ephe_used, retc);	/* bug 150 */
+#endif
     retc = swe_calc_r(ctx, t, ipl, iflag2, xx, serr);
+#ifndef SWE_UPSTREAM_COMPAT
+    if (retc != ERR)
+      ephe_used = pctr_ephe_lower(ephe_used, retc);
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
     /* the centre's acceleration at tjd for the aberration rate below:
      * from its velocities at t = tjd - d, read above, at tjd and at
@@ -14160,6 +14192,23 @@ static int32 swe_calc_pctr_r_body(swe_ctx *ctx, double tjd, int32 ipl, int32 ipl
   }
   if (retc == ERR)
     return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 150: the return was the caller's flags, as plaus_iflag()
+   * left them, whatever answered: with the fallback allowed and only the
+   * JPL file missing, Mars from Jupiter at 2000 Jul 1.5 returned 257
+   * (SEFLG_JPLEPH) with the Swiss answer bit for bit, and with the Moon
+   * files missing the Moon from Mars 258 (SEFLG_SWIEPH) with Moshier's
+   * Moon, which swe_calc() of it flags SEFLG_MOSEPH (bug 120). swephexp.h:
+   * "The ephemeris actually used is reported in the return flag". Now the
+   * ephemeris the centre's and the body's reads answered with, and where
+   * they differ the less precise: the answer is the body less the centre,
+   * each whole, so it is no better than the worse of them (bug 120's
+   * planet keeps Swiss because only 1/82 of a Moshier Moon reaches it).
+   * Under the strict setting no read substitutes, and a barycentric read
+   * cannot fall to Moshier at all (bug 139), so the lower one is Swiss
+   * for a JPL request or Moshier for a Moon from the Moshier Moon. */
+  iflag = (iflag & ~SEFLG_EPHMASK) | ephe_used;
+#endif
   return(iflag);
 }
 

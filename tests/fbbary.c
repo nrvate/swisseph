@@ -18,12 +18,16 @@
  * the heliocentric ellipse (Uranus's node 0.025 deg off); both refuse a
  * Moshier request.
  *
- * One more of the same family, UPSTREAM-BUGS 149: swe_nod_aps() with
+ * Two more of the same family. UPSTREAM-BUGS 149: swe_nod_aps() with
  * barycentric output on Moshier, asked for or fallen to, answered Moshier's
  * heliocentric points, its change of centre adding no barycentric Sun
  * there: Mars's osculating node at 2000 Jul 1.5 49.5626 deg for the files'
  * barycentric 49.6398, the Moon's mean node 0.37 deg off; only the
  * SE_NODBIT_OSCU_BAR ellipse beyond 6 AU, read barycentric, was refused.
+ * UPSTREAM-BUGS 150: swe_calc_pctr() returned the caller's flags: with only
+ * the JPL file missing and the fallback allowed, Mars from Jupiter 257
+ * (SEFLG_JPLEPH) with the Swiss answer bit for bit, and with the Moon
+ * files missing the Moon from Mars 258 (SEFLG_SWIEPH) with Moshier's Moon.
  *
  * The check, each case in a forked, pristine process, a directory in /tmp
  * holding links to sefstars.txt and seorbel.txt alone, two instants (2000
@@ -82,21 +86,36 @@
  *      answers as the Moshier request does, bit for bit, and SEFLG_HELCTR
  *      | SEFLG_BARYCTR as SEFLG_HELCTR. Not the UT calls, whose fallback
  *      takes the files' delta t, nor the Sun's geocentric points, which the
- *      Moshier request answers seen from the Earth: neither is bug 149's.
- * Measured: 1002 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ *      Moshier request answers seen from the Earth: neither is bug 149's;
+ *  (i) swe_calc_pctr()'s return flag: the complete directory's the
+ *      ephemeris asked; the JPL file alone missing, JPL asked, the
+ *      fallback allowed: Mars from Jupiter (SEFLG_SPEED, SEFLG_TRUEPOS,
+ *      SEFLG_BARYCTR), the Moon from Mars and Mars from the Moon
+ *      SEFLG_SWIEPH, the Swiss request's return and answer bit for bit,
+ *      strict the downgrade's refusal; the Moon files alone missing,
+ *      Swiss, the fallback allowed: the Moon from Mars and Mars from the
+ *      Moon SEFLG_MOSEPH within 1e-6 deg of the complete directory's, Mars
+ *      from Jupiter its answer bit for bit, strict bug 120's refusal of
+ *      the two and the complete directory's answer for the rest.
+ * Measured: 1072 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
  * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
- * (osculating).
+ * (osculating), swe_calc_pctr()'s Moon 2.1e-7 deg.
  * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
  * of (a) (answered, 18180 for swe_calc(), or swe_calc_pctr() without
  * SEFLG_BARYCTR refused for the barycentric Sun's file where Moshier's own
  * refusal is due) and 12 of (f). Before bug 149's, 162: 152 of (g) (each
  * Moshier and fallback call answered but the Saturn ellipse's) and 10 of
- * (f). The upstream build (SWE_UPSTREAM_COMPAT) fails 262: those 234, the
- * 8 Moshier requests of swe_calc_orbel() in (a) (entry 135 restored),
- * entry 139's 4 fallen barycentric ellipses of Saturn in (g) and their 12
- * heliocentric and geocentric neighbours in (h), entry 120's Moon twice in
- * (e), and the Sun's and the Earth's osculating apsides in (e) 3.9e-10 deg
- * off with the Moon files missing (entry 108's mass ratio restored).
+ * (f). Before bug 150's, 24 of (i): with the JPL file missing 257 and its
+ * kin, the Moshier Moon 258. The upstream build (SWE_UPSTREAM_COMPAT)
+ * fails 296: those 258, the 8 Moshier requests of swe_calc_orbel() in (a)
+ * (entry 135 restored), entry 139's 4 fallen barycentric ellipses of
+ * Saturn in (g) and their 12 heliocentric and geocentric neighbours in
+ * (h), entry 120's Moon twice in (e) and its 4 strict answers in (i), the
+ * Sun's and the Earth's osculating apsides in (e) 3.9e-10 deg off with
+ * the Moon files missing (entry 108's mass ratio restored), and 6 of
+ * Mars from Jupiter in (i) at 1900, 2.1e-11 deg off there (compat's
+ * obliquity keyed to the SE_ECL_NUT call at tjd + delta t, whose tidal
+ * term the missing Moon file changes).
  * Run as
  *   fbbary EPHEDIR
  */
@@ -188,7 +207,16 @@ static const struct cs GA = {"nod_aps Chiron osculating", NODAPS, SE_CHIRON, SE_
  * geocentric, and SEFLG_HELCTR | SEFLG_BARYCTR, which this function reads
  * as heliocentric */
 static const int32 HCTR[3] = {SEFLG_HELCTR, 0, SEFLG_HELCTR | SEFLG_BARYCTR};
+/* (i): swe_calc_pctr()'s return flag (UPSTREAM-BUGS 150) */
+static const struct cs P[] = {
+  {"pctr Mars from Jupiter", PCTR, SE_MARS, SE_JUPITER, SEFLG_SPEED},
+  {"pctr Mars from Jupiter, TRUEPOS", PCTR, SE_MARS, SE_JUPITER, SEFLG_TRUEPOS},
+  {"pctr Mars from Jupiter, BARYCTR", PCTR, SE_MARS, SE_JUPITER, BS},
+  {"pctr Moon from Mars", PCTR, SE_MOON, SE_MARS, SEFLG_SPEED},
+  {"pctr Mars from Moon", PCTR, SE_MARS, SE_MOON, SEFLG_SPEED},
+};
 #define NG ((int) (sizeof G / sizeof G[0]))
+#define NP ((int) (sizeof P / sizeof P[0]))
 #define NA ((int) (sizeof A / sizeof A[0]))
 #define NF ((int) (sizeof F / sizeof F[0]))
 #define NN ((int) (sizeof N / sizeof N[0]))
@@ -199,6 +227,7 @@ static const int32 EPH[2] = {SEFLG_SWIEPH, SEFLG_JPLEPH};
 static char DIR_[] = "/tmp/fbbary-XXXXXX";	/* sefstars.txt, seorbel.txt */
 static char DIRM[] = "/tmp/fbbarym-XXXXXX";	/* all but the Moon files */
 static char DIRA[] = "/tmp/fbbarya-XXXXXX";	/* DIR_'s and the asteroid files */
+static char DIRJ[] = "/tmp/fbbaryj-XXXXXX";	/* all but the JPL file */
 static char DIR18[] = "/tmp/fbbary18-XXXXXX";	/* the planet and Moon files of 1800-2400 */
 static char EPHE[PATH_MAX];
 static int nbad, nrow;
@@ -397,7 +426,7 @@ static int warm_child(int32 eph, double jd, int at18)
 }
 
 /* which files a directory links: */
-enum { STARS_ONLY, NO_MOON, ASTEROIDS, FILES_18 };
+enum { STARS_ONLY, NO_MOON, ASTEROIDS, NO_JPL, FILES_18 };
 static int build(char *dir, int which)
 {
   DIR *d;
@@ -413,6 +442,7 @@ static int build(char *dir, int which)
     switch (which) {
       case NO_MOON: take = strncmp(e->d_name, "semo", 4) != 0; break;
       case ASTEROIDS: take = stars || strncmp(e->d_name, "seas_", 5) == 0; break;
+      case NO_JPL: take = strstr(e->d_name, ".eph") == NULL; break;
       case FILES_18: take = stars || strcmp(e->d_name, "sepl_18.se1") == 0
                             || strcmp(e->d_name, "semo_18.se1") == 0; break;
       default: take = stars; break;
@@ -449,13 +479,13 @@ static void unbuild(const char *dir)
 int main(int argc, char **argv)
 {
   int id, ie, k, j, fb, nwarm = 0;
-  double wmoon = 0, wnodm = 0, wnodo = 0;
+  double wmoon = 0, wnodm = 0, wnodo = 0, wpctr = 0;
   if (argc != 2 || realpath(argv[1], EPHE) == NULL) {
     fprintf(stderr, "usage: fbbary EPHEDIR\n");
     return 2;
   }
   if (build(DIR_, STARS_ONLY) != 0 || build(DIRM, NO_MOON) != 0 || build(DIRA, ASTEROIDS) != 0
-      || build(DIR18, FILES_18) != 0) {
+      || build(DIRJ, NO_JPL) != 0 || build(DIR18, FILES_18) != 0) {
     printf("G133 FAIL: cannot build the directories in /tmp\n");
     return 1;
   }
@@ -596,6 +626,44 @@ int main(int argc, char **argv)
         check(same(&m[2], &m[0]), "h", G[k].sz, eph, jd, &m[2],
               "Moshier, HELCTR | BARYCTR: not its heliocentric answer");
       }
+      /* (i) swe_calc_pctr()'s return flag, bug 150 */
+      for (k = 0; k < NP; k++) {
+        const struct cs *c = &P[k];
+        struct ans f, s, full, sw;
+        int moon = c->ipl == SE_MOON || c->ctr == SE_MOON;
+        child(EPHE, 0, eph, c, jd, &full);
+        check(full.ran && full.r >= 0 && (full.r & EPHMASK) == eph, "i", c->sz, eph, jd, &full,
+              "the complete directory: not the ephemeris asked");
+        if (eph == SEFLG_JPLEPH) {
+          /* the JPL file alone missing: Swiss answers */
+          child(DIRJ, 1, eph, c, jd, &f);
+          child(DIRJ, 1, SEFLG_SWIEPH, c, jd, &sw);
+          child(DIRJ, 0, eph, c, jd, &s);
+          check(f.ran && f.r >= 0 && (f.r & EPHMASK) == SEFLG_SWIEPH, "i", c->sz, eph, jd, &f,
+                "JPL file missing: not flagged SEFLG_SWIEPH");
+          check(f.ran && sw.ran && f.r == sw.r && memcmp(f.x, sw.x, sizeof f.x) == 0, "i", c->sz, eph, jd,
+                &f, "JPL file missing: not the Swiss request's answer and flag");
+          check(s.ran && s.r < 0 && strstr(s.serr, "JPL ephemeris is not available for jd") != NULL
+                && strstr(s.serr, "falling back to Swiss") != NULL, "i", c->sz, eph, jd, &s,
+                "JPL file missing, strict: not the downgrade's refusal");
+        } else {
+          /* the Moon files alone missing: a Moon from Moshier answers so */
+          double d;
+          child(DIRM, 1, eph, c, jd, &f);
+          child(DIRM, 0, eph, c, jd, &s);
+          d = fabs(swe_difdeg2n(f.x[0], full.x[0])) + fabs(f.x[1] - full.x[1]);
+          if (moon && f.ran && f.r >= 0 && d > wpctr)
+            wpctr = d;
+          check(f.ran && f.r >= 0 && (f.r & EPHMASK) == (moon ? SEFLG_MOSEPH : SEFLG_SWIEPH)
+                && (moon ? d < 1e-6 : same(&f, &full)), "i", c->sz, eph, jd, &f, moon
+                ? "Moon files missing: not flagged SEFLG_MOSEPH, or not within 1e-6 deg"
+                : "Moon files missing: not the complete directory's answer and flag");
+          check(moon ? s.ran && s.r < 0 && strstr(s.serr, "Moon file is not available") != NULL
+                : same(&s, &full), "i", c->sz, eph, jd, &s, moon
+                ? "Moon files missing, strict: not bug 120's refusal"
+                : "Moon files missing, strict: not the complete directory's answer");
+        }
+      }
       k = warm_child(eph, jd, 0);
       nwarm += NWARM;
       nrow += NWARM;
@@ -617,11 +685,12 @@ int main(int argc, char **argv)
   unbuild(DIR_);
   unbuild(DIRM);
   unbuild(DIRA);
+  unbuild(DIRJ);
   unbuild(DIR18);
   printf("  rows %d (%d warm), failed %d; the Moon from Moshier on the files' Earth %.2e deg off the files'\n",
          nrow, nwarm, nbad, wmoon);
-  printf("  there, swe_nod_aps()'s barycentric Moon points %.2e deg (mean), %.2e (osculating)\n",
-         wnodm, wnodo);
+  printf("  there, swe_nod_aps()'s barycentric Moon points %.2e deg (mean), %.2e (osculating); swe_calc_pctr() %.2e\n",
+         wnodm, wnodo, wpctr);
   printf(nbad ? "G133 FAIL: %d\n" : "G133 PASS\n", nbad);
   return nbad ? 1 : 0;
 }

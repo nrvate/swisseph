@@ -1956,6 +1956,30 @@ static double fallback_mosh_bary_ret(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 150: swe_calc_pctr() of Mars from Jupiter at 2000 Jul
+ * 1.5, JPL asked, the JPL file named missing and the Swiss files there,
+ * the fallback allowed: the return. Swiss answered, bit for bit the Swiss
+ * request, and the return was the caller's flags, 257 (SEFLG_JPLEPH |
+ * SEFLG_SPEED); now the ephemeris that answered, 258. The JPL file the
+ * cases around it name, de200.eph, is named again after. */
+static double pctr_ephe_ret(void)
+{
+  double x[6], r;
+  char serr[256];
+  int fb;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de999.eph");	/* no such file */
+  fb = swe_get_ephe_fallback();
+  swe_set_ephe_fallback(1);
+  r = swe_calc_pctr(2451727.0, SE_MARS, SE_JUPITER, SEFLG_JPLEPH | SEFLG_SPEED, x, serr);
+  swe_set_ephe_fallback(fb);
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  return r;
+}
+
 /* UPSTREAM-BUGS 149: swe_nod_aps() of Mars on Moshier, barycentric,
  * osculating, at 2000 Jul 1.5: the return. It answered 0 (OK) with
  * Moshier's heliocentric points, the ascending node 49.5626 deg where the
@@ -3672,7 +3696,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3797,6 +3821,7 @@ int main(int argc, char **argv)
   fbmb = fallback_mosh_bary_ret();
   toputr = topo_ut_round_off();
   nodmb = nodaps_mosh_bary_ret();
+  pctreph = pctr_ephe_ret();
   starkept = star_load_kept();
   eoppath = eop_path_kept_off();
   adoptjpl = adopt_jpl_off();
@@ -4650,6 +4675,14 @@ int main(int argc, char **argv)
   else {
     printf("  fallback to Moshier, barycentric %.0f FAIL: expected %s\n",
            fbmb, WANT_DEFECT ? "18180" : "< 0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (pctreph == 257) : (pctreph == 258))
+    printf("  pctr ephemeris returned %.0f OK\n", pctreph);
+  else {
+    printf("  pctr ephemeris returned %.0f FAIL: expected %s\n",
+           pctreph, WANT_DEFECT ? "257" : "258");
     bad++;
   }
 

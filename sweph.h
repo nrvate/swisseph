@@ -1281,6 +1281,10 @@ struct epsilon {
  *     osculating node 0.077 deg off the files' barycentric one, the Moon's
  *     mean node 0.37 deg, every method and body class (UPSTREAM-BUGS 149,
  *     G133)
+ *   - swe_calc_pctr() returning the caller's flags whatever answered: with
+ *     the fallback allowed and the JPL file missing 257 (SEFLG_JPLEPH) on
+ *     the Swiss answer, with the Moon files missing SEFLG_SWIEPH on a Moon
+ *     from Moshier (UPSTREAM-BUGS 150, G133)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
