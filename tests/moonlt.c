@@ -27,13 +27,50 @@
  * 500 s heliocentric light time (measured now 0.0004 mas, the Earth series'
  * own last bits between the two instants).
  * The upstream build fails check 2 (UPSTREAM-BUGS 23): 1.18 mas geocentric
- * on the files, 1.12 on Moshier. Run as
+ * on the files, 1.12 on Moshier. Against the Sun's motion over tau
+ * (UPSTREAM-BUGS 102), which Moshier's reference includes since, the build
+ * before that fix fails Moshier's check 2 by 10.3 mas (0.0004 after). Run as
  *   moonlt EPHEDIR
  */
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "swephexp.h"
+
+/* Moshier's Sun's barycentric velocity and acceleration, from its own
+ * heliocentric planets as point masses (bug 102; G101 has the same) */
+static void sun_bary_mosh(swe_ctx *c, double jd, double *v, double *a)
+{
+  static const int ipl[8] = {SE_MERCURY, SE_VENUS, SE_EARTH, SE_MARS,
+                             SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE};
+  static const double rm[8] = {6023600, 408523.719, 328900.5, 3098703.59,
+                               1047.348644, 3497.9018, 22902.98, 19412.26};
+  const double k2 = 1.32712440017987e+20 * 86400.0 * 86400.0
+                    / (1.49597870700e11 * 1.49597870700e11 * 1.49597870700e11);
+  const int32 fc = SEFLG_MOSEPH | SEFLG_J2000 | SEFLG_ICRS | SEFLG_XYZ
+                   | SEFLG_TRUEPOS | SEFLG_SPEED;
+  char serr[256];
+  double x[6], m[6], ms = 1, r;
+  int k, i;
+  for (i = 0; i < 3; i++)
+    v[i] = a[i] = 0;
+  for (k = 0; k < 8; k++) {
+    swe_calc_r(c, jd, ipl[k], fc | SEFLG_HELCTR, x, serr);
+    if (ipl[k] == SE_EARTH) {	/* the Earth-Moon barycentre */
+      swe_calc_r(c, jd, SE_MOON, fc, m, serr);
+      for (i = 0; i < 6; i++)
+        x[i] += m[i] / (81.30056907419062 + 1);
+    }
+    r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+    ms += 1 / rm[k];
+    for (i = 0; i < 3; i++) {
+      v[i] += x[i + 3] / rm[k];
+      a[i] += k2 * x[i] / (r * r * r) / rm[k];
+    }
+  }
+  for (i = 0; i < 3; i++)
+    v[i] = -v[i] / ms;
+}
 
 static double Sep(const double *a, const double *b)   /* arcsec */
 {
@@ -53,7 +90,7 @@ int main(int argc, char **argv)
   static const char *rgszCtr[2] = {"geo", "helio"};
   const double c = 173.1446326846693;   /* AU per day */
   char serr[256];
-  int ie, ic, id, it, bad = 0;
+  int ie, ic, id, it, k, bad = 0;
 
   if (argc != 2) {
     fprintf(stderr, "usage: moonlt EPHEDIR\n");
@@ -64,8 +101,9 @@ int main(int argc, char **argv)
     swe_ctx *ctx = swe_ctx_new();
     int32 base = rgEphe[ie] | SEFLG_J2000 | SEFLG_ICRS | SEFLG_NONUT | SEFLG_XYZ;
     int32 astr = base | SEFLG_NOABERR | SEFLG_NOGDEFL;
-    /* Moshier serves no barycentric positions: its barycentre IS the Sun,
-     * so its geometric frame is heliocentric and the Sun sits at 0 */
+    /* Moshier serves no barycentric positions: its geometric frame is
+     * heliocentric, the Sun at 0, and the Sun's motion over tau is formed
+     * from its own planets (bug 102) */
     int32 moshier = rgEphe[ie] == SEFLG_MOSEPH;
     int32 geom = base | (moshier ? SEFLG_HELCTR : SEFLG_BARYCTR) | SEFLG_TRUEPOS | SEFLG_SPEED;
     swe_set_ephe_path_r(ctx, argv[1]);
@@ -76,6 +114,7 @@ int main(int argc, char **argv)
       for (id = 0; id < 40; id++) {
         double jd = 2378496.5 + id * 2739.325 + id * 0.0371;   /* 1800-2100 */
         double xs[6], xn[6], xo[6], xb[6], d[3], tau, tr, e, r, s;
+        double vs[3] = {0, 0, 0}, as[3] = {0, 0, 0};
         int32 iflag = astr | rgCtr[ic];
         if (swe_calc_r(ctx, jd, SE_MOON, iflag | SEFLG_SPEED, xs, serr) < 0 ||
             swe_calc_r(ctx, jd, SE_MOON, iflag, xn, serr) < 0 ||
@@ -89,6 +128,8 @@ int main(int argc, char **argv)
          * instant read, tr, is t - tau rounded to a double, and the Moon's
          * velocity carries it the rest of the way */
         tau = 0.0;
+        if (moshier)	/* the Sun moves over tau (bug 102) */
+          sun_bary_mosh(ctx, jd, vs, as);
         for (it = 0; it < 20; it++) {
           tr = jd - tau;
           if (swe_calc_r(ctx, tr, SE_MOON, geom, xb, serr) < 0) {
@@ -96,9 +137,8 @@ int main(int argc, char **argv)
             return 1;
           }
           e = (jd - tr) - tau;
-          d[0] = xb[0] + xb[3] * e - xo[0];
-          d[1] = xb[1] + xb[4] * e - xo[1];
-          d[2] = xb[2] + xb[5] * e - xo[2];
+          for (k = 0; k < 3; k++)
+            d[k] = xb[k] + xb[k + 3] * e - tau * vs[k] + 0.5 * tau * tau * as[k] - xo[k];
           r = sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
           if (fabs(r / c - tau) < 1e-16) break;
           tau = r / c;

@@ -631,6 +631,64 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
   return(OK);
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 102: the Sun's barycentric velocity and acceleration,
+ * equatorial J2000, AU/day and AU/day^2, from Moshier's own planets, for
+ * the light times that Moshier's heliocentric frame cannot see the Sun
+ * move over. The barycentre of the Sun and the eight planets (the
+ * Earth-Moon barycentre's series for the Earth and the Moon): v_S =
+ * -sum m_i v_i / (M_S + sum m_i), v_i heliocentric; a_S = k^2 sum
+ * (m_i / M_S) x_i / r_i^3, the planets' pull, exact for point masses.
+ * The masses DE431's, as swecl.c's. Left out: Pluto (3e-5 m/s), the
+ * asteroids (Ceres 8e-6 m/s). Against the Swiss files' barycentric Sun
+ * <= 6.5 mm/s 1800..2200, as the files' own planets give the same way
+ * (1.2e-9 deg of v_S / c). Memoised per instant: a chart's bodies share
+ * it. */
+static const double mosh_plmass[8] = {	/* M_Sun / m, Moshier's order */
+  6023600,        /* Mercury */
+  408523.719,     /* Venus */
+  328900.5,       /* Earth and Moon */
+  3098703.59,     /* Mars */
+  1047.348644,    /* Jupiter */
+  3497.9018,      /* Saturn */
+  22902.98,       /* Uranus */
+  19412.26,       /* Neptune */
+};
+void swi_mosh_sun_bary(swe_ctx *ctx, double tjd, double *vs, double *as)
+{
+  int i, ip;
+  double x[6], r, m, msum = 1, v[3] = {0, 0, 0}, a[3] = {0, 0, 0};
+  const double k2 = HELGRAVCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT);
+  double seps2000 = ctx->oec2000.seps;
+  double ceps2000 = ctx->oec2000.ceps;
+  if (ctx->mosh_sun_bary.t != tjd) {
+    for (ip = 0; ip < 8; ip++) {
+      moshplan2(ctx, tjd, ip, x, x + 3);
+      swi_polcart_sp(x, x);
+      swi_coortrf2(x, x, -seps2000, ceps2000);
+      swi_coortrf2(x + 3, x + 3, -seps2000, ceps2000);
+      m = 1.0 / mosh_plmass[ip];
+      r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+      r = r * r * r;
+      msum += m;
+      for (i = 0; i <= 2; i++) {
+        v[i] += m * x[i+3];
+        a[i] += m * x[i] / r;
+      }
+    }
+    for (i = 0; i <= 2; i++) {
+      ctx->mosh_sun_bary.v[i] = -v[i] / msum;
+      ctx->mosh_sun_bary.a[i] = k2 * a[i];
+    }
+    ctx->mosh_sun_bary.t = tjd;
+  }
+  for (i = 0; i <= 2; i++) {
+    vs[i] = ctx->mosh_sun_bary.v[i];
+    as[i] = ctx->mosh_sun_bary.a[i];
+  }
+}
+#endif
+
 
 /* Prepare lookup table of sin and cos ( i*Lj )
  * for required multiple angles

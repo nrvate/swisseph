@@ -15,10 +15,13 @@
  * The checks, Moshier, 24 dates 1800-2100, J2000 equator, no nutation:
  *   1. the astrometric direction (ICRS, no aberration or deflection) equals
  *      P(t - tau) - O(t) built from this library's own geometric
- *      heliocentric vectors, tau solved here: Mercury, Venus, Mars,
+ *      heliocentric vectors, tau solved here, with the Sun's motion over
+ *      tau from Moshier's own planets (bug 102): Mercury, Venus, Mars,
  *      Jupiter, Pluto, Chiron, geocentric and heliocentric, within 0.05
  *      mas (measured <= 0.0088, Mercury heliocentric: the two straight-line
- *      passes that set tau, as on the files, 0.0048 there);
+ *      passes that set tau, as on the files, 0.0048 there; 0.0042 since
+ *      bug 78; the build before bug 102 fails all twelve by 8.2 to 10.7
+ *      mas);
  *   2. the position with SEFLG_SPEED equals the position without it;
  *   3. speeds against five-point differences of the positions over 2^-5
  *      day (2^-7 topocentric) at multiples of 2^-8 day, angles in deg/day:
@@ -63,6 +66,41 @@ static double wrap(double d)
   while (d > 180) d -= 360;
   while (d < -180) d += 360;
   return d;
+}
+
+/* Moshier's Sun's barycentric velocity and acceleration, from its own
+ * heliocentric planets as point masses (bug 102; G101 has the same) */
+static void sun_bary_mosh(swe_ctx *c, double jd, double *v, double *a)
+{
+  static const int ipl[8] = {SE_MERCURY, SE_VENUS, SE_EARTH, SE_MARS,
+                             SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE};
+  static const double rm[8] = {6023600, 408523.719, 328900.5, 3098703.59,
+                               1047.348644, 3497.9018, 22902.98, 19412.26};
+  const double k2 = 1.32712440017987e+20 * 86400.0 * 86400.0
+                    / (1.49597870700e11 * 1.49597870700e11 * 1.49597870700e11);
+  const int32 fc = SEFLG_MOSEPH | SEFLG_J2000 | SEFLG_ICRS | SEFLG_XYZ
+                   | SEFLG_TRUEPOS | SEFLG_SPEED;
+  char serr[256];
+  double x[6], m[6], ms = 1, r;
+  int k, i;
+  for (i = 0; i < 3; i++)
+    v[i] = a[i] = 0;
+  for (k = 0; k < 8; k++) {
+    swe_calc_r(c, jd, ipl[k], fc | SEFLG_HELCTR, x, serr);
+    if (ipl[k] == SE_EARTH) {	/* the Earth-Moon barycentre */
+      swe_calc_r(c, jd, SE_MOON, fc, m, serr);
+      for (i = 0; i < 6; i++)
+        x[i] += m[i] / (81.30056907419062 + 1);
+    }
+    r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+    ms += 1 / rm[k];
+    for (i = 0; i < 3; i++) {
+      v[i] += x[i + 3] / rm[k];
+      a[i] += k2 * x[i] / (r * r * r) / rm[k];
+    }
+  }
+  for (i = 0; i < 3; i++)
+    v[i] = -v[i] / ms;
 }
 
 static double date(int id)
@@ -166,18 +204,20 @@ int main(int argc, char **argv)
       double wLt = 0, wSpeed = 0;
       for (id = 0; id < 24; id++) {
         double jd = date(id) + 0.0371 * id, xs[6], xn[6], xo[6] = {0}, xb[6], d[3] = {0};
-        double tau = 0, r, s;
+        double tau = 0, r, s, vs[3], as[3];
         if (swe_calc_r(c, jd, rgPl[ip], astr | SEFLG_SPEED, xs, serr) < 0
             || swe_calc_r(c, jd, rgPl[ip], astr, xn, serr) < 0
             || (!ic && swe_calc_r(c, jd, SE_EARTH, geom, xo, serr) < 0)) {
           printf("  ERROR %s\n", serr);
           return 1;
         }
-        /* Moshier's barycentre is the Sun: geometric frame heliocentric */
+        /* Moshier's positions are heliocentric: the geometric frame, and
+         * the Sun's motion over tau from its own planets (bug 102) */
+        sun_bary_mosh(c, jd, vs, as);
         for (it = 0; it < 20; it++) {
           swe_calc_r(c, jd - tau, rgPl[ip], geom, xb, serr);
           for (k = 0; k < 3; k++)
-            d[k] = xb[k] - xo[k];
+            d[k] = xb[k] - tau * vs[k] + 0.5 * tau * tau * as[k] - xo[k];
           r = sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
           if (fabs(r / cl - tau) < 1e-15) break;
           tau = r / cl;

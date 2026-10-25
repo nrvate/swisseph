@@ -1542,6 +1542,36 @@ static double earth_helio_lt_rate_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 102: Ceres heliocentric under Moshier, read from the same
+ * file as on the Swiss path, against the Swiss files' place, five dates
+ * 1900-2100 mid-way between the files' yearly joins of the barycentric
+ * Sun, deg. Moshier's light time held the Sun still: 2.8e-6 before the
+ * fix, 1.3e-5 upstream (whose heliocentric light time is also bug 26's),
+ * 1.9e-10 after. */
+static double mosh_sun_lt_off(void)
+{
+  double w = 0, d, a[6], b[6], ra, rb;
+  int32 fl = SEFLG_J2000 | SEFLG_EQUATORIAL | SEFLG_XYZ | SEFLG_HELCTR;
+  char serr[256];
+  int k, i;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 5; k++) {
+    double t = 2451547.5 + 182.625 + 365.25 * (-100 + 50 * k);
+    if (swe_calc(t, SE_CERES, fl | SEFLG_MOSEPH, a, serr) < 0
+        || swe_calc(t, SE_CERES, fl | SEFLG_SWIEPH, b, serr) < 0)
+      return 1;
+    ra = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    rb = sqrt(b[0] * b[0] + b[1] * b[1] + b[2] * b[2]);
+    for (d = 0, i = 0; i < 3; i++)
+      d += (a[i] / ra - b[i] / rb) * (a[i] / ra - b[i] / rb);
+    d = sqrt(d) * 180 / M_PI;
+    if (d > w)
+      w = d;
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 86: the JPL barycentric Sun's sidereal (Lahiri) longitude,
  * right after a request for Mars ten years on, against its tropical
  * longitude less the ayanamsa at its own date, deg. The Sun is answered in
@@ -2111,7 +2141,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2207,6 +2237,7 @@ int main(int argc, char **argv)
   usernak = user_nakshatra_off();
   moonnbr = moon_neighbour_off();
   refused = refused_file_off();
+  moshsunlt = mosh_sun_lt_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2918,6 +2949,14 @@ int main(int argc, char **argv)
   else {
     printf("  nod_aps Venus GM q     %.2e AU FAIL: expected %s\n",
            nodapsgm, WANT_DEFECT ? "> 1e-11" : "< 1e-13");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshsunlt > 1e-6) : (moshsunlt < 1e-9))
+    printf("  Moshier helio lt, Sun  %.2e deg OK\n", moshsunlt);
+  else {
+    printf("  Moshier helio lt, Sun  %.2e deg FAIL: expected %s\n",
+           moshsunlt, WANT_DEFECT ? "> 1e-6" : "< 1e-9");
     bad++;
   }
 

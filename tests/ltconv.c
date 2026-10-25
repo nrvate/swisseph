@@ -32,7 +32,8 @@
  * here, X from swe_calc(SEFLG_BARYCTR | SEFLG_TRUEPOS) at t - tau (moved by
  * the rounding of t - tau along its velocity), O the true body less its
  * true position from the observer; Moshier's positions are heliocentric,
- * so there X is SEFLG_HELCTR. 61 dates -3000..+3000 (de200: 1601..2168).
+ * so there X is SEFLG_HELCTR, plus the Sun's motion over tau, -tau v_S +
+ * tau^2 a_S / 2, from its own planets (bug 102, G101). 61 dates -3000..+3000 (de200: 1601..2168).
  * Within 1e-11 deg (measured <= 5.2e-13). The heliocentric Earth the same
  * way on the Swiss files and de200, within 1e-11 (measured 3.8e-14): the
  * Swiss files subtracted the Sun read at t - tau, 3.0e-6 deg off (part 2).
@@ -40,7 +41,8 @@
  * 1.8e-6 deg/day, the Sun's by 6.8e-10 and 9.1e-10, the planets by 1.8e-11
  * (Mars heliocentric) to 7.2e-10 deg (Mercury geocentric). The build before
  * part 2 fails the Swiss heliocentric Earth's position by 3.0e-6 deg, the
- * build before part 3 both barycentric Suns. The upstream build fails all
+ * build before part 3 both barycentric Suns, the build before bug 102 the
+ * nine Moshier planet rows by 3.0e-6 deg. The upstream build fails all
  * 38.
  * Run as
  *   ltconv EPHEDIR
@@ -54,6 +56,41 @@
 static double norm(const double *x)
 {
   return sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+}
+
+/* Moshier's Sun's barycentric velocity and acceleration, from its own
+ * heliocentric planets as point masses (bug 102; G101 has the same) */
+static void sun_bary_mosh(double jd, double *v, double *a)
+{
+  static const int ipl[8] = {SE_MERCURY, SE_VENUS, SE_EARTH, SE_MARS,
+                             SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE};
+  static const double rm[8] = {6023600, 408523.719, 328900.5, 3098703.59,
+                               1047.348644, 3497.9018, 22902.98, 19412.26};
+  const double k2 = 1.32712440017987e+20 * 86400.0 * 86400.0
+                    / (1.49597870700e11 * 1.49597870700e11 * 1.49597870700e11);
+  const int32 fc = SEFLG_MOSEPH | SEFLG_J2000 | SEFLG_ICRS | SEFLG_XYZ
+                   | SEFLG_TRUEPOS | SEFLG_SPEED;
+  char serr[256];
+  double x[6], m[6], ms = 1, r;
+  int k, i;
+  for (i = 0; i < 3; i++)
+    v[i] = a[i] = 0;
+  for (k = 0; k < 8; k++) {
+    swe_calc(jd, ipl[k], fc | SEFLG_HELCTR, x, serr);
+    if (ipl[k] == SE_EARTH) {	/* the Earth-Moon barycentre */
+      swe_calc(jd, SE_MOON, fc, m, serr);
+      for (i = 0; i < 6; i++)
+        x[i] += m[i] / (81.30056907419062 + 1);
+    }
+    r = norm(x);
+    ms += 1 / rm[k];
+    for (i = 0; i < 3; i++) {
+      v[i] += x[i + 3] / rm[k];
+      a[i] += k2 * x[i] / (r * r * r) / rm[k];
+    }
+  }
+  for (i = 0; i < 3; i++)
+    v[i] = -v[i] / ms;
 }
 
 static int body_rate(int ipl, int32 ephe, int32 fc, const char *sz, double lim)
@@ -106,12 +143,15 @@ static int lt_fixed_point(int32 ephe, int ipl, int32 fo, const char *sz, double 
     double yr = ephe == SEFLG_JPLEPH ? 1601 + y * (2168.0 - 1601) / 60 : -3000 + y * 100;
     double jd = 2451545.0 + (yr - 2000) * 365.25 + 0.37 * y;
     double xa[6], x0[6], g0[6], o[3], xt[6], r[3], tau, e;
+    double vs[3] = {0, 0, 0}, as[3] = {0, 0, 0};
     if (swe_calc(jd, ipl, fc | fo | SEFLG_NOABERR | SEFLG_NOGDEFL, xa, serr) < 0) {
       printf("  %-7s %-20s ERROR %s\n", sz, "", serr);
       return 1;
     }
     swe_calc(jd, ipl, fx, x0, serr);
     swe_calc(jd, ipl, fc | fo | SEFLG_TRUEPOS, g0, serr);
+    if (ephe == SEFLG_MOSEPH)	/* the Sun moves over tau (bug 102) */
+      sun_bary_mosh(jd, vs, as);
     for (i = 0; i < 3; i++)
       o[i] = x0[i] - g0[i];
     tau = norm(g0) / CAU;
@@ -120,7 +160,7 @@ static int lt_fixed_point(int32 ephe, int ipl, int32 fo, const char *sz, double 
       swe_calc(t, ipl, fx | SEFLG_SPEED, xt, serr);
       for (i = 0; i < 3; i++) {
         xt[i] += ((jd - t) - tau) * xt[i + 3];
-        r[i] = xt[i] - o[i];
+        r[i] = xt[i] - tau * vs[i] + 0.5 * tau * tau * as[i] - o[i];
       }
       tau = norm(r) / CAU;
     }

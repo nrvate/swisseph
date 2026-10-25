@@ -137,6 +137,7 @@ worst were in code that had never executed even once.
 | 104 | A refused Swiss file empties the constants of every file left open, so the next calls fail on healthy files; the path setter crashes on a refused moon file (the crash this fork's) | Correctness / Memory | `sweph.c` |
 | 103 | Files closed and reopened when nothing changed (the implicit `SE_EPHE_PATH` path after any setter, the same path or JPL file again, an ephemeris switch, another thread's JPL file), and `swe_deltat()`'s ephemeris guessed from the files this thread has open (partly this fork's) | Correctness, performance | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h` |
 | 105 | `swe_nod_aps()`'s osculating ellipses take the Astronomical Almanac's GM, not the ephemeris's, and Pluto Mercury's mass | Correctness | `swecl.c`, `sweph.c`, `sweph.h` |
+| 102 | Moshier's light time holds the Sun still: v_S tau left out of every place without aberration and every heliocentric one | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 
 ---
 
@@ -4321,17 +4322,16 @@ true positions' own floor. One extra read on SE_SUN | SEFLG_BARYCTR |
 SEFLG_SPEED calls only. G77 gains both rows, within 2e-9 (Swiss files)
 and 5e-10 (de200): 38 rows.
 
-Not fixed here: Moshier solves the light time in its heliocentric frame,
-which leaves out the Sun's motion over it, v_Sun tau. In an apparent
-position that cancels against the aberration taken with the heliocentric
-Earth's velocity (the apparent place depends on the relative velocity
-only): the two together are within 1e-9 deg of the barycentric answer,
-measured by solving both ways on the Swiss files' positions. The
-remainder is in SEFLG_NOABERR and heliocentric Moshier positions: 3.0e-6
-deg (v_Sun / c) on every planet. Removing it needs the Sun's
-barycentric velocity, which Moshier does not have. The heliocentric
-Moshier speeds 2e-9 to 7e-9 deg/day off their positions, seen before
-entry 53, are gone with it: <= 2.2e-10 now, Mercury to Vesta.
+Moshier solved the light time in its heliocentric frame, which leaves out
+the Sun's motion over it, v_Sun tau. In an apparent direction that cancels
+against the aberration taken with the heliocentric Earth's velocity (the
+direction depends on the relative velocity only): within 6.6e-10 deg of
+the barycentric answer. The remainder, 3.0e-6 deg (v_Sun / c) on every
+SEFLG_NOABERR and heliocentric Moshier position, was left here for want of
+the Sun's barycentric velocity; entry 102 forms it from Moshier's own
+planets and removes it (G101). The heliocentric Moshier speeds 2e-9 to
+7e-9 deg/day off their positions, seen before entry 53, are gone with
+this entry's fix: <= 2.2e-10 now, Mercury to Vesta.
 
 ## 81. A fictitious body's light-time position is read at the rounded instant, and its elements' large terms are rounded unreduced
 
@@ -6232,6 +6232,125 @@ Moshier at JD 2460000.297 against DE403's GMS + GM2, 1.11e-16 AU shipped,
 1.15e-10 compat. G74's Moshier apogee limit tightened from 4e-7 to 3e-8
 deg/day (measured 8.2e-9; 1.8e-8 over 150 dates; the build before entry
 95 fails its five rows). G94, G74, G79, G86, G69 pass.
+
+## 102. Moshier's light time holds the Sun still
+
+**Severity: Correctness (3.0e-6 deg, v_Sun / c, on every Moshier position without aberration and every heliocentric one; their speeds by up to 7.8e-7 deg/day)**
+**Where:** `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_sun()`, `app_pos_etc_moon()`; `swemplan.c`: `swi_mosh_sun_bary()` (new); `sweph.h`: its memo
+
+Entry 78's remainder. Moshier's positions are heliocentric and its light
+time was solved in that frame: X(t - tau) - O(t) with the Sun held still,
+where the Swiss files and JPL take X(t - tau) - O(t) about the barycentre,
+the Sun moving 13 m/s. The light time leaves out S(t - tau) - S(t) =
+-v_Sun tau. Without aberration the geocentric Sun had no light time at all
+(-E(t) for S(t - tau) - E(t)), the heliocentric Earth was E(t - tau) - S(t
+- tau), the planets, asteroids and the Moon (geocentric, topocentric and
+heliocentric) each v_Sun tau off. With aberration it cancels: the
+aberration was taken with the heliocentric Earth's velocity, v_Sun short,
+and the apparent direction depends on the relative velocity only.
+
+Not a convention. The library defines a heliocentric light time as
+X(t - tau) - S(t), the Sun where the light arrives, on the files and on
+de200 (entries 26 and 78 part 2), and an astrometric place about the
+barycentre; Moshier's differed from its own other two ephemerides by
+v_Sun tau, and from its own apparent place by more than the aberration.
+
+Measured, Moshier against the Swiss files, 121 dates 1800..2200, J2000
+equatorial, deg. Moshier's own theory error (the apparent place's) is
+larger for the major bodies: Sun 2.2e-5, Moon 7.4e-4, Mercury 3.1e-5,
+Venus 8.5e-5, Mars 1.7e-4, Jupiter 1.9e-4, Saturn 1.2e-4, Uranus 3.2e-4,
+Neptune 7.2e-4, Pluto 1.6e-3 (to 0.16 deg on Mars and the Moon at
+-2900..+2900). It cancels from the place without aberration less the
+apparent place against the files' same difference, which leaves v_Sun tau:
+2.96e-6 to 3.04e-6 on every body, the predicted v_Sun / c across the line
+of sight to <= 1e-8 (further out the theory error couples in: 1.4e-5 on
+Mars and the Moon near -2900). An asteroid under Moshier is read from the same file as on the Swiss
+path (its true heliocentric places agree to 1e-14): Chiron and Ceres
+heliocentric were 2.97e-6 and 2.92e-6 off the files, the whole of their
+difference, and Chiron's geocentric place without aberration 3.5e-6
+against 1.4e-6 apparent.
+
+**Fix, as done here:** `swi_mosh_sun_bary()` forms the Sun's barycentric
+velocity and acceleration from Moshier's eight planets, the barycentre of
+point masses: v_Sun = -sum m_i v_i / (M_Sun + sum m_i), the planets'
+heliocentric series velocities (the Earth-Moon barycentre's series),
+DE431's mass ratios; a_Sun = k^2 sum (m_i / M_Sun) x_i / r_i^3. Left out:
+Pluto (3e-5 m/s), the asteroids (8e-6 m/s for Ceres). Against the files'
+barycentric Sun it is good to <= 6.5 mm/s 1800..2200 (4.1 mm/s
+-2900..+2900), which is what the files' own planets give the same way: the
+files' Sun is not the eight-planet barycentre closer than that, and jumps
+by up to 1.2e-8 AU at its yearly segment joins (below). 6.5 mm/s is
+1.2e-9 deg of v_Sun / c. Memoised per instant in the context, emptied with
+the other instants. Without aberration (and not SEFLG_TRUEPOS), each of the
+three light-time paths now works with the origin at the Sun at teval and
+barycentric velocities, as on the files: every velocity at teval gains
+v_Sun, the body read at t moves by the Sun's displacement s v_Sun + s^2
+a_Sun / 2, s = t - teval, and the heliocentric centre is the Sun at teval,
+(0, v_Sun); the light-time loops, the Newton step, the rounding move and
+the light-time rate are then the files' own. The apparent path is not
+touched (bit-identical, apparent and topocentric, positions and speeds),
+nor SEFLG_TRUEPOS.
+
+After: the place without aberration less the apparent one against the
+files', 1800..2200: 1.2e-8 to 6.8e-8 (Pluto 1.6e-7), the theory error's
+coupling; Chiron and Ceres heliocentric 7.7e-10 and 7.1e-10 off the files
+(2.5e-10 away from the joins), Chiron's geocentric place without
+aberration 1.44e-6, as apparent. Moshier positions without aberration and
+heliocentric move by 2.7e-6 to 3.0e-6 deg (-2900..+2900), their distances
+by up to 2.4e-6 AU (Pluto), speeds by up to 6.6e-7 deg/day (the Moon
+without aberration; 7.8e-7 topocentric, 2.8e-7 Mercury heliocentric), each
+the rate of the moved positions: against five-point differences the same
+before and after (Mercury 4.5e-11 deg/day, the Moon 9.5e-9). Cost:
+calc-moseph, the apparent bench, +0.01% instructions (perf stat). The
+eight series per new instant land on the other paths: a ten-body chart
+without aberration +12%, heliocentric +17%, a single body without
+aberration per instant +30%.
+
+Not fixed here: the apparent distance. The apparent direction needs no
+v_Sun, but the light-time distance does, rho^.v_Sun tau, along the line of
+sight: Mercury 7.1e-8 AU, Mars 1.3e-7, Saturn 4.4e-7, Pluto 2.4e-6,
+Chiron 8.3e-7 (its apparent distance 9.2e-7 off the files against 3.1e-7
+without aberration), the Sun 5e-8, the Moon 1.3e-10. Taking it needs v_Sun
+on every apparent call: +12% on calc-moseph with the memo (measured with
+the barycentric frame on the apparent path too, whose directions it moves
+by <= 6.6e-10 deg), against a 2% budget. Moshier's own distance error is
+3e-7 AU (Mercury) to 2.9e-4 AU (Pluto), above it but for the asteroids.
+Nor the fictitious bodies (`app_pos_etc_plan_osc()`, the same 2.6e-6 to
+3.0e-6 deg heliocentric on Moshier, Cupido, Isis, Vulcan), nor the fixed
+stars, whose Moshier aberration is taken with the heliocentric Earth's
+velocity and has no light time to cancel it (3.0e-6 deg on Spica,
+Aldebaran, Polaris and Sirius apparent; Sirius 9.2e-7 without aberration,
+its parallax from the heliocentric Earth).
+
+Found on the way, the reference's: the Swiss files' barycentric Sun is
+discontinuous at its yearly segment joins, by up to 1.2e-8 AU (302 joins
+over 1e-10 AU, 2000..2300). A light time that straddles one carries it:
+the Swiss geocentric apparent Sun 2.1e-7 deg off its neighbours at
+2451547.51 for one light time, Mercury 1.5e-7 geocentric and 4.9e-7
+heliocentric, Ceres heliocentric 5.6e-8 on 7 Jan 2200. Not fixed here.
+
+G101 `tests/moshsunlt.c`: (1) Chiron and Ceres heliocentric under Moshier
+against the Swiss files, 13 dates 1800..2200 mid-way between the joins,
+within 2e-9 deg: 2.5e-10 measured; (2) the astrometric place of the Sun,
+the Moon, Mercury, Jupiter and Chiron geocentric and topocentric, of the
+Moon, Mercury, Jupiter and Chiron heliocentric and of the heliocentric
+Earth, against the light time's fixed point about the barycentre, iterated
+in the gate from the library's heliocentric true places and v_Sun, a_Sun
+formed there from its planets, 31 dates -2900..+2900, within 1e-11 deg
+(<= 3.6e-13; the Moon within 5e-10, 1.1e-10, its series' own floor, the
+same about the heliocentric frame before the fix); (3) the speeds of
+Mercury and the Sun without aberration, Mercury and the Earth
+heliocentric, within 2e-9 deg/day of five-point differences over 2^-7 day
+(<= 5.2e-11), the Moon without aberration within 2e-8 (9.5e-9). 22 rows.
+The build before the fix fails 17 (all of (1) and (2), by 2.6e-6 to
+3.0e-6 deg); the upstream build all 22. G77, G52 and G33 judged Moshier
+against the light time about its heliocentric frame and now take the Sun's
+motion over tau into their references the same way (the build before the
+fix fails G77's nine Moshier rows by 3.0e-6 deg, G52's twelve by 8.2 to
+10.7 mas, G33's two by 10.3 mas). G24 `mosh_sun_lt_off`: Ceres
+heliocentric on Moshier against the files, five dates 1900..2100, 1.9e-10
+deg shipped (2.8e-6 before the fix), 1.25e-5 compat. G24, G52, G63, G84,
+G77 and G33 pass.
 
 ## How these were found
 

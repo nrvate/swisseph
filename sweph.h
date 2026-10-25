@@ -922,6 +922,10 @@ struct epsilon {
  *     files this thread had open (169.4 s of delta t in AD 1000 on a second
  *     thread), and a same path, a same JPL file and an ephemeris switch
  *     closed and reopened every file (UPSTREAM-BUGS 103, G102)
+ *   - app_pos_etc_plan(), app_pos_etc_sun() and app_pos_etc_moon() solved
+ *     Moshier's light time with the Sun held still, v_S tau left out (3.0e-6
+ *     deg on every Moshier place without aberration and every heliocentric
+ *     one; UPSTREAM-BUGS 102, G101)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -1118,6 +1122,7 @@ extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, dou
 extern int swi_moshplan2(swe_ctx *ctx, double J, int iplm, double *pobj);
 #ifndef SWE_UPSTREAM_COMPAT
 extern void swi_mosh_earth_accel(swe_ctx *ctx, double tjd, const double *x0, double *acc);
+extern void swi_mosh_sun_bary(swe_ctx *ctx, double tjd, double *vs, double *as);
 #endif
 extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
                            int ipl, int ipli, const double * SWI_RESTRICT xearth,
@@ -1680,6 +1685,9 @@ struct swe_ctx {
    * was made with, on JPL and Moshier; t is its instant, 0 for none
    * (UPSTREAM-BUGS 66) */
   struct { double t, x[6]; int32 iephe; } earth_moon;
+  /* the Sun's barycentric velocity and acceleration from Moshier's planets
+   * at instant t (UPSTREAM-BUGS 102), swi_mosh_sun_bary()'s memo */
+  struct { double t, v[3], a[3]; } mosh_sun_bary;
 #endif
   /* nddat is deliberately the heavier plan_data, not node_data.
    *
