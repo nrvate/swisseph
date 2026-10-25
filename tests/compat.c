@@ -2095,7 +2095,9 @@ static double refused_file_off(void)
  * read as 2451545 and answers; (3) its mean anomaly empty is 0 and
  * answers; (4) with no sefstars.txt, swe_fixstar2() says only that the
  * star was not found; (5) swe_fixstar() with serr NULL answers an unknown
- * star with the catalogue's last. Upstream all five (31), shipped none. */
+ * star with the catalogue's last; (6) UPSTREAM-BUGS 114: Cupido's mean
+ * anomaly "163.7409 + .0 * T" read as "+ T", not as "+ 0.0 * T". Upstream
+ * all six (63), shipped none. */
 static int fict_star_line(const char *dir, const char *ephe, const char *cupido)
 {
   char src[PATH_MAX + 40], dst[PATH_MAX + 40], s[1024];
@@ -2156,6 +2158,21 @@ static double fict_star_parse(void)
     swe_set_ephe_path(dir);
     if (swe_calc(2451545.0, SE_FICT_OFFSET, 0, x, serr) >= 0)
       mask |= 4;
+  }
+  {
+    double xa[6] = {0}, xb[6] = {1};
+    if (fict_star_line(dir, ephe, "J1900, J1900, 163.7409 + .0 * T, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, Cupido\n") == 0) {
+      swe_close();
+      swe_set_ephe_path(dir);
+      swe_calc(2451545.0, SE_FICT_OFFSET, 0, xa, serr);
+    }
+    if (fict_star_line(dir, ephe, "J1900, J1900, 163.7409 + 0.0 * T, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, Cupido\n") == 0) {
+      swe_close();
+      swe_set_ephe_path(dir);
+      swe_calc(2451545.0, SE_FICT_OFFSET, 0, xb, serr);
+    }
+    if (xa[0] != xb[0])
+      mask |= 32;
   }
   swe_close();
   swe_set_ephe_path(dir);
@@ -3231,11 +3248,11 @@ int main(int argc, char **argv)
     bad++;
   }
 
-  if (WANT_DEFECT ? (fictstar == 31) : (fictstar == 0))
-    printf("  malformed orbel/star lines %2.0f of 31 OK\n", fictstar);
+  if (WANT_DEFECT ? (fictstar == 63) : (fictstar == 0))
+    printf("  malformed orbel/star lines %2.0f of 63 OK\n", fictstar);
   else {
-    printf("  malformed orbel/star lines %2.0f of 31 FAIL: expected %s\n",
-           fictstar, WANT_DEFECT ? "31" : "0");
+    printf("  malformed orbel/star lines %2.0f of 63 FAIL: expected %s\n",
+           fictstar, WANT_DEFECT ? "63" : "0");
     bad++;
   }
 

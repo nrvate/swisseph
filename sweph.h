@@ -1072,6 +1072,10 @@ struct epsilon {
  *     swe_fixstar() with serr NULL answering an unknown star with the
  *     file's last (UPSTREAM-BUGS 113, G111; the element-term hang and the
  *     partial table's leak are fixed in both builds)
+ *   - a seorbel.txt term's power after T taken by atoi() ("T5" to "T9"
+ *     ignored, "T0" as T, "T 2" as T2 times 2) and a number taken only
+ *     when atof() was not 0 or began with '0' (".0" read as a factor 1,
+ *     "1.2.3" as 1.2) (UPSTREAM-BUGS 114, G111)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

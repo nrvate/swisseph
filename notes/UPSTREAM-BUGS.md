@@ -145,6 +145,7 @@ worst were in code that had never executed even once.
 | 112 | `swe_calc_orbel()` (this fork's) refuses on the "Please call swe_set_ephe_path()" warning with no path at all, ignores the strict fallback setting, and never names the path from `SE_EPHE_PATH` itself | Correctness (behaviour) | `sweph.c` |
 | 111 | `swe_get_orbital_elements()`: the true anomaly cancels near aphelion, e loses digits, and the periods leave out the body's mass (the tropical one 3.9e-5 long, the synodic against k) | Correctness | `swecl.c` |
 | 113 | A seorbel.txt element field with a character no term has hangs `swe_calc()` for that body; a non-numeric epoch or equinox, an empty field, a short line are read as 0 or refuse every later body; a broken sefstars.txt is reported as "star not found", and `swe_fixstar()` with serr NULL answers an unknown star with the catalogue's last | Correctness (a hang; error reporting) | `swemplan.c`, `sweph.c` |
+| 114 | A seorbel.txt element term reads a power "T5" to "T9" as nothing, "T0" as T, "T 2" as T2 times 2, a number ".0" as 1 and "1.2.3" as 1.2, all without an error | Correctness | `swemplan.c` |
 
 ---
 
@@ -6912,6 +6913,49 @@ passes the six and fails the other seven. G24 `fict_star_parse`: the
 short line, the epoch, the empty field, the load error and the serr-NULL
 answer as five bits, 0 shipped, 31 compat and before the fix. G24, G59,
 G64, G91, G99 and G103 pass.
+
+## 114. A seorbel.txt element term reads a power "T5" to "T9" as nothing, "T0" as T, "T 2" as T2 times 2, a number ".0" as 1 and "1.2.3" as 1.2, all without an error
+
+**Severity: Correctness (a fictitious body's elements silently wrong: Cupido 1.0 deg off at J2000 for ".0 * T", 1 deg for "1 * T5")**
+**Where:** `swemplan.c`: `check_t_terms()`, the T and number branches
+
+Entry 113's noticed items. The program manual (swephprg, the seorbel.txt
+section) says the elements other than epoch and equinox "may have T
+terms, where T = (tjd - epoch) / 36525 ... "T * T", "T2", "T3" are also
+allowed"; the code has had T4 as well. Two branches read a term's factors:
+
+- After a T, the power was `atoi()` of the rest, taken if 0 to 4 and
+  otherwise ignored. So "T5" to "T9", "T12" left the term as its other
+  factors ("163.7409 + 1 * T5" read as 164.7409); "T0" was T, since
+  `atoi()` of nothing is 0 and `tt[0]` is T, which bare "T" needs; and
+  `atoi()` skips blanks, so "T 2" was T2 and then a factor 2.
+- A number was taken only when `atof()` was not 0 or it began with '0',
+  a test meant to tell a number from other text: ".0" (and "." or ".00")
+  was skipped, the term read as if its factor were 1 -- "163.7409 + .0 *
+  T" as "163.7409 + T", Cupido 1.0 deg off at J2000; and the run of digits
+  and points was skipped whole, so "1.2.3" read as 1.2.
+
+**Fix, as done here:** a T is followed by nothing -- the power 1, as bare
+"T", "-T", "+T" always were -- or by the digits of a power from 1 to 4,
+and anything else ("T0", "T5", "T12", "T2.5") refuses the field; blanks
+after a T end it, so "T 2" is T times 2. A number is its whole run of
+digits and points, read by `strtod()` and refused unless all of it is
+one number: ".0" is 0 in every position, "1.2.3" and "." refuse the
+field. The message is entry 113's, naming the file, line and field. The
+shipped seorbel.txt -- every body at six instants, its speeds and names --
+is bit for bit as before, so is "T" against "1 * T", "+T2" against
+"1 * T2", "-T" against "-1 * T". Behind `SWE_UPSTREAM_COMPAT`'s `#ifndef`,
+upstream's branches under `#else`, since these change what input that
+returned reads as.
+
+G111 extended: O11-O13 "T5", "T0", "1.2.3" must be refused naming the
+field; O14-O16 Cupido's and Hades' lines replaced by two spellings of the
+same elements (".0 * T" and "0.0 * T"; "T", "+T2", "-T" and "1 * T",
+"1 * T2", "-1 * T"; "T 2" and "2 * T") must answer bit for bit alike, and
+Zeus and Kronos as from the complete file. 19 pass; before the fix
+O11-O14 and O16 fail (O15 passes, as it should); the compat build fails
+12. G24 `fict_star_parse` bit 6, ".0 * T" against "0.0 * T": 0 shipped, 63
+of 63 compat. G24, G59, G64 and G80 pass.
 
 ## How these were found
 

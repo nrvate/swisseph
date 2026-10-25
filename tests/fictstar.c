@@ -13,7 +13,15 @@
  *   O8     the equinox empty (atof(): JD 0);
  *   O9     the mean anomaly empty (the value 0);
  *   O10    the line cut to five fields: the scan stopped there, so Hades,
- *          Zeus and every later body were refused as well.
+ *          Zeus and every later body were refused as well;
+ *   O11-O13 a power "T5" (ignored: the term read as 1), "T0" (read as T),
+ *          a number "1.2.3" (read as 1.2) -- UPSTREAM-BUGS 114.
+ * And three pairs, Cupido's line and Hades' replaced by two spellings of
+ * the same elements, which must answer bit for bit alike (114):
+ *   O14    ".0 * T" as "0.0 * T" (".0" was skipped: the term read as T,
+ *          Cupido 1.0 deg off at J2000);
+ *   O15    "T", "+T2", "-T" as "1 * T", "1 * T2", "-1 * T" (always so);
+ *   O16    "T 2" as "2 * T" (it was T2 times 2).
  * Each: Cupido fails within the 5 s alarm, its message naming the file,
  * the line and the field; Hades, Zeus and Kronos answer bit for bit as
  * from the complete file, and swe_get_planet_name() names Hades.
@@ -31,9 +39,10 @@
  *          last star (OK); now an error.
  * Each case runs in a child process, in a directory of links to EPHEDIR's
  * files built in /tmp.
- * Measured: the 13 cases pass. Before the fix all 13 fail, O1-O6 by the
- * alarm; the compat build passes O1-O6 (the hang is fixed in both) and
- * fails the 7 others, asserted by G24's fict_star_parse().
+ * Measured: the 19 cases pass. Before UPSTREAM-BUGS 113 O1-O10 and F1-F3
+ * failed, O1-O6 by the alarm; before 114 O11-O14 and O16. The compat build
+ * passes O1-O6, O13 and O15 and fails the 12 others, asserted by G24's
+ * fict_star_parse().
  * Run as
  *   fictstar EPHEDIR
  */
@@ -89,7 +98,7 @@ static void unlink_all(const char *dir)
   rmdir(dir);
 }
 
-enum { ORB, STARBAD, STARNONE, STARNULL };
+enum { ORB, ORBEQ, STARBAD, STARNONE, STARNULL };
 struct kase { const char *name; int kind; int field; const char *value; const char *word; };
 
 static const struct kase rgCase[] = {
@@ -103,6 +112,19 @@ static const struct kase rgCase[] = {
   {"O8 equinox empty", ORB, 1, " ", "equinox"},
   {"O9 mean anomaly empty", ORB, 2, " ", "mean anomaly"},
   {"O10 the line cut to five fields", ORB, -1, NULL, "nine elements"},
+  {"O11 a power T5", ORB, 2, " 163.7409 + 1 * T5", "mean anomaly"},
+  {"O12 a power T0", ORB, 6, " 129.8325 + T0", "node"},
+  {"O13 a number \"1.2.3\"", ORB, 2, " 163.7409 + 1.2.3 * T", "mean anomaly"},
+  /* ORBEQ: Cupido's line, then Hades' line; the two must answer alike */
+  {"O14 \".0\" as 0.0", ORBEQ, 0,
+   "J1900, J1900, 163.7409 + .0 * T, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, A\n",
+   "J1900, J1900, 163.7409 + 0.0 * T, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, B\n"},
+  {"O15 \"T\", \"+T2\", \"-T\" as 1 * T, 1 * T2, -1 * T", ORBEQ, 0,
+   "J1900, J1900, 163.7409 + T, 40.99837 +T2, 0.00460, 171.4333, 129.8325 -T, 1.0833, A\n",
+   "J1900, J1900, 163.7409 + 1 * T, 40.99837 + 1 * T2, 0.00460, 171.4333, 129.8325 - 1 * T, 1.0833, B\n"},
+  {"O16 \"T 2\" as T * 2", ORBEQ, 0,
+   "J1900, J1900, 163.7409 + T 2, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, A\n",
+   "J1900, J1900, 163.7409 + 2 * T, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833, B\n"},
   {"F1 a star line without a comma", STARBAD, 0, NULL, "invalid line"},
   {"F2 no star catalogue", STARNONE, 0, NULL, "sefstars.txt"},
   {"F3 a star not there, serr NULL", STARNULL, 0, NULL, NULL},
@@ -117,6 +139,8 @@ static int craft_orb(const char *dir, const struct kase *k)
   char src[PATH_MAX + 40], dst[PATH_MAX + 40], s[1024];
   FILE *f, *g;
   int done = 0, n = 0;
+  if (k->kind == ORBEQ)
+    done = -2;	/* two lines to replace */
   snprintf(src, sizeof src, "%s/seorbel.txt", EPHE);
   snprintf(dst, sizeof dst, "%s/seorbel.txt", dir);
   if ((f = fopen(src, "r")) == NULL || (g = fopen(dst, "w")) == NULL)
@@ -126,6 +150,11 @@ static int craft_orb(const char *dir, const struct kase *k)
     n++;
     while (*sp == ' ' || *sp == '\t')
       sp++;
+    if (done < 0 && *sp != '#' && *sp != '\r' && *sp != '\n' && *sp != '\0') {
+      fputs(done == -2 ? k->value : k->word, g);
+      done = done == -2 ? -1 : 1;
+      continue;
+    }
     if (!done && *sp != '#' && *sp != '\r' && *sp != '\n' && *sp != '\0') {
       char *fld[16], *t = s;
       int nf = 0, i;
@@ -210,6 +239,21 @@ static int run(const char *dir, const struct kase *k)
       printf("    the name of body %d: \"%s\" for \"%s\"\n", SE_FICT_OFFSET + 1, name, rname);
       nbad++;
     }
+  } else if (k->kind == ORBEQ) {
+    struct ans a = fict(c, SE_FICT_OFFSET), b = fict(c, SE_FICT_OFFSET + 1);
+    if (a.r < 0 || !same(&a, &b)) {
+      printf("    A %d %.12f %.12f \"%s\", B %d %.12f %.12f \"%s\"\n", a.r, a.x[0], a.x[3], a.serr,
+             b.r, b.x[0], b.x[3], b.serr);
+      nbad++;
+    } else
+      printf("    both %.9f, %.9f deg/day\n", a.x[0], a.x[3]);
+    for (i = 2; i <= 3; i++) {
+      struct ans d = fict(c, SE_FICT_OFFSET + i), f = fict(ref, SE_FICT_OFFSET + i);
+      if (!same(&d, &f)) {
+        printf("    body %d: %d %.9f for %.9f\n", SE_FICT_OFFSET + i, d.r, d.x[0], f.x[0]);
+        nbad++;
+      }
+    }
   } else if (k->kind == STARBAD || k->kind == STARNONE) {
     int mag;
     for (mag = 0; mag < 2; mag++) {
@@ -261,7 +305,7 @@ int main(int argc, char **argv)
   for (i = 0; i < NCASE; i++) {
     const struct kase *k = &rgCase[i];
     char dir[] = "/tmp/fictstarXXXXXX";
-    const char *skip = k->kind == ORB ? "seorbel.txt" : k->kind == STARNULL ? NULL : "sefstars.txt";
+    const char *skip = k->kind == ORB || k->kind == ORBEQ ? "seorbel.txt" : k->kind == STARNULL ? NULL : "sefstars.txt";
     int st = 0, ok = 0;
     pid_t pid;
     if (mkdtemp(dir) == NULL) {
@@ -270,7 +314,7 @@ int main(int argc, char **argv)
     }
     if (link_all(EPHE, dir, skip) != 0)
       ok = -1;
-    else if (k->kind == ORB)
+    else if (k->kind == ORB || k->kind == ORBEQ)
       ok = craft_orb(dir, k);
     else if (k->kind == STARBAD) {
       char src[PATH_MAX + 40], dst[PATH_MAX + 40], s[1024];
@@ -309,7 +353,7 @@ int main(int argc, char **argv)
                              : "wrong answer");
       nbad++;
     } else
-      printf("  %s: refused, the rest unchanged\n", k->name);
+      printf("  %s: %s, the rest unchanged\n", k->name, k->kind == ORBEQ ? "read alike" : "refused");
   }
   printf(nbad ? "G111 FAIL: %d\n" : "G111 PASS\n", nbad);
   return nbad != 0;

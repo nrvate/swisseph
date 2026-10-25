@@ -1668,7 +1668,10 @@ return_err:
  * rounding only, and the rate (drate) is the analytic one as before. */
 static int check_t_terms(double t, double tlo, double mod, char *sinp, double *doutp, double *drate)
 {
-  int i, isgn = 1, z;
+  int isgn = 1, z;
+#ifdef SWE_UPSTREAM_COMPAT
+  int i;
+#endif
   int retc = 0;
   char *sp;
   double tt[5], fac;
@@ -1749,32 +1752,66 @@ static int check_t_terms(double t, double tlo, double mod, char *sinp, double *d
       char *sp0 = sp;
       while(*sp != '\0' && strchr("* \t", *sp) != NULL)
         sp++;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 114: a power after T was atoi(), which skips blanks
+       * and returns 0 for none -- "T5" to "T9" (and "T12") were ignored,
+       * the term read as its factors without them, "T0" read as T and
+       * "T 2" as T2 followed by a factor 2; a number was taken only if
+       * atof() was not 0 or it began with '0', so ".0" was skipped and the
+       * term read as if its factor were 1, and "1.2.3" as 1.2. Now T is
+       * followed by nothing (T) or by the digits of a power, 1 to 4 (the
+       * documented T2, T3 and the T4 the code has); a number is its whole
+       * run of digits and points, read as its value. Anything else refuses
+       * the field. */
+      if (*sp != '\0' && strchr("tT", *sp) != NULL) {
+        int n = 1;
+        sp++;
+        if (*sp >= '0' && *sp <= '9') {
+          char *end;
+          long ln = strtol(sp, &end, 10);
+          if (ln < 1 || ln > 4 || *end == '.')
+            return ERR;
+          n = (int) ln;
+          sp = end;
+        }
+        dfac = dfac * tt[n] + fac * dtt[n];
+        fac *= tt[n];
+        pw += n;
+      } else if (*sp != '\0' && strchr("0123456789.", *sp) != NULL) {
+        char num[AS_MAXCH], *end;
+        size_t len = strspn(sp, "0123456789.");
+        double v;
+        if (len >= sizeof num)
+          return ERR;
+        memcpy(num, sp, len);
+        num[len] = '\0';
+        v = strtod(num, &end);
+        if (end != num + len)
+          return ERR;	/* ".", "1.2.3" */
+        dfac *= v;
+        fac *= v;
+        cnum *= v;
+        sp += len;
+      }
+#else
       if (*sp != '\0' && strchr("tT", *sp) != NULL) {
 		/* a T */
         sp++;
         if (*sp != '\0' && strchr("+-", *sp)) {
 		  dfac = dfac * tt[0] + fac * dtt[0];
 		  fac *= tt[0];
-#ifndef SWE_UPSTREAM_COMPAT
-		  pw++;
-#endif
 	    } else if ((i = atoi(sp)) <= 4 && i >= 0) {
 		  dfac = dfac * tt[i] + fac * dtt[i];
           fac *= tt[i];
-#ifndef SWE_UPSTREAM_COMPAT
-		  pw += i ? i : 1;	/* tt[0] is T, as tt[1] */
-#endif
 	    }
 	  } else {
         /* a number */
         if (atof(sp) != 0 || *sp == '0') {
           dfac *= atof(sp);
           fac *= atof(sp);
-#ifndef SWE_UPSTREAM_COMPAT
-          cnum *= atof(sp);
-#endif
 	    }
 	  }
+#endif
       while (*sp != '\0' && strchr("0123456789.", *sp))
 	    sp++;
       /* Upstream bug 113: a character that is no sign, blank, '*', T or
