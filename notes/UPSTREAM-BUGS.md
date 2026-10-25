@@ -139,6 +139,7 @@ worst were in code that had never executed even once.
 | 105 | `swe_nod_aps()`'s osculating ellipses take the Astronomical Almanac's GM, not the ephemeris's, and Pluto Mercury's mass | Correctness | `swecl.c`, `sweph.c`, `sweph.h` |
 | 102 | Moshier's light time holds the Sun still: v_S tau left out of every place without aberration and every heliocentric one | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 | 107 | With the files named by `SE_EPHE_PATH`, a first call that reads a file before `swe_calc()` names the path reads it along the compiled default path, and some read it twice: delta t, sidereal time, houses, stars, ayanamsa, eclipses, leap seconds, a JPL file | Correctness, performance | `sweph.c`, `swephlib.c`, `swedate.c` |
+| 108 | `swe_nod_aps()`'s osculating points turned by the frame bias twice and its EMB built with the AA's Earth-Moon ratio; `swe_get_orbital_elements()` takes the AA's GMs and gives Pluto Mercury's mass | Correctness | `swecl.c`, `sweph.c`, `sweph.h` |
 
 ---
 
@@ -6206,12 +6207,12 @@ Left, recorded, not this defect:
   frame bias applied, and `swi_plan_for_osc_elem()` applies the bias again
   (for DE >= 403), so every osculating point of every body on those
   ephemerides is turned by the frame bias once more. Above the floor;
-  a separate item.
+  a separate item, fixed as 108.
 - The Earth's (the Sun's) osculating ellipse is fitted to an EMB built
   with EARTH_MOON_MRAT, the AA's 81.30055985, not the ephemeris's EMRAT
   (DE200 81.300587): on de200 3.6e-7 deg on its perihelion and 1e-11 AU,
   1.2e-7 deg with DE431's 81.30056907 (G104 builds the EMB the same way). Above the floor; a
-  separate item.
+  separate item, fixed as 108.
 - With the default (apparent) flags `swe_nod_aps()`'s and SE_OSCU_APOG's
   apogees still differ by 9e-5 deg, as they always have: SE_OSCU_APOG
   fits the light-time-corrected Moon, `swe_nod_aps()` the geometric one
@@ -6219,7 +6220,9 @@ Left, recorded, not this defect:
   rounding.
 - `swe_get_orbital_elements()` (`get_gmsm()`) takes the same AA
   constants, with deliberate Astronomical Almanac factors on top, and the
-  same `ipl_to_elem[]` for Pluto; not changed here.
+  same `ipl_to_elem[]` for Pluto; not changed here. (Fixed as 108, which
+  found the factors compiled only under `TEST_ORBEL_AA`, a test switch
+  nothing sets.)
 
 G104 `tests/nodapsgm.c`: the Swiss files (their DE number's header,
 DE441 here), de200 and Moshier, eight dates each: (a) the Moon's apogee
@@ -6415,6 +6418,129 @@ the upstream build 17. G24 `calc_ut_first_path_off`: 0 deg shipped,
 0), G2 and the context gate pass. Instructions (perf, the bench
 workloads): `houses` 19566.2M for 19569.6M (+0.017 %), the others +6k of
 12-23G.
+
+## 108. `swe_nod_aps()`'s osculating points turned by the frame bias twice and its EMB built with the AA's Earth-Moon ratio; `swe_get_orbital_elements()` takes the AA's GMs and gives Pluto Mercury's mass
+
+**Severity: Correctness (`swe_nod_aps()` on the Swiss files, Moshier and DE4xx: every osculating apsis 2e-6..1.2e-5 deg off, the Moon's node 7.2e-5 deg and 1.5e-10 AU, Mars's 4.4e-4 deg, twice that with SEFLG_ICRS; on de200 the Earth's perihelion 4.2e-7 deg and 1.1e-11 AU; `swe_get_orbital_elements()`: Pluto's a 2.6e-7 relative and its perihelion 3.7e-5 deg, the Moon's 3.8e-8 and 5e-5 deg, de200's Neptune's 2.5e-3 deg, every planet's a about 2e-10)**
+**Where:** `swecl.c`: `swe_nod_aps_r()`, the osculating points; `get_gmsm()`, `swe_get_orbital_elements_r()`; `sweph.c`: `swi_emb_mrat()`, `swi_gm_planet()`
+
+Three defects, the first two left over from 105.
+
+(a) `swe_nod_aps()` reads the body's J2000 state from `swe_calc()`
+(`iflJ2000`), which already carries the frame bias on an ephemeris that
+has one (DE >= 403: the Swiss files, Moshier, a DE4xx JPL file), and then
+`swi_plan_for_osc_elem()` applies `swi_bias()` again for DE >= 403 unless
+SEFLG_ICRS is set. Every osculating point of every body on those
+ephemerides was turned by the bias a second time; with SEFLG_ICRS, whose
+answer should carry no bias at all, `iflJ2000` never took the flag, so it
+carried two. de200 has no bias, so G104's de200 rows agreed and hid it. Measured (G104, eight dates
+-2500..2800, SEFLG_TRUEPOS): the Moon's apogee against SE_OSCU_APOG 4.3e-6
+deg (DE441 JPL 6.1e-6; ICRS 8.6e-6 and 1.2e-5), its ascending node
+against SE_TRUE_NODE 6.5e-5 deg and 1.5e-10 AU (an orbit inclined 5 deg
+turns its node by the bias over sin i), the planets' perihelia against
+their own eccentricity vectors 4e-6..1.2e-5 deg.
+
+(b) The Earth's osculating orbit is the Earth-Moon barycentre's, built
+as Earth + Moon / (EARTH_MOON_MRAT + 1), the Astronomical Almanac's ratio
+1 / 0.0123000383. That is the ratio the Swiss files (`embofs`) and
+Moshier (`swemplan`) make their Earth from the EMB with, so it is right
+there; but a JPL file's Earth comes from its EMB with the file's own
+EMRAT (`swi_pleph()`, `eh_emrat`), DE200's 81.300587, DE441's
+81.30056822. On de200 the EMB was 1.1e-11 AU off and its perihelion 4.2e-7
+deg; on DE441 3.3e-12 AU.
+
+(c) `swe_get_orbital_elements()`'s `get_gmsm()` takes the AA's constants
+as `swe_nod_aps()` did before 105: the Moon's G M_earth (1 + 1 /
+EARTH_MOON_MRAT), 3.3e-8 above DE441's GMB, the Sun's HELGRAVCONST /
+AUNIT^3, 1.8e-10 below every header's GMS, plmass's planets (de200's
+Uranus and Neptune 2.5e-3 and 5e-3 off its own); and `ipl_to_elem[]`
+sends Pluto to Mercury's element, so Pluto's two-body GM was the Sun's
+plus Mercury's, and SEFLG_ORBEL_AA's sum of the masses inside the orbit
+counted Mercury twice and Pluto never. Its EMB was built as in (b).
+
+Whether the AA choice is deliberate: SEFLG_ORBEL_AA itself is documented
+(swephprg 7.2, "sum all masses inside the orbit to be computed (method of
+Astronomical Almanac)"; `swephexp.h`: "used for Astronomical Almanac mode
+in calculation of Kepler elipses"), so the sum is kept. The constants are
+not documented anywhere as a choice; they are the library's legacy
+HELGRAVCONST and plmass. The correction factors that 105 called
+deliberate, `Gmsm_factor_AA[]`, are compiled only under `TEST_ORBEL_AA`,
+which nothing defines ("This is only a test feature. Orbital elements in
+agreement with AA should be calculated using iflag | SEFLG_ORBEL_AA"):
+they never ran, and are left as they were.
+
+Measured (G107, eight dates, against the eccentricity vector of
+`swe_calc()`'s heliocentric J2000 state with the header's GMs), upstream:
+Pluto a 2.6e-7 relative, e 2.0e-7, q 2.3e-7, longitude of perihelion
+3.7e-5 deg on every ephemeris (SEFLG_ORBEL_AA the same, but de200's 2.2e-8
+and 3.2e-6 deg, where de200's other masses offset it); the Moon 3.8e-8,
+2.9e-8 and 5e-5 deg (Swiss, Moshier), 3.5e-9 and 2.6e-6 deg (de200); on
+de200 Neptune 2.7e-7, 2.6e-7 and 2.5e-3 deg, Uranus 1.2e-7 and 1.3e-4
+deg, Jupiter 1.2e-9 and 1.2e-6 deg; otherwise a about 2e-10 relative, e
+1.4e-10..2.4e-10, perihelion 4e-8 (Mercury) to 2.7e-6 deg (Neptune AA).
+The sidereal period (dret[10]) is a^1.5 and moves 1.5 times a (Pluto
+3.9e-7, 51 minutes); the tropical and synodic periods with it.
+
+**Fix, as done here:** (a) `swe_nod_aps()` asks `swe_calc()` for the J2000
+state with SEFLG_ICRS, unbiased, and passes the caller's SEFLG_ICRS to
+`swi_plan_for_osc_elem()`, so the bias is applied once, there, unless the
+caller asked for ICRS. (b) the EMB takes `swi_emb_mrat()`: the open JPL
+file's EMRAT on SEFLG_JPLEPH, EARTH_MOON_MRAT otherwise, the ephemeris the
+one the first `swe_calc()` answered with; in both functions. (c)
+`get_gmsm()` takes the ephemeris's GMs as 105 did: the Moon's
+`swi_gm_earth_moon()`, the Sun's GMS and each planet's GMi
+(`swi_gm_sun_planet()` with no planet, new `swi_gm_planet()`), from the
+JPL header when one is open, otherwise the header the DE number names; the
+ephemeris `swe_calc()` answered with; Pluto its own element, in the
+two-body GM and in the SEFLG_ORBEL_AA sum. After: G104's Moon apogee and
+node within 1.4e-16 AU and 4.1e-11 deg of SE_OSCU_APOG and SE_TRUE_NODE on
+all four ephemerides and both frames, the perihelia within 5.3e-14 AU and
+5.9e-12 deg; G107's a and q within 3.7e-14 relative (a the same
+expression, 0), e 3.6e-14, the longitude of perihelion 4.8e-9 deg.
+Positions move by what was removed: `swe_nod_aps()` with default flags,
+900..2960 (de200 1959..2027), the apsides 2e-6..9.3e-6 deg (Mars) and
+3.5e-8 AU geocentric, the nodes up to 4.4e-4 deg (Mars), 3.1e-4 (Uranus),
+6.9e-5 (the Moon), 5.2e-5 (Chiron); on de200 only the Earth's orbit (the
+Sun's points 9.4e-7 deg). The upstream build is unchanged (both functions'
+outputs byte-identical to the build before, SWE_UPSTREAM_COMPAT). Not a
+hot path.
+
+Left, recorded, not this defect:
+- With the default (apparent) flags `swe_nod_aps()`'s and SE_OSCU_APOG's
+  apogees still differ by 9e-5 deg: SE_OSCU_APOG fits the
+  light-time-corrected Moon, `swe_nod_aps()` the geometric one and applies
+  its corrections to the points. Two definitions, not a defect (105).
+- The Swiss files' and Moshier's Earth is made from the EMB with the AA's
+  ratio though the files were fitted with DE441's EMRAT (81.30056822, vs
+  81.30055985): the Earth 3.2e-12 AU off DE441's, geocentric places about
+  2e-10 deg. Below the floor.
+- `swe_get_orbital_elements()`'s longitude of perihelion loses digits near
+  aphelion on a near-circular orbit: the true anomaly is 2 atan(k sin E /
+  (1 + cos E)), and 1 + cos E cancels: Venus 4.4e-9 deg at 1700 (E 178
+  deg), Neptune 1.6e-9. Its e from sqrt(1 - p / a) loses half the digits
+  of a small e (3.6e-14; Neptune's q 1.1e-12 AU). The first above the
+  floor; a separate item.
+- `swe_get_orbital_elements()`'s periods take Kepler's third law without
+  the planet's mass, a^1.5 sidereal years: against 2 pi sqrt(a^3 / GM),
+  Jupiter's 4.8e-4 (2.1 days) long, Saturn's 1.4e-4 (1.5 days). A
+  modelling choice upstream; not changed.
+
+G104 `tests/nodapsgm.c`, extended: the Swiss files, de200, Moshier and,
+with SE_TEST_DE4, a DE >= 403 JPL file (the DE number and EMRAT read from
+its first record, the GMs from the table by DE number); (a) the Moon's
+apogee against SE_OSCU_APOG and its node against SE_TRUE_NODE, (b) the
+perihelia against the eccentricity vectors, now in both SEFLG_TRUEPOS and
+SEFLG_ICRS and with direction compared on every ephemeris, the EMB built
+with the file's EMRAT on a JPL file. 33 rows (44 with DE441); the build
+before the fix fails 23 (34), the upstream build 31 (42). G107
+`tests/orbelgm.c`: Mercury..Pluto, the EMB and the Moon, two-body and
+SEFLG_ORBEL_AA, on the same ephemerides; a and q within 1e-12 relative, e
+within 1e-12, the longitude of perihelion within 1e-8 deg (above its
+4.8e-9 residual). 60 rows (80); the build before and the upstream build
+fail all 60 (80). G24 `nodaps_bias_off`: the Moon's apogee on Moshier,
+SEFLG_TRUEPOS, against SE_OSCU_APOG, 1.99e-12 deg shipped, 1.65e-6 compat;
+`orbel_pluto_off`: Pluto's a on Moshier against DE403's GMS + GM9, 0
+shipped, 2.03e-7 compat. G94, G74, G79, G86, G69, G38 pass.
 
 ## How these were found
 

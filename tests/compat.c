@@ -708,6 +708,42 @@ static double nodaps_gm_off(void)
   return fabs(a * (1 - e) - xp[2]);
 }
 
+/* The Moon's osculating apogee from swe_nod_aps() on Moshier, SEFLG_TRUEPOS,
+ * against SE_OSCU_APOG's, the larger of the longitude and latitude
+ * differences, deg. Upstream turns swe_calc()'s J2000 state, already in the
+ * J2000 frame, by the frame bias once more (UPSTREAM-BUGS 108). */
+static double nodaps_bias_off(void)
+{
+  double t = floor(2460000.3 * 256) / 256, o[6], xn[6], xd[6], xp[6], xa[6], d;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_OSCU_APOG, SEFLG_MOSEPH | SEFLG_TRUEPOS, o, serr);
+  swe_nod_aps(t, SE_MOON, SEFLG_MOSEPH | SEFLG_TRUEPOS, SE_NODBIT_OSCU, xn, xd, xp, xa, serr);
+  d = fabs(swe_difdeg2n(o[0], xa[0]));
+  return fabs(o[1] - xa[1]) > d ? fabs(o[1] - xa[1]) : d;
+}
+
+/* Pluto's semi-axis from swe_get_orbital_elements() on Moshier against
+ * 1 / (2 / r - v^2 / mu) of swe_calc()'s heliocentric state with DE403's
+ * GMS + GM9, relative. Upstream gives Pluto Mercury's mass, and the Sun
+ * HELGRAVCONST / AUNIT^3 (UPSTREAM-BUGS 108). */
+static double orbel_pluto_off(void)
+{
+  double t = floor(2460000.3 * 256) / 256, x[6], d[50], r, v2, a;
+  double mu = 2.959122082855911e-4 + 2.18869976542597e-12;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_PLUTO, SEFLG_MOSEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_TRUEPOS
+           | SEFLG_NONUT | SEFLG_XYZ | SEFLG_SPEED, x, serr);
+  swe_get_orbital_elements(t, SE_PLUTO, SEFLG_MOSEPH, d, serr);
+  r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+  v2 = x[3] * x[3] + x[4] * x[4] + x[5] * x[5];
+  a = 1 / (2 / r - v2 / mu);
+  return fabs(d[0] - a) / a;
+}
+
 /* The flags swe_fixstar2() returns against swe_calc()'s for Mars, sidereal
  * and heliocentric Moshier: the bits that differ, counted. Upstream returns
  * the caller's iflag, without NONUT (1) and NOABERR|NOGDEFL (2)
@@ -2197,7 +2233,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -2237,6 +2273,8 @@ int main(int argc, char **argv)
   oscj2k = osc_speed_off(1);
   operinoise = moon_oscu_peri_noise();
   nodapsgm = nodaps_gm_off();
+  nodapsbias = nodaps_bias_off();
+  orbelpluto = orbel_pluto_off();
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
   nodjd0 = nodaps_jd0_off();
@@ -3022,6 +3060,22 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier helio lt, Sun  %.2e deg FAIL: expected %s\n",
            moshsunlt, WANT_DEFECT ? "> 1e-6" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodapsbias > 1e-6) : (nodapsbias < 1e-9))
+    printf("  nod_aps Moon apog bias %.2e deg OK\n", nodapsbias);
+  else {
+    printf("  nod_aps Moon apog bias %.2e deg FAIL: expected %s\n",
+           nodapsbias, WANT_DEFECT ? "> 1e-6" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbelpluto > 1e-8) : (orbelpluto < 1e-12))
+    printf("  orbel Pluto GM a       %.2e OK\n", orbelpluto);
+  else {
+    printf("  orbel Pluto GM a       %.2e FAIL: expected %s\n",
+           orbelpluto, WANT_DEFECT ? "> 1e-8" : "< 1e-12");
     bad++;
   }
 

@@ -1043,6 +1043,13 @@ struct epsilon {
  *     plmass's planets for de200's and Mercury's mass for Pluto (Venus's
  *     perihelion 3e-6 deg, de200's Neptune's 2.9e-3; UPSTREAM-BUGS 105,
  *     G104)
+ *   - swe_nod_aps()'s osculating points on an ephemeris with a frame bias
+ *     (DE >= 403) turned by it twice, swe_calc()'s J2000 state already
+ *     having it (the Moon's node 7e-5 deg, its apogee 6e-6, twice that
+ *     with SEFLG_ICRS), its EMB on a JPL file built with EARTH_MOON_MRAT
+ *     not the file's EMRAT; swe_get_orbital_elements() with the AA's GMs
+ *     and Pluto Mercury's mass (Pluto's a 2.5e-7 off, relative;
+ *     UPSTREAM-BUGS 108, G104, G107)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1162,6 +1169,8 @@ extern int32 swi_get_denum(swe_ctx *ctx, int32 ipli, int32 iflag);
 #ifndef SWE_UPSTREAM_COMPAT
 extern double swi_gm_earth_moon(swe_ctx *ctx, int32 epheflag);
 extern double swi_gm_sun_planet(swe_ctx *ctx, int32 epheflag, int iel);
+extern double swi_emb_mrat(swe_ctx *ctx, int32 epheflag);
+extern double swi_gm_planet(swe_ctx *ctx, int32 epheflag, int iel);
 #endif
 
 

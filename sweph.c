@@ -8572,7 +8572,21 @@ double swi_gm_earth_moon(swe_ctx *ctx, int32 epheflag)
   return gm_earth_moon(ctx, epheflag);
 }
 
-double swi_gm_sun_planet(swe_ctx *ctx, int32 epheflag, int iel)
+/* Upstream bug 108: the Earth-Moon mass ratio the Earth's place was made
+ * from the EMB with, to make the EMB again: a JPL file's own EMRAT
+ * (swi_pleph() takes the Earth from the file's EMB with it), else
+ * EARTH_MOON_MRAT, the ratio embofs() and Moshier's series take the Earth
+ * from the Swiss files' and the series' EMB with. */
+double swi_emb_mrat(swe_ctx *ctx, int32 epheflag)
+{
+  double em;
+  if ((epheflag & SEFLG_JPLEPH) && ctx->jpl_file_is_open
+      && swi_get_jpl_const(ctx, "EMRAT", &em) == OK && em > 0)
+    return em;
+  return EARTH_MOON_MRAT;
+}
+
+static void gm_sun_planet(swe_ctx *ctx, int32 epheflag, int iel, double *pgms, double *pgmp)
 {
   static const char *gmname[9] = {"GM1", "GM2", "GMB", "GM4", "GM5", "GM6",
                                   "GM7", "GM8", "GM9"};
@@ -8605,11 +8619,31 @@ double swi_gm_sun_planet(swe_ctx *ctx, int32 epheflag, int iel)
   if ((epheflag & SEFLG_JPLEPH) && ctx->jpl_file_is_open
       && swi_get_jpl_const(ctx, "GMS", &gms) == OK && gms > 0
       && (iel < 0 || iel > 8
-          || (swi_get_jpl_const(ctx, gmname[iel], &gmp) == OK && gmp > 0)))
-    return gms + gmp;
+          || (swi_get_jpl_const(ctx, gmname[iel], &gmp) == OK && gmp > 0))) {
+    *pgms = gms;
+    *pgmp = gmp;
+    return;
+  }
   denum = swi_get_denum(ctx, SEI_EARTH, epheflag);
   k = denum >= 440 ? 0 : denum >= 430 ? 1 : denum >= 405 ? 2 : denum >= 403 ? 3 : 4;
-  return gmde[k][0] + (iel >= 0 && iel <= 8 ? gmde[k][1 + iel] : 0);
+  *pgms = gmde[k][0];
+  *pgmp = iel >= 0 && iel <= 8 ? gmde[k][1 + iel] : 0;
+}
+
+double swi_gm_sun_planet(swe_ctx *ctx, int32 epheflag, int iel)
+{
+  double gms, gmp;
+  gm_sun_planet(ctx, epheflag, iel, &gms, &gmp);
+  return gms + gmp;
+}
+
+/* bug 108: the planet's GM alone (0 for iel -1), for
+ * swe_get_orbital_elements()'s SEFLG_ORBEL_AA sum of the masses inside */
+double swi_gm_planet(swe_ctx *ctx, int32 epheflag, int iel)
+{
+  double gms, gmp;
+  gm_sun_planet(ctx, epheflag, iel, &gms, &gmp);
+  return gmp;
 }
 #endif
 

@@ -5237,7 +5237,9 @@ static const double el_sema[8][4] =
   { 19.218446062, -0.0000000372,  0.00000000098,  0.0,}, /* Uranus  */
   { 30.110386869, -0.0000001663,  0.00000000069,  0.0,}, /* Neptune */
   };
-/* Ratios of mass of Sun to masses of the planets */
+#ifdef SWE_UPSTREAM_COMPAT
+/* Ratios of mass of Sun to masses of the planets (bugs 105, 108: the
+ * default build takes the ephemeris's, swi_gm_sun_planet()) */
 static const double plmass[9] = {
     6023600,        /* Mercury */
      408523.719,    /* Venus */
@@ -5249,6 +5251,7 @@ static const double plmass[9] = {
       19412.26,     /* Neptune */
   136566000,        /* Pluto */
 };
+#endif
 static const int ipl_to_elem[15] = {2, 0, 0, 1, 3, 4, 5, 6, 7, 0, 0, 0, 0, 0, 2,};
 #ifndef SWE_UPSTREAM_COMPAT
 /* A position in the mean ecliptic of t to the J2000 equator. */
@@ -5574,6 +5577,17 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       return ERR;
 #endif
     iflJ2000 = (iflag & SEFLG_EPHMASK)|SEFLG_J2000|SEFLG_EQUATORIAL|SEFLG_XYZ|SEFLG_TRUEPOS|SEFLG_NONUT|SEFLG_SPEED;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 108: swe_calc()'s J2000 state has the frame bias
+     * (DE >= 403: Swiss files, Moshier, DE4xx), and swi_plan_for_osc_elem()
+     * below applies it again: every osculating point was turned by it
+     * twice, 5.5e-6 deg on the Moon's apogee against SE_OSCU_APOG's
+     * (6.2e-6 in latitude), twice that with SEFLG_ICRS, where it was
+     * applied twice and SE_OSCU_APOG's not at all. Now the ICRS state,
+     * biased once there unless SEFLG_ICRS is asked for, as
+     * lunar_osc_elem() does with the ephemeris's own. */
+    iflJ2000 |= SEFLG_ICRS;
+#endif
     ellipse_is_bary = FALSE;
     if (ipli != SE_MOON) {
       if ((method & SE_NODBIT_OSCU_BAR) && x[2] > 6) {
@@ -5668,10 +5682,21 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
       if (ipli == SE_EARTH) {
         if (swe_calc_r(ctx, t, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR), xposm, serr) == ERR)
           return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+        /* Upstream bug 108: with the EMB's mass ratio the Earth was made
+         * from (swi_emb_mrat(): a JPL file's EMRAT, not the AA's) */
+        for (j = 0; j <= 5; j++)
+          xpos[i][j] += xposm[j] / (swi_emb_mrat(ctx, retc0 & SEFLG_EPHMASK) + 1.0);
+#else
         for (j = 0; j <= 5; j++)
           xpos[i][j] += xposm[j] / (EARTH_MOON_MRAT + 1.0);
+#endif
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      swi_plan_for_osc_elem(ctx, iflg0 | (iflag & SEFLG_ICRS), t, xpos[i]);	/* bug 108 */
+#else
       swi_plan_for_osc_elem(ctx, iflg0, t, xpos[i]);
+#endif
     }
     for (i = istart; i <= iend; i++) {
       if (fabs(xpos[i][5]) < dzmin)
@@ -6261,6 +6286,72 @@ static const double Gmsm_factor_AA[] = {
 0.99866025, 	/* Pluto */
 };
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 108: swe_get_orbital_elements()'s GM was the Astronomical
+ * Almanac's, as swe_nod_aps()'s was (bug 105): the Moon's G M_earth (1 + 1 /
+ * EARTH_MOON_MRAT), 3.3e-8 above the ephemeris's GMB, the Sun's
+ * HELGRAVCONST / AUNIT^3, 1.8e-10 below every JPL header's, plmass's
+ * planets; and ipl_to_elem[] sent Pluto to Mercury's mass, and in
+ * SEFLG_ORBEL_AA's sum Mercury's twice and Pluto's never. SEFLG_ORBEL_AA,
+ * the Almanac's sum of the masses inside the orbit, is documented
+ * (swephprg 7.2) and kept; the constants are the ephemeris's
+ * (swi_gm_sun_planet(), swi_gm_planet(), as bug 105), the ephemeris the
+ * one swe_calc() answered with. TEST_ORBEL_AA's factors, a test feature
+ * never compiled, are left as they were. */
+static int pl_elem(int j)
+{
+  return j == SE_PLUTO ? 8 : ipl_to_elem[j];
+}
+
+static int32 get_gmsm(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double r, double *gmsm, char *serr)
+{
+  int j;
+  double Gmsm, x[6];
+  int32 eph = iflag & SEFLG_EPHMASK;
+  int32 iflJ2000p = (iflag & (SEFLG_EPHMASK |SEFLG_HELCTR|SEFLG_BARYCTR))|SEFLG_J2000|SEFLG_TRUEPOS|SEFLG_NONUT;
+  if (!(iflJ2000p & (SEFLG_HELCTR|SEFLG_BARYCTR)))
+    iflJ2000p |= SEFLG_HELCTR;
+  if (ipl == SE_MOON) {
+    *gmsm = swi_gm_earth_moon(ctx, eph);
+    return OK;
+  }
+  Gmsm = swi_gm_sun_planet(ctx, eph, -1);
+  if ((ipl >= SE_MERCURY && ipl <= SE_PLUTO) || ipl == SE_EARTH) {
+    if (iflag & SEFLG_ORBEL_AA) {
+      /* the masses of all planets inside the orbit */
+      if (ipl == SE_EARTH) {
+        Gmsm += swi_gm_planet(ctx, eph, pl_elem(SE_EARTH));
+        Gmsm += swi_gm_planet(ctx, eph, pl_elem(SE_VENUS));
+        Gmsm += swi_gm_planet(ctx, eph, pl_elem(SE_MERCURY));
+      } else {
+        for (j = ipl; j >= SE_MERCURY; j--)
+          Gmsm += swi_gm_planet(ctx, eph, pl_elem(j));
+        if (ipl >= SE_MARS)
+          Gmsm += swi_gm_planet(ctx, eph, pl_elem(SE_EARTH));
+      }
+    } else {
+      Gmsm += swi_gm_planet(ctx, eph, pl_elem(ipl));
+    }
+#ifdef TEST_ORBEL_AA
+    if (!(iflag & SEFLG_ORBEL_AA))
+      Gmsm /= Gmsm_factor_AA[ipl_to_elem[ipl]];
+#endif
+  } else if (iflag & SEFLG_ORBEL_AA) {	/* asteroid or fictitious object */
+    for (j = SE_MERCURY; j <= SE_PLUTO; j++) {
+      if (swe_calc_r(ctx, tjd_et, j, iflJ2000p, x, serr) == ERR)
+        return ERR;
+      if (r > x[2])
+        Gmsm += swi_gm_planet(ctx, eph, pl_elem(j));
+    }
+    if (swe_calc_r(ctx, tjd_et, SE_EARTH, iflJ2000p, x, serr) == ERR)
+      return ERR;
+    if (r > x[2])
+      Gmsm += swi_gm_planet(ctx, eph, pl_elem(SE_EARTH));
+  }
+  *gmsm = Gmsm;
+  return OK;
+}
+#else
 static int32 get_gmsm(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, double r, double *gmsm, char *serr)
 {
   int j;
@@ -6317,6 +6408,7 @@ static int32 get_gmsm(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, doubl
   *gmsm = Gmsm;
   return OK;
 }
+#endif
 
 /* Function calculates osculating orbital elements (Kepler elements) of a planet 
  * or asteroid or the Earth-Moon barycentre. 
@@ -6376,6 +6468,9 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   double sinincl, cosincl, cosu, sinu, uu, eanom, tanom, manom;
   double v2, sema, pp, ecce, cosE, sinE, ny, ny2, rn, rn2, ro, ro2, cosE2;
   double r, ecce2;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 retc0;
+#endif
   if (ipl <= 0 || ipl == SE_MEAN_NODE || ipl == SE_TRUE_NODE || ipl == SE_MEAN_APOG || ipl == SE_OSCU_APOG || ipl == SE_INTP_APOG || ipl == SE_INTP_PERG) {
     if (serr != NULL)
       sprintf(serr, "error in swe_get_orbital_elements(): object %d not valid\n", ipl);
@@ -6383,8 +6478,15 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   }
   // if (ipl != SE_MOON) iflg0 |= SEFLG_HELCTR;
   /* first, we need a heliocentric distance of the planet */
+#ifndef SWE_UPSTREAM_COMPAT
+  if ((retc0 = swe_calc_r(ctx, tjd_et, ipl, iflJ2000p, x, serr)) == ERR)
+    return ERR;
+  /* bug 108: the GM of the ephemeris swe_calc() answered with */
+  iflag = (iflag & ~SEFLG_EPHMASK) | (retc0 & SEFLG_EPHMASK);
+#else
   if (swe_calc_r(ctx, tjd_et, ipl, iflJ2000p, x, serr) == ERR)
     return ERR;
+#endif
   r =  x[2];
   if (ipl != SE_MOON) {
     if ((iflag & SEFLG_BARYCTR) && r > 6) {
@@ -6401,8 +6503,14 @@ int32 CALL_CONV swe_get_orbital_elements_r(swe_ctx *ctx, double tjd_et,
   if (ipl == SE_EARTH) {
     if (swe_calc_r(ctx, tjd_et, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR), xposm, serr) == ERR)
       return ERR;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* bug 108: with the ratio the Earth was made from the EMB with */
+    for (j = 0; j <= 5; j++)
+      xpos[j] += xposm[j] / (swi_emb_mrat(ctx, iflag & SEFLG_EPHMASK) + 1.0);
+#else
     for (j = 0; j <= 5; j++)
       xpos[j] += xposm[j] / (EARTH_MOON_MRAT + 1.0);
+#endif
   }
   fac = xpos[2] / xpos[5];
   sgn = xpos[5] / fabs(xpos[5]);
