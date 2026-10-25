@@ -110,6 +110,7 @@ worst were in code that had never executed even once.
 | 72 | The interpolated perigee's light-time estimate takes one pass, not two (this fork's) | Correctness | `sweph.c` |
 | 77 | `swe_calc_pctr()` reads its bodies at the rounded instant, and its aberration rate is the centre's whole velocity change over the light time | Correctness | `sweph.c` |
 | 75 | The true node's and osculating apogee's speeds divide by the step asked for, not the step taken | Correctness | `sweph.c` |
+| 71 | Every other cache emptied by an instant of 0 answers for JD 0, and sweph()'s forced EMB is the Earth there | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
 
 ---
 
@@ -3678,6 +3679,77 @@ longitude 9.4e-8 Swiss, 4.5e-7 de200, J2000 latitude 3.5e-7, apogee
 `osc_speed_off`: the apogee's longitude speed at JD 2460000.297, 9.97e-9
 deg/day shipped, 4.01e-6 compat; the node's J2000 latitude speed 1.0e-13
 shipped, 2.32e-7 compat.
+
+## 71. Every other cache emptied by an instant of 0 answers for JD 0, and sweph()'s forced EMB is the Earth there
+
+**Severity: Correctness (returned values at exactly tjd = 0: 0.025 deg on Mars's osculating node, 15 deg on a barycentric Sun in a warm context, 0.3 mag in a limiting magnitude; NaN)**
+**Where:** `sweph.c`: `sweph()`, `swe_calc_r()`, `jplplan()`, `free_planets()`, `ctx_init_defaults()`, `swi_init_swed_if_start()`, `swi_close_keep_topo_etc()`, `ctx_release()`, `lunar_osc_elem()`, `intp_apsides()`, the five `app_pos_etc_*()` observer checks, `swi_check_ecliptic()`, `swe_set_topo_r()`, `swi_force_app_pos_etc()`; `sweconfig.c`: `swi_invalidate_deltat()`, `swi_invalidate_models()`, `swi_config_apply()`; `sweph.h`: `SWI_TJD_NEVER`
+
+Entry 67's idiom, everywhere else. The planets' slots (`pldat[].teval`),
+`swe_calc()`'s save area (`savedat[].tsave`), the nodes' (`nddat[].teval`),
+the obliquity (`oec.teps`, `oec2000.teps`), the observer (`topd.teval`) and
+`SunRA()`'s memo in `swehel.c` (`hel.sunra.tjdlast`) were emptied, or a
+recomputation forced, by setting the instant to 0, which is also JD 0
+(-4712). Some readers guarded it (`tjd == 0` in `swi_check_ecliptic()`,
+`jplplan()` and the observer checks, `tjd != 0` in `swe_calc_r()` and the
+node caches), so their caches never answered at tjd 0; others did not:
+
+- `sweph()` forces the EMB to be recomputed for the barycentric Sun by
+  setting the Earth slot's teval to 0 around the call (the slot is the EMB's
+  too). At tjd 0 the slot then claims to hold JD 0, and the Earth it holds,
+  of its own instant, comes back as the EMB. `swe_nod_aps()` puts a
+  light-time step (a `swe_calc()` at tjd - dt) between its points and
+  recomputes the Sun after it, which is the state that reaches this.
+  Measured after `swe_close()`, against tjd 1e-9: Mars's heliocentric
+  osculating ascending node 356.99952 against 357.02455 (0.025 deg; the
+  speed 1.57e-4 against 3.92e-5 deg/day), its geocentric osculating
+  perihelion 0.22 deg, its geocentric mean perihelion 5.5e-3 deg, the
+  Moon's and every planet's points by every method; the osculating points
+  without `SEFLG_SPEED` NaN after a call at J2000. In a context warm from
+  other instants, `swe_calc()` itself at tjd 0: the barycentric Sun 157.81
+  against 172.98 (15.2 deg), the Sun with `SEFLG_TRUEPOS` 4.95 deg (the
+  Earth slot held the Earth five days on), Mercury 2.6e-4 deg.
+- `lunar_osc_elem()` forced the Moon's slot the same way ("there may be a
+  moon of wrong ephemeris"), leaving its last Moon claiming JD 0.
+- `SunRA()`'s memo, empty with tjdlast 0, answered RA 0 for UT 0:
+  `swe_vis_limit_mag()` at tjd_ut 0 on a fresh context, Venus -6.4973 mag
+  against -6.2006, the Moon -13.93 against -12.46.
+- Latent: `swi_plan_for_osc_elem()`, `swi_obliquity_rate()` and the
+  Moshier Moon read `oec.teps == tjd` unguarded, and an emptied obliquity
+  cache has eps 0; every public path fills it at the call's tjd first.
+
+The default context's first use, `swi_init_swed_if_start()`, clears it
+with a memset and set none of the sentinels, entry 67's included (only
+`ctx_init_defaults()`, for `swe_ctx_new()`, did). Not measured to reach a
+result: the first call's ephemeris-path setup empties the caches again
+through `swi_close_keep_topo_etc()` (a first `swe_get_ayanamsa_ex()` or
+`swe_calc()` at tjd 0 was right), but `SunRA()`'s memo is not among them.
+
+**Fix, as done here:** one sentinel, `SWI_TJD_NEVER` (-1e300, which no
+instant equals; `SWI_NUT_NEVER` is now its alias). `free_planets()` sets it
+in every planet, save-area and node slot; the two close paths in the
+obliquity and all three nutation caches; context creation, through both
+`ctx_init_defaults()` and the default context's memset, in all of them, the
+observer's and `SunRA()`'s memo; and every forcing site (`sweph()`'s EMB,
+`lunar_osc_elem()`'s Moon, `swi_force_app_pos_etc()`, `swe_set_topo_r()`,
+the invalidations in `sweconfig.c`) uses it. The `tjd == 0` and `tjd != 0`
+guards are compat-only: tjd 0 is an instant like any other, and a cache
+filled there answers there. At every other instant nothing changes: G70's
+requests at J2000, 1e-9 and two more instants, in its four states, are
+bit-identical before and after, as is the bench checksum; calc-swieph and
+calc-moseph unchanged within noise.
+
+G70 `tests/tjdzero.c`: the same requests at tjd 0 and 1e-9 -- `swe_calc()`
+for nine bodies and ten flag sets, `swe_nod_aps()` for seven bodies by the
+three methods with and without speed and heliocentric, the ayanamsa for
+four modes with and without nutation, `swe_vis_limit_mag()` for Venus and
+the Moon -- in a fresh context, after `swe_close()`, warm, and after the
+invalidating setters; 7676 rows, positions within the motion over 1e-9 day
+plus 2e-8 deg (largest residual 7.6e-11), speeds within 2e-7 deg/day
+(largest 4.4e-8), magnitudes within 1e-5 (6.4e-7), flags equal, no errors.
+The upstream build fails 3342 rows; ts20 before this fix failed 4176. G24
+`nodaps_jd0_off`: Mars's heliocentric osculating node at 0 against 1e-9,
+0 deg shipped, 2.5e-2 compat. G24, G42, G47, G57 and G66 pass.
 
 ## How these were found
 

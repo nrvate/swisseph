@@ -855,6 +855,14 @@ struct epsilon {
  *     on the node, 6e-6 on the apogee), and their J2000 latitude and
  *     declination speeds left out the mean obliquity's rate (3.5e-7;
  *     UPSTREAM-BUGS 75, G74)
+ *   - the other instant-keyed caches were emptied, or a recomputation forced,
+ *     by setting their instant to 0, which is also JD 0: at tjd 0 the
+ *     barycentric Sun took the Earth slot's Earth for the EMB (0.025 deg on
+ *     Mars's osculating node, 5.5e-3 on its mean perihelion, 15 deg on a
+ *     barycentric Sun in a warm context, NaN after a call at J2000),
+ *     SunRA()'s empty memo answered RA 0 for UT 0 (0.3 mag), and `tjd == 0`
+ *     guards kept the save areas from answering at tjd 0 (UPSTREAM-BUGS 71,
+ *     G70)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -985,13 +993,23 @@ extern double swi_armc_to_mc(double armc, double eps);
 extern int32 swi_get_denum(swe_ctx *ctx, int32 ipli, int32 iflag);
 
 
+/* Upstream bug 71: the same idiom in every other cache keyed on an instant
+ * -- the planets' and nodes' save areas (teval, tsave), the obliquity
+ * (teps), the observer (topd.teval), SunRA()'s memo -- and in sweph()'s
+ * "force a new computation" of the EMB by teval = 0, which at tjd 0 handed
+ * the Earth slot's Earth to the barycentric Sun as the EMB (0.025 deg on
+ * Mars's osculating node, 15 deg on a barycentric Sun). An empty or forced
+ * entry is now SWI_TJD_NEVER, which no instant equals, and the `tjd == 0`
+ * / `tjd != 0` guards are gone. */
+#define SWI_TJD_NEVER (-1.0e300)
+
 /* nutation */
 /* Upstream bug 67: tnut == 0 is also JD 0 (-4712), so an emptied or
  * never-filled cache, or ctx->nutv/nut2000 (no longer filled since bug 58),
  * matched a request at exactly tjd = 0 (or J2000, for nut2000) and gave a
  * zero nutation matrix or angles: swe_get_ayanamsa_ex() at tjd 0 lacked the
  * nutation, 4.2e-4 deg. An empty cache is now tnut = SWI_NUT_NEVER. */
-#define SWI_NUT_NEVER (-1.0e300)
+#define SWI_NUT_NEVER SWI_TJD_NEVER
 struct nut {
   double tnut;
   double nutlo[2];	/* nutation in longitude and obliquity */

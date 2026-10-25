@@ -231,6 +231,9 @@ static int app_pos_rest(swe_ctx *ctx, struct plan_data *pdp, int32 iflag,
     double *xx, double *x2000, struct epsilon *oe, char *serr);
 static int open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *serr);
 static void free_planets(swe_ctx *ctx);
+#ifndef SWE_UPSTREAM_COMPAT
+static void planets_forget_instants(swe_ctx *ctx);
+#endif
 static void ctx_release(swe_ctx *ctx);
 
 #ifdef TRACE
@@ -504,7 +507,11 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * because all asteroids called by MPC number share the same
    * save area.
    */ 
+#ifndef SWE_UPSTREAM_COMPAT
+  if (sd->tsave == tjd && ipl == sd->ipl && iplmoon == 0) {	/* bug 71 */
+#else
   if (sd->tsave == tjd && tjd != 0 && ipl == sd->ipl && iplmoon == 0) {
+#endif
     if ((sd->iflgsave & ~SEFLG_COORDSYS) == (iflag & ~SEFLG_COORDSYS)) 
       goto end_swe_calc;
   }
@@ -1443,7 +1450,56 @@ static void free_planets(swe_ctx *ctx)
   for (i = 0; i < SEI_NNODE_ETC; i++) {
     memset((void *) &ctx->nddat[i], 0, sizeof(struct plan_data));
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  planets_forget_instants(ctx);
+#endif
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 71: these caches were emptied by an instant of 0, which is
+ * also JD 0 (-4712), and only some readers guarded it with `tjd == 0`;
+ * sweph() forced its EMB to be recomputed by setting the Earth slot's teval
+ * to 0, so at tjd 0 the slot claimed JD 0 and its Earth, of whatever
+ * instant, came back as the EMB, and the barycentric Sun with it. Against
+ * tjd 1e-9: Mars's heliocentric osculating node 0.025 deg, its mean
+ * perihelion 5.5e-3, NaN without SEFLG_SPEED after a call at J2000; in a
+ * warm context swe_calc()'s barycentric Sun 15.2 deg, Mercury 2.6e-4.
+ * Empty is now SWI_TJD_NEVER, which no instant equals, and the guards are
+ * gone: tjd = 0 is an instant like any other. */
+static void planets_forget_instants(swe_ctx *ctx)
+{
+  int i;
+  for (i = 0; i < SEI_NPLANETS; i++)
+    ctx->pldat[i].teval = SWI_TJD_NEVER;
+  for (i = 0; i <= SE_NPLANETS; i++)
+    ctx->savedat[i].tsave = SWI_TJD_NEVER;
+  ctx->earth_moon.t = SWI_TJD_NEVER;   /* bug 66's Moon of the saved Earth */
+  for (i = 0; i < SEI_NNODE_ETC; i++)
+    ctx->nddat[i].teval = SWI_TJD_NEVER;
+}
+
+/* the same for the angles (bug 67 began it with ctx->nut) */
+static void angles_forget_instants(swe_ctx *ctx)
+{
+  ctx->oec.teps = SWI_TJD_NEVER;
+  ctx->oec2000.teps = SWI_TJD_NEVER;
+  ctx->nut.tnut = SWI_TJD_NEVER;
+  ctx->nut2000.tnut = SWI_TJD_NEVER;
+  ctx->nutv.tnut = SWI_TJD_NEVER;
+}
+
+/* all of them, for a context the memset or calloc has just zeroed; and
+ * SunRA()'s memo in swehel.c, whose empty tjdlast of 0 answered RA 0 for
+ * UT 0: swe_vis_limit_mag() at tjd_ut 0 on a fresh context, Venus -6.4973
+ * against -6.2006 at 1e-9, the Moon -13.93 against -12.46 */
+static void ctx_forget_instants(swe_ctx *ctx)
+{
+  planets_forget_instants(ctx);
+  angles_forget_instants(ctx);
+  ctx->topd.teval = SWI_TJD_NEVER;
+  ctx->hel.sunra.tjdlast = SWI_TJD_NEVER;
+}
+#endif
 
 /* Function initialises swed structure. 
  * Returns 1 if initialisation is done, otherwise 0 */
@@ -1480,7 +1536,7 @@ static void ctx_init_defaults(swe_ctx *ctx)
   ctx->const_lapse_rate = SE_LAPSE_RATE;   /* calloc leaves 0.0, not 0.0065 */
   ctx->saved_sundec     = 99;              /* "no Sunshine memo yet" */
 #ifndef SWE_UPSTREAM_COMPAT
-  ctx->nut.tnut         = SWI_NUT_NEVER;   /* calloc leaves 0: a valid instant (bug 67) */
+  ctx_forget_instants(ctx);                /* calloc leaves 0: a valid instant (bugs 67, 71) */
 #endif
   ctx->tid_acc          = SE_TIDAL_DEFAULT;
   ctx->is_tid_acc_manual = FALSE;
@@ -1576,6 +1632,9 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
      * this is what makes SE_EPHE_FALLBACK reach the default context, which
      * never passes through ctx_init_defaults(). */
     ctx->ephe_fallback = swi_env_ephe_fallback();
+#ifndef SWE_UPSTREAM_COMPAT
+    ctx_forget_instants(ctx);      /* the memset leaves 0: a valid instant (bug 71) */
+#endif
     swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
     ctx->swed_is_initialised = TRUE;
     swi_config_end_apply(ctx, swi_cfg_was);
@@ -1604,7 +1663,7 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
   memset((void *) &ctx->nut2000, 0, sizeof(struct nut));
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
 #ifndef SWE_UPSTREAM_COMPAT
-  ctx->nut.tnut = SWI_NUT_NEVER;	/* Upstream bug 67 */
+  angles_forget_instants(ctx);	/* Upstream bugs 67, 71 */
 #endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
@@ -1662,7 +1721,7 @@ static void ctx_release(swe_ctx *ctx)
   memset((void *) &ctx->nut2000, 0, sizeof(struct nut));
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
 #ifndef SWE_UPSTREAM_COMPAT
-  ctx->nut.tnut = SWI_NUT_NEVER;	/* Upstream bug 67 */
+  angles_forget_instants(ctx);	/* Upstream bugs 67, 71 */
 #endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
@@ -1682,6 +1741,9 @@ static void ctx_release(swe_ctx *ctx)
   ctx->i_saved_planet_name = 0;
   *(ctx->saved_planet_name) = '\0';
   memset((void *) &ctx->topd, 0, sizeof(struct topo_data));
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->topd.teval = SWI_TJD_NEVER;	/* Upstream bug 71 */
+#endif
   memset((void *) &ctx->sidd, 0, sizeof(struct sid_data));
   ctx->timeout = 0;
   ctx->last_epheflag = 0;
@@ -2704,7 +2766,11 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
   }
   if (do_earth) {
     /* barycentric earth */
+#ifndef SWE_UPSTREAM_COMPAT
+    if (tjd != pedp->teval) {	/* bug 71 */
+#else
     if (tjd != pedp->teval || tjd == 0) {
+#endif
       retc = swi_pleph(ctx, tjd, J_EARTH, J_SBARY, xpe, serr);
 #ifndef SWE_UPSTREAM_COMPAT
       if (do_save && retc == OK && swi_pleph_moon(ctx, tjd, ctx->earth_moon.x)) {
@@ -2732,7 +2798,11 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
   } 
   if (do_sunbary) {
     /* barycentric sun */
+#ifndef SWE_UPSTREAM_COMPAT
+    if (tjd != psdp->teval) {	/* bug 71 */
+#else
     if (tjd != psdp->teval || tjd == 0) {
+#endif
       retc = swi_pleph(ctx, tjd, J_SUN, J_SBARY, xps, serr);
       if (do_save) {
 	psdp->teval = tjd;
@@ -3047,7 +3117,13 @@ again:
      * after call of sweph(ctx, EMB). 
      */
     tsv = pedp->teval;
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 71: 0 is JD 0, where the slot's Earth, of its own
+     * instant, passed for the EMB */
+    pedp->teval = SWI_TJD_NEVER;
+#else
     pedp->teval = 0;
+#endif
     retc = sweph(ctx, tjd, SEI_EMB, ifno, iflag | SEFLG_SPEED, NULL, NO_SAVE, xemb, serr);
     if (retc != OK) 
       return(retc);
@@ -3255,7 +3331,10 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
   /* if topocentric position is wanted  */
   if (iflag & SEFLG_TOPOCTR) { 
     if (ctx->topd.teval != pedp->teval
-      || ctx->topd.teval == 0) {
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
+      || ctx->topd.teval == 0
+#endif
+      ) {
       if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
         return ERR;
     } else {
@@ -4294,7 +4373,10 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
   /* if topocentric position is wanted  */
   if (iflag & SEFLG_TOPOCTR) { 
     if (ctx->topd.teval != pedp->teval
-      || ctx->topd.teval == 0) {
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
+      || ctx->topd.teval == 0
+#endif
+      ) {
       if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
         return ERR;
     } else {
@@ -4707,7 +4789,10 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
   /* if topocentric position is wanted  */
   if (iflag & SEFLG_TOPOCTR) {
     if (ctx->topd.teval != pedp->teval
-      || ctx->topd.teval == 0) {
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
+      || ctx->topd.teval == 0
+#endif
+      ) {
       if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
         return ERR;
     } else {
@@ -5891,7 +5976,10 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
   /* if topocentric position is wanted  */
   if (iflag & SEFLG_TOPOCTR) { 
     if (ctx->topd.teval != pedp->teval
-      || ctx->topd.teval == 0) {
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
+      || ctx->topd.teval == 0
+#endif
+      ) {
       if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
         return ERR;
     } else {
@@ -6157,7 +6245,10 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
    *******************************/
   if (iflag & SEFLG_TOPOCTR) {
     if (ctx->topd.teval != pdp->teval
-      || ctx->topd.teval == 0) {
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
+      || ctx->topd.teval == 0
+#endif
+      ) {
       if (swi_get_observer(ctx, pdp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
         return ERR;
     } else {
@@ -7387,7 +7478,9 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   speedf1 = ndp->xflgs & SEFLG_SPEED;
   speedf2 = iflag & SEFLG_SPEED;
   if (tjd == ndp->teval 
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
 	&& tjd != 0 
+#endif
 	&& flg1 == flg2
 	&& (!speedf2 || speedf1)) {
     ndp->xflgs = iflag;
@@ -7423,7 +7516,11 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   }
   /* there may be a moon of wrong ephemeris in save area
    * force new computation: */
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->pldat[SEI_MOON].teval = SWI_TJD_NEVER;	/* Upstream bug 71 */
+#else
   ctx->pldat[SEI_MOON].teval = 0;
+#endif
   if (iflag & SEFLG_SPEED) {
     istart = 0;
   } else {
@@ -7880,7 +7977,9 @@ static int intp_apsides(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *se
   speedf1 = ndp->xflgs & SEFLG_SPEED;
   speedf2 = iflag & SEFLG_SPEED;
   if (tjd == ndp->teval 
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
 	&& tjd != 0 
+#endif
 	&& flg1 == flg2
 	&& (!speedf2 || speedf1)) {
     ndp->xflgs = iflag;
@@ -8383,7 +8482,10 @@ void swi_check_ecliptic(swe_ctx *ctx, double tjd, int32 iflag)
     ctx->oec.epsflag = ctx->oec2000.epsflag;
     return;
   }
-  if (ctx->oec.teps != tjd || tjd == 0
+  if (ctx->oec.teps != tjd
+#ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
+      || tjd == 0
+#endif
       || ctx->oec.epsflag != SWI_EPS_KEY(iflag)) {
     calc_epsilon(ctx, tjd, iflag, &ctx->oec);
   }
@@ -9775,7 +9877,11 @@ void CALL_CONV swe_set_topo_r(swe_ctx *ctx, double geolon, double geolat, double
   ctx->topd.geoalt = geoalt;
   ctx->geopos_is_set = TRUE;
   /* to force new calculation of observer position vector */
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->topd.teval = SWI_TJD_NEVER;	/* bug 71 */
+#else
   ctx->topd.teval = 0;
+#endif
   /* to force new calculation of light-time etc.
    */
   swi_force_app_pos_etc(ctx);
@@ -9798,7 +9904,11 @@ void swi_force_app_pos_etc(swe_ctx *ctx)
   for (i = 0; i < SEI_NNODE_ETC; i++)
     ctx->nddat[i].xflgs = -1;
   for (i = 0; i <= SE_NPLANETS; i++) { // "=" because save area for asteroids > SE_AST_OFFSET is at i == SE_NPLANETS
+#ifndef SWE_UPSTREAM_COMPAT
+    ctx->savedat[i].tsave = SWI_TJD_NEVER;	/* bug 71 */
+#else
     ctx->savedat[i].tsave = 0;
+#endif
     ctx->savedat[i].iflgsave = -1;
   }
 }

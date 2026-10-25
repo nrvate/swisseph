@@ -599,6 +599,26 @@ static double ayanamsa_jd0_off(void)
   return fabs(a0 - a1);
 }
 
+/* Mars's heliocentric osculating ascending node at tjd = 0 against tjd =
+ * 1e-9, deg, each after swe_close(). Upstream forces sweph()'s EMB to be
+ * recomputed with the Earth's teval = 0, which at tjd 0 is the Earth slot
+ * claiming JD 0: the "EMB" is the slot's Earth, of its own instant, and the
+ * barycentric Sun after the light-time step is wrong: 0.025 deg
+ * (UPSTREAM-BUGS 71). */
+static double nodaps_jd0_off(void)
+{
+  double a[2][6], d[6], p[6], q[6];
+  char serr[256];
+  int k;
+  for (k = 0; k < 2; k++) {
+    swe_close();
+    swe_set_ephe_path(EPHE);
+    swe_nod_aps(k ? 1e-9 : 0.0, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_HELCTR,
+                SE_NODBIT_OSCU, a[k], d, p, q, serr);
+  }
+  return fabs(swe_difdeg2n(a[1][0], a[0][0]));
+}
+
 /* The SEFLG_SPEED3 speed of the osculating apogee, Moshier, year 2800,
  * against a five-point difference of its longitude over 2^-5 day, deg/day.
  * Upstream takes it over +-0.1 day, and the h^2 term is 1.5e-3
@@ -1279,7 +1299,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, oscspd, oscj2k, moshlt;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, oscspd, oscj2k, moshlt, nodjd0;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1315,6 +1335,7 @@ int main(int argc, char **argv)
   oscj2k = osc_speed_off(1);
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
+  nodjd0 = nodaps_jd0_off();
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
   apsrate = planet_apsis_rate_off();
@@ -1582,6 +1603,14 @@ int main(int argc, char **argv)
   else {
     printf("  ayanamsa at JD 0       %.2e deg FAIL: expected %s\n",
            ayajd0, WANT_DEFECT ? "> 1e-4" : "< 1e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodjd0 > 1e-3) : (nodjd0 < 1e-8))
+    printf("  Mars osc. node at JD 0 %.2e deg OK\n", nodjd0);
+  else {
+    printf("  Mars osc. node at JD 0 %.2e deg FAIL: expected %s\n",
+           nodjd0, WANT_DEFECT ? "> 1e-3" : "< 1e-8");
     bad++;
   }
 

@@ -94,7 +94,8 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  *   ephepath/jplfnam -> close ephemeris files, then force_app_pos_etc
  *                       (matches swe_set_ephe_path -> swi_close_keep_topo_etc)
  *   sidd/astro_models -> force_app_pos_etc   (matches sweph.c:2930)
- *   geo*              -> topd.teval = 0, force_app_pos_etc
+ *   geo*              -> topd.teval = SWI_TJD_NEVER (0 under compat),
+ *                        force_app_pos_etc
  *                                        (matches sweph.c:7266-7269)
  *   tid_acc/delta_t   -> force_app_pos_etc
  *   do_interpolate_nut-> reset interpol
@@ -107,11 +108,14 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  * topd holds the observer's geocentric position vector, and
  * swi_get_observer() recomputes it only when
  *
- *     ctx->topd.teval != pedp->teval || ctx->topd.teval == 0
+ *     ctx->topd.teval != pedp->teval
+ *
+ * (upstream adds `|| ctx->topd.teval == 0`, its empty mark; since bug 71
+ * empty is SWI_TJD_NEVER and JD 0 is an instant like any other)
  *
  * -- the INSTANT. That observer is a function of sidereal time, which comes
  * from UT = TT minus delta t, so delta t is an input to the cache whose key
- * does not carry it. swe_set_topo_r() zeroes teval and was the only thing
+ * does not carry it. swe_set_topo_r() empties teval and was the only thing
  * that ever did; it also early-returns when the site is unchanged, so a
  * SITE change invalidated and a DELTA T change did not. That is why a
  * Greenwich answer and a Sydney answer at one instant were both right and
@@ -135,7 +139,11 @@ void swi_config_capture(swe_ctx *ctx, struct swe_config *c)
  * -- and an instrument looking for a difference cannot see a missing one. */
 void swi_invalidate_deltat(swe_ctx *ctx)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->topd.teval = SWI_TJD_NEVER;  /* force swi_get_observer() to recompute (bug 71) */
+#else
   ctx->topd.teval = 0;          /* force swi_get_observer() to recompute */
+#endif
   swi_force_app_pos_etc(ctx);
 }
 
@@ -155,10 +163,11 @@ void swi_invalidate_models(swe_ctx *ctx)
 {
 #ifndef SWE_UPSTREAM_COMPAT
   ctx->nut.tnut = SWI_NUT_NEVER;
+  ctx->nutv.tnut = SWI_TJD_NEVER;
 #else
   ctx->nut.tnut = 0;
-#endif
   ctx->nutv.tnut = 0;
+#endif
   /* Same story one function along: swi_check_ecliptic() keys the obliquity
    * on tjd alone -- oec on `teps != tjd`, oec2000 on `teps != J2000` -- and
    * no precession model appears in either. Without this, changing
@@ -166,8 +175,13 @@ void swi_invalidate_models(swe_ctx *ctx)
    * computed returned the previous model's obliquity. It showed up as
    * epsiln_owen_1986() staying at zero coverage while a row that selects
    * SEMOD_PREC_OWEN_1990 sat right next to it. */
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->oec.teps = SWI_TJD_NEVER;	/* bug 71: 0 is JD 0 */
+  ctx->oec2000.teps = SWI_TJD_NEVER;
+#else
   ctx->oec.teps = 0;
   ctx->oec2000.teps = 0;
+#endif
   swi_force_app_pos_etc(ctx);
 }
 
@@ -263,7 +277,11 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
    * another thread's delta t kept the observer it had already built, which
    * is the same defect arriving by the other door. */
   if (geo_changed || dt_changed)
+#ifndef SWE_UPSTREAM_COMPAT
+    ctx->topd.teval = SWI_TJD_NEVER;  /* force swi_get_observer(ctx) to recompute (bug 71) */
+#else
     ctx->topd.teval = 0;        /* force swi_get_observer(ctx) to recompute */
+#endif
   if (nut_changed) {
     ctx->interpol.tjd_nut0 = 0;
     ctx->interpol.tjd_nut2 = 0;
