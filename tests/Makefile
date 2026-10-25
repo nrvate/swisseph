@@ -1414,7 +1414,9 @@ check-moonlesstid: moonlesstid
 # osculating apsides' speeds the rates of their positions, the EMB the
 # series' own (180); the Moon's mean points answered under the
 # ephemeris asked with files missing, strict or not, as the mean node is
-# (174; /tmp directories of links); every refusal's points zeroed (179).
+# (174; /tmp directories of links); every refusal's points zeroed (179); the
+# Sun's and the Earth's heliocentric points answered strict without the moon
+# files, which they do not use (192).
 check-nodcentre: nodcentre
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodcentre $(EPHE)
 

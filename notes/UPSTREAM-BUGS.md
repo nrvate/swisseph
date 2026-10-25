@@ -220,6 +220,7 @@ worst were in code that had never executed even once.
 | 170 | `swe_nod_aps_ut()` takes delta t from the ephemeris bits as given and keeps it after a fallback: fallen to Moshier, the files' delta t at 1900 (-1.9915 s for Moshier's -2.0521 s), Mars's perihelion 2.8e-7 deg off the Moshier request's, the Moon's 1.7e-6; SEFLG_JPLEPH with SEFLG_SWIEPH on de200 the Swiss files' tidal term, the Moon's points 3.6e-5 deg off the SEFLG_JPLEPH request's | Correctness (behaviour) | `swecl.c` |
 | 174 | `swe_nod_aps()` reads the Moon for the save area of the Moon's mean points, geocentric and topocentric, which do not use it: without the moon files the strict setting refuses them, as in an empty directory and JPL without its file, where `swe_calc()` answers the mean node; with the fallback the read says Moshier, so `swe_nod_aps_ut()` redoing delta t for it (entry 170) moves the mean node 6.0e-8 deg at 1900 and 1.8e-5 in AD 1000, and the site takes Moshier's delta t (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
 | 179 | A refusal inside `swe_nod_aps()` (the strict setting's, a file's, a range's) returns -1 with the four points as the caller had them, where `swe_calc()` zeroes a refused place (the manual: "the position and speed variables are set to zero") and the function itself an unimplemented body's: 1234.5 put in came back 1234.5, all 24 values | Robustness (behaviour) | `swecl.c` |
+| 192 | Under the strict setting without the moon files `swe_nod_aps()` refuses the Sun's points and the Earth's heliocentric and barycentric ones ("Swiss (.se1) Moon file is not available"), which the Moon does not reach: their reads of the Earth, and for the osculating ones of the Moon to rebuild the Earth-Moon barycentre, are refused by entry 120's test; with the fallback they answer 6.5e-15 deg off the complete directory's | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 
 ---
 
@@ -12997,6 +12998,70 @@ G24 `nodaps_err_left`: `swe_nod_aps()` of Mars's osculating points at 2000
 Jul 1.5, Swiss, along an empty directory under the strict setting, the
 outputs filled with 1234.5, how many of the 24 values the refusal leaves
 unzeroed: 0 shipped, 24 compat.
+
+## 192. Without the moon files the strict setting refuses the Sun's points and the Earth's heliocentric ones, which the Moon does not reach
+
+**Severity: Correctness (behaviour: a refusal where the answer does not depend on what is missing; with the fallback 6.5e-15 deg off the complete directory's), this fork's build (upstream has no such refusal)**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, `swe_nod_aps()`, `swe_nod_aps_ut()`; `sweph.c`: `swi_refuse_moshmoon()`
+
+Found by entry 174's work. Entry 120 refuses, under the strict setting,
+a Swiss answer whose Moon, or whose Earth through the Moon, is Moshier's
+for want of the moon files: the Moon and the Earth themselves, and any
+body seen from the Earth. `swe_nod_aps()` of the Sun (the Earth's orbit,
+seen from the Sun since entry 167) and of the Earth heliocentric or
+barycentric reads the heliocentric Earth for its save area, and the
+osculating ones the Earth and the geocentric Moon at each instant of the
+ellipse, to make the Earth-Moon barycentre again; every one of those
+reads is refused there, so the points are: "Swiss (.se1) Moon file is not
+available for jd ...", at 1900 and 2000, every method. Yet the Moon
+reaches none of them: the mean points are the elements, with the Sun
+(the planet file's) for the barycentric ones; the ellipse is fitted to
+the barycentre, which is the Earth less Moshier's Moon's share and that
+share added again; only the deflection of the Sun's geocentric points
+looks from the Earth. With the fallback allowed they answered, within
+6.5e-15 deg of the complete directory's (the speeds 1.5e-11 deg/day, the
+two barycentres' rounding over the ellipse's 2^-6 day). This fork's
+build alone: upstream refuses nothing for Moshier's Moon.
+
+**Fix, as done here:**
+- For those points (`ipli` the Earth and the Sun's, or the Earth's
+  heliocentric and barycentric), `swe_nod_aps()` sets
+  `ctx->moshmoon_cancels`, under which `swi_refuse_moshmoon()` lets its
+  reads take Moshier's Moon; the osculating ellipse's barycentre is the
+  Earth plus the Moon it was made with, which the Earth's read saved
+  (`ctx->pldat[SEI_MOON]`, when `ctx->moshmoon_earth_t` says so), where a
+  read of the Moon itself is refused as Moshier's. The wrappers clear the
+  setting and drop the save areas (`swi_force_app_pos_etc()`): a strict
+  `swe_calc()` of the Earth at the instant, with the flags the read's
+  answer carries (SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_TRUEPOS |
+  SEFLG_HELCTR | SEFLG_NOABERR | SEFLG_NOGDEFL), found the read's Earth
+  there and answered 99.904 deg at 1900 without that, refused as before
+  with it.
+- Now they answer under the strict setting as with the fallback, bit for
+  bit, and as the complete directory within 6.5e-15 deg. The Earth's
+  geocentric and topocentric points, seen from that Earth, stay refused;
+  every other body as before.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`, as entry 120 is; the switch,
+  like upstream, refuses none of them. No hot path.
+
+G143 `tests/nodcentre.c` (h): (f)'s directory without the moon files and
+the complete one, AD 1000, 1900 and 2000, `swe_nod_aps()` and
+`swe_nod_aps_ut()`: the Sun's points geocentric, topocentric and
+heliocentric and the Earth's heliocentric and barycentric, method 0,
+mean, osculating, SE_NODBIT_OSCU_BAR and osculating with
+SE_NODBIT_FOPOINT, answered strict, the fallback's answer bit for bit,
+the complete directory's within 1e-12 deg and AU (6.5e-15 measured) and
+the speeds 1e-10 deg/day (1.5e-11); after the Sun's osculating points
+the Earth of their reads at the instant and 2^-6 day after refused, and
+the Earth's geocentric points refused, with entry 120's message. 153 rows
+pass; before the fix all 153 fail. G143 2302 rows pass; the upstream
+build fails 1684.
+
+G24 `nodaps_sun_moonless`: the Sun's osculating points at 1900 Jan 0.75,
+Swiss, without the moon files, strict, then the heliocentric Earth with
+its read's flags: 1 if the points are refused, plus 2 if the Earth is
+answered: 0 shipped (1 before the fix, 2 without the save areas dropped),
+2 compat.
 
 ## How these were found
 

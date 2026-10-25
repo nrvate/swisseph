@@ -1456,6 +1456,12 @@ struct epsilon {
  *   - swe_nod_aps() refusing after an inner calculation refused with the
  *     four points as the caller had them, not zeroed as for an
  *     unimplemented body (UPSTREAM-BUGS 179, G143)
+ *   - (nothing for UPSTREAM-BUGS 192: swe_nod_aps()'s Sun's points and
+ *     the Earth's heliocentric and barycentric ones answered under the
+ *     strict setting without the moon files, which they do not use, narrow
+ *     this fork's refusal of Moshier's Moon (bug 120), which upstream and
+ *     the switch do not have: they answer them; G24's case 0 shipped, 2
+ *     compat, the Earth after them refused only here; G143)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -2172,6 +2178,10 @@ struct swe_ctx {
    * a saved Earth made so (UPSTREAM-BUGS 120) */
   AS_BOOL moshmoon_used;
   double moshmoon_earth_t;
+  /* swe_nod_aps()'s reads for points the Moon does not reach, the Sun's
+   * and the Earth's heliocentric and barycentric ones: Moshier's Moon taken
+   * unrefused, as with the fallback (UPSTREAM-BUGS 192) */
+  AS_BOOL moshmoon_cancels;
   /* the Sun's barycentric place, velocity and acceleration from Moshier's
    * planets at instant t, for each planet set, and the planets' series at
    * their own instants tp (UPSTREAM-BUGS 102, 109), swi_mosh_sun_bary()'s

@@ -5468,6 +5468,19 @@ static void nodaps_ecl_to_j2000(swe_ctx *ctx, double *x, double tjd, int32 iflag
   nodaps_ecl_rot_j2000(ctx, x, tjd, iflag);
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* the end of swe_nod_aps()'s reads that take Moshier's Moon unrefused
+ * (UPSTREAM-BUGS 192): the save areas they leave dropped, as a refused
+ * read leaves none */
+static void nodaps_moshmoon_end(swe_ctx *ctx)
+{
+  if (ctx->moshmoon_cancels) {
+    ctx->moshmoon_cancels = FALSE;
+    swi_force_app_pos_etc(ctx);
+  }
+}
+#endif
+
 /* swe_nod_aps()'s refusal of a barycentric Moshier answer (UPSTREAM-BUGS
  * 149), and since bug 179 of any: its points zeroed, as swe_calc() zeroes
  * a refused position and this function an unimplemented body's */
@@ -5609,6 +5622,27 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
     if (!(iflag & SEFLG_HELCTR))
       do_aberr = FALSE;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 192: the Sun's points (the Earth's orbit, seen from the
+   * Sun since bug 167) and the Earth's heliocentric and barycentric ones
+   * read the Earth, and the osculating ones the Moon too, to make the
+   * Earth-Moon barycentre again, so that without the moon files the strict
+   * setting refused them (bug 120: "Swiss (.se1) Moon file is not
+   * available"), where the Moon reaches none of them: the mean points are
+   * the elements with the Sun, the ellipse is fitted to the barycentre,
+   * the Earth less Moshier's Moon's share and that share again, and only
+   * the deflection of the Sun's geocentric points looks from the Earth;
+   * with the fallback they answered within 6.5e-15 deg of the complete
+   * directory's (the speeds 1.5e-11 deg/day, the barycentres' rounding
+   * over the ellipse's 2^-6 day). Now their reads take Moshier's Moon
+   * unrefused (ctx->moshmoon_cancels), the ellipse's barycentre from the
+   * Moon the Earth was made with, and the wrappers below drop the save
+   * areas the reads leave, so that a strict request does not find there
+   * an Earth made from Moshier's Moon. The Earth's geocentric and
+   * topocentric points, seen from that Earth, stay refused. */
+  if (ipli == SE_EARTH && (ipl == SE_SUN || (iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))))
+    ctx->moshmoon_cancels = TRUE;
+#endif
   iflg0 = (iflag & (SEFLG_EPHMASK|SEFLG_NONUT)) | SEFLG_SPEED | SEFLG_TRUEPOS;
   if (ipli != SE_MOON)
     iflg0 |= SEFLG_HELCTR;
@@ -5954,6 +5988,17 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
 #endif
       /* the EMB is used instead of the earth */
       if (ipli == SE_EARTH) {
+#ifndef SWE_UPSTREAM_COMPAT
+        /* bug 192: an Earth made from Moshier's Moon, the moon files
+         * missing, gets its barycentre back from the Moon it was made
+         * with, which its read saved; a read of the Moon itself is refused
+         * under the strict setting */
+        if (ctx->moshmoon_cancels && ctx->moshmoon_earth_t == t && pedp->teval == t
+            && ctx->pldat[SEI_MOON].teval == t && ctx->pldat[SEI_MOON].iephe == SEFLG_MOSEPH) {
+          for (j = 0; j <= 5; j++)
+            xposm[j] = ctx->pldat[SEI_MOON].x[j];
+        } else
+#endif
         if (swe_calc_r(ctx, t, SE_MOON, iflJ2000 & ~(SEFLG_BARYCTR|SEFLG_HELCTR), xposm, serr) == ERR)
           return ERR;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -6675,6 +6720,7 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
   swi_config_hold(ctx);	/* bug 115 */
   ret = swe_nod_aps_r_body(ctx, tjd_et, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr, NULL);
 #ifndef SWE_UPSTREAM_COMPAT
+  nodaps_moshmoon_end(ctx);	/* bug 192 */
   /* Upstream bug 179: a refusal by a calculation inside (the strict
    * setting's, a file's, a range's) returned -1 and left the four points as
    * the caller had them, where swe_calc() zeroes a refused position (the
@@ -6749,6 +6795,7 @@ int32 CALL_CONV swe_nod_aps_ut_r(swe_ctx *ctx, double tjd_ut, int32 ipl, int32 i
   swi_config_hold(ctx);	/* bug 115 */
   ret = swe_nod_aps_ut_r_body(ctx, tjd_ut, ipl, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
 #ifndef SWE_UPSTREAM_COMPAT
+  nodaps_moshmoon_end(ctx);	/* bug 192 */
   if (ret == ERR)	/* bug 179, as swe_nod_aps_r() */
     nodaps_refuse(xnasc, xndsc, xperi, xaphe);
 #endif

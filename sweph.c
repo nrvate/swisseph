@@ -3140,7 +3140,8 @@ static AS_BOOL swi_refuse_downgrade(swe_ctx *ctx, int32 wanted, int32 got, doubl
  * took it. The caller decides whether its answer depends on it. */
 static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr)
 {
-  if (ctx->ephe_fallback || !ctx->moshmoon_used)
+  if (ctx->ephe_fallback || !ctx->moshmoon_used
+      || ctx->moshmoon_cancels)	/* bug 192: swe_nod_aps()'s, the Moon cancelling */
     return FALSE;
   if (serr != NULL)
     snprintf(serr, AS_MAXCH,
