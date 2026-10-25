@@ -8443,6 +8443,37 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
     xo_p[i+3] = xe[i+3] + dp * ae[i];
   }
   if (iflag & SEFLG_TOPOCTR) {
+    /* Upstream bug 259: the site is built of date and put into J2000 by
+     * the frame at its instant, and within dm or dp of a step of the
+     * frame's models (a short-term window's edge, Owen 1990's joins,
+     * SEFLG_JPLHOR_APPROX's at 1962; swi_frame_step_side()) the read
+     * across it was the other model's, on every ephemeris: with "0,9,1"
+     * Polaris's topocentric right ascension speed 8.33e-5 deg/day off its
+     * places' rate within 1e-5 day of J2000 + 2 centuries (latitude
+     * 1.9e-6), with the IERS 2010 sidereal time 3.41e-4 there and 2.52e-4
+     * at - 2; 9.49e-5 at 1962 Jan 20 under SEFLG_JPLHOR_APPROX. That read
+     * is not taken, as bug 246 passes over the Earth's: the site there the
+     * quadratic through the site at tjd and two reads on tjd's side, at u1
+     * = dp or -dm and u2 = 2 u1 as rounded (its velocity's truncation d^3
+     * v''', 7e-17 AU/day). */
+    double dd = dm > dp ? dm : dp;
+    int side = swi_frame_step_side(ctx, tjd, dd, siteflag, SWI_FRAME_ALL);
+    if (side != 0) {
+      double xq[3][6], u1 = side > 0 ? dp : -dm, t2 = tjd + 2 * u1, u2 = t2 - tjd;
+      double ux = side > 0 ? -dm : dp;
+      double l0 = (ux - u1) * (ux - u2) / (u1 * u2), l1 = ux * (ux - u2) / (u1 * (u1 - u2));
+      double l2 = ux * (ux - u1) / (u2 * (u2 - u1));
+      double *xon = side > 0 ? xo_p : xo_m, *xox = side > 0 ? xo_m : xo_p;
+      for (k = 0; k < 3; k++)
+        if (swi_get_observer(ctx, k == 0 ? tjd : (k == 1 ? tjd + u1 : t2),
+                             siteflag | SEFLG_NONUT, NO_SAVE, xq[k], serr) != OK)
+          return ERR;
+      for (i = 0; i <= 5; i++) {
+        xon[i] += xq[1][i];
+        xox[i] += l0 * xq[0][i] + l1 * xq[1][i] + l2 * xq[2][i];
+      }
+      return OK;
+    }
     for (k = 0; k < 2; k++) {
       double *xo = k ? xo_p : xo_m;
       /* bug 195: the site by the delta t of the ephemeris that answered */
@@ -9309,7 +9340,41 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
 	  xx[i] += xe[i];
 	    break;
       case SEFLG_SWIEPH:
+#ifndef SWE_UPSTREAM_COMPAT
+        {
+          /* Upstream bug 258: with the Moon's file missing and the fallback
+           * allowed (mosh_mixed, bug 109), the Moon at the light-time
+           * instant t is read again from Moshier, of date and put into
+           * J2000 by the frame at t, and within the light time after a
+           * step of the frame's models (a short-term window's edge, Owen
+           * 1990's joins; swi_frame_step_side(), the precession with no
+           * flags and the obliquity with the cache's, as the Moon takes
+           * them) that frame was the other model's: under "0,9,1" after
+           * J2000 + 2 centuries the Moon's longitude 1.715e-4 deg off the
+           * side's model alone's ("0,9,9"; on Moshier within 1e-12), its
+           * speed 2.29e-2 deg/day off its places' rate (after - 2:
+           * 1.588e-4 and 2.12e-2), heliocentric 4.6e-7 deg within 500 s.
+           * There the read now holds teval's model (swi_frame_model_hold(),
+           * as bug 202 holds the Moon's epochs): the place the side's
+           * model alone's bit for bit. */
+          int side = 0;
+          if (mosh_mixed) {
+            double h = pdp->teval - t;	/* exact, t being near teval */
+            side = swi_frame_step_side(ctx, pdp->teval, h, 0, SWI_FRAME_PREC);
+            if (side == 0)
+              side = swi_frame_step_side(ctx, pdp->teval, h, ctx->oec.epsflag, SWI_FRAME_EPS);
+          }
+          if (side > 0) {
+            int32 held[2];
+            swi_frame_model_hold(ctx, pdp->teval, held);
+            retc = sweplan(ctx, t, SEI_MOON, SEI_FILE_MOON, iflag, NO_SAVE, xx, xe, xs, NULL, serr);
+            swi_frame_model_release(ctx, held);
+          } else
+            retc = sweplan(ctx, t, SEI_MOON, SEI_FILE_MOON, iflag, NO_SAVE, xx, xe, xs, NULL, serr);
+        }
+#else
         retc = sweplan(ctx, t, SEI_MOON, SEI_FILE_MOON, iflag, NO_SAVE, xx, xe, xs, NULL, serr);
+#endif
         if (retc != OK)
           return(retc);
 	for (i = 0; i <= 5; i++)

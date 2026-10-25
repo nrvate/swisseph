@@ -1776,6 +1776,17 @@ struct epsilon {
  *     swi_precess() at the date); the sidereal times' far delta t in
  *     double-double, UPSTREAM-BUGS 257, G159, is in entry 234's exact
  *     forms, this fork's, and has no upstream form
+ *   - with the Moon files missing and the fallback allowed, the Swiss
+ *     request's Moon within its light time after a step of the frame's
+ *     models, read from Moshier at the light-time instant in the other
+ *     model's frame: 1.715e-4 deg in longitude after J2000 + 2 centuries
+ *     with IAU 1976 under Vondrak (the compat build 2.7e-5) (UPSTREAM-BUGS
+ *     258, G170, G24)
+ *   - a topocentric star's speeds within 1e-5 day of a step of the frame's
+ *     models, its site for the aberration rate read across it: Polaris's
+ *     right ascension 8.3e-5 deg/day off with IAU 1976 under Vondrak (the
+ *     compat build reads its site at tjd - 1e-5 day only, across after
+ *     the step: 6.0e-5) (UPSTREAM-BUGS 259, G170, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

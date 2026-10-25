@@ -5114,6 +5114,102 @@ static double mosh_aberr_window_off(int far)
   return r;
 }
 
+/* UPSTREAM-BUGS 258: with the Moon files missing (a directory of links to
+ * the others) and the fallback allowed, the Swiss request's Moon under IAU
+ * 1976 and Vondrak ("0,9,1") at J2000 + 2 centuries + 2^-20 day, within
+ * its light time after the window's edge, against the same under "0,9,9",
+ * the side's model alone, a fresh context each: the longitude's
+ * difference, deg. The shipped build read Moshier's Moon at the
+ * light-time instant in the window's frame (1.715e-4), 0 now; upstream
+ * reads it so too (2.71e-5). -1 if a call fails. */
+static double fall_moon_window_off(void)
+{
+  char dir[] = "/tmp/compatfwXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  char mod[2][40] = { "0,9,1,0,0,0,0,0", "0,9,9,0,0,0,0,0" }, serr[AS_MAXCH];
+  const double t = 2524595.0 + 1.0 / 1048576;
+  double x[2][6], r = -1;
+  struct dirent *e;
+  DIR *d;
+  int i, ok = 1;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -1;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strncmp(e->d_name, "semo", 4) != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  for (i = 0; i < 2; i++) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL) {
+      ok = 0;
+      break;
+    }
+    swe_set_ephe_path_r(c, dir);
+    swe_set_ephe_fallback_r(c, 1);
+    swe_set_astro_models_r(c, mod[i], 0);
+    if (swe_calc_r(c, t, SE_MOON, SEFLG_SWIEPH | SEFLG_SPEED, x[i], serr) < 0)
+      ok = 0;
+    swe_ctx_free(c);
+  }
+  if (ok)
+    r = fabs(swe_difdeg2n(x[0][0], x[1][0]));
+  if ((d = opendir(dir)) != NULL) {
+    while ((e = readdir(d)) != NULL)
+      if (e->d_name[0] != '.') {
+        snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+        unlink(q);
+      }
+    closedir(d);
+  }
+  rmdir(dir);
+  return r;
+}
+
+/* UPSTREAM-BUGS 259: a topocentric star's aberration rate across a
+ * short-term precession window's edge. Polaris at Zurich on the Swiss
+ * files, equatorial, under "0,9,1" at J2000 + 2 centuries + 2^-17 day (the
+ * edge's instant the window's): its right ascension's and declination's
+ * speeds against a one-sided five-point difference over 2^-9 day of its
+ * places after it, the largest, deg/day. The shipped build read the site
+ * 1e-5 day before, across the edge (8.33e-5), 5.6e-10 now; upstream
+ * reads it there too (5.97e-5). -1 if a call fails. */
+static double topo_star_window_off(void)
+{
+  const double t = 2524595.0 + 1.0 / 131072, h = 1.0 / 512;
+  const double o5[5] = { -25.0 / 12, 4, -3, 4.0 / 3, -1.0 / 4 };
+  const int32 fl = SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_EQUATORIAL;
+  char mod[40] = "0,9,1,0,0,0,0,0", s[64], serr[AS_MAXCH];
+  double x[6], f[5][6], r = 0;
+  int j, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_astro_models_r(c, mod, 0);
+  swe_set_topo_r(c, 8.55, 47.38, 400);
+  strcpy(s, "Polaris");
+  if (swe_fixstar2_r(c, s, t, fl | SEFLG_SPEED, x, serr) < 0)
+    r = -1;
+  for (k = 0; k < 5 && r >= 0; k++) {
+    strcpy(s, "Polaris");
+    if (swe_fixstar2_r(c, s, t + k * h, fl, f[k], serr) < 0)
+      r = -1;
+  }
+  for (j = 0; j < 2 && r >= 0; j++) {
+    double dd = 0;
+    for (k = 0; k < 5; k++)
+      dd += o5[k] * (j == 0 ? swe_difdeg2n(f[k][0], f[0][0]) : f[k][1] - f[0][1]);
+    dd /= h;
+    if (fabs(x[3 + j] - dd) > r)
+      r = fabs(x[3 + j] - dd);
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 187: the house speeds across a short-term precession
  * window's edge. Equal houses' Ascendant speed at Zurich on the Swiss files
  * under IAU 1976 and Vondrak ("0,9,1"), delta t 2^-11 day, at J2000 - 2
@@ -6989,7 +7085,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -7172,6 +7268,8 @@ int main(int argc, char **argv)
   moshrng = mosh_range_misnamed();
   speed3span = speed3_span_edge_off();
   sidtlrng = sidt_lterm_range_answered();
+  fallmoonwin = fall_moon_window_off();
+  topostarwin = topo_star_window_off();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -8957,6 +9055,22 @@ int main(int argc, char **argv)
   else {
     printf("  long-term sidt range   %.0f/6 answered FAIL: expected %s\n",
            sidtlrng, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (fallmoonwin > 1e-5) : (fallmoonwin == 0))
+    printf("  fallen Moon at a window %.2e deg OK\n", fallmoonwin);
+  else {
+    printf("  fallen Moon at a window %.2e deg FAIL: expected %s\n",
+           fallmoonwin, WANT_DEFECT ? "> 1e-5" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (topostarwin > 1e-6) : (topostarwin >= 0 && topostarwin < 5e-9))
+    printf("  topocentric star at a window %.2e deg/day OK\n", topostarwin);
+  else {
+    printf("  topocentric star at a window %.2e deg/day FAIL: expected %s\n",
+           topostarwin, WANT_DEFECT ? "> 1e-6" : "< 5e-9");
     bad++;
   }
 

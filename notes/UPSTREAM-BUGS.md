@@ -286,6 +286,8 @@ worst were in code that had never executed even once.
 | 248 | The barycentric Sun's fall from a missing JPL file keeps SEFLG_JPLEPH: with SEFLG_SPEED this fork's light-time rate (entry 78) reads the JPL file through a NULL handle, SIGSEGV, fresh, warm and strict; without it 17921 for the Swiss request's 17922, SEFLG_SPEED3 18049 for 18050, and the strict setting answers; upstream 18177 for 18178 | Correctness (a crash; behaviour) | `sweph.c` |
 | 256 | The long-term sidereal time integrates its precession model's rate past the model's range, out to 2000 centuries, where entry 212 refuses the model: `swe_sidtime()` and `swe_sidtime0()` answer there under the ten polynomial models and Owen 1990, 0.03 to 17.5 deg off Vondrak 2011's at the range's end, over 64 consecutive JDs at 800 .. 1999 centuries off a line by up to 2.5e-5 deg under IAU 2006, 1.05 under Simon 1994, 8.4 under Owen; `swe_azalt()` SE_EQU2HOR and `swe_azalt_rev()` SE_HOR2EQU from them; and at -13200 on the Swiss files the houses OK from it | Correctness (behaviour) | `swephlib.c`, `swehouse.c`, `swecl.c` |
 | 257 | With the library's own delta t the sidereal times take delta t's far parabola evaluated in double, 2 ulps off its formula (1.3e-4 day at 1e12): the default over 64 consecutive JDs off its line by 4.1e-9 .. 5.1e-9 deg at -+1e12, 1.3e-9 .. 2.0e-9 at -+5e11 | Correctness | `swephlib.c` |
+| 258 | With the Moon files missing and the fallback allowed, the Swiss request's Moon, fallen to Moshier's, is read again at its light-time instant, of date and put into J2000 by the frame there: within its light time after a short-term window's edge, with IAU 1976 under Vondrak, its longitude 1.715e-4 deg off the side's model alone's after J2000 + 2 centuries (1.588e-4 after - 2), its speed 2.29e-2 deg/day off its places' rate; heliocentric within 500 s 4.6e-7 deg | Correctness (behaviour) | `sweph.c` |
+| 259 | A topocentric star's aberration rate reads its site at tjd -+ 1e-5 day, of date and put into J2000 by the frame at its instant, across a step of the frame's models, on every ephemeris: with IAU 1976 under Vondrak within 1e-5 day of J2000 + 2 centuries Polaris's topocentric right ascension speed 8.33e-5 deg/day off its places' rate (3.41e-4 with the IERS 2010 sidereal time, 2.52e-4 at - 2), across SEFLG_JPLHOR_APPROX's 1962 step 9.49e-5 | Correctness | `sweph.c` |
 
 ---
 
@@ -18657,6 +18659,197 @@ Noticed, not fixed:
   houses and SE_ECL_NUT are as noisy, and the house speeds (frames 1/64
   day apart) 2.1e3 .. 7.7e3 deg/day off five-point differences over 1/16
   day at 1e11 .. 1e12; entry 196 keeps the nutation to 1e12.
+
+## 258. With the Moon files missing, the Swiss request's Moon fallen to Moshier's is read again at its light-time instant in that instant's frame: within its light time after a short-term window's edge its longitude 1.715e-4 deg off, its speed 2.29e-2 deg/day off its places' rate
+
+**Severity: Correctness (behaviour: with the Moon files missing and the fallback allowed, and `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()` or Owen 1990 the long-term model: the Swiss request's Moon within its light time after a step of the frame's models, with IAU 1976 under Vondrak after J2000 + 2 centuries its longitude 1.715e-4 deg off the side's model alone's and its speed 2.29e-2 deg/day off its places' rate, after - 2 1.588e-4 and 2.12e-2; heliocentric and barycentric, within 500 s, 4.6e-7 deg and 6.1e-5 deg/day)**
+**Where:** `sweph.c`: `app_pos_etc_moon()`
+
+Entry 246's noticed item. With the Moon's file missing `sweplan()` takes
+the Moon from Moshier (entry 120), and the Earth is the files' EMB less
+that Moon. The apparent Moon's light time then reads the files' path again
+at the instant the light left, t = teval - tau (entry 109's mixed case),
+where `sweplan()` falls to Moshier's Moon again: of date, put into J2000
+by `ecldat_equ2000()` with the precession and obliquity at t. Moshier's
+own request carries its Moon from teval to t instead (entry 53), in
+teval's frame. Within the light time after a step of the frame's models
+(entry 160's window edges: with "0,9,1" 0.57" in the precession and 81.6
+mas in the obliquity at J2000 + 2 centuries, 0.53" and 3.4 mas at - 2;
+entry 183's Owen joins) t is on the other side, and the Moon read there
+was the other model's, then taken to the frame of date at teval by
+teval's. Measured on this tip, a directory of links to the files but the
+Moon's (semo*), the fallback allowed, "0,9,1", SEFLG_SPEED, against the
+same call under the side's model alone ("0,1,1" inside, "0,9,9" outside),
+fresh contexts, at J2000 -+ 2 centuries -+ 2^-k day, k = 13..26:
+- after + 2 centuries, within the light time (1.5e-5 day: from 2^-16),
+  the longitude 1.715e-4 deg off (Moshier's own request within 1e-12),
+  the latitude 7.76e-6; equatorial 1.741e-4, J2000 1.752e-4, topocentric
+  1.706e-4; after - 2 1.588e-4 and 7.5e-6;
+- the speed 2.29e-2 deg/day off a one-sided five-point difference over
+  2^-6 day of the places on the instant's side (2.12e-2 at - 2), the
+  place at the instant being the one off, and up to 1.27e-5 off the side's
+  model's speed (6.7e-7 in ecliptic longitude at + 2, 2.6e-6 at - 2);
+- heliocentric and barycentric, the light time 500 s, at all 14 instants
+  the place 4.6e-7 deg off (2.6e-7 at - 2), the speed 6.1e-5 deg/day off
+  the places' rate (3.5e-5);
+- before either edge nothing: t is further on the instant's side.
+Not reached: Moshier's request (carried, not read again); a JPL request
+past its file (it falls to Moshier whole); SEFLG_TRUEPOS (no light time);
+the Sun and the planets on the same files, whose light-time Earth (the
+EMB less Moshier's Moon) reaches across too: their places the side's
+model's bit for bit, their speeds within 9.2e-10 deg/day of it (the
+Sun's, Mars's and Jupiter's, entry 246's `earth_at_lt()` note), under
+the floor. The compat build reads the Moon so too (2.71e-5 deg at + 2
+centuries + 2^-20 day; its Moshier Moon turned by the cache's obliquity,
+teval's).
+
+**Fix, as done here:** in the mixed case, where `swi_frame_step_side()`
+says t takes another model than teval (the step within h = teval - t,
+exact; the precession with no flags, else the obliquity with the cache's,
+as the Moon takes them), the read at t holds teval's model
+(`swi_frame_model_hold()`, with entry 200 Owen's piece), as entry 202
+holds the Moon's epochs, and releases it after. The files' part of the
+read (the EMB, the barycentric Sun) has no frame of date and is
+unchanged. Elsewhere, and on Moshier's and JPL's paths, the code is as
+before. Behind `#ifndef SWE_UPSTREAM_COMPAT`. (Its saves need no passing
+over, as entry 245's did: the Moon's slot and the Earth's are teval's by
+then, and the Earth's saved Moon, Moshier's or JPL's only, is emptied
+when the call's ephemeris changes, `planets_forget_instants()`: a
+Moshier call at t before the Swiss one at teval leaves nothing there.)
+- After: the place the side's model alone's bit for bit at every instant,
+  equatorial, J2000, without aberration, heliocentric, barycentric and
+  topocentric too, and the answer in one warm context the fresh one's;
+  the speed within 8.5e-14 deg/day of the side's model's (entry 184's
+  one-sided frame turning there against its central one), the
+  topocentric 4.1e-9 (its site's acceleration, entry 259's note), and
+  within 9.0e-9 of the places' rate (the
+  reference's own on this Moon: 6.4e-9 under the side's model alone within
+  a day of the edges, 1.6e-9 under the default models).
+- A survey before and after, 72576 answers: the Moon, Mars, Polaris and
+  Sirius; of date, equatorial, J2000, topocentric (and equatorial),
+  heliocentric, without aberration, true positions and sidereal, with and
+  without SEFLG_SPEED; on the Swiss files, Moshier and de200; with the
+  full directory and with the Moon files missing (fallback allowed);
+  under the default models, "0,9,1", "0,9,6" and "0,10"; at 12 dates
+  1800-2097 and 15 instants within 5 days of J2000 -+ 2 centuries --
+  identical bit for bit but 560, all under "0,9,1" and "0,9,6": 176 of
+  the Swiss Moon without its files within its light time after an edge
+  (the heliocentric to 2^-9 day), and entry 259's 384.
+- Cost: `perf stat -e instructions:u`, bench's calc-swieph (one
+  repetition) 12280467030 before, 12280491075 after (+0.0002%, both
+  entries); calc-moseph 23410931187 and 23410919173.
+
+G170 `tests/framefall.c`, check (a): the directory without the Moon
+files, the fallback allowed, the Moon with SEFLG_SPEED and no ephemeris
+flag under "0,9,1" at J2000 -+ 2 centuries -+ 2^-k day, k = 13..26, of
+date, equatorial, J2000, without aberration, heliocentric, barycentric
+and topocentric (with the IERS 2010 sidereal time; the long-term one has
+a step of its own there, see the notes), each side on its 14 instants:
+(a1) the place bit for bit the side's model alone's, fresh, and the
+answer in a warm context bit for bit the fresh one's; (a2) the longitude's
+and latitude's speeds within 1e-8 deg/day of the side's model's; (a3)
+within 2e-8 of the one-sided five-point difference over 2^-6 day of the
+places on the instant's side (the reference's noise above; the
+topocentric left out, its one-sided difference carrying the diurnal
+parallax's curvature, 5e-5): 80 checks. Before the fix 40 fail, every
+set's after both edges; the upstream build all 80 (its Moshier
+speeds differences of places across the edge, 5.4 deg/day). G170 112
+checks with entry 259's; the upstream build fails all 112. G24
+`fall_moon_window_off`: the Moon's longitude under "0,9,1" against "0,9,9"
+at J2000 + 2 centuries + 2^-20 day, the Moon files missing: 0 shipped
+(1.715e-4 before the fix), 2.71e-5 compat. G139, G155, G75, G108, G117,
+G99, G74, G154, G158 and G133 pass.
+
+Noticed, not fixed (not this entry's):
+- RESIDUAL(2.9e-7 deg; 1.83e-4 deg/day on Polaris's right ascension
+  speed). The long-term sidereal time takes its precession model at TT =
+  UT + delta t by the default tidal acceleration (`sidt_deltat()`, iflag
+  -1), and the site's UT came from the call's TT by its ephemeris's delta
+  t (entry 195): at J2000 - 2 centuries 18.903 s on the Swiss files,
+  18.125 on Moshier, 18.606 by default. So within 0.297 s after the edge
+  on the Swiss files (0.481 s before it on Moshier) the site's sidereal
+  time is the other side's model's: under "0,9,1" the topocentric Moon's
+  place 2.91e-7 deg off the side's model alone's (latitude 2.1e-8), its
+  speed 1.49e-6 deg/day (latitude 1.13e-6, right ascension 1.86e-6),
+  with or without aberration and light time; Polaris's topocentric right
+  ascension speed 1.83e-4 there (ecliptic latitude 5.2e-6), and 6.1e-5
+  from a stencil reaching into it 1.5e-5 day away. None at + 2
+  centuries, where the delta ts agree (no tidal correction past the
+  tables). G170 takes the IERS 2010 sidereal time at - 2 centuries.
+
+## 259. A topocentric star's aberration rate reads its site across a step of the frame's models: within 1e-5 day of a short-term window's edge Polaris's topocentric right ascension speed 8.33e-5 deg/day off its places' rate
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()`, Owen 1990 the long-term model, or SEFLG_JPLHOR_APPROX across its 1962 step: within 1e-5 day either side of the step the speeds of every topocentric star on every ephemeris, with IAU 1976 under Vondrak at J2000 + 2 centuries Polaris's right ascension 8.33e-5 deg/day and latitude 1.9e-6 off their places' rate, with the IERS 2010 sidereal time 3.41e-4 and 7.9e-6, at - 2 2.52e-4 and 7.2e-6; with SEFLG_JPLHOR_APPROX at 1962 Jan 20 9.49e-5 and 2.4e-6)**
+**Where:** `sweph.c`: `fixstar_obs_rate()`
+
+Entry 246's noticed item. A star's aberration rate takes the observer's
+velocity at tjd - dm and tjd + dp (the 1e-5 day steps as rounded,
+`aberr_light_central()`, entry 76), and with SEFLG_TOPOCTR the site's
+part is read at both instants by `swi_get_observer()`, which builds the
+site on the true equator of date and puts it into J2000 by the frame
+there (entry 27): the precession, the nutation matrix's obliquity and
+nutation, and the sidereal time, under the long-term model the
+precession's own (entry 181). Within 1e-5 day of a step of those models
+one read was the other side's, its velocity turned by the step, and the
+diurnal aberration's rate took the difference. Entry 246 passed over
+the Earth's reads across; the site's were left. Measured on this tip
+(G170 check (b)): Polaris topocentric at Zurich, against one-sided
+five-point differences over 2^-9 day of its places on the instant's
+side, the worst at the step -+ 2^-k day, k = 12..26:
+- "0,9,1" at + 2 centuries, the Swiss files and Moshier alike: right
+  ascension 8.33e-5 deg/day either side, ecliptic longitude 1.5e-6 and
+  latitude 1.9e-6;
+- with the IERS 2010 sidereal time (no step of its own) 3.41e-4 at + 2
+  (latitude 7.9e-6), 2.52e-4 at - 2 (7.2e-6), on de200 too;
+- SEFLG_JPLHOR_APPROX on de200 at 1962 Jan 20 (default models): 9.49e-5
+  (2.4e-6 in the ecliptic);
+- from 2^-16 day out nothing (both reads on the instant's side).
+The other site reads for a rate: `observer_accel()`, the site's
+acceleration as a central difference of its velocities over -+ 2^-6 day
+(entry 79) for the planets', the Moon's, the Sun's and `swe_nod_aps()`'s
+topocentric aberration rate, reaches across within 2^-6 day of a step
+too: the topocentric Sun's, Moon's and Mars's speeds up to 4.2e-9
+deg/day off the side's model alone's (on the sky; a right ascension at
+declination d takes 1 / cos d of it), under the floor, left. The site's
+own velocity takes the precession's rate on the instant's side already
+(entries 153, 160).
+
+**Fix, as done here:** where `swi_frame_step_side()` (the site's flags,
+every model: precession, obliquity, nutation) says the frame's models
+change within max(dm, dp) of tjd, the read across is not taken, as
+entry 246 passes over the Earth's: the site there is the quadratic
+through the site at tjd and two reads on tjd's side, at u1 = dp or -dm
+and u2 = 2 u1 as rounded (Lagrange weights from the exact offsets; its
+velocity's truncation d^3 v''', about 7e-17 AU/day, 2e-9 of the
+stencil's velocity difference); the read on the side is the one before.
+Elsewhere unchanged, the test returning at once under the default models.
+Inside `#ifndef SWE_UPSTREAM_COMPAT` (the function is this fork's, entry
+76).
+- After: G170 check (b) within 2.4e-9 deg/day (the reference's noise in
+  right ascension; the latitude's 1e-11).
+- Entry 258's survey: 384 of its answers differ, the topocentric stars
+  with SEFLG_SPEED within 1e-5 day of an edge under "0,9,1" and "0,9,6"
+  (Polaris and Sirius, on the Swiss files, Moshier and de200), and only
+  those. Its cost there.
+
+G170 `tests/framefall.c`, check (b): Polaris (`swe_fixstar2()`)
+topocentric at Zurich with SEFLG_SPEED, ecliptic and equatorial, under
+"0,9,1" with the IERS 2010 sidereal time at J2000 + 2 centuries on the
+Swiss files and Moshier and at - 2 on those and de200, with the
+long-term sidereal time at + 2 on the Swiss files and Moshier (at - 2 it
+has entry 258's noticed step), and on de200 with SEFLG_JPLHOR_APPROX at
+1962 Jan 20 under the default models; at the step -+ 2^-k day, k =
+12..26, the longitude's and latitude's speeds against the one-sided
+five-point difference over 2^-9 day of the places on the instant's side,
+each side on the worst of its 15 instants: 32 checks within 1e-8
+deg/day. Before the fix all 32 fail (1.5e-6 to 3.41e-4); the upstream
+build all 32 (its site read at tjd - 1e-5 day only, 6.8e-4 on the files;
+its Moshier speeds differences across the edge, 2.3 in right ascension).
+G24 `topo_star_window_off`: Polaris's equatorial speeds on the Swiss
+files under "0,9,1" at J2000 + 2 centuries + 2^-17 day against the
+one-sided five-point difference over 2^-9 day after it: 5.6e-10 deg/day
+shipped (8.33e-5 before the fix), 5.97e-5 compat. G60, G49, G66 and the
+gates of entry 258 pass.
 
 ## How these were found
 
