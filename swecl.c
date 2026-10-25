@@ -5535,6 +5535,9 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   double pargx, eax, pp, sinE;
 #else
   double dtosc = 0, rosc[NODAPS_NOSC] = {0, 0, 0, 0, 0};
+  AS_BOOL hold = FALSE, holdi;	/* bug 199 */
+  int32 held[2];
+  double teps = 0, tnut = 0;
 #endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *psbdp = &ctx->pldat[SEI_SUNBARY];
@@ -5992,6 +5995,28 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * deg/day heliocentric; 2.8e-9 at 2^-6, the points' noise) and 2^-6 for
      * the Moon (3.1e-9 geocentric; 1.8e-8 at 2^-5, its truncation). */
     dtosc = ipli == SE_MOON ? 1.0 / 64 : 1.0 / 32;
+    /* Upstream bug 199: and each epoch's place is put into the frame of
+     * date at that epoch (swi_plan_for_osc_elem()), so where the stencil
+     * spans a short-term precession model's window edge (entry 160: 0.53"
+     * of precession and 3.4 mas of mean obliquity at J2000 - 2 centuries
+     * with IAU 1976 under Vondrak) the difference took the frame's step as
+     * the orbit's motion, as the true node's did (bug 186): under "0,9,1"
+     * on the Swiss files within 1/8 day of J2000 - 2 centuries Mars's
+     * ascending node's speed 5.2e-3 deg/day off, the Moon's nodes 8.0e-2,
+     * its apsides 0.16; with the five-point difference above the Moon's
+     * points 6.5e-3 and Uranus's 1.7e-2 within its stencil, and under
+     * "0,9,8" at -+ 75 centuries the Moon's 7.9, Mars's 8.1, Jupiter's 41.
+     * Now within the stencil's reach of an edge every epoch is put into the
+     * frame of tjd's side's model (swi_frame_model_hold()), so the speeds
+     * are that side's own rate (within 4.6e-9 deg/day); tjd's own place is
+     * in the frame it had, and everything farther from an edge as it was.
+     * Whether to hold: */
+    hold = (iflag & SEFLG_SPEED)
+           && swi_frame_step_side(ctx, tjd_et, 2 * dtosc, iflag, SWI_FRAME_PREC | SWI_FRAME_EPS) != 0;
+# ifdef SID_TNODE_FROM_ECL_T0
+    if (iflag & SEFLG_SIDEREAL)	/* the frame is t0's at every epoch */
+      hold = FALSE;
+# endif
 #endif
     for (i = istart, t = tjd_et - dt; i <= iend; i++, t += dt) {
       if (istart == iend)
@@ -6064,8 +6089,27 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
        * Moshier request's, Mars's node at 1500 Jan 1 1.58e-4 deg
        * heliocentric, 1.56e-4 geocentric, the Moon's 2.9e-5. Now the bit
        * of the call that gave this state. */
+      /* bug 199: not Moshier's Moon, which is of date already, taken to
+       * J2000 by the frame at its epoch (ecldat_equ2000()), which
+       * swi_plan_for_osc_elem() undoes (lunar_osc_elem() holds none) */
+      holdi = hold && !(ipli == SE_MOON && (retx & SEFLG_EPHMASK) == SEFLG_MOSEPH);
+      if (holdi) {
+        /* the obliquity and nutation memos swe_calc() left at another
+         * epoch are its own side's model's: computed afresh under the held
+         * model, and the memos kept */
+        teps = ctx->oec.teps;
+        tnut = ctx->nut.tnut;
+        if (t != tjd_et)
+          ctx->oec.teps = ctx->nut.tnut = SWI_TJD_NEVER;
+        swi_frame_model_hold(ctx, tjd_et, held);
+      }
       swi_plan_for_osc_elem(ctx, (iflg0 & ~SEFLG_EPHMASK) | (retx & SEFLG_EPHMASK)
                             | (iflag & SEFLG_ICRS), t, xpos[i]);	/* bug 108 */
+      if (holdi) {
+        swi_frame_model_release(ctx, held);
+        ctx->oec.teps = teps;
+        ctx->nut.tnut = tnut;
+      }
 #else
       swi_plan_for_osc_elem(ctx, iflg0, t, xpos[i]);
 #endif

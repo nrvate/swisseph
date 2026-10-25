@@ -1546,6 +1546,13 @@ struct epsilon {
  *     fast: Neptune's heliocentric perihelion in 1815 5.3e-7 deg/day, the
  *     Moon's apsides 7.9e-8 (the compat build's are upstream's, over 1e-3
  *     day per AU: 2.0e-6 there) (UPSTREAM-BUGS 201, G154, G24)
+ *   - swe_nod_aps()'s osculating speeds within their stencil of a
+ *     short-term precession window's edge differencing the body's places
+ *     in the frames of date of both sides: the Moon's points 6.0e-3 and
+ *     6.5e-3 deg/day with IAU 1976 under Vondrak, Uranus's 1.7e-2,
+ *     Jupiter's 41.5 with IAU 2006 at 75 centuries (the compat build's are
+ *     upstream's, over 1e-3 day per AU: 0.80 there) (UPSTREAM-BUGS 199,
+ *     G154, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

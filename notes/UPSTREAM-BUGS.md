@@ -236,6 +236,7 @@ worst were in code that had never executed even once.
 | 202 | `lunar_osc_elem()` leaves Moshier's Moon out of entry 186's frame hold, but its velocity carries the frame's turning (entries 95, 184), which `swi_plan_for_osc_elem()` does not take off, so its true node and osculating apogee move with the precession model's rates: within 1/16 day of a short-term window's edge, with IAU 1976 under Vondrak at J2000 -+ 2 centuries, the node's speed 9.5e-8 and 1.05e-7 deg/day off the side's model's, the apogee's 5.0e-6 and 1.4e-6 | Correctness | `sweph.c` |
 | 206 | Within 2^-9 day of an ephemeris's edge a star with SEFLG_SPEED is refused or answered with Moshier mixed in, where it answers without the flag: `fixstar_obs_rate()` reads the Earth 2^-9 day either side for the aberration's rate. On de200.eph Aldebaran -1 "outside JPL eph. range" 2^-10 day inside either end (1 without the flag; Mars 257 at the end); with the Swiss files of 1800-2400 alone the downgrade's refusal (strict) or Moshier's heliocentric velocity in the acceleration, 6.6e-4 deg/day on the longitude speed (allowed); at a Moon file's end the same through the Moon | Correctness (behaviour) | `sweph.c` |
 | 208 | A fictitious body or `swe_calc_orbel()`'s orbit whose light time leaves the Swiss files' span is answered from Moshier's Sun, 0, taken for the barycentric one, under either setting: the light-time loop's `main_planet_bary()` falls to Moshier on its own and answers OK. Cupido at JD 2378496.6 with the files of 1800-2400 alone 258, 4.33e-3 deg off the complete directory's and the Moshier request's, strict too | Correctness (behaviour) | `sweph.c` |
+| 199 | `swe_nod_aps()`'s osculating nodes' and apsides' speeds put each epoch of their difference into the frame of date at that epoch, so within the stencil of a short-term precession window's edge the difference took the frame's step: with IAU 1976 under Vondrak ("0,9,1") on JPL and the Swiss files the Moon's points 5.99e-3 deg/day off at J2000 - 2 centuries and 6.49e-3 at + 2, the planets' up to 1.69e-2 (Uranus's); with IAU 2006 ("0,9,8") at -+ 75 centuries the Moon's 7.9, Mars's 8.1, Jupiter's 41.5 | Correctness | `swecl.c` |
 | 201 | `swe_nod_aps()`'s osculating nodes' and apsides' speeds (entry 80) are a three-point difference over 2^-6 day (the Moon 2^-11), off by h^2 / 6 of the point's third derivative where a near-circular orbit's apsides turn fast, and over the Moon's short step by its points' noise: against nine-point differences of the positions, 1800-2100, Neptune's heliocentric perihelion 5.3e-7 deg/day off in 1815, Uranus's 4.2e-8, the Earth's 3.5e-8, Jupiter's 2.2e-8, the Moon's geocentric apsides 7.9e-8 and nodes 1.6e-8, the distances' speeds 1.2e-8 AU/day | Correctness | `swecl.c` |
 
 ---
@@ -14562,6 +14563,122 @@ Noticed, not fixed:
   stencil of one (2^-4 day for the planets, 2^-5 for the Moon now, 2^-6
   and 2^-11 before) the speed is a difference across the jump: the files'
   velocities at their joints, not this code's.
+
+## 199. `swe_nod_aps()`'s osculating speeds difference the body's places in the frames of date across a short-term precession window's edge: the Moon's points 6.5e-3 deg/day off within the stencil with IAU 1976 under Vondrak, Uranus's 1.7e-2, Jupiter's 41.5 with IAU 2006 at 75 centuries
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()`, on JPL and the Swiss files and Moshier's planets: the speeds of SE_NODBIT_OSCU and SE_NODBIT_OSCU_BAR, and of SE_NODBIT_MEAN for Pluto and the asteroids, within the stencil of the window's edges (1/32 day for the Moon, 1/16 for the planets) off their positions' rate, with IAU 1976 under Vondrak at J2000 -+ 2 centuries the Moon's 6.0e-3 and 6.5e-3 deg/day, the planets' up to 1.7e-2 (Uranus's), with IAU 2006 at -+ 75 centuries the Moon's 7.7 and 7.9, Mars's 8.1, Jupiter's 41.5, the distances' speeds up to 1.0 AU/day; ecliptic and equatorial of date alike; before entry 201's stencil, within 1/8 day, Mars's ascending node 5.2e-3, the Moon's nodes 8.0e-2 and apsides 0.16)**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, the osculating points
+
+Entry 186's noticed item. The osculating points' speeds (entries 80 and
+201) are a five-point difference of the points at tjd + k h, k = -2..2,
+h = 2^-5 day for the planets and 2^-6 for the Moon, and
+`swi_plan_for_osc_elem()` puts each epoch's place into the ecliptic and
+equator of date at that epoch, as `lunar_osc_elem()` does for the true
+node (entry 186). Within 1/16 day of a window's edge (the Moon's 1/32)
+some epochs lie on the other side (entry 160: 0.53" of precession and
+3.4 mas of mean obliquity at J2000 - 2 centuries with IAU 1976 under
+Vondrak, 0.57" and 81.6 mas at + 2, 42" and 107" with IAU 2006 at -+
+75), and the difference took the frame's step as a motion of the orbit,
+which the nodes' and apsides' longitudes amplify by the inclination and
+eccentricity. Measured against nine-point central differences over 2^-5
+day of the positions of the instant's side's model alone ("0,1,1" or
+"0,8,8" inside, "0,9,9" outside), which has no step and whose places on
+that side are the models' (the positions are unchanged below), counted
+where they agree with the ones over 2^-6 day within 1e-8 deg/day, at
+G139's instants within 1/4 day of the edge (TT), geocentric, the worst
+of the four points' longitude's and latitude's speeds within the
+stencil, ecliptic and equatorial of date alike:
+- "0,9,1" at J2000 - 2 centuries, de200 and the Swiss files alike: the
+  Moon's 5.99e-3 deg/day, the planets' 1.69e-2 (Uranus's); the distances'
+  speeds 3.1e-9 and 4.2e-4 AU/day;
+- "0,9,1" at + 2, Swiss: 6.49e-3 and 1.64e-2;
+- "0,9,8" at - 75 centuries, Swiss: 7.71 and 8.12 (Mars's); at + 75 7.90
+  and 41.5 (Jupiter's), the distances' 1.0 AU/day;
+- before entry 201's stencil (three points 2^-6 day apart, the Moon's
+  2^-11): the Moon's 0.164 and 0.178 at -+ 2 centuries, 212 and 217 at -+
+  75, the planets' 2.90e-2, 2.81e-2, 13.9 and 71.1.
+Beyond the stencil the speeds were their own, as entry 201 leaves them
+(the Moon's within 3.6e-9 deg/day, the planets' 8.4e-10). Moshier's Moon
+needs none of it: it is of date already and taken to J2000 by the frame
+at its epoch (`ecldat_equ2000()`), which `swi_plan_for_osc_elem()`
+undoes (held, its points were 2.9e-3 deg/day off).
+
+**Fix, as done here:** `swe_nod_aps_r_body()` asks
+`swi_frame_step_side()` (entries 153, 159, 160) whether the precession's
+or the obliquity's model changes within its stencil's reach of tjd (1/16
+day, the Moon's 1/32; never without SEFLG_SPEED, nor sidereal under
+SID_TNODE_FROM_ECL_T0, whose frame is t0's at every epoch); where it
+does, but for Moshier's Moon, each epoch's `swi_plan_for_osc_elem()`
+runs with both precession entries of `astro_models[]` held at the model
+`swi_precess()` and `swi_epsiln()` take at tjd
+(`swi_frame_model_hold()`), put back after it
+(`swi_frame_model_release()`), as entry 186's `osc_frame_hold()`. Every
+epoch is then in tjd's side's own frame. The obliquity and nutation
+memos the epochs' `swe_calc()` reads leave behind are of their own
+side's model, so for every epoch but tjd they are bypassed (their
+instants set to none for the call and put back;
+`swi_plan_for_osc_elem()` computes the held model's into temporaries,
+writing no memo), and tjd's own place is in the frame it had: the
+positions are unchanged bit for bit at every instant (every row of 40
+instants within 1/16 day of the four edges under "0,9,1" and "0,9,8", 12
+bodies, 13 flag sets, the four methods). Elsewhere nothing changes, bit
+for bit (positions and speeds, the same rows at 60 dates 1600-1994 under
+the default models, "0,9,1" and "0,9,8", and at 40 instants 0.07 to 10
+days from the edges). Behind `#ifndef SWE_UPSTREAM_COMPAT`, with entry
+201's stencil; the compat build keeps upstream's difference over 1e-3
+day per AU (1e-4 for the Moon).
+- After: within the stencil as beyond, the Moon's within 4.6e-9 deg/day
+  (4.1e-9 and 4.6e-9 at -+ 75 centuries, the references' own; 1.6e-9 at
+  2), the planets' 8.4e-10, the distances 6.1e-12 AU/day; Moshier's
+  planets inside within 1e-8 of "0,1,1"'s, outside within 2.6e-11 of
+  references in their own context beyond the stencil (Venus's and
+  Mars's), where against "0,9,9" they are 1.3e-5 off (Venus's), within
+  the stencil and beyond alike: that reference's planets take its own
+  obliquity of J2000, not the window's.
+- Cost: `perf stat -e instructions:u`, 20000 `swe_nod_aps()` osculating
+  calls with speeds, Mars and the Moon alternately on the Swiss files
+  1452..2400 on the default models, 23919444672 before, 23914293305 after
+  (-0.02%: the side test once a call with speeds).
+
+G154 `tests/nodaposcrate.c`, new check (a): the Moon's and Mercury's to
+Pluto's osculating points, geocentric, "0,9,1" at J2000 - 2 centuries on
+de200 and the Swiss files and at + 2 on the Swiss files, "0,9,8" at -+
+75 on the Swiss files, ecliptic and equatorial of date, the longitude's,
+latitude's and distance's speeds against the side's model alone as above
+at the 49 of G139's 105 instants within 1/4 day of the edge, the worst
+within the stencil and from there to 1/4 day, a point counted where the
+references over 2^-5 and 2^-6 day agree within 1e-8 deg/day (Jupiter's
+descending node behind the Sun at - 2 centuries: 3 of 196, 1 at + 2),
+at least 7 in 8: 180 checks within 1e-8 deg/day and 5e-11 AU/day. 200 checks;
+before the fix 90 fail, every one within the stencil (5.99e-3 to 41.5
+deg/day); after within 4.6e-9. The upstream build fails all 180 of (a)
+(its difference over 1e-3 day per AU across the edge, the Moon's 0.80 to
+951 deg/day, the planets' 9.4e-2 to 210, and its own difference's error
+beyond, entry 201, 1.0e-6 to 6.6e-5), 200 of 200 in all. G24
+`nodaps_window_speed_off`: Mars's ascending node's and the Moon's
+perigee's longitude speed on the Swiss files under "0,9,1" at J2000 - 2
+centuries -+ 2^-8 and -+ 2^-14 day against the side's model alone, the
+largest: 7.94e-10 deg/day shipped (5.96e-3 before the fix), 0.798
+compat. G139, G47, G69, G78, G79, G92, G104, G143, G146 and G74 pass.
+
+Noticed, not fixed:
+- RESIDUAL (8.0e-5 deg/day). `swe_nod_aps()`'s SEFLG_J2000 speeds take
+  the frame's turning as a central difference of the rotation over
+  NODAPS_FRAME_DT = 1 day either side (`nodaps_ecl_to_j2000()`, entry 47),
+  which reaches across a window's edge within a day of it: under "0,9,1"
+  on the Swiss files every method's points, mean and osculating, 7.95e-5
+  to 8.2e-5 deg/day off their positions' rate (same-context nine-point
+  differences over 2^-5 day, where they reach no file joint) at J2000 -
+  2 centuries -+ 1/2 and 15/16 day, the Moon's mean node 7.99e-5 at every
+  instant within the day, 1e-11 beyond; the same before this fix. As
+  entries 184 and 185 treat theirs, the side test and a one-sided rate
+  would take it.
+- Moshier's Moon's osculating points near the edges, not held (above) and
+  unchanged by this fix: within 2^-7 day of J2000 - 2 centuries under
+  "0,9,1" its apsides' longitude speeds 1.01e-5 deg/day off the side's
+  model alone, their latitude's 8.4e-7 (declination's 3.5e-6), its
+  nodes' 1.9e-7, from there to 1/4 day within 1e-8; entry 186's last
+  noticed item (the Moshier Moon's own frame there), another item's.
 
 ## How these were found
 

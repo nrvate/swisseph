@@ -1510,8 +1510,11 @@ check-spanedge: spanedge
 # G154: swe_nod_aps()'s osculating nodes' and apsides' speeds are their
 # positions' rate: a five-point difference, not a three-point one off by
 # its truncation where a near-circular orbit's apsides turn fast (Neptune's
-# perihelion 5.3e-7 deg/day, the Moon's apsides 7.9e-8), against nine-point
-# differences of the positions (UPSTREAM-BUGS 201).
+# perihelion 5.3e-7 deg/day, the Moon's apsides 7.9e-8), and across a
+# short-term precession window's edge each side's own rate, every epoch in
+# tjd's side's frame (the Moon's points 6.5e-3 at J2000 -+ 2 centuries
+# under "0,9,1", Jupiter's 41.5 at 75 centuries under "0,9,8"), against
+# nine-point differences of the positions (UPSTREAM-BUGS 201, 199).
 check-nodaposcrate: nodaposcrate
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodaposcrate $(EPHE)
 
