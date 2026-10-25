@@ -853,8 +853,10 @@ struct epsilon {
  *     differences by 2 x 0.0001 day, not by the interval between the
  *     Moon's rounded epochs, off by up to 2.3e-6 of itself (2.3e-7 deg/day
  *     on the node, 6e-6 on the apogee), and their J2000 latitude and
- *     declination speeds left out the mean obliquity's rate (3.5e-7;
- *     UPSTREAM-BUGS 75, G74)
+ *     declination speeds left out the mean obliquity's rate (3.5e-7),
+ *     the 0.0001-day step leaving 1e-6 of the Moon's velocity noise on
+ *     the apogee and Moshier's 2^-8-day three points 3.2e-6
+ *     (UPSTREAM-BUGS 75, G74)
  *   - the other instant-keyed caches were emptied, or a recomputation forced,
  *     by setting their instant to 0, which is also JD 0: at tjd 0 the
  *     barycentric Sun took the Earth slot's Earth for the EMB (0.025 deg on

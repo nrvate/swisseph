@@ -3680,6 +3680,52 @@ longitude 9.4e-8 Swiss, 4.5e-7 de200, J2000 latitude 3.5e-7, apogee
 deg/day shipped, 4.01e-6 compat; the node's J2000 latitude speed 1.0e-13
 shipped, 2.32e-7 compat.
 
+**Then the step, as done here (second part):** with the interval right,
+what was left was the step. Against a nine-point difference over 2^-3 day
+(eighth order; checked against the same over 2^-4, the dates where the
+two disagree, a Swiss Moon segment boundary within the stencil, left
+out: 5-9 of 150 on the Swiss files and de200), 150 binary dates,
+ecliptic and equatorial, worst of longitude and latitude:
+
+| speed of | before (3 points, 1e-4 day; Moshier 2^-8) | 3 points 2^-11 | 5 points 2^-10 | 2^-8 | 2^-7 | 2^-6 | 2^-5 | 2^-4 |
+|---|---|---|---|---|---|---|---|---|
+| Swiss node | 1.3e-9 | 1.3e-9 | 3.1e-10 | 3.1e-10 | 3.0e-10 | 3.2e-10 | 4.3e-10 | 3.6e-9 |
+| Swiss apogee | 5.2e-7 | 9.1e-8 | 1.1e-7 | 4.2e-8 | 2.2e-8 | 2.1e-8 | 1.7e-8 | 2.7e-7 |
+| de200 node | 1.2e-9 | 1.4e-9 | 4.8e-10 | 5.8e-10 | 5.9e-10 | 5.9e-10 | 5.1e-10 | 3.3e-9 |
+| de200 apogee | 1.5e-6 | 5.5e-8 | 3.3e-8 | 3.8e-8 | 3.8e-8 | 3.8e-8 | 2.9e-8 | 3.2e-7 |
+| Moshier node | 6.8e-8 | 1.9e-7 | 1.4e-7 | 4.0e-8 | 2.1e-8 | 1.1e-8 | 6.6e-9 | 1.8e-8 |
+| Moshier apogee | 3.2e-6 | 7.6e-6 | 7.3e-6 | 2.7e-6 | 1.6e-6 | 9.0e-7 | 4.7e-7 | 3.0e-7 |
+
+(the columns after the first from 60 dates for 2^-11 and 2^-10, 150 for
+the rest). Noise falls as the step grows until truncation takes over: on
+the Swiss files and de200 at 2^-5 in the distance speeds (6.4e-13 AU/day
+against 4.5e-14 at 2^-6) and at 2^-4 in all; on Moshier, whose Moon is
+noisier, at 2^-4 in the node. So five points over 2^-6 day on the Swiss
+files and JPL, over 2^-5 on Moshier (`OSC_NPT_*`, `OSC_INTV_*`); each
+epoch's rounding, `osc_round_err()`'s exact TwoSum of tjd + k step and of
+t - lt, is taken back to first order as a factor 1 + D[rr] on the
+difference, which replaces the first part's interval. Bug 31's slope of
+the node, overwritten before it was returned, is gone from the default
+build. Positions unchanged (bit for bit, with and without SEFLG_SPEED,
+three ephemerides, five flag sets, 40 dates); the compat build bit for
+bit as before. Cost: the true node with speed takes 5 Moon positions
+instead of 3, 22.6 against 16.8 us a call on the Swiss files, 113 against
+72 on Moshier (not in `calc-swieph`/`calc-moseph`). Near the end of a
+JPL or Swiss file the epochs reach 2 steps (0.031 day) past tjd, not
+0.0001, before the fall-back to another ephemeris.
+
+G74 now takes the nine-point difference over 2^-3 day as the reference
+(a five-point over 2^-6 would be the library's own stencil) and adds the
+Moshier apogee: 30 rows, the node within 1e-9 deg/day (measured <=
+1.0e-10), the apogee 5e-8 (8.6e-9), Moshier 5e-9 and 4e-7 (6.5e-10,
+7.2e-8), distances 4e-13 AU/day (4.6e-14; Moshier 2e-12, 3.1e-13). The
+first part's build fails 20 of 30 (Swiss node 1.6e-9, apogee 1.4e-7,
+Moshier node 5.1e-8, apogee 2.0e-6, Moshier distances 6.7e-12 and
+2.9e-11); the build before entry 75 and the upstream build fail all 30.
+G24 `osc_speed_off` against the same nine-point reference: 8.48e-9
+deg/day shipped, 4.00e-6 compat (shipped limit 3e-7 -> 5e-8); the J2000
+latitude 3.2e-14 and 2.32e-7. G41's true node 1.71e-9 (limit 2e-8).
+
 ## 71. Every other cache emptied by an instant of 0 answers for JD 0, and sweph()'s forced EMB is the Earth there
 
 **Severity: Correctness (returned values at exactly tjd = 0: 0.025 deg on Mars's osculating node, 15 deg on a barycentric Sun in a warm context, 0.3 mag in a limiting magnitude; NaN)**

@@ -874,8 +874,9 @@ check-intpconv: intpconv
 	@env -u SE_EPHE_PATH ./intpconv $(EPHE)
 
 # G74: the true node's and osculating apogee's speeds are the rates of their
-# positions: the Moon's epochs' rounded interval, and J2000's obliquity rate,
-# Swiss files, de200 and Moshier (UPSTREAM-BUGS 75).
+# positions: the Moon's epochs' rounded interval, J2000's obliquity rate and
+# the five-point step, Swiss files, de200 and Moshier, against a nine-point
+# difference over 2^-3 day (UPSTREAM-BUGS 75).
 check-oscspeed: oscspeed
 	@env -u SE_EPHE_PATH ./oscspeed $(EPHE)
 

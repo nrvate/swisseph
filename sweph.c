@@ -7364,6 +7364,35 @@ static double gm_earth_moon(swe_ctx *ctx, int32 epheflag)
 }
 #endif
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 75: the rounding error of s = a + b, exactly (TwoSum): the
+ * true sum less s, so an epoch's rounding can be undone to first order. */
+static double osc_round_err(double a, double b, double s)
+{
+  double bb = s - a;
+  return (a - (s - bb)) + (b - bb);
+}
+
+/* The true node's and osculating apogee's speeds: a five-point difference
+ * of their positions from the Moon at epochs OSC_INTV_* day apart (binary,
+ * so tjd + k x step is exact), the step of least truncation plus noise.
+ * The noise is the Moon's velocity's, which the apogee amplifies about
+ * twentyfold (1 / eccentricity): over a three-point 0.0001 day it was
+ * 5e-7 deg/day on the apogee. Measured against a nine-point difference
+ * over 2^-3 day, 150 dates (UPSTREAM-BUGS 75): five points over 2^-6 day
+ * on the Swiss files and JPL (2^-5: truncation in the distance; 2^-4 in
+ * all), over 2^-5 on Moshier, whose Moon is noisier (2^-4: truncation in
+ * the node). OSC_NPT_* 3 takes the three-point slope instead. */
+# ifndef OSC_NPT_SWI
+#  define OSC_NPT_SWI   5
+#  define OSC_INTV_SWI  (1.0 / 64)
+#  define OSC_NPT_JPL   5
+#  define OSC_INTV_JPL  (1.0 / 64)
+#  define OSC_NPT_MOSH  5
+#  define OSC_INTV_MOSH (1.0 / 32)
+# endif
+#endif
+
 /* lunar osculating elements, i.e.
  * osculating node ('true' node) and
  * osculating apogee ('black moon', 'lilith').
@@ -7438,8 +7467,14 @@ static double gm_earth_moon(swe_ctx *ctx, int32 epheflag)
  */ 
 static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *serr) 
 {
-  int i, j, istart;
+  int i, j, k, kstart = 2, npt = 3;
   int ipli = SEI_MOON;
+  /* the Moon's epochs, tjd + osc_off[i] x speed_intv: 0 and 1 are the
+   * three-point slope's, 2 is tjd, 3 and 4 the five-point's outer ones;
+   * computed in the order ord[], tjd last */
+  static const double osc_off[5] = {-1, 1, 0, -2, 2};
+  static const int ord3[3] = {0, 1, 2}, ord5[5] = {0, 1, 3, 4, 2};
+  const int *ord = ord3;
   int32 epheflag = SEFLG_DEFAULTEPH; 
   int retc = ERR; 
   int32 flg1, flg2;
@@ -7447,15 +7482,14 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   struct plan_data *ndp, *ndnp, *ndap;
   struct epsilon *oe;
   double speed_intv = NODE_CALC_INTV;	/* to silence gcc warning */
-  double b;
-  double xpos[3][6], xx[3][6], xxa[3][6], xnorm[6], r[6];
+  double xpos[5][6], xx[5][6], xxa[5][6], xnorm[6], r[6];
   double *xp;
   double rxy, rxyz, t, dt, fac, sgn;
   double sinnode, cosnode, sinincl, cosincl, sinu, cosu, sinE, cosE;
   double uu, ny, sema, ecce, Gmsm, c2, v2, pp;
   int32 speedf1, speedf2;
 #ifndef SWE_UPSTREAM_COMPAT
-  double tm[3] = {0, 0, 0}, dl[3] = {0, 0, 0};
+  double rr[5] = {0, 0, 0, 0, 0};
 #endif
 #ifdef SID_TNODE_FROM_ECL_T0
   struct sid_data *sip = &ctx->sidd;
@@ -7521,31 +7555,27 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 #else
   ctx->pldat[SEI_MOON].teval = 0;
 #endif
-  if (iflag & SEFLG_SPEED) {
-    istart = 0;
-  } else {
-    istart = 2;
-  }
   if (serr != NULL)
     *serr = '\0';
   three_positions:
   switch(epheflag) {
     case SEFLG_JPLEPH:
+#ifndef SWE_UPSTREAM_COMPAT
+      speed_intv = OSC_INTV_JPL;
+      npt = OSC_NPT_JPL;
+#else
       speed_intv = NODE_CALC_INTV;
-      for (i = istart; i <= 2; i++) {
-	if (i == 0) {
-	  t = tjd - speed_intv;
-        } else if (i == 1) {
-	  t = tjd + speed_intv;
-        } else  {
-	  t = tjd;
-	}
+#endif
+      ord = (npt == 5) ? ord5 : ord3;
+      kstart = (iflag & SEFLG_SPEED) ? 0 : npt - 1;
+      for (k = kstart; k < npt; k++) {
+	i = ord[k];
+	t = tjd + osc_off[i] * speed_intv;
+#ifndef SWE_UPSTREAM_COMPAT
+	rr[i] = osc_round_err(tjd, osc_off[i] * speed_intv, t);	/* bug 75 */
+#endif
 	xp = xpos[i];
 	retc = jplplan(ctx, t, ipli, iflag, NO_SAVE, xp, NULL, NULL, serr);
-#ifndef SWE_UPSTREAM_COMPAT
-	tm[i] = t;	/* the Moon's epoch and light-time, bug 75 */
-	dl[i] = 0;
-#endif
 	/* read error or corrupt file */
 	if (retc == ERR)
 	  return(ERR);
@@ -7559,8 +7589,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	  dt = sqrt(square_sum(xpos[i])) * AUNIT / CLIGHT / 86400.0;     
 	  retc = jplplan(ctx, t-dt, ipli, iflag, NO_SAVE, xpos[i], NULL, NULL, serr);/**/
 #ifndef SWE_UPSTREAM_COMPAT
-	  tm[i] = t - dt;
-	  dl[i] = dt;
+	  rr[i] += osc_round_err(t, -dt, t - dt);
 #endif
 	  /* read error or corrupt file */
 	  if (retc == ERR)
@@ -7588,20 +7617,21 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
       }
       break;
     case SEFLG_SWIEPH:
-      speed_intv = NODE_CALC_INTV;
-      for (i = istart; i <= 2; i++) {
-	if (i == 0) {
-	  t = tjd - speed_intv;
-        } else if (i == 1) {
-	  t = tjd + speed_intv;
-        } else  {
-	  t = tjd;
-	}
-	retc = swemoon(ctx, t, iflag | SEFLG_SPEED, NO_SAVE, xpos[i], serr);/**/
 #ifndef SWE_UPSTREAM_COMPAT
-	tm[i] = t;	/* the Moon's epoch and light-time, bug 75 */
-	dl[i] = 0;
+      speed_intv = OSC_INTV_SWI;
+      npt = OSC_NPT_SWI;
+#else
+      speed_intv = NODE_CALC_INTV;
 #endif
+      ord = (npt == 5) ? ord5 : ord3;
+      kstart = (iflag & SEFLG_SPEED) ? 0 : npt - 1;
+      for (k = kstart; k < npt; k++) {
+	i = ord[k];
+	t = tjd + osc_off[i] * speed_intv;
+#ifndef SWE_UPSTREAM_COMPAT
+	rr[i] = osc_round_err(tjd, osc_off[i] * speed_intv, t);	/* bug 75 */
+#endif
+	retc = swemoon(ctx, t, iflag | SEFLG_SPEED, NO_SAVE, xpos[i], serr);/**/
 	if (retc == ERR)
 	  return(ERR);
 	/* light-time-corrected moon for apparent node (~ 0.006") */
@@ -7609,8 +7639,7 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	  dt = sqrt(square_sum(xpos[i])) * AUNIT / CLIGHT / 86400.0;     
 	  retc = swemoon(ctx, t-dt, iflag | SEFLG_SPEED, NO_SAVE, xpos[i], serr);/**/
 #ifndef SWE_UPSTREAM_COMPAT
-	  tm[i] = t - dt;
-	  dl[i] = dt;
+	  rr[i] += osc_round_err(t, -dt, t - dt);
 #endif
 	  if (retc == ERR)
 	    return(ERR);
@@ -7637,24 +7666,22 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
        * noisy at 2.4e-6 of itself; the 0.1-day step that averaged it
        * out cost 1.5e-3 deg/day of truncation on the apogee's speed at
        * -3000 (5.8 deg/day, curving with the half-month). With that
-       * speed smooth, +-2^-8 day, exact instants: 3.4e-6 deg/day. */
-      speed_intv = 1.0 / 256;
+       * speed smooth, +-2^-8 day, exact instants: 3.4e-6 deg/day. Bug
+       * 75: five points 2^-5 day apart, 4.7e-7 (the node 6.6e-9). */
+      speed_intv = OSC_INTV_MOSH;
+      npt = OSC_NPT_MOSH;
 #else
       speed_intv = NODE_CALC_INTV_MOSH;
 #endif
-      for (i = istart; i <= 2; i++) {
-	if (i == 0) {
-	  t = tjd - speed_intv;
-        } else if (i == 1) {
-	  t = tjd + speed_intv;
-        } else  {
-	  t = tjd;
-	}
-	retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);/**/
+      ord = (npt == 5) ? ord5 : ord3;
+      kstart = (iflag & SEFLG_SPEED) ? 0 : npt - 1;
+      for (k = kstart; k < npt; k++) {
+	i = ord[k];
+	t = tjd + osc_off[i] * speed_intv;
 #ifndef SWE_UPSTREAM_COMPAT
-	tm[i] = t;	/* the Moon's epoch and light-time, bug 75 */
-	dl[i] = 0;
+	rr[i] = osc_round_err(tjd, osc_off[i] * speed_intv, t);	/* bug 75 */
 #endif
+	retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);/**/
 	if (retc == ERR)
 	  return(retc);
 	/* precession and nutation etc. */
@@ -7672,7 +7699,8 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   /* node is always needed, even if apogee is wanted */
   ndnp = &ctx->nddat[SEI_TRUE_NODE];
   /* three nodes */
-  for (i = istart; i <= 2; i++) {
+  for (k = kstart; k < npt; k++) {
+    i = ord[k];
     if (fabs(xpos[i][5]) < 1e-15)
       xpos[i][5] = 1e-15;
     fac = xpos[i][2] / xpos[i][5];
@@ -7688,27 +7716,25 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
    * below, a new distance will be derived from the osculating 
    * ellipse. 
    */
-  /* save position and speed */
+#ifdef SWE_UPSTREAM_COMPAT
+  /* save position and speed (overwritten below) */
   for (i = 0; i <= 2; i++) {
     ndnp->x[i] = xx[2][i];
     if (iflag & SEFLG_SPEED) {
+      double a, b;
       b = (xx[1][i] - xx[0][i]) / 2;
-#ifndef SWE_UPSTREAM_COMPAT
-      /* the slope at tjd (bug 31: 2 a + b is the slope at tjd + speed_intv).
-       * Overwritten below by the central difference of the nodes rescaled
-       * to the osculating ellipse, so this value is never returned. */
-      ndnp->x[i+3] = b / speed_intv;
-#else
-      {
-        double a = (xx[1][i] + xx[0][i]) / 2 - xx[2][i];
-        ndnp->x[i+3] = (2 * a + b) / speed_intv;
-      }
-#endif
+      a = (xx[1][i] + xx[0][i]) / 2 - xx[2][i];
+      ndnp->x[i+3] = (2 * a + b) / speed_intv;
     } else
       ndnp->x[i+3] = 0;
     ndnp->teval = tjd;
     ndnp->iephe = epheflag;
   }
+#else
+  /* (bug 31's slope here, overwritten below and never returned, is gone) */
+  ndnp->teval = tjd;
+  ndnp->iephe = epheflag;
+#endif
   /************************************************************
    * apogee with speed                                        * 
    * must be computed anyway to get the node's distance       *
@@ -7720,7 +7746,8 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
   Gmsm = GEOGCONST * (1 + 1 / EARTH_MOON_MRAT) /AUNIT/AUNIT/AUNIT*86400.0*86400.0;
 #endif
   /* three apogees */
-  for (i = istart; i <= 2; i++) {
+  for (k = kstart; k < npt; k++) {
+    i = ord[k];
     /* node */
     rxy =  sqrt(xx[i][0] * xx[i][0] + xx[i][1] * xx[i][1]);
     cosnode = xx[i][0] / rxy;	
@@ -7780,23 +7807,45 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
    * between them is off by up to 2.3e-6 of itself, steadily (1.7e-6 at
    * binary dates) and at random with the light-time. Every speed was off
    * by that fraction of itself on the Swiss files and JPL: 2.3e-7 deg/day
-   * on the node's longitude, 6e-6 on the apogee's. Now the difference is
-   * divided by the interval between the epochs used, over the light-time
-   * corrected epoch's rate, (dts - (lt1 - lt0)) / dts, from the unrounded
-   * light-times (Moshier's 2^-8 step and no light-time: exactly 2^-7). */
+   * on the node's longitude, 6e-6 on the apogee's. Now each epoch's
+   * rounding, rr[i] (exact, from osc_round_err()), is taken back to first
+   * order: x(epoch + rr) = x + v rr, so the slope over the unrounded
+   * epochs is the slope over the rounded ones times 1 + D[rr], D the same
+   * difference. And the step and the formula are those of least total
+   * error (truncation plus the Moon's velocity noise): OSC_NPT_* points
+   * OSC_INTV_* apart, see there. */
+  for (i = 0; i <= 2; i++) {
+    ndap->x[i] = xxa[2][i];
+    ndnp->x[i] = xx[2][i];
+    ndap->x[i+3] = ndnp->x[i+3] = 0;
+  }
+  ndap->teval = tjd;
+  ndap->iephe = epheflag;
   if (iflag & SEFLG_SPEED) {
-    double dts = (tjd + speed_intv) - (tjd - speed_intv);
-    dt = (tm[1] - tm[0]) * dts / (dts - (dl[1] - dl[0]));
+    double fr;
+    if (npt == 5) {
+      fr = 1 + (rr[3] - 8 * rr[0] + 8 * rr[1] - rr[4]) / (12 * speed_intv);
+      for (i = 0; i <= 2; i++) {
+        ndap->x[i+3] = (xxa[3][i] - 8 * xxa[0][i] + 8 * xxa[1][i] - xxa[4][i])
+                       / (12 * speed_intv) * fr;
+        ndnp->x[i+3] = (xx[3][i] - 8 * xx[0][i] + 8 * xx[1][i] - xx[4][i])
+                       / (12 * speed_intv) * fr;
+      }
+    } else {
+      fr = 1 + (rr[1] - rr[0]) / (2 * speed_intv);
+      for (i = 0; i <= 2; i++) {
+        ndap->x[i+3] = (xxa[1][i] - xxa[0][i]) / (2 * speed_intv) * fr;
+        ndnp->x[i+3] = (xx[1][i] - xx[0][i]) / (2 * speed_intv) * fr;
+      }
+    }
   }
 #else
-  dt = 2 * speed_intv;
-#endif
   /* save position and speed */
   for (i = 0; i <= 2; i++) {
     /* apogee */
     ndap->x[i] = xxa[2][i];
     if (iflag & SEFLG_SPEED) {
-      ndap->x[i+3] = (xxa[1][i] - xxa[0][i]) / dt;
+      ndap->x[i+3] = (xxa[1][i] - xxa[0][i]) / speed_intv / 2;
     } else {
       ndap->x[i+3] = 0;
     }
@@ -7805,11 +7854,12 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
     /* node */
     ndnp->x[i] = xx[2][i];
     if (iflag & SEFLG_SPEED) {
-      ndnp->x[i+3] = (xx[1][i] - xx[0][i]) / dt;/**/    
+      ndnp->x[i+3] = (xx[1][i] - xx[0][i]) / speed_intv / 2;/**/    
     } else {
       ndnp->x[i+3] = 0;
     }
   }
+#endif
   /**********************************************************************
    * precession and nutation have already been taken into account
    * because the computation is on the basis of lunar positions

@@ -11,19 +11,26 @@
  * date and precessed to J2000, left the mean obliquity's rate out of the
  * equatorial speed of date, on every ephemeris.
  *
- * The check: both bodies on the Swiss files and de200, and the node on
- * Moshier, at eight epochs (-2500..2800, de200 1650..2100), binary-fraction
- * instants, the speeds of longitude, latitude and distance against a
- * five-point difference over 2^-6 day of the library's positions, in the
- * ecliptic and the equator, of date, without nutation and J2000. Within
- * 2e-8 deg/day for the node (measured <= 1.5e-9), 5e-7 for the apogee
- * (<= 9.6e-8: the Moon's velocity noise over the 0.0001-day step), 1.5e-7
- * for the Moshier node (5.2e-8, bug 51's 2^-8-day step), and 5e-12 AU/day
- * in distance (1.9e-13; Moshier 2e-11, 6.7e-12). The build before the fix
- * fails 22 of the 25 rows: the node's longitude by 9.4e-8 (Swiss) and
- * 4.5e-7 (de200), its J2000 latitude by 3.5e-7 (also on Moshier), the
- * apogee's longitude by 1.1-1.3e-5 and the distances by 2.5-3.3e-11
- * AU/day. The upstream build fails all 25. Run as
+ * Then the step: over 0.0001 day the Moon's velocity noise, which the
+ * apogee amplifies twentyfold, left 5e-7 deg/day on its speed (1.7e-6 on
+ * de200), and Moshier's three points over 2^-8 day 3.2e-6 (the node
+ * 6.8e-8). Now five points over 2^-6 day (Moshier 2^-5).
+ *
+ * The check: both bodies on the Swiss files, de200 and Moshier, at eight
+ * epochs (-2500..2800, de200 1650..2100), binary-fraction instants, the
+ * speeds of longitude, latitude and distance against a nine-point
+ * difference over 2^-3 day of the library's positions (eighth order: its
+ * own truncation and noise below 1e-11 on the node), in the ecliptic and
+ * the equator, of date, without nutation and J2000. Within 1e-9 deg/day
+ * for the node (measured <= 1.0e-10), 5e-8 for the apogee (<= 8.6e-9),
+ * 5e-9 and 4e-7 on Moshier (6.5e-10, 7.2e-8), and 4e-13 AU/day in
+ * distance (4.6e-14; Moshier 2e-12, 3.1e-13). Over 150 dates the worst
+ * are 3.2e-10, 3.8e-8, 6.6e-9 and 4.7e-7. The build with the step fixed
+ * but not the step size (UPSTREAM-BUGS 75's first part) fails 20 of the
+ * 30 rows: the Swiss node by 1.6e-9, the apogee by 1.4e-7, Moshier's node
+ * by 5.1e-8 and apogee by 2.0e-6, Moshier's distances by 6.7e-12 and
+ * 2.9e-11. The build before UPSTREAM-BUGS 75 and the upstream build fail
+ * all 30. Run as
  *   oscspeed EPHEDIR
  */
 #include <math.h>
@@ -35,13 +42,18 @@ static const struct { int32 fl; const char *sz; } rgFl[5] = {
   {SEFLG_NONUT | SEFLG_EQUATORIAL, "equ nonut"},
   {SEFLG_J2000, "ecl J2000"}, {SEFLG_J2000 | SEFLG_EQUATORIAL, "equ J2000"},
 };
-static const struct { int32 fl; int ipl; const char *sz; double lim, dlim; } rgCase[5] = {
-  {SEFLG_SWIEPH, SE_TRUE_NODE, "Swiss true node", 2e-8, 5e-12},
-  {SEFLG_SWIEPH, SE_OSCU_APOG, "Swiss osc. apogee", 5e-7, 5e-12},
-  {SEFLG_JPLEPH, SE_TRUE_NODE, "de200 true node", 2e-8, 5e-12},
-  {SEFLG_JPLEPH, SE_OSCU_APOG, "de200 osc. apogee", 5e-7, 5e-12},
-  {SEFLG_MOSEPH, SE_TRUE_NODE, "Moshier true node", 1.5e-7, 2e-11},
+static const struct { int32 fl; int ipl; const char *sz; double lim, dlim; } rgCase[6] = {
+  {SEFLG_SWIEPH, SE_TRUE_NODE, "Swiss true node", 1e-9, 4e-13},
+  {SEFLG_SWIEPH, SE_OSCU_APOG, "Swiss osc. apogee", 5e-8, 4e-13},
+  {SEFLG_JPLEPH, SE_TRUE_NODE, "de200 true node", 1e-9, 4e-13},
+  {SEFLG_JPLEPH, SE_OSCU_APOG, "de200 osc. apogee", 5e-8, 4e-13},
+  {SEFLG_MOSEPH, SE_TRUE_NODE, "Moshier true node", 5e-9, 2e-12},
+  {SEFLG_MOSEPH, SE_OSCU_APOG, "Moshier osc. apogee", 4e-7, 2e-12},
 };
+/* the nine-point central difference, eighth order: over 2^-3 day its
+ * truncation is ~1e-12 deg/day and its noise a fiftieth of a five-point's
+ * over 2^-6 */
+static const double rgC9[4] = {4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280};
 static const double rgYear[8] = {-2500, -1000, 0, 1500, 1900, 2000, 2100, 2800};
 static const double rgYearJ[8] = {1650, 1700, 1800, 1900, 1950, 2000, 2050, 2100};
 
@@ -58,15 +70,15 @@ int main(int argc, char **argv)
   swe_set_ephe_path_r(c, argv[1]);
   swe_set_jpl_file_r(c, "de200.eph");
   printf("G74: the true node's and osculating apogee's speeds are the rates of their positions\n");
-  for (k = 0; k < 5; k++) {
+  for (k = 0; k < 6; k++) {
     for (f = 0; f < 5; f++) {
       int32 fl = rgCase[k].fl | rgFl[f].fl;
       double w[3] = {0, 0, 0};
       for (y = 0; y < 8; y++) {
         double yr = (rgCase[k].fl & SEFLG_JPLEPH) ? rgYearJ[y] : rgYear[y];
         double jd = 2451545.0 + (yr - 2000) * 365.25 + 0.1234567;
-        double t = floor(jd * 256) / 256, h = 1.0 / 64;
-        double x[6], p[5][6];
+        double t = floor(jd * 256) / 256, h = 1.0 / 8;
+        double x[6], p[9][6];
         char serr[256];
         int32 rf = swe_calc_r(c, t, rgCase[k].ipl, fl | SEFLG_SPEED, x, serr);
         if (rf < 0 || (rf & (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)) != rgCase[k].fl) {
@@ -74,13 +86,17 @@ int main(int argc, char **argv)
           swe_ctx_free(c);
           return 1;
         }
-        for (j = 0; j < 5; j++)
-          swe_calc_r(c, t + (j - 2) * h, rgCase[k].ipl, fl, p[j], serr);
-        for (j = 0; j < 5; j++)
-          if (j != 2)
-            p[j][0] = p[2][0] + swe_difdeg2n(p[j][0], p[2][0]);
+        for (j = 0; j < 9; j++)
+          swe_calc_r(c, t + (j - 4) * h, rgCase[k].ipl, fl, p[j], serr);
+        for (j = 0; j < 9; j++)
+          if (j != 4)
+            p[j][0] = p[4][0] + swe_difdeg2n(p[j][0], p[4][0]);
         for (i = 0; i < 3; i++) {
-          double r = (p[0][i] - 8 * p[1][i] + 8 * p[3][i] - p[4][i]) / (12 * h);
+          double r = 0;
+          int m;
+          for (m = 1; m <= 4; m++)
+            r += rgC9[m - 1] * (p[4 + m][i] - p[4 - m][i]);
+          r /= h;
           if (fabs(x[3 + i] - r) > w[i])
             w[i] = fabs(x[3 + i] - r);
         }

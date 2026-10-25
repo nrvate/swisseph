@@ -539,23 +539,26 @@ static double star_dist_rate_off(void)
 
 /* The osculating apogee's longitude speed (j2000 = 0) or the true node's
  * J2000 latitude speed (j2000 = 1), Swiss files, at a binary instant,
- * against a five-point difference over 2^-6 day, deg/day. Upstream divides
+ * against a nine-point difference over 2^-3 day, deg/day. Upstream divides
  * by 2 x 0.0001 day, not by the interval between the Moon's rounded
  * epochs, and leaves J2000's mean obliquity rate out (UPSTREAM-BUGS 75). */
 static double osc_speed_off(int j2000)
 {
-  double t = floor(2460000.3 * 256) / 256, h = 1.0 / 64, x[6], f[5][6];
+  static const double c9[4] = {4.0 / 5, -1.0 / 5, 4.0 / 105, -1.0 / 280};
+  double t = floor(2460000.3 * 256) / 256, h = 1.0 / 8, x[6], f[9][6], r = 0;
   int32 fl = SEFLG_SWIEPH | (j2000 ? SEFLG_J2000 : 0);
   int ipl = j2000 ? SE_TRUE_NODE : SE_OSCU_APOG, i = j2000 ? 1 : 0, k;
   char serr[256];
   swe_close();
   swe_set_ephe_path(EPHE);
   swe_calc(t, ipl, fl | SEFLG_SPEED, x, serr);
-  for (k = 0; k < 5; k++)
-    swe_calc(t + (k - 2) * h, ipl, fl, f[k], serr);
-  for (k = 0; k < 5; k++)
-    f[k][0] = f[2][0] + swe_difdeg2n(f[k][0], f[2][0]);
-  return fabs(x[3 + i] - (8 * (f[3][i] - f[1][i]) - (f[4][i] - f[0][i])) / (12 * h));
+  for (k = 0; k < 9; k++)
+    swe_calc(t + (k - 4) * h, ipl, fl, f[k], serr);
+  for (k = 0; k < 9; k++)
+    f[k][0] = f[4][0] + swe_difdeg2n(f[k][0], f[4][0]);
+  for (k = 1; k <= 4; k++)
+    r += c9[k - 1] * (f[4 + k][i] - f[4 - k][i]);
+  return fabs(x[3 + i] - r / h);
 }
 
 /* The flags swe_fixstar2() returns against swe_calc()'s for Mars, sidereal
@@ -1574,11 +1577,11 @@ int main(int argc, char **argv)
     bad++;
   }
 
-  if (WANT_DEFECT ? (oscspd > 1e-6) : (oscspd < 3e-7))
+  if (WANT_DEFECT ? (oscspd > 1e-6) : (oscspd < 5e-8))
     printf("  osc. apogee speed      %.2e deg/day OK\n", oscspd);
   else {
     printf("  osc. apogee speed      %.2e deg/day FAIL: expected %s\n",
-           oscspd, WANT_DEFECT ? "> 1e-6" : "< 3e-7");
+           oscspd, WANT_DEFECT ? "> 1e-6" : "< 5e-8");
     bad++;
   }
 
