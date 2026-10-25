@@ -127,7 +127,7 @@ struct jpl_save {
   double twot;              /* pc[]/vc[]/ac[]/jc[]; keyed off pc[1] */
 #ifndef SWE_UPSTREAM_COMPAT
   /* UPSTREAM-BUGS 66: the geocentric Moon the last Earth read took from the
-   * file, and its instant (0: none) */
+   * file, and its instant (SWI_TJD_NEVER: none) */
   double moong[6], moong_t;
 #endif
 };
@@ -1054,6 +1054,12 @@ int swi_open_jpl_file(swe_ctx *ctx, double *ss, char *fname, char *fpath, char *
   }
   strcpy(js->jplfname, fname);
   strcpy(js->jplfpath, fpath);
+#ifndef SWE_UPSTREAM_COMPAT
+  /* not 0, which CALLOC leaves: et 0 is an instant DE431/DE441 hold, where
+   * swi_pleph_moon() would have answered a Moon never read -- zeros (the
+   * 2026-10-25 review; entry 71's sentinel) */
+  js->moong_t = SWI_TJD_NEVER;
+#endif
   retc = read_const_jpl(ctx, ss, serr);
   if (retc != OK) 
     swi_close_jpl_file(ctx);
