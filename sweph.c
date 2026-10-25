@@ -5607,9 +5607,37 @@ int swi_observer_accel_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
 {
   double xel[6], as[3], tau = teval - t;
   int i;
-  earth_at_lt_sun(ctx, teval, t, xeteval, xsun, xe, xel);
-  for (i = 0; i <= 2; i++)
-    acc[i] = tau > 0 ? (xeteval[i+3] - xel[i+3]) / tau : 0;
+  /* Upstream bug 93: on Moshier tau a was V(teval) less the Earth's
+   * velocity at t carried back by the gravitational jerk, over tau
+   * (earth_at_lt_sun()), which is a less tau/2 times the difference between
+   * the series' jerk and the gravitational one. The series' small monthly
+   * terms are 1e-4 of a (bug 66, part 3), turning at 0.23 rad/day: 7e-9
+   * AU/day^3, so 3e-10 to 1e-9 AU/day^2 off the Earth's acceleration at
+   * tau = 0.03..0.17 day (the planets' light times), 6e-12 rad/day through
+   * the aberration: 1.7e-10 deg/day on Neptune's points' geocentric
+   * latitude speed (1e-12 under SEFLG_NOABERR; 2e-11 on JPL and Swiss,
+   * whose Earth is the gravitational one). Now a is the Earth's
+   * acceleration at teval, the central difference of its velocities at
+   * teval +- 2^-9 day, as bug 76 takes it for a star; the positions'
+   * second difference (bug 66, part 3) is rougher by the series' rounding
+   * (it left 1.6e-10 deg/day on the points' longitude speed). */
+  if (ctx->pldat[SEI_EARTH].iephe == SEFLG_MOSEPH && ctx->pldat[SEI_EARTH].teval == teval) {
+    double xa[2][6];
+    int k;
+    for (k = 0; k < 2; k++) {
+      int32 iephe_used = SEFLG_MOSEPH;
+      if (main_planet_bary(ctx, k ? teval - 1.0 / 512 : teval + 1.0 / 512, SEI_EARTH,
+                           SEFLG_MOSEPH, iflag | SEFLG_SPEED, NO_SAVE, &iephe_used,
+                           xa[k], xa[k], NULL, NULL, serr) != OK)
+        return ERR;
+    }
+    for (i = 0; i <= 2; i++)
+      acc[i] = (xa[0][i+3] - xa[1][i+3]) * 256;
+  } else {
+    earth_at_lt_sun(ctx, teval, t, xeteval, xsun, xe, xel);
+    for (i = 0; i <= 2; i++)
+      acc[i] = tau > 0 ? (xeteval[i+3] - xel[i+3]) / tau : 0;
+  }
   if (iflag & SEFLG_TOPOCTR) {
     if (observer_accel(ctx, teval, iflag, as, serr) != OK)
       return ERR;

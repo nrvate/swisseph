@@ -966,6 +966,11 @@ struct epsilon {
  *     context's first call, another instant's frame of date (1.8e-5
  *     deg/day), a Swiss Sun added on Moshier (2.4e-3 deg/day; UPSTREAM-BUGS
  *     88, G87)
+ *   - swi_observer_accel_lt() took the Moshier Earth's acceleration in the
+ *     aberration rate of swe_nod_aps()'s points from its velocity at the
+ *     light time and the gravitational jerk, off by the series' monthly
+ *     terms (1.7e-10 deg/day on Neptune's points' latitude speed;
+ *     UPSTREAM-BUGS 93, G92)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

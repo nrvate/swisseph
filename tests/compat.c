@@ -1748,17 +1748,39 @@ static double moon_site_speed_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 93: Neptune's mean ascending node, geocentric, default
+ * flags, Moshier, at 2000 BC (J2000 - 4000 years + 100 days): its latitude
+ * speed against a five-point difference of its latitude over 2^-6 day,
+ * deg/day. The aberration's rate took the Earth's acceleration from the
+ * Taylor form at the light time, off by 1e-9 AU/day^2 on Moshier's Earth,
+ * 1.7e-10 deg/day here; upstream's rate is wrong by 1e-2 besides. */
+static double nodaps_mosh_lat_off(void)
+{
+  double jd = floor((2451545.0 - 4000 * 365.25 + 100.37) * 256) / 256, h = 1.0 / 64;
+  double x[6], f[5][6], u[6];
+  int32 fl = SEFLG_MOSEPH;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_nod_aps(jd, SE_NEPTUNE, fl | SEFLG_SPEED, SE_NODBIT_MEAN, x, u, u, u, serr);
+  for (k = 0; k < 5; k++)
+    swe_nod_aps(jd + (k - 2) * h, SE_NEPTUNE, fl, SE_NODBIT_MEAN, f[k], u, u, u, serr);
+  return fabs(x[4] - (f[0][1] - 8 * f[1][1] + 8 * f[3][1] - f[4][1]) / (12 * h));
+}
+
 int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
 
   dtfirst = dt_userdef_first_off();   /* first: it needs a pristine library */
+  nodmosh = nodaps_mosh_lat_off();
 
   contam = jplhor_contaminates();
   drift  = pctr_drift();
@@ -2091,6 +2113,14 @@ int main(int argc, char **argv)
   else {
     printf("  delta t set first      %.2e s FAIL: expected %s\n",
            dtfirst, WANT_DEFECT ? "> 10" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodmosh > 1e-6) : (nodmosh < 1e-11))
+    printf("  Moshier node lat speed %.2e deg/day OK\n", nodmosh);
+  else {
+    printf("  Moshier node lat speed %.2e deg/day FAIL: expected %s\n",
+           nodmosh, WANT_DEFECT ? "> 1e-6" : "< 1e-11");
     bad++;
   }
 

@@ -124,6 +124,7 @@ worst were in code that had never executed even once.
 | 82 | The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold | Correctness | `swehel.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 83 | A setting made before the first calculation is lost, and the first heliacal call after a setter fails (partly this fork's) | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c`, `sweph.c` |
 | 90 | `swe_calc(SE_ECL_NUT, SEFLG_SPEED3)` differences the four angles as a position; `jplplan()`'s Earth also takes the other-planet branch; `-Og` false positive on `dt` | Correctness / Memory | `sweph.c` |
+| 93 | `swe_nod_aps()`'s aberration rate takes the Moshier Earth's acceleration from the gravitational jerk | Correctness | `sweph.c` |
 
 ---
 
@@ -5019,6 +5020,53 @@ call's longitude against a warm one, 0 shipped, 76.8 deg before the fix
 and compat. G24 `orbel_lt_flag_off` (entry 81 part 3) no longer warms the
 context: it compares equatorial J2000 XYZ, which needs no obliquity, 0 AU
 shipped, 3.1e-7 AU compat. G48, G62, G76, G77, G80 pass.
+
+## 93. `swe_nod_aps()`'s aberration rate takes the Moshier Earth's acceleration from the gravitational jerk
+
+**Severity: Correctness (1.7e-10 deg/day on Neptune's points' geocentric latitude speed, 3.1e-10 on its mean points' longitude speed; Moshier only)**
+**Where:** `sweph.c`: `swi_observer_accel_lt()`
+
+Entry 70 gave the planets' apparent points the rate of their aberration,
+the central difference of A(x + s x', V + s a), a the observer's
+acceleration from `swi_observer_accel_lt()`: V(teval) less the Earth's
+velocity at t = teval - tau carried back by `earth_at_lt_sun()` with the
+Sun's and the Moon's gravitational jerk, over tau. On Moshier the Earth
+the series returns is not the gravitational one: its small monthly terms
+are 1e-4 of a (entry 66, part 3), turning at 0.23 rad/day, so its jerk
+differs from the gravitational one by 7e-9 AU/day^3 and tau a came out
+3e-10 to 1e-9 AU/day^2 off the acceleration of the Earth's velocity, at the
+points' light times of 0.03 to 0.17 day. Through the aberration (a/c)
+that is 6e-12 rad/day. Measured on Moshier, Jupiter..Neptune, mean and
+osculating points, geocentric, default flags, seven instants -3000..3000,
+against five-point differences of the points' own positions over 2^-6 day:
+latitude speed 3.1e-11 (Jupiter), 5.3e-11, 1.1e-10, 1.7e-10 deg/day
+(Neptune), against 1.5e-12 or less under SEFLG_NOABERR; mean longitude
+speed 3.3e-11 (Saturn) to 3.1e-10 (Neptune), against 5.8e-12. On JPL and
+Swiss files, whose Earth is the gravitational one, the same case is
+2e-11.
+
+**Fix, as done here:** on Moshier `swi_observer_accel_lt()` takes a as the
+Earth's acceleration at teval itself, the central difference of its
+velocities at teval +- 2^-9 day (`main_planet_bary()`, no save), as entry 76
+takes it for a star; the Moshier velocity is smooth since entry 85. The
+positions' second difference that entry 66 part 3 uses for tau a past 0.3
+day is not used: it carries the series' rounding and left 1.6e-10 deg/day
+on the points' longitude speed. Measured after: mean longitude speed
+<= 7.4e-12, latitude <= 9.1e-13 deg/day, osculating latitude <= 1.6e-12,
+osculating longitude <= 3.9e-10 (the reference's own floor, 3.8e-10 under
+SEFLG_NOABERR). JPL, Swiss, the Sun's and heliocentric points and the
+positions are unchanged; the topocentric site's acceleration is added as
+before. Two velocity reads (the Earth only) per point set with SEFLG_SPEED
+on Moshier, none otherwise.
+
+G92 `tests/nodapsmosh.c`: Jupiter..Neptune, mean and osculating, the four
+points, longitude and latitude speeds against five-point differences, seven
+instants; limits 3e-11 (mean longitude), 5e-10 (osculating longitude),
+1e-11 deg/day (latitude). 13 of the 16 checks fail before the fix, none
+after. G24 `nodaps_mosh_lat_off`: Neptune's mean ascending node's latitude
+speed at 2000 BC, 6.6e-15 deg/day shipped, 1.7e-10 before the fix, 4.8e-6
+compat (upstream's whole aberration rate). G69, G79, G63, G54, G65 and G84
+pass.
 
 ## How these were found
 
