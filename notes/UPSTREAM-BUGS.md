@@ -95,6 +95,7 @@ worst were in code that had never executed even once.
 | 61 | A topocentric fixed star is deflected from the geocenter | Correctness | `sweph.c` |
 | 59 | Four small house defects: Placidus cusps unconverged, RADIANS speeds in degrees, sidereal Makransky computed as Treindl, Sunshine houses without files | Correctness | `swehouse.c` |
 | 68 | Three house residues: Sunshine's Sun from the wrong ephemeris, stale Gauquelin cusps 13..36 after the Porphyry fallback, ARMC's rate for a Placidus cusp on an equinox point | Correctness | `swehouse.c` |
+| 63 | A planet's light-time position is read at the rounded instant, and its heliocentric light-time rate leaves out the Sun's velocity | Correctness | `sweph.c` |
 | 64 | The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms | Correctness | `swecl.c` |
 | 67 | The star functions return the caller's flags, and an emptied nutation cache answers for JD 0 | Correctness | `sweph.c`, `sweconfig.c` |
 | 52 | The aberration rate term is first order in v/c | Correctness | `sweph.c` |
@@ -2984,6 +2985,56 @@ before). The upstream build fails all three (14 failures). G24
 deg/day shipped, 105 compat). G45's Placidus and Gauquelin tolerance,
 left at the old 3.5e-8 deg convergence, is now 2e-7 deg/day + 5e-10 of the
 rate (worst 9.4e-8, 1.4e-10 of the rate, with bug 59's 1e-12 convergence).
+
+## 63. A planet's light-time position is read at the rounded instant, and its heliocentric light-time rate leaves out the Sun's velocity
+
+**Severity: Correctness (positions ~1e-9 deg on Mercury, a noise that a five-point difference over 2^-9 day turns into 4.7e-7 deg/day heliocentric and 2.2e-7 geocentric; 3e-8 deg/day on Mercury's heliocentric speed)**
+**Where:** `sweph.c`: `app_pos_etc_plan()`
+
+Two residues after entry 35, found as Mercury's speed sitting 1-2e-8
+deg/day off a five-point difference of its positions with SEFLG_NOABERR or
+SEFLG_HELCTR, and 7e-10 with SEFLG_TRUEPOS. The first scales as 1/h with
+the step, so it is in the positions: the body was read at t = teval - dt
+rounded to a double, up to half an ulp of the date (2.3e-10 day near the
+present) from the emission instant, and the apparent place jumped by the
+body's motion over that from one date to the next (the Moon had the same,
+entry 23). Scanned on ts20, Swiss files, 61 dates -3000..+3000, steps
+2^-6..2^-9 day, binary-fraction instants, longitude speed against the
+difference: Mercury 1.8e-7 geocentric and 7.7e-7 heliocentric, Venus 3.9e-7
+and 2.2e-7, Mars 1.4e-7 and 4.9e-8 (5.3e-8 at thirteen dates without
+aberration, the 3e-8 seen in entry 52's scan), Jupiter 1.2e-8 (-9e-9 in that
+scan), Saturn 4e-9, the outer planets 1.6e-9; Ceres, Pallas, Juno and
+Vesta 3e-8 to 7e-8 (1400-2900), Chiron and Pholus 8e-9. The second is steady with the step and heliocentric
+only: entry 35's rate rho^.(v_P - v_O) / (c + rho^.v_P) times v_P was taken
+from the body relative to the Sun at teval with the Sun at the origin, so
+rho^.v_P and v_P lacked the Sun's barycentric velocity, ~13 m/s: 3e-8
+deg/day on Mercury's heliocentric speed (dtau/dt 3.5e-5 times 7.5e-6
+AU/day).
+
+**Fix, as done here:** after the read at t, the body is moved along its
+velocity at teval (there with or without SEFLG_SPEED) by the rounding,
+(teval - t) - dt, exact since t is near teval; JPL and Swiss files only,
+as Moshier's positions are extrapolated by dt itself. The heliocentric and
+barycentric rate takes the barycentric body and centre (xobs, the Sun or
+zero). After, same scan: every planet within its true positions' own
+floor, geocentric <= 8.7e-10 (Mercury), without aberration <= 7.9e-10,
+heliocentric <= 2.1e-9 (Mercury, whose true heliocentric positions are off
+their own differences by the same); the asteroids <= 1.7e-10 without
+aberration. Positions
+move by <= 1e-9 deg. Two multiply-adds a call: bench calc-swieph
+1.237-1.251 s after, 1.242 before (runs within the machine's noise).
+
+G62 `tests/ltround.c`: Mercury to Pluto, Ceres and Vesta, geocentric with
+and without aberration and heliocentric, thirteen dates, four steps,
+longitude and latitude speeds within 5e-9 deg/day (measured <= 1.6e-9; the
+build before this fix fails 18 of the 30 rows, by up to 4.7e-7; the
+upstream build fails all 30, by 8.9e-6 to 1.7e-4). G24:
+`mercury_lt_round_off`, Mercury's heliocentric longitude speed over 2^-8
+day at nine dates: 1.8e-9 shipped (2.1e-7 before the fix), 1.5e-4 compat.
+
+Not fixed here, same rounding: `swe_calc_pctr()` reads both bodies at
+tjd - dt rounded (Mercury from Mars, 1.1e-7 deg/day at 2^-9 day, 4.9e-10
+true positions).
 
 ## 64. The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms
 

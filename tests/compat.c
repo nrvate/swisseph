@@ -882,6 +882,25 @@ static double mercury_lt_rate_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 63: Mercury's heliocentric speed against a five-point
+ * difference of its longitude over 2^-8 day, nine dates 1800-2335,
+ * deg/day. The light-time position was read at teval - dt rounded to a
+ * double, and the heliocentric light-time rate took the body relative to
+ * the Sun: 2.1e-7 before the fix, 1.8e-9 after. Upstream has no
+ * heliocentric rate at all (bug 35): 1.5e-4. */
+static double mercury_lt_round_off(void)
+{
+  double w = 0, d;
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 9; k++)
+    if ((d = lon_speed_off(SE_MERCURY, SEFLG_SWIEPH | SEFLG_HELCTR,
+                           2378496.5 + k * 24413.7 + 0.137)) > w)
+      w = d;
+  return w;
+}
+
 /* UPSTREAM-BUGS 36: the topocentric Moon at -999, true positions, the
  * site turning per UT day instead of per TT day */
 static double topo_moon_ancient_off(void)
@@ -1106,7 +1125,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1159,6 +1178,7 @@ int main(int argc, char **argv)
   moonpull = far_body_moon_pull_off();
   abr2 = topo_aberr_second_order_off();
   moonpulle = far_body_moon_pull_eph_off();
+  merclr = mercury_lt_round_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1536,6 +1556,14 @@ int main(int argc, char **argv)
   else {
     printf("  far body, Moon, JPL/Mosh %.2e deg/day FAIL: expected %s\n",
            moonpulle, WANT_DEFECT ? "> 1e-5" : "< 2e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (merclr > 1e-5) : (merclr < 5e-9))
+    printf("  light time, rounding   %.2e deg/day OK\n", merclr);
+  else {
+    printf("  light time, rounding   %.2e deg/day FAIL: expected %s\n",
+           merclr, WANT_DEFECT ? "> 1e-5" : "< 5e-9");
     bad++;
   }
 

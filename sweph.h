@@ -822,6 +822,11 @@ struct epsilon {
  *     still, which N = R1(-eps - deps) R3(-dpsi) R1(eps) turns with when
  *     dpsi != 0: 3e-11 deg/day, 2.0e-9 in a polar star's right ascension
  *     (UPSTREAM-BUGS 69, G68)
+ *   - app_pos_etc_plan() read a planet at teval - dt rounded to a double,
+ *     and took the heliocentric light-time rate with the Sun's velocity
+ *     out of the body's (4.7e-7 deg/day on a five-point difference of
+ *     Mercury's heliocentric places, 3e-8 on its heliocentric speed;
+ *     UPSTREAM-BUGS 63, G62)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

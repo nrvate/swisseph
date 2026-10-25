@@ -3440,6 +3440,23 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
         }
 	break;
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 63: the body was read at t = teval - dt rounded to a
+     * double, up to half an ulp of the date (2.3e-10 day near the present)
+     * from the emission instant, so the light-time position jumped by its
+     * motion over that from one date to the next, ~1e-9 deg on Mercury:
+     * 4.7e-7 deg/day in a five-point difference over 2^-9 day of its
+     * heliocentric places, 2.2e-7 geocentric, against 7e-10 for its true
+     * positions (G62). Move it along its velocity at teval (xx0, there
+     * with or without SEFLG_SPEED) by the rounding, (teval - t) - dt,
+     * exact since t is near teval (as the Moon's, bug 23). Moshier's
+     * positions are extrapolated by dt itself and round nothing. */
+    if (epheflag == SEFLG_JPLEPH || epheflag == SEFLG_SWIEPH) {
+      double eps = (pdp->teval - t) - dt;
+      for (i = 0; i <= 2; i++)
+        xx[i] += eps * xx0[i+3];
+    }
+#endif
     calc_center_body(ipli, iflag, xx, xcom, serr);
     if (iflag & SEFLG_HELCTR) {
       if (pdp->iephe == SEFLG_JPLEPH || pdp->iephe == SEFLG_SWIEPH) 
@@ -3492,11 +3509,18 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
   }
 #ifndef SWE_UPSTREAM_COMPAT
   /* Heliocentric and barycentric light times change too, and upstream
-   * left their rate out entirely: 1.4e-4 deg/day on Mercury (bug 35). xx
-   * is relative to the centre at t here, so the centre is the origin. */
+   * left their rate out entirely: 1.4e-4 deg/day on Mercury (bug 35).
+   * Upstream bug 63: xx is relative to the centre at teval here, and the
+   * rate was taken from it with the centre at the origin, so its rho^.v_P
+   * and v_P dtau/dt had the Sun's barycentric velocity taken out: 3e-8
+   * deg/day on Mercury's heliocentric speed. The rate wants the body's
+   * barycentric velocity; xobs is the centre, barycentric (the Sun, or
+   * zero for the barycentre and for Moshier's heliocentric positions). */
   else if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_TRUEPOS)) {
-    static const double xorigin[6] = {0, 0, 0, 0, 0, 0};
-    lt_rate_exact(xx, xorigin, xxsp);
+    double xb[6];
+    for (i = 0; i <= 5; i++)
+      xb[i] = xx[i] + xobs[i];
+    lt_rate_exact(xb, xobs, xxsp);
     for (i = 3; i <= 5; i++)
       xx[i] -= xxsp[i-3];
   }
