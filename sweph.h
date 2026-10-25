@@ -780,6 +780,10 @@ struct epsilon {
  *     (2e-6 deg/day), the aux. position of the mean perigee a day on (2e-5
  *     deg/day on the Moon's latitude speed), the nodes' distance speed over
  *     a day (UPSTREAM-BUGS 55, G54)
+ *   - swi_nutate() took the nutation angles' rate as a backward difference
+ *     over 1e-4 day, the rate at t - h/2: 6.5e-10 deg/day in every
+ *     longitude speed of date, 2.7e-8 in a polar star's right ascension
+ *     (UPSTREAM-BUGS 58, G57)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -909,6 +913,8 @@ struct nut {
   double nutlo[2];	/* nutation in longitude and obliquity */
   double snut, cnut;	/* sine and cosine of nutation in obliquity */
   double matrix[3][3];	
+  double dnut[2];	/* rate of nutlo, rad/day, when dnut_ok */
+  int dnut_ok;
 };
 
 struct plantbl {

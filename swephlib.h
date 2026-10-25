@@ -163,6 +163,9 @@ extern void swi_ldp_peps(swe_ctx *ctx, double J, double *dpre, double *deps);
 /* nutation */
 extern void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag);
 extern int swi_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo);
+#ifndef SWE_UPSTREAM_COMPAT
+extern void swi_nutation_rate(swe_ctx *ctx, double J, int32 iflag, double *rate);
+#endif
 extern void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward);
 #ifndef SWE_UPSTREAM_COMPAT
 extern double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nut);

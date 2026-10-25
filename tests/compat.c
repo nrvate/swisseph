@@ -522,6 +522,36 @@ static double node3_speed_off(void)
   return fabs(x[3] - (f[0][0] - 8 * f[1][0] + 8 * f[3][0] - f[4][0]) / (12 * h));
 }
 
+/* The nutation's rate in a speed of date: Polaris's right ascension speed
+ * minus the same with NONUT, against a five-point difference of the same
+ * two calls' positions over 2^-8 day, deg/day. Upstream takes the nutation
+ * angles' rate as a backward difference over 1e-4 day, the rate at t - h/2,
+ * 6.5e-10 deg/day short of the fortnightly term, 2.7e-8 in a polar star's
+ * right ascension (UPSTREAM-BUGS 58). */
+static double nut_rate_off(void)
+{
+  double t = floor(2451545.0 * 256) / 256, h = 1.0 / 256, xa[6], xb[6], q[5];
+  int32 fl = SEFLG_SWIEPH | SEFLG_EQUATORIAL;
+  char serr[256], s[64];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  strcpy(s, "Polaris");
+  swe_fixstar2(s, t, fl | SEFLG_SPEED, xa, serr);
+  strcpy(s, "Polaris");
+  swe_fixstar2(s, t, fl | SEFLG_SPEED | SEFLG_NONUT, xb, serr);
+  for (k = 0; k < 5; k++) {
+    double ya[6], yb[6], df;
+    strcpy(s, "Polaris");
+    swe_fixstar2(s, t + (k - 2) * h, fl, ya, serr);
+    strcpy(s, "Polaris");
+    swe_fixstar2(s, t + (k - 2) * h, fl | SEFLG_NONUT, yb, serr);
+    df = ya[0] - yb[0];
+    q[k] = df - 360 * floor(df / 360 + 0.5);
+  }
+  return fabs(xa[3] - xb[3] - (8 * (q[3] - q[1]) - (q[4] - q[0])) / (12 * h));
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -780,7 +810,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, hspd, hsid, moshr, moshs, n3spd, moonpspd;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, hspd, hsid, moshr, moshs, n3spd, moonpspd;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -811,6 +841,7 @@ int main(int argc, char **argv)
   stardd = star_dist_rate_off();
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
+  nutr = nut_rate_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -1029,6 +1060,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moon perigee speed     %.2e deg/day FAIL: expected %s\n",
            moonpspd, WANT_DEFECT ? "> 1e-6" : "< 1e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nutr > 5e-9) : (nutr < 3e-9))
+    printf("  nutation rate          %.2e deg/day OK\n", nutr);
+  else {
+    printf("  nutation rate          %.2e deg/day FAIL: expected %s\n",
+           nutr, WANT_DEFECT ? "> 5e-9" : "< 3e-9");
     bad++;
   }
 

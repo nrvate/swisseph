@@ -5103,8 +5103,7 @@ static void lt_rate_exact(const double *xx, const double *xo, double *xxsp)
  * rate, rad/day: the mean obliquity's by a difference over one day (its
  * rate changes over centuries; the value at tjd is usually cached in
  * ctx->oec already), and with_nut adds the nutation in
- * obliquity's, from the nutation at tjd and tjd - NUT_SPEED_INTV that
- * swi_check_nutation() keeps for speeds (up to 1.3e-5 deg/day, the
+ * obliquity's, swi_nutation_rate() (up to 1.3e-5 deg/day, the
  * fortnightly and semiannual terms; the mean rate is 3.6e-7). */
 double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nut)
 {
@@ -5112,14 +5111,12 @@ double swi_obliquity_rate(swe_ctx *ctx, double tjd, int32 iflag, AS_BOOL with_nu
               ? ctx->oec.eps : swi_epsiln(ctx, tjd, iflag);
   double rate = swi_epsiln(ctx, tjd + 1, iflag) - e0;
   if (with_nut) {
-    double t = tjd - NUT_SPEED_INTV, nl[2];
-    if (ctx->nut.tnut == tjd && ctx->nutv.tnut == t) {
-      rate += (ctx->nut.nutlo[1] - ctx->nutv.nutlo[1]) / NUT_SPEED_INTV;
+    if (ctx->nut.tnut == tjd && ctx->nut.dnut_ok) {
+      rate += ctx->nut.dnut[1];
     } else {
-      double n0[2];
-      swi_nutation(ctx, tjd, iflag, n0);
-      swi_nutation(ctx, t, iflag, nl);
-      rate += (n0[1] - nl[1]) / NUT_SPEED_INTV;
+      double dn[2];
+      swi_nutation_rate(ctx, tjd, iflag, dn);
+      rate += dn[1];
     }
   }
   return rate;
@@ -5178,11 +5175,15 @@ void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward)
      * Now the rotation's rate from the angles' own: N = R1(-eps - deps)
      * R3(-dpsi) R1(eps), the mean obliquity held, turns at w = deps' e1 +
      * dpsi' (0, -sin(eps + deps), cos(eps + deps)) in the true frame, and
-     * the velocity gains w x x_true; backward, -(N^T w) x x_mean. */
+     * the velocity gains w x x_true; backward, -(N^T w) x x_mean.
+     * Upstream bug 58: the angles' rates were a backward difference over h,
+     * the rate at t - h/2, 6.5e-10 deg/day off in every longitude speed
+     * of date (2.7e-8 in Polaris's right ascension). Now swi_nutation_rate(),
+     * the polynomial's own derivative or a central difference. */
     {
       double w[3], wm[3], et = ctx->oec.eps + ctx->nut.nutlo[1];
-      double dpsi = (ctx->nut.nutlo[0] - ctx->nutv.nutlo[0]) / NUT_SPEED_INTV;
-      w[0] = (ctx->nut.nutlo[1] - ctx->nutv.nutlo[1]) / NUT_SPEED_INTV;
+      double dpsi = ctx->nut.dnut[0];
+      w[0] = ctx->nut.dnut[1];
       w[1] = -dpsi * sin(et);
       w[2] = dpsi * cos(et);
       if (backward) {
@@ -8033,7 +8034,9 @@ void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
 {
   int32 speedf1, speedf2;
   /* moved to ctx->sp.nut (Phase 3c) */
+#ifdef SWE_UPSTREAM_COMPAT
   double t;
+#endif
   speedf1 = ctx->sp.nut.nutflag & SEFLG_SPEED;
   speedf2 = iflag & SEFLG_SPEED;
   /* The JPLHOR bits belong in the key for the same reason they belong in
@@ -8051,6 +8054,13 @@ void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
     ctx->nut.cnut = cos(ctx->nut.nutlo[1]);
     ctx->sp.nut.nutflag = iflag;
     nut_matrix(&ctx->nut, &ctx->oec);
+#ifndef SWE_UPSTREAM_COMPAT
+    ctx->nut.dnut_ok = FALSE;
+    if (iflag & SEFLG_SPEED) {
+      swi_nutation_rate(ctx, tjd, iflag, ctx->nut.dnut);
+      ctx->nut.dnut_ok = TRUE;
+    }
+#else
     if (iflag & SEFLG_SPEED) {
       /* once more for 'speed' of nutation, which is needed for 
        * planetary speeds */
@@ -8061,6 +8071,7 @@ void swi_check_nutation(swe_ctx *ctx, double tjd, int32 iflag)
       ctx->nutv.cnut = cos(ctx->nutv.nutlo[1]);
       nut_matrix(&ctx->nutv, &ctx->oec);
     } 
+#endif
   } 
 } 
 

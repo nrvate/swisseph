@@ -90,6 +90,7 @@ worst were in code that had never executed even once.
 | 60 | A negative mean anomaly with no T terms freezes a fictitious body | Correctness | `swemplan.c` |
 | 54 | `SEFLG_SPEED3` takes the true node's and osculating apogee's speeds over 0.1 day | Correctness | `sweph.c` |
 | 55 | The mean nodes' and apsides' speeds are one-day differences | Correctness | `swecl.c`, `swemmoon.c` |
+| 58 | The nutation's rate in every speed of date is a backward difference | Correctness | `sweph.c`, `swephlib.c` |
 
 ---
 
@@ -2522,11 +2523,8 @@ the distance per day (the reference's own noise; 5e-7 AU/day on Spica);
 XYZ within 1.1e-11 of the distance per day. G41's planets' latitude
 speeds go to 1.6e-9 (Mars, from 2.8e-8) and 7.5e-10 (Chiron, from 4e-8).
 
-Not done here: the 6.5e-10 deg/day left in every longitude speed of date,
-planets too, is the nutation's rate as a backward difference over 1e-4
-day (the fortnightly term's curvature); a central one needs the nutation
-at t + h in `swi_check_nutation()`. In right ascension near the pole it
-reads 2.7e-8 deg/day (Polaris), 3.5e-10 in angle. Also seen and left
+Not done here (done in entry 58): the 6.5e-10 deg/day left in every
+longitude speed of date. Also seen and left
 alone: the topocentric deflection reads the site from `ctx->topd`, which
 the star's path fills NO_SAVE, so it is a stale or empty site (an Earth
 radius in e, 4e-5 of a 4 mas deflection).
@@ -2755,6 +2753,47 @@ perigee longitude speed at 2461338.137 (binary fraction), 2.6e-10 deg/day
 shipped, 1.8e-6 compat. G1 rows of the mean nodes' and apsides' speeds
 move (the Moon by 5e-6 deg/day longitude, 2e-5 latitude) and need the
 re-baseline.
+
+## 58. The nutation's rate in every speed of date is a backward difference
+
+**Severity: Correctness (6.5e-10 deg/day in every longitude speed of date; 2.7e-8 deg/day in the right ascension of a star near the pole, 3.5e-10 as an angle on the sky)**
+**Where:** `sweph.c`: `swi_check_nutation()`, `swi_nutate()`, `swi_obliquity_rate()`; `swephlib.c`: `calc_nutation_grid()`, new `swi_nutation_rate()`
+
+`swi_nutate()` adds the rotation's own turning to the velocity (entry 49),
+from the rate of the nutation angles: (nut(t) - nut(t - h)) / h, h = 1e-4
+day. That is the rate at t - h/2, short by (h/2) times the second
+derivative, which the fortnightly term (18.6-year node, 13.66 days) makes
+6.5e-10 deg/day. It is in every body's longitude and right ascension speed
+of date, planets, Moon, stars, and in the obliquity rate of entry 33; near
+the pole the right ascension multiplies it by 1/cos(declination), 2.7e-8
+for Polaris. Measured as the speed of date less the NONUT speed (which
+removes the files' and the light time's own 5e-9..3e-8) against the
+five-point difference of the same two positions: the Sun, Mars, Jupiter,
+Saturn and Pluto 6.2e-10..7.3e-10 deg/day, Polaris's longitude 6.9e-10,
+its right ascension 2.65e-8.
+
+**Fix, as done here:** `swi_nutation_rate()` returns the rate at t. For
+the default model (the 2000A septic Hermite grid) it is the polynomial's
+own derivative from the nodes' cached values: no series evaluation, and
+`swi_check_nutation()` no longer evaluates the nutation and builds a matrix
+at t - h at all (one nutation and one matrix less per fresh instant). Any
+other model (2000B, 1980, Woolard, JPL Horizons, the interpolated nutation)
+takes the central difference of nutation at t - h and t + h, one nutation
+more than before, uncached. The rate is kept in `struct nut` (`dnut`,
+`dnut_ok`) beside the angles; `ctx->nutv` is no longer filled. Nutation
+itself is unchanged, bit for bit.
+
+G57 `tests/nutrate.c`: Sun, Mars, Jupiter, Saturn, Pluto and Polaris,
+ecliptic and equatorial, seven dates 1900-2100, speed of date less NONUT
+against five-point differences over 2^-8 day: the planets <= 1.7e-11
+deg/day (<= 7.3e-10 upstream), Polaris's longitude 6.7e-11 (6.9e-10),
+its right ascension 1.9e-9 (2.65e-8; the remainder is the mean obliquity's
+turning inside the nutation matrix, ~3e-11 deg/day times 82, left alone).
+The upstream build fails all 12. G24 `nut_rate_off`: Polaris's right
+ascension at J2000, 1.0e-9 deg/day shipped, 1.04e-8 compat. G32 (default
+against 2000B: daily 1.95, scattered 3.20, limits 5 and 8), G49, G41, G29
+unchanged. bench calc-swieph/calc-moseph no slower (min of 7: 1.23/1.06 s
+against 1.40/1.22 s for the commit before).
 
 ## How these were found
 

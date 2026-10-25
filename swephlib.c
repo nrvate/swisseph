@@ -2451,7 +2451,7 @@ static void calc_nutation_2000a_derivs(double J, double *out)
  * evaluated the series six times, 25-40 times the cost of 2000B (G32). The
  * value depends on J alone, never on what the cache held. Measured against
  * the direct series: G29. */
-static void calc_nutation_grid(swe_ctx *ctx, double J, double *nutlo)
+static void calc_nutation_grid(swe_ctx *ctx, double J, double *nutlo, double *dnut)
 {
   /* septic Hermite basis on [0, 1], for f0, h f0', h^2 f0'', h^3 f0''' and
    * then the same at 1: the coefficients of s^4..s^7. Below s^4 the basis
@@ -2489,6 +2489,22 @@ static void calc_nutation_grid(swe_ctx *ctx, double J, double *nutlo)
     for (m = 0; m < 4; m++)
       r += H[m] * hm[m] * v[0][4 * j + m] + H[4 + m] * hm[m] * v[1][4 * j + m];
     nutlo[j] = r;
+  }
+  if (dnut != NULL) {
+    /* the polynomial's own derivative, d/dJ = (1/h) d/ds */
+    double D[8];
+    for (m = 0; m < 8; m++)
+      D[m] = 4 * B[m][0] * s3 + 5 * B[m][1] * s4 + 6 * B[m][2] * s5 + 7 * B[m][3] * s6;
+    D[0] += 0.0;
+    D[1] += 1.0;
+    D[2] += s;
+    D[3] += 0.5 * s2;
+    for (j = 0; j < 2; j++) {
+      double r = 0.0;
+      for (m = 0; m < 4; m++)
+        r += D[m] * hm[m] * v[0][4 * j + m] + D[4 + m] * hm[m] * v[1][4 * j + m];
+      dnut[j] = r / h;
+    }
   }
 }
 #endif
@@ -2541,7 +2557,7 @@ static int calc_nutation(swe_ctx *ctx, double J, int32 iflag, double *nutlo)
     /* The grid indexes nodes as integers, so a non-finite or absurd J
      * (G25's hostile walk) takes the direct series, which copes. */
     if (use_grid && nut_model == SEMOD_NUT_IAU_2000A && fabs(J) < 1e12)
-      calc_nutation_grid(ctx, J, nutlo);
+      calc_nutation_grid(ctx, J, nutlo, NULL);
     else
 #endif
     calc_nutation_iau2000ab(ctx, J, nutlo);
@@ -2610,6 +2626,38 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
   }
   return retc;
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 58: the rate of the nutation angles, rad/day. Upstream took
+ * (nut(t) - nut(t - h)) / h, h = NUT_SPEED_INTV, which is the rate at
+ * t - h/2: it misses the fortnightly term's curvature, 6.5e-10 deg/day in
+ * every longitude speed of date (2.7e-8 deg/day in the right ascension of
+ * Polaris). The default model's Hermite polynomial is differentiated
+ * (nodes cached, no series evaluation); any other model takes the central
+ * difference of nutation at t - h and t + h. rate[0] is dpsi/dt, rate[1]
+ * deps/dt. */
+void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
+{
+  int nut_model = ctx->astro_models[SE_MODEL_NUT];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+  AS_BOOL use_grid = (nut_model == 0);
+  if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
+  if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
+  if (use_grid && nut_model == SEMOD_NUT_IAU_2000A && fabs(tjd) < 1e12
+      && !ctx->do_interpolate_nut && !(iflag & SEFLG_JPLHOR)
+      && !((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3
+           && tjd <= HORIZONS_TJD0_DPSI_DEPS_IAU1980)) {
+    double nl[2];
+    calc_nutation_grid(ctx, tjd, nl, rate);
+  } else {
+    double a[2], b[2];
+    swi_nutation(ctx, tjd - NUT_SPEED_INTV, iflag, a);
+    swi_nutation(ctx, tjd + NUT_SPEED_INTV, iflag, b);
+    rate[0] = (b[0] - a[0]) / (2 * NUT_SPEED_INTV);
+    rate[1] = (b[1] - a[1]) / (2 * NUT_SPEED_INTV);
+  }
+}
+#endif
 
 #define OFFSET_JPLHORIZONS (-52.3) 
 #define DCOR_RA_JPL_TJD0  2437846.5
