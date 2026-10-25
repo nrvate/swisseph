@@ -1174,6 +1174,11 @@ struct epsilon {
  *     a later context's swe_set_jpl_file() missed, E 1.19e-8 day (1.03
  *     ms) off at J2000, and after swe_close() a JPLEPH calculation moving
  *     them to the file (UPSTREAM-BUGS 132, G128)
+ *   - (nothing for UPSTREAM-BUGS 133: the Sunshine houses' remembered
+ *     declination, which swe_houses_armc() can set before a context's
+ *     first start, kept across that start's memset, and 99 left there
+ *     when none was set, is in both builds; Phase 3c moved upstream's
+ *     static, which nothing resets, into the context; G129)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1911,8 +1916,8 @@ struct swe_ctx {
   /* swehouse.c: last solar declination handed to swe_houses_armc_ex2(),
    * recalled when a caller passes the sentinel 99. 99 means "none yet", so
    * zero would be a real declination and wrong. Set in swed's designated
-   * initialiser (sweph.c) and in swi_init_swed_if_start(), which memsets
-   * before filling in non-zero defaults. */
+   * initialiser (sweph.c) and in ctx_init_defaults(), and kept across
+   * swi_init_swed_if_start()'s memset, as upstream's static is (bug 133). */
   double saved_sundec;
 
   /* swehel.c memo caches -- see struct hel_state above. */

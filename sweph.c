@@ -1907,12 +1907,23 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
     AS_BOOL saved_naming_off = ctx->path_naming_off;
 #endif
     int32     saved_hold  = ctx->cfg_hold;	/* bug 115: the caller's hold */
+    /* Upstream bug 133 (this fork's): the Sunshine houses' remembered
+     * declination, which swe_houses_armc() and swe_houses_armc_ex2() keep
+     * without starting the context, went with the memset below, which also
+     * left 0 for 99, "none yet": after swe_houses_armc(123.4, 47.37, 23.44,
+     * 'I') with 20 deg in ascmc[9], a first calculation and a recall with
+     * 99, cusps 2 and 3 were declination 0's, 228.717 and 260.801 deg for
+     * 223.821 and 254.087. Upstream's memo is a static nothing resets
+     * (Phase 3c moved it here): it is kept across the memset now, in both
+     * builds, and 99 if none was made. */
+    double    saved_sundec = ctx->saved_sundec;
     AS_BOOL swi_cfg_was = swi_config_begin_apply(ctx);
     /* ctx, not &swed: a non-default context must clear itself. */
     memset((void *) ctx, 0, sizeof(struct swe_ctx));
     ctx->cfg_seen     = saved_seen;
     ctx->cfg_local    = saved_local;
     ctx->cfg_hold     = saved_hold;
+    ctx->saved_sundec = saved_sundec;
     ctx->cfg_applying = TRUE;      /* re-arm the guard the memset cleared */
     strcpy(ctx->ephepath, SE_EPHE_PATH);
     strcpy(ctx->jplfnam, SE_FNAME_DFT);

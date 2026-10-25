@@ -164,6 +164,7 @@ worst were in code that had never executed even once.
 | 129 | A change of nutation model -- `swe_set_astro_models()`, its adoption by another thread, an explicit context, `SE_SIDBIT_PREC_ORIG`, `swe_close()` -- keeps the interpolation's nodes of the old model, and any change of model the topocentric observer: the old model answers at an instant already computed, 8.7e-3" in dpsi, the topocentric Moon 0.17" in AD 1000 after a delta t model | Correctness (behaviour) | `swephlib.c`, `sweconfig.c`, `sweph.h` |
 | 130 | `swe_calc_orbel()` (this fork's) never pairs the frame bias, entry 20's defect on its copy of the fictitious path: its geocentric places are seen from the ICRS Earth, 3.2e-8 to 1.1e-7 AU off its heliocentric ones less the Earth (1.4e-5 deg at a = 1.2 AU), and with SEFLG_ICRS the body stays unturned, 23 mas off the same elements in seorbel.txt | Correctness | `sweph.c` |
 | 132 | `swe_time_equ()`, `swe_lmt_to_lat()` and `swe_lat_to_lmt()` take the JPL Sun only when this context has the JPL file open: after `swe_set_jpl_file()` a new thread, a thread that computed before it and a context made after it answer from the Swiss files, E 1.19e-8 day (1.03 ms) off at J2000, 1.17e-7 day in 1800, and after `swe_close()` a JPLEPH calculation moves them to the JPL file while `swe_deltat()` stays Swiss | Correctness (behaviour) | `sweph.c` |
+| 133 | The Sunshine houses' remembered declination, set by `swe_houses_armc()` before a context's first start, is wiped by the start's memset, which leaves 0 for 99, "none yet" (this fork's): a recall with 99 after the first calculation answers with declination 0, cusp 3 6.71 deg off | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 
 ---
 
@@ -8615,6 +8616,73 @@ has the getter answer with the term the next delta t uses. The compat
 build's getter and delta t agree (-23.8946, 14.438958 s), both following
 the open file. The first delta t's -25.80 itself is entry 127's noticed
 item.
+
+## 133. The Sunshine houses' remembered declination is wiped by a context's first start (this fork's): a recall with 99 after a first calculation answers with declination 0, cusp 3 6.71 deg off
+
+**Severity: Correctness (behaviour: wrong cusps, no error)**
+**Where:** `sweph.c`: `swi_init_swed_if_start()`; `sweph.h`: `struct swe_ctx`
+(`saved_sundec`); the memo is `swehouse.c`'s `swe_houses_armc_ex2_r()`
+
+`swe_houses_armc()` and `swe_houses_armc_ex2()` remember the Sun's
+declination a Sunshine ('I') call is given in `ascmc[9]`, and a later
+call with 99 there recalls it, as `swe_house_pos()` always does. Upstream
+keeps the memo in a function-scope static that nothing resets; Phase 3c
+moved it into the context as `saved_sundec`, 99 in `swed`'s initialiser
+and in `ctx_init_defaults()`. The two functions take no ephemeris and do
+not start the context, so on a thread's first calls the memo can come
+before the start, and the start's memset in `swi_init_swed_if_start()`
+wiped it, leaving 0 where 99 means "none yet" (the comment at the field
+said the start set 99; it did not). The recall then answered with
+declination 0: the cusps depended on whether a calculation had come
+between. At ARMC 123.4, 47.37 N, obliquity 23.44 with 20 deg remembered,
+a first `swe_calc_ut()` or `swe_set_ephe_path()` and a recall gave cusps
+2 and 3 at 228.717 and 260.801 deg for 223.821 and 254.087, cusp 3's
+speed 9.53 deg/day off by `swe_houses_armc_ex2()`, and `swe_house_pos()`
+of a body at 200 deg 1 deg N 12.7645 for 12.8080; both builds, on the
+main thread and a new one. Upstream 2.10.03, built from its tag, answers
+223.821 after the calculation too. The wrong marker alone is not seen
+through the API: with no memo, 99 and 0 both recall declination 0.
+
+Measured by a scratch program (not in the tree): 66 public functions,
+each as a fresh process's first call, with the context's bytes before and
+after it compared field by field where it left the context unstarted, and
+again after a start; and a started default context against a
+`swe_ctx_new()` one. In the default build `saved_sundec` is the one field
+a public function sets before the start, and the one whose empty value
+the start leaves wrong (the others that differ are the path's first use
+and the tables a new context seeds and the default one seeds on first
+use). The setters, the getters and the functions that calculate start
+the context first (bugs 83, 101, 122, 128); the rest -- the date and
+angle arithmetic, `swe_house_pos()` and `swe_houses_armc()` with other
+systems, the names, `swe_version()`, `swe_get_library_path()`,
+`swe_get_current_file_data()`, `swe_refrac()`, `swe_ctx_new()` -- write
+nothing to the default context. Under `SWE_UPSTREAM_COMPAT` more write
+before the start and lose it there, as upstream's do: the setters of the
+tidal acceleration, delta t and the nutation interpolation (upstream's
+half of bug 83, which the switch restores), the caches of the UTC
+conversions, the heliacal angle functions and `swe_close()`, and the star
+magnitudes' open sefstars.txt, whose FILE the memset forgets -- one
+descriptor left open past `swe_close()`, upstream 2.10.03 the same, not
+fixed here.
+
+**Fix, as done here:** `swi_init_swed_if_start()` keeps `saved_sundec`
+across its memset, as it keeps the configuration fields, so a memo made
+before the start is recalled after it and a context with none keeps 99.
+In both builds: upstream's static was never reset, so `SWE_UPSTREAM_COMPAT`
+has nothing to restore. Only a context's first start runs the memset, off
+the hot path; G1's 13000 rows are bit-identical to the tip's.
+
+G129 `tests/sunmemo.c`: six cases, each in its own process, the memo,
+the first start and the recall bit for bit a fresh process's recall
+straight after the memo: `calc` (`swe_calc_ut()` starts the context,
+`swe_houses_armc()` recalls), `path` (`swe_set_ephe_path()` starts it),
+`pos` (`swe_house_pos()` recalls), `speed` (`swe_houses_armc_ex2()` with
+speeds, both ways), `thread` (calc on a new thread), and `marker` (no
+memo: 99 after the start, as before it). 0 in all six; before the fix
+both builds fail all six, 6.71 deg, 6.71 deg, 0.0435 of a house, 9.53
+deg/day, 6.71 deg and 0 for 99. No G24 case: the two builds agree before
+the fix and after it. G20, G24, G45, G58, G67, G82, G124 and the context
+test pass.
 
 ## How these were found
 
