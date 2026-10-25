@@ -168,6 +168,7 @@ worst were in code that had never executed even once.
 | 131 | After `swe_close()` without the path again, the kept path's first delta t takes the default tidal term (-25.80) until a file opens: 1463.43 s in AD 1000 for 1474.72, the first UT Moon there 1.6e-3 deg off the second, with de200.eph 14.29 s in AD 1700 for 3.01 -- on the closing thread, every thread and context adopting the close and an explicit context closed by `swe_close_r()` | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 | 135 | `swe_calc_orbel()` (this fork's) answers a barycentric Moshier request, which `swe_calc()` refuses: the heliocentric place under a return flag with SEFLG_BARYCTR set, 5.7e-3 AU off the barycentric one (0.29 deg at a = 1.2 AU) | Correctness (behaviour) | `sweph.c` |
 | 136 | `swe_calc_orbel()` (this fork's) with elements of the equinox of date holds that equinox at the observation instant through the light time and leaves its turning out of the speed: 1.9e-2 deg at a = 80000 AU, 6.9e-6 deg at 30 AU, 3.5e-7 deg at 1.2 AU off the same elements as a seorbel.txt JDATE body, the speeds 4.0e-5 to 8.8e-5 deg/day off them and off the positions' rate | Correctness | `sweph.c`, `swephexp.h` |
+| 134 | The interpolation's nodes are keyed on neither the JPL Horizons flags of the call nor the approximation's mode (`SE_MODEL_JPLHORA_MODE`), nor go with the IERS corrections `swe_close()` frees, and `swe_get_ayanamsa_ex()` takes the nutation kept at its instant whatever flags computed it: another setting's nutation answers there, 6.2e-2" after the flag per call, 0.104" after a change of mode, 0.131" across the corrections | Correctness (behaviour) | `swephlib.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
 
 ---
 
@@ -8451,7 +8452,137 @@ interpolation on, `SE_ECL_NUT` with `SEFLG_JPLHOR_APPROX` at JD 2433282.5
 (1950) and then without it at + 0.37 answered dpsi -3.199992" for
 -3.261906" (6.2e-2"); with it at both, `swe_set_astro_models()` of
 `SEMOD_JPLHORA_2` between, -3.199992" for -3.303286" (0.103"). Both
-builds.
+builds. Fixed by entry 134, with the nodes of `SEFLG_JPLHOR`'s IERS
+corrections and `swe_get_ayanamsa_ex()`'s read of the nutation kept at
+its instant.
+
+## 134. The interpolation's nodes are keyed on neither the JPL Horizons flags nor the approximation's mode, nor go with the IERS corrections, and the ayanamsa takes the nutation kept at its instant whatever flags computed it: another setting's nutation answers there
+
+**Severity: Correctness (behaviour: a flag or setting without effect at an instant already computed; dpsi and every place of date there 6.2e-2" after the flag per call, 0.104" after a change of mode, 0.131" across the corrections; the ayanamsa 6.19e-2" with the interpolation off)**
+**Where:** `swephlib.c`: `swi_nutation()`; `sweph.h`: `struct interpol`; `sweph.c`: `ctx_release()`, `swe_get_ayanamsa_ex_r_body()`; `sweconfig.c`: `swi_config_apply()`
+
+Entry 129's noticed item. With the interpolation on, `swi_nutation()`
+answers from a quadratic through three nodes a day apart, which entry 129
+keyed on the nutation model. `calc_nutation()`, which builds them, reads
+more: the flags' `SEFLG_JPLHOR` (IAU 1980 with the IERS corrections of
+eop_1962_today.txt) and `SEFLG_JPLHOR_APPROX`, and with the latter
+`SE_MODEL_JPLHORA_MODE` (`SEMOD_JPLHORA_3`, the default: IAU 1980 with a
+fixed offset before 1962; `SEMOD_JPLHORA_2`: IAU 2000 with another). The
+nodes answered for any flags and mode, and those of `SEFLG_JPLHOR` for
+any corrections: `swe_close()` frees them and keeps the interpolation and
+its nodes (entry 123), and the next `swe_set_jpl_file()` loads another
+directory's. Measured on de200, the interpolation on, at JD 2433282.5
+(1950):
+- the flag per call: `SE_ECL_NUT` with `SEFLG_JPLHOR_APPROX` there, then
+  without it at + 0.37: dpsi -3.199992" for -3.261906" (6.19e-2"), and
+  the reverse; Mars, Spica and the ayanamsa the same, the topocentric
+  Moon 6.22e-2";
+- the mode: with the flag both times, `swe_set_astro_models()` from mode
+  3 to 2 between: -3.199992" for -3.303681" (0.104"), and back; adopted
+  by a second thread, by `swe_set_astro_models_r()` on an explicit
+  context, and from 2 to the default by `swe_close()` (which resets the
+  models), the same;
+- `SEFLG_JPLHOR`, which needs a DE >= 403 and the corrections, on G19's
+  synthetic DE431 header (`SE_ECL_NUT` reads none of its coefficients)
+  and two fixture files: `SEFLG_JPLHOR` and then `SEFLG_JPLHOR_APPROX`,
+  4.20e-2", and the reverse; with it throughout, across `swe_close()` from
+  one directory's corrections to another's, the old ones' -13.531351" for
+  -13.400650" (0.131", the fixtures' own difference).
+Both builds.
+
+The other caches of an instant, checked for the same flags:
+- `ctx->nut` is keyed on the JPLHOR bits (`SWI_EPS_KEY`); every route
+  that changes the mode empties it (`swi_invalidate_models()`), and
+  `swe_close()` with the corrections. Its readers inside a calculation
+  follow `swi_check_nutation()` with the same flags, but
+  `swe_get_ayanamsa_ex()` took it on the instant alone: the interpolation
+  off, on de200 at 1950 + 0.37, Mars with `SEFLG_JPLHOR_APPROX` and then
+  the ayanamsa without it answered the flag's nutation, 83309.173544" for
+  83309.111630" (6.19e-2", True Citra; Lahiri the same), and the
+  reverse. Both builds.
+- The obliquity (`oec`, `oec2000`) is keyed on the same bits and emptied
+  the same way; the corrections do not enter it.
+- The observer (`topd`) is keyed on them too (`SWI_TOPD_KEY`, entry 92)
+  and emptied by a change of model (entry 129); its nutation comes
+  through `swi_nutation()`, so through the nodes.
+- `calc_nutation()`'s memo declines both flags (`SWI_NUT_NO_MEMO`).
+- The corrections' availability: `plaus_iflag()` turns `SEFLG_JPLHOR`
+  into `SEFLG_JPLHOR_APPROX` when none are loaded, so the flag a
+  calculation's nodes are keyed on says it. Their contents change only by
+  `swe_close()` and a later `swe_set_jpl_file()`.
+
+**Fix, as done here:**
+- `struct interpol` keeps, with the model, the flags' JPLHOR bits
+  (`nut_jplhor`) and, with `SEFLG_JPLHOR_APPROX`, the approximation's
+  mode, defaulted (`nut_jplhora`; 0 without the flag, which does not read
+  it), and `swi_nutation()` uses the nodes only under all three. Behind
+  `#ifndef SWE_UPSTREAM_COMPAT`, upstream's test under `#else`.
+- `ctx_release()` (`swe_close()`, `swe_ctx_free()`) drops nodes built
+  under `SEFLG_JPLHOR` with the corrections it frees. Behind `#ifndef`.
+- `swe_get_ayanamsa_ex()` takes `ctx->nut` only under its own JPLHOR
+  bits, as `swi_check_nutation()` keys it. Behind `#ifndef`.
+- `swi_config_apply()`, in both builds, as the adoption is this fork's
+  (entries 83, 122, 123, 126, 129): an adopted change of the mode empties
+  the nodes as one of the nutation model does. This fork's build would
+  refuse them by their key anyway.
+- No hot path: with the interpolation off `swi_nutation()` is the code it
+  was, and the key is read only with it on. `perf stat` instructions,
+  `swe_calc()` of the ten bodies with speed at 20000 instants on the Swiss
+  files: 11400206950 before, 11401497681 after (+0.011%). The golden
+  transcript is bit for bit the tip's (13000 rows).
+
+G122 `tests/nutintp.c`, extended with 84 checks, each in a forked
+process, each answer bit for bit with its return flag a fresh process's
+that set the final state first and made the calls after the change: the
+interpolation on, de200, the path, an observer and True Citra set; the
+probe at 1950 and 1950 + 0.37 and a topocentric Moon at 1950 + 0.37 under
+the first flags; the change; the probe at 1950 and 1950 + 0.37 under the
+final ones. `SEFLG_JPLHOR_APPROX` before and not after, and the reverse;
+with it throughout, the mode from 3 to 2 and back by
+`swe_set_astro_models()`, by a second thread adopting it and by
+`swe_set_astro_models_r()` on an explicit context, and from 2 to the
+default by `swe_close()` with the files set again: the nine probes of
+entry 126 each, the flags theirs. And `SE_ECL_NUT` on the fixtures, made
+in $TMPDIR: `SEFLG_JPLHOR` to `SEFLG_JPLHOR_APPROX` and back, and the
+corrections A to B across `swe_close()`. 246 checks in all, none fail.
+Before the fix 50 of the 84 fail: the flag per call 6.19e-2" (the
+topocentric Moon 6.22e-2"), each change of mode 1.04e-1", and the houses
+on the second thread 2.0e-10" (their nodes built at its delta t before it
+opened the JPL file, noticed below); `SEFLG_JPLHOR` against
+`SEFLG_JPLHOR_APPROX` 4.20e-2", the corrections 0.131". With the nodes
+keyed and the ayanamsa not, its two flag cases fail; without the drop at
+`swe_close()`, the corrections' case. The compat build fails 113 of 246:
+entry 129's 74 and 39 of these, all but the second thread's ten, which
+this fork's adoption fixes in both builds, and after `swe_close()` the
+topocentric Moon, the ayanamsa and the sidereal Mars as in entry 129 (125
+before the fix). G24 `nut_jplhor_intp_off`: dpsi at 1950 + 0.37 after
+`SEFLG_JPLHOR_APPROX` at 1950, and at 1950 + 10.37 after mode 2 under it,
+against a fresh context's, the larger: 0 shipped (1.03e-1" before the
+fix), 1.03e-1" compat. G19, G29, G32, G57, G113, G2 and check-ctx pass;
+G25 skips (no DE >= 403 here); G1's transcript is identical to the tip's.
+
+Noticed, not fixed:
+- `swe_get_ayanamsa_ex()`, `swe_get_ayanamsa_ex_ut()` and sidereal
+  `swe_houses_ex2()` with `SEFLG_JPLHOR` and no corrections loaded (de200,
+  or a thread that never called `swe_set_jpl_file()`) crash: their flags
+  skip `plaus_iflag()`, and `calc_nutation()` calls `bessel()` on
+  `ctx->dpsi`, NULL (SIGSEGV at J2000). Both builds.
+- A second thread on the default context never loads the corrections
+  (`load_dpsi_deps()` runs in `swe_set_jpl_file()` alone), so its
+  `SEFLG_JPLHOR` becomes `SEFLG_JPLHOR_APPROX` ("you did not call
+  swe_set_jpl_file()") where the setter's thread keeps it: dpsi on the
+  fixtures -13.522732" for -13.564630" (4.2e-2").
+- `swe_set_ephe_path()` keeps the corrections of the old directory
+  (only `swe_close()` frees them, and the loader loads once): after A,
+  B and `swe_set_jpl_file()`, `SEFLG_JPLHOR` answered A's -13.479309"
+  for B's -13.348539" (0.131").
+- `swe_deltat_ex()` with no ephemeris flag (0, which the houses pass)
+  answers 28.927550 s at 1950 on the thread that set de200 and 28.931886
+  s on a second thread until it opens the JPL file (4.3e-3 s).
+- Across `SEMOD_JPLHORA_3`'s switch at 1962 Jan 20, the nodes lie on both
+  sides of a 7.2e-2" step: dpsi at the switch + 0.3 after a call at - 0.5,
+  -10.105320" interpolated for -10.124814" (1.95e-2"), where the
+  interpolation is otherwise within about 3 mas. Both builds.
 
 ## 130. `swe_calc_orbel()` never pairs the frame bias: its geocentric places are seen from the ICRS Earth, and SEFLG_ICRS leaves the body unturned (this fork's)
 

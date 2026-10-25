@@ -1223,7 +1223,10 @@ check-closekeep: closekeep
 # 126). And a change of nutation model -- swe_set_astro_models(), its
 # adoption, an explicit context, SE_SIDBIT_PREC_ORIG, swe_close() -- is not
 # answered from the old model's interpolation nodes, nor a change of model
-# from its observer (UPSTREAM-BUGS 129).
+# from its observer (UPSTREAM-BUGS 129); nor the JPL Horizons flags of a
+# call, the approximation's mode or the IERS corrections from the nodes or
+# the nutation of others (UPSTREAM-BUGS 134: SEFLG_JPLHOR on G19's
+# synthetic DE431 header, with corrections it writes in $TMPDIR or /tmp).
 check-nutintp: nutintp
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nutintp $(EPHE)
 

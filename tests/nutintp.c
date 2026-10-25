@@ -68,7 +68,44 @@
  * topocentric Moon, the ayanamsa and the sidereal Mars on the second
  * thread too, as upstream's close drops the observer and the sidereal
  * mode (entry 127). The sidereal-time cases pass
- * there, as upstream builds that Moon's observer afresh. Run as
+ * there, as upstream builds that Moon's observer afresh.
+ *
+ * And the JPL Horizons flags (UPSTREAM-BUGS 134): the nodes were keyed on
+ * neither the flags' SEFLG_JPLHOR and SEFLG_JPLHOR_APPROX nor the
+ * approximation's mode, all of which calc_nutation() reads, nor were the
+ * nodes of SEFLG_JPLHOR dropped with the IERS corrections they were built
+ * from; and swe_get_ayanamsa_ex() took the nutation kept at its instant
+ * whatever flags had computed it. The same check, the interpolation on,
+ * on de200 at 1950 (before 1962, where SEMOD_JPLHORA_3 takes IAU 1980 with
+ * an offset, SEMOD_JPLHORA_2 IAU 2000 with another): SEFLG_JPLHOR_APPROX
+ * before and not after, and the reverse; and with it throughout, the mode
+ * from 3 to 2 and back by swe_set_astro_models() on the setter's thread,
+ * adopted by a second thread, and by swe_set_astro_models_r() on an
+ * explicit context, and from 2 to the default by swe_close() with the
+ * files set again. Nine probes each, the flags theirs (swe_sidtime(), the
+ * houses, the true node and the sidereal Mars take none). After the change
+ * the probe at the instant and at + 0.37 (swe_sidtime() at the instant,
+ * of no flags, would build nodes of its own). SEFLG_JPLHOR needs a DE >=
+ * 403 and eop_1962_today.txt: G19's synthetic DE431 header (SE_ECL_NUT
+ * reads none of its coefficients) and two files of other corrections, in
+ * directories A and B made in $TMPDIR (or /tmp); SE_ECL_NUT at 2000 Jan 7
+ * with SEFLG_JPLHOR and then SEFLG_JPLHOR_APPROX, the reverse, and with
+ * SEFLG_JPLHOR throughout across swe_close() from A to B. 84 checks, 246
+ * in all.
+ *
+ * Measured before the fix, 50 of the 84 fail: SE_ECL_NUT, Mars, the
+ * ayanamsa and Spica 6.19e-2", the topocentric Moon 6.22e-2", after the
+ * flag per call (either way); 1.04e-1" (the Moon 1.04e-1") after each
+ * change of mode, and the houses on the second thread 2.0e-10" (nodes
+ * built at its delta t before it opened the JPL file, 4.3 ms off the one
+ * after); SE_ECL_NUT 4.20e-2" between
+ * SEFLG_JPLHOR and SEFLG_JPLHOR_APPROX, 0.131" across the corrections.
+ * With the nodes keyed and the ayanamsa not, its two flag cases fail
+ * (6.19e-2"); without the drop at swe_close(), the corrections' case. The
+ * upstream build fails 113 of 246: 129's 74 and 39 of these, all but the
+ * second thread's ten (adopted through this fork's code, fixed in both
+ * builds), and after swe_close() the topocentric Moon, the ayanamsa and
+ * the sidereal Mars as in 129 (125 before the fix). Run as
  *   nutintp EPHEDIR
  */
 #include <math.h>
@@ -77,6 +114,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include "swephexp.h"
 
@@ -101,11 +139,14 @@ enum { M_OWN, M_THREAD, M_CTX, NM };
 static const char *MN[NM] = { "the setter's thread", "a second thread",
   "an explicit context" };
 
+/* the probes' ephemeris and JPL Horizons flags (UPSTREAM-BUGS 134) */
+static int32 XFL = SEFLG_SWIEPH;
+
 /* the probe at t, on c, or on the default context for c NULL */
 static void probe(swe_ctx *c, int p, double t, struct obs *o)
 {
   char serr[AS_MAXCH], s[64];
-  int32 fl = SEFLG_SWIEPH | SEFLG_SPEED;
+  int32 fl = XFL | SEFLG_SPEED;
   memset(o, 0, sizeof *o);
   switch (p) {
     case P_NUT:
@@ -125,8 +166,8 @@ static void probe(swe_ctx *c, int p, double t, struct obs *o)
                  : swe_calc(t, SE_TRUE_NODE, fl, o->v, serr);
       break;
     case P_AYA:
-      o->ret = c ? swe_get_ayanamsa_ex_r(c, t, SEFLG_SWIEPH, o->v, serr)
-                 : swe_get_ayanamsa_ex(t, SEFLG_SWIEPH, o->v, serr);
+      o->ret = c ? swe_get_ayanamsa_ex_r(c, t, XFL, o->v, serr)
+                 : swe_get_ayanamsa_ex(t, XFL, o->v, serr);
       break;
     case P_STAR:
       strcpy(s, "Spica");
@@ -379,7 +420,9 @@ static void run2(int k, int p, int fresh, struct obs *o)
   }
 }
 
-static int in_child2(int k, int p, int fresh, struct obs *o)
+/* scenario k's run (run2(), run3()) in a forked process */
+static int in_child2(void (*run)(int, int, int, struct obs *), int k, int p,
+                     int fresh, struct obs *o)
 {
   int fd[2], st;
   pid_t pid;
@@ -393,7 +436,7 @@ static int in_child2(int k, int p, int fresh, struct obs *o)
   if (pid == 0) {
     struct obs r;
     close(fd[0]);
-    run2(k, p, fresh, &r);
+    run(k, p, fresh, &r);
     _exit(write(fd[1], &r, sizeof r) == (ssize_t) sizeof r ? 0 : 4);
   }
   close(fd[1]);
@@ -403,6 +446,276 @@ static int in_child2(int k, int p, int fresh, struct obs *o)
       || got != (ssize_t) sizeof *o)
     return -1;
   return 0;
+}
+
+/* The JPL Horizons flags, the approximation's mode and the IERS
+ * corrections (UPSTREAM-BUGS 134), the interpolation on throughout. On
+ * de200 at 1950, before 1962, where SEMOD_JPLHORA_3 takes IAU 1980 with
+ * an offset and SEMOD_JPLHORA_2 IAU 2000 with another: the flag per call,
+ * and the mode by each route. SEFLG_JPLHOR itself needs a DE >= 403 and
+ * eop_1962_today.txt: G19's synthetic DE431 header, whose coefficients
+ * nothing reads for SE_ECL_NUT, and two such files of other corrections,
+ * in two directories made here (A and B). */
+#define T0H 2433282.5		/* 1950 Jan 1 */
+#define T0F 2451550.5		/* in the corrections' span, 2000 Jan 1..Feb 9 */
+#define JE SEFLG_JPLEPH
+#define JA (SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX)
+#define JH (SEFLG_JPLEPH | SEFLG_JPLHOR)
+#define MOD_HA3 "0,0,0,0,0,0,3,0"	/* SEMOD_JPLHORA_3, the default */
+#define MOD_HA2 "0,0,0,0,0,0,2,0"	/* SEMOD_JPLHORA_2 */
+#define JPL_FIXTURE "de431fixture.eph"
+static char DIRS[3][512];	/* EPHE, A, B */
+enum { H_FLAG, H_SET, H_THREAD, H_CTX, H_CLOSE, NH };
+static const char *HN[NH] = { "the flag per call", "swe_set_astro_models()",
+  "a second thread adopting swe_set_astro_models()",
+  "swe_set_astro_models_r() on an explicit context",
+  "swe_close() and the files set again" };
+struct scen3 {
+  int route;
+  int32 fa, fb;		/* the flags before and after */
+  const char *ma, *mb;	/* the models before and after */
+  int da, db;		/* the directory before and after: DIRS[] */
+};
+static const struct scen3 SH[] = {
+  { H_FLAG, JA, JE, MOD_HA3, MOD_HA3, 0, 0 },
+  { H_FLAG, JE, JA, MOD_HA3, MOD_HA3, 0, 0 },
+  { H_SET, JA, JA, MOD_HA3, MOD_HA2, 0, 0 },
+  { H_SET, JA, JA, MOD_HA2, MOD_HA3, 0, 0 },
+  { H_THREAD, JA, JA, MOD_HA3, MOD_HA2, 0, 0 },
+  { H_THREAD, JA, JA, MOD_HA2, MOD_HA3, 0, 0 },
+  { H_CTX, JA, JA, MOD_HA3, MOD_HA2, 0, 0 },
+  { H_CTX, JA, JA, MOD_HA2, MOD_HA3, 0, 0 },
+  { H_CLOSE, JA, JA, MOD_HA2, MOD_DEF, 0, 0 },
+  /* SEFLG_JPLHOR, SE_ECL_NUT alone */
+  { H_FLAG, JH, JA, MOD_DEF, MOD_DEF, 1, 1 },
+  { H_FLAG, JA, JH, MOD_DEF, MOD_DEF, 1, 1 },
+  { H_CLOSE, JH, JH, MOD_DEF, MOD_DEF, 1, 2 },
+};
+#define NSH ((int) (sizeof SH / sizeof SH[0]))
+
+static void setup3(swe_ctx *c, int d, const char *mod)
+{
+  char m[40], jf[40];
+  strcpy(m, mod);
+  strcpy(jf, d ? JPL_FIXTURE : "de200.eph");
+  if (c) {
+    swe_set_ephe_path_r(c, DIRS[d]);
+    swe_set_jpl_file_r(c, jf);
+    swe_set_topo_r(c, GEO[0], GEO[1], GEO[2]);
+    swe_set_astro_models_r(c, m, 0);
+    swe_set_sid_mode_r(c, SE_SIDM_TRUE_CITRA, 0, 0);
+    swe_set_interpolate_nut_r(c, 1);
+  } else {
+    swe_set_ephe_path(DIRS[d]);
+    swe_set_jpl_file(jf);
+    swe_set_topo(GEO[0], GEO[1], GEO[2]);
+    swe_set_astro_models(m, 0);
+    swe_set_sid_mode(SE_SIDM_TRUE_CITRA, 0, 0);
+    swe_set_interpolate_nut(1);
+  }
+}
+
+/* before the change, under fl: the probe at t0 (the nodes there) and at
+ * t0 + 0.37, and the nutation and observer cached there */
+static void before3(swe_ctx *c, int p, double t0, int32 fl)
+{
+  struct obs o;
+  XFL = fl;
+  probe(c, p, t0, &o);
+  probe(c, p, t0 + 0.37, &o);
+  probe(c, P_TOPOMOON, t0 + 0.37, &o);
+}
+
+/* after it, under fl: the probe at t0 and at t0 + 0.37. Not
+ * swe_sidtime()'s nutation at t0, which has no flags and so would build
+ * nodes of its own whatever the probe's */
+static void after3(swe_ctx *c, int p, double t0, int32 fl, struct obs *o)
+{
+  XFL = fl;
+  probe(c, p, t0, o);
+  probe(c, p, t0 + 0.37, o);
+}
+
+static void change3(swe_ctx *c, const struct scen3 *s)
+{
+  char m[40], jf[40];
+  strcpy(m, s->mb);
+  switch (s->route) {
+    case H_FLAG:		/* after3() takes the flags fb */
+      break;
+    case H_SET: case H_THREAD:
+      swe_set_astro_models(m, 0);
+      break;
+    case H_CTX:
+      swe_set_astro_models_r(c, m, 0);
+      break;
+    case H_CLOSE:
+      strcpy(jf, s->db ? JPL_FIXTURE : "de200.eph");
+      swe_close();
+      swe_set_ephe_path(DIRS[s->db]);
+      swe_set_jpl_file(jf);
+      break;
+  }
+}
+
+static const struct scen3 *th_s;
+static void *second3(void *arg)
+{
+  double t0 = th_s->da ? T0F : T0H;
+  (void) arg;
+  pthread_barrier_wait(&bar);
+  before3(NULL, th_p, t0, th_s->fa);
+  pthread_barrier_wait(&bar);
+  pthread_barrier_wait(&bar);
+  after3(NULL, th_p, t0, th_s->fb, &th_o);
+  return NULL;
+}
+
+/* the scenario, or (fresh) a process that set its final state first */
+static void run3(int k, int p, int fresh, struct obs *o)
+{
+  const struct scen3 *s = &SH[k];
+  double t0 = s->da ? T0F : T0H;
+  if (s->route == H_CTX) {
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      exit(3);
+    setup3(c, fresh ? s->db : s->da, fresh ? s->mb : s->ma);
+    if (!fresh) {
+      before3(c, p, t0, s->fa);
+      change3(c, s);
+    }
+    after3(c, p, t0, s->fb, o);
+    swe_ctx_free(c);
+  } else if (!fresh && s->route == H_THREAD) {
+    pthread_t th;
+    setup3(NULL, s->da, s->ma);
+    th_p = p;
+    th_s = s;
+    pthread_barrier_init(&bar, NULL, 2);
+    if (pthread_create(&th, NULL, second3, NULL) != 0)
+      exit(3);
+    pthread_barrier_wait(&bar);
+    pthread_barrier_wait(&bar);
+    change3(NULL, s);
+    pthread_barrier_wait(&bar);
+    pthread_join(th, NULL);
+    *o = th_o;
+  } else {
+    setup3(NULL, fresh ? s->db : s->da, fresh ? s->mb : s->ma);
+    if (!fresh) {
+      before3(NULL, p, t0, s->fa);
+      change3(NULL, s);
+    }
+    after3(NULL, p, t0, s->fb, o);
+  }
+}
+
+/* G19's synthetic JPL header (eopload.c), DE 431: fsizer() accepts it and
+ * the file is the length it implies; SE_ECL_NUT reads no coefficient. */
+static void put32(unsigned char *p, int v)    { memcpy(p, &v, 4); }
+static void putd (unsigned char *p, double v) { memcpy(p, &v, 8); }
+static int write_jpl(const char *path)
+{
+  unsigned char h[2856];
+  const int ncf = 4, na = 1, maxoff = 1200, nrecl = 4;
+  const double ss0 = 2451544.5, ss1 = 2451576.5, ss2 = 32.0;   /* nseg = 1 */
+  int i, ksize, nseg = (int) ((ss1 - ss0) / ss2);
+  long nb = 0;
+  FILE *fp;
+  memset(h, ' ', 252);
+  memcpy(h, "SWISSEPH EOP LOADER FIXTURE", 27);
+  memset(h + 252, ' ', 2400);
+  putd (h + 2652, ss0);
+  putd (h + 2660, ss1);
+  putd (h + 2668, ss2);
+  put32(h + 2676, 0);                 /* ncon  */
+  putd (h + 2680, 149597870.7);       /* au    */
+  putd (h + 2688, 81.3);              /* emrat */
+  for (i = 0; i < 12; i++) {
+    put32(h + 2696 + (i * 3 + 0) * 4, 3);
+    put32(h + 2696 + (i * 3 + 1) * 4, ncf);
+    put32(h + 2696 + (i * 3 + 2) * 4, na);
+  }
+  put32(h + 2696 + 30 * 4, maxoff);
+  put32(h + 2696 + 31 * 4, ncf);
+  put32(h + 2696 + 32 * 4, na);
+  put32(h + 2840, 431);               /* numde */
+  put32(h + 2844, 3);
+  put32(h + 2848, ncf);
+  put32(h + 2852, na);
+  ksize = (maxoff + 3 * ncf * na - 1) * 2;
+  for (i = 0; i < 13; i++)
+    nb += (long) ncf * na * (i == 11 ? 2 : 3) * nseg;
+  nb += 2 * nseg;
+  nb *= 8;
+  nb += 2 * (long) ksize * nrecl;
+  if ((fp = fopen(path, "wb")) == NULL)
+    return -1;
+  fwrite(h, 1, sizeof h, fp);
+  for (i = (int) sizeof h; i < nb; i++)
+    fputc(0, fp);
+  if ((fp = freopen(path, "r+b", fp)) == NULL)
+    return -1;
+  fseek(fp, 2L * ksize * nrecl, SEEK_SET);
+  { double ep[2]; ep[0] = ss0; ep[1] = ss1; fwrite(ep, 8, 2, fp); }
+  fclose(fp);
+  return 0;
+}
+
+/* eop_1962_today.txt (EOPC04 columns) for MJD 51544..51583, dpsi and deps
+ * (arcsec) a + i b and c + i d */
+static int write_eop(const char *path, double a, double b, double c, double d)
+{
+  FILE *fp = fopen(path, "w");
+  int i;
+  if (fp == NULL)
+    return -1;
+  fprintf(fp, "# EOPC04 fixture\n");
+  for (i = 0; i < 40; i++)
+    fprintf(fp, "2000  1 %2d  %5d   0.0 0.0 0.0 0.0 %.9f %.9f\n",
+            i + 1, 51544 + i, a + i * b, c + i * d);
+  return fclose(fp);
+}
+
+static int make_fixtures(void)
+{
+  char p[600], base[400];
+  const char *tmp = getenv("TMPDIR");
+  if (snprintf(base, sizeof base, "%s/nutintp.XXXXXX", tmp && *tmp ? tmp : "/tmp")
+      >= (int) sizeof base || mkdtemp(base) == NULL)
+    return -1;
+  snprintf(DIRS[1], sizeof DIRS[1], "%s", base);
+  snprintf(DIRS[2], sizeof DIRS[2], "%s/B", base);
+  if (mkdir(DIRS[2], 0700) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/%s", DIRS[1], JPL_FIXTURE);
+  if (write_jpl(p) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/%s", DIRS[2], JPL_FIXTURE);
+  if (write_jpl(p) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[1]);
+  if (write_eop(p, -0.05, -1e-5, -0.005, -1e-6) != 0)
+    return -1;
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[2]);
+  if (write_eop(p, 0.08, 1e-4, 0.01, 1e-5) != 0)
+    return -1;
+  return 0;
+}
+
+static void remove_fixtures(void)
+{
+  char p[600];
+  int d;
+  for (d = 2; d >= 1; d--) {
+    snprintf(p, sizeof p, "%s/%s", DIRS[d], JPL_FIXTURE);
+    unlink(p);
+    snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[d]);
+    unlink(p);
+  }
+  rmdir(DIRS[2]);
+  rmdir(DIRS[1]);
 }
 
 /* how far a from b, and whether they differ at all (with the return) */
@@ -457,7 +770,7 @@ int main(int argc, char **argv)
       struct obs ot, of;
       double d;
       n++;
-      if (in_child2(k, p, 0, &ot) != 0 || in_child2(k, p, 1, &of) != 0) {
+      if (in_child2(run2, k, p, 0, &ot) != 0 || in_child2(run2, k, p, 1, &of) != 0) {
         printf("    %s, %s to %s: child failed\n", RN[SC[k].route], SC[k].ma, SC[k].mb);
         nfail++;
         continue;
@@ -468,6 +781,31 @@ int main(int argc, char **argv)
         nfail++;
       }
     }
+  snprintf(DIRS[0], sizeof DIRS[0], "%s", EPHE);
+  if (make_fixtures() != 0) {
+    printf("    cannot write the SEFLG_JPLHOR fixtures in %s\n", DIRS[1]);
+    nfail++;
+  } else {
+    for (k = 0; k < NSH; k++)
+      for (p = 0; p < (SH[k].da ? 1 : NP); p++) {	/* the fixtures: SE_ECL_NUT */
+        struct obs ot, of;
+        double d;
+        n++;
+        if (in_child2(run3, k, p, 0, &ot) != 0 || in_child2(run3, k, p, 1, &of) != 0) {
+          printf("    %s, flags %#x to %#x, %s to %s: child failed\n", HN[SH[k].route],
+                 (unsigned) SH[k].fa, (unsigned) SH[k].fb, SH[k].ma, SH[k].mb);
+          nfail++;
+          continue;
+        }
+        if (differ(&ot, &of, &d)) {
+          printf("    %s, flags %#x to %#x, %s to %s%s, %s: %.3e\" off a fresh process's (return %d, %d) FAIL\n",
+                 HN[SH[k].route], (unsigned) SH[k].fa, (unsigned) SH[k].fb, SH[k].ma, SH[k].mb,
+                 SH[k].da != SH[k].db ? ", corrections A to B" : "", PN[p], d * 3600, ot.ret, of.ret);
+          nfail++;
+        }
+      }
+    remove_fixtures();
+  }
   if (nfail)
     printf("G122 FAIL: %d of %d\n", nfail, n);
   else

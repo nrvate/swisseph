@@ -2681,6 +2681,9 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
 {
   int retc = OK;
   double dnut[2], dx;
+#ifndef SWE_UPSTREAM_COMPAT
+  int32 jplhor, jplhora;
+#endif
   if (!ctx->do_interpolate_nut) {
     retc = calc_nutation(ctx, tjd, iflag, nutlo);
   // from interpolation, with three data points in 1-day steps;
@@ -2695,9 +2698,25 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
      * (8.6e-3"); after IAU 1980 and swe_close(), which resets the models
      * and keeps the interpolation, IAU 1980's for the default's (8.7e-3").
      * They are of the model they were built under now, and another model
-     * builds its own, whatever route set it. */
+     * builds its own, whatever route set it.
+     * Upstream bug 134: and of the rest calc_nutation() reads, the JPL
+     * Horizons bits of the flags and, with SEFLG_JPLHOR_APPROX, the
+     * approximation's mode. On de200, SE_ECL_NUT at 1950 with
+     * SEFLG_JPLHOR_APPROX, then without it at + 0.37, was the flag's
+     * -3.199992" for -3.261906" (6.2e-2"); with it both times, mode 3 then
+     * 2, mode 3's for mode 2's -3.303681" (0.104"). The nodes of
+     * SEFLG_JPLHOR, of the IERS corrections loaded, go with them at
+     * swe_close() (ctx_release()). */
+    jplhor = iflag & SWI_JPLHOR_FLAGMASK;
+    jplhora = 0;
+    if (jplhor & SEFLG_JPLHOR_APPROX) {
+      jplhora = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+      if (jplhora == 0) jplhora = SEMOD_JPLHORA_DEFAULT;
+    }
     if (tjd < ctx->interpol.tjd_nut2 && tjd > ctx->interpol.tjd_nut0
-        && ctx->interpol.nut_model == ctx->astro_models[SE_MODEL_NUT]) {
+        && ctx->interpol.nut_model == ctx->astro_models[SE_MODEL_NUT]
+        && ctx->interpol.nut_jplhor == jplhor
+        && ctx->interpol.nut_jplhora == jplhora) {
 #else
     if (tjd < ctx->interpol.tjd_nut2 && tjd > ctx->interpol.tjd_nut0) {
 #endif
@@ -2709,6 +2728,8 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
       ctx->interpol.tjd_nut2 = tjd + 1.0; // one day later
 #ifndef SWE_UPSTREAM_COMPAT
       ctx->interpol.nut_model = ctx->astro_models[SE_MODEL_NUT];
+      ctx->interpol.nut_jplhor = jplhor;
+      ctx->interpol.nut_jplhora = jplhora;
 #endif
       retc = calc_nutation(ctx, ctx->interpol.tjd_nut0, iflag, dnut);
       if (retc == ERR) return ERR;

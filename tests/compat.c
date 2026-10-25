@@ -2981,6 +2981,49 @@ static double nut_model_intp_off(void)
   return d * 3600;
 }
 
+/* UPSTREAM-BUGS 134: and across the JPL Horizons flags and the
+ * approximation's mode. On de200, the interpolation on: dpsi at 1950 +
+ * 0.37 without SEFLG_JPLHOR_APPROX after it at 1950; and with it at 1950
+ * + 10.37 after it at 1950 + 10 and SEMOD_JPLHORA_2. Against a fresh
+ * context making the same calls under the final flags and mode (the
+ * instant and then + 0.37), the larger, arcsec. */
+static double nut_jplhor_intp_off(void)
+{
+  double x[6], y[6], d, t = 2433282.5;
+  char serr[256], m2[] = "0,0,0,0,0,0,2", mdef[] = "0,0,0,0,0,0,0";
+  const int32 je = SEFLG_JPLEPH, ja = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX;
+  swe_ctx *c;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_jpl_file("de200.eph");
+  swe_set_interpolate_nut(TRUE);
+  swe_calc(t, SE_ECL_NUT, ja, x, serr);
+  swe_calc(t, SE_ECL_NUT, je, x, serr);
+  swe_calc(t + 0.37, SE_ECL_NUT, je, x, serr);
+  if ((c = swe_ctx_new()) == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_jpl_file_r(c, "de200.eph");
+  swe_set_interpolate_nut_r(c, TRUE);
+  swe_calc_r(c, t, SE_ECL_NUT, je, y, serr);
+  swe_calc_r(c, t + 0.37, SE_ECL_NUT, je, y, serr);
+  d = fabs(x[2] - y[2]);
+  swe_calc(t + 10, SE_ECL_NUT, ja, x, serr);
+  swe_set_astro_models(m2, 0);
+  swe_calc(t + 10, SE_ECL_NUT, ja, x, serr);
+  swe_calc(t + 10.37, SE_ECL_NUT, ja, x, serr);
+  swe_set_astro_models_r(c, m2, 0);
+  swe_calc_r(c, t + 10, SE_ECL_NUT, ja, y, serr);
+  swe_calc_r(c, t + 10.37, SE_ECL_NUT, ja, y, serr);
+  swe_ctx_free(c);
+  if (fabs(x[2] - y[2]) > d)
+    d = fabs(x[2] - y[2]);
+  swe_set_astro_models(mdef, 0);
+  swe_set_interpolate_nut(FALSE);
+  swe_close();
+  return d * 3600;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3276,7 +3319,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate, nutjplhor;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3389,6 +3432,7 @@ int main(int argc, char **argv)
   nutintp = nut_intp_off();
   holdstart = hold_start_off();
   nutmodel = nut_model_intp_off();
+  nutjplhor = nut_jplhor_intp_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
@@ -4325,6 +4369,14 @@ int main(int argc, char **argv)
   else {
     printf("  nutation model kept    %.2e arcsec FAIL: expected %s\n",
            nutmodel, WANT_DEFECT ? "> 1e-3" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nutjplhor > 1e-2) : (nutjplhor == 0))
+    printf("  nutation JPLHOR kept   %.2e arcsec OK\n", nutjplhor);
+  else {
+    printf("  nutation JPLHOR kept   %.2e arcsec FAIL: expected %s\n",
+           nutjplhor, WANT_DEFECT ? "> 1e-2" : "0");
     bad++;
   }
 

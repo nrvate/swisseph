@@ -1195,6 +1195,12 @@ struct epsilon {
  *     time and leaving its turning out of the speed: 1.9e-2 deg at a =
  *     80000 AU, 3.5e-7 deg at 1.2 AU, 4.0e-5 to 8.8e-5 deg/day off the
  *     same elements as a JDATE body (UPSTREAM-BUGS 136, G126)
+ *   - the nodes kept across the JPL Horizons flags of a call, the
+ *     approximation's mode (1.03e-1" in dpsi) and, under SEFLG_JPLHOR,
+ *     the IERS corrections swe_close() frees, and swe_get_ayanamsa_ex()
+ *     taking the nutation kept at its instant whatever flags computed it
+ *     (6.2e-2") (UPSTREAM-BUGS 134, G122). A thread adopting a change of
+ *     mode empties the nodes in both builds, as above
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1460,6 +1466,8 @@ struct interpol {
   double nut_deps0, nut_deps1, nut_deps2;
 #ifndef SWE_UPSTREAM_COMPAT
   int32 nut_model;	/* astro_models[SE_MODEL_NUT] the nodes are of (bug 129) */
+  int32 nut_jplhor;	/* their flags' SWI_JPLHOR_FLAGMASK bits (bug 134) */
+  int32 nut_jplhora;	/* with SEFLG_JPLHOR_APPROX its mode, defaulted; else 0 (bug 134) */
 #endif
 };
 

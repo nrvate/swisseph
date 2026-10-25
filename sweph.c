@@ -2262,6 +2262,17 @@ static void ctx_release(swe_ctx *ctx)
     ctx->deps = NULL;
   }
   ctx->eop_dpsi_loaded = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 134: the interpolation's nodes built under SEFLG_JPLHOR
+   * are of these corrections, and the close keeps the nodes (entry 123):
+   * after it, another directory's eop_1962_today.txt and swe_set_jpl_file(),
+   * SE_ECL_NUT with SEFLG_JPLHOR answered the old file's dpsi (G122's
+   * fixtures, 0.131"). They go with the corrections. */
+  if (ctx->interpol.nut_jplhor & SEFLG_JPLHOR) {
+    ctx->interpol.tjd_nut0 = 0;
+    ctx->interpol.tjd_nut2 = 0;
+  }
+#endif
   /* Same shape, same close: both guard a per-context table read from the
    * EPHEMERIS PATH, and swe_set_ephe_path() closes before adopting the new
    * one. Left set, the tables loaded from the old directory survive into the
@@ -5064,7 +5075,18 @@ static int32 swe_get_ayanamsa_ex_r_body(swe_ctx *ctx, double tjd_et, int32 iflag
   struct nut *nutp = &nuttmp;	/* dummy assign, to silence gcc warning */
   int32 retval = swi_get_ayanamsa_ex(ctx, tjd_et, iflag, daya, serr);
   if (!(iflag & SEFLG_NONUT)) {
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 134: the nutation kept at the instant was taken for
+     * its instant alone, of whatever JPL Horizons flags computed it: on
+     * de200 at 1950 + 0.37, Mars with SEFLG_JPLHOR_APPROX and then the
+     * ayanamsa without it (True Citra, Lahiri) answered the flag's
+     * nutation, 6.19e-2" off, and the reverse. Keyed as
+     * swi_check_nutation() keys it now. */
+    if (tjd_et == ctx->nut.tnut
+        && SWI_EPS_KEY(ctx->sp.nut.nutflag) == SWI_EPS_KEY(iflag)) {
+#else
     if (tjd_et == ctx->nut.tnut) {
+#endif
       nutp = &ctx->nut;
     } else {
       nutp = &nuttmp;

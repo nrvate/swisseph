@@ -310,8 +310,12 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
                    || memcmp(ctx->astro_models, c->astro_models,
                              sizeof(ctx->astro_models)) != 0
                    || ctx->ayana_is_set != c->ayana_is_set);
+  /* bug 134: the Horizons approximation's mode with it, which the nodes
+   * built under SEFLG_JPLHOR_APPROX are of */
   nutmod_changed = (groups & SWI_CFG_SID)
-                   && ctx->astro_models[SE_MODEL_NUT] != c->astro_models[SE_MODEL_NUT];
+                   && (ctx->astro_models[SE_MODEL_NUT] != c->astro_models[SE_MODEL_NUT]
+                    || ctx->astro_models[SE_MODEL_JPLHORA_MODE]
+                       != c->astro_models[SE_MODEL_JPLHORA_MODE]);
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 101 (this fork's): an automatic tidal acceleration is
    * the context's own, derived from its files (sweconfig.h), but it was
@@ -484,7 +488,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
    * nodes alone were reset, and the nutation, observer and positions kept
    * at the instant answered for the old setting. Bug 129: the nodes of
    * another nutation model, likewise (in this fork's build their key
-   * refuses them anyway, swi_nutation()). */
+   * refuses them anyway, swi_nutation()); bug 134, of another Horizons
+   * approximation mode. */
   if (nut_changed || nutmod_changed)
     swi_invalidate_nut_interp(ctx);
   if (model_changed)
