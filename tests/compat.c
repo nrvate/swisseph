@@ -689,6 +689,29 @@ static double far_body_moon_pull_eph_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 65: Kronos from the built-in table (an empty directory on
+ * the path) against seorbel.txt's elements, heliocentric J2000 Moshier at
+ * JD 2341972.5 (1700), degrees. The built-in semi-axis was 64.81960 for
+ * the file's 64.81690: 0 shipped, 8.6e-3 compat. */
+static double kronos_builtin_off(void)
+{
+  const int32 fl = SEFLG_MOSEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_NONUT | SEFLG_TRUEPOS;
+  char dir[] = "/tmp/compatkronXXXXXX", serr[256];
+  double a[6], b[6];
+  if (mkdtemp(dir) == NULL)
+    return -1;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(2341972.5, SE_FICT_OFFSET + 3, fl, a, serr);
+  swe_close();
+  swe_set_ephe_path(dir);
+  swe_calc(2341972.5, SE_FICT_OFFSET + 3, fl, b, serr);
+  swe_close();
+  rmdir(dir);
+  swe_set_ephe_path((char *) EPHE);
+  return fabs(swe_difdeg2n(a[0], b[0]));
+}
+
 /* A topocentric fixed star's deflection by the Sun: the part of it that
  * comes from the observer's site, Regulus near the Sun on 2023-08-10,
  * (topocentric - topocentric NOGDEFL) - (geocentric - geocentric NOGDEFL)
@@ -1145,7 +1168,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1200,6 +1223,7 @@ int main(int argc, char **argv)
   abr2 = topo_aberr_second_order_off();
   moonpulle = far_body_moon_pull_eph_off();
   merclr = mercury_lt_round_off();
+  kronos = kronos_builtin_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1593,6 +1617,14 @@ int main(int argc, char **argv)
   else {
     printf("  light time, rounding   %.2e deg/day FAIL: expected %s\n",
            merclr, WANT_DEFECT ? "> 1e-5" : "< 5e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (kronos > 1e-3) : (kronos >= 0 && kronos < 1e-9))
+    printf("  Kronos, built-in table   %.2e deg OK\n", kronos);
+  else {
+    printf("  Kronos, built-in table   %.2e deg FAIL: expected %s\n",
+           kronos, WANT_DEFECT ? "> 1e-3" : "< 1e-9");
     bad++;
   }
 

@@ -103,6 +103,7 @@ worst were in code that had never executed even once.
 | 66 | The Moon's pull on the Earth reaches the aberration rate on the Swiss files only | Correctness | `sweph.c` |
 | 69 | The nutation matrix's rate holds the mean obliquity still | Correctness | `sweph.c` |
 | 70 | `swe_nod_aps()`'s apparent speeds are not the rate of the aberration it applies | Correctness | `swecl.c`, `sweph.c` |
+| 65 | Kronos' built-in semi-axis has two digits swapped, and the Kepler solver's starting guess is wrong | Correctness | `swemplan.c` |
 
 ---
 
@@ -3388,6 +3389,44 @@ G54's Mars longitude limit is 5e-10 now, from 1e-8 (measured 4.1e-11, from
 5.6e-9). G24 `planet_aberr_rate_off`: Neptune's mean aphelion's
 heliocentric distance rate at J2000 + 100 days, 2.2e-13 AU/day shipped,
 3.3e-9 compat. G42, G47, G54, G63 pass.
+
+## 65. Kronos' built-in semi-axis has two digits swapped, and the Kepler solver's starting guess is wrong
+
+**Severity: Correctness (Kronos 0.0086 deg at 1700, 0.0169 deg at 2300 without seorbel.txt; the second part moves no result beyond rounding)**
+**Where:** `swemplan.c`: `plan_oscu_elem[]` (SE_NEELY block), `swi_osc_el_plan()`
+
+Without `seorbel.txt` on the path the fictitious bodies come from a built-in
+table. Its Neely row for Kronos has the semi-axis 64.81960; `seorbel.txt`
+(Neely's, "refined by James Neely") and Witte's original 64.816896 (the
+non-Neely rows of the same table) give 64.81690. The repo holds no Neely
+paper to check the digits against; the file and the original elements agree
+with each other, and the other fourteen built-in rows agree with the file to
+the last digit (compared row by row), so the value is the swap. Kronos'
+mean motion is off by 0.0043 deg per century from the 1900 epoch:
+-0.0086 deg at 1700, +0.0169 deg at 2300, 0.0257 deg and 2.8e-3 AU at 2500.
+
+The solver of `swi_osc_el_plan()` for eccentricities above 0.975 (Nibiru,
+the Christ Comet) builds a starting guess near perihelion with
+`zeta = pow(x, 1/3)`, where `1/3` is integer division, so `zeta = pow(x, 0)
+= 1`, and adds `M_180_or_0 = 180` to an angle in radians where 180 degrees
+is pi. `swi_kepler()` converges to the same root from either guess, so the
+results move only by rounding. Measured over 20000 dates 1699 to 2301
+(Swiss, geocentric, with speed): Nibiru differs by 2.8e-14 deg in longitude,
+1.4e-14 in latitude, 6.1e-11 deg/day in longitude speed, 3.1e-10 AU/day in
+distance speed; the Christ Comet by 8.9e-15 deg, 1.9e-11 deg/day.
+
+**Fix, as done here:** the semi-axis is 64.81690. The guess is
+`pow(x, 1.0 / 3)` and `M_PI`. The solver now needs fewer passes: Nibiru
+383199 to 295420 for 59947 calls (6.4 to 4.9 per call), the Christ Comet
+512773 to 179943 for 59981 (8.5 to 3.0). Cost is below any bench noise.
+
+G64 `tests/fictbuiltin.c`: the 15 built-in bodies at five dates 1700..2500,
+heliocentric Moshier, with the shipped `seorbel.txt` against an empty
+directory (the built-in table): 0 deg, 5.7e-14 AU; the upstream build fails
+on Kronos alone (0.0086 deg at 1700, 0.0169 deg at 2300, 0.0257 deg at 2500).
+G24 `kronos_builtin_off`: Kronos at 1700, built-in against the file, 0 shipped,
+8.7e-3 deg compat. The starting-guess part is not gated: no public result
+moves beyond rounding, and the pass count has no clean hook.
 
 ## How these were found
 

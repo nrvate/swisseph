@@ -791,7 +791,16 @@ static const double plan_oscu_elem[SE_NFICT_ELEM][8] = {
   {J1900, J1900, 163.7409, 40.99837, 0.00460, 171.4333, 129.8325, 1.0833},/* Cupido Neely */ 
   {J1900, J1900,  27.6496, 50.66744, 0.00245, 148.1796, 161.3339, 1.0500},/* Hades Neely */
   {J1900, J1900, 165.1232, 59.21436, 0.00120, 299.0440,   0.0000, 0.0000},/* Zeus Neely */
+  /* Upstream bug 65: Kronos' semi-axis was 64.81960, a digit swap of
+   * seorbel.txt's 64.81690 (and Witte's original 64.816896): without the
+   * file Kronos drifted 0.0043 deg per century from 1900, -0.0086 deg at
+   * 1700, +0.0169 deg at 2300. It is seorbel.txt's now. The other fourteen
+   * rows agree with the file. */
+#ifndef SWE_UPSTREAM_COMPAT
+  {J1900, J1900, 169.0193, 64.81690, 0.00305, 208.8801,   0.0000, 0.0000},/* Kronos Neely */ 
+#else
   {J1900, J1900, 169.0193, 64.81960, 0.00305, 208.8801,   0.0000, 0.0000},/* Kronos Neely */ 
+#endif
   {J1900, J1900, 138.0533, 70.29949, 0.00000,   0.0000,   0.0000, 0.0000},/* Apollon Neely */
   {J1900, J1900, 351.3350, 73.62765, 0.00000,   0.0000,   0.0000, 0.0000},/* Admetos Neely */
   {J1900, J1900,  55.8983, 77.25568, 0.00000,   0.0000,   0.0000, 0.0000},/* Vulcanus Neely */
@@ -906,7 +915,11 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
     M2 = M * RADTODEG;
     if (M2 > 150 && M2 < 210) {
       M2 -= 180;
+#ifndef SWE_UPSTREAM_COMPAT
+      M_180_or_0 = M_PI;
+#else
       M_180_or_0 = 180;
+#endif
     } else
       M_180_or_0 = 0;
     if (M2 > 330) 
@@ -920,7 +933,16 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
       M2 *= DEGTORAD;
       alpha = (1 - ecce) / (4 * ecce + 0.5);
       beta = M2 / (8 * ecce + 1);
+      /* Upstream bug 65: 1/3 is integer division, so zeta was pow(x, 0) = 1,
+       * and M_180_or_0 added 180 to an angle in radians. The starting guess
+       * was 1-based nonsense; swi_kepler() converged to the same root, so
+       * no result moves beyond rounding (see UPSTREAM-BUGS 65). It is now
+       * the cube root and pi. */
+#ifndef SWE_UPSTREAM_COMPAT
+      zeta = pow(beta + sqrt(beta * beta + alpha * alpha), 1.0 / 3);
+#else
       zeta = pow(beta + sqrt(beta * beta + alpha * alpha), 1/3);
+#endif
       sigma = zeta - alpha / 2;
       sigma = sigma - 0.078 * sigma * sigma * sigma * sigma * sigma / (1 + ecce);
       E = Msgn * (M2 + ecce * (3 * sigma - 4 * sigma * sigma * sigma))

@@ -841,6 +841,10 @@ struct epsilon {
  *   - lunar_osc_elem() fitted the osculating apogee's ellipse with a 1996
  *     almanac GM, 3.3e-8 above the ephemeris's GMB (0.2" on the apogee;
  *     UPSTREAM-BUGS 28, G38)
+ *   - the built-in Kronos had the semi-axis 64.81960 for seorbel.txt's
+ *     64.81690 (0.0086 deg at 1700, 0.0169 deg at 2300 without the file),
+ *     and swi_osc_el_plan()'s Kepler guess for e > 0.975 used pow(x, 1/3)
+ *     = 1 and 180 for pi (rounding only; UPSTREAM-BUGS 65, G64)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
