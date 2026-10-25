@@ -352,6 +352,7 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
      * de200's 271.8881245810 for 271.8881823960 (5.8e-5 deg). Forgotten,
      * as the setter forgets them on its own thread. */
     swi_adopted_files_forget(ctx, FALSE);
+    swi_hel_forget(ctx);	/* heliacal results from the old file (bug 82) */
     ctx->topd.teval = SWI_TJD_NEVER;	/* the DE number frames the site (bug 92) */
     if (!ctx->is_tid_acc_manual) {
       int32 denumret;
