@@ -1627,6 +1627,28 @@ static double jpl_stale_earth_off(void)
   return fabs(swe_difdeg2n(x[0], y[0]));
 }
 
+/* UPSTREAM-BUGS 89: the barycentric Sun at JD 2378496.6, just past 1800.0
+ * where sepl_12 hands over to sepl_18, after a call 1.5 days before the
+ * join, against the Sun alone, mas. sepl_12 runs 79 days past its nominal
+ * end and an open file answered any instant it held: 47.6 mas; every
+ * instant from the file of its own 600 years now, 0. */
+static double file_join_off(void)
+{
+  double t = 2378496.6, x[6], y[6];
+  int32 fl = SEFLG_SWIEPH | SEFLG_BARYCTR | SEFLG_SPEED;
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  if (swe_calc(t, SE_SUN, fl, x, serr) < 0)
+    return -1;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t - 1.5, SE_SUN, fl, y, serr);
+  if (swe_calc(t, SE_SUN, fl, y, serr) < 0)
+    return -1;
+  return fabs(swe_difdeg2n(x[0], y[0])) * 3.6e6;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -1859,7 +1881,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1946,6 +1968,7 @@ int main(int argc, char **argv)
   oscaps = oscu_apsis_speed_off();
   eclnut = ecl_nut_speed3_off();
   ayastar = aya_star_rate_off();
+  filejoin = file_join_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2586,6 +2609,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier geo. fict. jitter %.2e AU FAIL: expected %s\n",
            moshgeojit, WANT_DEFECT ? "> 3e-14" : "< 6e-15");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (filejoin > 1) : (filejoin == 0))
+    printf("  Sun past a file join   %.2e mas OK\n", filejoin);
+  else {
+    printf("  Sun past a file join   %.2e mas FAIL: expected %s\n",
+           filejoin, WANT_DEFECT ? "> 1" : "0");
     bad++;
   }
 

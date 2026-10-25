@@ -61,6 +61,7 @@
 
 
 #include <assert.h>
+#include <stddef.h>
 #include <string.h>
 #include <ctype.h>
 #if MSDOS
@@ -198,6 +199,11 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
 		   double *xp, double *xpe, double *xps, char *serr);
 static void rot_back(swe_ctx *ctx, int ipl);
 static int read_const(swe_ctx *ctx, int ifno, char *serr);
+#ifndef SWE_UPSTREAM_COMPAT
+static void file_nominal_span(double tjd, int ipli, const char *fname,
+                              double *t0, double *t1);
+static void file_spare_drop(swe_ctx *ctx, int ifno);
+#endif
 static void embofs(double * SWI_RESTRICT xemb, const double * SWI_RESTRICT xmoon);
 static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, char *serr);
 static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, char *serr);
@@ -1514,6 +1520,8 @@ static void free_planets(swe_ctx *ctx)
   }
 #ifndef SWE_UPSTREAM_COMPAT
   memset((void *) &ctx->earth_moon, 0, sizeof(ctx->earth_moon));
+  for (i = 0; i <= SEI_FILE_MAIN_AST; i++)	/* with the planets' data */
+    file_spare_drop(ctx, i);
 #endif
   for (i = 0; i <= SE_NPLANETS; i++) /* "<=" is correct! see decl. */
     memset((void *) &ctx->savedat[i], 0, sizeof(struct save_positions));
@@ -2034,6 +2042,10 @@ void CALL_CONV swe_set_ephe_path_r(swe_ctx *ctx, const char *path)
         fclose(fdp->fptr);
         memset((void *) fdp, 0, sizeof(struct file_data));
       }
+#ifndef SWE_UPSTREAM_COMPAT
+      else	/* the span it answers for, as sweph() opens it (bug 89) */
+        file_nominal_span(J2000, SEI_MOON, fname, &fdp->tnom0, &fdp->tnom1);
+#endif
     }
     if (fdp->fptr != NULL)
       swi_set_tid_acc(ctx, 0, 0, fdp->sweph_denum, NULL);
@@ -2211,6 +2223,10 @@ void swi_close_ephe_files(swe_ctx *ctx, AS_BOOL forget_denum)
     if (!forget_denum)
       ctx->fidat[i].sweph_denum = denum;
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  for (i = 0; i <= SEI_FILE_MAIN_AST; i++)
+    file_spare_drop(ctx, i);
+#endif
 }
 
 /* Did the library answer from a different ephemeris than the one asked for?
@@ -3000,6 +3016,106 @@ static int jplplan(swe_ctx *ctx, double tjd, int ipli, int32 iflag, AS_BOOL do_s
   return (OK);
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* [t0, t1): the instants swi_gen_filename() names fname for, the 600-year
+ * bucket of tjd (UPSTREAM-BUGS 89). From the calendar, then moved to the
+ * double where the name changes, so the open file's span and a fresh
+ * context's choice cannot disagree by a rounding at the join. */
+static void file_nominal_span(double tjd, int ipli, const char *fname,
+                              double *t0, double *t1)
+{
+  char s[AS_MAXCH];
+  int y, m, d, icty, ncties = (int) NCTIES;
+  double ut, t;
+  swe_revjul(tjd, tjd >= 2305447.5 ? SE_GREG_CAL : SE_JUL_CAL, &y, &m, &d, &ut);
+  icty = y / 100;
+  if (y < 0 && y % 100 != 0)
+    icty -= 1;
+  while (icty % ncties != 0)
+    icty--;
+  y = icty * 100;
+  t = swe_julday(y, 1, 1, 0, y >= 1600 ? SE_GREG_CAL : SE_JUL_CAL);
+  for (swi_gen_filename(t, ipli, s); strcmp(s, fname) != 0; swi_gen_filename(t, ipli, s))
+    t = nextafter(t, HUGE_VAL);
+  for (;;) {
+    double tp = nextafter(t, -HUGE_VAL);
+    swi_gen_filename(tp, ipli, s);
+    if (strcmp(s, fname) != 0)
+      break;
+    t = tp;
+  }
+  *t0 = t;
+  y += ncties * 100;
+  t = swe_julday(y, 1, 1, 0, y >= 1600 ? SE_GREG_CAL : SE_JUL_CAL);
+  for (swi_gen_filename(t, ipli, s); strcmp(s, fname) == 0; swi_gen_filename(t, ipli, s))
+    t = nextafter(t, HUGE_VAL);
+  for (;;) {
+    double tp = nextafter(t, -HUGE_VAL);
+    swi_gen_filename(tp, ipli, s);
+    if (strcmp(s, fname) == 0)
+      break;
+    t = tp;
+  }
+  *t1 = t;
+}
+
+/* The file each of sepl, semo and seas had open before, kept open with its
+ * planets' file data -- the part of plan_data before teval: constants,
+ * reference ellipse, loaded segment -- so reads alternating across a join,
+ * as a light time across it makes them, swap files instead of reopening
+ * one (UPSTREAM-BUGS 89). Each body's slot belongs to one of the three
+ * files. */
+#define PLAN_FILE_PART offsetof(struct plan_data, teval)
+
+static int file_of_body(int i)
+{
+  if (i == SEI_MOON)
+    return SEI_FILE_MOON;
+  if (i == SEI_ANYBODY)
+    return -1;
+  if (i >= SEI_CHIRON)
+    return SEI_FILE_MAIN_AST;
+  return SEI_FILE_PLANET;
+}
+
+/* the open file and its bodies' file data trade places with the spare */
+static void file_spare_exchange(swe_ctx *ctx, int ifno)
+{
+  struct file_data f = ctx->fidat[ifno];
+  unsigned char b[PLAN_FILE_PART];
+  int i;
+  ctx->fidat[ifno] = ctx->fidat_spare[ifno];
+  ctx->fidat_spare[ifno] = f;
+  for (i = 0; i < SEI_NPLANETS; i++)
+    if (file_of_body(i) == ifno) {
+      memcpy(b, &ctx->pldat[i], PLAN_FILE_PART);
+      memcpy(&ctx->pldat[i], &ctx->pldat_spare[i], PLAN_FILE_PART);
+      memcpy(&ctx->pldat_spare[i], b, PLAN_FILE_PART);
+    }
+}
+
+static void file_spare_drop(swe_ctx *ctx, int ifno)
+{
+  int i;
+  if (ctx->fidat_spare[ifno].fptr != NULL)
+    fclose(ctx->fidat_spare[ifno].fptr);
+  memset((void *) &ctx->fidat_spare[ifno], 0, sizeof(struct file_data));
+  for (i = 0; i < SEI_NPLANETS; i++)
+    if (file_of_body(i) == ifno) {
+      free((void *) ctx->pldat_spare[i].segp);
+      free((void *) ctx->pldat_spare[i].refep);
+      memset((void *) &ctx->pldat_spare[i], 0, sizeof(struct plan_data));
+    }
+}
+
+/* the file answers tjd: inside its data and the nominal span it is for */
+static AS_BOOL file_answers(const struct file_data *f, double tjd)
+{
+  return f->fptr != NULL && tjd >= f->tfstart && tjd <= f->tfend
+    && tjd >= f->tnom0 && tjd < f->tnom1;
+}
+#endif
+
 /* 
  * this function looks for an ephemeris file, 
  * opens it, if not yet open,
@@ -3056,6 +3172,33 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
   /****************************** 
    * get correct ephemeris file * 
    ******************************/
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 89: an open file was kept for any instant inside its
+   * data, and the files run past their nominal 600-year ends (sepl 2-89
+   * days, seas about 350, semo 1-30; semo also starts 1-27 days early).
+   * So a context warm from one side of a join answered just across it
+   * from that side's file, and a fresh context from the file named for
+   * the instant: JD 2378496.6 after a call 1.5 days before, the
+   * barycentric Sun 47.6 mas, Juno 8.7 mas, the Moon up to 220 mas across
+   * a join's light time, the barycentric Sun 1.03 arcsec at -7800, and at
+   * 1800.0 itself Vulcan's heliocentric speed 8.2e-7 deg/day. Now an open
+   * file answers only inside the nominal span it was opened for, as a
+   * fresh context's would; every read, the light time's t - tau included,
+   * comes from the file of its own instant (sepl and seas start exactly
+   * at the join, so no one file holds both reads of a light time across
+   * it). The file it replaces is kept as a spare, so going back is a swap:
+   * 4.1 us a call inside a join's light time, 33 reopening. */
+  if (ifno <= SEI_FILE_MAIN_AST) {
+    if (!file_answers(fdp, tjd)) {
+      if (file_answers(&ctx->fidat_spare[ifno], tjd)) {
+        file_spare_exchange(ctx, ifno);
+      } else if (fdp->fptr != NULL) {
+        file_spare_drop(ctx, ifno);
+        file_spare_exchange(ctx, ifno);	/* the open one is the spare */
+      }
+    }
+  } else
+#endif
   if (fdp->fptr != NULL) {
     /* if tjd is beyond file range, close old file.
      * if new asteroid, close old file. */
@@ -3148,6 +3291,15 @@ again:
     retc = read_const(ctx, ifno, serr);
     if (retc != OK)
       return(retc);
+#ifndef SWE_UPSTREAM_COMPAT
+    /* the span of the instant's own bucket, if a neighbour answers it */
+    if (ipli < SE_PLMOON_OFFSET && ipl != SEI_ANYBODY) {
+      file_nominal_span(tjd, ipli, fname, &fdp->tnom0, &fdp->tnom1);
+    } else {
+      fdp->tnom0 = -HUGE_VAL;	/* one file for all time */
+      fdp->tnom1 = HUGE_VAL;
+    }
+#endif
   }
   /* if first ephemeris file (J-3000), it might start a mars period
    * after -3000. if last ephemeris file (J3000), it might end a

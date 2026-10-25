@@ -128,6 +128,7 @@ worst were in code that had never executed even once.
 | 91 | The ayanamsa's speed is a backward difference over 0.001 day | Correctness | `sweph.c` |
 | 92 | The fixed-star memos and catalogue outlive a new path, a path change resets a manual tidal acceleration, and the topocentric observer outlives an ephemeris switch (partly this fork's) | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 96 | An Earth-centred fictitious body's light-time place on Moshier jitters with the second read of the Earth | Correctness | `sweph.c` |
+| 89 | At the Swiss files' 600-year joins an open file answers past its nominal end, so the answer depends on the file an earlier call left open | Correctness | `sweph.c`, `sweph.h` |
 
 ---
 
@@ -5535,6 +5536,82 @@ off the fixed point (before the fix 6.3e-11 and 9.7e-12, which G80 now
 fails). G24 `mosh_geo_lt_jitter`: Waldemath's fourth difference at
 2026-10-24, 2.5e-15 AU shipped, 1.3e-14 before the fix, 1.2e-13 compat.
 G59, G64, G80, G87 pass.
+
+## 89. At the Swiss files' 600-year joins an open file answers past its nominal end, so the answer depends on the file an earlier call left open
+
+**Severity: Correctness (call-order dependence: the barycentric Sun 47.6 mas at 1800.0 + 0.1 day after a call 1.5 days before, 1.03 arcsec at -7800; the Moon 220 mas across a join's light time; Juno 37 km; Vulcan's heliocentric speed at 1800.0 8.2e-7 deg/day)**
+**Where:** `sweph.c`: `sweph()`, the test that keeps the open file
+
+Found by entry 84's sweep and left there. Every Swiss file's data runs past
+its nominal 600 years: sepl 2-89 days (sepl_12 to JD 2378575.7, 79 days
+past 1800.0), every seas file 350-361 days (seas_12 to 2378857.5), semo
+1-30 days, and the semo files also start 1-27 days before their nominal
+start (the sepl and seas files start exactly on it). `sweph()` kept an open
+file for any instant inside its data, and a fresh context opens the file
+`swi_gen_filename()` names for the instant. So just across a join a context
+warm from the other side answered from that side's file and a fresh one
+from the instant's own: at JD 2378496.6 after a call 1.5 days before, the
+barycentric Sun 47.6 mas, Juno 8.7 mas, Chiron 0.67 mas geocentric, speeds
+up to 4.7e-3 mas/day where the light time crosses the join. Over the 49
+joins -12600..16800: the barycentric Sun up to 1.03 arcsec (-7800), the
+geocentric Moon 220 mas (J + 2^-17 day, its light time across the join),
+Mercury 2.7 mas, Juno 37 km. At 1800.0 itself a fictitious body's
+heliocentric speed is the older file's in a context that holds it and the
+newer's in a fresh one, Vulcan 8.2e-7 deg/day apart -- the "8.2e-7 at any
+step" of entry 88's note; on Moshier and JPL there is no join. Within one
+calculation the light time's read at t - tau, before the join, switched
+the open file to the older one, and every later read at t answered from
+it, so even a fresh context's answer mixed files by its own read order;
+those move a little too (the Moon 0.26 mas and 1.5e-8 deg/day at 1800.0 +
+2^-17 day, the planets' and Juno's speeds up to 4.8e-13 deg/day).
+Entry F11's neighbour-file fix (REVIEW) covers only a missing file.
+
+**Fix, as done here:** an open sepl, semo or seas file answers only inside
+the nominal span it was opened for -- the 600-year bucket of the instant
+that opened it, `[tnom0, tnom1)` on `struct file_data`, found from the
+calendar and moved to the double where `swi_gen_filename()`'s name changes,
+so the two cannot disagree at a join by a rounding. Every read, the light
+time's t - tau included, comes from the file of its own instant, which is a
+fresh context's choice: across a join's light time the read at t is the
+newer file's and the read at t - tau the older's. One file for both is not
+possible for the planets and asteroids, whose newer files start exactly at
+the join; the position therefore steps by the files' difference at J and
+again at J + tau (Vulcan 0.4e-6 deg, Mars 0.1 mas, Juno and the Moon some 4
+mas), as a fresh context's did. A missing bucket file is still answered by
+its neighbour (F11), for that bucket's span only. The file replaced is
+kept open as a spare per file kind, with its bodies' file data (the part of
+`plan_data` before `teval`: constants, reference ellipse, loaded segment),
+and an instant it answers swaps it back: inside a join's light time a call
+costs 4.1 us against 4.0 elsewhere, where reopening cost 33 (ten planets
+with SEFLG_SPEED, 1800.0 + 2^-7); `free_planets()` and
+`swi_close_ephe_files()` drop the spares. calc-swieph unchanged within
+noise (best of 9: 0.568 against 0.571 s); calc-moseph does not reach the
+code. The files' general constants are the same in all 150 files, and each
+body's coefficient count the same in every file, so the last file read
+setting `gcdat` and a reused segment buffer depend on no order. Upstream's
+code is under `SWE_UPSTREAM_COMPAT`.
+
+Not this entry's, and left: with `semo_12.se1` missing, at JD 2159377.5
+(1200.0 + 20 days, past `semo_06`'s data) F11 opens `semo_06`, its range
+check refuses the instant and the file stays open, so `swemoon()`'s
+"no moon file, use Moshier" test does not fire: a fresh context returns
+the Moon as NaN with flags 0x100 and no error, a warm one 26.44179 deg,
+where upstream answers 349.29034 from Moshier; the Sun there 6.03 arcsec
+apart fresh and warm. The same before and after this fix.
+
+G88 `tests/filejoin.c`, bit for bit, at each of the 49 joins: (1) at J - 4,
+J - 2^-7, J, J + 2^-17, J + 2^-7, J + 2^-4, J + 2, J + 20 and J + 200 the
+Sun, Moon, Mercury, Mars, Jupiter, Neptune, Pluto, Chiron, Ceres, Juno,
+Cupido and Vulcan, geocentric, barycentric, heliocentric and J2000 XYZ
+true, with speed, in a context warmed 1.5 days across the join by the same
+call or by Mercury, the Moon and Ceres, against fresh; (2) one context
+stepping 2^-5 day across every fourth join, both ways, the barycentric Sun,
+Moon, Jupiter, Pluto, Juno and heliocentric Vulcan, against fresh; every
+coordinate finite. 42684 rows, none differ. ts20 before the fix fails
+30538 (29346 and 1192), the upstream build 30958 (29766 and 1192). G24
+`file_join_off`: the barycentric Sun at JD 2378496.6 after a call 1.5 days
+before against alone, 0 shipped, 47.4 mas compat. G24, G62, G70 and G83
+pass; G88 also under ASan and UBSan.
 
 ## How these were found
 

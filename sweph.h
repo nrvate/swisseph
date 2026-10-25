@@ -992,6 +992,11 @@ struct epsilon {
  *     its focus from a second read of the Earth at t - tau, whose rounding
  *     the Earth at teval does not share: 3e-15 AU rms of jitter, 2.7e-11
  *     deg on Waldemath (UPSTREAM-BUGS 96, G95)
+ *   - sweph() kept an open Swiss file for any instant inside its data,
+ *     which runs past the file's nominal 600 years (and, for semo, starts
+ *     before them): a context warm from one side of a join answered just
+ *     across it from that side's file (the barycentric Sun 47.6 mas at JD
+ *     2378496.6 after a call 1.5 days before; UPSTREAM-BUGS 89, G88)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1161,6 +1166,10 @@ struct file_data {
   int32 iflg; 		/* byte reorder flag and little/bigendian flag */
   short npl;		/* how many planets in file */
   int ipl[SEI_FILE_NMAXPLAN];	/* planet numbers */
+#ifndef SWE_UPSTREAM_COMPAT
+  double tnom0, tnom1;	/* the nominal span [tnom0, tnom1) it answers for,
+			 * its instant's 600-year bucket (UPSTREAM-BUGS 89) */
+#endif
 };
  
 struct gen_const {
@@ -1609,6 +1618,11 @@ struct swe_ctx {
   struct gen_const gcdat;
   struct plan_data pldat[SEI_NPLANETS];
 #ifndef SWE_UPSTREAM_COMPAT
+  /* sepl's, semo's and seas's file before the open one, still open, and
+   * its bodies' file data, the part of pldat before teval (UPSTREAM-BUGS
+   * 89) */
+  struct file_data fidat_spare[SEI_FILE_MAIN_AST + 1];
+  struct plan_data pldat_spare[SEI_NPLANETS];
   /* the geocentric Moon (equatorial J2000, AU, AU/day) that the saved Earth
    * was made with, on JPL and Moshier; t is its instant, 0 for none
    * (UPSTREAM-BUGS 66) */
