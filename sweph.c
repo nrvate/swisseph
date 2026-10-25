@@ -434,6 +434,11 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * in such cases we calculate speed from three positions */
   if ((iflag & SEFLG_SPEED) && (iflag & SEFLG_TOPOCTR) && !(iflag & SEFLG_NOABERR)) 
     use_speed3 = TRUE;
+  /* SE_ECL_NUT's four angles are not a position: the three-position speed
+   * would difference them as one and read slots no call writes. The
+   * nutation has no speed, so it answers as without a speed flag. */
+  if (ipl == SE_ECL_NUT)
+    use_speed3 = FALSE;
   /* cartesian flag excludes radians flag */
   if ((iflag & SEFLG_XYZ) && (iflag & SEFLG_RADIANS))
     iflag = iflag & ~SEFLG_RADIANS;
@@ -555,7 +560,8 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
     x[j] = *(xs + j);
   for (j = i; j < 6; j++)
     x[j] = 0;
-  if (iflag & (SEFLG_SPEED3 | SEFLG_SPEED)) {
+  /* SE_ECL_NUT shares a save area whose speed slots are no one's */
+  if ((iflag & (SEFLG_SPEED3 | SEFLG_SPEED)) && ipl != SE_ECL_NUT) {
     for (j = 3; j < 6; j++)
       x[j] = *(xs + j);
   }

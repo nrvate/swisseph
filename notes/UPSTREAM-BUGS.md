@@ -59,6 +59,7 @@ worst were in code that had never executed even once.
 | 25 | A setting made before the first calculation is lost; the first heliacal call after a setter fails | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c` |
 | 26 | `swe_set_ephe_fallback()` is never seen by another thread or a new context | Correctness | `sweconfig.c`, `sweph.c` |
 | 27 | A call on the default context adopts another thread's setter half-way through: its files closed under it, two configurations in one answer | Crash / Correctness | `sweconfig.c`, every public calculation |
+| 28 | `swe_calc(SE_ECL_NUT)` with a speed flag differences its angles as a position, reads two doubles never written, and copies stale speed slots | Memory / Correctness | `sweph.c` |
 
 ---
 
@@ -1635,3 +1636,28 @@ depend on, and is all of it in the key?*
 - Entries 5, 6, 10 and 11 change numerical output. That is the point of
   them, but it means they need a deliberate decision about regression
   fixtures rather than a silent adoption.
+
+## 28. `swe_calc(SE_ECL_NUT)` with a speed flag differences its angles as a position, reads two doubles never written, and copies stale speed slots
+
+**Severity: Memory (an uninitialised read) / Correctness (x[3..5] wrong by up to 1.6e-3 deg)**
+**Where:** `sweph.c`: `swe_calc_r()`
+
+SE_ECL_NUT answers four angles: the true and mean obliquity and the
+nutation in longitude and in obliquity. With SEFLG_SPEED3, or with
+SEFLG_SPEED and SEFLG_TOPOCTR (which takes the three-position speed),
+`calc_speed()` differenced them as if they were a position. x[3], the
+nutation in obliquity (-1.6026e-3 deg), came back as the true obliquity's
+rate (-6.06e-6), and x[4] and x[5] as rates (up to 5e-5).
+`denormalize_positions()` read `x0[12]` and `x2[12]`, which nothing writes:
+valgrind counts 1948 errors over a 30-call hostile run, and on a stack that
+leaves NaN there, UBSan stops in `swe_revjul()`. With SEFLG_SPEED alone,
+x[4] and x[5] were copied from the save area SE_ECL_NUT shares with the
+asteroids, so they were stale.
+
+**Fix, as done here:** SE_ECL_NUT never takes the three-position speed, and
+no speed slots are copied for it. Any speed flag answers as none: x[3] is
+the nutation in obliquity, and x[4] = x[5] = 0. G37 `tests/eclnutspeed.c`
+compares the six slots under no speed flag, SPEED and SPEED3 at six epochs,
+on the Swiss files and Moshier, in degrees and radians, and finds 0
+differences. Before the fix it failed by 1.6e-3 deg.
+
