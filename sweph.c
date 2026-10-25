@@ -9427,7 +9427,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   /* moved to ctx->sp.fx_struct (Phase 3c) */
   double dt = PLAN_SPEED_INTV * 0.1;
 #ifndef SWE_UPSTREAM_COMPAT
-  double xpo_p[6], xsite[6];
+  double xpo_p[6] = {0}, xsite[6];	/* read only with SEFLG_SPEED; set for LTO's -Wmaybe-uninitialized */
   /* the exact steps to the instants the observer is read at (bug 49) */
   double dm = tjd - (tjd - dt), dp = (tjd + dt) - tjd;
 #endif
@@ -10954,7 +10954,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   /* moved to ctx->sp.fx_record (Phase 3c) */
   double dt = PLAN_SPEED_INTV * 0.1;
 #ifndef SWE_UPSTREAM_COMPAT
-  double xpo_p[6], xsite[6];
+  double xpo_p[6] = {0}, xsite[6];	/* read only with SEFLG_SPEED; set for LTO's -Wmaybe-uninitialized */
   /* the exact steps to the instants the observer is read at (bug 49) */
   double dm = tjd - (tjd - dt), dp = (tjd + dt) - tjd;
 #endif
