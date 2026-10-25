@@ -2928,7 +2928,16 @@ static void swi_approx_jplhor(swe_ctx *ctx, double *x, double tjd, int32 iflag, 
     t0 = (int) t;
     t1 = t0 + 1;
     dofs = dcor_ra_jpl[(int)t0];
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 173: (t - t0) (v[t0] - v[t1]) + v[t0], the difference
+     * the wrong way round: each year ended at 2 v[t0] - v[t1] and the
+     * offset jumped by 2 (v[t1] - v[t0]) into the next, up to 0.99 mas
+     * (Polaris's right ascension 2.87e-7 deg at 2006 Jul 1, G141), its
+     * slope reversed between. Linear between the years' values now. */
+    dofs = (t - t0) * (dcor_ra_jpl[(int)t1] - dcor_ra_jpl[(int)t0]) + dcor_ra_jpl[(int)t0];
+#else
     dofs = (t - t0) * (dcor_ra_jpl[(int)t0] - dcor_ra_jpl[(int)t1]) + dcor_ra_jpl[(int)t0];
+#endif
   }
   dofs /= (1000.0 * 3600.0);
   swi_cartpol(x, x);

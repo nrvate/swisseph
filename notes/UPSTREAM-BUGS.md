@@ -193,6 +193,7 @@ worst were in code that had never executed even once.
 | 158 | `swe_calc_pctr()` overwrites the return of the centre's read at the light-time instant with the body's before testing it: a centre whose files begin between that instant and the date is taken as zero there, and Mars from Ceres in the first 0.024 day of seas_18.se1 returns 258 with a longitude speed 5.09e-3 deg/day off (0.130 upstream) | Correctness | `sweph.c` |
 | 171 | An eop_finals.txt that breaks off (a day missing after those it adds) makes `load_dpsi_deps()` set -3, which `plaus_iflag()` takes as no IERS corrections at all: a complete eop_1962_today.txt is thrown away with it, against upstream's own comment ("no error, as we do have data"), and SEFLG_JPLHOR falls to SEFLG_JPLHOR_APPROX, dpsi 4.20e-2" off on G134's fixtures | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 172 | A failed allocation of the IERS corrections' tables sets ERR, eop_1962_today.txt's "not found", so SEFLG_JPLHOR's warning names a missing file that had just been opened | Robustness (message) | `sweph.c`, `sweph.h` |
+| 173 | `swi_approx_jplhor()` interpolates the Horizons offset's yearly table backwards, (t - t0) (v[t0] - v[t1]) + v[t0]: the offset in right ascension jumps by 2 (v[t1] - v[t0]) at every year from 1963 to 2011, up to 0.99 mas (Polaris 2.87e-7 deg at 2006 Jul 1), its slope reversed between | Correctness | `swephlib.c` |
 | 161 | Under SEFLG_JPLHOR_APPROX with `SEMOD_JPLHORA_3`, on a JPL file of DE 403 or later, `swi_bias()` puts the frame bias (23 mas) and the Horizons offset in right ascension (-51.26 mas) in from tjd >= 1962 Jan 20, where the precession and nutation change after it, and is given the instant the body was read at, the true Sun 0: over the light time after the step every body 1.1e-5 deg off (the true Sun at every date after it), at the step Polaris 4.95e-5 deg in right ascension, SEFLG_SPEED3 0.162 deg/day | Correctness | `sweph.c`, `swephlib.c` |
 | 162 | Under SEFLG_JPLHOR_APPROX (`SEMOD_JPLHORA_1`, and `_3` after 1962 Jan 20), on a JPL file of DE 403 or later, `swi_approx_jplhor()` turns the position about the pole by the Horizons offset in right ascension (-51 to -53 mas) and not the velocity: speeds off their places' rate, the Moon's latitude 1.46e-6 deg/day, its right ascension 5.6e-7, Mars's 1.25e-7, the Sun's latitude 1.02e-7; distance rates 7.2e-9 AU/day on Mars | Correctness | `swephlib.c` |
 
@@ -11044,7 +11045,7 @@ Noticed, not fixed:
   offset jumps by 2 (dcor[t1] - dcor[t0]) at every year of the table
   (`DCOR_RA_JPL_TJD0` + 365.25 k, 1963-2012): up to 0.99 mas, 2.8e-7 deg
   in right ascension (Polaris's measured 1.03 mas at JD 2453917.5), its
-  slope between the wrong way. Both builds.
+  slope between the wrong way. Both builds. Fixed as entry 173.
 - Its rate, the slope as interpolated, is left out of the speeds: at most
   3.8e-10 deg/day, under the floor (above).
 - A JPL request that falls to the Swiss files keeps SEFLG_JPLHOR_APPROX,
@@ -11052,7 +11053,45 @@ Noticed, not fixed:
   drops the flag from a Swiss request: the same Swiss place 52.9 mas
   apart in right ascension (Mars at J2000) as asked of SEFLG_JPLEPH with
   the fallback or of SEFLG_SWIEPH, the return flag naming the
-  approximation in the first.
+  approximation in the first. Left as it is, not a defect: the request
+  asked for the Horizons approximation of a JPL file of DE 403 or later,
+  the Swiss files reproduce DE 431 to about 1 mas, so the approximation
+  applied to them is the nearest answer to the one asked, and the return
+  names both the files and the approximation; a Swiss request cannot ask
+  for it.
+
+## 173. The Horizons approximation's offset table is interpolated backwards: the offset jumps up to 0.99 mas at every year from 1963 to 2011
+
+**Severity: Correctness (positions under SEFLG_JPLHOR_APPROX, SEMOD_JPLHORA_1 at every date and SEMOD_JPLHORA_3 after 1962, up to 0.99 mas off and discontinuous at each year of the table)**
+**Where:** `swephlib.c`: `swi_approx_jplhor()`
+
+Entry 162's noticed item. The Horizons approximation turns a place about
+the pole by an offset in right ascension, -51.257 mas before 1962 Jul 1
+(`DCOR_RA_JPL_TJD0`), then a table of yearly values, `dcor_ra_jpl[]`, to
+2012, and -52.255 mas after. Between two years the code took
+(t - t0) (v[t0] - v[t1]) + v[t0], the difference the wrong way round: the
+offset ran from v[t0] away from v[t1], ended the year at 2 v[t0] - v[t1],
+and jumped by 2 (v[t1] - v[t0]) to the next year's value. The largest
+step in the table, -52.292 to -51.796 mas into 2006 Jul 1, made a jump of
+0.992 mas: Polaris's barycentric right ascension under SEMOD_JPLHORA_1
+moved 2.87e-7 deg in 2^-9 day across JD 2453917.5 beyond its motion,
+Mars's 2.76e-7. Between the years the offset was off by up to that much
+too. Both builds.
+
+**Fix, as done here:** linear between the years' values, (t - t0)
+(v[t1] - v[t0]) + v[t0], behind `#ifndef SWE_UPSTREAM_COMPAT`. The places
+are continuous across the table's years to the stencil's own error (Mars
+2.0e-12 deg, Polaris 2.9e-10 through its speed). The offset's rate, now
+the table's slope, stays out of the speeds, at most 3.8e-10 deg/day
+(entry 162). No hot path: the approximation's own branch.
+
+G141 `tests/jplhorbias.c`, extended with 2 checks: Polaris's and Mars's
+right ascension under SEMOD_JPLHORA_1 at the start of each of the table's
+49 inner years, the place 2^-10 day after less that 2^-10 day before
+less 2^-9 day of their mean speed, the worst within 1e-9 deg. 75 checks.
+Before the fix both fail (2.87e-7 and 2.76e-7 at 2006 Jul 1), and so in
+the compat build. G24 `jplhora_table_jump`: barycentric Polaris on
+de200, across 2006 Jul 1: 1.5e-11 deg shipped, 2.90e-7 compat.
 
 ## How these were found
 

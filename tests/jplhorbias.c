@@ -62,7 +62,19 @@
  * (Mars), 4.1e-9 (the Sun). The upstream build fails all 36, by these and
  * its own speed defects that earlier entries fixed (ecliptic speeds
  * 1.5e-5 to 5.3e-5 deg/day, the topocentric Moon 4.4e-3, Saturn's
- * distance 1.9e-5 AU/day). Run as
+ * distance 1.9e-5 AU/day).
+ *
+ * And the offset's table (UPSTREAM-BUGS 173): swi_approx_jplhor()
+ * interpolated its yearly values from 1962 Jul 1 backwards, (t - t0)
+ * (v[t0] - v[t1]) + v[t0], so the offset left each year at 2 v[t0] - v[t1]
+ * and jumped by 2 (v[t1] - v[t0]) to the next year's value, up to 0.99
+ * mas (1963-2011), its slope the wrong way between. The check: Polaris's
+ * and Mars's right ascension under SEMOD_JPLHORA_1 at each of the 49
+ * inner years' starts b, the place at b + 2^-10 less that at b - 2^-10
+ * less 2^-9 day of their mean speed, the worst within 1e-9 deg: 2 checks,
+ * 75 in all. Measured after the fix 2.9e-10 deg on Polaris (its own speed
+ * over the 2^-9 day), 2.0e-12 on Mars; before it 2.87e-7 and 2.76e-7 at
+ * 2006 Jul 1 (0.99 mas of offset), and so in the upstream build. Run as
  *   jplhorbias EPHEDIR
  */
 #include <math.h>
@@ -270,6 +282,36 @@ static int speeds(swe_ctx *c3, swe_ctx *c1)
   return 0;
 }
 
+/* the offset's table across its years: no jump in the place */
+static int table(swe_ctx *c1)
+{
+  static const int bb[2] = { B_POLARIS, B_MARS };
+  const double e = ldexp(1, -10);
+  int i, k;
+  printf("  173: the offset across its table's years, SEMOD_JPLHORA_1, right ascension\n");
+  for (i = 0; i < 2; i++) {
+    double w = 0, wt = 0, x[6], y[6];
+    for (k = 1; k <= 49; k++) {
+      double b = 2437846.5 + k * 365.25, d;	/* DCOR_RA_JPL_TJD0 + k years */
+      if (place(c1, bb[i], b - e, SEFLG_EQUATORIAL, x) < 0
+          || place(c1, bb[i], b + e, SEFLG_EQUATORIAL, y) < 0)
+        return -1;
+      d = fabs(dang(y[0], x[0]) - e * (x[3] + y[3]));
+      if (d > w) {
+        w = d;
+        wt = b;
+      }
+    }
+    printf("    %-17s worst jump %.2e deg at JD %.2f\n", BN[bb[i]], w, wt);
+    n++;
+    if (!(w <= 1e-9)) {
+      bad++;
+      printf("    FAIL %s: the offset jumps %.2e deg > 1e-9\n", BN[bb[i]], w);
+    }
+  }
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   swe_ctx *c3, *c1;
@@ -284,6 +326,8 @@ int main(int argc, char **argv)
   r = (c3 == NULL || c1 == NULL) ? -1 : side(c3, c1);
   if (r == 0)
     r = speeds(c3, c1);
+  if (r == 0)
+    r = table(c1);
   if (c3 != NULL)
     swe_ctx_free(c3);
   if (c1 != NULL)

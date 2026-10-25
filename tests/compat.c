@@ -3470,6 +3470,36 @@ out:
  * read, 1.23e-5. star 1: barycentric Polaris on de200 (the bias whatever the
  * DE number) at the step against 2^-20 day before it less its motion:
  * upstream's bias starts at the step, 4.92e-5. -1 if a call fails. */
+/* UPSTREAM-BUGS 173: barycentric Polaris on de200 with SEFLG_JPLHOR_APPROX
+ * under SEMOD_JPLHORA_1, right ascension, across 2006 Jul 1, a year of the
+ * Horizons offset's table: the place 2^-10 day after less that 2^-10 day
+ * before less 2^-9 day of their mean speed, degrees. The table was
+ * interpolated backwards, and the offset jumped 0.99 mas there (2.87e-7
+ * deg); 1.5e-11 now. */
+static double jplhora_table_jump(void)
+{
+  const double b = 2437846.5 + 44 * 365.25, e = ldexp(1, -10);
+  const int32 ja = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX | SEFLG_EQUATORIAL | SEFLG_SPEED | SEFLG_BARYCTR;
+  double x[6], y[6], d, r = -1;
+  char serr[256], s[64], m1[] = "0,0,0,0,0,0,1,0";
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return r;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_jpl_file_r(c, "de200.eph");
+  swe_set_astro_models_r(c, m1, 0);
+  strcpy(s, "Polaris");
+  if (swe_fixstar2_r(c, s, b - e, ja, x, serr) >= 0) {
+    strcpy(s, "Polaris");
+    if (swe_fixstar2_r(c, s, b + e, ja, y, serr) >= 0) {
+      d = y[0] - x[0];
+      r = fabs(d - 360 * floor(d / 360 + 0.5) - e * (x[3] + y[3]));
+    }
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 static double jplhora_bias_side_off(int star)
 {
   const double ts = 2437684.5, e = ldexp(1, -20);
@@ -3947,7 +3977,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4075,6 +4105,7 @@ int main(int argc, char **argv)
   nodmb = nodaps_mosh_bary_ret();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
+  biastab = jplhora_table_jump();
   eopcut = eop_finals_cut_off();
   starkept = star_load_kept();
   eoppath = eop_path_kept_off();
@@ -4949,6 +4980,14 @@ int main(int argc, char **argv)
   else {
     printf("  IERS kept past a broken eop_finals.txt %.2e arcsec FAIL: expected %s\n",
            eopcut, WANT_DEFECT ? "> 1e-2" : "0");
+    bad++;
+  }
+
+  if (biastab >= 0 && (WANT_DEFECT ? (biastab > 1e-7) : (biastab < 1e-9)))
+    printf("  Horizons offset across a table year %.2e deg OK\n", biastab);
+  else {
+    printf("  Horizons offset across a table year %.2e deg FAIL: expected %s\n",
+           biastab, WANT_DEFECT ? "> 1e-7" : "< 1e-9");
     bad++;
   }
 

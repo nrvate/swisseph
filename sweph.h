@@ -1334,6 +1334,9 @@ struct epsilon {
  *     places' rate by the offset times the transverse velocity: the Moon's
  *     latitude 1.46e-6 deg/day, Mars's right ascension 1.25e-7, Mars's
  *     distance 7.2e-9 AU/day (UPSTREAM-BUGS 162, G141)
+ *   - SEFLG_JPLHOR_APPROX's yearly offset table interpolated backwards:
+ *     the offset jumping up to 0.99 mas at every year from 1963 to 2011
+ *     (UPSTREAM-BUGS 173, G141)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
