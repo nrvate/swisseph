@@ -203,7 +203,8 @@ extern void swi_config_claim(swe_ctx *ctx, int32 groups);
 extern void swi_config_sync(swe_ctx *ctx);
 
 /* A calculation's one configuration (bug 115). swi_config_hold() syncs at
- * the entry of a calculation -- unless it is nested in one already -- and
+ * the entry of a calculation -- unless it is nested in one already;
+ * a context not yet initialised it starts, which syncs (bug 128) -- and
  * holds every sync after it until the matching swi_config_release(), so
  * the configuration a call started with is the one it finishes with: no
  * file closed, no cache emptied from under it by another thread's setter.

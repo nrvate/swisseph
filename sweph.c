@@ -1971,6 +1971,12 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
     swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
     swi_config_end_apply(ctx, was);
   }
+  /* bug 128: the start swi_config_hold() made, answered here as if made
+   * here (the warnings on a context's first call key on it) */
+  if (ctx->start_unreported) {
+    ctx->start_unreported = FALSE;
+    started = 1;
+  }
 #endif
   return started;
 }

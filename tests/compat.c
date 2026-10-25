@@ -2800,6 +2800,34 @@ static double nut_intp_off(void)
   return fabs(x[2] - y[2]) * 3600;
 }
 
+/* A new thread's first swe_deltat_ex() after the main thread's
+ * swe_set_delta_t_userdef(0.001), against the 0.001 days set: s.
+ * Upstream's checks the user delta t before anything has started the
+ * thread's context, and answers the computed delta t, 22.6 s off
+ * (UPSTREAM-BUGS 128). */
+static double hstart_got;
+static void *hstart_thread(void *arg)
+{
+  char serr[256];
+  (void) arg;
+  hstart_got = swe_deltat_ex(2451545.25, SEFLG_SWIEPH, serr);
+  return NULL;
+}
+static double hold_start_off(void)
+{
+  pthread_t th;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_delta_t_userdef(0.001);
+  if (pthread_create(&th, NULL, hstart_thread, NULL) != 0)
+    return -1;
+  pthread_join(th, NULL);
+  swe_set_delta_t_userdef(SE_DELTAT_AUTOMATIC);	/* swe_close() keeps it */
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  return fabs(hstart_got - 0.001) * 86400;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3070,7 +3098,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closekeep, holdstart;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3180,6 +3208,7 @@ int main(int argc, char **argv)
   cfghold = cfg_hold_off();
   searchhold = search_hold_off();
   nutintp = nut_intp_off();
+  holdstart = hold_start_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
@@ -4056,6 +4085,14 @@ int main(int argc, char **argv)
   else {
     printf("  topo, sid after close  %.2e deg FAIL: expected %s\n",
            closekeep, WANT_DEFECT ? "> 0.5" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (holdstart > 1) : (holdstart == 0))
+    printf("  thread's first setting %.2e s OK\n", holdstart);
+  else {
+    printf("  thread's first setting %.2e s FAIL: expected %s\n",
+           holdstart, WANT_DEFECT ? "> 1" : "0");
     bad++;
   }
 

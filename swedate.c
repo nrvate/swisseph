@@ -337,7 +337,7 @@ static int init_leapsec(swe_ctx *ctx)
    * seleapsec.txt before the context was initialised, along the compiled
    * default path, and the initialisation (swe_deltat_ex() below it) wiped
    * the table. Initialised first, it is read along the path, once. */
-  if (!ctx->swed_is_initialised)
+  if (!ctx->swed_is_initialised || ctx->start_unreported)	/* bug 128 */
     swi_init_swed_if_start(ctx);
 #endif
   if (!ctx->leapsec_done) {

@@ -3124,7 +3124,7 @@ static int32 calc_deltat(swe_ctx *ctx, double tjd, int32 iflag, double *deltat, 
    * the compiled default path and then wiped by the initialisation, and
    * read again. Initialised first, it is read once, along the path. */
   AS_BOOL started = FALSE;
-  if (!ctx->swed_is_initialised)
+  if (!ctx->swed_is_initialised || ctx->start_unreported)	/* bug 128 */
     started = (swi_init_swed_if_start(ctx) == 1);
 #endif
   deltat_model = ctx->astro_models[SE_MODEL_DELTAT];
@@ -5592,6 +5592,15 @@ void CALL_CONV swe_get_astro_models_r(swe_ctx *ctx, char *samod, char *sdet, int
   int *pmodel = &(ctx->astro_models[0]);
   char s[AS_MAXCH], samod0[AS_MAXCH];
   AS_BOOL list_all_models = FALSE;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 128: as a thread's first call this read the models of
+   * the context before anything had initialised it, zeros for the main
+   * thread's swe_set_astro_models() ("-amod0,0,0,0,0,0,0,0" for
+   * "-amod1,3,1,1,1,0,0,1"), and on a context already started before the
+   * sync that adopts them. It initialises and syncs first now, as
+   * swe_get_tid_acc() does (bug 101). */
+  swi_init_swed_if_start(ctx);
+#endif
   if (samod != NULL) {
     if (strchr(samod, '+') != NULL)
       list_all_models = TRUE;

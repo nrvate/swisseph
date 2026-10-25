@@ -648,15 +648,29 @@ void swi_config_sync(swe_ctx *ctx)
  * swe_set_delta_t_userdef() stayed out, 22.6 s. They hold the same way
  * now, so each syncs at its entry (G121).
  *
- * A context that is not yet initialised is not synced here: its first
- * swi_init_swed_if_start() starts it from scratch and syncs regardless of
- * the hold, as nothing of it is in use yet.
+ * Upstream bug 128 (this fork's): a context not yet initialised was not
+ * synced here, and was left to its first swi_init_swed_if_start() to
+ * start and sync. What a held function read before that, it read from
+ * the unstarted context, all zeros, on a thread's first call: after the
+ * main thread's swe_set_delta_t_userdef(0.001), a new thread's first
+ * swe_deltat_ex() answered 63.83 s, its swe_calc_ut() Moon 3.1e-3 deg
+ * off, swe_jdut1_to_utc() 22.6 s, swe_sol_eclipse_where()'s central line
+ * 0.238 deg; after swe_set_astro_models(), swe_sidtime0() 3.1e-7 h. The
+ * hold starts it now, which syncs it, and marks the start unreported:
+ * the first swi_init_swed_if_start() the call reaches still answers 1, as
+ * when that one started the context, for the "Please call
+ * swe_set_ephe_path()" warnings it keys (G124).
  *====================================================================*/
 void swi_config_hold(swe_ctx *ctx)
 {
 #ifndef SWE_UPSTREAM_COMPAT
-  if (ctx->cfg_hold == 0 && ctx->swed_is_initialised)
-    swi_config_sync(ctx);
+  if (ctx->cfg_hold == 0) {
+    if (!ctx->swed_is_initialised) {
+      swi_init_swed_if_start(ctx);	/* bug 128: starts and syncs */
+      ctx->start_unreported = TRUE;
+    } else
+      swi_config_sync(ctx);
+  }
   ctx->cfg_hold++;
 #else
   (void) ctx;

@@ -160,6 +160,7 @@ worst were in code that had never executed even once.
 | 126 | `swe_set_interpolate_nut()` resets the interpolation's nodes and not the nutation, observer and positions cached at an instant, nor does a thread adopting the change (this fork's adoption): the old setting's nutation answers there, 7.42e-5" in dpsi | Correctness (behaviour) | `swephlib.c`, `sweconfig.c`, `sweconfig.h` |
 | 125 | Moshier's light time past a day carries the Sun about the barycentre by bug 109's Taylor step: VEA 2e-7 deg off its light time's fixed point, its speed 5.4e-9 deg/day off its positions, a `swe_calc_orbel()` orbit at 80000 AU the same (this fork's) | Correctness | `sweph.c`, `swemplan.c`, `sweph.h` |
 | 127 | `swe_close()` resets the observer and the sidereal mode, which the manual has survive it: after it a topocentric calculation is refused ("geographic position has not been set") and a sidereal one is in Fagan/Bradley's mode, 0.88 deg off Lahiri's -- on the closing thread, every thread on the default context and an explicit context closed by `swe_close_r()` | Correctness (behaviour) | `sweph.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
+| 128 | A thread's first call reads the configuration before its context has started (this fork's): the main thread's user delta t answered 63.83 s for 86.40 s by `swe_deltat_ex()` and every function of UT through it (the Moon 3.1e-3 deg), its sidereal-time model missed by `swe_sidtime0()`, its models listed as zeros | Correctness (behaviour) | `sweconfig.c`, `sweph.c`, `sweph.h`, `swephlib.c`, `swedate.c` |
 
 ---
 
@@ -7900,13 +7901,15 @@ functions, `swe_calc_pctr_r()`, `swe_get_ayanamsa_ex_r()` and `_ut_r()`,
 bodies that call `swi_config_hold()` first and `swi_config_release()`
 last. The hold syncs once, at the outermost entry, and counts its depth in
 `ctx->cfg_hold`; `swi_config_sync()` does nothing while the depth is
-above 0. A context not yet initialised is not synced by the hold: its
-first `swi_init_swed_if_start()` starts it and syncs regardless of the
+above 0. A context not yet initialised was not synced by the hold: its
+first `swi_init_swed_if_start()` started it and synced regardless of the
 depth (nothing of it is in use), and the depth survives that start's
-memset as `cfg_seen` does. The other public functions -- the eclipse,
-rise and heliacal searches among them -- were left syncing at each
-calculation they make, so another thread's setter was still adopted
-between two of them: entry 124, where they hold the same way. Under
+memset as `cfg_seen` does; what the call read before that start it read
+unsynced, and the hold starts the context itself now (entry 128). The
+other public functions -- the eclipse, rise and heliacal searches among
+them -- were left syncing at each calculation they make, so another
+thread's setter was still adopted between two of them: entry 124, where
+they hold the same way. Under
 `SWE_UPSTREAM_COMPAT`'s `#ifndef`: the
 hold and release are no-ops and every nested sync runs, as before. The
 golden transcript is bit for bit as before (13000 rows); `bench` medians
@@ -8026,6 +8029,12 @@ t. 0 in all six; before the fix 4990 s (and the retflag), 1.49e-3 s,
 way (4990 s, 1.53e-3 s, 5600 s, 1.03 s, 0.883 deg, 22.6 s). G24
 `search_hold_off`: the mooncross case, 0 shipped, 5600 s compat. G2, G4,
 G102, G112, G115 and G24 pass.
+
+Not fixed here (entry 128): the hold still left a context not yet
+initialised to the first `swi_init_swed_if_start()` inside the call, so
+what the call read before it -- the user delta t `swe_deltat_ex()` checks
+first, the model `swe_sidtime0()` reads first -- a thread's first call
+read from the unstarted context.
 
 ## 125. Moshier's light time past a day carries the Sun about the barycentre by a Taylor step: VEA 2e-7 deg off its fixed point (this fork's)
 
@@ -8228,6 +8237,97 @@ Noticed, not fixed:
   `swe_close()` unblocks it too (as upstream's); `swe_set_delta_t_userdef()`,
   whose return to automatic the manual words the same way, survives the
   close. Neither sentence names `swe_close()`; left as entry 92 has it.
+
+## 128. A thread's first call reads the configuration before its context has started (this fork's): another thread's user delta t and models missed, 22.6 s
+
+**Severity: Correctness (behaviour: wrong answers, no error)**
+**Where:** `sweconfig.c`: `swi_config_hold()`; `sweph.c`:
+`swi_init_swed_if_start()`; `sweph.h`: `struct swe_ctx`; `swephlib.c`:
+`calc_deltat()`, `swe_get_astro_models_r()`; `swedate.c`: `init_leapsec()`
+
+Entries 115 and 124 made every public function that calculates sync the
+shared configuration once, in `swi_config_hold()` at its entry. The hold
+did not sync a context not yet initialised -- a thread's default context
+before its first call -- and left it to the first
+`swi_init_swed_if_start()` inside the call to start it from scratch and
+sync. What the call read before that it read from the unstarted context,
+all zeros: `swe_deltat_ex()` checks the user delta t before
+`calc_deltat()` starts the context, `swe_sidtime0()` reads its model
+first. `swe_get_astro_models()`, a getter no hold covers, listed the
+models without starting the context at all, and on a context already
+started read them before the sync its tidal getter makes, so its
+"-amod" line kept the old models under the new ones' descriptions. The
+second call was right.
+
+Measured by a scratch program (not in the tree): 72 calls of 69 public
+functions, each as a new thread's first call after the main thread set
+nothing, the path alone, or the path and one of nine settings (the user
+delta t, the tidal acceleration, the models, the sidereal mode, the
+observer, the nutation interpolation, the lapse rate, the fallback with
+an empty path, the JPL file), against a fresh process that set the same
+first and made the call on its main thread, each in its own process.
+After `swe_set_delta_t_userdef(0.001)`: `swe_deltat_ex()` with an
+ephemeris flag and with -1 63.83 s for 86.40 s, `swe_jdut1_to_utc()`
+22.6 s, and every function of UT through its delta t --
+`swe_calc_ut()`'s Moon 3.1e-3 deg, `swe_sol_eclipse_where()`'s central
+line at the 2003 May 31 maximum 0.238 deg in latitude,
+`swe_sol_eclipse_how()` 1.9e-3 deg, `swe_lun_eclipse_how()`'s umbral
+magnitude 9.9e-4, `swe_nod_aps_ut()` 1.0e-4 deg, `swe_pheno_ut()` 6.4e-5
+deg, `swe_gauquelin_sector()` 3.0e-5 of a sector, `swe_calc_orbel_ut()`
+2.4e-5 deg, the stars 3.7e-8 deg, `swe_get_ayanamsa_ex_ut()` 1.1e-8 deg,
+the houses 2.8e-9 deg (1.3e-8 deg/day in `swe_houses_ex2()`'s speeds),
+`swe_azalt()` 7.1e-10 deg, `swe_sidtime()` 6.9e-11 h, `swe_time_equ()`
+2.9e-12 day. After `swe_set_astro_models("1,3,1,1,1,0,0,1")`:
+`swe_sidtime0()` 3.1e-7 h (4.6e-6 deg), `swe_get_astro_models()`
+"-amod0,0,0,0,0,0,0,0" for "-amod1,3,1,1,1,0,0,1". No other first call
+moved: the searches, rise and set, the crossings, the heliacal
+functions, `swe_utc_to_jd()`, `swe_jdet_to_utc()` and the getters that
+start the context (bugs 101, 122) start it before they read, and the
+other seven settings moved no first call at all. The eclipse functions'
+opening `swi_set_tid_acc()` did read the unstarted context, but the
+start that followed resolved the term again.
+
+**Fix, as done here:** `swi_config_hold()`, at depth 0, starts a context
+not yet initialised (`swi_init_swed_if_start()`, which syncs it) before
+the call reads anything, and syncs one already started as before. The
+start is the same start in the same call: the bug-118 naming of the
+default path and its tidal term, the files it opens (G106 and G115 count
+them) are unchanged. What the start answers is not lost: the context's
+first-call warning, "Please call swe_set_ephe_path() or
+swe_set_jplfile() before ...", keys on `swi_init_swed_if_start()`
+answering 1 in the call, and with the hold starting first every one
+inside it answered 0 -- a new thread's or a fresh process's first
+`swe_deltat_ex()` with no path in effect lost its warning. The hold
+marks the start (`ctx->start_unreported`), and the first
+`swi_init_swed_if_start()` after it answers 1 and clears the mark, as
+when that one started the context; `calc_deltat()` and `init_leapsec()`,
+which call it only on a context not yet initialised, call it on a marked
+one too, so the mark is taken where the start was. The first-call
+warnings of 15 first calls, each followed by four others, on the main
+thread and a new one, with no path, strict and with the fallback, are
+word for word as before. `swe_get_astro_models_r()` starts and syncs
+first, as `swe_get_tid_acc_r()` does. Explicit contexts are started by
+`swe_ctx_new()` and never reach the new branch (a context made after the
+setters answers the same before and after). Under `SWE_UPSTREAM_COMPAT`
+the hold does nothing and the getter is upstream's, as before. With the
+fix the scratch program finds no first call off. Instructions (`perf
+stat`, one count each), `swe_calc()` over the planets on the Swiss files,
+calc-swieph's loop: 6219228370 before, 6217798530 after.
+
+G124 `tests/holdstart.c`: seven cases, each in its own process, a new
+thread's first call after the main thread's setter bit for bit a fresh
+process's: `swe_deltat_ex()`, `swe_calc_ut()`'s Moon,
+`swe_jdut1_to_utc()`, `swe_sol_eclipse_where()` and `swe_houses()` after
+the user delta t, `swe_sidtime0()` and `swe_get_astro_models()` after the
+models; and an eighth, `warn`, that the first `swe_deltat_ex()` with no
+path still warns, on the main thread and a new one. 0 in all seven and
+the warning kept; before the fix 22.6 s, 3.1e-3 deg, 22.6 s, 0.238 deg,
+2.8e-9 deg, 3.1e-7 h and the zeros; the compat build fails the seven
+(22.6 s and the warning bug 110 restores, 3.1e-3 deg, 0.355 s, 0.238
+deg, 2.8e-9 deg, 3.1e-7 h, a tidal acceleration of 0 in the models'
+text, bug 101) and passes `warn`. G24 `hold_start_off`: the deltat case,
+0 shipped, 22.6 s compat. G2, G20, G82, G106, G112, G115, G119, G120,
+G121, cfgleak and the context test pass.
 
 ## How these were found
 

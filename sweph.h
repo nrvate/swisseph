@@ -1151,6 +1151,12 @@ struct epsilon {
  *     configuration: after it the topocentric Moon refused ("geographic
  *     position has not been set") and the ayanamsa Fagan/Bradley's 24.740
  *     deg for Lahiri's 23.857 (UPSTREAM-BUGS 127, G123)
+ *   - a thread's first call reading the configuration from its context
+ *     before anything has started it, zeros for the main thread's setter:
+ *     a user delta t of 86.40 s answered 63.83 s by swe_deltat_ex() and
+ *     every function of UT through it, the sidereal-time model in
+ *     swe_sidtime0() 3.1e-7 h, swe_get_astro_models() listing zeros
+ *     (UPSTREAM-BUGS 128, G124)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1704,6 +1710,9 @@ struct swe_ctx {
   int32     cfg_local;     /* groups this context set itself and now owns  */
   AS_BOOL   cfg_applying;  /* re-entrancy guard while a setter is applying */
   int32     cfg_hold;      /* depth of calculations synced at entry (bug 115) */
+  /* bug 128: swi_config_hold() started this context, and no
+   * swi_init_swed_if_start() has answered 1 for that start yet */
+  AS_BOOL   start_unreported;
   AS_BOOL ephe_path_is_set;
   /* bug 103: the path was set by first use, not by a caller (implicit), and
    * the files and caches it fed are still those of that path (live: not
