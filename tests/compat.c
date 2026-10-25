@@ -4114,6 +4114,82 @@ static double nut00b_sofa_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 211: a NaN date, which passed every "J < START || J > END",
+ * on a fresh context each, Moshier: swe_calc() of Mars, the Moon, the
+ * true node, the interpolated apogee and Cupido, swe_fixstar2() of Spica,
+ * swe_nod_aps() of Mars's mean points, swe_gauquelin_sector() of the Sun
+ * by method 0, swe_topo_arcus_visionis() and swe_heliacal_angle(); the
+ * number answered with OK flags. The shipped build refuses all 10;
+ * upstream answers all 10, with NaN or a number. */
+static double nan_date_answered(void)
+{
+  double x[6], b[6], p[6], q[6], dret[50];
+  double geo[3] = { 10, 50, 100 }, datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  char serr[AS_MAXCH], star[AS_MAXCH];
+  int i, n = 0;
+  for (i = 0; i < 10; i++) {
+    int32 r = ERR;
+    swe_ctx *c = swe_ctx_new();
+    if (c == NULL)
+      return -1;
+    swe_set_ephe_path_r(c, (char *) EPHE);
+    switch (i) {
+    case 0: r = swe_calc_r(c, NAN, SE_MARS, SEFLG_MOSEPH | SEFLG_SPEED, x, serr); break;
+    case 1: r = swe_calc_r(c, NAN, SE_MOON, SEFLG_MOSEPH | SEFLG_SPEED, x, serr); break;
+    case 2: r = swe_calc_r(c, NAN, SE_TRUE_NODE, SEFLG_MOSEPH | SEFLG_SPEED, x, serr); break;
+    case 3: r = swe_calc_r(c, NAN, SE_INTP_APOG, SEFLG_MOSEPH | SEFLG_SPEED, x, serr); break;
+    case 4: r = swe_calc_r(c, NAN, SE_CUPIDO, SEFLG_MOSEPH | SEFLG_SPEED, x, serr); break;
+    case 5: strcpy(star, "Spica"); r = swe_fixstar2_r(c, star, NAN, SEFLG_MOSEPH, x, serr); break;
+    case 6: r = swe_nod_aps_r(c, NAN, SE_MARS, SEFLG_MOSEPH, SE_NODBIT_MEAN, x, b, p, q, serr); break;
+    case 7: r = swe_gauquelin_sector_r(c, NAN, SE_SUN, NULL, SEFLG_MOSEPH, 0, geo, 1013.25, 10, x, serr); break;
+    case 8: r = swe_topo_arcus_visionis_r(c, NAN, geo, datm, dobs, SEFLG_MOSEPH, -4, 100, 5, 280, 0, -10, dret, serr); break;
+    default: r = swe_heliacal_angle_r(c, NAN, geo, datm, dobs, SEFLG_MOSEPH, -4, 100, 280, 0, -10, dret, serr); break;
+    }
+    if (r >= 0)
+      n++;
+    swe_ctx_free(c);
+  }
+  return n;
+}
+
+/* UPSTREAM-BUGS 211: the eclipse searches and swe_heliacal_ut() at NaN,
+ * +inf and -inf, a fresh context each, Moshier; the number refused as an
+ * invalid date. The shipped build refuses all 15 so; upstream refuses
+ * none so: the solar and lunar searches with the range message of a date
+ * no caller gave ("jd 6634702579155901.000000 outside Moshier planet
+ * range", from the lunation number's cast), swe_heliacal_ut() with "no
+ * heliacal date found within 5 synodic periods". */
+static double nan_search_named(void)
+{
+  static const double tq[3] = { NAN, INFINITY, -INFINITY };
+  double tr[10], at[20], dret[50];
+  double geo[3] = { 10, 50, 100 }, datm[4] = { 1013.25, 15, 40, 0 }, dobs[6] = { 36, 1, 0, 1, 0, 0 };
+  char serr[AS_MAXCH], obj[AS_MAXCH];
+  int d, i, n = 0;
+  for (d = 0; d < 3; d++)
+    for (i = 0; i < 5; i++) {
+      swe_ctx *c = swe_ctx_new();
+      if (c == NULL)
+        return -1;
+      swe_set_ephe_path_r(c, (char *) EPHE);
+      *serr = '\0';
+      switch (i) {
+      case 0: swe_sol_eclipse_when_glob_r(c, tq[d], SEFLG_MOSEPH, 0, tr, 0, serr); break;
+      case 1: swe_sol_eclipse_when_loc_r(c, tq[d], SEFLG_MOSEPH, geo, tr, at, 0, serr); break;
+      case 2: swe_lun_eclipse_when_r(c, tq[d], SEFLG_MOSEPH, 0, tr, 0, serr); break;
+      case 3: swe_lun_eclipse_when_loc_r(c, tq[d], SEFLG_MOSEPH, geo, tr, at, 0, serr); break;
+      default:
+        strcpy(obj, "Venus");
+        swe_heliacal_ut_r(c, tq[d], geo, datm, dobs, obj, SE_HELIACAL_RISING, SEFLG_MOSEPH, dret, serr);
+        break;
+      }
+      if (strncmp(serr, "invalid date", 12) == 0)
+        n++;
+      swe_ctx_free(c);
+    }
+  return n;
+}
+
 /* UPSTREAM-BUGS 163: the nutation's rate far from J2000. The Sun's right
  * ascension speed minus the same with SEFLG_NONUT under IAU 2000A set
  * explicitly, against a five-point difference of the same two calls'
@@ -5857,7 +5933,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6034,6 +6110,8 @@ int main(int argc, char **argv)
   nut00b = nut00b_sofa_off();
   sidhor = sid_jplhor_off();
   makrcusp = makransky_cusp_off();
+  nandate = nan_date_answered();
+  nansearch = nan_search_named();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -7509,6 +7587,22 @@ int main(int argc, char **argv)
   else {
     printf("  Makransky cusp at w 270 %.2e deg FAIL: expected %s\n",
            makrcusp, WANT_DEFECT ? "> 1e-6" : "< 1e-11");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nandate == 10) : (nandate == 0))
+    printf("  NaN date               %.0f/10 answered OK\n", nandate);
+  else {
+    printf("  NaN date               %.0f/10 answered FAIL: expected %s\n",
+           nandate, WANT_DEFECT ? "10" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nansearch == 0) : (nansearch == 15))
+    printf("  NaN, inf search        %.0f/15 invalid date OK\n", nansearch);
+  else {
+    printf("  NaN, inf search        %.0f/15 invalid date FAIL: expected %s\n",
+           nansearch, WANT_DEFECT ? "0" : "15");
     bad++;
   }
 

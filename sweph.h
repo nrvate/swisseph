@@ -262,6 +262,9 @@ typedef struct swe_ctx swe_ctx;
 #define MAXORD          40
 
 #define NCTIES         6.0     /* number of centuries per eph. file */
+/* |tjd| up to which swi_gen_filename() names a file: swe_revjul()'s year,
+ * an int, overflows past about 7.84e11 days (UPSTREAM-BUGS 216) */
+#define SWI_FILENAME_JMAX 7.8e11
 
 #define OK (0)
 #define ERR (-1)
@@ -1589,6 +1592,26 @@ struct epsilon {
  *     deg, losing digits as w nears 90 or 270: 0.195 deg on cusp 9 at
  *     47.37N within 2e-9 deg of ARMC of w = 270 (UPSTREAM-BUGS 224, G156,
  *     G24)
+ *   - a NaN date, which "J < START || J > END" passes, answered with the
+ *     call's flags: the Moshier planets, Moon and fictitious bodies, the
+ *     stars on Moshier, the interpolated apsides, swe_nod_aps(),
+ *     swe_pheno(), swe_gauquelin_sector() (NaN, 260 or 0),
+ *     swe_topo_arcus_visionis() and swe_heliacal_angle() OK with a number
+ *     at NaN and -+inf, the crossings looping, the eclipse searches
+ *     refusing with a date no caller gave ("jd 6634702579155901.000000
+ *     outside ..."), swe_heliacal_ut() "no heliacal date found within 5
+ *     synodic periods" (UPSTREAM-BUGS 211, G160, G24). The mean node's and
+ *     apogee's tests (their tables indexed by (int) floor(NaN), SIGSEGV),
+ *     the JPL record's, and the eclipse searches' lunation number cast
+ *     without overflow are in both builds
+ *   - (nothing for UPSTREAM-BUGS 210: the refusals of a date out of range
+ *     written by snprintf() within their buffer, not sprintf() of the
+ *     date's digits past 256 bytes from about -+1e188 days, are in both
+ *     builds, a memory fix that changes no message that fits; G160)
+ *   - (nothing for UPSTREAM-BUGS 216: the Swiss files refused past
+ *     -+7.8e11 days, -+inf and NaN before a file is named, and
+ *     swe_revjul()'s casts INT_MIN, as on x86-64, for a value no int
+ *     holds, are in both builds, undefined behaviour's fix; G160)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

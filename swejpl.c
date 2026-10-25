@@ -844,7 +844,7 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
       reorder((char *) &ts[2], sizeof(double), 2);
     if (ts[0] != js->eh_ss[0] || ts[3] != js->eh_ss[1]) {
       if (serr != NULL)
-	sprintf(serr, "JPL ephemeris file is corrupt; start/end date check failed. %.1f != %.1f || %.1f != %.1f", ts[0],js->eh_ss[0],ts[3],js->eh_ss[1]);
+	snprintf(serr, AS_MAXCH, "JPL ephemeris file is corrupt; start/end date check failed. %.1f != %.1f || %.1f != %.1f", ts[0],js->eh_ss[0],ts[3],js->eh_ss[1]);	/* bug 210 */
       return NOT_AVAILABLE;
     }
   }
@@ -869,9 +869,15 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
 #endif
   et_mn += .5;	/* midnight before epoch */
   /*       error return for epoch out of range */
-  if (et < js->eh_ss[0] || et > js->eh_ss[1]) {
+  /* Upstream bug 211: a NaN date passed this test, and the record number
+   * below was (int32) of NaN (UB), the read failing as "Read error in JPL
+   * eph. at nan" and the call going on to the Swiss files. Refused now as
+   * a date outside the range; unguarded, undefined behaviour.
+   * Upstream bug 210: sprintf() into serr, whose %f of the date overran it
+   * from |et| about 1e196 (360 characters at 1e300). */
+  if (!(et >= js->eh_ss[0] && et <= js->eh_ss[1])) {
     if (serr != NULL) 
-      sprintf(serr,"jd %f outside JPL eph. range %.2f .. %.2f;", et, js->eh_ss[0], js->eh_ss[1]);
+      snprintf(serr, AS_MAXCH, "jd %f outside JPL eph. range %.2f .. %.2f;", et, js->eh_ss[0], js->eh_ss[1]);
     return BEYOND_EPH_LIMITS;
   }
   /*       calculate record # and relative time in interval */
@@ -888,12 +894,12 @@ static int state(swe_ctx *ctx, double et, int32 *list, int do_bary,
     js->nrl = 0;
     if (FSEEK(js->jplfptr, (off_t64) (nr * ((off_t64) js->irecsz)), 0) != 0) {
       if (serr != NULL)
-	sprintf(serr, "Read error in JPL eph. at %f\n", et);
+	snprintf(serr, AS_MAXCH, "Read error in JPL eph. at %f\n", et);	/* bug 210 */
       return NOT_AVAILABLE;
     }
     if ((int32) fread((void *) buf, sizeof(double), (size_t) js->ncoeffs, js->jplfptr) != js->ncoeffs) {
       if (serr != NULL)
-	sprintf(serr, "Read error in JPL eph. at %f\n", et);
+	snprintf(serr, AS_MAXCH, "Read error in JPL eph. at %f\n", et);	/* bug 210 */
       return NOT_AVAILABLE;
     }
     if (js->do_reorder)

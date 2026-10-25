@@ -65,6 +65,15 @@
 #include <time.h>
 
 #define SEFLG_EPHMASK	(SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH)
+/* Upstream bug 211: the eclipse searches' lunation number K was (int) of
+ * the start date's lunations from J2000, which overflows (UB) past |tjd|
+ * about 6.3e10 days and at NaN and -+inf. Now -2^31, what x86-64's
+ * conversion gave, for a value no int holds: the same answers, defined;
+ * unguarded, undefined behaviour. */
+static double lunation_trunc(double x)
+{
+  return (x > -2147483649.0 && x < 2147483648.0) ? (double) (int) x : -2147483648.0;
+}
 static int find_maximum(double y00, double y11, double y2, double dx, 
 			double *dxret, double *yret);
 static int find_zero(double y00, double y11, double y2, double dx, 
@@ -853,7 +862,7 @@ iter_where:
     retc |= (SE_ECL_PARTIAL | SE_ECL_NONCENTRAL);
   } else {
     if (serr != NULL)
-      sprintf(serr, "no solar eclipse at tjd = %f", tjd);
+      snprintf(serr, AS_MAXCH, "no solar eclipse at tjd = %f", tjd);	/* bug 210 */
     for (i = 0; i < 2; i++)
       geopos[i] = 0;
     *dcore = 0;
@@ -1156,7 +1165,7 @@ static int32 eclipse_how( swe_ctx *ctx, double tjd_ut, int32 ipl, char *starname
   else {
     retc = 0;
     if (serr != NULL)
-      sprintf(serr, "no solar eclipse at tjd = %f", tjd_ut);
+      snprintf(serr, AS_MAXCH, "no solar eclipse at tjd = %f", tjd_ut);	/* bug 210 */
   }
   /*
    * ratio of diameter of moon to that of sun
@@ -1310,6 +1319,17 @@ static int32 swe_sol_eclipse_when_glob_r_body(swe_ctx *ctx, double tjd_start, in
   int direction = 1;
   AS_BOOL dont_times = FALSE;
   int32 iflag, iflagcart;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 211: a NaN or infinite start went into the lunation
+   * number's cast (UB, held at -2^31 above), and the search refused with
+   * the range message of a date no caller gave: "jd 6634702579155901.000000
+   * outside Moshier planet range" at NaN and -+inf, the solar and lunar
+   * eclipse searches alike. Refused now as an invalid date, tret zeroed. */
+  if (swi_date_invalid(tjd_start, serr)) {
+    memset(tret, 0, 10 * sizeof(double));
+    return ERR;
+  }
+#endif
   ifl &= SEFLG_EPHMASK; 
   swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
   iflag = SEFLG_EQUATORIAL | ifl;
@@ -1333,7 +1353,7 @@ static int32 swe_sol_eclipse_when_glob_r_body(swe_ctx *ctx, double tjd_start, in
     ifltype |= SE_ECL_NONCENTRAL;
   if (backward)
     direction = -1;
-  K = (int) ((tjd_start - J2000) / 365.2425 * 12.3685);
+  K = lunation_trunc((tjd_start - J2000) / 365.2425 * 12.3685);	/* bug 211 */
   K -= direction;
 next_try:
   retflag = 0;
@@ -2164,6 +2184,13 @@ static int32 swe_sol_eclipse_when_loc_r_body(swe_ctx *ctx, double tjd_start, int
 {
   int32 retflag = 0, retflag2 = 0;
   double geopos2[20], dcore[10];
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(tjd_start, serr)) {	/* bug 211, as when_glob */
+    memset(tret, 0, 10 * sizeof(double));
+    memset(attr, 0, 20 * sizeof(double));
+    return ERR;
+  }
+#endif
   if (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX) {
     if (serr != NULL)
       sprintf(serr, "location for eclipses must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
@@ -2294,7 +2321,7 @@ static int32 eclipse_when_loc(swe_ctx *ctx, double tjd_start, int32 ifl, double 
   int32 iflag = SEFLG_EQUATORIAL | SEFLG_TOPOCTR | ifl;
   int32 iflagcart = iflag | SEFLG_XYZ;
   set_topo_for_this_call(ctx, geopos[0], geopos[1], geopos[2]);
-  K = (int) ((tjd_start - J2000) / 365.2425 * 12.3685);
+  K = lunation_trunc((tjd_start - J2000) / 365.2425 * 12.3685);	/* bug 211 */
   if (backward)
     K++;
   else
@@ -3634,7 +3661,7 @@ static int32 lun_eclipse_how(swe_ctx *ctx,
     attr[0] = 0;
   } else {
     if (serr != NULL)
-      sprintf(serr, "no lunar eclipse at tjd = %f", tjd);
+      snprintf(serr, AS_MAXCH, "no lunar eclipse at tjd = %f", tjd);	/* bug 210 */
   }
   attr[8] = attr[0];
   /**************************
@@ -3701,6 +3728,12 @@ static int32 swe_lun_eclipse_when_r_body(swe_ctx *ctx, double tjd_start, int32 i
   int direction = 1;
   int32 iflag;
   int32 iflagcart;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(tjd_start, serr)) {	/* bug 211, as the solar search */
+    memset(tret, 0, 10 * sizeof(double));
+    return ERR;
+  }
+#endif
   ifl &= SEFLG_EPHMASK; 
   swi_set_tid_acc(ctx, tjd_start, ifl, 0, serr);
   iflag = SEFLG_EQUATORIAL | ifl;
@@ -3719,7 +3752,7 @@ static int32 swe_lun_eclipse_when_r_body(swe_ctx *ctx, double tjd_start, int32 i
     ifltype = SE_ECL_TOTAL | SE_ECL_PENUMBRAL | SE_ECL_PARTIAL;
   if (backward)
     direction = -1;
-  K = (int) ((tjd_start - J2000) / 365.2425 * 12.3685);
+  K = lunation_trunc((tjd_start - J2000) / 365.2425 * 12.3685);	/* bug 211 */
   K -= direction;
 next_try:
   retflag = 0;
@@ -3959,6 +3992,13 @@ static int32 swe_lun_eclipse_when_loc_r_body(swe_ctx *ctx, double tjd_start, int
   int32 retflag = 0, retflag2 = 0, retc;
   double tjdr, tjds, tjd_max = 0;
   int i;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(tjd_start, serr)) {	/* bug 211, as the solar search */
+    memset(tret, 0, 10 * sizeof(double));
+    memset(attr, 0, 20 * sizeof(double));
+    return ERR;
+  }
+#endif
   if (geopos != NULL && (geopos[2] < SEI_ECL_GEOALT_MIN || geopos[2] > SEI_ECL_GEOALT_MAX)) {
     if (serr != NULL)
       sprintf(serr, "location for eclipses must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
@@ -6327,9 +6367,13 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   } else if (moon_geo_mean) {
     /* swe_calc()'s range of the mean node, its speed's instants in it */
     double tm = tjd_et - 1.0 / 32, tp = tjd_et + 1.0 / 32;
-    if (tm < MOSHNDEPH_START || tp > MOSHNDEPH_END) {
+    /* Upstream bug 211 (this fork's test): a NaN date passed it, and the
+     * mean node's corr_mean_node() SIGSEGV; refused now as outside.
+     * Upstream bug 210: sprintf() into serr, whose %f of the date overran
+     * it from |tjd| about 1e193 (glibc's fortify aborted). */
+    if (!(tm >= MOSHNDEPH_START && tp <= MOSHNDEPH_END)) {
       if (serr != NULL)
-        sprintf(serr, "jd %f outside mean node range %.2f .. %.2f ",
+        snprintf(serr, AS_MAXCH, "jd %f outside mean node range %.2f .. %.2f ",
                 tm < MOSHNDEPH_START ? tm : tp, MOSHNDEPH_START, MOSHNDEPH_END);
       return ERR;
     }
@@ -7864,6 +7908,17 @@ static int32 swe_gauquelin_sector_r_body(swe_ctx *ctx, double t_ut,  /* input ti
   AS_BOOL do_fixstar = (starname != NULL && *starname != '\0');
   int32 risemeth = 0;
   AS_BOOL above_horizon = FALSE;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 211: a NaN date answered 0 with a NaN sector, the body's
+   * range tests passing it; at -inf every method SIGSEGV in this fork's
+   * sidereal time, taken before the body (methods 0 and 1 directly, 2 to 5
+   * in the rise and set search). Refused now as an invalid date, the
+   * sector 0. */
+  if (swi_date_invalid(t_ut, serr)) {
+    *dgsect = 0;
+    return ERR;
+  }
+#endif
   if (imeth < 0 || imeth > 5) {
     if (serr)
           sprintf(serr, "invalid method: %d", imeth);

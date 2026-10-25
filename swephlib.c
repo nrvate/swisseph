@@ -5786,6 +5786,18 @@ void swi_gen_filename(double tjd, int ipli, char *fname)
   sprintf(fname + strlen(fname), "%02d.%s", icty, SE_FILE_SUFFIX);
 }
 
+/* UPSTREAM-BUGS 211: TRUE, with serr "invalid date: jd nan", for a date
+ * that is NaN or infinite, which the searches and the functions without a
+ * range test of their own refuse before they use it. */
+AS_BOOL swi_date_invalid(double tjd, char *serr)
+{
+  if (isfinite(tjd))
+    return FALSE;
+  if (serr != NULL)
+    snprintf(serr, AS_MAXCH, "invalid date: jd %g", tjd);
+  return TRUE;
+}
+
 /**************************************************************
 cut the string s at any char in cutlist; put pointers to partial strings
 into cpos[0..n-1], return number of partial strings;

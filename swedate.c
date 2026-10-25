@@ -81,6 +81,7 @@
   Return: OK or ERR (for illegal date)
 *********************************************************/
 
+# include <limits.h>
 # include "swephexp.h"
 # include "sweph.h"
 
@@ -197,6 +198,18 @@ double CALL_CONV swe_julday(int year, int month, int day, double hour, int gregf
   Original author Mark Pottenger, Los Angeles.
   with bug fix for year < -4711 16-aug-88 Alois Treindl
 *************************************************************************/
+/* Upstream bug 216: the year, month and day were doubles cast to int,
+ * which overflows (UB) past |jd| about 7.84e11 days and at NaN: the Swiss
+ * file names were built from such a year ('seplm21474840.se1' at 1e12 to
+ * 1e300, -+inf and NaN), the heliacal functions' SunRA() takes it at any
+ * date. Now INT_MIN for a value no int holds -- what x86-64's conversion
+ * gave -- so every answer is the one it was there, and defined; unguarded,
+ * undefined behaviour. */
+static int revjul_int(double x)
+{
+  return (x > -2147483649.0 && x < 2147483648.0) ? (int) x : INT_MIN;
+}
+
 void CALL_CONV swe_revjul (double jd, int gregflag,
 	     int *jyear, int *jmon, int *jday, double *jut)
 {
@@ -210,10 +223,10 @@ void CALL_CONV swe_revjul (double jd, int gregflag,
   u2 = floor (u0 + 123.0);
   u3 = floor ( (u2 - 122.2) / 365.25);
   u4 = floor ( (u2 - floor (365.25 * u3) ) / 30.6001);
-  *jmon = (int) (u4 - 1.0);
+  *jmon = revjul_int(u4 - 1.0);
   if (*jmon > 12) *jmon -= 12;
-  *jday = (int) (u2 - floor (365.25 * u3) - floor (30.6001 * u4));
-  *jyear = (int) (u3 + floor ( (u4 - 2.0) / 12.0) - 4800);
+  *jday = revjul_int(u2 - floor (365.25 * u3) - floor (30.6001 * u4));
+  *jyear = revjul_int(u3 + floor ( (u4 - 2.0) / 12.0) - 4800);
   *jut = (jd - floor (jd + 0.5) + 0.5) * 24.0;
 }
 
@@ -417,8 +430,10 @@ static int32 swe_utc_to_jd_r_body(swe_ctx *ctx, int32 iyear, int32 imonth, int32
    || imin < 0 || imin > 59 
    || dsec < 0 || dsec >= 61
    || (dsec >= 60 && (imin < 59 || ihour < 23 || tjd_ut1 < J1972))) {
+    /* Upstream bug 210: sprintf(), whose %.2f of the caller's dsec overran
+     * serr from dsec about 1e232 (1e215 with the hour and minute INT_MIN) */
     if (serr != NULL)
-      sprintf(serr, "invalid time: %d:%d:%.2f", ihour, imin, dsec);
+      snprintf(serr, AS_MAXCH, "invalid time: %d:%d:%.2f", ihour, imin, dsec);
     return ERR;
   }
   dhour = (double) ihour + ((double) imin) / 60.0 + dsec / 3600.0;

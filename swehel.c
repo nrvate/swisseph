@@ -1501,6 +1501,19 @@ static int32 swe_vis_limit_mag_r_body(swe_ctx *ctx, double tjdut, double *dgeo, 
   double sunra;
   for (i = 0; i < 7; i++)
     dret[i] = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 211: a NaN or infinite date went on into the search or
+   * the place of the Sun and the object: swe_heliacal_ut() refused NaN
+   * and -+inf with "no heliacal date found within 5 synodic periods",
+   * swe_topo_arcus_visionis() and swe_heliacal_angle(), which no range
+   * test guards, answered OK with a number (6.34 and 3.47 at NaN and
+   * -+inf), swe_vis_limit_mag() 1 and swe_heliacal_pheno_ut() 0 with NaN
+   * at NaN, and at -inf these two SIGSEGV in this fork's sidereal time.
+   * Refused now as an invalid date, the results zeroed, in each of the
+   * five. */
+  if (swi_date_invalid(tjdut, serr))
+    return ERR;
+#endif
   tolower_string_star(ObjectName);
   if (DeterObject(ObjectName) == SE_SUN) {
     if (serr != NULL) {
@@ -1643,6 +1656,12 @@ static int32 TopoArcVisionis(swe_ctx *ctx, double Magn, double *dobs, double Alt
 static int32 swe_topo_arcus_visionis_r_body(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double alt_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
 {
   double sunra;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(tjdut, serr)) {	/* bug 211, see swe_vis_limit_mag() */
+    dret[0] = 0;
+    return ERR;
+  }
+#endif
   swi_set_tid_acc(ctx, tjdut, helflag, 0, serr);
   sunra = SunRA(ctx, tjdut, helflag, serr);
   if (serr != NULL && *serr != '\0')
@@ -1752,6 +1771,12 @@ static int32 HeliacalAngle(swe_ctx *ctx, double Magn, double *dobs, double AziO,
 
 static int32 swe_heliacal_angle_r_body(swe_ctx *ctx, double tjdut, double *dgeo, double *datm, double *dobs, int32 helflag, double mag, double azi_obj, double azi_sun, double azi_moon, double alt_moon, double *dret, char *serr)
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(tjdut, serr)) {	/* bug 211, see swe_vis_limit_mag() */
+    dret[0] = dret[1] = dret[2] = 0;
+    return ERR;
+  }
+#endif
   if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
     if (serr != NULL)
       sprintf(serr, "location for heliacal events must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
@@ -1953,6 +1978,12 @@ static int32 swe_heliacal_pheno_ut_r_body(swe_ctx *ctx, double JDNDaysUT, double
   char ObjectName[AS_MAXCH];
   double sunra;
   int32 iflag = helflag & (SEFLG_JPLEPH|SEFLG_SWIEPH|SEFLG_MOSEPH);
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(JDNDaysUT, serr)) {	/* bug 211, see swe_vis_limit_mag() */
+    memset(darr, 0, SE_HELIACAL_DARR_SIZE * sizeof(double));
+    return ERR;
+  }
+#endif
   if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
     if (serr != NULL)
       sprintf(serr, "location for heliacal events must be between %.0f and %.0f m above sea", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);
@@ -3268,6 +3299,12 @@ static int32 swe_heliacal_ut_r_body(swe_ctx *ctx, double JDNDaysUTStart, double 
   double tjd0 = JDNDaysUTStart, tjd, dsynperiod, tjdmax, tadd;
   int32 MaxCountSynodicPeriod = MAX_COUNT_SYNPER;
   char *sevent[7] = {"", "morning first", "evening last", "evening first", "morning last", "acronychal rising", "acronychal setting"};
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(JDNDaysUTStart, serr_ret)) {	/* bug 211, see swe_vis_limit_mag() */
+    dret[0] = dret[1] = dret[2] = 0;
+    return ERR;
+  }
+#endif
   if (dgeo[2] < SEI_ECL_GEOALT_MIN || dgeo[2] > SEI_ECL_GEOALT_MAX) {
     if (serr_ret != NULL)
       sprintf(serr_ret, "location for heliacal events must be between %.0f and %.0f m above sea\n", SEI_ECL_GEOALT_MIN, SEI_ECL_GEOALT_MAX);

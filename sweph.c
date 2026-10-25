@@ -1640,7 +1640,14 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	x[i] = 0;
       return iflag;
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 211: a NaN date passed this test, and the interpolated
+     * apogee and perigee answered NaN with their flags (260 on Moshier, 258
+     * on the files). Refused now as a date outside the range. */
+    if (!(tjd >= MOSHLUEPH_START && tjd <= MOSHLUEPH_END)) {
+#else
     if (tjd < MOSHLUEPH_START || tjd > MOSHLUEPH_END) {
+#endif
       for (i = 0; i < 24; i++)
 	x[i] = 0;
       if (serr != NULL)
@@ -1664,7 +1671,11 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
 	x[i] = 0;
       return iflag;
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    if (!(tjd >= MOSHLUEPH_START && tjd <= MOSHLUEPH_END)) {	/* bug 211 */
+#else
     if (tjd < MOSHLUEPH_START || tjd > MOSHLUEPH_END) {
+#endif
       for (i = 0; i < 24; i++)
 	x[i] = 0;
       if (serr != NULL)
@@ -1713,13 +1724,23 @@ static int32 swecalc(swe_ctx *ctx, double tjd, int ipl, int32 iplmoon, int32 ifl
     } else {
       ifno = SEI_FILE_MAIN_AST;
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 211: a NaN date passed these tests (and went on to the
+     * file's name, bug 216). Refused now as a date outside the range. */
+    if (ipli == SEI_CHIRON && !(tjd >= CHIRON_START && tjd <= CHIRON_END)) {
+#else
     if (ipli == SEI_CHIRON && (tjd < CHIRON_START || tjd > CHIRON_END)) {
+#endif
       if (serr != NULL)
 	sprintf(serr, "Chiron's ephemeris is restricted to JD %8.1f - JD %8.1f",
 		CHIRON_START, CHIRON_END);
       return ERR;
     }
+#ifndef SWE_UPSTREAM_COMPAT
+    if (ipli == SEI_PHOLUS && !(tjd >= PHOLUS_START && tjd <= PHOLUS_END)) {
+#else
     if (ipli == SEI_PHOLUS && (tjd < PHOLUS_START || tjd > PHOLUS_END)) {
+#endif
       if (serr != NULL)
 	sprintf(serr, 
 		"Pholus's ephemeris is restricted to JD %8.1f - JD %8.1f",
@@ -4347,9 +4368,24 @@ static int sweph(swe_ctx *ctx, double tjd, int ipli, int ifno, int32 iflag, doub
 	xpret[i] = pdp->x[i];
     return(OK);
   }
-  /****************************** 
-   * get correct ephemeris file * 
+  /******************************
+   * get correct ephemeris file *
    ******************************/
+  /* Upstream bug 216: the file's name is built from swe_revjul()'s year,
+   * a double cast to int, which overflows past |tjd| about 7.84e11 days
+   * (UB): from 7.9e11 to 1e300 and at -+inf, swe_calc() of Mars, the
+   * stars and swe_nod_aps() on the files said "SwissEph file
+   * 'seplm21474840.se1' not found"; at NaN the same, or with a file open
+   * (or an asteroid's, named for no date) the range test below passed it
+   * and get_new_segment() cast NaN. Refused now before any file is named
+   * or tested, where swe_calc() of a date beyond the files says no file
+   * answers it; unguarded, undefined behaviour. */
+  if (!(tjd >= -SWI_FILENAME_JMAX && tjd <= SWI_FILENAME_JMAX)) {
+    if (serr != NULL)
+      snprintf(serr, AS_MAXCH, "jd %.10g outside the range the Swiss Ephemeris files are named for, %g .. %g",
+               tjd, -SWI_FILENAME_JMAX, SWI_FILENAME_JMAX);
+    return(NOT_AVAILABLE);
+  }
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 89: an open file was kept for any instant inside its
    * data, and the files run past their nominal 600-year ends (sepl 2-89
@@ -4528,12 +4564,15 @@ again:
       } else {
         sprintf(s, "moon eph. file (%s): ", sp);
       }
+      /* Upstream bug 210: sprintf(), whose %f of the date and of the
+       * file's limits could overrun s (the date is bounded by bug 216's
+       * test above now, the limits by the file's header) */
       if (tjd < fdp->tfstart) {
-	sprintf(s + strlen(s), "jd %f < lower limit %f;", 
-		  tjd, fdp->tfstart); 
+	snprintf(s + strlen(s), sizeof s - strlen(s), "jd %f < lower limit %f;",
+		  tjd, fdp->tfstart);
       } else {
-	sprintf(s + strlen(s), "jd %f > upper limit %f;", 
-		  tjd, fdp->tfend); 
+	snprintf(s + strlen(s), sizeof s - strlen(s), "jd %f > upper limit %f;",
+		  tjd, fdp->tfend);
       }
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
@@ -14927,6 +14966,15 @@ static double swe_solcross_r_body(swe_ctx *ctx, double x2cross, double jd_et, in
   double x[6], xlp, dist;
   double jd;
   int ipl = SE_SUN;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 211: a NaN or infinite date was refused by the body's
+   * range test and answered jd_et - 1, NaN or -+inf, which no caller's
+   * "jd < jd_et" test reads as an error (at NaN the body answered NaN and
+   * the search never ended). Refused now as an invalid date, ERR; so the
+   * other crossings. */
+  if (swi_date_invalid(jd_et, serr))
+    return ERR;
+#endif
   /*
    * compute the SUN at start date, and then estimate the crossing date
    */
@@ -14977,6 +15025,10 @@ static double swe_solcross_ut_r_body(swe_ctx *ctx, double x2cross, double jd_ut,
   double x[6], xlp, dist;
   double jd;
   int ipl = SE_SUN;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(jd_ut, serr))	/* bug 211, see swe_solcross() */
+    return ERR;
+#endif
   /*
    * compute the SUN at start date, and then estimate the crossing date
    */
@@ -15027,6 +15079,10 @@ static double swe_mooncross_r_body(swe_ctx *ctx, double x2cross, double jd_et, i
   double x[6], xlp, dist;
   double jd;
   int ipl = SE_MOON;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(jd_et, serr))	/* bug 211, see swe_solcross() */
+    return ERR;
+#endif
   /*
    * compute the SUN at start date, and then estimate the crossing date
    */
@@ -15079,6 +15135,10 @@ static double swe_mooncross_ut_r_body(swe_ctx *ctx, double x2cross, double jd_ut
   double x[6], xlp, dist;
   double jd;
   int ipl = SE_MOON;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(jd_ut, serr))	/* bug 211, see swe_solcross() */
+    return ERR;
+#endif
   /*
    * compute the SUN at start date, and then estimate the crossing date
    */
@@ -15126,6 +15186,12 @@ static double swe_mooncross_node_r_body(swe_ctx *ctx, double jd_et, int flag, do
   double x[6], xlat, dist;
   double jd;
   int ipl = SE_MOON;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(jd_et, serr)) {	/* bug 211, see swe_solcross() */
+    *xlon = *xla = 0;
+    return ERR;
+  }
+#endif
   flag |= SEFLG_SPEED;
   if (swe_calc_r(ctx, jd_et, ipl, flag, x, serr) < 0) 
     return jd_et - 1;
@@ -15179,6 +15245,12 @@ static double swe_mooncross_node_ut_r_body(swe_ctx *ctx, double jd_ut, int flag,
   double x[6], xlat, dist;
   double jd;
   int ipl = SE_MOON;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(jd_ut, serr)) {	/* bug 211, see swe_solcross() */
+    *xlon = *xla = 0;
+    return ERR;
+  }
+#endif
   flag |= SEFLG_SPEED;
   if (swe_calc_ut_r(ctx, jd_ut, ipl, flag, x, serr) < 0) 
     return jd_ut - 1;
@@ -15235,6 +15307,12 @@ static int32 swe_helio_cross_r_body(swe_ctx *ctx, int ipl, double x2cross, doubl
   double x[6], xlp, dist;
   double jd;
   int flag = iflag | SEFLG_SPEED | SEFLG_HELCTR;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(jd_et, serr)) {	/* bug 211, see swe_solcross() */
+    *jd_cross = 0;
+    return ERR;
+  }
+#endif
   if (ipl == SE_SUN 
     || ipl == SE_MOON 
     || (ipl >= SE_MEAN_NODE && ipl <= SE_OSCU_APOG)
@@ -15297,6 +15375,12 @@ static int32 swe_helio_cross_ut_r_body(swe_ctx *ctx, int ipl, double x2cross, do
   double x[6], xlp, dist;
   double jd;
   int flag = iflag | SEFLG_SPEED | SEFLG_HELCTR;
+#ifndef SWE_UPSTREAM_COMPAT
+  if (swi_date_invalid(jd_ut, serr)) {	/* bug 211, see swe_solcross() */
+    *jd_cross = 0;
+    return ERR;
+  }
+#endif
   if (ipl == SE_SUN 
     || ipl == SE_MOON 
     || (ipl >= SE_MEAN_NODE && ipl <= SE_OSCU_APOG)

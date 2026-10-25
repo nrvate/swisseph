@@ -216,6 +216,8 @@ extern double swi_angnorm(double x);
 
 /* generation of SWISSEPH file names */
 extern void swi_gen_filename(double tjd, int ipli, char *fname);
+/* a NaN or infinite date refused, "invalid date" (UPSTREAM-BUGS 211) */
+extern AS_BOOL swi_date_invalid(double tjd, char *serr);
 
 /* cyclic redundancy checksum (CRC), 32 bit */
 extern uint32 swi_crc32(unsigned char *buf, int len);

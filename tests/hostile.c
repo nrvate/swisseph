@@ -12,7 +12,9 @@
  * None of it shows in a plain build's numbers reliably, so this is built
  * with -fsanitize=undefined and -fno-sanitize-recover: any report is a
  * nonzero exit. Two passes -- every entry point over a grid of edge ids and
- * flag set, then a fixed-seed random walk over ids, flags and dates, which
+ * flag set, at J2000 and at eleven dates that are no dates or past every
+ * range (-+inf, NaN, -+1e308 .. -+7.9e11), then a fixed-seed random walk
+ * over ids, flags and dates, which
  * is what reaches order-dependent defects like the second (found at call 123
  * of such a walk, and now also spelled out first). Deterministic: the seed
  * is fixed, so a failure reproduces. The gate runs 2000 random calls, about
@@ -23,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <math.h>
 #include "swephexp.h"
 
 static const int ids[] = {
@@ -82,6 +85,20 @@ int main(int argc, char **argv)
     for (unsigned f = 0; f < sizeof flags / sizeof *flags; f++)
       for (unsigned op = 0; op < 8; op++, grid++)
         call(C, op, 2451545.5, ids[i], SE_MARS, flags[f], SE_NODBIT_OSCU);
+  /* Dates that are no dates or past every range, the same grid, the mean
+   * and osculating points alternately: the refusals' "jd %f" past 1e190,
+   * a NaN through the range tests into table indexes and int casts, the
+   * Swiss file name's year past 7.84e11 (UPSTREAM-BUGS 210, 211, 216). */
+  {
+    static const double far[] = { INFINITY, -INFINITY, NAN, 1e308, -1e308, 1e300,
+                                  -1e300, 1e200, -1e200, 7.9e11, -7.9e11 };
+    for (unsigned d = 0; d < sizeof far / sizeof *far; d++)
+      for (unsigned i = 0; i < NIDS; i++)
+        for (unsigned f = 0; f < sizeof flags / sizeof *flags; f++)
+          for (unsigned op = 0; op < 8; op++, grid++)
+            call(C, op, far[d], ids[i], SE_MARS, flags[f],
+                 (f & 1) ? SE_NODBIT_OSCU : SE_NODBIT_MEAN);
+  }
   /* Ephemeris-flag bits are masked to one Swiss/Moshier pair: JPL would
    * only measure how fast a missing file is reported. */
   for (long k = 0; k < n; k++) {

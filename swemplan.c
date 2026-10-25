@@ -523,9 +523,19 @@ int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xp
   if (do_save || ipli == SEI_EARTH || xeret != NULL) 
     do_earth = TRUE;
   /* tjd beyond ephemeris limits, give some margin for spped at edge */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 211: a NaN date passed this test, and the Moshier planets,
+   * the fictitious bodies, the stars on Moshier and swe_nod_aps() answered
+   * NaN with their flags (Mars and Cupido 260, swe_fixstar2() 260,
+   * swe_nod_aps() 0). Refused now as a date outside the range. */
+  if (!(tjd >= MOSHPLEPH_START - 0.3 && tjd <= MOSHPLEPH_END + 0.3)) {
+#else
   if (tjd < MOSHPLEPH_START - 0.3 || tjd > MOSHPLEPH_END + 0.3) {
+#endif
     if (serr != NULL) {
-      sprintf(s, "jd %f outside Moshier planet range %.2f .. %.2f ",
+      /* Upstream bug 210: sprintf(), whose %f of the date overran s from
+       * |tjd| about 1e188 (glibc's fortify aborted) */
+      snprintf(s, sizeof s, "jd %f outside Moshier planet range %.2f .. %.2f ",
 		    tjd, MOSHPLEPH_START, MOSHPLEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);

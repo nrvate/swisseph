@@ -771,9 +771,18 @@ int swi_moshmoon(swe_ctx *ctx, double tjd, AS_BOOL do_save, double *xpmret, char
   else
     xpm = xx;
   /* allow 0.2 day tolerance so that true node interval fits in */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 211: a NaN date passed this test, and the Moon, the true
+   * node and the osculating apogee on Moshier answered NaN with flags 260.
+   * Refused now as a date outside the range. */
+  if (!(tjd >= MOSHLUEPH_START - 0.2 && tjd <= MOSHLUEPH_END + 0.2)) {
+#else
   if (tjd < MOSHLUEPH_START - 0.2 || tjd > MOSHLUEPH_END + 0.2) {
+#endif
     if (serr != NULL) {
-      sprintf(s, "jd %f outside Moshier's Moon range %.2f .. %.2f ",
+      /* Upstream bug 210: sprintf(), whose %f of the date overran s from
+       * |tjd| about 1e188 (glibc's fortify aborted) */
+      snprintf(s, sizeof s, "jd %f outside Moshier's Moon range %.2f .. %.2f ",
 		    tjd, MOSHLUEPH_START, MOSHLUEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
@@ -1441,8 +1450,9 @@ static double corr_mean_node(double J)
   int i;
   J0 = CORR_MNODE_JD_T0GREG; /* 1-jan--13000 greg */
   dayscty = 36524.25; /* days per Gregorian century */
-  if (J < JPL_DE431_START) return 0;
-  if (J > JPL_DE431_END) return 0;
+  /* Upstream bug 211: a NaN date passed both tests and indexed the table
+   * by (int) floor(NaN): SIGSEGV. Not in the table now, as outside it. */
+  if (!(J >= JPL_DE431_START && J <= JPL_DE431_END)) return 0;
 /*if (J > CORR_MNODE_JD_T1GREG && J < CORR_MNODE_JD_T2GREG) return 0;*/
   dJ = J - J0;
   i = (int) floor(dJ / dayscty); /* centuries = index of lower correction value */
@@ -1470,9 +1480,15 @@ int swi_mean_node(swe_ctx *ctx, double J, double *pol, char *serr)
   ctx->moon.T3 = ctx->moon.T*ctx->moon.T2;
   ctx->moon.T4 = ctx->moon.T2*ctx->moon.T2;
   /* with elements from swi_moshmoon2(), which are fitted to jpl-ephemeris */
-  if (J < MOSHNDEPH_START || J > MOSHNDEPH_END) {
+  /* Upstream bug 211: a NaN date passed this test, and corr_mean_node()
+   * indexed its table by (int) floor(NaN): the mean node and
+   * swe_nod_aps()'s Moon's mean points SIGSEGV. Refused now as a date
+   * outside the range; unguarded, a crash. */
+  if (!(J >= MOSHNDEPH_START && J <= MOSHNDEPH_END)) {
     if (serr != NULL) {
-      sprintf(s, "jd %f outside mean node range %.2f .. %.2f ",
+      /* Upstream bug 210: sprintf(), whose %f of the date overran s from
+       * |J| about 1e193 (glibc's fortify aborted) */
+      snprintf(s, sizeof s, "jd %f outside mean node range %.2f .. %.2f ",
 		    J, MOSHNDEPH_START, MOSHNDEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);
@@ -1511,8 +1527,8 @@ static double corr_mean_apog(double J)
   int i;
   J0 = CORR_MAPOG_JD_T0GREG; /* 1-jan--13000 greg */
   dayscty = 36524.25; /* days per Gregorian century */
-  if (J < JPL_DE431_START) return 0;
-  if (J > JPL_DE431_END) return 0;
+  /* Upstream bug 211: as corr_mean_node()'s */
+  if (!(J >= JPL_DE431_START && J <= JPL_DE431_END)) return 0;
   /*if (J > CORR_MAPOG_JD_T1GREG && J < CORR_MAPOG_JD_T2GREG) return 0;*/
   dJ = J - J0;
   i = (int) floor(dJ / dayscty); /* centuries = index of lower correction value */
@@ -1543,9 +1559,11 @@ int swi_mean_apog(swe_ctx *ctx, double J, double *pol, char *serr)
   ctx->moon.T3 = ctx->moon.T*ctx->moon.T2;
   ctx->moon.T4 = ctx->moon.T2*ctx->moon.T2;
   /* with elements from swi_moshmoon2(), which are fitted to jpl-ephemeris */
-  if (J < MOSHNDEPH_START || J > MOSHNDEPH_END) {
+  /* Upstream bug 211: as swi_mean_node()'s, corr_mean_apog() the SIGSEGV */
+  if (!(J >= MOSHNDEPH_START && J <= MOSHNDEPH_END)) {
     if (serr != NULL) {
-      sprintf(s, "jd %f outside mean apogee range %.2f .. %.2f ",
+      /* Upstream bug 210: as swi_mean_node()'s, from |J| about 1e191 */
+      snprintf(s, sizeof s, "jd %f outside mean apogee range %.2f .. %.2f ",
 		    J, MOSHNDEPH_START, MOSHNDEPH_END);
       if (strlen(serr) + strlen(s) < AS_MAXCH)
 	strcat(serr, s);

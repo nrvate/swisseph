@@ -246,6 +246,9 @@ worst were in code that had never executed even once.
 | 221 | `swe_nod_aps()` changes the centre of its J2000 points by adding and taking away the barycentric Sun and Earth in the ephemeris's frame, ICRS for DE 403 and later: every point off by the frame bias times the vectors that do not cancel, a planet's geocentric points 3.5e-8 AU off its heliocentric ones less the Earth at J2000 (9.6e-8 AU over -3000..3000, 2.6e-6 deg on Mercury's apparent perihelion), the Moon's heliocentric and barycentric points 9.6e-8 AU (1.9e-6 deg), the barycentric points 9.7e-10 AU; the files, Moshier and DE4xx, not with SEFLG_ICRS or on de200 | Correctness (behaviour) | `swecl.c` |
 | 223 | `swe_get_ayanamsa_ex()` and its `_ut` form add the nutation of the caller's JPL Horizons flags, which `plaus_iflag()` drops from every sidereal place and the ayanamsa's precession never takes, and the traditional sidereal houses subtract it: at 1950, Lahiri, the ayanamsa and every sidereal cusp 1.72e-5 deg off with SEFLG_JPLHOR_APPROX (1.99e-5 before the 1962 step), on de200, the Swiss files and Moshier alike, while sidereal Mars does not move; `swe_gauquelin_sector()`'s frame takes the flags where the body's place does not, 1.9e-6 sector | Correctness (behaviour) | `sweph.c`, `swehouse.c`, `swecl.c` |
 | 224 | Makransky's Sunshine cusps lose digits as their right ascension w nears 90 or 270 deg, cos m tan w with m rounded near 90: 1.6e-12 deg / \|w - 270\|, 0.72 deg within 1e-11 deg of it, and the ARMC difference of their speeds takes that: cusp 9 at TT 2437683.0, Zurich, 1.6e-7 deg/day off its cusps' rate, 4.9e-4 nearer | Correctness | `swehouse.c` |
+| 210 | The refusals of a date outside a range write "jd %f outside ..." with `sprintf()`, the date's digits in full, into 256 bytes: from about -+1e188 days the Moshier planets', Moon's, mean node's and apogee's messages overrun their local buffer (glibc's fortify aborts), the JPL file's and `swe_nod_aps()`'s mean node's overrun the caller's serr from 1e196 and 1e193 (360 characters at 1e300); `swe_utc_to_jd()`'s "invalid time" the same with the caller's seconds from 1e232 | Memory | `swemplan.c`, `swemmoon.c`, `swecl.c`, `swejpl.c`, `sweph.c`, `swedate.c` |
+| 211 | A NaN date passes every "J < START \|\| J > END": the mean node and apogee, and the Moon's mean points by `swe_nod_aps()`, SIGSEGV in `corr_mean_node()`'s table; the Moshier planets, Moon, fictitious bodies, stars, interpolated apsides, `swe_nod_aps()`, `swe_pheno()`, `swe_gauquelin_sector()`, `swe_rise_trans()` and two heliacal functions answer NaN with their flags; the six crossings loop; the eclipse searches refuse with a date no caller gave ("jd 6634702579155901.000000 outside ..."); `swe_topo_arcus_visionis()` and `swe_heliacal_angle()` answer OK at NaN and -+inf; at -inf the Gauquelin sectors, rise and set and two heliacal functions SIGSEGV in this fork's sidereal time | Correctness (a crash, a hang; wrong answers) | `swemplan.c`, `swemmoon.c`, `sweph.c`, `swecl.c`, `swehel.c`, `swejpl.c`, `swephlib.c` |
+| 216 | On the Swiss files past -+7.84e11 days, and at -+inf and NaN, the file's name is made from `swe_revjul()`'s year cast to int (UB): "SwissEph file 'seplm21474840.se1' not found" for every body, star and `swe_nod_aps()` from 7.9e11 to DBL_MAX | Correctness (undefined behaviour; error reporting) | `sweph.c`, `sweph.h`, `swedate.c` |
 
 ---
 
@@ -15435,6 +15438,216 @@ Noticed, not fixed:
   (Makransky's Asc at ARMC 270 - 2^-5, a stencil point on 270 exactly).
   A stencil point within 1e-10 deg of an ARMC of 90 or 270 is a chance of
   a few in 1e12 per call.
+
+## 210. The refusals of a date outside a range write the date's digits in full into 256 bytes: from |J| about 1e188 days the message overruns its buffer, or the caller's serr
+
+**Severity: Memory (stack buffer and serr overrun; glibc's fortify aborts at -O2, the stack protector at -O0; both builds)**
+**Where:** `swemplan.c`: `swi_moshplan()`; `swemmoon.c`: `swi_moshmoon()`, `swi_mean_node()`, `swi_mean_apog()`; `swecl.c`: `swe_nod_aps()`'s mean points, the eclipse functions' "no ... eclipse at tjd"; `swejpl.c`: `state()`'s range, read and header errors; `sweph.c`: `sweph()`'s file range message; `swedate.c`: `swe_utc_to_jd()`
+
+Entry 196's noticed item. Every refusal of a date outside a body's range
+prints the date by `%f` with `sprintf()`: "jd %f outside Moshier planet
+range %.2f .. %.2f " into a local `char s[AS_MAXCH]` (256 bytes) in
+`swi_moshplan()`, `swi_moshmoon()`, `swi_mean_node()` and
+`swi_mean_apog()`, copied into serr after; "jd %f outside JPL eph. range"
+and `swe_nod_aps()`'s "jd %f outside mean node range" straight into the
+caller's serr. `%f` writes every integer digit: the message is 256
+characters or more (with its NUL past 256 bytes) from |J| 1e188 (the
+Moshier planets and Moon), 1e191 (the mean apogee), 1e193 (the mean
+node, `swe_nod_aps()`) and 1e196 (JPL; 360 characters at 1e300). Measured
+on the tip, each call in a child process, |J| 1e200, 1e250, 1e300, 1e308
+and DBL_MAX either sign, Mars, the Moon, the mean node and apogee and
+Cupido on Moshier, `swe_nod_aps()` of the Moon's and Mars's mean points,
+Spica by `swe_fixstar2()` on Moshier and Mars on de200.eph: 61 of 90
+calls aborted ("stack smashing detected" at -O0; at -O2 "buffer overflow
+detected"), the other 29 wrote past the 256 bytes of serr.
+`swe_utc_to_jd()`'s "invalid time: %d:%d:%.2f" takes the caller's
+seconds the same way, past serr from 1e232 (1e215 with the hour and
+minute INT_MIN). The eclipse functions' "no solar eclipse at tjd = %f",
+the JPL reader's "Read error in JPL eph. at %f" and `sweph()`'s "jd %f <
+lower limit %f;" would overrun likewise, behind range tests that refuse
+such a date first (`sweph()`'s now behind entry 216's).
+
+**Fix, as done here:** each of these by `snprintf()` with its buffer's
+size (`sizeof s`, or AS_MAXCH for serr), the format unchanged: every
+message that fitted is the same, byte for byte; one that did not ends at
+255 characters (at 1e200 "jd " and the date's first 252 digits). Outside
+`SWE_UPSTREAM_COMPAT`: a memory fix that changes no message that fits.
+`swe_get_astro_models()`'s two `%f` of the tidal acceleration go into
+`sdet` (1134 characters at 1e300, under the 4000 its header asks for) and
+are left.
+
+G160 `tests/absdate.c` check (a): the 90 calls above and
+`swe_utc_to_jd()` with those seconds, each in a child process: ERR, the
+outputs 0, serr from "jd " (or "invalid time") under AS_MAXCH, and the
+bytes of the caller's buffer past AS_MAXCH as they were. 100 of 100;
+before the fix 2 of 100 (61 aborted, 37 overran serr); the upstream build
+80 of 100, its `swe_nod_aps()` leaving the caller's points on a refusal
+(entry 179). No G24 case: both builds have it.
+
+## 211. A NaN date passes every "J < START || J > END": SIGSEGV in the mean node's table, NaN answered with the call's flags, the crossings looping, the eclipse searches naming a date no caller gave
+
+**Severity: Correctness (a crash, a hang; wrong answers: NaN returned with the call's flags and no error, or OK with a number)**
+**Where:** `swemplan.c`: `swi_moshplan()`; `swemmoon.c`: `swi_moshmoon()`, `swi_mean_node()`, `swi_mean_apog()`, `corr_mean_node()`, `corr_mean_apog()`; `sweph.c`: the interpolated apsides', Chiron's and Pholus's range tests, the six crossings and two heliocentric crossings; `swejpl.c`: `state()`; `swecl.c`: the four eclipse searches, `swe_nod_aps()`'s mean points, `swe_gauquelin_sector()`; `swehel.c`: the five heliacal functions
+
+Entry 196's noticed item. Every body's range test is written `if (tjd <
+START || tjd > END)`, false for NaN. Measured on the tip, `swe_*` at NaN
+on Moshier unless named, one process each, 10 s cap:
+- SIGSEGV: the mean node and apogee (any ephemeris; their corrections'
+  tables indexed by `(int) floor(NaN)` in `corr_mean_node()` and
+  `corr_mean_apog()`, whose own test passes NaN too), and with them
+  `swe_nod_aps()` of the Moon's mean points;
+- NaN with the call's flags: Mars, the Moon, the Sun, the true node, the
+  osculating apogee, Cupido (260), the Earth heliocentric, the
+  interpolated apogee and perigee (260, and 258 on the files),
+  `swe_fixstar2()` and `swe_fixstar()` (260), `swe_nod_aps()` of Mars
+  (0), `swe_pheno()` (4), `swe_get_orbital_elements()` and
+  `swe_orbit_max_min_true_distance()` (0), `swe_gauquelin_sector()`
+  methods 0 to 5 (0), `swe_rise_trans()` of the Sun (0),
+  `swe_vis_limit_mag()` (1) and `swe_heliacal_pheno_ut()` (0);
+- OK with a number at NaN and -+inf: `swe_topo_arcus_visionis()` 6.34151,
+  `swe_heliacal_angle()` 3.46875 (no range test reaches them);
+- the crossings `swe_solcross()`, `swe_mooncross()`,
+  `swe_mooncross_node()`, their `_ut` forms, `swe_helio_cross()` and its
+  `_ut` form, and the occultation searches of Venus: no end within 10 s
+  (the body answers NaN and the search steps on; the `_ut` forms at -inf
+  too, its TT NaN); at -+inf the body's test refuses and the six return
+  `jd_et - 1`, -+inf, which no caller's `jd < jd_et` reads as an error,
+  `swe_helio_cross()` ERR with the date left as the caller had it;
+- the eclipse searches cast the start's lunation number, `(int) ((tjd -
+  J2000) / 365.2425 * 12.3685)`, which is INT_MIN on x86-64 for NaN, -+inf
+  and every |tjd| past about 6.3e10 (UB), and refuse with a date no caller
+  gave: "jd 6634702579155901.000000 outside Moshier planet range";
+- `swe_heliacal_ut()` refuses NaN and -+inf with "no heliacal date found
+  within 5 synodic periods";
+- on de200.eph the record number `(int32)` of NaN (UB), the read failing
+  ("Read error in JPL eph. at nan") and the call going on to the Swiss
+  files and entry 216's name;
+- at -inf (TT and the sidereal time's century NaN) the Gauquelin sectors,
+  every method, `swe_rise_trans()`, `swe_vis_limit_mag()` and
+  `swe_heliacal_pheno_ut()` SIGSEGV in this fork's `sidt_pra()`, reached
+  before any body's test.
+
+**Fix, as done here:** every range test refuses NaN as outside:
+`!(tjd >= START && tjd <= END)`, the message and outputs those of any
+date outside it ("jd nan outside Moshier planet range 625000.50 ..
+2818000.50 "). The searches and functions that take no body first test
+the date with `swi_date_invalid()` (`swephlib.c`): ERR, serr "invalid
+date: jd nan" (or "inf", "-inf"), their outputs zeroed -- the four
+eclipse searches tret (and attr), `swe_gauquelin_sector()` the sector,
+the five heliacal functions their results; the six crossings return ERR,
+-1 (their documented error is a date before the start, which NaN and
+-inf have none of) and
+`swe_mooncross_node()` its longitude and latitude 0; the heliocentric
+crossings ERR with the date 0. The Moshier planets', Moon's, the
+interpolated apsides', Chiron's and Pholus's tests and the entry checks
+are behind `#ifndef SWE_UPSTREAM_COMPAT`; the mean node's and apogee's
+(the crash), `corr_mean_node()`'s and `corr_mean_apog()`'s, the JPL
+reader's (UB) and the lunation number's cast are in both builds: K is
+`lunation_trunc()`, -2^31 for a value no int holds, what x86-64 gave, so
+a finite date past 6.3e10 searches and refuses as before.
+- After: at NaN, +inf and -inf every date-taking entry point refuses
+  (`swe_calc()` of fourteen bodies on three ephemerides, `swe_calc_ut()`,
+  the star functions, `swe_nod_aps()`, `swe_pheno()`, `swe_calc_orbel()`,
+  `swe_calc_pctr()`, `swe_get_orbital_elements()`,
+  `swe_orbit_max_min_true_distance()`, the Gauquelin sectors, the eclipse,
+  occultation, rise and set and crossing searches, the heliacal
+  functions); no crash, no hang. Inside the ranges nothing changes, bit
+  for bit: 44992 results (fifteen bodies on four flag sets at 600 dates --
+  every range's ends and the doubles either side, J2000 -+ 1.1e7, |J|
+  log-uniform 1e5..7.8e11 -- `swe_nod_aps()`, `swe_fixstar2()`,
+  `swe_pheno()`, `swe_get_orbital_elements()`, the searches, crossings
+  and heliacal functions at 40 dates, `swe_revjul()` and
+  `swe_utc_to_jd()`) the tip's but for entry 216's 38 at |TT| > 7.8e11.
+- Cost, `perf stat -e instructions:u`, 240000 `swe_calc()` (twelve
+  bodies, SEFLG_SPEED): 18554695812 and 45639849412 before (Swiss,
+  Moshier), 18564648152 and 45640109971 after (+0.05%, +0.0006%).
+
+G160 `tests/absdate.c` check (b): at NaN, +inf and -inf the 89 entry
+points above in a child process with a 10 s alarm: ERR, a message, the
+outputs 0 (but `swe_calc_pctr()`, `swe_get_orbital_elements()` and
+`swe_orbit_max_min_true_distance()`, which leave the caller's outputs on
+any refusal). 267 of 267; before the fix 168 of 267 (17 crashed, 12
+hung); the upstream build 162 of 267 (12 hung). Check (d): after the
+refusals Mars and the Moon on the files and Moshier, the mean node and
+Spica at J2000 and 2460000.5 bit for bit as a fresh context (before the
+fix the NaN mean node crashed it). G24 `nan_date_answered`: ten Moshier
+calls at NaN -- Mars, the Moon, the true node, the interpolated apogee,
+Cupido, Spica, `swe_nod_aps()` of Mars, the Gauquelin sector by method
+0, `swe_topo_arcus_visionis()`, `swe_heliacal_angle()` -- answered with
+OK flags: 0 of 10 shipped, 10 of 10 compat; `nan_search_named`: the four eclipse searches and
+`swe_heliacal_ut()` at NaN and -+inf refused "invalid date": 15 of 15
+shipped, 0 of 15 compat. G25 `tests/hostile.c` runs its grid also at
+-+inf, NaN, -+1e308, -+1e300, -+1e200 and -+7.9e11.
+
+## 216. On the Swiss files past |J| 7.84e11 days, and at -+inf and NaN, the file's name is made from `swe_revjul()`'s year cast to int: "SwissEph file 'seplm21474840.se1' not found"
+
+**Severity: Correctness (undefined behaviour, float-cast-overflow; the error a file not found that no date names)**
+**Where:** `sweph.c`: `sweph()`, before "get correct ephemeris file"; `swedate.c`: `swe_revjul()`
+
+Entry 196's noticed item. `sweph()` names the file for a date by
+`swi_gen_filename()`, whose year is `swe_revjul()`'s, three doubles cast
+to int: past |J| about 7.84e11 (the year past 2^31) and at -+inf and NaN
+the cast is undefined; on x86-64 it is INT_MIN, the file
+"seplm21474840.se1". Measured on the tip, the Swiss files, a fresh
+context: Mars, the Moon, Ceres, Jupiter's centre (9599), `swe_calc_ut()`
+of Mars, Spica by `swe_fixstar2()` and Jupiter's mean points by
+`swe_nod_aps()` at -+7.9e11, -+1e12, -+1e300, -+DBL_MAX and -+inf: ERR,
+"SwissEph file 'seplm21474840.se1' not found in PATH ..."; at NaN the
+same, and with a file already open the range test of the open file
+(`tjd < tfstart || tjd > tfend`) passes NaN on to `get_new_segment()`'s
+casts. Up to 7.8e11 the name is a real one's
+("sepl_21355626.se1", "seplm21355284.se1"), not found.
+
+**Fix, as done here:** `sweph()` refuses a date outside -+7.8e11 days
+(`SWI_FILENAME_JMAX`, `sweph.h`), -+inf and NaN, before any file is
+named or tested: NOT_AVAILABLE, so `swe_calc()` answers ERR as for a
+date beyond the files, serr "jd 7.9e+11 outside the range the Swiss
+Ephemeris files are named for, -7.8e+11 .. 7.8e+11" (the date by
+`%.10g`, as entry 196's, so no date overruns serr). And `swe_revjul()`
+casts by `revjul_int()`: INT_MIN for a value no int holds, what x86-64
+gave, so its outputs are the same and defined (the heliacal functions'
+`SunRA()` takes its year at any date). Both are outside
+`SWE_UPSTREAM_COMPAT`: undefined behaviour's fix; the only message that
+changes is the not-found of a name no date has. At 7.8e11 itself the
+file is still named and not found as before; `swe_revjul()` at 600
+dates and the 44992 results of entry 211 are the tip's but for 38 at
+|TT| > 7.8e11, each ERR before and after, the message now the range's.
+
+G160 `tests/absdate.c` check (c): the seven calls at -+7.9e11, -+1e12,
+-+1e300, -+DBL_MAX, the doubles next past -+7.8e11, NaN and -+inf, fresh
+and after J2000 on the same context: ERR, the outputs 0, the range
+message, no file named; at -+7.8e11 the file named for it. 194 of 194;
+before the fix 24 of 194; the upstream build 164 of 194 (its
+`swe_nod_aps()` leaves the caller's points, entry 179). No G24 case:
+both builds have it.
+
+Noticed, not fixed (entries 210, 211, 216; one process each, 10 s cap):
+- BEHAVIOUR. `swe_sidtime()` SIGSEGV at -inf, -1e300 and -1e200 (this
+  fork's `sidt_pra()`, `k = (int) floor(x)` of NaN, entry 196's noticed
+  item) and runs past 10 s at -7.9e11; with it `swe_time_equ()`,
+  `swe_lmt_to_lat()`, `swe_lat_to_lmt()`, the houses, and the Gauquelin
+  sectors' methods 0 and 1 at finite -1e200 to -1e308 (the date
+  refusal above covers only -+inf and NaN).
+- BEHAVIOUR. `swe_utc_to_jd()` takes NaN seconds (`dsec < 0 || dsec >=
+  61` is false for NaN): OK with both dates NaN.
+- BEHAVIOUR. `swe_calc_pctr()`, `swe_get_orbital_elements()`,
+  `swe_orbit_max_min_true_distance()`, `swe_sol_eclipse_where()` and
+  `swe_lun_occult_where()` leave the caller's outputs as they were on a
+  range refusal, NaN and -+inf included; `swe_helio_cross()` its date at
+  a finite one (1e7: ERR, the date 7 as passed); the compat build's
+  `swe_nod_aps()` too (entry 179).
+- BEHAVIOUR. The eclipse searches at a finite date from about -+6e10
+  days refuse with the range message of a date no caller gave, as
+  before: "jd 6059650833862693.000000 outside Moshier planet range" at
+  6.2e10, "jd 6634702579155901.000000" past -+6.3e10 (K at -2^31).
+- BEHAVIOUR. `swe_heliacal_ut()` at finite -+1e200 to -+1e308 says "no
+  heliacal date found within 5 synodic periods", not out of range.
+- BEHAVIOUR. `sweph()`'s range message for a file names Mars's and the
+  Moon's file "asteroid eph. file (sepl_168.se1)" at 8e6 days.
+- BEHAVIOUR. A refusal message past |J| about 1e188 is cut at 255
+  characters, digits only (format kept).
+- BEHAVIOUR. `swe_lmt_to_lat()` and `swe_lat_to_lmt()` return ERR at NaN
+  and +inf with the output NaN or inf, not 0.
 
 ## How these were found
 
