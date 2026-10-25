@@ -1721,6 +1721,39 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
   return started;
 }
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 92: the fixed-star memos -- swe_fixstar()'s and
+ * swe_fixstar_mag()'s last record (sp.fs1, sp.fs1mag), swe_fixstar2()'s and
+ * swe_fixstar2_mag()'s last star (sp.fs2, sp.fs2mag) -- outlived
+ * swe_close() and a path to another sefstars.txt, and the catalogue
+ * swe_fixstar2() reads into memory outlived the path: Sirius stayed at
+ * -1.46 and 2.64 pc under a catalogue giving -1.00 and 3.33 pc, and
+ * stayed at -1.00 after the path back, until another star was asked for
+ * (and in swe_fixstar2() even then, until swe_close()). A thread adopting
+ * another's path kept its star file open on the old one too. All are
+ * emptied, and the file closed, wherever the path can change and where
+ * swi_hel_forget() runs. */
+void swi_fixstar_forget(swe_ctx *ctx)
+{
+  *ctx->sp.fs1.slast_stardata = '\0';
+  *ctx->sp.fs1.slast_starname = '\0';
+  *ctx->sp.fs1mag.slast_stardata = '\0';
+  *ctx->sp.fs1mag.slast_starname = '\0';
+  *ctx->sp.fs2.slast_starname = '\0';
+  *ctx->sp.fs2mag.slast_starname = '\0';
+  if (ctx->fixfp != NULL) {
+    fclose(ctx->fixfp);
+    ctx->fixfp = NULL;
+  }
+  free(ctx->fixed_stars);
+  ctx->fixed_stars = NULL;
+  ctx->n_fixstars_real = 0;
+  ctx->n_fixstars_named = 0;
+  ctx->n_fixstars_records = 0;
+  ctx->is_old_starfile = FALSE;
+}
+#endif
+
 /* closes all open files, frees space of planetary data, 
  * deletes memory of all computed positions 
  */
@@ -1736,6 +1769,8 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
 #ifndef SWE_UPSTREAM_COMPAT
   angles_forget_instants(ctx);	/* Upstream bugs 67, 71 */
   swi_hel_forget(ctx);		/* Upstream bug 82 */
+  swi_fixstar_forget(ctx);	/* Upstream bug 92 */
+  ctx->topd.teval = SWI_TJD_NEVER;	/* bug 92: other files, another site */
 #endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
@@ -1758,7 +1793,22 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
    * are all that have to go back. */
   ctx->leapsec_done = FALSE;
   ctx->init_dt_done = FALSE;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 92: a manual tidal acceleration was reset to automatic
+   * here, so by every swe_set_ephe_path() and swe_set_jpl_file() and by
+   * the implicit path a first calculation sets when the files are named by
+   * SE_EPHE_PATH: swe_set_tid_acc(SE_TIDAL_DE406); swe_calc_ut(...) left
+   * -25.936 and swe_deltat() in AD 1000 1474.79 s for 1465.66, and a
+   * swe_set_jpl_file("de200.eph") after it -23.8946 and 1305.37 s -- where
+   * the manual says that once swe_set_tid_acc() has been used the
+   * automatic setting is blocked until swe_set_tid_acc(SE_TIDAL_AUTOMATIC).
+   * A manual value stays now; swe_close(), which releases everything,
+   * still returns it to automatic. */
+  if (!ctx->is_tid_acc_manual)
+    swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+#else
   swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC);
+#endif
   ctx->is_old_starfile = FALSE;
   ctx->i_saved_planet_name = 0;
   *(ctx->saved_planet_name) = '\0';
@@ -1795,6 +1845,7 @@ static void ctx_release(swe_ctx *ctx)
 #ifndef SWE_UPSTREAM_COMPAT
   angles_forget_instants(ctx);	/* Upstream bugs 67, 71 */
   swi_hel_forget(ctx);		/* Upstream bug 82 */
+  swi_fixstar_forget(ctx);	/* Upstream bug 92 */
 #endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
@@ -3447,6 +3498,8 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
     if (ctx->topd.teval != pedp->teval
 #ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
       || ctx->topd.teval == 0
+#else				/* bug 92: nor is any ephemeris */
+      || ctx->topd.iflgkey != SWI_TOPD_KEY(iflag)
 #endif
       ) {
       if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
@@ -4629,6 +4682,8 @@ static int app_pos_etc_plan_osc(swe_ctx *ctx, int ipl, int ipli, int32 iflag, ch
     if (ctx->topd.teval != pedp->teval
 #ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
       || ctx->topd.teval == 0
+#else				/* bug 92: nor is any ephemeris */
+      || ctx->topd.iflgkey != SWI_TOPD_KEY(iflag)
 #endif
       ) {
       if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
@@ -5068,6 +5123,8 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
     if (ctx->topd.teval != pedp->teval
 #ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
       || ctx->topd.teval == 0
+#else				/* bug 92: nor is any ephemeris */
+      || ctx->topd.iflgkey != SWI_TOPD_KEY(iflag)
 #endif
       ) {
       if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
@@ -6421,6 +6478,8 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
     if (ctx->topd.teval != pedp->teval
 #ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
       || ctx->topd.teval == 0
+#else				/* bug 92: nor is any ephemeris */
+      || ctx->topd.iflgkey != SWI_TOPD_KEY(iflag)
 #endif
       ) {
       if (swi_get_observer(ctx, pedp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
@@ -6727,6 +6786,8 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
     if (ctx->topd.teval != pdp->teval
 #ifdef SWE_UPSTREAM_COMPAT	/* bug 71: no instant is special */
       || ctx->topd.teval == 0
+#else				/* bug 92: nor is any ephemeris */
+      || ctx->topd.iflgkey != SWI_TOPD_KEY(iflag)
 #endif
       ) {
       if (swi_get_observer(ctx, pdp->teval, iflag | SEFLG_NONUT, DO_SAVE, xobs, serr) != OK)
@@ -10015,6 +10076,12 @@ int32 CALL_CONV swe_fixstar2_r(swe_ctx *ctx, char *star, double tjd, int32 iflag
   char srecord[AS_MAXCH + 20];	/* 20 byte for SE_STARFILE */
   int retc;
   struct fixed_star stardata;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 92: the lookup came before the first sync, so a thread
+   * that had adopted one path looked its star up in that path's
+   * catalogue after another thread had set a new one. Adopt it first. */
+  swi_init_swed_if_start(ctx);
+#endif
   if (serr != NULL)
     *serr = '\0';
 #ifdef TRACE
@@ -10125,6 +10192,9 @@ int32 CALL_CONV swe_fixstar2_mag_r(swe_ctx *ctx, char *star, double *mag, char *
   /* moved to ctx->sp.fs2mag (Phase 3c) */
   int retc;
   struct fixed_star stardata;
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);	/* bug 92, see swe_fixstar2_r() */
+#endif
   if (serr != NULL)
     *serr = '\0';
   load_all_fixed_stars(ctx, serr); // loads stars unless loaded with an earlier call of function
@@ -10765,6 +10835,20 @@ int swi_get_observer(swe_ctx *ctx, double tjd, int32 iflag,
       ctx->topd.xobs[i] = xobs[i];
     ctx->topd.teval = tjd;
     ctx->topd.tjd_ut = tjd_ut;	/* -> save area */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 92: the observer was kept for the instant alone, but it
+     * is placed by the delta t of the request's ephemeris (its tidal
+     * acceleration) and, here, framed by its DE number (the bias above):
+     * a topocentric request at the instant of one on another ephemeris
+     * took that one's site. De200 after Swiss at 2000 Jan 1 12h UT, the
+     * Moon 3.7e-8 deg off in right ascension, 3.9e-8 in azimuth, its
+     * latitude speed 4.1e-7 deg/day; at TT 1600 Jan 1, where their delta t
+     * differ, Swiss after de200 4.4" (0.00122 deg), Moshier after Swiss
+     * 0.77", at 1000 5.4" (upstream, without the bias: 4.4" and 31"). It is
+     * keyed on those flags too now (SWI_TOPD_KEY()), and
+     * emptied by a path change, which can bring other files. */
+    ctx->topd.iflgkey = SWI_TOPD_KEY(iflag);
+#endif
   }
   return OK;
 }
@@ -11389,6 +11473,9 @@ int32 CALL_CONV swe_fixstar_r(swe_ctx *ctx, char *star, double tjd, int32 iflag,
   /* moved to ctx->sp.fs1 (Phase 3c) */
   char srecord[AS_MAXCH + 20], *sp;	/* 20 byte for SE_STARFILE */
   int retc;
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);	/* bug 92, see swe_fixstar2_r() */
+#endif
   if (serr != NULL)
     *serr = '\0';
 #ifdef TRACE
@@ -11504,6 +11591,9 @@ int32 CALL_CONV swe_fixstar_mag_r(swe_ctx *ctx, char *star, double *mag, char *s
   struct fixed_star stardata;
   int retc;
   double dparams[20];
+#ifndef SWE_UPSTREAM_COMPAT
+  swi_init_swed_if_start(ctx);	/* bug 92, see swe_fixstar2_r() */
+#endif
   if (serr != NULL)
     *serr = '\0';
   retc = fixstar_format_search_name(star, sstar, serr);

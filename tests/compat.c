@@ -745,6 +745,24 @@ static double hel_memo_off(void)
   return fabs(m[1] - m[0]);
 }
 
+/* swe_deltat() in AD 1000 after swe_set_tid_acc(SE_TIDAL_DE406) and a
+ * second swe_set_ephe_path(), against right after the setting, s.
+ * Upstream's path change resets a manual tidal acceleration to automatic,
+ * the file's -25.936: 9.13 s (UPSTREAM-BUGS 92). */
+static double tid_acc_path_off(void)
+{
+  double d0, d1;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_tid_acc(SE_TIDAL_DE406);
+  d0 = swe_deltat(2086302.5);
+  swe_set_ephe_path(EPHE);
+  d1 = swe_deltat(2086302.5);
+  swe_set_tid_acc(SE_TIDAL_AUTOMATIC);
+  swe_close();
+  return fabs(d1 - d0) * 86400;
+}
+
 /* Mars's heliocentric osculating ascending node at tjd = 0 against tjd =
  * 1e-9, deg, each after swe_close(). Upstream forces sweph()'s EMB to be
  * recomputed with the Earth's teval = 0, which at tjd 0 is the Earth slot
@@ -1816,7 +1834,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1857,6 +1875,7 @@ int main(int argc, char **argv)
   ayajd0 = ayanamsa_jd0_off();
   nodjd0 = nodaps_jd0_off();
   helmemo = hel_memo_off();
+  tidpath = tid_acc_path_off();
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
   apsrate = planet_apsis_rate_off();
@@ -2174,6 +2193,14 @@ int main(int argc, char **argv)
   else {
     printf("  heliacal memo, RH 80 %%  %.2e mag FAIL: expected %s\n",
            helmemo, WANT_DEFECT ? "> 0.1" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (tidpath > 1) : (tidpath < 1e-9))
+    printf("  tidal acc. after path  %.2e s OK\n", tidpath);
+  else {
+    printf("  tidal acc. after path  %.2e s FAIL: expected %s\n",
+           tidpath, WANT_DEFECT ? "> 1" : "< 1e-9");
     bad++;
   }
 

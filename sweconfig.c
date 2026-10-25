@@ -296,6 +296,8 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     ctx->last_epheflag = 0;
 #ifndef SWE_UPSTREAM_COMPAT
     swi_hel_forget(ctx);	/* a star's magnitude is the path's (bug 82) */
+    swi_fixstar_forget(ctx);	/* and its catalogue, and its file (bug 92) */
+    ctx->topd.teval = SWI_TJD_NEVER;	/* other files, another site (bug 92) */
 #endif
   }
   /* dt_changed is in here for the reason G26 records: the observer is built

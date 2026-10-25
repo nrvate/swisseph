@@ -903,6 +903,13 @@ struct epsilon {
  *     swe_set_interpolate_nut() did not initialise the default context, so
  *     called before any calculation they were wiped by its first-use memset
  *     (22.6 s of delta t; UPSTREAM-BUGS 83, G82)
+ *   - the fixed-star memos (sp.fs1, fs1mag, fs2, fs2mag) and the catalogue
+ *     swe_fixstar2() reads outlived swe_close() and a path to another
+ *     sefstars.txt (Sirius 2.64 pc for 3.33, -1.46 mag for -1.00), a path
+ *     change reset a manual tidal acceleration to automatic (9.13 s of
+ *     delta t in AD 1000), and the topocentric observer was kept for the
+ *     instant alone across ephemerides (4.4" on the Moon at 1600 TT;
+ *     UPSTREAM-BUGS 92, G91)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -1193,7 +1200,13 @@ struct topo_data {
   double teval;
   double tjd_ut;
   double xobs[6];
+  int32 iflgkey;	/* SWI_TOPD_KEY() of the flags xobs was built for (bug 92) */
 };
+/* What of a request's flags the observer depends on besides the instant:
+ * the ephemeris, whose delta t (its tidal acceleration) and DE number (the
+ * frame bias) place the site, and the JPL Horizons offsets in its
+ * nutation (UPSTREAM-BUGS 92). */
+#define SWI_TOPD_KEY(iflag)  ((iflag) & (SEFLG_EPHMASK | SWI_JPLHOR_FLAGMASK))
 
 struct sid_data {
   int32 sid_mode;
@@ -1693,6 +1706,10 @@ extern swe_ctx *swi_default_ctx(void);
  * new ephemeris path and a new context call it: the star magnitude's comes
  * from the catalogue on that path (UPSTREAM-BUGS 82). */
 extern void swi_hel_forget(swe_ctx *ctx);
+/* Empty the fixed-star memos and the star catalogue read into memory
+ * (sweph.c), and close the star file: the catalogue is the path's
+ * (UPSTREAM-BUGS 92). Called where swi_hel_forget() is. */
+extern void swi_fixstar_forget(swe_ctx *ctx);
 #endif
 
 /* Shared configuration layer. Included here, after struct sid_data and

@@ -126,6 +126,7 @@ worst were in code that had never executed even once.
 | 93 | `swe_nod_aps()`'s aberration rate takes the Moshier Earth's acceleration from the gravitational jerk | Correctness | `sweph.c` |
 | 87 | The precession at exactly J2000 is the identity, which the Vondrak series is not | Correctness | `swephlib.c` |
 | 91 | The ayanamsa's speed is a backward difference over 0.001 day | Correctness | `sweph.c` |
+| 92 | The fixed-star memos and catalogue outlive a new path, a path change resets a manual tidal acceleration, and the topocentric observer outlives an ephemeris switch (partly this fork's) | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
 
 ---
 
@@ -5375,6 +5376,100 @@ Over 1e-4 day steps that are not binary the noise is 1.9e-10 to 2.4e-10
 deg rms: the instants' own rounding (ulp 4.7e-10 day at JD 2.45e6 times
 1.2-1.4 deg/day), which five-point differences over 1e-4 day turn into a
 few 1e-6 deg/day; the measurement's, not the library's.
+
+## 92. The fixed-star memos and catalogue outlive a new path, a path change resets a manual tidal acceleration, and the topocentric observer outlives an ephemeris switch
+
+**Severity: Correctness (returned values: a star's magnitude and distance from another catalogue, 9.13 s of delta t in AD 1000, 4.4" on the topocentric Moon)**
+**Where:** `sweph.c`: `swi_fixstar_forget()`, `swi_close_keep_topo_etc()`, `ctx_release()`, `swe_fixstar_r()`, `swe_fixstar2_r()`, `swe_fixstar_mag_r()`, `swe_fixstar2_mag_r()`, `swi_get_observer()` and the five places that reuse `topd`; `sweconfig.c`: `swi_config_apply()`; `sweph.h`: `struct topo_data`, `SWI_TOPD_KEY()`
+
+Three answers that depended on what was asked before them, each measured
+against the same request in a fresh process:
+
+- **The fixed-star memos.** `swe_fixstar()` and `swe_fixstar_mag()` keep
+  their last star's record (`sp.fs1`, `sp.fs1mag`), `swe_fixstar2()` and
+  `swe_fixstar2_mag()` their last star (`sp.fs2`, `sp.fs2mag`), and
+  `swe_fixstar2()` reads the whole catalogue into memory once
+  (`fixed_stars`). None was emptied by a path change, and the memos not by
+  `swe_close()` either (it frees the catalogue): with a second
+  `sefstars.txt` giving Sirius -1.00 mag and a parallax of 300 mas, Sirius
+  after `swe_close()` and the path to it stayed at -1.46 and 2.64 pc
+  (543932 AU) for -1.00 and 3.33 pc (687549 AU) in all four functions, and
+  at the other catalogue's values after the path back; `swe_fixstar2()`
+  answered from the old catalogue after a path change whatever star was
+  asked, until `swe_close()`. And on the shared configuration a thread
+  adopting another thread's path kept its star file open on the old
+  directory and its catalogue in memory, and looked a star up before
+  adopting at all (the four functions synced only inside the calculation,
+  after the lookup, and the magnitudes never): every answer on it after
+  each path B was catalogue A's (Aldebaran 0.86 mag and 4214646 AU for
+  0.50 and 5156619). Entry 82 found the first of these.
+- **A manual tidal acceleration** was reset to automatic by every path
+  change -- `swe_set_ephe_path()`, `swe_set_jpl_file()`, and the implicit
+  path the first calculation sets when the files are named by
+  `SE_EPHE_PATH` -- in `swi_close_keep_topo_etc()`. So
+  `swe_set_tid_acc(SE_TIDAL_DE406)` followed by `swe_calc_ut()` (files by
+  `SE_EPHE_PATH`), or by another `swe_set_ephe_path()`, left -25.936, the
+  file's, and `swe_deltat()` in AD 1000 1474.79 s for 1465.66; followed by
+  `swe_set_jpl_file("de200.eph")`, -23.8946 and 1305.37 s. The manual
+  (10.3): "Once the function swe_set_tid_acc() has been used, the
+  automatic setting of tidal acceleration is blocked. In order to unblock
+  it again, call swe_set_tid_acc(SE_TIDAL_AUTOMATIC)." `swe_close()`
+  releases everything, and after it "no Swiss Ephemeris functions should
+  be used unless you call swe_set_ephe_path() again" (2.2); it returns the
+  setting to automatic, as upstream's does, and that is kept. Upstream's
+  too.
+- **The topocentric observer** (`topd`) is reused when its instant equals
+  the Earth's, but it is placed by the delta t of the request's ephemeris
+  (its tidal acceleration) and, in this fork, framed by its DE number
+  (entry 27's J2000 -> ICRS bias, for DE403 and later): a topocentric
+  request at the instant of one on another ephemeris took that one's site,
+  with no setter between them. De200 after Swiss (or Moshier) at 2000 Jan
+  1 12h UT: the Moon 3.7e-8 deg in right ascension, 3.9e-8 in azimuth and
+  1e-8 in altitude (`swe_azalt()`), 4.1e-7 deg/day in its latitude speed;
+  this is the 3.9e-8 G81 saw. At TT 1600 Jan 1, where the ephemerides'
+  delta t differ, `swe_calc()` Swiss after de200 4.4" (0.00122 deg),
+  Moshier after Swiss 0.77", and at 1000 5.4" (upstream, without the
+  bias: 4.4" and 31"). `swe_calc_ut()` at those dates misses the reuse
+  (the TT differ with the delta t). The delta t part is upstream's.
+
+Swept for the rest, each against a fresh process, on Swiss, Moshier and
+de200 after each other at 2000, 1600 and 1000: `swe_calc()` and
+`swe_calc_ut()` (geocentric, topocentric, with speeds), `swe_azalt()` and
+`swe_houses_ex()`; nothing else moves. The nutation and obliquity caches
+are keyed on the instant and the JPL Horizons flags, which is complete
+across ephemerides; the save areas carry the ephemeris; delta t is
+recomputed per request with the ephemeris's tidal acceleration.
+
+**Fix, as done here:** `swi_fixstar_forget()` empties the four memos,
+frees the catalogue and closes the star file; `swe_close()`, every path
+change (`swi_close_keep_topo_etc()`) and an adopted path
+(`swi_config_apply()`) call it, where `swi_hel_forget()` runs. The four
+star functions sync first (`swi_init_swed_if_start()`), so a thread adopts
+a new path before its lookup. `swi_close_keep_topo_etc()` returns the tidal
+acceleration to automatic only when it is not manual. The observer is
+keyed on its instant and `SWI_TOPD_KEY()` of the flags it was built for
+(the ephemeris and the Horizons flags), and emptied by a path change, which
+can bring files of another DE number. Under `SWE_UPSTREAM_COMPAT` all
+three are upstream's.
+
+Not fixed here: the star functions as the very first library call fail
+with the files named by `SE_EPHE_PATH` ("sefstars.txt not found in PATH
+''" on upstream and before this fix; the sync now gives the compiled
+default path, not the variable's), upstream's too.
+
+G91 `tests/ephswitch.c`: the four star functions on Sirius, Aldebaran and
+Sirius again through path A, `swe_close()` and B, A, B, `swe_close()` and
+A (two catalogues), and on a second thread while the first sets the paths;
+seven tidal-acceleration scenarios against the setting alone or none; and
+140 topocentric Moon, `swe_azalt()` and `swe_houses_ex()` requests at
+2000, 1600 and 1000 on each ephemeris right after a topocentric Moon on
+each other one at the same instant; within 1e-10 of a fresh process: 156
+pass. Before the fix 34 fail (stars 6 of 9, tidal 4 of 7, ephem 24 of
+140); the compat build 18 (ephem 8: the delta t cases); the upstream build
+(legacy-master) 18 (stars 8, its second thread finding no path at all,
+tidal 4, ephem 6). G24 `tid_acc_path_off`: `swe_deltat()` in AD 1000
+after a manual DE406 and a second path, 0 s shipped, 9.13 s compat. G24,
+G81, G82, G83, G20, G70, G2 and the context gate pass.
 
 ## How these were found
 
