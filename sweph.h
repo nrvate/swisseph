@@ -934,6 +934,9 @@ extern int swi_intp_apsides_est(swe_ctx *ctx, double J, double *pol, int ipli, i
 /* planets, s. moshplan.c */
 extern int swi_moshplan(swe_ctx *ctx, double tjd, int ipli, AS_BOOL do_save, double *xpret, double *xeret, char *serr);
 extern int swi_moshplan2(swe_ctx *ctx, double J, int iplm, double *pobj);
+#ifndef SWE_UPSTREAM_COMPAT
+extern void swi_mosh_earth_accel(swe_ctx *ctx, double tjd, const double *x0, double *acc);
+#endif
 extern int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
                            int ipl, int ipli, const double * SWI_RESTRICT xearth,
                            const double * SWI_RESTRICT xsun, char *serr);

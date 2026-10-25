@@ -3340,151 +3340,27 @@ gives the same. Bench calc-swieph/calc-moseph/jpl-interp: within noise (min of
 two runs 0.5567/0.5549 s, 1.0298/1.0376 s vs 0.5485/0.5495, 1.0361/1.0526
 before). Left out below 0.3 day: the planets' jerk, 8e-6 of tau a.
 
+**Part 3 (the Moshier floor).** The far bodies stayed at 2e-9 to 6e-9 on
+Moshier: the Earth the series returns accelerates differently from the
+gravitational sum (its small monthly terms: 1e-4 of a; a full Moshier Moon
+gave the same numbers). Past 0.3 day `swi_mosh_earth_accel()` now takes a as
+the second difference of the Earth's position (EMB series plus the Moon
+offset) over +-2^-8 day at exact instants (truncation 7e-8 of the Moon's
+part, rounding 7e-12 AU/day^2 against 3e-4), from the saved Earth at teval;
+the planets' sum is not needed there. Measured after: Moshier <= 1.06e-9
+(Harrington topo 1.06e-9, Pluto 8.6e-10; the far bodies 5e-10 to 6.5e-10 topo,
+1.2e-10 geo). Swiss and JPL with the same own-a (JPL: the Earth's velocity
+from the file differenced over the same step) reach 1.0e-9 as well, which is
+what the gravitational sum gives them, so they keep the sum (no extra reads).
+
 G65 `tests/lunarpulleph.c`: Nibiru, Harrington, the Christ Comet, Planet 9,
 VEA, Pluto, Zeus and Kronos, geocentric and topocentric, Swiss files, JPL and
 Moshier, seven dates 1650..2150, longitude and latitude speeds within 2e-9
-deg/day (Swiss, JPL; measured <= 1.0e-9) or 1e-8 (Moshier, <= 6.2e-9). The
-build before part 2 fails Swiss at 4.6e-9, JPL and Moshier up to 1.7e-8; the
-build before part 1 fails the far-body rows at 5.9e-8 to 6.0e-7; the upstream
-build fails them all. G24: `far_body_moon_pull_eph_off`, VEA's longitude
-speed on JPL and Moshier, 1.6e-9 shipped, 3.4e-5 compat.
-
-## 69. The nutation matrix's rate holds the mean obliquity still
-
-**Severity: Correctness (2.0e-9 deg/day in the right ascension speed of a star near the pole; 4e-10 in the ecliptic longitude speed near the ecliptic's pole; 2e-11 in every latitude and declination speed of date)**
-**Where:** `sweph.c`: `swi_nutate()`, `swi_check_nutation()`
-
-Entry 49 put the nutation's own turning into the velocity as w x x, w
-the angular velocity of N = R1(-eps - deps) R3(-dpsi) R1(eps) from the
-angles' rates (entry 58 made those the rates at t): w = deps' e1 + dpsi'
-(0, -sin(eps + deps), cos(eps + deps)), the mean obliquity eps held. It
-moves, 3.6e-7 deg/day, and R1(-eps - deps) and R1(eps) do not cancel
-when dpsi != 0: w left out eps' (e1 - R1(-eps - deps) R3(-dpsi) e1) =
-eps' (1 - cos dpsi, -sin dpsi cos(eps + deps), -sin dpsi sin(eps +
-deps)), up to eps' x 8e-5 rad = 3e-11 deg/day. Measured as G57 does
-(speed of date less the NONUT speed, against the five-point difference of
-the same two calls' positions) over 2^-6 day, seven dates 1900-2100:
-Polaris's right ascension 1.88e-9, Polaris Australis's 2.04e-9 (times
-1/cos(declination)), delta Dor's ecliptic longitude 4.06e-10, 42 Dra's
-1.96e-10, the polar stars' other longitudes ~7e-11, latitudes and
-declinations of the planets and stars 1.3e-11 to 2.8e-11. The same
-1.88e-9 over 2^-8 and 2^-6 day: not the reference's noise. The rate of
-N by a central difference of its nine entries (40 digits, eps, deps and
-dpsi all moving, dpsi = 8e-5) agrees with the w below to 1e-30 rad/day;
-the old w is short by 4.6e-13 rad/day, eps' sin(dpsi) cos(eps + deps).
-
-**Fix, as done here:** w gains the eps' terms above. eps' is the mean
-obliquity's rate from `swi_obliquity_rate()` (its one-day difference of
-`swi_epsiln()`), taken once per fresh instant in `swi_check_nutation()`
-beside the angles' rates and kept as `nut.deps0`. Positions unchanged.
-Measured after: Polaris's right ascension 1.1e-11, Polaris Australis's
-1.2e-11, delta Dor's ecliptic longitude 1.2e-11, 42 Dra's 8.6e-12, every
-latitude and declination <= 1.2e-12 (the difference's own rounding:
-Polaris's right ascension 6.2e-11 over 2^-8 day, 1.1e-11 over 2^-6 and
-2^-5); the planets' longitudes 1e-12..5e-12, unchanged. bench
-calc-swieph/calc-moseph no slower (min of 3x7: 0.553/1.038 s against
-0.553/1.029). G57's Polaris
-right ascension 1.82e-9 -> 6.2e-11 (its limit 3e-9 kept), G24
-`nut_rate_off` 1.0e-9 -> 5.75e-11; G49's angles 3.9e-11 -> 1.9e-11, its
-XYZ rates 7.0e-13 -> 1.8e-13 of the distance per day; G41 within
-2e-11 either way (Aldebaran's latitude 7.2e-12 -> 1.3e-12).
-
-G68 `tests/nutobliq.c`: Polaris, Polaris Australis, delta Dor, 42 Dra,
-the Sun, Mars, Saturn and Pluto, ecliptic and equatorial, longitude and
-latitude, the nutation's share over 2^-6 day at seven dates: 32 checks,
-longitudes within 3e-11 deg/day, latitudes within 5e-12. Before the fix
-20 of 32 failed; the upstream build fails all 32 (bug 58 besides). G24
-`nut_obliq_rate_off`: Polaris Australis's right ascension, the worse of
-1900 and 2000, 6.6e-12 deg/day shipped (2.04e-9 before the fix), 8.2e-9
-compat.
-
-## 70. `swe_nod_aps()`'s apparent speeds are not the rate of the aberration it applies
-
-**Severity: Correctness (1.6e-8 deg/day on Neptune's mean points' geocentric longitude, 5.7e-9 on Mars's; 2.1e-9 AU/day on Neptune's heliocentric distance rate)**
-**Where:** `swecl.c`, `swe_nod_aps_r()`, the aberration of the points (every
-point and method; measured on the planets' mean ones); `sweph.c`,
-`swi_aberr_rate()` (replaced)
-
-The points carry no light time: a point x(t) seen from the observer, then
-aberration A(x, V) by the observer's velocity V(t). Its rate is A's
-derivative along x' and along V' = a, the observer's acceleration. The
-speed was `swi_aberr_light()`'s (the point moved, V held) plus bug 34's
-term tau a, a's part across the line of sight -- A to first order in v/c
--- with tau a's series taken while the save area held the instant
-t - dt, so without the Moon (bug 62) in the Earth's jerk: tau/2 of the
-Moon's 7.5% of it left in a. Seen from the Sun (heliocentric, and the Sun's
-own points) it was the raw V(t) - V(t - dt), its radial part too, which
-moves the distance rate. Measured with default flags against five-point
-differences of the library's own positions, mean nodes, perihelia and
-aphelia of Mercury..Neptune, thirteen instants -3000..+3000: geocentric
-longitude off by 5.2e-9 (Mercury) to 1.6e-8 (Neptune) deg/day, latitude by
-up to 1.3e-9 (Neptune); heliocentric distance by 1.3e-9 AU/day (Uranus) and
-2.1e-9 (Neptune). With SEFLG_NOABERR the same cases are within 5.3e-10,
-3e-11 and 2.3e-11; the deflection's rate (SEFLG_NOGDEFL) moves nothing.
-
-**Fix, as done here:** the position is `swi_aberr_light()`'s, unchanged to
-the bit (with and without SEFLG_SPEED, every point, method and frame
-compared). The velocity is the central difference of the aberrated place,
-A(x + s x', V + s a) at s = +-2^-6 day, x with its velocity before
-aberration. a is the new `swi_observer_accel_lt()`'s (the Earth's, from
-`earth_at_lt_sun()`'s tau a over tau, plus the site's for SEFLG_TOPOCTR),
-taken after the save area is back at tjd so that the Moon is in it; seen
-from the Sun, V(t) - V(t - dt) over dt. After, same instants: geocentric
-longitude <= 5.3e-10 deg/day (Mercury at -3000, the floor without
-aberration), Neptune 3.5e-10; latitude <= 4.4e-11; distance <= 2.2e-11
-AU/day. The speeds of the other points through the same code move by up to
-2.6e-8 deg/day, toward their positions' rates: the osculating points' (Mars
-geocentric 1.2e-8 to 6.8e-9 deg/day, Pluto 2.1e-8 to 2.0e-9), the Moon's
-heliocentric mean points' distance rate (5.8e-11 to 2.7e-14 AU/day), the
-topocentric mean points' (Neptune 3.2e-8 to 1.6e-9 deg/day).
-
-G69 `tests/nodapsaberr.c`: the fourteen cases of G63 (Mercury..Neptune,
-geocentric and heliocentric) with default flags, seven instants
--3000..+3000, longitude, latitude and distance speeds within 1e-9, 1e-10
-deg/day and 5e-11 AU/day (measured 5.3e-10, 4.4e-11, 2.2e-11); the build
-before this fix fails 20 of the 42 checks, the upstream build all 42.
-G54's Mars longitude limit is 5e-10 now, from 1e-8 (measured 4.1e-11, from
-5.6e-9). G24 `planet_aberr_rate_off`: Neptune's mean aphelion's
-heliocentric distance rate at J2000 + 100 days, 2.2e-13 AU/day shipped,
-3.3e-9 compat. G42, G47, G54, G63 pass.
-
-## 65. Kronos' built-in semi-axis has two digits swapped, and the Kepler solver's starting guess is wrong
-
-**Severity: Correctness (Kronos 0.0086 deg at 1700, 0.0169 deg at 2300 without seorbel.txt; the second part moves no result beyond rounding)**
-**Where:** `swemplan.c`: `plan_oscu_elem[]` (SE_NEELY block), `swi_osc_el_plan()`
-
-Without `seorbel.txt` on the path the fictitious bodies come from a built-in
-table. Its Neely row for Kronos has the semi-axis 64.81960; `seorbel.txt`
-(Neely's, "refined by James Neely") and Witte's original 64.816896 (the
-non-Neely rows of the same table) give 64.81690. The repo holds no Neely
-paper to check the digits against; the file and the original elements agree
-with each other, and the other fourteen built-in rows agree with the file to
-the last digit (compared row by row), so the value is the swap. Kronos'
-mean motion is off by 0.0043 deg per century from the 1900 epoch:
--0.0086 deg at 1700, +0.0169 deg at 2300, 0.0257 deg and 2.8e-3 AU at 2500.
-
-The solver of `swi_osc_el_plan()` for eccentricities above 0.975 (Nibiru,
-the Christ Comet) builds a starting guess near perihelion with
-`zeta = pow(x, 1/3)`, where `1/3` is integer division, so `zeta = pow(x, 0)
-= 1`, and adds `M_180_or_0 = 180` to an angle in radians where 180 degrees
-is pi. `swi_kepler()` converges to the same root from either guess, so the
-results move only by rounding. Measured over 20000 dates 1699 to 2301
-(Swiss, geocentric, with speed): Nibiru differs by 2.8e-14 deg in longitude,
-1.4e-14 in latitude, 6.1e-11 deg/day in longitude speed, 3.1e-10 AU/day in
-distance speed; the Christ Comet by 8.9e-15 deg, 1.9e-11 deg/day.
-
-**Fix, as done here:** the semi-axis is 64.81690. The guess is
-`pow(x, 1.0 / 3)` and `M_PI`. The solver now needs fewer passes: Nibiru
-383199 to 295420 for 59947 calls (6.4 to 4.9 per call), the Christ Comet
-512773 to 179943 for 59981 (8.5 to 3.0). Cost is below any bench noise.
-
-G64 `tests/fictbuiltin.c`: the 15 built-in bodies at five dates 1700..2500,
-heliocentric Moshier, with the shipped `seorbel.txt` against an empty
-directory (the built-in table): 0 deg, 5.7e-14 AU; the upstream build fails
-on Kronos alone (0.0086 deg at 1700, 0.0169 deg at 2300, 0.0257 deg at 2500).
-G24 `kronos_builtin_off`: Kronos at 1700, built-in against the file, 0 shipped,
-8.7e-3 deg compat. The starting-guess part is not gated: no public result
-moves beyond rounding, and the pass count has no clean hook.
+deg/day (measured <= 1.06e-9). The build before part 3 fails Moshier's far
+bodies (2e-9 to 6e-9) and Harrington/Pluto before part 2 (1.4e-8 to 1.7e-8),
+Swiss at 4.6e-9; the build before part 1 fails the far-body rows at 5.9e-8 to
+6.0e-7; the upstream build fails them all. G24: `far_body_moon_pull_eph_off`,
+VEA's longitude speed on JPL and Moshier, 2.9e-11 shipped, 3.4e-5 compat.
 
 ## 76. A fixed star's aberration rate takes the Earth's acceleration half a step back
 

@@ -15,11 +15,11 @@
  * The check: Nibiru, Harrington, the Christ Comet, Planet 9, VEA, Pluto,
  * Zeus and Kronos, apparent geocentric and topocentric (Zurich), Swiss
  * files, de200.eph and Moshier, seven dates 1650..2150: longitude and
- * latitude speeds within 2e-9 deg/day (Swiss, JPL; measured <= 1.0e-9) or
- * 1e-8 (Moshier; measured <= 6.2e-9, the Moshier Earth's own acceleration
- * noise) of a five-point difference of the positions over 2^-7 day at
- * multiples of it. The build before part 2 fails 40 of 48 rows on
- * Swiss/JPL/Moshier (Swiss 4.6e-9, JPL and Moshier up to 1.7e-8); the
+ * latitude speeds within 2e-9 deg/day (measured <= 1.06e-9 on all three;
+ * Moshier took 6.2e-9 before part 3) of a five-point difference of the positions over 2^-7 day at
+ * multiples of it. The build before part 2 fails Swiss at 4.6e-9, JPL and Moshier up to
+ * 1.7e-8; the
+ * build before part 3 fails Moshier's far bodies at 2e-9 to 6e-9; the
  * build before part 1 and the upstream build fail them all. Run as
  *   lunarpulleph EPHEDIR
  */
@@ -38,7 +38,7 @@ int main(int argc, char **argv)
   static const char *const eph[3] = {"Swiss", "JPL", "Mosh"};
   static const double y0[3] = {1650, 1650, 1650};	/* first year, per ephemeris */
   static const double dy[3] = {500.0 / 6, 500.0 / 6, 500.0 / 6};
-  static const double lim[3] = {2e-9, 2e-9, 1e-8};	/* deg/day */
+  static const double lim[3] = {2e-9, 2e-9, 2e-9};	/* deg/day */
   const double h = 1.0 / 128;
   char serr[256];
   int ie, ib, ic, y, k, i, bad = 0;

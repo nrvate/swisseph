@@ -744,6 +744,34 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
 }
 
 #ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 66 (part 3): the acceleration of the Earth this series
+ * returns, a = (x(t+h) - 2 x(t) + x(t-h)) / h^2 over exact instants, h =
+ * 2^-8 day, of the EMB series plus its Moon offset, from x0 the saved Earth
+ * at tjd. Truncation (w h)^2 / 12 = 7e-8 of the Moon's part, rounding
+ * 1e-16 / h^2 = 7e-12 AU/day^2 against 3e-4. The aberration rate's tau a
+ * wants the Earth's own acceleration, not the gravitational sum's: the
+ * series' small monthly terms move it by 1e-4 of a (4-6e-9 deg/day on the
+ * far bodies). */
+void swi_mosh_earth_accel(swe_ctx *ctx, double tjd, const double *x0, double *acc)
+{
+  const double h = 1.0 / 256;
+  double xp[3], xm[3], xx[6];
+  double seps2000 = ctx->oec2000.seps, ceps2000 = ctx->oec2000.ceps;
+  int i, k;
+  for (k = 0; k < 2; k++) {
+    double *x = k ? xm : xp;
+    double t = tjd + (k ? -h : h);
+    swi_moshplan2(ctx, t, pnoint2msh[SEI_EMB], xx);
+    swi_polcart(xx, xx);
+    swi_coortrf2(xx, xx, -seps2000, ceps2000);
+    embofs_mosh(ctx, t, xx);
+    for (i = 0; i <= 2; i++)
+      x[i] = xx[i];
+  }
+  for (i = 0; i <= 2; i++)
+    acc[i] = (xp[i] - 2 * x0[i] + xm[i]) / (h * h);
+}
+
 /* Subtracts the Earth-Moon offset's rate from vemb: a central difference
  * over +-2^-8 day, exact instants for any JD below 2^44, divided by
  * their actual distance. Over that step the short lunar series above is

@@ -5010,6 +5010,13 @@ static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, double *acc, ch
  * plenty); only bodies past 0.3 day pay for them. Below 0.3 day the series
  * reads the planets' share in the difference of the Earth's velocities
  * (its jerk, 8e-6 of tau a, is left out).
+ * Part 3: on Moshier, past 0.3 day tau a is taken from the Earth the series
+ * returns, a second difference of its position (EMB plus Moon offset) over
+ * +-2^-8 day at exact instants, not from the gravitational sum: the series'
+ * small monthly terms move its acceleration by 1e-4 (2e-9 to 6e-9 deg/day
+ * on the far bodies). Swiss and JPL reach the same 1e-9 with the sum (JPL
+ * measured with the Earth's velocity differenced over the same step: 1.0e-9
+ * either way), which needs no further read.
  * Without the Moon in hand, past 10 days the series itself fails (3.7e-4
  * deg/day at the 462 days of a body 80,000 AU out), and tau a(teval) is
  * taken whole from the Sun's pull, -GM r/r^3: that leaves out the Moon's
@@ -5099,6 +5106,15 @@ static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *
   rr = sqrt(square_sum(r));
   if (tau > (have_moon ? 0.3 : 10)) {
     double ap[3];
+    if (ctx->pldat[SEI_EARTH].iephe == SEFLG_MOSEPH && ctx->pldat[SEI_EARTH].teval == teval) {
+      /* Upstream bug 66, part 3: the acceleration of the Earth the series
+       * returns, not the gravitational sum (the series' monthly terms move
+       * it by 1e-4: 4-6e-9 deg/day on the far bodies) */
+      swi_mosh_earth_accel(ctx, teval, ctx->pldat[SEI_EARTH].x, ap);
+      for (i = 0; i <= 2; i++)
+        xout[i+3] = xeteval[i+3] - tau * ap[i];
+      return;
+    }
     /* Upstream bug 66: and the planets' pull on the Earth */
     planets_pull(ctx, teval, r, ap);
     for (i = 0; i <= 2; i++)
