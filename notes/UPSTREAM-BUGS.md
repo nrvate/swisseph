@@ -88,6 +88,7 @@ worst were in code that had never executed even once.
 | 50 | The Moshier series round their arguments at more time than a JD resolves | Correctness | `swemplan.c`, `swemmoon.c` |
 | 51 | The Moshier velocities are differences at rounded instants | Correctness | `swemplan.c`, `swemmoon.c`, `sweph.c` |
 | 60 | A negative mean anomaly with no T terms freezes a fictitious body | Correctness | `swemplan.c` |
+| 54 | `SEFLG_SPEED3` takes the true node's and osculating apogee's speeds over 0.1 day | Correctness | `sweph.c` |
 
 ---
 
@@ -2614,8 +2615,8 @@ deg/day, the Moon <= 5e-9; the true node <= 3.1e-8, the apogee <= 3.4e-6.
 Left: the apparent speeds still lack tau times the acceleration, as Moshier
 places a body at x - tau v rather than at t - tau (the Moon 4e-7 deg/day
 with aberration and 8e-5 without, Mercury heliocentric 5e-6 AU/day in its
-distance rate; entry 32 left the Moon's); and `SEFLG_SPEED3` still takes
-the node and apogee over 0.1 day, for every ephemeris.
+distance rate; entry 32 left the Moon's); and `SEFLG_SPEED3` still took
+the node and apogee over 0.1 day, for every ephemeris (entry 54).
 
 Against the Swiss files, 241 epochs -3000..3000, Sun..Pluto, Moon, true
 node, osculating apogee, geocentric apparent and topocentric equatorial:
@@ -2674,6 +2675,41 @@ distance rate within 1e-9 (1.3e-14); the upstream build fails all four
 deg/day, distance rate by 5.1e-4). G24 `fict_negative_mano_off`: the
 two sets 100 days on, 0 deg shipped, 113 deg compat. G1 and G17
 unchanged.
+
+## 54. `SEFLG_SPEED3` takes the true node's and osculating apogee's speeds over 0.1 day
+
+**Severity: Correctness (1.4e-3 deg/day on the apogee, 3.5e-5 on the node, 1e-4 deg/day in the apogee's latitude, 5e-9 AU/day in distance)**
+**Where:** `sweph.c`, `swe_calc_r()`; `sweph.h`
+
+With `SEFLG_SPEED3`, `swe_calc_r()` picks the step of its three positions per
+body: `MOON_SPEED_INTV` for the Moon, `INTP_APS_SPEED_INTV` for the
+interpolated apsides (entry 45), `PLAN_SPEED_INTV` for the rest -- and
+`NODE_CALC_INTV_MOSH`, 0.1 day, for `SE_TRUE_NODE` and `SE_OSCU_APOG` on
+every ephemeris ("the optimum dt with Moshier"). That step averaged out the
+Moshier Moon's noise, which entry 51 removed; what is left is the h^2 term of
+a three-point slope over 0.1 day. Against five-point differences over 2^-5
+day of the library's own positions at binary-fraction instants, at eight
+epochs: the apogee's longitude speed is off by 1.4e-3 deg/day with Swiss
+files, Moshier and de200 alike (1.1e-3 de200), its latitude's by 1.0e-4, the
+true node's longitude by 3.5e-5, the distances by 4.5e-9 AU/day.
+
+**Fix, as done here:** the step is `NODE_SPEED3_INTV`, 2^-9 day, for both
+bodies and every ephemeris. Measured over steps 2^-14..2^-3 at eight epochs
+(-2500..2800; 1650..2100 for de200, which spans 1600-2170), the error is
+the truncation above 2^-9 and the positions' noise below: Swiss files and
+de200 bottom out at 2^-11..2^-9 (apogee 1e-7..4e-7 deg/day), Moshier at
+2^-10..2^-8 (1e-6), the node at 1e-8 on all three. The speed stays the
+three-point slope at t (entry 31). Now: apogee longitude <= 6.2e-7 (Swiss),
+2.4e-7 (de200), 1.3e-6 (Moshier) deg/day, latitude <= 9.5e-8, the true node
+<= 2.3e-8, distances 2e-12 AU/day. Cost: none (the same three calls).
+
+G53 `tests/node3speed.c`: both bodies on the three ephemerides, longitude,
+latitude and distance speeds against five-point differences, within 3e-6
+deg/day and 1e-10 AU/day. The upstream build fails all six rows (apogee
+0.15..0.19 deg/day, node 3.2e-3..4.7e-3, with entry 31's late slope on top;
+7e-7 AU/day). G24 `node3_speed_off`: the Moshier apogee at 2800, 1.1e-6
+deg/day shipped, 0.19 compat. G1: rows with `SEFLG_SPEED3` on these two
+bodies, if any, move by the figures above; not re-baselined here.
 
 ## How these were found
 

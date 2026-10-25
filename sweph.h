@@ -325,6 +325,7 @@ typedef struct swe_ctx swe_ctx;
 #define DEFL_SPEED_INTV  0.0000005
 #ifndef SWE_UPSTREAM_COMPAT
 #define INTP_APS_SPEED_INTV  0.00390625	/* 2^-8 day, interpolated apsides (bug 45) */
+#define NODE_SPEED3_INTV  0.001953125	/* 2^-9 day, SPEED3 of the true node and osculating apogee (bug 54) */
 #endif
 
 #define SE_LAPSE_RATE        0.0065  /* deg K / m, for refraction */
@@ -771,6 +772,9 @@ struct epsilon {
  *     and apogee's speeds over 0.1 day: ~3e-6 of the speed, 0.13 mas on
  *     Mercury's apparent place, 45" jumps on the osculating apogee
  *     (UPSTREAM-BUGS 50, 51, G50)
+ *   - swe_calc_r() took the SEFLG_SPEED3 speed of the true node and the
+ *     osculating apogee over +-0.1 day on every ephemeris: 1.4e-3 deg/day
+ *     on the apogee, 3.5e-5 on the node (UPSTREAM-BUGS 54, G53)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

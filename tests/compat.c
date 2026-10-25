@@ -500,6 +500,28 @@ static double star_dist_rate_off(void)
   return fabs(x[5] - (8 * (f[3][2] - f[1][2]) - (f[4][2] - f[0][2])) / (12 * h));
 }
 
+/* The SEFLG_SPEED3 speed of the osculating apogee, Moshier, year 2800,
+ * against a five-point difference of its longitude over 2^-5 day, deg/day.
+ * Upstream takes it over +-0.1 day, and the h^2 term is 1.5e-3
+ * (UPSTREAM-BUGS 54). */
+static double node3_speed_off(void)
+{
+  double t = floor((2451545.0 + 800 * 365.25 + 0.1234567) * 256) / 256, h = 1.0 / 32;
+  double x[6], f[5][6];
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_OSCU_APOG, SEFLG_MOSEPH | SEFLG_SPEED3, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_calc(t + (k - 2) * h, SE_OSCU_APOG, SEFLG_MOSEPH, f[k], serr);
+  for (k = 0; k < 5; k++)
+    if (k != 2)
+      f[k][0] = swe_difdeg2n(f[k][0], f[2][0]);
+  f[2][0] = 0;
+  return fabs(x[3] - (f[0][0] - 8 * f[1][0] + 8 * f[3][0] - f[4][0]) / (12 * h));
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -737,7 +759,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, hspd, hsid, moshr, moshs;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, hspd, hsid, moshr, moshs, n3spd;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -766,6 +788,7 @@ int main(int argc, char **argv)
   intpsf = intp_speedflag_off();
   intprough = intp_rough_off();
   stardd = star_dist_rate_off();
+  n3spd = node3_speed_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -968,6 +991,14 @@ int main(int argc, char **argv)
   else {
     printf("  star distance rate     %.2e AU/day FAIL: expected %s\n",
            stardd, WANT_DEFECT ? "> 1e-4" : "< 1e-5");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (n3spd > 5e-4) : (n3spd < 1e-5))
+    printf("  apogee SPEED3          %.2e deg/day OK\n", n3spd);
+  else {
+    printf("  apogee SPEED3          %.2e deg/day FAIL: expected %s\n",
+           n3spd, WANT_DEFECT ? "> 5e-4" : "< 1e-5");
     bad++;
   }
 

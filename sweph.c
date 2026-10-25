@@ -540,7 +540,17 @@ int32 CALL_CONV swe_calc_r(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 	 * we use Moshier optimum.
 	 * For precise speed, use JPL and FAST speed computation,
 	 */
+#ifndef SWE_UPSTREAM_COMPAT
+	/* Upstream bug 54: the 0.1 day step above, for every ephemeris, left
+	 * the h^2 term in the speed: 1.4e-3 deg/day on the apogee, 3.5e-5 on the
+	 * node (against five-point differences, 8 epochs). Their positions
+	 * are smooth now (bug 51), so the step is where that term and the
+	 * noise balance, 2^-9 day: 1e-7..4e-7 deg/day on the apogee with Swiss
+	 * files and de200, 1e-6 with Moshier; 1e-8 on the node. */
+	dt = NODE_SPEED3_INTV;
+#else
 	dt = NODE_CALC_INTV_MOSH;
+#endif
 	break;
 #ifndef SWE_UPSTREAM_COMPAT
       /* Upstream bug 45: 8.64 s apart, the positions' 1.3 mas jitter was
