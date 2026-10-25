@@ -173,6 +173,7 @@ worst were in code that had never executed even once.
 | 138 | A JPL file a calculation opens sets the automatic tidal term for itself, not for `swe_deltat()`'s guess, which follows the configuration: after the path, de200.eph and the path again by another string, which forgets the JPL DE number, a TT JPL Sun left `swe_get_tid_acc()` at -23.8946 while the next `swe_deltat()` used -25.936 (18.902020 s in 1800) -- on every thread and context | Correctness | `sweph.c` |
 | 145 | `swe_deltat_ex()` with no ephemeris bit in the flag takes the tidal term of the JPL file the context has open, else the default, not the Swiss files' that a 0 flag means to `swe_calc()` and every UT function: at 1950 28.927550 s on the thread that set de200.eph, 28.931886 on a second thread until it opens the file, for 28.932196; 169.4 s in AD 1000; a flag-0 eclipse search 11.3 s off | Correctness | `swephlib.c` |
 | 139 | With the fallback allowed, a Swiss or JPL barycentric request whose files are missing is answered from Moshier, which refuses it asked for itself: Moshier's heliocentric place under SEFLG_BARYCTR and SEFLG_MOSEPH, Mars 0.24 deg and 7.2e-3 AU off the files' barycentric one, the Moon 0.37 deg; `swe_calc_orbel()`, `swe_calc_pctr()` and `swe_nod_aps()`'s barycentric ellipse alike | Correctness (behaviour) | `sweph.c` |
+| 146 | The nutation interpolation's nodes lie both sides of `SEMOD_JPLHORA_3`'s step at 1962 Jan 20 under SEFLG_JPLHOR_APPROX (7.17e-2" in dpsi on the default model): dpsi and every place of date within a day of it interpolated across it, 1.95e-2" off the exact nutation at the switch + 0.3 after a call at - 0.5, 6.93e-2" at worst, where the interpolation is otherwise within about 3 mas | Correctness | `swephlib.c` |
 
 ---
 
@@ -8587,7 +8588,8 @@ Noticed, not fixed:
 - Across `SEMOD_JPLHORA_3`'s switch at 1962 Jan 20, the nodes lie on both
   sides of a 7.2e-2" step: dpsi at the switch + 0.3 after a call at - 0.5,
   -10.105320" interpolated for -10.124814" (1.95e-2"), where the
-  interpolation is otherwise within about 3 mas. Both builds.
+  interpolation is otherwise within about 3 mas. Both builds. Entry 146,
+  fixed there.
 
 ## 130. `swe_calc_orbel()` never pairs the frame bias: its geocentric places are seen from the ICRS Earth, and SEFLG_ICRS leaves the body unturned (this fork's)
 
@@ -9376,6 +9378,123 @@ and after. G99, G117, G119, G109, G87, G2, check-ctx and G24 pass.
 
 G24 `fallback_mosh_bary_ret`: a Swiss barycentric Mars at 2000 Jul 1.5,
 an empty directory, the fallback allowed: -1 shipped, 18180 compat.
+
+## 146. The nutation interpolation's nodes lie both sides of `SEMOD_JPLHORA_3`'s step at 1962 Jan 20: dpsi there 1.95e-2" off the exact nutation, 6.93e-2" at worst
+
+**Severity: Correctness (dpsi and every place of date within a day of 1962 Jan 20 up to 6.93e-2" (1.9e-5 deg) off, with the interpolation on and SEFLG_JPLHOR_APPROX under its default mode; the interpolation is otherwise within about 3 mas)**
+**Where:** `swephlib.c`: `swi_nutation()`
+
+Entry 134's noticed item. With the interpolation on, `swi_nutation()`
+answers from a quadratic through the nutation at three nodes a day apart,
+t - 1, t and t + 1 of the call that built them, for any instant strictly
+between the outer two. What it interpolates, `calc_nutation()`, has a
+step: with `SEFLG_JPLHOR_APPROX` and `SEMOD_JPLHORA_3` (the default
+mode) it takes IAU 1980 plus a fixed offset (64.284 and 6.151 mas) up to
+`HORIZONS_TJD0_DPSI_DEPS_IAU1980`, JD 2437684.5 = 1962 Jan 20
+(inclusive), and the nutation model after it. Measured on de200 at the
+switch, exactly (the instant and the next double):
+- the default model (IAU 2000A): dpsi -10.074409" before, -10.146158"
+  after, 7.17e-2"; deps 2.96e-3";
+- IAU 1980 and Herring's 1987: the offset itself, 6.43e-2" and 6.15e-3";
+  IAU 2000B 7.20e-2"; Woolard 0.267".
+Nodes built on both sides interpolate across it. After a call at the
+switch - 0.5, SE_ECL_NUT at + 0.3 answered dpsi -10.105320" for
+-10.124814" (1.95e-2"), Mars's longitude the same. Over every node centre
+within 1.5 day of it by 1/64 day and every query between its nodes by
+1/16: 6.93e-2" at worst on the default model, before the switch, after it
+and at it alike, 6.20e-2" on IAU 1980. Nodes all on one side answer
+within 1.03e-3" before it and 4.27e-4" after. Both builds.
+
+The rest of what `calc_nutation()` returns, searched for steps:
+- `SEFLG_JPLHOR` (IAU 1980 plus the IERS corrections of
+  eop_1962_today.txt, by `bessel()`): the table's interpolation is
+  continuous at its days, and before 1962 Jan 20
+  (`eop_tjd_beg_horizons`), before the table's first day and past its
+  last day it holds the value there: a kink, not a step. On G19's
+  synthetic DE431 header with a 40-day table whose corrections move 0.3
+  mas a day with 0.3 mas of noise, the value across the first and the last
+  day moves 8.6e-12" and 5.1e-11" (the series over one ulp), and the
+  interpolation within 1.5 day of them is within 8.8e-4" and 1.41e-3", as
+  inside the table (2.35e-3").
+- `SEMOD_JPLHORA_2` adds a constant offset to IAU 2000, `SEMOD_JPLHORA_1`
+  nothing: neither has a date, and across the switch's date both answer as
+  without the flag (3.5e-11", one ulp of the series).
+- The series (IAU 1980, Herring 1987, IAU 2000A and B, Woolard) have no
+  date in them but T.
+- The default's grid gives way to the direct series at |J| = 1e12, a
+  guard for absurd dates (G25). The grid has left the series long before
+  that (noticed below), so its step there is the grid's own defect, not one
+  to keep the nodes off; with the grid where it holds the step would be
+  below the floor.
+So the one step is the switch, under `SEFLG_JPLHOR_APPROX` without
+`SEFLG_JPLHOR` (which wins in `calc_nutation()`) and under mode 3.
+
+**Fix, as done here:** where the nodes a call would build, t - 1.0, t and
+t + 1.0, lie both sides of the switch (t - 1.0 <= it < t + 1.0) under
+those flags and that mode, `swi_nutation()` returns `calc_nutation()` at
+t and leaves the nodes as they were. No set of nodes spans the step, so
+none interpolates across it: nodes all at or before it answer only before
+it, nodes after it only after. Nodes of another key (entry 134) are
+rebuilt through the same test. Within a day of the switch the answer is
+the exact nutation, one series a call where the interpolation took a
+quadratic; elsewhere nothing changes. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, upstream's interpolation under `#else`.
+- After: 0 within a day of the switch, before it, after it and at it, on
+  every model; nodes on one side keep their 1.03e-3" and 4.27e-4".
+- Away from the switch the interpolation is bit for bit the tip's: a
+  probe's 192000 queries 1800-2100 on four settings (the default, mode 3,
+  IAU 1980 under mode 3, mode 2; 3.06 mas worst, the interpolation's own
+  "about 3 mas"), and 24366 under `SEFLG_JPLHOR` on the fixture above,
+  hashed the same before and after.
+- No hot path: the interpolation is off by default, and the test runs
+  only where nodes are built. `perf stat` instructions, `swe_calc()` of the
+  ten bodies with speed at 20000 instants on the Swiss files:
+  15892588394 before and 15887959108 after with it off, 15901468958 and
+  15897329213 with it on (-0.03%, layout). The golden transcript is bit
+  for bit the tip's (13000 rows).
+
+G122 `tests/nutintp.c`, extended with 104 checks on explicit contexts:
+SE_ECL_NUT and Mars at the switch + 0.3 after a call at - 0.5, bit for bit
+with the return against a context with the interpolation off; and scans:
+each node centre c within 2 days of the switch by 1/4 day, after a call
+at c + 500 and at c, the queries c + j/4 (|j| <= 3) against it off, bit
+for bit where c's nodes straddle the switch and within 3.5 mas elsewhere,
+on the default model and on IAU 1980 (17 centres each); and where nothing
+steps, within 3.5 mas throughout, `SEMOD_JPLHORA_2` and no flag at the
+switch's date and `SEFLG_JPLHOR` about the first and the last day of entry
+134's fixture A. 350 checks in all, none fail. Before the fix 18 of the
+104 fail: the two at + 0.3 (1.95e-2") and the eight straddling centres on
+each model, 2.74e-2" to 6.01e-2" on the default and 2.46e-2" to 5.38e-2"
+on IAU 1980. The compat build fails 131 of 350, entry 134's 113 and these
+18. G24 `nut_step_intp_off`: dpsi at the switch + 0.3 after a call at
+- 0.5, and at - 0.3 after one at + 0.5, against the interpolation off, the
+larger: 0 shipped (1.96e-2" before the fix), 1.97e-2" compat. G19, G29,
+G32 and G57 pass; G1's transcript is identical to the tip's.
+
+Noticed, not fixed:
+- Woolard's nutation (`SEMOD_NUT_WOOLARD`, `calc_nutation_woolard()`)
+  turns the Moon's mean anomaly at 13255523.59 revolutions a century, 10^4
+  times its 1325.552359 (1325r 198 deg 50' 56".79): its five terms in md
+  have a period of 3.97 minutes. dpsi up to 0.238" and deps 0.0226" off
+  the same series with the right rate (20000 instants 1900-1975), and the
+  interpolation on it 0.151" off away from any step. Both builds.
+- The default's grid (`calc_nutation_grid()`) leaves the direct IAU 2000A
+  series far inside its guard of |J| < 1e12: worst over instants between
+  its nodes 4.5e-10 deg at |J| 5.6e8 (1.5 million years), 8.0e-7 deg at
+  1e9, 2.8e-3 deg at 1.8e9, 8.7 deg at 3.2e9 and 5.4e25 deg near 1e12,
+  where `swe_calc(SE_ECL_NUT)` on Moshier answers without an error. No
+  model holds there; the direct series stays bounded.
+- The speeds across the same switch, with the interpolation off: for t in
+  (switch - 1, switch] Mars's longitude speed of date under
+  `SEFLG_JPLHOR_APPROX` is 1.571e-5 deg/day off a five-point difference of
+  its positions over 2^-8 day on that side (RA 1.71e-5), 1e-11 outside
+  that day. The precession's speed for a model other than Vondrak's,
+  (P(t + 1) - P(t - 1)) / 2 (entry 49's fallback), and the obliquity's
+  rate, eps(t + 1) - eps(t), reach past the switch, where the precession
+  and the obliquity change model with the nutation. Within
+  `NUT_SPEED_INTV` (1e-4 day) of it the nutation's rate, a central
+  difference there, takes its 7.17e-2" step: the speed 9.96e-2 deg/day
+  off at the switch - 2^-16 and - 2^-14 day.
 
 ## How these were found
 

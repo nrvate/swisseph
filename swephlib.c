@@ -2724,6 +2724,25 @@ int swi_nutation(swe_ctx *ctx, double tjd, int32 iflag, double *nutlo)
       nutlo[0] = quadratic_intp(ctx->interpol.nut_dpsi0, ctx->interpol.nut_dpsi1, ctx->interpol.nut_dpsi2, dx);
       nutlo[1] = quadratic_intp(ctx->interpol.nut_deps0, ctx->interpol.nut_deps1, ctx->interpol.nut_deps2, dx);
     } else {
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 146: the nodes could lie both sides of a step of
+       * calc_nutation(). With SEFLG_JPLHOR_APPROX, SEMOD_JPLHORA_3 takes
+       * IAU 1980 with a fixed offset up to 1962 Jan 20 and the nutation
+       * model after it, a step of 7.17e-2" in dpsi (2.96e-3" in deps) on
+       * the default model: after a call at the step - 0.5 day, dpsi at
+       * + 0.3 was -10.105320" for -10.124814" (1.95e-2"), and 6.93e-2"
+       * at worst within a day of it, where the interpolation is otherwise
+       * within about 3 mas. Where the nodes would straddle it, the
+       * nutation is computed at the instant and the nodes are left as they
+       * were, so no set of nodes spans it. calc_nutation() has no other
+       * step: SEFLG_JPLHOR's IERS corrections hold their end values beyond
+       * the table, SEMOD_JPLHORA_2's offset is constant, and the series
+       * take no date. */
+      if (!(jplhor & SEFLG_JPLHOR) && jplhora == SEMOD_JPLHORA_3
+          && tjd - 1.0 <= HORIZONS_TJD0_DPSI_DEPS_IAU1980
+          && tjd + 1.0 > HORIZONS_TJD0_DPSI_DEPS_IAU1980)
+        return calc_nutation(ctx, tjd, iflag, nutlo);
+#endif
       ctx->interpol.tjd_nut0 = tjd - 1.0; // one day earlier
       ctx->interpol.tjd_nut2 = tjd + 1.0; // one day later
 #ifndef SWE_UPSTREAM_COMPAT

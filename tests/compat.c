@@ -3049,6 +3049,38 @@ static double nut_jplhor_intp_off(void)
   return d * 3600;
 }
 
+/* UPSTREAM-BUGS 146: the interpolation's nodes across SEMOD_JPLHORA_3's
+ * switch at 1962 Jan 20 (7.17e-2" in dpsi). On de200 with
+ * SEFLG_JPLHOR_APPROX, the interpolation on: dpsi at the switch + 0.3
+ * after a call at - 0.5, and at - 0.3 after one at + 0.5, against a
+ * context with it off, the larger, arcsec. */
+static double nut_step_intp_off(void)
+{
+  double x[6], y[6], d = 0, ts = 2437684.5;
+  const double tc[2] = { -0.5, 0.5 }, tq[2] = { 0.3, -0.3 };
+  char serr[256];
+  const int32 ja = SEFLG_JPLEPH | SEFLG_JPLHOR_APPROX;
+  swe_ctx *ci, *ce;
+  int k;
+  for (k = 0; k < 2; k++) {
+    if ((ci = swe_ctx_new()) == NULL || (ce = swe_ctx_new()) == NULL)
+      return -1;
+    swe_set_ephe_path_r(ci, EPHE);
+    swe_set_jpl_file_r(ci, "de200.eph");
+    swe_set_interpolate_nut_r(ci, TRUE);
+    swe_set_ephe_path_r(ce, EPHE);
+    swe_set_jpl_file_r(ce, "de200.eph");
+    swe_calc_r(ci, ts + tc[k], SE_ECL_NUT, ja, x, serr);
+    swe_calc_r(ci, ts + tq[k], SE_ECL_NUT, ja, x, serr);
+    swe_calc_r(ce, ts + tq[k], SE_ECL_NUT, ja, y, serr);
+    if (fabs(x[2] - y[2]) > d)
+      d = fabs(x[2] - y[2]);
+    swe_ctx_free(ci);
+    swe_ctx_free(ce);
+  }
+  return d * 3600;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3390,7 +3422,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate, nutjplhor, jplopen, dtflag0, fbmb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, orbelmb, orbeldate, nutjplhor, jplopen, dtflag0, fbmb, nutstep;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3504,6 +3536,7 @@ int main(int argc, char **argv)
   holdstart = hold_start_off();
   nutmodel = nut_model_intp_off();
   nutjplhor = nut_jplhor_intp_off();
+  nutstep = nut_step_intp_off();
   moshsunlt = mosh_sun_lt_off();
   moshbary = mosh_bary_off();
   moshfarlt = mosh_far_lt_off();
@@ -4475,6 +4508,14 @@ int main(int argc, char **argv)
   else {
     printf("  nutation JPLHOR kept   %.2e arcsec FAIL: expected %s\n",
            nutjplhor, WANT_DEFECT ? "> 1e-2" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nutstep > 1e-2) : (nutstep == 0))
+    printf("  nutation across a step %.2e arcsec OK\n", nutstep);
+  else {
+    printf("  nutation across a step %.2e arcsec FAIL: expected %s\n",
+           nutstep, WANT_DEFECT ? "> 1e-2" : "0");
     bad++;
   }
 

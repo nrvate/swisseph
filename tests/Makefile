@@ -1232,7 +1232,10 @@ check-closekeep: closekeep
 # from its observer (UPSTREAM-BUGS 129); nor the JPL Horizons flags of a
 # call, the approximation's mode or the IERS corrections from the nodes or
 # the nutation of others (UPSTREAM-BUGS 134: SEFLG_JPLHOR on G19's
-# synthetic DE431 header, with corrections it writes in $TMPDIR or /tmp).
+# synthetic DE431 header, with corrections it writes in $TMPDIR or /tmp);
+# nor interpolated across SEMOD_JPLHORA_3's step at 1962 Jan 20: there bit
+# for bit the exact nutation, elsewhere within the interpolation's own
+# accuracy, 3.5 mas (UPSTREAM-BUGS 146).
 check-nutintp: nutintp
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nutintp $(EPHE)
 

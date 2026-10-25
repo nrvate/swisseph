@@ -1222,6 +1222,10 @@ struct epsilon {
  *     SEFLG_MOSEPH, Mars 0.24 deg, 7.2e-3 AU off the files' barycentric
  *     one; swe_calc_orbel(), swe_calc_pctr() and swe_nod_aps()'s
  *     barycentric ellipse alike (UPSTREAM-BUGS 139, G133)
+ *   - the interpolation's nodes lying both sides of SEMOD_JPLHORA_3's
+ *     step at 1962 Jan 20 under SEFLG_JPLHOR_APPROX (7.17e-2" in dpsi):
+ *     dpsi there 1.95e-2" off the exact, 6.93e-2" at worst
+ *     (UPSTREAM-BUGS 146, G122)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

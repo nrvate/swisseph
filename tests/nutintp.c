@@ -105,7 +105,33 @@
  * upstream build fails 113 of 246: 129's 74 and 39 of these, all but the
  * second thread's ten (adopted through this fork's code, fixed in both
  * builds), and after swe_close() the topocentric Moon, the ayanamsa and
- * the sidereal Mars as in 129 (125 before the fix). Run as
+ * the sidereal Mars as in 129 (125 before the fix).
+ *
+ * And the steps (UPSTREAM-BUGS 146): the three nodes could lie both sides
+ * of a step of what they interpolate. With SEFLG_JPLHOR_APPROX,
+ * SEMOD_JPLHORA_3 takes IAU 1980 with a fixed offset up to 1962 Jan 20
+ * and the nutation model after it, 7.17e-2" in dpsi on the default model
+ * (6.43e-2", the offset, on IAU 1980); the interpolation across it was
+ * 6.93e-2" off at worst. calc_nutation() steps nowhere else: SEFLG_JPLHOR's
+ * corrections hold their end values beyond their table, SEMOD_JPLHORA_2's
+ * offset is constant, and the series take no date. The check, on de200 and
+ * explicit contexts: SE_ECL_NUT and Mars at the switch + 0.3 after a call
+ * at - 0.5, bit for bit (with the return) the interpolation off's; and a
+ * scan, each node centre c within 2 days of the switch by 1/4 day after a
+ * call far off, then the queries c + j/4 (|j| <= 3) against it off: bit
+ * for bit where c's nodes straddle the switch, within 3.5 mas elsewhere
+ * (the interpolation's own "about 3 mas"; 3.06 mas worst over 1800-2100).
+ * On the default model and on IAU 1980, and where nothing steps, within
+ * 3.5 mas throughout: SEMOD_JPLHORA_2 and no flag at the switch's date, and
+ * SEFLG_JPLHOR on fixture A about the corrections' first and last day. 104
+ * checks, 350 in all.
+ *
+ * Measured before the fix, 18 of the 104 fail: SE_ECL_NUT and Mars at the
+ * switch + 0.3, -10.105320" for -10.124814" (1.95e-2"), and the eight
+ * straddling centres on each model, the default's 2.74e-2" to 6.01e-2",
+ * IAU 1980's 2.46e-2" to 5.38e-2". Away from them the answers are bit for
+ * bit the tip's. The upstream build fails 131 of 350: 113 and these 18.
+ * Run as
  *   nutintp EPHEDIR
  */
 #include <math.h>
@@ -718,6 +744,155 @@ static void remove_fixtures(void)
   rmdir(DIRS[1]);
 }
 
+/* The steps of calc_nutation() (UPSTREAM-BUGS 146). With
+ * SEFLG_JPLHOR_APPROX, SEMOD_JPLHORA_3 takes IAU 1980 with a fixed offset
+ * up to 1962 Jan 20 and the nutation model after it. A scan about it: for
+ * each node centre c = TS + i/4 (|i| <= 8), on an explicit context with
+ * the interpolation on, a call at c + 500 (the nodes far off), at c (the
+ * nodes there), and the queries c + j/4 (|j| <= 3), each against a context
+ * with it off: bit for bit, with the return, where nodes at c would lie
+ * both sides of the step, and within the interpolation's own accuracy
+ * ("about 3 mas"; ST_TOL) elsewhere. And where nothing steps, the same
+ * scan within ST_TOL throughout: SEMOD_JPLHORA_2 and no flag at the
+ * switch, and SEFLG_JPLHOR at the first and the last day of the
+ * corrections (fixture A), which hold their end values beyond them. */
+#define TSTEP 2437684.5		/* 1962 Jan 20, HORIZONS_TJD0_DPSI_DEPS_IAU1980 */
+#define ST_TOL (3.5e-3 / 3600)	/* deg */
+#define MOD_1980HA3 "0,0,0,1,0,0,3,0"	/* IAU 1980, SEMOD_JPLHORA_3 */
+struct scen4 {
+  const char *mod;
+  int32 fl;
+  int d;		/* DIRS[] */
+  double ts;		/* the instant scanned about */
+  int step;		/* whether the nutation steps there */
+  const char *lab;
+};
+static const struct scen4 SS[] = {
+  { MOD_HA3, JA, 0, TSTEP, 1, "SEMOD_JPLHORA_3's switch, the default model" },
+  { MOD_1980HA3, JA, 0, TSTEP, 1, "SEMOD_JPLHORA_3's switch, IAU 1980" },
+  { MOD_HA2, JA, 0, TSTEP, 0, "the switch's date under SEMOD_JPLHORA_2" },
+  { MOD_DEF, JE, 0, TSTEP, 0, "the switch's date without the flag" },
+  { MOD_DEF, JH, 1, 2451544.5, 0, "SEFLG_JPLHOR, the corrections' first day" },
+  { MOD_DEF, JH, 1, 2451583.5, 0, "SEFLG_JPLHOR, the corrections' last day" },
+};
+#define NSS ((int) (sizeof SS / sizeof SS[0]))
+
+static swe_ctx *ctx4(const struct scen4 *s, int intp)
+{
+  char m[40], jf[40];
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return NULL;
+  strcpy(m, s->mod);
+  strcpy(jf, s->d ? JPL_FIXTURE : "de200.eph");
+  swe_set_ephe_path_r(c, DIRS[s->d]);
+  swe_set_jpl_file_r(c, jf);
+  swe_set_astro_models_r(c, m, 0);
+  swe_set_interpolate_nut_r(c, intp);
+  return c;
+}
+
+/* body ipl at q after calls at c + 500 and c, interpolated (on ci) and
+ * exact (on ce): the larger difference of the first four values, deg, or
+ * -1 if the returns differ; *same whether they agree bit for bit */
+static double vs_exact(swe_ctx *ci, swe_ctx *ce, int ipl, int32 fl, double c,
+                       double q, int *same, double *vi, double *ve)
+{
+  char serr[AS_MAXCH];
+  double x[6], y[6], w = 0;
+  int ri, re, k;
+  swe_calc_r(ci, c + 500, ipl, fl, x, serr);
+  swe_calc_r(ci, c, ipl, fl, x, serr);
+  ri = swe_calc_r(ci, q, ipl, fl, x, serr);
+  re = swe_calc_r(ce, q, ipl, fl, y, serr);
+  *same = ri == re;
+  for (k = 0; k < 4; k++) {
+    if (x[k] != y[k])
+      *same = 0;
+    if (fabs(x[k] - y[k]) > w)
+      w = fabs(x[k] - y[k]);
+  }
+  if (vi != NULL) {
+    *vi = x[2];
+    *ve = y[2];
+  }
+  return ri == re ? w : -1;
+}
+
+/* the headline (entry 134's noticed item): SE_ECL_NUT and Mars at the
+ * switch + 0.3 after a call at - 0.5, bit for bit; and the scans */
+static int steps(int *n)
+{
+  int k, i, j, nfail = 0;
+  for (k = 0; k < 2; k++) {
+    swe_ctx *ci = ctx4(&SS[0], 1), *ce = ctx4(&SS[0], 0);
+    double w, vi = 0, ve = 0;
+    int same;
+    (*n)++;
+    if (ci == NULL || ce == NULL) {
+      printf("    no context\n");
+      nfail++;
+      continue;
+    }
+    w = vs_exact(ci, ce, k ? SE_MARS : SE_ECL_NUT, JA, TSTEP - 0.5, TSTEP + 0.3,
+                 &same, &vi, &ve);
+    if (!same) {
+      printf("    %s at SEMOD_JPLHORA_3's switch + 0.3 after a call at - 0.5: %.3e\" off the exact%s FAIL\n",
+             k ? "Mars" : "SE_ECL_NUT", w * 3600, w < 0 ? " (return)" : "");
+      if (!k)
+        printf("      dpsi %.6f\" for %.6f\"\n", vi * 3600, ve * 3600);
+      nfail++;
+    }
+    swe_ctx_free(ci);
+    swe_ctx_free(ce);
+  }
+  for (k = 0; k < NSS; k++) {
+    const struct scen4 *s = &SS[k];
+    swe_ctx *ci = ctx4(s, 1), *ce = ctx4(s, 0);
+    double wstr = 0, woff = 0;
+    int bad = 0;
+    for (i = -8; i <= 8; i++) {
+      double c = s->ts + i / 4.0, wc = 0;
+      int straddle = s->step && c - 1.0 <= s->ts && c + 1.0 > s->ts, cbad = 0;
+      (*n)++;
+      if (ci == NULL || ce == NULL) {
+        nfail++;
+        continue;
+      }
+      for (j = -3; j <= 3; j++) {
+        int same;
+        double w = vs_exact(ci, ce, SE_ECL_NUT, s->fl, c, c + j / 4.0, &same, NULL, NULL);
+        if (w < 0 || (straddle ? !same : w > ST_TOL))
+          cbad = 1;
+        if (w < 0)
+          w = 360;
+        if (w > wc)
+          wc = w;
+      }
+      if (straddle && wc > wstr)
+        wstr = wc;
+      if (!straddle && wc > woff)
+        woff = wc;
+      if (cbad) {
+        printf("    %s, nodes at %+.2f d%s: %.3e\" off the exact FAIL\n", s->lab, i / 4.0,
+               straddle ? " (both sides)" : "", wc * 3600);
+        nfail++;
+        bad++;
+      }
+    }
+    if (s->step)
+      printf("    %s: nodes both sides %.3e\", one side %.3e\"%s\n", s->lab,
+             wstr * 3600, woff * 3600, bad ? "" : " OK");
+    else
+      printf("    %s: %.3e\"%s\n", s->lab, woff * 3600, bad ? "" : " OK");
+    if (ci)
+      swe_ctx_free(ci);
+    if (ce)
+      swe_ctx_free(ce);
+  }
+  return nfail;
+}
+
 /* how far a from b, and whether they differ at all (with the return) */
 static int differ(const struct obs *a, const struct obs *b, double *d)
 {
@@ -804,6 +979,7 @@ int main(int argc, char **argv)
           nfail++;
         }
       }
+    nfail += steps(&n);
     remove_fixtures();
   }
   if (nfail)
