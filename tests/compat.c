@@ -627,6 +627,36 @@ static double ayanamsa_jd0_off(void)
   return fabs(a0 - a1);
 }
 
+/* Venus's limiting magnitude at humidity 80 % right after one at 40 %,
+ * same instant and place, against the same request with the memos elsewhere
+ * first, mag. Upstream's ka() and Deltam() memos are keyed on the Sun's
+ * and the object's altitudes alone and answer with the 40 % extinction:
+ * 0.67 mag (UPSTREAM-BUGS 82). The caller's swe_set_topo() keeps bug 83
+ * out of it. */
+static double hel_memo_off(void)
+{
+  double geo[3] = { 8.55, 47.37, 400 }, dobs[6] = { 36, 1, 0, 0, 0, 0 }, d[50], m[2];
+  double a40[4] = { 1013.25, 15, 40, 0 }, a80[4] = { 1013.25, 15, 80, 0 };
+  char serr[256], obj[32];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(geo[0], geo[1], geo[2]);
+  strcpy(obj, "venus");
+  swe_vis_limit_mag(2451545.01, geo, a80, dobs, obj, 0, d, serr);
+  strcpy(obj, "venus");
+  swe_vis_limit_mag(2451545.0, geo, a80, dobs, obj, 0, d, serr);
+  m[0] = d[0];
+  strcpy(obj, "venus");
+  swe_vis_limit_mag(2451545.01, geo, a40, dobs, obj, 0, d, serr);
+  strcpy(obj, "venus");
+  swe_vis_limit_mag(2451545.0, geo, a40, dobs, obj, 0, d, serr);
+  strcpy(obj, "venus");
+  swe_vis_limit_mag(2451545.0, geo, a80, dobs, obj, 0, d, serr);
+  m[1] = d[0];
+  swe_close();
+  return fabs(m[1] - m[0]);
+}
+
 /* Mars's heliocentric osculating ascending node at tjd = 0 against tjd =
  * 1e-9, deg, each after swe_close(). Upstream forces sweph()'s EMB to be
  * recomputed with the Earth's teval = 0, which at tjd 0 is the Earth slot
@@ -1645,7 +1675,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1682,6 +1712,7 @@ int main(int argc, char **argv)
   sflags = star_ret_flags_off();
   ayajd0 = ayanamsa_jd0_off();
   nodjd0 = nodaps_jd0_off();
+  helmemo = hel_memo_off();
   n3spd = node3_speed_off();
   moonpspd = moon_perigee_speed_off();
   apsrate = planet_apsis_rate_off();
@@ -1971,6 +2002,14 @@ int main(int argc, char **argv)
   else {
     printf("  Mars osc. node at JD 0 %.2e deg FAIL: expected %s\n",
            nodjd0, WANT_DEFECT ? "> 1e-3" : "< 1e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (helmemo > 0.1) : (helmemo < 1e-9))
+    printf("  heliacal memo, RH 80 %%  %.2e mag OK\n", helmemo);
+  else {
+    printf("  heliacal memo, RH 80 %%  %.2e mag FAIL: expected %s\n",
+           helmemo, WANT_DEFECT ? "> 0.1" : "< 1e-9");
     bad++;
   }
 

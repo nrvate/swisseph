@@ -355,7 +355,37 @@ static int32 call_swe_fixstar_mag(swe_ctx *ctx, char *star, double *mag, char *s
   int32 retval;
   char star2[AS_MAXCH];
   /* moved to ctx->hel.starmag (Phase 3c) */
-  /* moved to ctx->hel.starmag (Phase 3c) */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 82: this memo outlived swe_close() and a new ephemeris
+   * path, so a star kept the magnitude of the catalogue it was first read
+   * from (Sirius -1.46 where the new catalogue gives -1.00), and it took
+   * the name before the lookup, so a failed lookup left that name keyed to
+   * the previous star's magnitude; "" was a hit on the empty memo, mag 0;
+   * and a hit left serr as it was, where the lookup clears it (a warning
+   * from ka() survived into swe_vis_limit_mag()'s serr on the second call
+   * only). It is filled on success only, keeps the lookup's serr, and
+   * swi_hel_forget() empties it. */
+  double dmag = 0;
+  char s[AS_MAXCH];
+  if (ctx->hel.starmag.valid && strcmp(star, ctx->hel.starmag.star_save) == 0) {
+    *mag = ctx->hel.starmag.dmag;
+    if (serr != NULL)
+      strcpy(serr, ctx->hel.starmag.serr_save);
+    return OK;
+  }
+  strcpy(star2, star);
+  *s = '\0';
+  retval = swe_fixstar_mag_r(ctx, star2, &dmag, s);
+  if (serr != NULL)
+    strcpy(serr, s);
+  *mag = dmag;
+  ctx->hel.starmag.valid = (retval != ERR);
+  if (retval != ERR) {
+    strcpy(ctx->hel.starmag.star_save, star);
+    strcpy(ctx->hel.starmag.serr_save, s);
+    ctx->hel.starmag.dmag = dmag;
+  }
+#else
   if (strcmp(star, ctx->hel.starmag.star_save) == 0) {
     *mag = ctx->hel.starmag.dmag;
     return OK;
@@ -364,6 +394,7 @@ static int32 call_swe_fixstar_mag(swe_ctx *ctx, char *star, double *mag, char *s
   strcpy(star2, star);
   retval = swe_fixstar_mag_r(ctx, star2, &ctx->hel.starmag.dmag, serr);
   *mag = ctx->hel.starmag.dmag;
+#endif
   return retval;
 }
 
@@ -518,6 +549,23 @@ static int32 RiseSet(swe_ctx *ctx, double JDNDaysUT, double *dgeo, double *datm,
     retval = my_rise_trans(ctx, JDNDaysUT, -1, ObjectName, eventtype, helflag, dgeo, datm, tret, serr);
   return retval;
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 82: nothing emptied these memos, not swe_close() nor a new
+ * ephemeris path; the star magnitude's follows the catalogue on that path.
+ * The others are keyed on all their inputs, and emptied too so that a
+ * closed context answers as a fresh one. SunRA()'s key, UT, is complete:
+ * the function is the monthly approximation (SIMULATE_VICTORVB), so
+ * neither the ephemeris nor delta T reaches it. */
+void swi_hel_forget(swe_ctx *ctx)
+{
+  ctx->hel.starmag.valid = FALSE;
+  ctx->hel.sunra.tjdlast = SWI_TJD_NEVER;
+  ctx->hel.koz.valid = FALSE;
+  ctx->hel.ka.valid = FALSE;
+  ctx->hel.deltam.valid = FALSE;
+}
+#endif
 
 /*###################################################################
 ' JDNDaysUT [Days]
@@ -752,8 +800,18 @@ static double kOZ(swe_ctx *ctx, double AltS, double sunra, double Lat)
   double CHANGEKO, OZ, LT, kOZret;
   /* moved to ctx->hel.koz (Phase 3c) */
   double altslim = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 82: keyed on AltS and sunra, not on Lat, and empty when
+   * both were 0. Keyed on all three, empty by `valid`. */
+  if (ctx->hel.koz.valid && AltS == ctx->hel.koz.alts_last
+      && sunra == ctx->hel.koz.sunra_last && Lat == ctx->hel.koz.lat_last)
+    return ctx->hel.koz.koz_last;
+  ctx->hel.koz.lat_last = Lat;
+  ctx->hel.koz.valid = TRUE;
+#else
   if (AltS == ctx->hel.koz.alts_last && sunra == ctx->hel.koz.sunra_last)
     return ctx->hel.koz.koz_last;
+#endif
   ctx->hel.koz.alts_last = AltS; ctx->hel.koz.sunra_last = sunra;
   OZ = 0.031;
   LT = Lat * DEGTORAD;
@@ -807,6 +865,19 @@ static int Sgn(double x)
 ' VR [km]
 ' ka [-]
 */
+#ifndef SWE_UPSTREAM_COMPAT
+/* ka()'s two warnings, by number, so a memo hit can write them again */
+static void ka_warn(int warn, char *serr)
+{
+  if (serr == NULL || warn == 0)
+    return;
+  if (warn == 1)
+    strcpy(serr, "The provided Meteorological range is too long, when taking into acount other atmospheric parameters"); /* is a warning */
+  else
+    strcpy(serr, "The provided atmosphic coeefficent (ktot) is too low, when taking into acount other atmospheric parameters"); /* is a warning */
+}
+#endif
+
 static double ka(swe_ctx *ctx, double AltS, double sunra, double Lat, double HeightEye, double TempS, double RH, double VR, char *serr)
 {
   double CHANGEKA, LAMBDA, BetaVr, Betaa, kaact;
@@ -815,8 +886,29 @@ static double ka(swe_ctx *ctx, double AltS, double sunra, double Lat, double Hei
    * lambda eye sensibility changes
    * see extinction section of Vistas in Astronomy page 343 */
   /* moved to ctx->hel.ka (Phase 3c) */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 82: keyed on AltS and sunra alone, so another latitude,
+   * eye height, temperature, humidity or visual range at the same Sun was
+   * answered with the previous aerosol extinction (humidity 40 -> 80 %:
+   * the limiting magnitude 0.67 mag off), empty when both were 0, and a
+   * hit dropped the warning below. Keyed on every input, empty by
+   * `valid`, the warning kept and written again. */
+  if (ctx->hel.ka.valid && AltS == ctx->hel.ka.alts_last
+      && sunra == ctx->hel.ka.sunra_last && Lat == ctx->hel.ka.lat_last
+      && HeightEye == ctx->hel.ka.heye_last && TempS == ctx->hel.ka.temps_last
+      && RH == ctx->hel.ka.rh_last && VR == ctx->hel.ka.vr_last) {
+    ka_warn(ctx->hel.ka.warn, serr);
+    return ctx->hel.ka.ka_last;
+  }
+  ctx->hel.ka.lat_last = Lat; ctx->hel.ka.heye_last = HeightEye;
+  ctx->hel.ka.temps_last = TempS; ctx->hel.ka.rh_last = RH;
+  ctx->hel.ka.vr_last = VR;
+  ctx->hel.ka.warn = 0;
+  ctx->hel.ka.valid = TRUE;
+#else
   if (AltS == ctx->hel.ka.alts_last && sunra == ctx->hel.ka.sunra_last)
     return ctx->hel.ka.ka_last;
+#endif
   ctx->hel.ka.alts_last = AltS; ctx->hel.ka.sunra_last = sunra;
   CHANGEKA = (1 - 0.166667 * mymin(6, mymax(-AltS - 12, 0)));
   LAMBDA = 0.55 + (CHANGEKA - 1) * 0.04;
@@ -830,15 +922,25 @@ static double ka(swe_ctx *ctx, double AltS, double sunra, double Lat, double Hei
       Betaa = BetaVr - (kW(HeightEye, TempS, RH) / scaleHwater + kR(AltS, HeightEye) / scaleHrayleigh) * 1000 * astr2tau;
       kaact = Betaa * scaleHaerosol / 1000 * tau2astr;
       if (kaact < 0) {
+#ifndef SWE_UPSTREAM_COMPAT
+	ctx->hel.ka.warn = 1;
+	ka_warn(1, serr);
+#else
 	if (serr != NULL)
 	  strcpy(serr, "The provided Meteorological range is too long, when taking into acount other atmospheric parameters"); /* is a warning */
+#endif
         /* return 0; * return "#HIGHVR"; */
       }
     } else {
       kaact = VR - kW(HeightEye, TempS, RH) - kR(AltS, HeightEye) - kOZ(ctx, AltS, sunra, Lat);
       if (kaact < 0) {
+#ifndef SWE_UPSTREAM_COMPAT
+	ctx->hel.ka.warn = 2;
+	ka_warn(2, serr);
+#else
 	if (serr != NULL)
 	  strcpy(serr, "The provided atmosphic coeefficent (ktot) is too low, when taking into acount other atmospheric parameters"); /* is a warning */
+#endif
         /* return 0; * "#LOWktot"; */
       }
     }
@@ -967,8 +1069,32 @@ static double Deltam(swe_ctx *ctx, double AltO, double AltS, double sunra, doubl
   double AppAltO = AppAltfromTopoAlt(AltO, TempE, PresE, helflag);
   double deltam;
   /* moved to ctx->hel.deltam (Phase 3c) */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 82: keyed on AltS, AltO and sunra alone, but the result
+   * depends on Lat, HeightEye, the four datm and SE_HELFLAG_HIGH_PRECISION
+   * (AppAltfromTopoAlt()), so the same altitudes under another atmosphere,
+   * or SE_HELFLAG_VISLIM_DARK (AltS -90) at another latitude or height,
+   * were answered with the previous extinction (pressure 1013 -> 900 mbar
+   * 0.53 mag, 47 N -> 33 S in the dark 0.10 mag); empty when all three
+   * were 0, and a hit dropped ka()'s warning. Keyed on every input, empty
+   * by `valid`, ka()'s warning kept and written again. */
+  if (ctx->hel.deltam.valid && AltS == ctx->hel.deltam.alts_last
+      && AltO == ctx->hel.deltam.alto_last && sunra == ctx->hel.deltam.sunra_last
+      && Lat == ctx->hel.deltam.lat_last && HeightEye == ctx->hel.deltam.heye_last
+      && datm[0] == ctx->hel.deltam.datm_last[0] && datm[1] == ctx->hel.deltam.datm_last[1]
+      && datm[2] == ctx->hel.deltam.datm_last[2] && datm[3] == ctx->hel.deltam.datm_last[3]
+      && helflag == ctx->hel.deltam.helflag_last) {
+    ka_warn(ctx->hel.deltam.warn, serr);
+    return ctx->hel.deltam.deltam_last;
+  }
+  ctx->hel.deltam.lat_last = Lat; ctx->hel.deltam.heye_last = HeightEye;
+  memcpy(ctx->hel.deltam.datm_last, datm, sizeof ctx->hel.deltam.datm_last);
+  ctx->hel.deltam.helflag_last = helflag;
+  ctx->hel.deltam.valid = TRUE;
+#else
   if (AltS == ctx->hel.deltam.alts_last && AltO == ctx->hel.deltam.alto_last && sunra == ctx->hel.deltam.sunra_last)
     return ctx->hel.deltam.deltam_last;
+#endif
   ctx->hel.deltam.alts_last = AltS; ctx->hel.deltam.alto_last = AltO; ctx->hel.deltam.sunra_last = sunra;
   if (staticAirmass == 0) {
     zend = (90 - AppAltO) * DEGTORAD;
@@ -984,6 +1110,9 @@ static double Deltam(swe_ctx *ctx, double AltO, double AltS, double sunra, doubl
     deltam = kt(ctx, AltS, sunra, Lat, HeightEye, datm[1], datm[2], datm[3], 4, serr) * Airmass(AppAltO, datm[0]);
   }
   ctx->hel.deltam.deltam_last = deltam;
+#ifndef SWE_UPSTREAM_COMPAT
+  ctx->hel.deltam.warn = ctx->hel.ka.warn;   /* both branches reach ka() */
+#endif
   return deltam;
 }
 

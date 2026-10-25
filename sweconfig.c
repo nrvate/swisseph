@@ -269,6 +269,9 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     swi_close_ephe_files(ctx, FORGET_DENUM);
     swi_free_fict_lines(ctx);
     ctx->last_epheflag = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+    swi_hel_forget(ctx);	/* a star's magnitude is the path's (bug 82) */
+#endif
   }
   /* dt_changed is in here for the reason G26 records: the observer is built
    * from UT = TT minus delta t, and topd.teval keys only the instant. The

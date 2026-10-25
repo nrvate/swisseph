@@ -120,6 +120,7 @@ worst were in code that had never executed even once.
 | 84 | `jplplan()`'s Earth and Sun answer for any ephemeris, and the JPL barycentric Sun is finished at the Earth slot's instant | Correctness | `sweph.c` |
 | 79 | The topocentric site's acceleration is 1.6e-6 low | Correctness | `sweph.c` |
 | 80 | `swe_nod_aps()`'s osculating speeds difference rounded points over a few minutes | Correctness | `swecl.c` |
+| 82 | The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold | Correctness | `swehel.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
 
 ---
 
@@ -4735,6 +4736,86 @@ Venus's osculating perihelion, heliocentric, at J2000 + 100 days, 3.5e-10
 deg/day shipped (3.7e-7 before), 4.7e-7 compat. G42, G43, G47, G54, G63,
 G69, G72, G78 pass. G1: the osculating rows' speeds move (Venus by up to
 6e-7 deg/day, the Moon's perigee 2e-6), their positions by <= 3e-9 deg.
+
+## 82. The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold
+
+**Severity: Correctness (returned values: 0.67 mag in a limiting magnitude, 0.46 mag in a star's, a day in a heliacal event)**
+**Where:** `swehel.c`: `call_swe_fixstar_mag()`, `kOZ()`, `ka()`, `Deltam()`, `swi_hel_forget()`; `sweph.c`: `ctx_forget_instants()`, `swi_close_keep_topo_etc()`, `ctx_release()`; `sweconfig.c`: `swi_config_apply()`; `sweph.h`: `struct hel_state`
+
+`swehel.c` memoises five results per context (upstream: five pairs of TLS
+statics). Three were keyed on less than their result depends on:
+
+- `kOZ()`, the ozone extinction, on the Sun's altitude and `SunRA()`; it
+  depends on the latitude too.
+- `ka()`, the aerosol extinction, on the same two; it depends on the
+  latitude, eye height, temperature, humidity and visual range (or
+  extinction coefficient).
+- `Deltam()`, the extinction along the line of sight, on those two and the
+  object's altitude; it depends on all of the above, the pressure, and
+  `SE_HELFLAG_HIGH_PRECISION` (through `AppAltfromTopoAlt()`).
+
+So the same instant and place under another atmosphere was answered with
+the previous request's extinction, and so was `SE_HELFLAG_VISLIM_DARK`
+(which fixes the Sun's altitude at -90) at another latitude or eye height.
+Measured with `swe_vis_limit_mag()`, Venus at 2000 Jan 1 12h UT from
+8.55 E 47.37 N, each request right after the one before it against the
+same request in a fresh process: humidity 40 -> 80 % -6.447 for -7.121
+(0.67 mag), temperature 15 -> 30 C 0.62 mag, a visual range of 40 km 0.43,
+an extinction coefficient of 0.25 0.57, 900 mbar 0.53; in the dark sky,
+47 N -> 33 S 0.10, 400 -> 1500 m 0.048, humidity 80 % 0.26; Sirius at
+humidity 80 % 0.25. None was emptied by anything, so the dark-sky answer
+after `swe_close()` was still the one before it (0.26 mag).
+
+`call_swe_fixstar_mag()`'s memo, keyed on the star's name, was not emptied
+by `swe_close()` or a new ephemeris path, so a star kept the magnitude of
+the catalogue it was first read from: Sirius after `swe_close()` and a
+path whose `sefstars.txt` gives it -1.00 was -1.46 in
+`swe_vis_limit_mag()`'s `dret[7]` and `swe_heliacal_pheno_ut()`'s
+`darr[20]`, and `swe_heliacal_ut()`'s end of visibility of its heliacal
+rising came a day early (2451778.67 for 2451779.67). It took the name
+before the lookup, so a failed lookup left the name keyed to the previous
+star's magnitude, and an empty name was a hit on the empty memo; and a hit
+left `serr` as it was where the lookup clears it, so a warning from `ka()`
+reached `swe_vis_limit_mag()`'s `serr` on the second call only.
+
+`kOZ()`, `ka()` and `Deltam()` took a key of 0 as empty, and a hit dropped
+the warning `ka()` writes for an over-long visual range or an extinction
+coefficient too small for the other terms. The key of 0 is not reachable
+through the public functions: `SunRA()` is never exactly 0.
+
+`SunRA()`'s memo is keyed on UT and nothing else, which is complete:
+`SIMULATE_VICTORVB` (always defined) makes it the monthly approximation, a
+function of UT alone, so neither the ephemeris flag nor delta T reaches it.
+G81's sequence alternates both at one UT and finds nothing. Entry 71 gave
+it `SWI_TJD_NEVER`.
+
+**Fix, as done here:** each memo is keyed on every input of its result,
+has a `valid` flag for empty, and keeps what its computation wrote to
+`serr` -- `ka()`'s warning (by number, also in `Deltam()`'s memo, which
+reaches `ka()` on both its branches), the star lookup's `serr` -- to write
+it again on a hit. The star's memo is filled on success only.
+`swi_hel_forget()` empties all five; context creation, `swe_close()`,
+every path change (`swi_close_keep_topo_etc()`) and an adopted path
+(`swi_config_apply()`) call it. No setter feeds the extinction memos, now
+that their keys are complete. Under `SWE_UPSTREAM_COMPAT` the keys, the
+empty 0, the name before the lookup and the dropped warnings are
+upstream's, and nothing empties them.
+
+Not fixed here: `swe_fixstar_mag()`'s own one-star memo in `sweph.c`
+(`sp.fs1mag`, and `sp.fs1` in `swe_fixstar()`) is not emptied by
+`swe_close()` or a path change either: Sirius -1.46 after `swe_close()`
+and the -1.00 catalogue, and -1.00 after a path back to the -1.46 one,
+until another star is asked for.
+
+G81 `tests/helmemo.c`: one sequence of 37 `swe_vis_limit_mag()`,
+`swe_heliacal_pheno_ut()` and `swe_heliacal_ut()` requests alternating the
+atmosphere, eye height, latitude in the dark sky, the high-precision flag,
+the ephemeris (Swiss, Moshier, de200), a user delta T, `swe_close()` and
+two star catalogues, each answer -- return code, every value, `serr` --
+against the same request in a fresh process; all agree within 1e-9. The
+build before the fix fails 17, the upstream build the same 17. G24
+`hel_memo_off`: Venus at humidity 80 % right after 40 %, 0 mag shipped,
+0.67 compat. G24, G70 and G20 pass.
 
 ## How these were found
 

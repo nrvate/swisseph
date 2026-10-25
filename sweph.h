@@ -894,6 +894,11 @@ struct epsilon {
  *     the Earth slot's instant (JD 0 fresh, another instant warm: 0.11 deg
  *     sidereal; a heliocentric asteroid after it 0.24 deg; UPSTREAM-BUGS
  *     84, G83)
+ *   - the heliacal memos kOZ(), ka() and Deltam() were keyed on the Sun's
+ *     and object's altitudes alone, not the latitude, eye height or
+ *     atmosphere (0.67 mag in a limiting magnitude), the star magnitude's
+ *     outlived swe_close() and a new catalogue (0.46 mag, a day in a
+ *     heliacal event), and none was emptied (UPSTREAM-BUGS 82, G81)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
@@ -1398,12 +1403,24 @@ struct moon_state {
  * instant, so neither could have been switched back on without moving
  * results.
  */
+/* Since UPSTREAM-BUGS 82 each memo is keyed on every input of its result
+ * (the fields after each first line), is empty by its `valid` flag rather
+ * than by a key of 0, and each keeps what its computation wrote to serr
+ * (ka()'s warning; swe_fixstar_mag()'s clearing), to write it again on a
+ * hit. swi_hel_forget() empties them all. Under
+ * SWE_UPSTREAM_COMPAT only each first line is used, as upstream did. */
 struct hel_state {
-  struct { double dmag; char star_save[AS_MAXCH]; }        starmag;
+  struct { double dmag; char star_save[AS_MAXCH];
+           char serr_save[AS_MAXCH]; int valid; }          starmag;
   struct { double tjdlast, ralast; }                       sunra;
-  struct { double koz_last, alts_last, sunra_last; }       koz;
-  struct { double alts_last, sunra_last, ka_last; }        ka;
-  struct { double alts_last, alto_last, sunra_last, deltam_last; } deltam;
+  struct { double koz_last, alts_last, sunra_last;
+           double lat_last; int valid; }                   koz;
+  struct { double alts_last, sunra_last, ka_last;
+           double lat_last, heye_last, temps_last, rh_last, vr_last;
+           int warn, valid; }                              ka;
+  struct { double alts_last, alto_last, sunra_last, deltam_last;
+           double lat_last, heye_last, datm_last[4];
+           int32 helflag_last; int warn, valid; }          deltam;
 };
 
 /* Memo caches for sweph.c.
@@ -1641,6 +1658,13 @@ extern TLS struct swe_ctx swed;
  * converted incrementally: a function that has been given a `ctx` parameter
  * is called with swi_default_ctx() until its callers have one of their own. */
 extern swe_ctx *swi_default_ctx(void);
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* Empty the heliacal memos (struct hel_state; swehel.c). swe_close(), a
+ * new ephemeris path and a new context call it: the star magnitude's comes
+ * from the catalogue on that path (UPSTREAM-BUGS 82). */
+extern void swi_hel_forget(swe_ctx *ctx);
+#endif
 
 /* Shared configuration layer. Included here, after struct sid_data and
  * SEI_NMODELS, because struct swe_config embeds both. */

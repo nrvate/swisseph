@@ -1513,7 +1513,7 @@ static void ctx_forget_instants(swe_ctx *ctx)
   planets_forget_instants(ctx);
   angles_forget_instants(ctx);
   ctx->topd.teval = SWI_TJD_NEVER;
-  ctx->hel.sunra.tjdlast = SWI_TJD_NEVER;
+  swi_hel_forget(ctx);		/* SunRA()'s, and bug 82's */
 }
 #endif
 
@@ -1680,6 +1680,7 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
 #ifndef SWE_UPSTREAM_COMPAT
   angles_forget_instants(ctx);	/* Upstream bugs 67, 71 */
+  swi_hel_forget(ctx);		/* Upstream bug 82 */
 #endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
@@ -1738,6 +1739,7 @@ static void ctx_release(swe_ctx *ctx)
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
 #ifndef SWE_UPSTREAM_COMPAT
   angles_forget_instants(ctx);	/* Upstream bugs 67, 71 */
+  swi_hel_forget(ctx);		/* Upstream bug 82 */
 #endif
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
