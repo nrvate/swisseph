@@ -8581,7 +8581,8 @@ Noticed, not fixed:
   for B's -13.348539" (0.131").
 - `swe_deltat_ex()` with no ephemeris flag (0, which the houses pass)
   answers 28.927550 s at 1950 on the thread that set de200 and 28.931886
-  s on a second thread until it opens the JPL file (4.3e-3 s).
+  s on a second thread until it opens the JPL file (4.3e-3 s). Fixed as
+  entry 145: no ephemeris bit is the Swiss files' term on every thread.
 - Across `SEMOD_JPLHORA_3`'s switch at 1962 Jan 20, the nodes lie on both
   sides of a 7.2e-2" step: dpsi at the switch + 0.3 after a call at - 0.5,
   -10.105320" interpolated for -10.124814" (1.95e-2"), where the
@@ -8916,6 +8917,17 @@ observed in TT for this, now takes the sidereal readers' ayanamsa in AD
 48 fail before this fix (3.3e-9 deg), 78 compat. G120, G115, G106, G82,
 G100, the delta-t memo, G119, cfgleak, G2 and check-ctx pass.
 
+Noticed, not fixed: a thread that had the JPL file open and adopts another
+thread's `swe_set_ephe_path()` to a directory without it kept the file's DE
+number, so its SEFLG_JPLEPH delta t in AD 1700 was 3.012003 s for the
+14.286718 a fresh process with that path gives (before this entry too).
+Fixed as entry 137. And with no close: the path, de200.eph, the path again
+by another string (which forgets the JPL DE number) and a JPL Sun left
+`swe_get_tid_acc()` at -23.8946 while the next `swe_deltat()` guessed the
+Swiss files and used -25.936 (18.902020 s in 1800), the getter -25.936
+after it; the compat build agrees with itself (14.438958 s). Fixed as
+entry 138.
+
 ## 135. `swe_calc_orbel()` answers a barycentric Moshier request, which `swe_calc()` refuses (this fork's)
 
 **Severity: Correctness (behaviour: an answer where `swe_calc()` refuses, the heliocentric place labelled barycentric, 5.7e-3 AU off the barycentric one)**
@@ -9060,17 +9072,6 @@ geometric, J2000 equatorial XYZ, Swiss files: its velocity against a
 five-point difference of its positions over 2^-7 day, four dates in 2025.
 1.73e-14 AU/day shipped, 6.11e-7 AU/day compat (the frame's turning,
 omega x r); 6.11e-7 shipped before the fix.
-
-Noticed, not fixed: a thread that had the JPL file open and adopts another
-thread's `swe_set_ephe_path()` to a directory without it kept the file's DE
-number, so its SEFLG_JPLEPH delta t in AD 1700 was 3.012003 s for the
-14.286718 a fresh process with that path gives (before this entry too).
-Fixed as entry 137. And with no close: the path, de200.eph, the path again
-by another string (which forgets the JPL DE number) and a JPL Sun left
-`swe_get_tid_acc()` at -23.8946 while the next `swe_deltat()` guessed the
-Swiss files and used -25.936 (18.902020 s in 1800), the getter -25.936
-after it; the compat build agrees with itself (14.438958 s). Fixed as
-entry 138.
 
 ## 137. A thread that had the JPL file open and adopts another thread's `swe_set_ephe_path()` keeps the file's DE number: its JPLEPH delta t takes the closed file's tidal term (this fork's)
 
