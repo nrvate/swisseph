@@ -16,3 +16,7 @@ only on scratch disk when the overnight run on PR #33 was stopped
 
 The agents on 290, 297, 298, 304-306, 308, 310-316 had nothing saved; their
 bugs are described in the state log only.
+
+`probes/` holds the probe programs from the scratch directories of the
+agents on 290-316 (swe-f290 to swe-f316), copies of library sources left
+out: the reproductions for those bugs, which the state log describes.
