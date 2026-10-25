@@ -1810,6 +1810,17 @@ struct epsilon {
  *   - swe_gauquelin_sector() answering the Earth, the sector of its
  *     geocentric zero vector, in every method (UPSTREAM-BUGS 274, G175,
  *     G24)
+ *   - the houses of the ecliptic of t0 offset from the auxiliary vernal
+ *     point by a distance signed by the date, not by where the point lies:
+ *     a step of 2 dpsi at t0, -9.64e-3 deg on the ecliptic of 1900, for
+ *     some 130 days on one side, the speeds 0.31 deg/day off across it
+ *     (UPSTREAM-BUGS 287, G179, G24)
+ *   - ascmc[8] on the ecliptic of t0 and the solar system plane moved by
+ *     the frames' offset, 336.84 deg on the ecliptic of 1900, 0.70 J2000's
+ *     (UPSTREAM-BUGS 288, G179, G24)
+ *   - swe_house_pos() in the horizon system ('H') counting the houses the
+ *     other way from swe_houses()'s cusps south of the equator and on it
+ *     (UPSTREAM-BUGS 289, G179, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

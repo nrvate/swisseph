@@ -296,6 +296,9 @@ worst were in code that had never executed even once.
 | 273 | `swe_gauquelin_sector()` methods 0 and 1 with SEFLG_TOPOCTR see the place from `swe_set_topo()`'s observer, not from geopos: the Moon at 1950, geopos Zurich, method 0, 13.8513 with the observer at Zurich, 13.7248 at 70W 30S (0.126 sector), ERR with none set; methods 2 to 5 observe from geopos | Correctness (behaviour) | `swecl.c` |
 | 274 | `swe_gauquelin_sector()` answers the Earth OK, the sector of `swe_calc()`'s geocentric zero vector: 20.8625 at 1950, Zurich, in methods 0 and 1 (with SEFLG_HELCTR too), 17.6567 from its rise and set in methods 2 to 5; swetest's house position of the Earth with -hel likewise | Correctness (behaviour) | `swecl.c`, `swetest.c` |
 | 275 | swetest's meridian and zenith distances (-fm, -fz) are those of the place printed with SEFLG_EQUATORIAL, so the frame and centre options move them (Mars at 1.1.1950 0h UT, Zurich, MD 74.4031 plain, 75.0440 with -j2000, 40.6078 with -hel), the diff modes' those of the RA's difference; the cusps' and axes' RA, declination, MD, ZD, azimuth and altitudes those of the printed cusp in xobl[0]'s frame (-sid1: the Ascendant's ZD 69.0860, RA 171.39, altitude 20.91 for 90, 192.69, 0), the MD and ZD without a format letter of the equator the last body's, the ARMC's azimuth of its RA taken for a longitude; -fz overwrote the azimuth and altitude printed after it with the geocentric place's | Correctness (behaviour, program) | `swetest.c` |
+| 287 | On the ecliptic of t0 (`ecl_t0_aux()`; J2000, J1900, B1950 always) the houses' offset from the auxiliary vernal point is acos(), 0 .. 180, signed by the date, where it is about p (t - t0) + dpsi: for some 130 days on one side of t0 every cusp and ascmc 2 \|dvpxe\| off, a step of 2 dpsi at t0 (Zurich: -9.64e-3 deg on the ecliptic of 1900 and J1900, -7.74e-3 J2000's, -9.32e-3 Lahiri's of 1956; Placidus's cusps given to `swe_house_pos()` 4.9e-4 house off one day before 1900), the speeds 0.25 to 0.31 deg/day off within 1/64 day of it; acos() near 1 4.0e-9 deg off where dvpxe passes 0 | Correctness | `swehouse.c` |
+| 288 | On the ecliptic of t0 and the solar system plane the ascmc loops run to i <= SE_NASCMC and move ascmc[8], 0 ("ascmc[8... 9] are 0"), by the frames' offset: 336.84 deg on the ecliptic of 1900 and Lahiri's, 359.30 J1900, 0.70 J2000, 340.40 the solar system plane | Correctness | `swehouse.c` |
+| 289 | `swe_house_pos()` in the horizon system ('H') turns the place by 90 - lat where `CalcH()` takes -90 - lat south of the equator and on it: there the houses count the other way from `swe_houses()`'s cusps, the middles of houses 1 .. 12 at 33.87S 12.50, 11.52 .. 1.48, on the equator 12.56 .. 1.37 | Correctness | `swehouse.c` |
 
 ---
 
@@ -19302,6 +19305,185 @@ files under "0,9,1" at J2000 + 2 centuries + 2^-17 day against the
 one-sided five-point difference over 2^-9 day after it: 5.6e-10 deg/day
 shipped (8.33e-5 before the fix), 5.97e-5 compat. G60, G49, G66 and the
 gates of entry 258 pass.
+
+## 287. On the ecliptic of t0 the houses' offset from the auxiliary vernal point is signed by the date, not by where the point lies: for some 130 days on one side of t0 every cusp and ascmc is off by twice it, a step of 2 dpsi at t0 (-9.64e-3 deg on the ecliptic of 1900, -7.74e-3 J2000's, -9.32e-3 Lahiri's of 1956), the speeds 0.25 to 0.31 deg/day off within 1/64 day of it
+
+**Severity: Correctness (behaviour: a step of 2 dpsi in every cusp and ascmc at t0 and the houses 2 |dvpxe| off for 100 to 135 days on one side of it; every SE_SIDBIT_ECL_T0 mode, J2000, J1900 and B1950 always)**
+**Where:** `swehouse.c`: `ecl_t0_aux()`
+
+`sidereal_houses_ecl_t0()` computes the houses in an auxiliary frame,
+the true equator of date and the mean ecliptic of t0 cut at the
+auxiliary vernal point, then subtracts dvpxe, the distance along the
+ecliptic of t0 from the auxiliary vernal point to t0's (step 5), and
+ayan_t0. `ecl_t0_aux()` took it as acos() of the two points' dot
+product, 0 .. 180, and gave it the sign of tjde - t0. It is t0's vernal
+point's longitude from the auxiliary one, about p (t - t0) + dpsi (the
+true equinox lies -dpsi along the ecliptic from the mean): its sign is
+dpsi's, not the date's, within |dpsi| / p, some 125 days, of t0, on the
+side where p (t - t0) and dpsi differ in sign. There every cusp and
+ascmc but the ARMC was 2 |dvpxe| off, and at t0 the houses stepped by
+2 dpsi. Measured at Zurich against a construction by vectors (G179 (a):
+the t0 ecliptic's axes rotated into the true equator of date, each
+Regiomontanus and Campanus house circle cut with it): the user's
+ecliptic of 1900 (2415020.0, 22.46) and J1900 9.637e-3 deg off just
+before t0, 8.75e-3 10 days before, 1.71e-3 100, 1.4e-4 130, 3e-11 200
+(dpsi +17.3" in 1900); J2000 7.740e-3 just after t0, 1.13e-3 100 days
+after (dpsi -13.9"); Lahiri's (1956 Mar 21) 9.321e-3 just before, 1.31e-3
+100 days before. Placidus's sidereal cusps carried to the ecliptic of
+date (G168's frame) and given to `swe_house_pos()` with ascmc[2]: 4.94e-4
+house off one day before 1900, 2.67e-4 at 50 days, 2.1e-5 at 125. The
+speeds (bug 43's rates of the frame over -+1/64 day) took the flip within
+1/64 day of t0: 0.308 deg/day off on the ecliptic of 1900 and J1900,
+0.248 J2000, 0.298 Lahiri (the speeds of the fixed build at those
+instants, which are their places' rate within 1.0e-8). And acos() near 1
+resolves 1e-16 / angle: the cusps 4.0e-9 deg off the vectors' where
+dvpxe passes 0 (J2000 + 125 days), 1.4e-10 at 100 days from t0 on the
+right side.
+
+**Fix, as done here:** dvpxe the signed angle from the auxiliary vernal
+point to t0's about the pole of the ecliptic of t0 (xnorm = x x (x + 3),
+the plane's positive sense), atan2((xvpx x x) . xnorm / |xnorm|, xvpx .
+x): continuous through t0, of either sign on either side. The cusps are
+within 2.3e-13 deg of the vectors' either side of t0 in the four
+settings; the speeds within 1/32 day of t0 within 1.0e-8 deg/day of
+five-point differences of the places over 2^-12 day (the difference's
+truncation; the tropical houses' the same). Behind `#ifndef
+SWE_UPSTREAM_COMPAT`. G1's `cov:hsys_sid[eclt0]` (Lahiri, J2000) moves by
+5.0e-13 deg (the acos()'s rounding).
+
+G179 (a): the four settings at TT t0 -+ 2^-20, 1/64, 1, 10, 50, 100, 125,
+130 and 200 days, the cusps against the vectors within 1e-11 deg: 4
+checks; (b): their speeds within 1/32 day of t0 within 1e-7 deg/day: 4
+checks. Before the fix all 8 fail. G24 `ecl_t0_step_off`: J2000's
+Placidus MC less the tropical one at TT J2000 - 1.5 h, - 0.5 h, + 0.5 h
+(h = 2^-10 day), its second difference: 1.0e-11 deg shipped, 7.74e-3
+compat.
+
+Noticed, not fixed:
+- BEHAVIOUR. `ssypl_aux()`, the solar system plane's step 5, has the
+  same acos() and no sign at all ("always positive for dates after 5400
+  bc"): the angle from the auxiliary vernal point to the plane's node
+  less SSY_PLANE_NODE passes 0 about 5650 BC, and before that the houses
+  are folded, 2 |angle| off. The user's solar system plane (J2000, 23.86),
+  Zurich, Moshier, Regiomontanus's Asc against the same construction by
+  vectors: 7e-12 deg at 5640 BC, 0.27 at 5660 BC, 3.9 at 5800 BC, 9.2 at
+  6000 BC, 61 at 8000 BC, 170 at 13000 BC. The same signed angle about the
+  plane's pole would take it.
+
+## 288. On the ecliptic of t0 and the solar system plane the ascmc loops run to i <= SE_NASCMC and move ascmc[8], which is 0, by the frames' offset: 336.84 deg on the ecliptic of 1900 and Lahiri's, 359.30 J1900, 0.70 J2000, 340.40 the solar system plane
+
+**Severity: Correctness (behaviour: a reserved output nonzero; every mode on those planes)**
+**Where:** `swehouse.c`: `sidereal_houses_ecl_t0()`, `sidereal_houses_ssypl()`
+
+`swe_houses_armc_ex2_r()` sets ascmc[8] and [9] 0 ([9] the Sun's
+declination for Sunshine), and the manual says "ascmc[8... 9] are 0 and
+may be used for additional points in future releases" (swephprg 15.4).
+The two planes' functions move the points from the auxiliary frame with
+`for (i = 0; i <= SE_NASCMC; i++)`, SE_NASCMC 8: ascmc[8] came out
+swe_degnorm(-dvpxe - ayan_t0 (- x00) + corr). Zurich, UT 2433282.5:
+336.841 deg on the user's ecliptic of 1900, 336.842 Lahiri's ecliptic of
+t0, 359.301 J1900, 0.701 J2000, 340.398 the user's solar system plane,
+340.401 Lahiri's, in every system. Its speed stayed 0 (`houses_less_rate()`
+runs i < SE_NASCMC) and ascmc[9] was left. Every other ascmc loop in
+`swehouse.c` (the RADIANS conversions, the rates' partials and scaling,
+`houses_less_rate()`, `sidereal_houses_trad()`) runs i < SE_NASCMC; the
+zeroing ones run SE_NASCMC .. 9 and 0 .. 9.
+
+**Fix, as done here:** the two loops run i < SE_NASCMC. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`.
+
+G179 (c): the six settings of G172, 'P', 'I', 'G' and 'W', ascmc[8] and
+its speed 0, ascmc[9] the tropical call's: 6 checks; before the fix all
+fail. G24 `sid_plane_ascmc8_off`: J2000's Placidus ascmc[8], UT
+2433282.5: 0 shipped, 0.70 deg compat.
+
+## 289. `swe_house_pos()` in the horizon system ('H') counts the houses the other way from `swe_houses()`'s cusps south of the equator and on it: at 33.87S the middles of houses 1 .. 12 answer 12.50, 11.52 .. 1.48, on the equator 12.56 .. 1.37
+
+**Severity: Correctness (behaviour: a house position in the mirrored house; every place south of the equator and on it)**
+**Where:** `swehouse.c`: `swe_house_pos_r()`, case 'H'
+
+Entry 270's noticed item. `CalcH()` computes the horizon houses as
+Campanus's of a site at the co-latitude and the ARMC + 180 (the house
+circles are verticals, through the zenith and nadir), taking `fi = 90 -
+fi` north of the equator and `fi = -90 - fi` south of it and on it (fi
+<= 0). `swe_house_pos()` turned the place by 90 - lat everywhere, the
+northern co-latitude: south of the equator and on it its positions ran
+the other way. Zurich's longitude, UT 2433282.5, the middles of houses 1
+.. 12 (cusp k plus half the house): at 33.87S 12.50, 11.52, 10.52, 9.50,
+8.48, 7.48, 6.50, 5.52, 4.52, 3.50, 2.48, 1.48; on the equator 12.56,
+11.62, 10.55 .. 1.37; 60S alike; north of the equator in their houses.
+The exact-cusp test hid it at the cusps.
+
+**Fix, as done here:** the place turned by CalcH()'s co-latitude, `geolat
+> 0 ? 90 - geolat : -90 - geolat`. At 33.87S the middles answer 1.50,
+2.48 .. 12.52, on the equator 1.44, 2.38 .. 12.63. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`.
+
+G179 (d): at 47.37N, 33.87S, the equator, 60N and 60S, entry 268's four
+dates, in each of the 50 letters A .. Y, a .. y both functions take, the
+cusps at their numbers within 1e-7 house and the places 1e-6, 0.5 and 1 -
+1e-6 of the way through each house in it, the first and last within 1e-3
+of its cusps: 248 checks (but 'i' at 60N and 60S, and 'H' where the MC
+lies beyond the zenith, below); before the fix 'H' and 'h' fail at 33.87S,
+the equator and 60S (6). Every other letter passed before: lower case is
+upper case to both functions but 'i', which `swe_house_pos()` takes as
+'I' (below). G24 `horizon_south_off`: 33.87S, UT 2433282.5, house 2's
+middle, its house number less 2: 0 shipped, 9 compat.
+
+Noticed, not fixed:
+- BEHAVIOUR, the cause of entry 270's noticed 'i' item. `swe_house_pos()`
+  takes 'i' (Makransky's Sunshine solution) as 'I' (Treindl's), one code
+  for both, and so answers the Sunshine circles of swisseph.htm 6.2.15
+  (through the horizon's north and south points and the trisection
+  points of the Sun's diurnal and nocturnal arcs). Where its answers miss
+  Makransky's houses, `swe_houses()`'s Makransky cusps are off those
+  circles: `sunshine_solution_makransky()`, for a house point whose
+  meridian distance md passes 90 deg (two thirds of a semi-arc over 135,
+  the Sun's nocturnal arc at 60N in winter), takes `a = atand(tand(md -
+  90) / coslat)`, the house meridian's crossing of the prime vertical
+  measured from the east point, for its distance from the zenith (the
+  comment's), 90 less. At 60N, Zurich's longitude, UT 2433282.5, cusp 2
+  189.18 for 216.26 and cusp 6 26.51 for 348.73 (cusp 2 before cusp 1),
+  27.1 and 37.8 deg off; at 60S cusps 8 and 12. A construction by vectors
+  of those circles agrees with Treindl's cusps within 1e-3 deg and with
+  Makransky's everywhere md < 90. So the middles of Makransky's houses 1,
+  5 and 6 there answer 6.96, 6.30 and 1.29: his houses 1 and 6 span 357
+  and 345 deg. With `a = 90 + atand(...)` Makransky's cusps equal
+  Treindl's at 62N, 64N and 66N on 400 dates (123, 156 and 181 of them
+  differing now) and `swe_house_pos()` puts them at their numbers; below
+  the polar circles 'i' and 'I' are then one system and the toupper()
+  harmless. G58 (`housefix.c`, "sidereal 'i' equals sidereal 'I'") and
+  G24's `house_fix_off()` tell sidereal 'i' from 'I' at 60S by these very
+  cusps (the fix makes G58 fail) and would need a place where the two
+  solutions differ by design (inside the polar circles: 'i' falls back to
+  Porphyry with ERR for a circumpolar Sun and keeps the MC south).
+- BEHAVIOUR. `CalcH()`'s horizon houses take the MC on the equator's side
+  of the zenith (the hemisphere's co-latitude, above); in the tropics,
+  where the MC lies beyond the zenith (its declination over the latitude
+  north, under it south and on the equator), cusps 11, 12, 1, 2 and 3 fall
+  on the far halves of their verticals: cusp 1 is the Vertex, in the west
+  (5N, ARMC 109, obliquity 23.44: cusp 1 354.94, the Vertex), the houses
+  run clockwise, and `swe_house_pos()`, counting by azimuth, puts each 6
+  houses off (the equator, UT 2451545.0, ARMC 289.0: cusp 1 + 1e-6 of the
+  house answers 6.999996). Upstream's and the fixed `swe_house_pos()`
+  alike; the documentation names "problems with the Vertex and the horizon
+  house system for birth places in the tropics". G179 (d) leaves such
+  charts out (one, on the equator).
+- BEHAVIOUR. Inside the polar circles `swe_house_pos()`'s Sunshine code
+  misses Treindl's own cusps: at 68N, 70N, 75N and 70S, Zurich's longitude,
+  400 dates from J2000 0.91 day apart, 432 to 1096 of the 4800 cusps given
+  with latitude 1e-300 (past the exact-cusp test) answer 3 houses off
+  their numbers.
+- BEHAVIOUR. Koch's position of the MC or the IC itself given with a
+  latitude not exactly 0 (past the exact-cusp test): adp = -+admc, dfac
+  is 0 and rounds below it, and the answer is 0, "Koch house position
+  failed in circumpolar area": its cusps 4 and 10 with latitude 1e-300
+  in 8 of 20 charts (47.37N, 33.87S, 47.37S, 60N, 60S at entry 268's four
+  dates; 47.37N, UT 2433282.5, cusp 4); a place 1e-6 of the house off
+  them answers within the house.
+- RESIDUAL (1.2e-7 house, 3.6e-6 deg). Krusinski's ('U') position on the
+  equator of its own cusps given with latitude 1e-300: 1.2e-7 house off
+  their numbers (9.3e-9 elsewhere, the 0.001").
 
 ## How these were found
 

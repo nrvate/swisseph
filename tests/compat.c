@@ -4489,6 +4489,74 @@ static double sid_plane_corr_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 287: J2000's houses (the ecliptic of J2000) at Zurich,
+ * Placidus, across t0 = J2000 TT: the sidereal MC less the tropical one at
+ * TT t0 - 1.5 h, t0 - 0.5 h and t0 + 0.5 h, h = 2^-10 day, its second
+ * difference, deg. Upstream signed the frames' offset by the date, and
+ * just after J2000 dpsi's sign is the other: a step of 7.74e-3. */
+static double ecl_t0_step_off(void)
+{
+  const double h = 1.0 / 1024;
+  double f[3], cs[13], as[10], ct[13], at[10];
+  char serr[AS_MAXCH];
+  int k, i;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_sid_mode_r(c, SE_SIDM_J2000, 0, 0);
+  for (k = 0; k < 3; k++) {
+    double tt = J2000 + (k - 1.5) * h, tu = tt;
+    for (i = 0; i < 4; i++)
+      tu = tt - swe_deltat_ex_r(c, tu, SEFLG_SWIEPH, serr);
+    if (swe_houses_ex2_r(c, tu, SEFLG_SWIEPH | SEFLG_SIDEREAL, 47.37, 8.55, 'P', cs, as, NULL,
+                         NULL, serr) < 0
+        || swe_houses_ex2_r(c, tu, SEFLG_SWIEPH, 47.37, 8.55, 'P', ct, at, NULL, NULL,
+                            serr) < 0) {
+      swe_ctx_free(c);
+      return -1;
+    }
+    f[k] = swe_difdeg2n(as[1], at[1]);
+  }
+  swe_ctx_free(c);
+  return fabs(f[0] - 2 * f[1] + f[2]);
+}
+
+/* UPSTREAM-BUGS 288: J2000's houses, Zurich, UT 2433282.5, Placidus:
+ * ascmc[8], 0 (reserved), deg. Upstream moved it with the eight points:
+ * 0.70. */
+static double sid_plane_ascmc8_off(void)
+{
+  double cs[13], as[10];
+  if (sid_houses_at(SE_SIDM_J2000, 0, 0, 'P', cs, as, NULL, NULL) < 0)
+    return -1;
+  return fabs(swe_difdeg2n(as[8], 0));
+}
+
+/* UPSTREAM-BUGS 289: swe_house_pos() in the horizon system ('H'),
+ * tropical, 33.87 S, 8.55 E, UT 2433282.5, of the middle of house 2 (cusp
+ * 2 plus half the house): its house number less 2. Upstream counted the
+ * houses the other way from the cusps south of the equator: 11.52, 9. */
+static double horizon_south_off(void)
+{
+  double cu[13], am[10], x[6], xp[2];
+  char serr[AS_MAXCH];
+  double r = -1;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  if (swe_houses_ex2_r(c, 2433282.5, SEFLG_SWIEPH, -33.87, 8.55, 'H', cu, am, NULL, NULL,
+                       serr) >= 0
+      && swe_calc_ut_r(c, 2433282.5, SE_ECL_NUT, SEFLG_SWIEPH, x, serr) >= 0) {
+    xp[0] = swe_degnorm(cu[2] + swe_degnorm(cu[3] - cu[2]) / 2);
+    xp[1] = 0;
+    r = fabs(floor(swe_house_pos_r(c, am[2], -33.87, x[0], 'H', xp, serr)) - 2);
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 196: SE_ECL_NUT at dates past |J| 1e12 days and at no
  * dates: 1e13, 1e82 (dpsi 1.2e72 deg), 1e84 (NaN), -1e300 (the empty
  * caches' SWI_TJD_NEVER: zeros), +-inf and NaN, on a fresh context each,
@@ -7262,7 +7330,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar, lmtfar, utcfar, msgfar, moshrng, speed3span, gauqflag, joinnode, refkept, farsearch, helfar, plast, jplnote, barysun, sidtlrng, fallmoonwin, topostarwin, sidarmc, sidwsign, sripati, topoline, sidcorr, gauqtopo, gauqearth, eclt0step, sidascmc8, horsouth;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -7452,6 +7520,9 @@ int main(int argc, char **argv)
   sripati = sripati_wrap_off();
   topoline = topo_line_off();
   sidcorr = sid_plane_corr_off();
+  eclt0step = ecl_t0_step_off();
+  sidascmc8 = sid_plane_ascmc8_off();
+  horsouth = horizon_south_off();
   househora = house_jplhora_speed_off();
   nodowen = node_owen_join_off();
   nodmoshwin = node_mosh_window_off();
@@ -9311,6 +9382,30 @@ int main(int argc, char **argv)
   else {
     printf("  Gauquelin Earth        %.0f/6 answered FAIL: expected %s\n",
            gauqearth, WANT_DEFECT ? "6" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (eclt0step > 1e-3) : (eclt0step >= 0 && eclt0step < 1e-6))
+    printf("  ecl. t0 step at t0     %.2e deg OK\n", eclt0step);
+  else {
+    printf("  ecl. t0 step at t0     %.2e deg FAIL: expected %s\n",
+           eclt0step, WANT_DEFECT ? "> 1e-3" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (sidascmc8 > 0.1) : (sidascmc8 == 0))
+    printf("  sidereal ascmc[8]      %.2e deg OK\n", sidascmc8);
+  else {
+    printf("  sidereal ascmc[8]      %.2e deg FAIL: expected %s\n",
+           sidascmc8, WANT_DEFECT ? "> 0.1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (horsouth >= 1) : (horsouth == 0))
+    printf("  horizon houses, south  %.0f houses OK\n", horsouth);
+  else {
+    printf("  horizon houses, south  %.0f houses FAIL: expected %s\n",
+           horsouth, WANT_DEFECT ? ">= 1" : "0");
     bad++;
   }
 

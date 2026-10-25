@@ -865,9 +865,33 @@ static void ecl_t0_aux(swe_ctx *ctx, double tjde, double eps, const double *nutl
   *dvpx = x2[0] * RADTODEG;                     /* 2 */
   /* distance between auxiliary vernal point and
    * vernal point of t0 (a section on the sidereal plane) */
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 287: the distance was acos(), 0 .. 180, signed by the
+   * date, negative before t0. It is t0's vernal point's longitude from
+   * the auxiliary one, about p (t - t0) + dpsi (the true equinox lies
+   * -dpsi along the ecliptic), whose sign is dpsi's, not the date's, for
+   * some 130 days on one side of t0: there every cusp and ascmc was
+   * 2 |dvpxe| off, a step of 2 dpsi at t0 (Zurich: -9.64e-3 deg on the
+   * ecliptic of 1900 and J1900, -7.74e-3 on J2000's, -9.32e-3 on
+   * Lahiri's of 1956; Placidus's cusps given to swe_house_pos() 4.9e-4
+   * house off one day before 1900, 2.1e-5 at 125 days), the speeds 0.25
+   * to 0.31 deg/day off within 1/64 day of it; and acos() near 1 kept
+   * 1e-8 rad, the cusps 4.0e-9 deg off a construction by vectors where
+   * dvpxe passes 0, 1.4e-10 elsewhere. The signed angle from the
+   * auxiliary vernal point to t0's about the sidereal plane's pole
+   * (xnorm, x to x + 3), by atan2(): continuous, the cusps within 2.3e-13
+   * deg of that construction either side of t0 (G179). */
+  {
+    double xc[3];
+    swi_cross_prod(xvpx, x, xc);
+    *dvpxe = atan2((xc[0] * xnorm[0] + xc[1] * xnorm[1] + xc[2] * xnorm[2]) / rxyz,
+                   xvpx[0] * x[0] + xvpx[1] * x[1] + xvpx[2] * x[2]) * RADTODEG;  /* 5 */
+  }
+#else
   *dvpxe = acos(swi_dot_prod_unit(x, xvpx)) * RADTODEG;  /* 5 */
   if (tjde < sip->t0)
     *dvpxe = -*dvpxe;
+#endif
 }
 
 #ifndef SWE_UPSTREAM_COMPAT
@@ -977,7 +1001,17 @@ static int sidereal_houses_ecl_t0(swe_ctx *ctx, double tjde,
 #else
     cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0);
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 288: the loop ran to i <= SE_NASCMC and moved ascmc[8],
+   * which swe_houses_armc_ex2_r() sets 0 ("ascmc[8... 9] are 0",
+   * swephprg 15.4), by the frames' offset: 336.84 deg on the ecliptic of
+   * 1900 and Lahiri's, 359.30 J1900, 0.70 J2000 (Zurich, UT 2433282.5;
+   * its speed stayed 0, ascmc[9], Sunshine's declination, was left). The
+   * eight points, as every other ascmc loop here takes them. */
+  for (i = 0; i < SE_NASCMC; i++) {
+#else
   for (i = 0; i <= SE_NASCMC; i++) {
+#endif
     if (i == 2)	/* armc */
       continue;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -1164,7 +1198,12 @@ static int sidereal_houses_ssypl(swe_ctx *ctx, double tjde,
 #else
     cusp[i] = swe_degnorm(cusp[i] - dvpxe - sip->ayan_t0 - x00);
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 288, as in sidereal_houses_ecl_t0(): ascmc[8] 340.40 */
+  for (i = 0; i < SE_NASCMC; i++) {
+#else
   for (i = 0; i <= SE_NASCMC; i++) {
+#endif
     if (i == 2)	/* armc */
       continue;
 #ifndef SWE_UPSTREAM_COMPAT
@@ -3647,7 +3686,19 @@ double CALL_CONV swe_house_pos_r(swe_ctx *ctx, double armc, double geolat, doubl
       break;
     case 'H': // horizon / azimuth
       xeq[0] = swe_degnorm(mdd - 90);
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 289: the place was turned by 90 - lat, the
+       * co-latitude CalcH() takes north of the equator; south of it and
+       * on it CalcH() takes -90 - lat, and the houses counted the other
+       * way from its cusps: at 33.87 S, UT 2433282.5, the middles of
+       * houses 1 .. 12 answered 12.50, 11.52 .. 1.48, on the equator
+       * 12.56, 11.62 .. 1.37 (60 S alike). CalcH()'s co-latitude: each
+       * cusp at its number and each place in its house in both
+       * hemispheres and on the equator (G179). */
+      swe_cotrans(xeq, xp, geolat > 0 ? 90 - geolat : -90 - geolat);
+#else
       swe_cotrans(xeq, xp, 90 - geolat);
+#endif
       /* to make sure that a call with a house cusp position returns
        * a value within the house, 0.001" is added */
       xp[0] = swe_degnorm(xp[0] + MILLIARCSEC);
