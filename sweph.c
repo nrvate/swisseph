@@ -5508,15 +5508,22 @@ static void aberr_light_central(double *xx, const double *xe, const double *xe_m
 }
 
 /* The observer's velocity at t + dp for aberr_light_central(): the Earth's
- * carried on from t - dm, t, whose change over 1e-5 day is linear to 1e-7
- * of itself, and the site's, which turns, read at t + dp. */
-static int fixstar_obs_ahead(swe_ctx *ctx, double tjd, double dm, double dp, int32 iflag,
-                             const double *xb, const double *xb_m, double *xo_p, char *serr)
+ * and the site's, both read at t + dp. Upstream bug 76: the Earth's was
+ * carried on linearly from t - dm and t, so the central difference took the
+ * Earth's acceleration at t - dm/2, short by dm/2 of its rate of change: 8.6e-8
+ * of the aberration's rate, 8e-12 deg/day on the sky, 1.03e-9 in Polaris's
+ * right ascension speed at any step. Now read from the ephemeris. */
+static int fixstar_obs_ahead(swe_ctx *ctx, double tjd, double dp, int32 epheflag, int32 iflag,
+                             double *xo_p, char *serr)
 {
   int i;
+  int32 iephe_used = epheflag;
   double xs[6];
-  for (i = 0; i <= 5; i++)
-    xo_p[i] = xb[i] + dp / dm * (xb[i] - xb_m[i]);
+  if (main_planet_bary(ctx, tjd + dp, SEI_EARTH, epheflag, iflag, NO_SAVE, &iephe_used,
+                       xo_p, xo_p, xs, NULL, serr) != OK)
+    return ERR;
+  if (swi_refuse_downgrade(ctx, epheflag, iephe_used, tjd, serr))
+    return ERR;
   if (iflag & SEFLG_TOPOCTR) {
     if (swi_get_observer(ctx, tjd + dp, iflag | SEFLG_NONUT, NO_SAVE, xs, serr) != OK)
       return ERR;
@@ -8808,7 +8815,7 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
 #ifndef SWE_UPSTREAM_COMPAT
   /* never heliocentric or barycentric: plaus_iflag() sets SEFLG_NOABERR */
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0) {
-    if (fixstar_obs_ahead(ctx, tjd, dm, dp, iflag, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xearth_dt, xpo_p, serr) != OK)
+    if (fixstar_obs_ahead(ctx, tjd, dp, epheflag, iflag, xpo_p, serr) != OK)
       return ERR;
     aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, iflag & SEFLG_SPEED);
   }
@@ -10257,7 +10264,7 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
 #ifndef SWE_UPSTREAM_COMPAT
   /* never heliocentric or barycentric: plaus_iflag() sets SEFLG_NOABERR */
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0) {
-    if (fixstar_obs_ahead(ctx, tjd, dm, dp, iflag, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xearth_dt, xpo_p, serr) != OK)
+    if (fixstar_obs_ahead(ctx, tjd, dp, epheflag, iflag, xpo_p, serr) != OK)
       return ERR;
     aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, iflag & SEFLG_SPEED);
   }

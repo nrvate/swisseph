@@ -645,6 +645,31 @@ static double nut_obliq_rate_off(void)
   return worst;
 }
 
+/* The Earth's acceleration in a star's aberration rate: Polaris's right
+ * ascension speed against a five-point difference of its right ascension
+ * over 2^-5 day in 2100, deg/day. The Earth's velocity at t + dp was carried
+ * on linearly from t - dm and t, the acceleration at t - dm/2: 1.03e-9 in a
+ * right ascension near the pole (UPSTREAM-BUGS 76); upstream's star speeds
+ * have bugs 49 and 58 besides. */
+static double star_aberr_accel_off(void)
+{
+  double t = floor(2488070.1 * 256) / 256, h = 1.0 / 32, x[6], q[5];
+  int32 fl = SEFLG_SWIEPH | SEFLG_EQUATORIAL;
+  char serr[256], s[64];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  strcpy(s, "Polaris");
+  swe_fixstar2(s, t, fl | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++) {
+    double y[6];
+    strcpy(s, "Polaris");
+    swe_fixstar2(s, t + (k - 2) * h, fl, y, serr);
+    q[k] = y[0];
+  }
+  return fabs(x[3] - (8 * (q[3] - q[1]) - (q[4] - q[0])) / (12 * h));
+}
+
 /* UPSTREAM-BUGS 62: VEA (seorbel.txt's set 26, 80,000 AU, 462 days of light
  * time): its geocentric longitude speed against a five-point difference of
  * its longitude, deg/day. The aberration rate there is tau times the
@@ -1168,7 +1193,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1207,6 +1232,7 @@ int main(int argc, char **argv)
   aberrate = planet_aberr_rate_off();
   nutr = nut_rate_off();
   nutob = nut_obliq_rate_off();
+  staracc = star_aberr_accel_off();
   startd = star_topo_defl_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
@@ -1489,6 +1515,14 @@ int main(int argc, char **argv)
   else {
     printf("  nutation's obliquity   %.2e deg/day FAIL: expected %s\n",
            nutob, WANT_DEFECT ? "> 1e-9" : "< 1e-10");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (staracc > 5e-10) : (staracc < 1e-10))
+    printf("  star aberration accel. %.2e deg/day OK\n", staracc);
+  else {
+    printf("  star aberration accel. %.2e deg/day FAIL: expected %s\n",
+           staracc, WANT_DEFECT ? "> 5e-10" : "< 1e-10");
     bad++;
   }
 

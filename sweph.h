@@ -834,6 +834,10 @@ struct epsilon {
  *     raw change of its velocity, radial part too (5.7e-9 deg/day on Mars's
  *     mean points, 1.6e-8 on Neptune's, 2.1e-9 AU/day on Neptune's
  *     heliocentric distance rate; UPSTREAM-BUGS 70, G69)
+ *   - a fixed star's aberration rate took the Earth's velocity at t + dt
+ *     carried on linearly from t - dt and t, its acceleration half a step
+ *     back: 8e-12 deg/day on the sky, 1.03e-9 in Polaris's right ascension
+ *     (UPSTREAM-BUGS 76, G75)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

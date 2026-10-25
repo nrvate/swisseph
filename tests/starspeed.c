@@ -23,10 +23,12 @@
  * equatorial, XYZ, equatorial XYZ), swe_fixstar2() and swe_fixstar(), all
  * against five-point differences of the same call's positions over 2^-8
  * day at instants that are multiples of it. Per flag set and function: the
- * angular speeds, longitude times cos(latitude), within 2e-10 deg/day
- * (measured <= 4.0e-11, the five-point reference's own noise; it was
- * 6.6e-10 while the nutation's rate was a backward difference, UPSTREAM-BUGS
- * 58, and the limit 1e-8); the distance rate within 1e-12 of the distance
+ * angular speeds, longitude times cos(latitude), within 1e-10 deg/day
+ * (measured <= 3.5e-11, the five-point reference's own noise, the apparent
+ * ones 9e-12 to 1.2e-11; they were up to 4.0e-11, the apparent 1.9e-11 to
+ * 2.2e-11, while the aberration's rate took the Earth's acceleration half a
+ * step back, UPSTREAM-BUGS 76, and 6.6e-10 while the nutation's rate was a
+ * backward difference, UPSTREAM-BUGS 58, with the limit 1e-8); the distance rate within 1e-12 of the distance
  * per day (measured <= 1.7e-13, likewise); XYZ rates within 1.7e-11 of the
  * distance per day (measured 7e-13). The upstream build fails all 36: the
  * distance rate by 4.9e-10 of the distance per day, swe_fixstar()'s
@@ -110,7 +112,7 @@ int main(int argc, char **argv)
       } else {
         printf("  %-10s %-12s angles %.2e deg/day, distance %.2e of it per day\n",
                set[k].n, old ? "swe_fixstar" : "swe_fixstar2", ang, rel);
-        if (ang > 2e-10) {
+        if (ang > 1e-10) {
           printf("    FAIL: an angular speed is not the rate of the position\n");
           bad++;
         }

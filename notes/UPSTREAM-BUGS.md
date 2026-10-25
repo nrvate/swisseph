@@ -105,6 +105,7 @@ worst were in code that had never executed even once.
 | 70 | `swe_nod_aps()`'s apparent speeds are not the rate of the aberration it applies | Correctness | `swecl.c`, `sweph.c` |
 | 65 | Kronos' built-in semi-axis has two digits swapped, and the Kepler solver's starting guess is wrong | Correctness | `swemplan.c` |
 | 66 | The aberration rate's Earth lacks the Moon on JPL and Moshier, and the planets everywhere | Correctness | `sweph.c` |
+| 76 | A fixed star's aberration rate takes the Earth's acceleration half a step back | Correctness | `sweph.c` |
 
 ---
 
@@ -3484,6 +3485,63 @@ on Kronos alone (0.0086 deg at 1700, 0.0169 deg at 2300, 0.0257 deg at 2500).
 G24 `kronos_builtin_off`: Kronos at 1700, built-in against the file, 0 shipped,
 8.7e-3 deg compat. The starting-guess part is not gated: no public result
 moves beyond rounding, and the pass count has no clean hook.
+
+## 76. A fixed star's aberration rate takes the Earth's acceleration half a step back
+
+**Severity: Correctness (8e-12 deg/day on the sky in every apparent star speed; 1.03e-9 in Polaris's right ascension speed, 7.4e-10 in Polaris Australis's, 2.2e-10 in delta Dor's ecliptic longitude speed)**
+**Where:** `sweph.c`: `fixstar_obs_ahead()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`
+
+After entry 69, Polaris's right ascension speed was still off a
+five-point difference of its right ascension by 1.03e-9 deg/day, and
+Polaris Australis's by 7.4e-10, the same at every step from 2^-5 to
+2^-10 day: not the reference's rounding. Taken apart one correction at a
+time (seven dates 1900-2100, 2^-6 day): SEFLG_NONUT, SEFLG_NOGDEFL and
+SEFLG_J2000 left it (J2000 still 5.8e-10), SEFLG_NOABERR and
+SEFLG_TRUEPOS took it to 2.8e-11, J2000|NOABERR to 7.7e-13: the
+aberration. Every star had it, about 8e-12 deg/day on the sky in both
+coordinates (delta Dor's and 42 Dra's ecliptic longitudes 2.2e-10 and
+1.9e-10, near the ecliptic's poles).
+
+Entry 49's `aberr_light_central()` takes the star's aberration rate as
+the change of the shift from t - dm to t + dp over dm + dp, dm and dp the
+exact 1e-5 day steps. The observer's velocity at t + dp came from
+`fixstar_obs_ahead()`, the Earth's carried on linearly from its
+velocities at t - dm and t: (v(t) - v(t - dm)) (dm + dp) / dm for the
+change, the acceleration at t - dm/2, short by dm/2 of its rate of
+change. For the Earth's orbit that is dm/2 x 2 pi/year = 8.6e-8 of the
+acceleration, and so of the aberration's rate (20.5" x 2 pi/year =
+9.8e-5 deg/day): 8.4e-12 deg/day, 1/cos(declination) of that in a right
+ascension near the pole. The function's own comment had it: "linear to
+1e-7 of itself".
+
+**Fix, as done here:** the Earth at t + dp read from the ephemeris
+(`main_planet_bary()`, NO_SAVE, the same downgrade refusal as the other
+two reads); the site, as before, read there. Positions unchanged.
+Measured after, over 2^-5 day: Polaris's right ascension 1.8e-11,
+Polaris Australis's 9.5e-12, delta Dor's ecliptic longitude 9.7e-12, 42
+Dra's 5.2e-12, the five-point reference's own rounding (it scales as
+1/step, and SEFLG_TRUEPOS, no aberration, gives the same). One more
+Earth read per apparent star call with speed: `swe_fixstar2()` with
+SEFLG_SPEED 24.5 -> 26.8 us/call (+9%); `swe_calc()` untouched. G49's
+angles 4.0e-11 -> 3.5e-11, the apparent ones 1.9e-11 -> 9.4e-12, its
+angle limit 2e-10 -> 1e-10; G68 within its rounding either way (it takes
+the nutation's share, in which the aberration cancels), limits kept.
+
+Also seen and left alone: on Moshier (SEFLG_MOSEPH) Polaris's right
+ascension speed is off by up to 1.56e-8 deg/day (2.0e-10 on the sky),
+the same at 2^-5 and 2^-7 day, 7e-12 in 1900 and 2.1e-9 to 1.56e-8 at
+1970-2100, gone under SEFLG_NOABERR (8.6e-12): the Moshier Earth's
+velocity is not smooth at the 1e-5 day the aberration rate spans
+(7e-13 of itself would do it). Before this fix it was up to 5.1e-8.
+
+G75 `tests/staraberr.c`: Polaris and Polaris Australis in right
+ascension, delta Dor and 42 Dra in ecliptic longitude, apparent
+geocentric, `swe_fixstar2()` and `swe_fixstar()`, seven dates 1900-2100,
+against five-point differences over 2^-5 day: 8 checks within 6e-11
+deg/day. The build before the fix fails all 8 (1.9e-10 to 1.03e-9); the
+upstream build fails all 8 (2.6e-6 to 4.3e-4, bugs 49 and 58 besides).
+G24 `star_aberr_accel_off`: Polaris's right ascension speed in 2100,
+1.78e-11 deg/day shipped, 2.99e-6 compat.
 
 ## How these were found
 
