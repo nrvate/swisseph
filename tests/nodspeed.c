@@ -35,8 +35,7 @@
  * Sun: within 0.05 degree of it, the light deflection's speed is off by
  * 1.7e-2 deg/day in either build (Jupiter's descending node on 1 January).
  * The upstream build fails every case, by 1.3e-5 to 3.9 deg/day.
- * SEFLG_J2000 is not checked: its output is left as upstream has it (see
- * UPSTREAM-BUGS 37). Run as
+ * SEFLG_J2000 is checked by G47 (tests/nodaps2.c, UPSTREAM-BUGS 47). Run as
  *   nodspeed EPHEDIR
  */
 #include <math.h>

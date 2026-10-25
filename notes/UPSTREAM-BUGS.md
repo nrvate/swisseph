@@ -75,6 +75,8 @@ worst were in code that had never executed even once.
 | 37 | `swe_nod_aps()` carries the ecliptic's turning about the wrong centre | Correctness | `swecl.c` |
 | 38 | `swe_nod_aps()` returns the mean apsides' latitude as its speed | Correctness | `swecl.c` |
 | 39 | The light deflection's speed is rough behind the Sun's disc | Correctness | `sweph.c` |
+| 46 | `swe_nod_aps()`'s positions depend on SEFLG_SPEED | Correctness | `swecl.c` |
+| 47 | `swe_nod_aps()` under SEFLG_J2000 is not the J2000 frame | Correctness | `swecl.c` |
 
 ---
 
@@ -2054,6 +2056,109 @@ at seven instants 1e-9 day apart within 1e-7 of each other and within
 1e-6 of a central difference; the upstream build fails on Venus, Saturn,
 Jupiter and (light-time rate, entry 35) Mercury. G24
 `defl_rough_off`: 6.8e-9 shipped, 1.5e-5 compat. G1: the five meff rows.
+
+## 46. `swe_nod_aps()`'s positions depend on SEFLG_SPEED
+
+**Severity: Correctness (6-35 mas on Mars's descending node, perihelion and aphelion, the same on every planet's; 10 mas on the Sun's mean aphelion, 300 on its osculating focal point, 660 on Venus's; only with SEFLG_SPEED)**
+**Where:** `swecl.c`: `swe_nod_aps_r()`, the apparent speed's aberration term
+
+With SEFLG_SPEED and aberration, each point's speed gets the change of
+the observer's velocity over its light time dt: the body is computed at
+tjd - dt, which leaves the Sun and the Earth in the save area at tjd -
+dt, the observer is read from there, and then the save area is
+"restored" by computing the Sun at tjd with iflg0, the flags the
+function's internal calls use. Those carry SEFLG_HELCTR for every body
+but the Moon, and a heliocentric Sun is zeros, returned before anything
+is computed; for the Moon (heliocentric or barycentric points), whose
+iflg0 is geocentric, the call finds the Sun of the setup call in
+`swe_calc()`'s save area and returns it as it is. Either way the
+barycentric Sun and the Earth stayed at tjd - dt of the point before:
+the first point (the ascending node; the Sun's perihelion) is right, and
+the deflection and change of centre of the three after it used the
+wrong Earth. Without SEFLG_SPEED nothing of this runs. Found by sescan's
+scan C (`--only nod_aps --scan C`): Mars 1.5-30 mas equivalent with the
+Swiss files at -3000 and with JPL at 1800. Measured with and without
+SEFLG_SPEED over Sun..Pluto and the Moon, the four methods, geocentric,
+heliocentric, barycentric, topocentric, equatorial and J2000: Mars's
+mean descending node, perihelion and aphelion 30, 27 and 18 mas apart
+(equatorial 32, 35, 20); Mercury's 20, 10, 19; the Sun's mean aphelion
+10, its osculating focal point 307; Venus's focal point, heliocentric,
+664. Also, osculating, the middle of the three instants was tjd - dt +
+dt, tjd rounded twice, against tjd itself without SEFLG_SPEED (1e-8 mas).
+
+**Fix, as done here:** the restore repeats the setup call -- the body
+itself with iflg0 (topocentric but for the Earth, see the F6 note
+there), or the Sun for the Moon's heliocentric points -- after
+`swi_force_app_pos_etc()`, so that the save area is what the first point
+saw; the middle instant is tjd. Positions with and without SEFLG_SPEED
+now agree to <= 8e-6 mas (the Moon's osculating points; <= 6e-7 for the
+rest; 0 under SEFLG_J2000), the rounding of `swi_cartpol_sp()`'s and
+`swi_precess_speed()`'s own formulas for the position; sescan's scan C
+for `nod_aps` now worst 7e-6 mas.
+
+## 47. `swe_nod_aps()` under SEFLG_J2000 is not the J2000 frame
+
+**Severity: Correctness (7.9" on the Moon's mean node in 2026, 148" in latitude in 2326, against `swe_calc()`; 3.2e-5 deg/day on Mars's osculating points' declination speeds)**
+**Where:** `swecl.c`: `swe_nod_aps_r()`, the conversions shared by the mean and osculating points
+
+`swe_calc()`'s `plaus_iflag()` sets SEFLG_NONUT with SEFLG_J2000 ("if
+J2000, then no nutation"); this function did not, and it takes one
+obliquity, `oe`, for both ends of the conversion: the output's,
+J2000's under SEFLG_J2000. So the points, built in the ecliptic of date,
+were turned to the equator by the obliquity of J2000, the nutation was
+taken out on the way in (osculating) and applied to J2000 coordinates on
+the way out. The Moon's mean node from `swe_nod_aps()` was 7.9" in
+longitude and 6.9" in latitude from `swe_calc(SE_MEAN_NODE)` under the
+same flag on 2026-10-24 (of date they agree to 5e-9"), 15" and 148" in
+2326; SEFLG_J2000|SEFLG_NONUT was off by as much, the obliquity alone.
+The speeds had none of the frame's turning: entry 37's correction is for
+the ecliptic of date at both ends, skipped here, and
+`swi_precess_speed()`'s general precession in longitude about the J2000
+ecliptic is not the whole of the mean equator of date's turning. Against
+five-point differences, Mars's osculating points' declination speeds
+were off by 3.2e-5 deg/day, Jupiter's 2.2e-5.
+
+**Fix, as done here:** SEFLG_NONUT with SEFLG_J2000, as `swe_calc()`
+does (the sidereal case beside it, G30, already did), so the points are
+built in the mean ecliptic of date; then `nodaps_ecl_to_j2000()`: the
+mean obliquity of date to the equator, precession to J2000, and on the
+velocity the frame's turning as R'(tjd) x, the whole rotation's central
+difference over a day either side. The output's obliquity stays J2000's.
+The Moon's mean node and mean apogee now agree with `swe_calc()` under
+SEFLG_J2000 to 4.6e-9", ecliptic and equatorial, -300..+300 years
+(sidereal and SEFLG_NONUT with J2000 too); the angle between the
+osculating ones and `swe_calc()`'s, made another way, is the same in
+J2000 as of date to 3e-10"; and the planets' J2000 speeds are within
+1.4e-7 deg/day (latitude, declination) and 3.6e-7 (longitude, right
+ascension) of five-point differences, as of date.
+
+G47 `tests/nodaps2.c`, for both: (A) positions with and without
+SEFLG_SPEED, Sun..Pluto, the Moon and the Earth, four methods, six flag
+sets, five dates -3000..2100 and Mars with de200.eph at 1800, within
+1e-4 mas; (B) the Moon's mean points against `swe_calc()` under J2000
+within 1e-7", the osculating ones and the planets' angles between the
+points, J2000 against of date, within 1e-6"; (C) J2000 speeds of Mars,
+Venus, Jupiter and the Moon's mean nodes against five-point differences
+at binary-fraction instants, latitude/declination within 2.5e-7,
+longitude/right ascension within 1e-6 deg/day. The upstream build fails
+34 of its 35 rows. G24 asserts both ways: Mars's osculating points with
+and without SEFLG_SPEED (4.1e-7 mas shipped, 17 mas compat) and the
+Moon's mean node under J2000 against `swe_calc()` (2.7e-9" shipped,
+7.9" compat). G1: 36 rows, all of them bug 46 -- every `nodaps` row with
+SEFLG_SPEED that is not a call's first point and runs the aberration
+rate (the Earth's, Mercury's and Pluto's dsc/peri/aphe over the five
+methods, Mars's `_ut` aphelion): positions by 0.008-18 mas, each now
+within 2e-7 mas of the same call without SEFLG_SPEED (before: up to 18),
+and speeds by up to 1.3e-7 deg/day through the corrected Earth. No G1
+row is under SEFLG_J2000. G17 unchanged.
+
+Found along the way, not fixed here: `swe_nod_aps()`'s topocentric
+speeds still take the aberration rate upstream's way, from the call at
+tjd - dt, where entry 34 replaced it in `swe_calc()`; against five-point
+differences they are 7e-6 deg/day off on Mercury's points, 2e-4 on
+Neptune's, 3e-4 on Pluto's, in either frame;
+the Moon's mean perigee's latitude speed is a one-day forward difference
+(entry 38), 2e-5 deg/day from the rate.
 
 ## How these were found
 

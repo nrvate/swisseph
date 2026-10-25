@@ -399,6 +399,42 @@ static double mean_apsis_lat_speed_off(void)
   return fabs(x[4] - r);
 }
 
+/* UPSTREAM-BUGS 46: Mars's osculating descending node, perihelion and
+ * aphelion, geocentric, with and without SEFLG_SPEED: the largest move in
+ * longitude or latitude, mas. Upstream's aberration-rate call leaves the
+ * Earth of the point before for the three after the first, ~30 mas. */
+static double nodaps_speed_flag_move(void)
+{
+  double jd = 2461338.137, a[4][6], b[4][6], w = 0;
+  char serr[256];
+  int j;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_nod_aps(jd, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_OSCU, a[0], a[1], a[2], a[3], serr);
+  swe_nod_aps(jd, SE_MARS, SEFLG_SWIEPH, SE_NODBIT_OSCU, b[0], b[1], b[2], b[3], serr);
+  for (j = 0; j < 4; j++) {
+    w = fmax(w, fabs(swe_difdeg2n(a[j][0], b[j][0])) * 3.6e6);
+    w = fmax(w, fabs(a[j][1] - b[j][1]) * 3.6e6);
+  }
+  return w;
+}
+
+/* UPSTREAM-BUGS 47: the Moon's mean node from swe_nod_aps() against
+ * swe_calc(SE_MEAN_NODE) under SEFLG_J2000 on 2026-10-24, the larger of
+ * the longitude and latitude differences, arcsec. Upstream turns the
+ * point of date to the equator by J2000's obliquity and nutates J2000
+ * coordinates: 7.9". */
+static double nodaps_j2000_off(void)
+{
+  double jd = 2461337.5, a[6], x[6], u[6];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_nod_aps(jd, SE_MOON, SEFLG_SWIEPH | SEFLG_J2000, SE_NODBIT_MEAN, a, u, u, u, serr);
+  swe_calc(jd, SE_MEAN_NODE, SEFLG_SWIEPH | SEFLG_J2000, x, serr);
+  return fmax(fabs(swe_difdeg2n(a[0], x[0])), fabs(a[1] - x[1])) * 3600;
+}
+
 /* A speed against a five-point difference of its own longitude, deg/day,
  * at an instant and a step that are binary fractions (t + k h exact). */
 static double lon_speed_off(int ipl, int32 fl, double jd)
@@ -482,7 +518,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr;
+  double nodspd, apslat, deflr, nodflag, nodj2k;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -505,6 +541,8 @@ int main(int argc, char **argv)
   nodspd = nodaps_turning_off();
   apslat = mean_apsis_lat_speed_off();
   deflr = defl_rough_off();
+  nodflag = nodaps_speed_flag_move();
+  nodj2k = nodaps_j2000_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -653,6 +691,22 @@ int main(int argc, char **argv)
   else {
     printf("  deflection speed rough %.2e deg/day FAIL: expected %s\n",
            deflr, WANT_DEFECT ? "> 3e-6" : "< 1e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodflag > 1) : (nodflag < 1e-4))
+    printf("  nod_aps speed flag     %.2e mas     OK\n", nodflag);
+  else {
+    printf("  nod_aps speed flag     %.2e mas     FAIL: expected %s\n",
+           nodflag, WANT_DEFECT ? "> 1" : "< 1e-4");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodj2k > 1) : (nodj2k < 1e-6))
+    printf("  nod_aps J2000 node     %.2e arcsec  OK\n", nodj2k);
+  else {
+    printf("  nod_aps J2000 node     %.2e arcsec  FAIL: expected %s\n",
+           nodj2k, WANT_DEFECT ? "> 1" : "< 1e-6");
     bad++;
   }
 

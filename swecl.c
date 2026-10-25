@@ -5245,6 +5245,37 @@ static const double plmass[9] = {
   136566000,        /* Pluto */
 };
 static const int ipl_to_elem[15] = {2, 0, 0, 1, 3, 4, 5, 6, 7, 0, 0, 0, 0, 0, 2,};
+#ifndef SWE_UPSTREAM_COMPAT
+/* A position in the mean ecliptic of t to the J2000 equator. */
+static void nodaps_ecl_rot_j2000(swe_ctx *ctx, double *x, double t, int32 iflag)
+{
+  swi_coortrf(x, x, -swi_epsiln(ctx, t, iflag));
+  swi_precess(ctx, x, t, iflag, J_TO_J2000);
+}
+
+/* swe_nod_aps()'s points under SEFLG_J2000 (UPSTREAM-BUGS 47): x, in the
+ * mean ecliptic of tjd, to the J2000 equator; with SEFLG_SPEED the
+ * velocity is rotated and given the frame's turning, R'(tjd) x, the
+ * rotation's central difference over NODAPS_FRAME_DT a side (smooth over
+ * centuries; truncation ~1e-15 of the rate). */
+#define NODAPS_FRAME_DT 1.0
+static void nodaps_ecl_to_j2000(swe_ctx *ctx, double *x, double tjd, int32 iflag)
+{
+  double xm[3], xp[3];
+  int i;
+  if (iflag & SEFLG_SPEED) {
+    for (i = 0; i <= 2; i++)
+      xm[i] = xp[i] = x[i];
+    nodaps_ecl_rot_j2000(ctx, xm, tjd - NODAPS_FRAME_DT, iflag);
+    nodaps_ecl_rot_j2000(ctx, xp, tjd + NODAPS_FRAME_DT, iflag);
+    nodaps_ecl_rot_j2000(ctx, x + 3, tjd, iflag);
+    for (i = 0; i <= 2; i++)
+      x[i + 3] += (xp[i] - xm[i]) / (2 * NODAPS_FRAME_DT);
+  }
+  nodaps_ecl_rot_j2000(ctx, x, tjd, iflag);
+}
+#endif
+
 int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 iflag, 
                       int32  method,
                       double *xnasc, double *xndsc, 
@@ -5292,6 +5323,10 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
    * planets beside it do not: +12.8" for the mean node on 1990-06-16, the
    * whole of delta-psi (G30). */
   if (iflag & SEFLG_SIDEREAL)
+    iflag |= SEFLG_NONUT;
+  /* and SEFLG_J2000 for the same reason (plaus_iflag(): "if J2000, then
+   * no nutation"), UPSTREAM-BUGS 47 */
+  if (iflag & SEFLG_J2000)
     iflag |= SEFLG_NONUT;
 #endif
   /* function calls for Pluto with asteroid number 134340
@@ -5478,6 +5513,12 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     for (i = istart, t = tjd_et - dt; i <= iend; i++, t += dt) {
       if (istart == iend)
         t = tjd_et;
+#ifndef SWE_UPSTREAM_COMPAT
+      /* bug 46 as well: the middle instant, tjd - dt + dt, is tjd rounded
+       * twice; the points without SEFLG_SPEED are at tjd itself */
+      if (i == 1)
+        t = tjd_et;
+#endif
       if (swe_calc_r(ctx, t, ipli, iflJ2000, xpos[i], serr) == ERR)
         return ERR;
       /* the EMB is used instead of the earth */
@@ -5665,11 +5706,25 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
      * into the ecliptic again, on the GEOCENTRIC point; what survived was
      * de/dt x (the Earth's heliocentric position), up to 1.6e-5 deg/day on
      * the latitude and declination speeds, and nothing heliocentric or for
-     * the Moon. Taken out here, added back below. Not under SEFLG_J2000,
-     * whose output is left as upstream has it (see UPSTREAM-BUGS 37). */
+     * the Moon. Taken out here, added back below. Under SEFLG_J2000 the
+     * whole frame's turning is taken in nodaps_ecl_to_j2000() (bug 47). */
     if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
       swi_ecl_frame_speed(xp, -swi_obliquity_rate(ctx, tjd_et, iflag,
                               is_true_nodaps && !(iflag & SEFLG_NONUT)));
+    /* Upstream bug 47: under SEFLG_J2000 the points, in the ecliptic of
+     * date, were turned to the equator by the obliquity of J2000 (oe is
+     * the output's), and without SEFLG_NONUT, which swe_calc() sets for
+     * J2000, the nutation was taken out on the way in and applied to the
+     * J2000 coordinates on the way out: the Moon's mean node was 7.8" in
+     * longitude and 6.9" in latitude from swe_calc(SE_MEAN_NODE, J2000)
+     * on 2026-10-24, 148" in latitude in 2326. Now the mean ecliptic of
+     * date, its own obliquity, and the frame's turning on the velocity,
+     * which bug 37's correction left out here and swi_precess_speed()'s
+     * precession in longitude about the J2000 ecliptic does not give:
+     * the derivative of the whole rotation. */
+    if (iflag & SEFLG_J2000) {
+      nodaps_ecl_to_j2000(ctx, xp, tjd_et, iflag);
+    } else {
 #endif
     /*********************
      * to equator 
@@ -5694,6 +5749,9 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     swi_precess(ctx, xp, tjd_et, iflag, J_TO_J2000);
     if (iflag & SEFLG_SPEED)
       swi_precess_speed(ctx, xp, tjd_et, iflag, J_TO_J2000);
+#ifndef SWE_UPSTREAM_COMPAT
+    }
+#endif
 //      fprintf(stderr, "%.17f, %.17f, %.17f, %.17f, %.17f, %.17f\n", xp[0], xp[1], xp[2], xp[3], xp[4], xp[5]);
     /*********************
      * to barycenter 
@@ -5764,8 +5822,30 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
          * (i.e. bary sun, earth nutation matrix!). 
          * to restore it:
          */
+#ifndef SWE_UPSTREAM_COMPAT
+        /* Upstream bug 46: it did not. The call was for the Sun with
+         * iflg0, which carries SEFLG_HELCTR for every body but the Moon,
+         * and a heliocentric Sun is zeros, returned before anything is
+         * computed; for the Moon, whose iflg0 is geocentric, it found the
+         * Sun of the setup call above in swe_calc()'s save area and
+         * returned that. Either way the barycentric Sun and the Earth stayed
+         * at tjd - dt for the deflection and the change of centre of every
+         * later point: with SEFLG_SPEED, Mars's descending node, perihelion
+         * and aphelion were 6-35 mas from where they are without it, the
+         * ascending node, first, was right. Now the setup call is repeated,
+         * forced, so that the save area is what the first point saw. */
+        swi_force_app_pos_etc(ctx);
+        if (ipli == SE_MOON && (iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))) {
+          if (swe_calc_r(ctx, tjd_et, SE_SUN, iflg0, x2, serr) == ERR)
+            return ERR;
+        } else if (swe_calc_r(ctx, tjd_et, ipli, iflg0 | (ipli == SE_EARTH ? 0 :
+                   (iflag & SEFLG_TOPOCTR)), x2, serr) == ERR) {
+          return ERR;
+        }
+#else
         if (swe_calc_r(ctx, tjd_et, SE_SUN, iflg0 | (iflag & SEFLG_TOPOCTR), x2, serr) == ERR)
           return ERR;
+#endif
       }
     }
     /*********************
@@ -5802,7 +5882,7 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
     }
 #ifndef SWE_UPSTREAM_COMPAT
     /* into the ecliptic of date, which turns (bugs 33, 37); J2000's does
-     * not, and is left alone above as well */
+     * not (bug 47) */
     if ((iflag & SEFLG_SPEED) && !(iflag & SEFLG_J2000))
       swi_ecl_frame_speed(xp, swi_obliquity_rate(ctx, tjd_et, iflag,
                                                  !(iflag & SEFLG_NONUT)));

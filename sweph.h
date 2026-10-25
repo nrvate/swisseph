@@ -720,6 +720,14 @@ struct epsilon {
  *   - swi_deflect_light() formed the elongation's sine and 1 + q.e by
  *     cancelling subtractions, so a planet's speed behind the Sun's disc
  *     was rough by 1.5e-5 deg/day (UPSTREAM-BUGS 39, G44)
+ *   - swe_nod_aps() "restored" the save area after its aberration-rate
+ *     call with a heliocentric Sun, which computes nothing, so with
+ *     SEFLG_SPEED the points after the first used the Earth at tjd - dt
+ *     (6-35 mas on Mars's; UPSTREAM-BUGS 46, G47)
+ *   - swe_nod_aps() under SEFLG_J2000 turned the points of date to the
+ *     equator by J2000's obliquity, without SEFLG_NONUT, and its speeds left
+ *     out the frame's turning (7.9" on the Moon's mean node in 2026, 148"
+ *     in 2326; 3.2e-5 deg/day; UPSTREAM-BUGS 47, G47)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)
