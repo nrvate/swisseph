@@ -204,6 +204,7 @@ worst were in code that had never executed even once.
 | 169 | `swe_nod_aps()` reads the centre bits otherwise than `swe_calc()`: SEFLG_HELCTR with SEFLG_BARYCTR answers heliocentric (Mars's node 49.5625 deg for `swe_calc()`'s barycentric 49.6398), SEFLG_TOPOCTR with SEFLG_HELCTR heliocentric, SEFLG_TOPOCTR with SEFLG_BARYCTR the barycentric points less the site's offset (1.2e-3 deg off the barycentric node), where `swe_calc()` answers topocentric | Correctness (behaviour) | `swecl.c` |
 | 159 | SEFLG_JPLHOR's precession and obliquity step at 1799 Jan 1 and 2202 Jan 1 (IAU 1976 within, Owen 1990 outside; 17.6 and 19.8 mas in the mean obliquity), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across, under SEFLG_JPLHOR and (at 1799) SEFLG_JPLHOR_APPROX: every speed of date 2.8e-7 to 1.0e-6 deg/day off for a day either side, the Sun's latitude 5.0e-6 the day before, Polaris's right ascension 5.6e-6, SEFLG_SPEED3 8.9e-3 | Correctness | `swephlib.c`, `sweph.c` |
 | 160 | A short-term precession model the caller chooses (IAU 1976 or 2000 within 2 centuries of J2000, IAU 2006 within 75) steps to the long-term one at its window's edges (0.53" with IAU 1976 under Vondrak, 107" with IAU 2006 at 75 centuries), and the precession's, the obliquity's and the site's rates and SEFLG_SPEED3 difference them across: every speed of date 8.0e-5 deg/day off within a day inside the window, latitudes 9.3e-7 the day before, SEFLG_SPEED3 0.80; with IAU 2006 1.5e-2 | Correctness | `swephlib.c` |
+| 163 | `swi_nutation_rate()` (this fork's, entry 58's) takes every nutation model but the default's grid as a central difference over -+1e-4 day, which divides the series' rounding by 2e-4 day: under IAU 1980 to 2000B set explicitly the nutation's part of every speed of date 5.2e-10 deg/day off at 2.5e6 to 5.4e6 days from J2000, 1e-10 near it; the rate itself 1.2e-9 at 1e6 to 5.5e6 days, 3.2e-8 at 2.5e7 to 1e8, 5.1e-7 at 1e8 to 4e8 | Correctness | `swephlib.c` |
 
 ---
 
@@ -11777,6 +11778,112 @@ consult `swi_frame_step_side()`):
   each (1.2e-7 deg/day). The obliquity's under the Vondrak model with
   SEMOD_JPLHORA_1, and with SEMOD_JPLHORA_3 after 1962; the right
   ascension's wherever `swi_approx_jplhor()` applies. Upstream's.
+
+## 163. `swi_nutation_rate()` differences every nutation model but the default's grid over -+1e-4 day, which divides the series' rounding by 2e-4 day: 5.2e-10 deg/day in every speed of date far from J2000, the rate 3.2e-8 off at 2.5e7 to 1e8 days and 5.1e-7 at 1e8 to 4e8
+
+**Severity: Correctness (with a nutation model set by `swe_set_astro_models()`, IAU 1980, 1987, 2000A, 2000B or Woolard, under SEFLG_JPLHOR, and with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` before 1962: the nutation's rate the series' rounding over 2e-4 day, 1e-10 deg/day near J2000 and growing with the arguments, 1.2e-9 at |J - J2000| 1e6 to 5.5e6 days, 3.2e-8 at 2.5e7 to 1e8, 5.1e-7 at 1e8 to 4e8; in the speeds of date, which reach 5.4e6 days, up to 5.2e-10)**
+**Where:** `swephlib.c`: `swi_nutation_rate()` (this fork's, entry 58's), new `calc_nutation_rate()` and the series' rates it takes
+
+Entry 152's noticed item. Entry 58 replaced upstream's backward
+difference by `swi_nutation_rate()`: the default model's grid
+differentiated, and every other model, under the Horizons flags too, as
+(nut(t + h) - nut(t - h)) / 2h of `swi_nutation()`, h = `NUT_SPEED_INTV`
+= 1e-4 day. That divides the series' rounding by 2e-4 day, and the
+rounding grows with the arguments: their polynomials are some 1.7e9" T,
+so at |J - J2000| = 2.5e7 days (T = 684) their last bit is 2.6e-4", and
+near J2000 the instants t -+ h are rounded at the JD's resolution (4.7e-10
+day) while the divisor is 2h. Measured against a five-point difference
+over 2^-6 day of the series evaluated in long double (the library's
+series transcribed, every operation in long double), worst of 100
+instants a band of |J - J2000|, either sign, deg/day, 1e3-1e5, 1e5-1e6,
+1e6-5.5e6, 5.5e6-2.5e7, 2.5e7-1e8, 1e8-4e8 and 4e8-1e9 days:
+- IAU 1980: 1.1e-10, 2.3e-10, 1.0e-9, 3.6e-9, 2.9e-8, 1.2e-7, 1.2e-6;
+  IAU 1987 alike (1.5e-7 and 1.6e-6 in the last two);
+- IAU 2000A: 9.8e-11, 2.0e-10, 1.2e-9, 7.0e-9, 3.2e-8, 5.1e-7, 4.0e-5;
+  IAU 2000B alike (5.3e-7 and 4.3e-5);
+- Woolard: 7.9e-11, 7.8e-11, 1.3e-10, 1.2e-9, 3.1e-9, 3.0e-8, 1.4e-7.
+Under SEFLG_JPLHOR, IAU 1980 with the IERS corrections, the same; on a
+fixture of 400 days of corrections, 5.2e-11 to 8.8e-11 near J2000 against
+the library's own `swi_nutation()`. The speeds of date reach 5.4e6 days
+(the Swiss files' -13000..+17000; Moshier's mean node and apogee as far;
+nothing has a speed beyond 2.5e7, entry 152): there the nutation's part
+of the Sun's speed of date (the speed less the speed with SEFLG_NONUT,
+against the five-point difference of the two calls' positions over 2^-6
+day) 5.2e-10 deg/day off under IAU 1980 to 2000B at 2.5e6 to 5.4e6 days,
+7.1e-11 near J2000, Woolard's 1.2e-10. Upstream's backward difference
+over 1e-4 day (entry 58) divides the same rounding by 1e-4 day.
+
+**Fix, as done here:** `swi_nutation_rate()`, with the interpolation off,
+takes for every model but the default's grid `calc_nutation_rate()`: the
+rate of what `calc_nutation()` computes at the instant, by its branches,
+each series' own derivative with the same arguments, terms and order,
+each term's angle differentiated through the arguments' polynomials and
+its amplitude through its T term: IAU 1980 and Herring's 1987 terms
+(`calc_nutation_iau1980_rate()`), IAU 2000A the grid's node function
+(`calc_nutation_2000a_derivs()`, which entry 152 takes beyond 4e8 days),
+IAU 2000B its NLS_2000B terms (`calc_nutation_2000b_rate()`), Woolard
+(`calc_nutation_woolard_rate()`); under SEFLG_JPLHOR IAU 1980's and the
+IERS corrections' rate, a central difference of their interpolation over
+-+1e-4 day divided by the instants' own separation (their argument is
+days from the table's start, which the difference does not grow); the
+fixed offsets have none. On each side of `SEMOD_JPLHORA_3`'s step at 1962
+Jan 20 the rate is that side's model's, as the instant's. With the
+interpolation on (`swe_set_interpolate_nut()`) the central difference of
+its quadratic stays, entry 153's side test with it. `swi_nutation_rate()`
+is this fork's, so the fix is in place; the compat build keeps upstream's
+backward difference.
+- After, the same bands: IAU 1980 8.6e-15, 8.7e-15, 1.2e-14, 8.1e-14,
+  2.3e-13, 4.0e-12, 2.3e-11 (1987 alike); IAU 2000A 1.1e-14, 7.4e-15,
+  1.4e-14, 7.3e-14, 4.2e-13, 4.3e-12, 1.8e-9; IAU 2000B 7.0e-15 to 2.8e-12,
+  4.9e-9; Woolard 4.8e-15 to 6.3e-13, 1.4e-12. Within 4e8 days (1.1
+  million years) every model within 4.3e-12 deg/day. Beyond, IAU 2000A's
+  and 2000B's 1.8e-9 and 4.9e-9 to 1e9 days are the arguments' rounding
+  in double, the same with the reference over 2^-6, 2^-8 and 2^-10 day:
+  the series' positions are 6e-9 and 7e-9 deg off its long double
+  evaluation there (entry 152's "the arguments' rounding at that size";
+  its 2.6e-9 deg/day for the default's rate at 6.3e8 to 1e9, put down to
+  the reference's truncation, is this too). Below the 1e-8 floor; not
+  fixed.
+- SEFLG_JPLHOR on the fixture: within 2.8e-13 deg/day.
+- The speeds of date: the nutation's part of the Sun's within 1.2e-11
+  deg/day at 2.5e6 to 5.4e6 days, 4.1e-12 near J2000.
+- Cost, `perf stat -e instructions:u`, the ten bodies with speed at 6000
+  instants 2000-2081 (bench's calc workload), the default models, which
+  take the grid as before: Swiss 6143896583 at the tip before entries 159,
+  160 and this, 6145858487 after the three (+0.032%); Moshier 11687251714
+  and 11689213693 (+0.017%); this entry's own share 54 thousand. With a
+  model set the rate costs less than the two series it replaces: Moshier
+  under IAU 2000A 16005268607 and 12455525176 (-22%), IAU 1980 -1.1%, IAU
+  2000B -1.6%.
+
+G140 `tests/nutderiv.c`: (a) the nutation's part of the speed of date of
+the Sun and Mars (Swiss files) and the mean node (Moshier), longitude and
+latitude, ecliptic and equatorial, against the five-point difference of
+the position differences over 2^-6 day, under the five models set
+explicitly, at 40 instants with |J - J2000| log-uniform over 1e3..5.4e6
+days: 30 checks within 3e-11 deg/day, worst 5.7e-12 (before the fix all
+30 fail, 2.0e-10 to 2.6e-10 under IAU 1980 to 2000B, Woolard's 7.0e-11 to
+8.2e-11); (b) `swi_nutation_rate()` against five-point differences of
+`swi_nutation()` over 2^-4 day under the five models and
+SEFLG_JPLHOR_APPROX with the default models, 64 instants over 1e3..1e8
+days within 2e-10, 64 over 1e8..4e8 within 5e-9, where the reference's
+own rounding is 1e-9: 12 checks, worst 2.6e-11 and 1.1e-9 (before the
+fix all 12 fail, 5.4e-9 to 1.4e-8 and 1.6e-7 to 5.2e-7, Woolard's 1.7e-9
+and 3.2e-8); fork-only. The upstream build fails 30 of (a)'s 30, its
+backward difference 8.5e-10 to 1.0e-9 deg/day in the equatorial frame,
+and the ecliptic latitudes by entry 33's turning, Woolard by entry 151.
+G24 `nut_far_rate_off`: the nutation's part of the Sun's right ascension
+speed under IAU 2000A set explicitly at eight instants 2.6e6 to 5.3e6
+days either side of J2000, the worst: 5.0e-12 deg/day shipped (4.16e-10
+before the fix), 1.90e-9 compat. G24's `jplhor_1799_speed_off` (entry 159)
+is 8.7e-12 now, from 1.67e-11. G139, G24, G122, G138, G90, G89, G40, G75
+and G29 pass.
+
+Noticed, not fixed:
+- RESIDUAL. With the interpolation on, the rate's central difference of
+  the quadratic still divides by 2 `NUT_SPEED_INTV` rather than the
+  instants' own separation, rounded at the JD's resolution: 1.0e-10
+  deg/day against the quadratic's derivative, near J2000 and far from it.
 
 ## How these were found
 

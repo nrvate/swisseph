@@ -1317,6 +1317,14 @@ struct epsilon {
  *     models across them: 8.0e-5 deg/day within a day inside the window
  *     with IAU 1976 and Vondrak, the obliquity's 2.3e-5 the day before,
  *     SEFLG_SPEED3 0.80 (UPSTREAM-BUGS 160, G139)
+ *   - the nutation's rate in every speed of date a difference of the series
+ *     over 1e-4 day under a model set explicitly or the Horizons flags,
+ *     its rounding divided by the step: upstream's backward difference
+ *     (UPSTREAM-BUGS 58) 1.9e-9 deg/day in the nutation's part of the Sun's
+ *     right ascension speed under IAU 2000A 2.6e6 to 5.3e6 days from
+ *     J2000 (this fork's central difference 4.2e-10, its rate 3.2e-8 off
+ *     at 2.5e7 to 1e8 days, 5.1e-7 at 1e8 to 4e8, now each series' own
+ *     derivative) (UPSTREAM-BUGS 163, G140)
  *   - swe_nod_aps() with barycentric output on Moshier, asked for or fallen
  *     to, answering Moshier's heliocentric points, returned OK: Mars's
  *     osculating node 0.077 deg off the files' barycentric one, the Moon's

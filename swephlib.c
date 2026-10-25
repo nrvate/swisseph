@@ -2941,14 +2941,287 @@ int swi_frame_step_side(swe_ctx *ctx, double t, double h, int32 iflag, int which
   return 0;
 }
 
+/* Upstream bug 163: the rate of each nutation series as its own derivative
+ * at J, rad/day, for swi_nutation_rate(): the same arguments, terms and
+ * order as the series, each term's angle differentiated through the
+ * arguments' polynomials and its amplitude through its T term. The central
+ * difference over -+NUT_SPEED_INTV it replaces divided the series'
+ * rounding by 2e-4 day, and that grows with the arguments: their
+ * polynomials are some 1.7e9" T, so at |J - J2000| = 2.5e7 days (T = 684)
+ * a last bit of 2.6e-4", and every rate 1e-8 deg/day off there.
+ * IAU 1980 and its Herring 1987 corrections (calc_nutation_iau1980()): */
+static void calc_nutation_iau1980_rate(swe_ctx *ctx, double J, double *rate)
+{
+  double ss[5][8], cc[5][8], args[5], dargs[5];
+  double arg, f, g, df, dg, T, T2, C, D, dC, dD, dphi;
+  double cu, su, cv, sv, sw, s;
+  int i, j, k, k1, m, n;
+  int ns[5] = {3, 2, 4, 4, 2};
+  const short *p;
+  const double as2r = DEGTORAD / 3600.0;
+  int nut_model = ctx->astro_models[SE_MODEL_NUT];
+  if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
+  T = (J - 2451545.0) / 36525.0;
+  T2 = T * T;
+  /* MM, MS, FF, DD, OM as calc_nutation_iau1980() takes them, and their
+   * rates in T, radians per century */
+  args[0] = swe_degnorm((1717915922.633 * T + 485866.733 + (0.064 * T + 31.310) * T2) / 3600) * DEGTORAD;
+  dargs[0] = (1717915922.633 + (3 * 0.064 * T + 2 * 31.310) * T) * as2r;
+  args[1] = swe_degnorm((129596581.224 * T + 1287099.804 - (0.012 * T + 0.577) * T2) / 3600) * DEGTORAD;
+  dargs[1] = (129596581.224 - (3 * 0.012 * T + 2 * 0.577) * T) * as2r;
+  args[2] = swe_degnorm((1739527263.137 * T + 335778.877 + (0.011 * T - 13.257) * T2) / 3600) * DEGTORAD;
+  dargs[2] = (1739527263.137 + (3 * 0.011 * T - 2 * 13.257) * T) * as2r;
+  args[3] = swe_degnorm((1602961601.328 * T + 1072261.307 + (0.019 * T - 6.891) * T2) / 3600) * DEGTORAD;
+  dargs[3] = (1602961601.328 + (3 * 0.019 * T - 2 * 6.891) * T) * as2r;
+  args[4] = swe_degnorm((-6962890.539 * T + 450160.280 + (0.008 * T + 7.455) * T2) / 3600) * DEGTORAD;
+  dargs[4] = (-6962890.539 + (3 * 0.008 * T + 2 * 7.455) * T) * as2r;
+  for (k = 0; k <= 4; k++) {
+    arg = args[k];
+    n = ns[k];
+    su = sin(arg);
+    cu = cos(arg);
+    ss[k][0] = su;
+    cc[k][0] = cu;
+    sv = 2.0 * su * cu;
+    cv = cu * cu - su * su;
+    ss[k][1] = sv;
+    cc[k][1] = cv;
+    for (i = 2; i < n; i++) {
+      s = su * cv + cu * sv;
+      cv = cu * cv - su * sv;
+      sv = s;
+      ss[k][i] = sv;
+      cc[k][i] = cv;
+    }
+  }
+  /* the first terms, (a + bT) sin OM and (c + dT) cos OM */
+  C = -0.01742 * T - 17.1996;
+  D = 0.00089 * T + 9.2025;
+  dC = -0.01742 * ss[4][0] + C * cc[4][0] * dargs[4];
+  dD = 0.00089 * cc[4][0] - D * ss[4][0] * dargs[4];
+  for (p = &nt[0]; *p != ENDMARK; p += 9) {
+    if (nut_model != SEMOD_NUT_IAU_CORR_1987 && (p[0] == 101 || p[0] == 102))
+      continue;
+    k1 = 0;
+    cv = 0.0;
+    sv = 0.0;
+    dphi = 0.0;
+    for (m = 0; m < 5; m++) {
+      j = p[m];
+      if (j > 100)
+        j = 0;
+      if (j) {
+        k = j;
+        if (j < 0)
+          k = -k;
+        su = ss[m][k - 1];
+        if (j < 0)
+          su = -su;
+        cu = cc[m][k - 1];
+        dphi += j * dargs[m];
+        if (k1 == 0) {
+          sv = su;
+          cv = cu;
+          k1 = 1;
+        } else {
+          sw = su * cv + cu * sv;
+          cv = cu * cv - su * sv;
+          sv = sw;
+        }
+      }
+    }
+    f = p[5] * 0.0001;
+    df = 0;
+    if (p[6] != 0) {
+      f += 0.00001 * T * p[6];
+      df = 0.00001 * p[6];
+    }
+    g = p[7] * 0.0001;
+    dg = 0;
+    if (p[8] != 0) {
+      g += 0.00001 * T * p[8];
+      dg = 0.00001 * p[8];
+    }
+    if (*p >= 100) {
+      f *= 0.1;
+      g *= 0.1;
+      df *= 0.1;
+      dg *= 0.1;
+    }
+    if (*p != 102) {	/* f sin, g cos */
+      dC += df * sv + f * cv * dphi;
+      dD += dg * cv - g * sv * dphi;
+    } else {		/* f cos, g sin */
+      dC += df * cv - f * sv * dphi;
+      dD += dg * sv + g * cv * dphi;
+    }
+  }
+  /* arcsec per century to radians per day */
+  rate[0] = dC * as2r / 36525.0;
+  rate[1] = dD * as2r / 36525.0;
+}
+
+/* IAU 2000B's: its NLS_2000B luni-solar terms on the Simon et al. (1994)
+ * arguments, as calc_nutation_iau2000ab() sums them. (IAU 2000A's is the
+ * grid's node function, calc_nutation_2000a_derivs().) */
+static void calc_nutation_2000b_rate(double J, double *rate)
+{
+  static const double c[5][5] = {	/* Simon et al. (1994), arcsec */
+    {  485868.249036, 1717915923.2178,  31.8792,  0.051635, -0.00024470},
+    { 1287104.79305,   129596581.0481,  -0.5532,  0.000136, -0.00001149},
+    {  335779.526232, 1739527262.8478, -12.7512, -0.001037,  0.00000417},
+    { 1072260.70369,  1602961601.2090,  -6.3706,  0.006593, -0.00003169},
+    {  450160.398036,   -6962890.5431,   7.4722,  0.007702, -0.00005939},
+  };
+  double a[5], da[5], T = (J - J2000) / 36525.0, dpsi = 0, deps = 0;
+  int i, j, k;
+  /* M, SM, F, D, OM as calc_nutation_iau2000ab() takes them, and their
+   * rates in T, radians per century */
+  for (k = 0; k < 5; k++) {
+    a[k] = swe_degnorm((c[k][0] + T * (c[k][1] + T * (c[k][2] + T * (c[k][3] + T * c[k][4])))) / 3600.0) * DEGTORAD;
+    da[k] = (c[k][1] + T * (2 * c[k][2] + T * (3 * c[k][3] + T * 4 * c[k][4]))) / 3600.0 * DEGTORAD;
+  }
+  for (i = NLS_2000B - 1; i >= 0; i--) {
+    double darg, dd, s, co;
+    j = i * 5;
+    darg = swe_radnorm((double) nls[j + 0] * a[0] + (double) nls[j + 1] * a[1] +
+                       (double) nls[j + 2] * a[2] + (double) nls[j + 3] * a[3] +
+                       (double) nls[j + 4] * a[4]);
+    dd = (double) nls[j + 0] * da[0] + (double) nls[j + 1] * da[1] +
+         (double) nls[j + 2] * da[2] + (double) nls[j + 3] * da[3] +
+         (double) nls[j + 4] * da[4];
+    s = sin(darg);
+    co = cos(darg);
+    k = i * 6;
+    /* d/dT of (A + A'T) sin + A'' cos, and (B + B'T) cos + B'' sin */
+    dpsi += cls[k + 1] * s + ((cls[k + 0] + cls[k + 1] * T) * co - cls[k + 2] * s) * dd;
+    deps += cls[k + 4] * co + (-(cls[k + 3] + cls[k + 4] * T) * s + cls[k + 5] * co) * dd;
+  }
+  /* the series' unit per century to radians per day */
+  rate[0] = dpsi * O1MAS2DEG * DEGTORAD / 36525.0;
+  rate[1] = deps * O1MAS2DEG * DEGTORAD / 36525.0;
+}
+
+/* Woolard's (calc_nutation_woolard()) */
+static void calc_nutation_woolard_rate(double J, double *rate)
+{
+  double t, t2, a, b, ls, ld, ms, md, nm, tls, tnm, tld;
+  double dls, dld, dms, dmd, dnm, dtls, dtnm, dtld, dpsi, deps;
+  t = (J - J1900) / 36525.;
+  t2 = t * t;
+  a = 100.0021358 * t;
+  b = 360. * (a - (long) a);
+  ls = 279.697 + .000303 * t2 + b;
+  dls = 360. * 100.0021358 + 2 * .000303 * t;
+  a = 1336.855231 * t;
+  b = 360. * (a - (long) a);
+  ld = 270.434 - .001133 * t2 + b;
+  dld = 360. * 1336.855231 - 2 * .001133 * t;
+  a = 99.99736056000026 * t;
+  b = 360. * (a - (long) a);
+  ms = 358.476 - .00015 * t2 + b;
+  dms = 360. * 99.99736056000026 - 2 * .00015 * t;
+  a = 1325.552359 * t;	/* bug 151 */
+  b = 360. * (a - (long) a);
+  md = 296.105 + .009192 * t2 + b;
+  dmd = 360. * 1325.552359 + 2 * .009192 * t;
+  a = 5.372616667 * t;
+  b = 360. * (a - (long) a);
+  nm = 259.183 + .002078 * t2 - b;
+  dnm = 2 * .002078 * t - 360. * 5.372616667;
+  tls = 2 * ls * DEGTORAD;
+  dtls = 2 * dls * DEGTORAD;
+  nm = nm * DEGTORAD;
+  dnm = dnm * DEGTORAD;
+  tnm = 2 * nm;
+  dtnm = 2 * dnm;
+  ms = ms * DEGTORAD;
+  dms = dms * DEGTORAD;
+  tld = 2 * ld * DEGTORAD;
+  dtld = 2 * dld * DEGTORAD;
+  md = md * DEGTORAD;
+  dmd = dmd * DEGTORAD;
+  /* d/dt of (a + bt) sin x is b sin x + (a + bt) cos x x', arcsec per century */
+  dpsi = -.01737 * sin(nm) + (-17.2327 - .01737 * t) * cos(nm) * dnm
+       - .00013 * sin(tls) + (-1.2729 - .00013 * t) * cos(tls) * dtls
+       + .2088 * cos(tnm) * dtnm - .2037 * cos(tld) * dtld
+       - .00031 * sin(ms) + (.1261 - .00031 * t) * cos(ms) * dms
+       + .0675 * cos(md) * dmd
+       + .00012 * sin(tls + ms) - (.0497 - .00012 * t) * cos(tls + ms) * (dtls + dms)
+       - .0342 * cos(tld - nm) * (dtld - dnm) - .0261 * cos(tld + md) * (dtld + dmd)
+       + .0214 * cos(tls - ms) * (dtls - dms)
+       - .0149 * cos(tls - tld + md) * (dtls - dtld + dmd)
+       + .0124 * cos(tls - nm) * (dtls - dnm) + .0114 * cos(tld - md) * (dtld - dmd);
+  deps = .00091 * cos(nm) - (9.21 + .00091 * t) * sin(nm) * dnm
+       - .00029 * cos(tls) - (.5522 - .00029 * t) * sin(tls) * dtls
+       + .0904 * sin(tnm) * dtnm - .0884 * sin(tld) * dtld
+       - .0216 * sin(tls + ms) * (dtls + dms) - .0183 * sin(tld - nm) * (dtld - dnm)
+       - .0113 * sin(tld + md) * (dtld + dmd) + .0093 * sin(tls - ms) * (dtls - dms)
+       + .0066 * sin(tls - nm) * (dtls - dnm);
+  rate[0] = dpsi / 3600.0 * DEGTORAD / 36525.0;
+  rate[1] = deps / 3600.0 * DEGTORAD / 36525.0;
+}
+
+/* SEFLG_JPLHOR's IERS corrections at J, arcsec, as calc_nutation() reads
+ * them */
+static void jplhor_eop_corr(swe_ctx *ctx, double J, double *d)
+{
+  int n = (int) (ctx->eop_tjd_end - ctx->eop_tjd_beg + 0.000001);
+  double J2 = J;
+  if (J < ctx->eop_tjd_beg_horizons)
+    J2 = ctx->eop_tjd_beg_horizons;
+  d[0] = bessel(ctx->dpsi, n + 1, J2 - ctx->eop_tjd_beg);
+  d[1] = bessel(ctx->deps, n + 1, J2 - ctx->eop_tjd_beg);
+}
+
+/* The rate of what calc_nutation() computes at J, by its own branches: the
+ * series' derivatives, and under SEFLG_JPLHOR the IERS corrections' rate,
+ * a central difference of their interpolation over -+NUT_SPEED_INTV (a
+ * table of days near J2000, whose rounding the difference does not grow).
+ * The fixed offsets have none. */
+static void calc_nutation_rate(swe_ctx *ctx, double J, int32 iflag, double *rate)
+{
+  int nut_model = ctx->astro_models[SE_MODEL_NUT];
+  int jplhora_model = ctx->astro_models[SE_MODEL_JPLHORA_MODE];
+  double d[8];
+  iflag = swi_jplhor_plaus(ctx, iflag);
+  if (nut_model == 0) nut_model = SEMOD_NUT_DEFAULT;
+  if (jplhora_model == 0) jplhora_model = SEMOD_JPLHORA_DEFAULT;
+  if ((iflag & SEFLG_JPLHOR)
+      || ((iflag & SEFLG_JPLHOR_APPROX) && jplhora_model == SEMOD_JPLHORA_3
+          && J <= HORIZONS_TJD0_DPSI_DEPS_IAU1980)) {
+    calc_nutation_iau1980_rate(ctx, J, rate);
+    if (iflag & SEFLG_JPLHOR) {
+      double ca[2], cb[2], ta = J - NUT_SPEED_INTV, tb = J + NUT_SPEED_INTV;
+      jplhor_eop_corr(ctx, ta, ca);
+      jplhor_eop_corr(ctx, tb, cb);
+      rate[0] += (cb[0] - ca[0]) / (tb - ta) / 3600.0 * DEGTORAD;
+      rate[1] += (cb[1] - ca[1]) / (tb - ta) / 3600.0 * DEGTORAD;
+    }
+  } else if (nut_model == SEMOD_NUT_IAU_1980 || nut_model == SEMOD_NUT_IAU_CORR_1987) {
+    calc_nutation_iau1980_rate(ctx, J, rate);
+  } else if (nut_model == SEMOD_NUT_IAU_2000A) {
+    calc_nutation_2000a_derivs(J, d);
+    rate[0] = d[1];
+    rate[1] = d[5];
+  } else if (nut_model == SEMOD_NUT_IAU_2000B) {
+    calc_nutation_2000b_rate(J, rate);
+  } else if (nut_model == SEMOD_NUT_WOOLARD) {
+    calc_nutation_woolard_rate(J, rate);
+  } else {
+    rate[0] = rate[1] = 0;	/* no model: calc_nutation() leaves the angles */
+  }
+}
+
 /* Upstream bug 58: the rate of the nutation angles, rad/day. Upstream took
  * (nut(t) - nut(t - h)) / h, h = NUT_SPEED_INTV, which is the rate at
  * t - h/2: it misses the fortnightly term's curvature, 6.5e-10 deg/day in
  * every longitude speed of date (2.7e-8 deg/day in the right ascension of
  * Polaris). The default model's Hermite polynomial is differentiated
- * (nodes cached, no series evaluation); any other model takes the central
- * difference of nutation at t - h and t + h. rate[0] is dpsi/dt, rate[1]
- * deps/dt. */
+ * (nodes cached, no series evaluation); any other model takes its series'
+ * own derivative (bug 163), and with the interpolation on (the nutation
+ * then a quadratic through day-apart nodes) the central difference of
+ * nutation at t - h and t + h. rate[0] is dpsi/dt, rate[1] deps/dt. */
 void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
 {
   int nut_model = ctx->astro_models[SE_MODEL_NUT];
@@ -2973,7 +3246,20 @@ void swi_nutation_rate(swe_ctx *ctx, double tjd, int32 iflag, double *rate)
       rate[0] = d[1];
       rate[1] = d[5];
     }
+  } else if (!ctx->do_interpolate_nut) {
+    /* Upstream bug 163: the central difference over -+NUT_SPEED_INTV
+     * divided the series' rounding by 2e-4 day: far from J2000 the
+     * arguments' last bits, 1.2e-9 deg/day off at |J - J2000| 1e6 to 5.5e6
+     * days, 3.2e-8 at 2.5e7 to 1e8, 5.1e-7 at 1e8 to 4e8 (IAU 2000A set
+     * explicitly, against the series in long double; IAU 1980, 1987 and
+     * 2000B alike, Woolard's a tenth), near J2000 the step's own rounding
+     * at the JD's resolution, 1e-10. Now the series' own derivative at the
+     * instant, within 4.3e-12 deg/day to 4e8 days (1e-14 near J2000), and
+     * on each side of SEMOD_JPLHORA_3's 1962 step its own model's, as the
+     * instant is (bug 153). */
+    calc_nutation_rate(ctx, tjd, iflag, rate);
   } else {
+    /* the interpolation's quadratic, differenced */
     double a[2], b[2];
     int side = swi_frame_step_side(ctx, tjd, NUT_SPEED_INTV, iflag, SWI_FRAME_NUT);
     if (side != 0) {
