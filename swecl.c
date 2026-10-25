@@ -3403,6 +3403,14 @@ static double calc_dip(double geoalt, double atpress, double attemp, double laps
   */
   double krefr = (0.0342 + lapse_rate) / (0.154 * 0.0238);
   double d = 1-1.8480*krefr*atpress/(273.15+attemp)/(273.15+attemp);
+  /* The dip is how far the sea horizon lies below the geometric horizon,
+   * seen from above the sea. Below sea level (the Dead Sea, a basin) there
+   * is no sea horizon: the surrounding terrain is the horizon, and only
+   * swe_rise_trans_true_hor() can be told its height. The ideal horizon is
+   * then the geometric one, as at sea level; the formula's acos() would
+   * be of an argument above 1. */
+  if (geoalt < 0)
+    geoalt = 0;
   /* return -0.03203*sqrt(geoalt)*sqrt(d); */
   /* double a = acos(1/(1+geoalt/EARTH_RADIUS));*/
   return -180.0/PI * acos(1 / (1 + geoalt / EARTH_RADIUS)) * sqrt(d);

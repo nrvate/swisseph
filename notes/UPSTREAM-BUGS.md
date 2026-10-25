@@ -69,6 +69,7 @@ worst were in code that had never executed even once.
 | 35 | Kronos' built-in semi-axis has two digits swapped, the Kepler solver's starting guess is wrong, and the nakshatras of `swe_split_deg()` are shifted for `SE_SIDM_USER` | Correctness | `swemplan.c`, `swephlib.c`, `sweph.c` |
 | 36 | The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold | Correctness | `swehel.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 37 | The default nutation (full IAU 2000A) costs 12 to 100 times IAU 2000B's when the calls are a day or more apart: transit, station and return scans, lists of unrelated charts (this fork's) | Performance | `swephlib.c` |
+| 38 | `calc_dip()` is NaN below sea level: `swe_rise_trans_true_hor()` with horhgt -100 answers two hours after the start, `swe_refrac_extended()` never converts an apparent altitude, `swe_azalt()` refracts a body below the horizon | Correctness | `swecl.c` |
 
 ---
 
@@ -2077,6 +2078,46 @@ daily and scattered spacings (rounds interleaved, best of fifteen, limits
 Past 4e8 days (1.1 million years) the day grid's fit leaves the series fast
 (3.4 deg at 3e9 days, where the old quarter-day grid was 0.75), so the series
 itself is taken there, as for any date the grid does not cover.
+
+## 38. `calc_dip()` is NaN below sea level: `swe_rise_trans_true_hor()` with horhgt -100 answers the time two hours after the start, `swe_refrac_extended()` converts no apparent altitude to a true one, `swe_azalt()` refracts a body below the horizon
+
+**Severity: Correctness (a wrong time returned as a success; the refraction missing from an apparent altitude, 0.58 deg at the horizon; any height from -500 m to just below 0, the range the rise, azalt and eclipse functions accept)**
+**Where:** `swecl.c:3158` (upstream's), `calc_dip()`; reached from `swe_refrac_extended()` and `swe_rise_trans_true_hor()`
+
+The dip of the horizon is `-acos(1 / (1 + h / R)) * sqrt(d)`. For h < 0
+the argument is above 1 and the dip NaN, though `SEI_ECL_GEOALT_MIN` is
+-500 m and the Dead Sea shore is at -430. swephprg documents nothing for it:
+it describes `swe_refrac_extended()` "for altitudes above sea > 0", and
+horhgt -100, the horizon at the dip, is in no document. At -10 m (the
+Netherlands), -430 m (the Dead Sea) and -86 m (Death Valley), 1013.25 hPa,
+10 C, 2026-10-25:
+- `swe_rise_trans_true_hor()` with horhgt -100, the Sun and the Moon, rising
+  and setting, 12 of 12: success, with the time 0.0833 d (two hours) after
+  the start, 0.8 to 22.5 hours from the rising or setting;
+- `swe_refrac_extended()`: dret[3] NaN; an apparent altitude is never
+  converted (`inalt >= NaN` is false), 0 deg answering 0 where sea level
+  answers -0.57634, and 10 deg 10 where it answers 9.91100; a true altitude
+  below the horizon is refracted (-3 answering -1.77881, sea level -3);
+- `swe_azalt()`: the same refracted apparent altitude for a body below the
+  horizon;
+- `swe_rise_trans()`, with its default flags and with every SE_BIT_ option,
+  does not change: its horizon is 0, and the apparent altitude crosses 0 at
+  the same instant with or without the cut below the dip.
+
+**Fix, as done here:** below sea level there is no sea horizon; the terrain
+around is the horizon, which only `swe_rise_trans_true_hor()` can be told.
+`calc_dip()` takes a negative height as 0, the geometric horizon, as at sea
+level. The dip is continuous there (it grows as the square root of the
+height) and unchanged above it. G47 `tests/belowsea.c`, with the five heights
+-500, -430, -86, -10 and -1e-6 m: (a) `swe_refrac_extended()` in both
+directions at 13 altitudes, the answer and dret[0..3] those of 0 m bit for
+bit, the dip 0, and the dips at 1, 10 and 100 m as before (278 checks);
+(b) horhgt -100, the Sun and the Moon, rising and setting, at four sites
+(-10, -430, -86 and -500 m): found, within 2 days after the start, the time
+of horhgt 0.0001 to 1e-9 day, and within 1 s of sea level's (0.054 s worst;
+64); (c) `swe_azalt_r()` over a day, +60 to -60 deg, as at 0 m bit for bit, and
+finite with the pressure estimated (241). Before the fix 232 of the 583 fail
+(190 of (a), 32 of (b), 10 of (c)).
 
 ## How these were found
 
