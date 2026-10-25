@@ -67,6 +67,7 @@ worst were in code that had never executed even once.
 | 33 | `swe_gauquelin_sector()` methods 0 and 1 moved by SEFLG_SIDEREAL (2.6 sectors) and by the frame, form and centre flags (up to 18.4 sectors) | Correctness | `swecl.c` |
 | 34 | Sidereal houses on the ecliptic of t0 and the solar system plane (J2000, J1900, B1950 always): ascmc[2] the auxiliary ARMC, whole signs off the sidereal signs, a step of 2 dpsi at t0, ascmc[8] not 0 | Correctness | `swehouse.c` |
 | 35 | Kronos' built-in semi-axis has two digits swapped, the Kepler solver's starting guess is wrong, and the nakshatras of `swe_split_deg()` are shifted for `SE_SIDM_USER` | Correctness | `swemplan.c`, `swephlib.c`, `sweph.c` |
+| 36 | The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold | Correctness | `swehel.c`, `sweph.c`, `sweconfig.c`, `sweph.h` |
 
 ---
 
@@ -1948,6 +1949,90 @@ nakshatras under the 47 predefined modes, USER alone and with four SIDBITs,
 Sheoran with a SIDBIT and Lahiri with four: 114 checks pass, the ten USER
 ones failed before. The starting guess is not gated: no public result moves
 beyond rounding.
+
+## 36. The heliacal memos answer for an atmosphere, latitude or star catalogue they do not hold
+
+**Severity: Correctness (returned values: 0.67 mag in a limiting magnitude, 0.46 mag in a star's, a day in a heliacal event)**
+**Where:** `swehel.c`: `call_swe_fixstar_mag()`, `kOZ()`, `ka()`, `Deltam()`; `sweph.c`: `swi_close_keep_topo_etc()`, `ctx_release()`, the star functions' memos and catalogue; `sweconfig.c`: `swi_config_apply()`; `sweph.h`: `struct hel_state`
+
+`swehel.c` memoises five results per context (upstream: five pairs of TLS
+statics). Three were keyed on less than their result depends on:
+
+- `kOZ()`, the ozone extinction, on the Sun's altitude and `SunRA()`; it
+  depends on the latitude too.
+- `ka()`, the aerosol extinction, on the same two; it depends on the
+  latitude, eye height, temperature, humidity and visual range (or
+  extinction coefficient).
+- `Deltam()`, the extinction along the line of sight, on those two and the
+  object's altitude; it depends on all of the above, the pressure, and
+  `SE_HELFLAG_HIGH_PRECISION` (through `AppAltfromTopoAlt()`).
+
+So the same instant and place under another atmosphere was answered with
+the previous request's extinction, and so was `SE_HELFLAG_VISLIM_DARK`
+(which fixes the Sun's altitude at -90) at another latitude or eye height.
+Measured with `swe_vis_limit_mag()`, Venus at 2000 Jan 1 12h UT from
+8.55 E 47.37 N, each request right after the one before it against the
+same request in a fresh process: humidity 40 -> 80 % -6.447 for -7.121
+(0.67 mag), temperature 15 -> 30 C 0.62 mag, a visual range of 40 km 0.43,
+an extinction coefficient of 0.25 0.57, 900 mbar 0.53; in the dark sky,
+47 N -> 33 S 0.10, 400 -> 1500 m 0.048, humidity 80 % 0.26; Sirius at
+humidity 80 % 0.25. Nothing emptied them, so the dark-sky answer after
+`swe_close()` was still the one before it (0.26 mag).
+
+`call_swe_fixstar_mag()`'s memo, keyed on the star's name, was not emptied
+by `swe_close()` or a new ephemeris path, so a star kept the magnitude of
+the catalogue it was first read from: Sirius after `swe_close()` and a path
+whose `sefstars.txt` gives it -1.00 was -1.46 in `swe_vis_limit_mag()`'s
+`dret[7]` and `swe_heliacal_pheno_ut()`'s `darr[20]`, and
+`swe_heliacal_ut()`'s end of visibility of its heliacal rising came a day
+early (2451778.67 for 2451779.67). It took the name before the lookup, so
+a failed lookup left the name keyed to the previous star's magnitude, and
+an empty name was a hit on the empty memo; and a hit left `serr` as it was
+where the lookup clears it, so a warning from `ka()` reached
+`swe_vis_limit_mag()`'s `serr` on the second call only.
+
+The star functions of `sweph.c` under it kept memos of their own:
+`swe_fixstar()`'s and `swe_fixstar_mag()`'s last record (`sp.fs1`,
+`sp.fs1mag`), `swe_fixstar2()`'s and `swe_fixstar2_mag()`'s last star
+(`sp.fs2`, `sp.fs2mag`), and the catalogue `swe_fixstar2()` reads into
+memory, which `swe_close()` freed only when it was complete and a path
+change not at all. None of them was emptied by `swe_close()` or a path to
+another `sefstars.txt`, nor by a thread adopting another thread's path. With
+a second catalogue giving Sirius -1.00 mag and 300 mas, all four functions
+still gave -1.46 mag and 2.64 pc (543932 AU) for -1.00 and 3.33 pc (687549
+AU) after `swe_close()` and the path to it, and after a path change alone.
+That also refilled `swehel.c`'s memo with the old magnitude.
+
+`kOZ()`, `ka()` and `Deltam()` took a key of 0 as empty, and a hit dropped
+the warning `ka()` writes for an over-long visual range or an extinction
+coefficient too small for the other terms. The key of 0 is not reachable
+through the public functions: `SunRA()` is never exactly 0. `SunRA()`'s own
+memo, keyed on UT, is complete: `SIMULATE_VICTORVB` (always defined) makes
+it the monthly approximation, a function of UT alone.
+
+**Fix, as done here:** each memo is keyed on every input of its result, has
+a `valid` flag for empty, and keeps what its computation wrote to `serr`
+-- `ka()`'s warning (by number, also in `Deltam()`'s memo, which reaches
+`ka()` on both its branches), the star lookup's `serr` -- to write it again
+on a hit. The star's memo is filled on success only. `swi_hel_forget()`
+empties the four; `swe_close()` and `swe_ctx_free()` (`ctx_release()`),
+every path change (`swi_close_keep_topo_etc()`) and an adopted path
+(`swi_config_apply()`, which also sees a changed JPL file) call it. No
+setter feeds the extinction memos, now that their keys are complete.
+`swi_fixstar_forget()`, called from the same three places, empties the four
+star memos, frees the catalogue and closes the star file, so the next call
+reads the one on the new path.
+
+G45 `tests/helmemo.c`: one sequence of 37 `swe_vis_limit_mag()`,
+`swe_heliacal_pheno_ut()` and `swe_heliacal_ut()` requests alternating the
+atmosphere, eye height, latitude in the dark sky, the high-precision flag,
+the ephemeris (Swiss, Moshier, de200), a user delta T, `swe_close()` and
+two star catalogues, each answer -- return code, every value, `serr` --
+against the same request in a fresh process; all agree within 1e-9. 17 of
+the 37 failed before. The same test asks the four star functions for Sirius
+under the two catalogues, switched by `swe_close()`, by a path alone, and in
+a thread that adopts another thread's path: 24 checks of magnitude and
+distance pass, 12 failed without the emptying.
 
 ## How these were found
 

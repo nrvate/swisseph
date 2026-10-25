@@ -1062,12 +1062,24 @@ struct moon_state {
  * instant, so neither could have been switched back on without moving
  * results.
  */
+/* Each memo but SunRA()'s is keyed on every input of its result (the fields
+ * after each first line) and is empty by its `valid` flag, not by a key of 0.
+ * Each keeps what its computation wrote to serr (ka()'s warning; the star
+ * lookup's clearing), to write it again on a hit. SunRA()'s key, UT, is
+ * complete: it is the monthly approximation of the Sun's right ascension,
+ * a function of UT alone. swi_hel_forget() empties the others. */
 struct hel_state {
-  struct { double dmag; char star_save[AS_MAXCH]; }        starmag;
+  struct { double dmag; char star_save[AS_MAXCH];
+           char serr_save[AS_MAXCH]; int valid; }          starmag;
   struct { double tjdlast, ralast; }                       sunra;
-  struct { double koz_last, alts_last, sunra_last; }       koz;
-  struct { double alts_last, sunra_last, ka_last; }        ka;
-  struct { double alts_last, alto_last, sunra_last, deltam_last; } deltam;
+  struct { double koz_last, alts_last, sunra_last;
+           double lat_last; int valid; }                   koz;
+  struct { double alts_last, sunra_last, ka_last;
+           double lat_last, heye_last, temps_last, rh_last, vr_last;
+           int warn, valid; }                              ka;
+  struct { double alts_last, alto_last, sunra_last, deltam_last;
+           double lat_last, heye_last, datm_last[4];
+           int32 helflag_last; int warn, valid; }          deltam;
 };
 
 /* Memo caches for sweph.c.
@@ -1295,6 +1307,15 @@ extern TLS struct swe_ctx swed;
  * converted incrementally: a function that has been given a `ctx` parameter
  * is called with swi_default_ctx() until its callers have one of their own. */
 extern swe_ctx *swi_default_ctx(void);
+
+/* Empty the heliacal memos (struct hel_state; swehel.c). The star
+ * magnitude's comes from the catalogue on the ephemeris path, so a close
+ * and a new path call it. */
+extern void swi_hel_forget(swe_ctx *ctx);
+/* Empty the fixed-star memos and the star catalogue read into memory
+ * (sweph.c), and close the star file: the catalogue is the path's. Called
+ * where swi_hel_forget() is. */
+extern void swi_fixstar_forget(swe_ctx *ctx);
 
 /* Shared configuration layer. Included here, after struct sid_data and
  * SEI_NMODELS, because struct swe_config embeds both. */

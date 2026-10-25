@@ -1607,6 +1607,34 @@ int32 swi_init_swed_if_start(swe_ctx *ctx)
   return started;
 }
 
+/* The fixed-star memos -- swe_fixstar()'s and swe_fixstar_mag()'s last
+ * record (sp.fs1, sp.fs1mag), swe_fixstar2()'s and swe_fixstar2_mag()'s last
+ * star (sp.fs2, sp.fs2mag) -- and the catalogue swe_fixstar2() reads into
+ * memory come from the sefstars.txt on the ephemeris path. All are emptied,
+ * and the star file closed, wherever that path can change or the library is
+ * closed, so that a new catalogue is read: Sirius's -1.46 under one
+ * catalogue is not kept under another that gives it -1.00. A table left
+ * half loaded by a failed read goes too. */
+void swi_fixstar_forget(swe_ctx *ctx)
+{
+  *ctx->sp.fs1.slast_stardata = '\0';
+  *ctx->sp.fs1.slast_starname = '\0';
+  *ctx->sp.fs1mag.slast_stardata = '\0';
+  *ctx->sp.fs1mag.slast_starname = '\0';
+  *ctx->sp.fs2.slast_starname = '\0';
+  *ctx->sp.fs2mag.slast_starname = '\0';
+  if (ctx->fixfp != NULL) {
+    fclose(ctx->fixfp);
+    ctx->fixfp = NULL;
+  }
+  free(ctx->fixed_stars);
+  ctx->fixed_stars = NULL;
+  ctx->n_fixstars_real = 0;
+  ctx->n_fixstars_named = 0;
+  ctx->n_fixstars_records = 0;
+  ctx->is_old_starfile = FALSE;
+}
+
 /* closes all open files, frees space of planetary data, 
  * deletes memory of all computed positions 
  */
@@ -1619,16 +1647,14 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
   memset((void *) &ctx->nut, 0, sizeof(struct nut));
   memset((void *) &ctx->nut2000, 0, sizeof(struct nut));
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
+  swi_hel_forget(ctx);	/* the heliacal memos follow the path and the files */
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
   swi_close_jpl_file(ctx);
   ctx->jpl_file_is_open = FALSE;
   ctx->jpldenum = 0;
   /* close fixed stars */
-  if (ctx->fixfp != NULL) {
-    fclose(ctx->fixfp);
-    ctx->fixfp = NULL;
-  }
+  swi_fixstar_forget(ctx);
   swi_free_fict_lines(ctx);
   /* Both guard a table read from the EPHEMERIS PATH, and this function runs
    * when that path is being replaced -- swe_set_ephe_path_r() calls it. Left
@@ -1674,16 +1700,14 @@ static void ctx_release(swe_ctx *ctx)
   memset((void *) &ctx->nut, 0, sizeof(struct nut));
   memset((void *) &ctx->nut2000, 0, sizeof(struct nut));
   memset((void *) &ctx->nutv, 0, sizeof(struct nut));
+  swi_hel_forget(ctx);	/* the heliacal memos follow the path and the files */
   memset((void *) &ctx->astro_models, 0, SEI_NMODELS * sizeof(int32));
   /* close JPL file */
   swi_close_jpl_file(ctx);
   ctx->jpl_file_is_open = FALSE;
   ctx->jpldenum = 0;
   /* close fixed stars */
-  if (ctx->fixfp != NULL) {
-    fclose(ctx->fixfp);
-    ctx->fixfp = NULL;
-  }
+  swi_fixstar_forget(ctx);
   swi_free_fict_lines(ctx);
   SWI_CFG_LOCAL(ctx, swe_set_tid_acc_r(ctx, SE_TIDAL_AUTOMATIC));
   ctx->geopos_is_set = FALSE;
@@ -1722,13 +1746,6 @@ static void ctx_release(swe_ctx *ctx)
    * re-runs, so the flag is all that has to go back. */
   ctx->leapsec_done = FALSE;
   ctx->init_dt_done = FALSE;
-  if (ctx->n_fixstars_records > 0) {
-    free(ctx->fixed_stars);
-    ctx->fixed_stars = NULL;
-    ctx->n_fixstars_real = 0;
-    ctx->n_fixstars_named = 0;
-    ctx->n_fixstars_records = 0;
-  }
 /*  swed.ephe_path_is_set = FALSE;
   *swed.ephepath = '\0'; */
   /* Drop the shared master too.
