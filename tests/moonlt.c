@@ -21,13 +21,11 @@
  *      library's own geometric barycentric Moon and observer, and the
  *      rounding of t - tau to a double put back through the Moon's
  *      velocity, within 0.01 mas.
- * Moshier is held to 0.1 mas geocentric and 1 mas heliocentric: it does not
- * re-read its series at t - tau but extrapolates on finite-difference
- * velocities (the Earth's a backward difference over 8.64 s, the Moon's
- * taken 4.32 s ahead), which leaves 0.04 mas over the Moon's 1.3 s of light
- * time and 0.5 mas over the 500 s heliocentric one. Its Moon is 766 mas
- * from the Swiss files on average over 1800-2100 (worst 2.3"), so that is
- * kept rather than doubling the cost of every Moshier Moon.
+ * Moshier is held to the same 0.01 mas: its Moon and Earth are carried to
+ * t - tau to second order in their accelerations (UPSTREAM-BUGS 53), where
+ * they were moved back along their velocities at t, 0.5 mas off over the
+ * 500 s heliocentric light time (measured now 0.0004 mas, the Earth series'
+ * own last bits between the two instants).
  * The upstream build fails check 2 (UPSTREAM-BUGS 23): 1.18 mas geocentric
  * on the files, 1.12 on Moshier. Run as
  *   moonlt EPHEDIR
@@ -116,7 +114,7 @@ int main(int argc, char **argv)
         printf("    FAIL: the position depends on SEFLG_SPEED\n");
         bad++;
       }
-      if (wDef > (moshier ? (rgCtr[ic] ? 1e-3 : 1e-4) : 1e-5)) {
+      if (wDef > 1e-5) {
         printf("    FAIL: the light time is not the solution of its equation\n");
         bad++;
       }

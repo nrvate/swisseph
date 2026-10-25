@@ -1115,6 +1115,25 @@ static double topo_aberr_second_order_off(void)
   return fabs(r[0] - r[1]);
 }
 
+/* UPSTREAM-BUGS 53: Mercury's heliocentric distance rate under Moshier
+ * against a five-point difference of its distance over 2^-5 day, AU/day.
+ * Moshier moved the body back along its velocity, x(t) - tau v(t), and
+ * kept v(t) for the speed, without tau times the Sun's pull: ~5e-6; read
+ * at t - tau now, ~1e-11. */
+static double mosh_lt_off(void)
+{
+  double t = floor(2460000.3 * 256) / 256, h = 1.0 / 32, x[6], f[5][6];
+  int32 fl = SEFLG_MOSEPH | SEFLG_HELCTR | SEFLG_J2000 | SEFLG_NONUT;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_MERCURY, fl | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++)
+    swe_calc(t + (k - 2) * h, SE_MERCURY, fl, f[k], serr);
+  return fabs(x[5] - (8 * (f[3][2] - f[1][2]) - (f[4][2] - f[0][2])) / (12 * h));
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -1260,7 +1279,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, oscspd, oscj2k;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, oscspd, oscj2k, moshlt;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1321,6 +1340,7 @@ int main(int argc, char **argv)
   merclr = mercury_lt_round_off();
   kronos = kronos_builtin_off();
   pctrdd = pctr_dist_rate_off();
+  moshlt = mosh_lt_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -1762,6 +1782,14 @@ int main(int argc, char **argv)
   else {
     printf("  pctr distance rate     %.2e AU/day  FAIL: expected %s\n",
            pctrdd, WANT_DEFECT ? "> 1e-7" : "< 5e-10");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshlt > 1e-7) : (moshlt < 1e-9))
+    printf("  Moshier light time     %.2e AU/day OK\n", moshlt);
+  else {
+    printf("  Moshier light time     %.2e AU/day FAIL: expected %s\n",
+           moshlt, WANT_DEFECT ? "> 1e-7" : "< 1e-9");
     bad++;
   }
 

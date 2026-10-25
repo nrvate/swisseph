@@ -21,14 +21,11 @@
  * topocentric speed with aberration was three-point too until bug 34; it
  * is analytic now, and held to the analytic limit on the files.
  *
- * Moshier is checked on the three-point cases, and on the topocentric one
- * to the three-point limit. Its Moon is moved
- * back by the light time along its velocity at t (app_pos_etc_moon()), so
- * its analytic speed lacks tau times the Moon's acceleration, 1.3e-4
- * deg/day from the Sun's pull alone; re-reading its series at t - tau would
- * double the cost of every Moshier Moon, which is 766 mas from the files
- * anyway (G33). Those rows are printed, not judged.
- * The upstream build fails 11 of the 12 judged. Run as
+ * Moshier is held to the same limits: its Moon is carried to t - tau now
+ * (UPSTREAM-BUGS 53), where it was moved back along its velocity at t and
+ * its speed lacked tau times the acceleration, 1.1e-4 deg/day without
+ * aberration (G52 checks it closer).
+ * The upstream build fails 13 of the 15 judged. Run as
  *   moonspeed EPHEDIR
  */
 #include <math.h>
@@ -70,11 +67,11 @@ int main(int argc, char **argv)
   static const int32 rgEphe[3] = {SEFLG_SWIEPH, SEFLG_JPLEPH, SEFLG_MOSEPH};
   static const char *rgszEphe[3] = {"Swiss", "JPL", "Moshier"};
   const int32 frame = SEFLG_J2000 | SEFLG_NONUT | SEFLG_EQUATORIAL;
-  /* limits for the files, then for Moshier; 0: printed, not judged */
+  /* limits for the files, then for Moshier */
   struct { int ipl; int32 fl, fspeed; const char *sz; double lim, limMosh; } rgCase[] = {
-    {SE_MOON, 0, SEFLG_SPEED, "Moon geocentric", 5e-6, 0},
-    {SE_MOON, SEFLG_TOPOCTR, SEFLG_SPEED, "Moon topocentric", 5e-6, 1e-4},
-    {SE_MOON, SEFLG_TOPOCTR | SEFLG_NOABERR, SEFLG_SPEED, "Moon topocentric, no aberr", 5e-6, 0},
+    {SE_MOON, 0, SEFLG_SPEED, "Moon geocentric", 5e-6, 5e-6},
+    {SE_MOON, SEFLG_TOPOCTR, SEFLG_SPEED, "Moon topocentric", 5e-6, 5e-6},
+    {SE_MOON, SEFLG_TOPOCTR | SEFLG_NOABERR, SEFLG_SPEED, "Moon topocentric, no aberr", 5e-6, 5e-6},
     {SE_MOON, 0, SEFLG_SPEED3, "Moon SEFLG_SPEED3", 5e-5, 5e-5},
     {SE_MARS, 0, SEFLG_SPEED3, "Mars SEFLG_SPEED3", 1e-5, 1e-5},
   };

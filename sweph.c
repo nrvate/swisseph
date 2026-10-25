@@ -3288,11 +3288,20 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
    *******************************/
   if (!(iflag & SEFLG_TRUEPOS)) {
     /* number of iterations - 1 */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* two passes on every ephemeris: Moshier is read at t - dt below as
+     * well now (bug 53). One pass left dt off by dt rdot / c, 1e-4 of it:
+     * the place by v dt rdot / c, and the aberration rate, the Earth's
+     * velocity change over a dt the place does not have, by 1e-4 of the
+     * Earth's acceleration (5.7e-8 deg/day on topocentric Mercury). */
+    niter = 1;
+#else
     if (pdp->iephe == SEFLG_JPLEPH || pdp->iephe == SEFLG_SWIEPH) {
       niter = 1;
     } else { 	/* SEFLG_MOSEPH or planet from osculating elements */
       niter = 0;
     }
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
     /* Every estimate the loops below form is xx0 - dt * v, with xx0 the
      * BARYCENTRIC position, and the distance they measure is estimate
@@ -3419,6 +3428,32 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	break;
       case SEFLG_MOSEPH:
       default:
+#ifndef SWE_UPSTREAM_COMPAT
+	/* Upstream bug 53: Moshier kept x(t) - dt v(t), the body moved back
+	 * along its velocity, and read the series at t - dt for the speed
+	 * alone (geocentric only): the place off by dt^2 a / 2 and, with
+	 * one pass of the light time, by v dt rdot / c (13.0 mas on
+	 * Mercury, 0.09 on Chiron), a heliocentric speed without dt a
+	 * (Mercury's distance rate 5.6e-6 AU/day), and SEFLG_CENTER_BODY's
+	 * offset, in x(t) already, added again below (4.7e-7 AU on
+	 * Jupiter). Read at t - dt like the files, with or without
+	 * SEFLG_SPEED; the Earth there only for the speed. With SEFLG_SPEED
+	 * this is the call that was made already. */
+	{
+	  AS_BOOL need_earth = (iflag & SEFLG_SPEED)
+	    && !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR));
+	  if (ibody == IS_PLANET) {
+	    retc = swi_moshplan(ctx, t, ipli, NO_SAVE, xx, need_earth ? xearth : NULL, serr);
+	  } else {		/* asteroid, heliocentric under Moshier */
+	    retc = sweph(ctx, t, ipli, ifno, iflag, NULL, NO_SAVE, xx, serr);
+	    if (retc == OK && need_earth)
+	      retc = swi_moshplan(ctx, t, SEI_EARTH, NO_SAVE, xearth, xearth, serr);
+	  }
+	  if (retc != OK)
+	    return(retc);
+	}
+	break;
+#else
 	/* 
 	 * with moshier or other ephemerides, subtraction of dt * speed 
 	 * is sufficient (has been done in light-time iteration above)
@@ -3448,6 +3483,7 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
 	    xx[i] = xxsv[i];
         }
 	break;
+#endif
     }
 #ifndef SWE_UPSTREAM_COMPAT
     /* Upstream bug 63: the body was read at t = teval - dt rounded to a
@@ -3458,9 +3494,9 @@ static int app_pos_etc_plan(swe_ctx *ctx, int ipli, int iplmoon, int32 iflag, ch
      * heliocentric places, 2.2e-7 geocentric, against 7e-10 for its true
      * positions (G62). Move it along its velocity at teval (xx0, there
      * with or without SEFLG_SPEED) by the rounding, (teval - t) - dt,
-     * exact since t is near teval (as the Moon's, bug 23). Moshier's
-     * positions are extrapolated by dt itself and round nothing. */
-    if (epheflag == SEFLG_JPLEPH || epheflag == SEFLG_SWIEPH) {
+     * exact since t is near teval (as the Moon's, bug 23). Moshier reads
+     * the body at that rounded t too since bug 53, so it takes the same. */
+    {
       double eps = (pdp->teval - t) - dt;
       for (i = 0; i <= 2; i++)
         xx[i] += eps * xx0[i+3];
@@ -6033,6 +6069,42 @@ static int app_pos_etc_sun(swe_ctx *ctx, int32 iflag, char *serr)
 }
 
 
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 53: the accelerations, AU/day^2, J2000 equator, of the
+ * Moshier Moon about the Earth (xm, geocentric) and of the Earth about the
+ * Sun (xe, heliocentric), for carrying both over the Moon's light time:
+ * the Earth-Moon pair's pull and the Sun's tide on the Moon; the Sun's
+ * pull on the Earth-Moon barycentre, less the Earth's share of the
+ * Moon's motion about it. Left out: the planets (Venus ~3e-5 of the
+ * Earth's), the Earth's figure (~5e-7 of the Moon's); over 1.3 s each is
+ * below 1e-8 deg/day of the speed. */
+static void mosh_moon_earth_acc(const double *xm, const double *xe,
+                                double *am, double *ae)
+{
+  const double k = 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT);
+  const double gms = HELGRAVCONST * k;
+  const double gmem = GEOGCONST * (1.0 + 1.0 / EARTH_MOON_MRAT) * k;
+  double xh[3], xb[3], rm, rh, re, rb;
+  int i;
+  for (i = 0; i <= 2; i++) {
+    xh[i] = xe[i] + xm[i];			/* heliocentric Moon */
+    xb[i] = xe[i] + xm[i] / (EARTH_MOON_MRAT + 1.0);	/* barycentre */
+  }
+  rm = sqrt(square_sum(xm));
+  rh = sqrt(square_sum(xh));
+  re = sqrt(square_sum(xe));
+  rb = sqrt(square_sum(xb));
+  rm = rm * rm * rm;
+  rh = rh * rh * rh;
+  re = re * re * re;
+  rb = rb * rb * rb;
+  for (i = 0; i <= 2; i++) {
+    am[i] = -gmem * xm[i] / rm - gms * (xh[i] / rh - xe[i] / re);
+    ae[i] = -(gms + gmem) * xb[i] / rb - am[i] / (EARTH_MOON_MRAT + 1.0);
+  }
+}
+#endif
+
 /* transforms the position of the moon:
  * heliocentric position
  * barycentric position
@@ -6143,6 +6215,32 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
 	  xx[i] += xe[i];
 	    break;
       case SEFLG_MOSEPH:
+#ifndef SWE_UPSTREAM_COMPAT
+        /* Upstream bug 53: the Moon and the Earth were moved back along
+         * their velocities at teval, x - dt v, keeping v: the speed
+         * without dt a, 1.1e-4 deg/day without aberration (the Earth's
+         * 6e-6 km/s^2 and the Moon's 3e-6 over 1.3 s), 4.6e-5
+         * heliocentric. Now both at t, the instant the files are read
+         * at, rounding and all, to second order: x + s v + s^2 a / 2,
+         * v + s a, s = t - teval exactly; against the series read at t,
+         * 1e-18 AU on the Moon, its velocity 1e-13 AU/day (the
+         * accelerations' 4e-5, see mosh_moon_earth_acc()). Re-reading the
+         * series would cost a fifth of every Moshier Moon (its five-point
+         * velocity) and an Earth. Heliocentric, over 500 s, the third
+         * order leaves 5e-8 deg/day. */
+        {
+          double am[3], ae[3], s = t - pdp->teval;
+          mosh_moon_earth_acc(pdp->x, pedp->x, am, ae);
+          for (i = 0; i <= 2; i++) {
+            xe[i] = pedp->x[i] + s * (pedp->x[i+3] + 0.5 * s * ae[i]);
+            xe[i+3] = pedp->x[i+3] + s * ae[i];
+            xx[i] = pdp->x[i] + s * (pdp->x[i+3] + 0.5 * s * am[i]) + xe[i];
+            xx[i+3] = pdp->x[i+3] + s * am[i] + xe[i+3];
+            xs[i] = 0;
+            xs[i+3] = 0;
+          }
+        }
+#else
         /* this method results in an error of a milliarcsec in speed */
         for (i = 0; i <= 2; i++) {
           xx[i] -= dt * xx[i+3];
@@ -6151,6 +6249,7 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
 	  xs[i] = 0;
 	  xs[i+3] = 0;
         }
+#endif
         break;
     } 
 #ifndef SWE_UPSTREAM_COMPAT
@@ -6162,10 +6261,10 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
      * one read already made, moving the Moon along its barycentric velocity
      * by the difference between the instant read and teval - tau; each pass
      * gains the factor v/c, so three are exact. The rounding is recovered
-     * as (teval - t) - dt, exact since t is near teval; Moshier extrapolates
-     * by dt itself and rounds nothing. */
+     * as (teval - t) - dt, exact since t is near teval; Moshier is carried
+     * to the same t (bug 53). */
     {
-      double eps0 = (pdp->iephe == SEFLG_MOSEPH) ? 0 : (pdp->teval - t) - dt;
+      double eps0 = (pdp->teval - t) - dt;
       double dtk = dt, e = eps0, xk[3];
       int k;
       for (k = 0; k < 3; k++) {

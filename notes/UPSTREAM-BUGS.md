@@ -99,6 +99,7 @@ worst were in code that had never executed even once.
 | 64 | The planets' mean nodes' and apsides' speeds leave out their elements' t^2 and t^3 terms | Correctness | `swecl.c` |
 | 67 | The star functions return the caller's flags, and an emptied nutation cache answers for JD 0 | Correctness | `sweph.c`, `sweconfig.c` |
 | 52 | The aberration rate term is first order in v/c | Correctness | `sweph.c` |
+| 53 | Moshier moves a body back along its velocity instead of reading it at t - tau | Correctness | `sweph.c` |
 | 56 | The interpolated apsides stop short of their iteration's fixed point | Correctness | `swemmoon.c` |
 | 66 | The Moon's pull on the Earth reaches the aberration rate on the Swiss files only | Correctness | `sweph.c` |
 | 69 | The nutation matrix's rate holds the mean obliquity still | Correctness | `sweph.c` |
@@ -2658,11 +2659,11 @@ osculating apogee (their noise). Over 64 JDs at -3000: Mercury apparent
 osculating aphelion 5e-15 AU, fixed stars and True Citra <= 4e-7 mas.
 Speeds against five-point differences, J2000 geometric: planets <= 1.3e-12
 deg/day, the Moon <= 5e-9; the true node <= 3.1e-8, the apogee <= 3.4e-6.
-Left: the apparent speeds still lack tau times the acceleration, as Moshier
-places a body at x - tau v rather than at t - tau (the Moon 4e-7 deg/day
+Left: the apparent speeds lacked tau times the acceleration, as Moshier
+placed a body at x - tau v rather than at t - tau (the Moon 4e-7 deg/day
 with aberration and 8e-5 without, Mercury heliocentric 5e-6 AU/day in its
-distance rate; entry 32 left the Moon's); and `SEFLG_SPEED3` still took
-the node and apogee over 0.1 day, for every ephemeris (entry 54).
+distance rate; entry 32 left the Moon's), now entry 53; and `SEFLG_SPEED3`
+still took the node and apogee over 0.1 day, for every ephemeris (entry 54).
 
 Against the Swiss files, 241 epochs -3000..3000, Sun..Pluto, Moon, true
 node, osculating apogee, geocentric apparent and topocentric equatorial:
@@ -3227,6 +3228,89 @@ ephemeris' own speed noise cancels. Angles within 5e-9 deg/day (measured
 `topo_aberr_second_order_off`: the aberration's part of the topocentric
 Sun's longitude speed on the equator in 1990, 5.4e-10 deg/day shipped
 (3.1e-8 before), 3.0e-6 compat.
+
+## 53. Moshier moves a body back along its velocity instead of reading it at t - tau
+
+**Severity: Correctness (13.0 mas on Mercury's place; the Moon's speed 1.1e-4 deg/day without aberration, 4.6e-5 heliocentric; Mercury's heliocentric distance rate 5.6e-6 AU/day; the centre of body added twice, 4.7e-7 AU on Jupiter)**
+**Where:** `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_moon()`
+
+A body seen at t is where it was at t - tau. On the files and JPL,
+`app_pos_etc_plan()` sets tau by two passes along the velocity and reads
+the ephemeris at t - tau; `app_pos_etc_moon()` reads it there and solves
+the rest (entry 23). Under `SEFLG_MOSEPH` both kept x(t) - tau v(t)
+instead, the body moved back along its velocity at t, and the planets
+took one pass, not two:
+- the place was off by tau^2 a / 2 and, from the single pass, by
+  v tau rdot / c: 13.0 mas on Mercury, 3.4 on Venus, 1.3 on Mars, 0.13 on
+  Jupiter, 0.09 on Chiron (an asteroid under Moshier takes this path),
+  1.2 mas on Mercury heliocentric;
+- the speed kept v(t) where it is v(t - tau). The planets re-read the
+  series at t - tau for the speed, but only geocentric: heliocentric,
+  tau a was missing, radial, 5.6e-6 AU/day on Mercury's distance rate,
+  1.2e-6 on Mars's. The Moon was never re-read: the Earth's 6e-6 km/s^2
+  and the Moon's own 3e-6 over its 1.3 s, 1.1e-4 deg/day without
+  aberration (topocentric alike; 4e-7 with it, where the Earth's velocity
+  at teval in the aberration rate cancels most of it), 4.6e-5
+  heliocentric over 500 s;
+- the single pass left tau off by 1e-4 of itself, and the aberration rate
+  divides the observer's velocity change by the tau the place implies:
+  1e-4 of the aberration acceleration, 6.8e-9 deg/day on Mercury
+  geocentric, 5.7e-8 topocentric;
+- with `SEFLG_CENTER_BODY`, the centre-of-body offset was in x(t) already
+  and `calc_center_body()` added it again at t - tau: 4.66e-7 AU on
+  Jupiter.
+
+**Fix, as done here:** the planets take the files' two passes and are read
+at t - tau, with or without `SEFLG_SPEED`; the series' Earth there only
+for the speed. With the speed, this is the call that was already made;
+without it, one planet series (~1.9 us). The Moon and the Earth are
+carried from teval to the instant the files are read at, t = teval - tau
+rounded, by x + s v + s^2 a / 2 and v + s a, s = t - teval exactly, and
+the files' rounding correction (entry 23) now applies to Moshier too. The
+accelerations are the Earth-Moon pair's pull and the Sun's tide on the
+Moon, the Sun's pull on the barycentre less the Earth's share of the Moon's
+(`mosh_moon_earth_acc()`): 4e-5 of the series' own second differences
+(the planets, the Earth's figure), so 1e-18 AU and 1e-13 AU/day from the
+series read at t over 1.3 s. Re-reading the Moon there would cost its five
+series evaluations and an Earth, ~10% of calc-moseph. The speed carries
+1 - dtau/dt from `lt_rate_exact()` and the Moon's entry-32 term as on the
+files. Cost: bench calc-moseph min 1.050 s against 1.034 (+1.5%, the bench
+binary's layout: linked against libswe.a the same ten bodies take 170 us a
+date against 172, each body alone unchanged within 1%), moon 0.827
+against 0.829.
+
+Positions move by up to 13.0 mas (Mercury), 3.4 (Venus), 1.3 (Mars), 0.13
+(Jupiter), 0.05 (Saturn), 0.09 (Chiron); the Moon 0.003 mas geocentric,
+0.51 heliocentric. Speeds: the Moon's by 1.0e-4 deg/day without
+aberration, 4.8e-5 heliocentric, 1e-6 topocentric; Mercury's by 1.7e-7;
+heliocentric distance rates by 5.6e-6 AU/day (Mercury). Against the Swiss
+files, 241 epochs 1800-2100, J2000: the Moon's longitude speed without
+aberration 1.18e-4 rms to 9.72e-5, now the same as with it (the theory's
+own); heliocentric 3.15e-5 to 7.3e-7; Mercury's heliocentric distance rate
+4.46e-6 to 7.3e-9 AU/day, Mars's 1.12e-6 to 8.1e-9. Left: the heliocentric
+Moon's 4.7e-8 deg/day, the second order's truncation over 500 s (the
+files 5e-10); Mercury's 0.009 mas heliocentric from the two straight-line
+passes and the instant's rounding, the same as the files (0.005).
+
+G52 `tests/moshlt.c`, Moshier, 24 dates 1800-2100: the astrometric
+direction equals P(t - tau) - O(t) from the library's own geometric
+vectors within 0.05 mas (<= 0.0088) and does not depend on `SEFLG_SPEED`,
+Mercury, Venus, Mars, Jupiter, Pluto and Chiron, geocentric and
+heliocentric; 13 speeds against five-point differences, the Moon
+geocentric with and without aberration, topocentric with and without,
+heliocentric, Mercury and Mars geocentric with and without aberration and
+heliocentric, their heliocentric distance rates (the Moon <= 4.4e-7
+topocentric, 4.7e-8 heliocentric; the planets <= 3.6e-8; distance rates
+<= 2.9e-11 AU/day); the aberration's part of Mercury's and Mars's speeds,
+geocentric and topocentric, within 3e-9 (<= 1.4e-9; 5.7e-8 before); and
+Jupiter's centre-of-body offset equal to the files' (7.8e-15 AU). The
+upstream build fails 27 of the 42. G33 and G40 now hold Moshier to the
+files' limits (0.00035 mas, 4.8e-7 deg/day geocentric, 1.7e-6
+topocentric). G24 `mosh_lt_off`: Mercury's heliocentric distance rate,
+1.1e-11 AU/day shipped, 3.6e-6 compat. Since Moshier now reads the planets
+at the rounded t = teval - dt the files use, entry 63's correction for that
+rounding (the body moved along its velocity by (teval - t) - dt) applies to
+Moshier too.
 
 ## 56. The interpolated apsides stop short of their iteration's fixed point
 

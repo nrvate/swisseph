@@ -816,6 +816,11 @@ struct epsilon {
  *     radial part, first order in v/c, a site's acceleration stripped of
  *     its radial part (3e-8 deg/day on topocentric speeds, +5e-9
  *     geocentric; UPSTREAM-BUGS 52, G51)
+ *   - Moshier moved a body back along its velocity, x(t) - tau v(t), with
+ *     one light-time pass for the planets, instead of reading it at t - tau
+ *     (13 mas on Mercury; the Moon's speed 1.1e-4 deg/day without
+ *     aberration, Mercury's heliocentric distance rate 5.6e-6 AU/day; the
+ *     centre-of-body offset added twice; UPSTREAM-BUGS 53, G52)
  *   - swi_intp_apsides() stopped after five passes (perigee) or four
  *     (apogee) of an iteration that converges only linearly, up to 1.21"
  *     (perigee) and 2.5 mas (apogee) short of its fixed point
