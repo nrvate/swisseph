@@ -1693,6 +1693,18 @@ struct epsilon {
  *     the long-term sidereal time's rate, a central difference of the
  *     matrices, UPSTREAM-BUGS 235, G39, is this fork's, bug 29, and has no
  *     upstream form)
+ *   - (nothing for UPSTREAM-BUGS 245: the frame hold of Moshier's Moon
+ *     (entry 202) and the Earth's saved Moon it answered from (entry 191)
+ *     are this fork's; the compat build has neither, and its true node and
+ *     osculating apogee do not depend on what was called before; G155)
+ *   - Moshier's apparent speeds within 2^-11 day after a short-term
+ *     precession window's edge, and within 2^-8 day either side a far
+ *     body's, reading this fork's carried Earth (entry 191) and its
+ *     acceleration (entry 66) across it: the Sun's, planets' and stars'
+ *     latitude speeds 3.28e-5 deg/day off with IAU 1976 under Vondrak,
+ *     Poseidon's 2.06e-6 (the compat build's are upstream's, differenced
+ *     across the edge: 1.5e-5 on the Sun there) (UPSTREAM-BUGS 246, G139,
+ *     G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

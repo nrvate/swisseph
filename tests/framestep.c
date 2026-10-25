@@ -4,7 +4,7 @@
  * short-term precession model's window, and the joins of Owen 1990's
  * pieces; and across a window's edges the long-term sidereal time is its
  * own side's model's, and the house speeds and the true node's and
- * osculating apogee's each side's own rate.
+ * osculating apogee's each side's own rate, and Moshier's aberration rate.
  *
  * The defect (UPSTREAM-BUGS 153): with SEFLG_JPLHOR_APPROX under
  * SEMOD_JPLHORA_3 (the default mode), the precession, the mean obliquity
@@ -98,6 +98,19 @@
  * deg/day off at J2000 - 2 centuries, 4.29e-3 at + 2, the apogee's 5.96e-3
  * and 6.49e-3; under "0,9,8" at -+ 75 centuries 7.90 and 0.68.
  *
+ * The defect (UPSTREAM-BUGS 246): Moshier's Earth is its series' EMB less
+ * its Moon's share, and the Moon is of date, put into J2000 by the
+ * precession at its instant; the aberration rate reads the Earth at other
+ * instants, and those reads reached across the windows' edges: the second
+ * difference of the Moon over 2^-11 day that carries the Earth's other
+ * reads (within 2^-11 day after the edge), the Earth's acceleration over
+ * -+ 2^-8 day (a far body's, Poseidon) and -+ 2^-9 (a star's). With
+ * "0,9,1" on Moshier within 2^-11 day after J2000 + 2 centuries the
+ * latitude speed of the apparent Sun, planets and stars 3.28e-5 deg/day
+ * off (6.96e-7 after - 2), Polaris's right ascension 6.05e-4; within
+ * 2^-8 day either side Poseidon's 2.06e-6, within 2^-9 Polaris's right
+ * ascension 5.3e-8; swe_nod_aps()'s geocentric points the same.
+ *
  * Check (a): de200, SEFLG_JPLHOR_APPROX; at 1962 Jan 20 the default models
  * and IAU 2006 precession with IAU 2000B nutation ("0,8,8,4", which
  * difference after the step too), at 1799 Jan 1 the default models; and
@@ -189,6 +202,16 @@
  * ecliptic of J2000, whose obliquity is the window's at J2000 on both
  * sides and so not the outside model's alone.
  *
+ * Check (g): Moshier's apparent places, "0,9,1" and "0,9,6" (IAU 2000) at
+ * J2000 -+ 2 centuries ("0,9,8"'s edges at -+ 75 lie beyond Moshier's
+ * planets): the Sun, the Moon, Mars, Polaris, Poseidon (whose aberration
+ * rate takes the Earth's acceleration whole) and Mars's geocentric
+ * osculating perihelion (swe_nod_aps()), ecliptic and equatorial, against
+ * check (a)'s reference at the 105 instants (Moshier's places under
+ * "0,9,1" outside the window are not "0,9,9"'s: its J2000 obliquity is the
+ * window's), the worst over its three spans: 144 checks within 1e-8
+ * deg/day.
+ *
  * Measured after the fix: (a) within 2.4e-9 (the Moon's one-sided
  * reference at J2000 - 2 centuries, 2.0e-9 at 1799; Polaris's right
  * ascension 1.45e-9 at 1962, the topocentric Moon 9.6e-10, the others
@@ -227,14 +250,23 @@
  * IERS 2010 sidereal time, sidereal 3.9e-3 to 5.1e-3); after, (e) within
  * 4.5e-8 everywhere. Before the fix of bug 186, 20 of (f)'s 40 fail, every
  * one within 1/32 day of the edge (2.80e-3 to 7.90 deg/day); after, (f)
- * within 6.1e-10 for the node and 7.2e-9 for the apogee everywhere. The
- * upstream build fails 200 of (a)'s 210, the 66 of
+ * within 6.1e-10 for the node and 7.2e-9 for the apogee everywhere.
+ * (g) within 3.1e-9 (the Moon's, the reference's own as in (c); the others
+ * 9.8e-10); before the fix of bug 246, 50 of its 144 fail: every body but
+ * the Moon on the day after the edge, at both edges under both models
+ * (3.28e-5 deg/day at + 2 centuries under "0,9,1", 6.96e-7 at - 2, 4.39e-6
+ * and 1.10e-6 under "0,9,6"; Polaris's right ascension 6.05e-4), and on the
+ * day before Poseidon (up to 2.13e-6) and under "0,9,1" Polaris's right
+ * ascension (5.3e-8 and 3.7e-8). The upstream build fails 200 of (a)'s
+ * 210, the 66 of
  * (c), 3 of (d)'s 12 (outside the IAU 1976 window by 4.6e-9 to 6.6e-9 deg:
  * its long-term formula takes the obliquity of J2000, inside the window,
  * at every date), all 30 of (e) (its house speeds at ARMCS, entry 42:
  * equal houses 3.0e-5 to 8.6e-5 deg/day, Koch 199) and all 40 of (f) (its
  * difference over 1e-4 day across the edge, 0.36 to 951 deg/day, and its
- * interval's rounding beyond, entry 75), 339 of its 358. Of
+ * interval's rounding beyond, entry 75) and all 144 of (g) (its Moshier
+ * speeds differences across the edge, the Moon's 5.4 deg/day, Polaris's
+ * right ascension 2.3), 483 of its 502. Of
  * (a)'s first 168 it fails 160: its nutation rate, a backward
  * difference, reaches across the 1962 step just after it (0.200 deg/day,
  * Polaris's right ascension 2.14), its ayanamsa rate, a backward
@@ -285,10 +317,10 @@ static const struct {
  * equinox of date), and swe_calc_orbel() orbits of the equinox of date, one
  * about the Earth and one about the Sun */
 enum { B_SUN, B_MOON, B_MARS, B_POLARIS, B_SIDMARS, B_TOPOMOON, B_SPEED3, NB,
-  B_SELENA = NB, B_VULCAN, B_ORBGEO, B_ORBHEL, NBC };
+  B_SELENA = NB, B_VULCAN, B_ORBGEO, B_ORBHEL, B_POSEIDON, B_MARSPERI, NBC };
 static const char *BN[NBC] = { "Sun", "Moon", "Mars", "Polaris", "sidereal Mars",
   "topocentric Moon", "Mars SPEED3", "Selena", "Vulcan", "orbit about Earth",
-  "orbit about Sun" };
+  "orbit about Sun", "Poseidon", "Mars perihelion" };
 static const char *RN[3] = { "day before", "day after", "outside" };
 
 /* the step and flags in use; LTCELL: a place's frame of date is its
@@ -321,6 +353,16 @@ static int place(swe_ctx *c, int b, double t, int32 xf, double *x)
     break;
   case B_SELENA: rf = swe_calc_r(c, t, SE_WHITE_MOON, fl, x, serr); break;
   case B_VULCAN: rf = swe_calc_r(c, t, SE_VULCAN, fl, x, serr); break;
+  case B_POSEIDON: rf = swe_calc_r(c, t, SE_POSEIDON, fl, x, serr); break;
+  case B_MARSPERI: {
+    /* swe_nod_aps()'s geocentric osculating perihelion; its return is not
+     * the flags */
+    double xn[6], xd[6], xa[6];
+    rf = swe_nod_aps_r(c, t, SE_MARS, fl, SE_NODBIT_OSCU, xn, xd, x, xa, serr);
+    if (rf >= 0)
+      rf = FL;
+    break;
+  }
   default: {
     /* moved from TS by the two-body mean motion swe_calc_orbel() takes */
     double el[6] = { 40, 0.053, 0.05, 30, 60, 5 }, mu;
@@ -812,6 +854,72 @@ static int check_f(const char *ephe, int *n)
   return bad;
 }
 
+/* check (g): Moshier's apparent places across the windows' edges, whose
+ * aberration rate reads the Earth at other instants, its Moon of date put
+ * into J2000 by the precession there: "0,9,1" and "0,9,6" at J2000 -+ 2
+ * centuries ("0,9,8"'s edges at -+ 75 lie beyond Moshier's planets, JD
+ * 625000.5 to 2818000.5); the Sun, the Moon, Mars, Polaris, Poseidon (a
+ * far body, whose aberration rate takes the Earth's acceleration whole)
+ * and Mars's geocentric osculating perihelion (swe_nod_aps()); ecliptic and
+ * equatorial; check (a)'s reference at the 105 instants, the worst over
+ * its three spans, within 1e-8 deg/day; returns the failures, *n the
+ * checks. */
+static int check_g(const char *ephe, int *n)
+{
+  static const struct {
+    double ts;
+    int left;
+    const char *mod;
+  } SG[] = {
+    { 2378495.0, 0, "0,9,1,0,0,0,0,0" },
+    { 2524595.0, 1, "0,9,1,0,0,0,0,0" },
+    { 2378495.0, 0, "0,9,6,0,0,0,0,0" },
+    { 2524595.0, 1, "0,9,6,0,0,0,0,0" },
+  };
+  static const int bg[6] = { B_SUN, B_MOON, B_MARS, B_POLARIS, B_POSEIDON, B_MARSPERI };
+  double tq[105];
+  int m, b, f, i, k, nq, bad = 0, err = 0;
+  for (m = 0; m < (int) (sizeof SG / sizeof SG[0]); m++) {
+    char mod[40];
+    swe_ctx *c = swe_ctx_new();
+    TS = SG[m].ts;
+    LEFT = SG[m].left;
+    FL = SEFLG_MOSEPH;
+    nq = instants(tq);
+    strcpy(mod, SG[m].mod);
+    swe_set_ephe_path_r(c, ephe);
+    swe_set_astro_models_r(c, mod, 0);
+    printf("  (g) Moshier, step JD %.1f, models %s: worst |speed - reference|, deg/day,"
+           " %s / %s / %s\n", TS, SG[m].mod, RN[0], RN[1], RN[2]);
+    for (b = 0; b < 6; b++)
+      for (f = 0; f < 2; f++) {
+        int32 xf = f ? SEFLG_EQUATORIAL : 0;
+        double w[3] = { 0, 0, 0 };
+        for (i = 0; i < nq; i++) {
+          int skip;
+          double d = off(c, bg[b], tq[i], xf, &skip, &err);
+          if (err) {
+            swe_ctx_free(c);
+            return bad + 1;
+          }
+          if (!skip && d > w[span(tq[i])])
+            w[span(tq[i])] = d;
+        }
+        printf("    %-16s %s  %.2e  %.2e  %.2e\n", BN[bg[b]], f ? "equ" : "ecl", w[0], w[1], w[2]);
+        for (k = 0; k < 3; k++) {
+          (*n)++;
+          if (!(w[k] <= 1e-8)) {
+            bad++;
+            printf("    FAIL Moshier, models %s, %s %s, %s: %.2e > 1e-8\n", SG[m].mod,
+                   BN[bg[b]], f ? "equatorial" : "ecliptic", RN[k], w[k]);
+          }
+        }
+      }
+    swe_ctx_free(c);
+  }
+  return bad;
+}
+
 int main(int argc, char **argv)
 {
   double tq[105];
@@ -1004,6 +1112,7 @@ int main(int argc, char **argv)
   bad += check_d(&n);
   bad += check_e(argv[1], &n);
   bad += check_f(argv[1], &n);
+  bad += check_g(argv[1], &n);
   if (bad) {
     printf("G139 FAIL: %d of %d\n", bad, n);
     return 1;

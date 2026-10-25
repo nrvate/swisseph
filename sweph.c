@@ -8222,7 +8222,24 @@ static int fixstar_obs_rate(swe_ctx *ctx, double tjd, double dm, double dp, int3
    * (truncation h^2/3 a'', 1e-9 of a; central as before elsewhere). */
   AS_BOOL mm = ctx->moshmoon_used;	/* the Earth at tjd's Moon */
   char s[AS_MAXCH], *sp = (serr != NULL) ? s : NULL;
+  /* Upstream bug 246: and an Earth made from Moshier's Moon (Moshier's, or
+   * the files' with the Moon's fallen to it, mm), which is of date and put
+   * into J2000 by the precession at its instant: within h of a step of the
+   * frame's models (a short-term window's edge, Owen 1990's joins;
+   * swi_frame_step_side()) the read across it was of the other model's,
+   * with "0,9,1" at J2000 + 2 centuries Polaris's right ascension speed
+   * 5.3e-8 deg/day off (5.6e-8 with mm). That read is not taken either:
+   * the one-sided difference on tjd's side. */
+  if (epheflag == SEFLG_MOSEPH || mm) {
+    int side = swi_frame_step_side(ctx, tjd, h, 0, SWI_FRAME_PREC);
+    if (side == 0)
+      side = swi_frame_step_side(ctx, tjd, h, ctx->oec.epsflag, SWI_FRAME_EPS);
+    if (side != 0)
+      out = (side < 0) ? 0 : 1;
+  }
   for (k = 0; k < 2; k++) {
+    if (k == out)
+      continue;
     *s = '\0';
     retc = fixstar_rate_read(ctx, k ? tjd - h : tjd + h, epheflag, iflag, mm, xa[k], sp);
     if (retc == NOT_AVAILABLE && out < 0) {
@@ -11022,13 +11039,29 @@ static int lunar_osc_elem(swe_ctx *ctx, double tjd, int ipl, int32 iflag, char *
 	t = tjd + osc_off[i] * speed_intv;
 #ifndef SWE_UPSTREAM_COMPAT
 	rr[i] = osc_round_err(tjd, osc_off[i] * speed_intv, t);	/* bug 75 */
-	if (hold && i != 2)	/* bug 202: not tjd's */
+	if (hold && i != 2) {	/* bug 202: not tjd's */
+	  /* Upstream bug 245: under the hold swi_moshmoon() answered from its
+	   * save of the Moon Moshier's Earth was made with at the epoch (entry
+	   * 191), unheld, where a swe_calc() of the Moon, the Earth, the Sun
+	   * or a planet left one: under "0,9,1" at J2000 -+ 2 centuries + 2^-8
+	   * day, after one at that instant - 1/32 day, across the edge, the
+	   * node's speed up to 2.45e-3 deg/day off a fresh context's, the
+	   * apogee's 3.71e-3, and 1.4e-11 from an epoch on tjd's side. Those
+	   * saves (and the Moon's own, emptied above) are passed over for the
+	   * read and kept, as entry 229 does in swe_nod_aps(). */
+	  struct plan_data *pmdp = &ctx->pldat[SEI_MOON];
+	  double tm = pmdp->teval, te = ctx->earth_moon.t;
 	  swi_frame_model_hold(ctx, tjd, held);
-#endif
+	  pmdp->teval = ctx->earth_moon.t = SWI_TJD_NEVER;
+	  retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);
+	  pmdp->teval = tm;
+	  ctx->earth_moon.t = te;
+	  if (retc == ERR)
+	    swi_frame_model_release(ctx, held);
+	} else
+	  retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);
+#else
 	retc = swi_moshmoon(ctx, t, NO_SAVE, xpos[i], serr);/**/
-#ifndef SWE_UPSTREAM_COMPAT
-	if (retc == ERR && hold && i != 2)
-	  swi_frame_model_release(ctx, held);
 #endif
 	if (retc == ERR)
 	  return(retc);

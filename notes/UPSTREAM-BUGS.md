@@ -267,6 +267,8 @@ worst were in code that had never executed even once.
 | 247 | In a star mode whose star is refused (its ephemeris's range), `swe_get_ayanamsa_ex()` returns -65, neither ERR nor a flag set, with the ayanamsa dpsi, the `_ut` form likewise, `swe_get_ayanamsa()` 0, and the sidereal houses answer OK from it, their speeds within 1/64 day of the range's ends 1447 deg/day off: True Citra at JD 100000 on Moshier, -65 and -0.00425 deg, where the sidereal places refuse | Correctness (behaviour) | `sweph.c`, `swehouse.c` |
 | 234 | The sidereal times are their formulas evaluated in double and then reduced, the seconds by `gmst - 86400 floor(gmst / 86400)`: SEMOD_SIDT_IAU_2006's leaves 0 .. 24 h from J -+2e10 days (-4.55 h at 1.98e10, 1165 h at -6.3e10, -4.9e9 h at the double below 1e12), a sum just under 0 comes back 24 h under every model, and against the formulas in mpmath IAU 1976, IAU 2006 and IERS 2010 are off by 2.9e-9, 2.8e-9 and 2.3e-9 deg at 1e7 days and 0.024, 180 and 180 deg at 1e12, the rotation angle by 2.5e-4 deg there | Correctness (behaviour) | `swephlib.c` |
 | 235 | The long-term sidereal time's rate is a central difference of the precession matrices over -+50 days: low by its truncation, 8.6e-7"/cy, at every date (3.4e-4" short by 400 centuries), and under Vondrak 2011 scattered by their rounding, -+3e-7"/cy, at 1000 to 2000 centuries, so the integral from 400 to 2000 centuries does not converge with its panel count (2.1e-4", 5.9e-8 deg) and the sidereal time there jitters by up to 1.9e-8 deg over consecutive JDs | Correctness | `swephlib.c` |
+| 245 | `lunar_osc_elem()`'s Moshier hold (entry 202) reads each epoch's Moon by `swi_moshmoon()`, which answers from the Moon Moshier's Earth was made with there (entry 191), unheld, after a `swe_calc()` of the Moon, the Earth, the Sun or a planet at that epoch: within 1/16 day of a short-term window's edge, with IAU 1976 under Vondrak, the true node's and osculating apogee's speeds up to 2.45e-3 and 3.71e-3 deg/day off a fresh context's across the edge, 1.4e-11 on tjd's side | Correctness (behaviour) | `sweph.c` |
+| 246 | Moshier's aberration rate reads the Earth, whose Moon is of date put into J2000 at its instant, across a short-term window's edge: the Moon difference's d'' over 2^-11 day, the Earth's acceleration over -+ 2^-8 day, a star's over -+ 2^-9; with IAU 1976 under Vondrak within 2^-11 day after J2000 + 2 centuries the apparent Sun's, planets' and stars' latitude speeds 3.28e-5 deg/day off (6.96e-7 after - 2), within 2^-8 day a far body's 2.06e-6, within 2^-9 a star's right ascension 5.3e-8; the heliocentric Moon's place 9.35e-8 deg | Correctness | `swemplan.c`, `sweph.c` |
 
 ---
 
@@ -17111,6 +17113,207 @@ Noticed, not fixed:
   JDs within 400 .. 2000 centuries jitter by 1.9e-7 .. 4.8e-5 deg (1.3e-7
   .. 3.4e-5 before): IAU 2006's polynomial matrices past their fit,
   rounding at the size of their T^5 terms; not the integral's.
+
+## 245. `lunar_osc_elem()`'s Moshier hold answers from the Earth's saved Moon: after a `swe_calc()` at an epoch of the stencil across a short-term window's edge, the true node's and osculating apogee's speeds 2.45e-3 and 3.71e-3 deg/day off a fresh context's
+
+**Severity: Correctness (behaviour: an answer that depends on what was computed before it; with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976, 2000 or 2006 by `swe_set_astro_models()`, on Moshier and the files' fall to it for the Moon: the speeds of `SE_TRUE_NODE` and `SE_OSCU_APOG` within 1/16 day of a window's edge, after a `swe_calc()` of the Moon, the Earth, the Sun or a planet at an epoch of their stencil, with IAU 1976 under Vondrak up to 2.45e-3 and 3.71e-3 deg/day off a fresh context's from an epoch across the edge, 7.2e-12 and 1.4e-11 from one on tjd's side)**
+**Where:** `sweph.c`: `lunar_osc_elem()` (Moshier's case)
+
+Entry 229's noticed item. Entry 202 holds the frame model at tjd's for
+Moshier's Moon at every epoch of the node's and apogee's stencil but
+tjd's (`swi_frame_model_hold()`), so that the Moon's frame turning there
+is the held model's and `swi_plan_for_osc_elem()` takes it back by the
+same frame. But `swi_moshmoon()` answers first from its saves: the Moon's
+own save area, which `lunar_osc_elem()` empties at its top, and the Moon
+Moshier's Earth was made with (`ctx->earth_moon`, entry 191), which a
+`swe_calc()` of the Moon, the Earth, the Sun or any Moshier planet leaves
+at its instant. That Moon was computed unheld: its place taken to J2000 by
+its own side's frame, its velocity carrying its own side's turning (entry
+184's one-sided difference within a day of the edge). Measured on this tip
+on Moshier under "0,9,1", SEFLG_SPEED, ecliptic of date, against the same
+call in a fresh context:
+- at J2000 - 2 centuries + 2^-8 day, after `swe_calc(SE_MOON,
+  SEFLG_MOSEPH | SEFLG_SPEED)` (or the Earth's or the Sun's, with or without
+  SEFLG_SPEED) at that instant - 1/32 day, across the edge, the node's
+  speed 1.66e-3 deg/day off, the apogee's 3.40e-3; at - 1/16 day 2.07e-4
+  and 4.25e-4;
+- at + 2 centuries + 2^-8 day (outside the window), 2.45e-3 and 3.71e-3;
+- after a call at an epoch on tjd's side, 7.2e-12 and 1.4e-11 (the held
+  model's central difference of the frame against entry 184's one-sided
+  one).
+The places are unchanged: the node's and apogee's are tjd's epoch's,
+which is not held. Not reached: without SEFLG_SPEED and with SEFLG_SPEED3
+(no hold, the one epoch tjd's), beyond 1/16 day of an edge (no hold), the
+files' Moon (read without saving, and J2000 already), the interpolated
+apogee and perigee (no frame, no save). The compat build has neither the
+hold nor the Earth's saved Moon, and its answers do not depend on the
+order.
+
+**Fix, as done here:** as entry 229 does in `swe_nod_aps()`: under the
+hold, at every epoch but tjd's, the read by `swi_moshmoon()` passes over
+the Moon's save area and the Earth's Moon (their instants set to
+`SWI_TJD_NEVER` for the read and put back after it), so the Moon is the
+held model's; the saves are kept for later calls. Behind `#ifndef
+SWE_UPSTREAM_COMPAT`, with entry 202's hold.
+- After: 11760 orders bit for bit with a fresh context -- the true node
+  and the osculating apogee with SEFLG_SPEED of date, equatorial without
+  nutation, J2000, sidereal (Lahiri) of date and equatorial, with
+  SEFLG_SPEED3 and with none, at J2000 -+ 2 centuries -+ 2^-8, -+ 2^-5
+  and + 2^-12 day, at the edge and 3 days after it, after the Moon, the
+  heliocentric Earth, the Sun, the true node, the osculating apogee or
+  Mars at each of the five epochs, with and without SEFLG_SPEED, and that
+  other body there after the point (3840 differed before, every one with
+  SEFLG_SPEED within 1/16 day of an edge).
+- Elsewhere bit for bit: the read under the hold is the same computation
+  without the saves, and only under the hold. No cost off it.
+
+G155 `tests/framehold.c`, check (d): Moshier, "0,9,1" at J2000 -+ 2
+centuries, the true node and the osculating apogee with SEFLG_SPEED,
+ecliptic and equatorial of date, at the edge -+ 2^-8 and -+ 2^-5 day,
+after a `swe_calc()` with SEFLG_SPEED of the Moon, the heliocentric Earth,
+the Sun, the true node or the osculating apogee at each epoch of the
+stencil (tjd + k / 32, k = -2..2), and that body there after the point,
+each against the same call in a fresh context: 40 checks (edge, point,
+other body, before or after) of 40 answers each, bit for bit. Before the
+fix 12 fail: the Moon, the Earth and the Sun before either point at both
+edges, 32 of the 40 answers each (all but tjd's own epoch's), by up to
+1.66e-3 and 3.42e-3 deg/day at - 2 centuries, 2.45e-3 and 3.71e-3 at + 2.
+The upstream build passes (d), its answers independent of the order, and
+fails all 48 of (a) and (b). G155 92 checks in all. No G24 case: the
+compat build cannot show the defect (no hold, no saved Moon of the
+Earth).
+
+## 246. Moshier's aberration rate reads the Earth across a short-term window's edge: within 2^-11 day after J2000 + 2 centuries the apparent Sun's, planets' and stars' latitude speeds 3.28e-5 deg/day off
+
+**Severity: Correctness (with `SE_MODEL_PREC_SHORTTERM` set to IAU 1976 or 2000 by `swe_set_astro_models()`, on Moshier: within 2^-11 day after a window's edge the speeds of the apparent Sun, planets, fictitious bodies and stars and of `swe_nod_aps()`'s geocentric points, with IAU 1976 under Vondrak the latitude's 3.28e-5 deg/day off after J2000 + 2 centuries, 6.96e-7 after - 2 (Polaris's right ascension 6.05e-4 and 1.43e-5), with IAU 2000 4.39e-6 and 1.10e-6; within 2^-8 day either side a far body's 2.06e-6 (Poseidon), within 2^-9 a star's right ascension 5.3e-8; and places through the same reads: the heliocentric Moon's 9.35e-8 deg, Selena's 9.81e-8 heliocentric and 4.98e-9 geocentric, the Moon's without aberration 2.6e-10)**
+**Where:** `swemplan.c`: `mosh_dmoon_da()`, `swi_mosh_earth_accel()`; `sweph.c`: `fixstar_obs_rate()`
+
+Moshier's Earth is its series' EMB less its Moon's share (entry 191),
+and the Moon is of date, put into J2000 by the precession at its instant
+(the full series by `ecldat_equ2000()`, with the obliquity there, the
+short one by `moon_short()`, with the cache's): the Earth itself takes the
+frame's step at a window's edge, the Moon's share 3.1e-5 AU times 0.57"
+and the obliquity's 81.6 mas at + 2 centuries. Its places are each their
+side's. But the aberration rate reads the Earth at other instants, and
+three of those reads reached across the step:
+- the Moon difference's d'' (`mosh_dmoon_da()`, entry 191), which carries
+  every read of the Earth 2^-10 to 1 day from the saved one (the planets'
+  light-time Earth, the accelerations' reads), is taken from both series
+  at t - 2^-11 day: within 2^-11 day after an edge that is the other
+  side's, d'' 8.2e-3 AU/day^2 off and the Earth's acceleration 1.0e-4 of
+  its 3.0e-4 at + 2 centuries (where the obliquity steps by 81.6 mas, 3.4
+  at - 2);
+- the Earth's acceleration (`swi_mosh_earth_accel()`, entry 66 part 3), a
+  second difference over -+ 2^-8 day of carried reads, which a far body's
+  rate takes whole and the Earth-centred sets' place carries (entry 96):
+  within 2^-8 day either side 6.5e-6 AU/day^2 off, 2.1% of a (5.7e-6 at
+  - 2);
+- a star's acceleration of the Earth (`fixstar_obs_rate()`, entries 76 and
+  206), a central difference of carried velocities over -+ 2^-9 day.
+Against G139 check (a)'s reference (five-point differences over 2^-6 day
+of the same call's places on the instant's side, centred where they lie
+there, else one-sided) at G139's 105 instants about each edge, on Moshier
+under "0,9,1":
+- within 2^-11 day after + 2 centuries the Sun's latitude speed 3.28e-5
+  deg/day (longitude 9.2e-7; equatorial 3.28e-5 and 2.2e-6), Mars's and
+  Jupiter's alike, Polaris's 1.03e-5 (right ascension 6.05e-4), Poseidon's
+  3.27e-5, `swe_nod_aps()`'s geocentric points of Mars and Jupiter 3.28e-5;
+  not the Moon's (its light time is under the 1e-3 day below which entry 62
+  skips the term);
+- within 2^-11 day after - 2 (the edge's instant the window's, so
+  exclusive) 6.96e-7, Polaris's right ascension 1.43e-5; under "0,9,6"
+  (IAU 2000) 4.39e-6 and 1.10e-6;
+- within 2^-8 day either side Poseidon's longitude speed 2.06e-6 (1.70e-6
+  at - 2), and within 2^-9 Polaris's right ascension 5.3e-8 (3.7e-8);
+- places, through the first read: the heliocentric Moon (its Earth read at
+  the light-time instant, entry 109) 9.35e-8 deg within 2^-11 day after +
+  2 centuries, Selena heliocentric 9.81e-8; through the second, Selena
+  geocentric (entry 96's Earth carried back below 2^-10 day of light time)
+  4.98e-9 within 2^-8 day, and the Moon without aberration (entry 109's
+  light-time Earth) 2.6e-10.
+"0,9,8"'s edges at -+ 75 centuries lie beyond Moshier's planets (JD
+625000.5 to 2818000.5); of Owen 1990's joins only -2000's is within them,
+where the pieces meet (entry 200): the same before and after, within
+2.4e-10 (the Moon's reference 2.0e-9).
+
+**Fix, as done here:** each read on the instant's side, as entry 184 takes
+the Moon's frame turning there. Where t - 2^-11 day takes another model
+than t (`swi_frame_step_side()`, the precession with no flags and the
+obliquity with the cache's, as `moon_short()` and `ecl_equ2000_cart()`
+take them), d'' from t + 2^-11. Where t -+ 2^-8 day does, the Earth's
+acceleration the one-sided second difference on t's side, (2 x0 - 5 x1 +
+4 x2 - x3) / h^2 (truncation 11/12 h^2 x^(4), 5e-9 of a). And where t -+
+2^-9 day does, for an Earth made from Moshier's Moon (Moshier's, or the
+files' with the Moon fallen to it, entry 120), a star's read across is
+passed over as entry 206 passes over one outside the span, the
+acceleration then its one-sided second-order difference from the side
+within. All behind `#ifndef SWE_UPSTREAM_COMPAT` already (the compat build
+has neither entry 191's carried reads nor entry 66's acceleration).
+- After: G139 check (g) within 3.1e-9 deg/day (the Moon's, the
+  reference's own as in check (c)), the rest within 9.8e-10;
+  `swe_nod_aps()`'s geocentric points of Mars within 2.1e-9, of Jupiter
+  3.0e-9 at + 2 centuries.
+- With the Moon files missing and the fallback allowed (the files' Earth
+  from Moshier's Moon), Polaris's right ascension speed 5.57e-8 and
+  3.69e-8 deg/day off before, 2.7e-10 and 6.9e-11 after (by hand: G139
+  runs on the full set of files).
+- Left, under the floor: the planets' light-time Earth for the aberration
+  rate (`earth_at_lt()`), read across the edge within a light time after
+  it, turns its Moon's share's velocity by the other model: Mars 9.6e-10
+  deg/day, the Sun 3.0e-10 (1.6e-10 and 5e-11 ten days from the edge).
+- A survey before and after, 111384 calls: the Sun, the Moon, Mercury,
+  Mars, Jupiter, Pluto, the true node, the osculating and interpolated
+  apogees, Poseidon, Selena, Polaris and Mars's osculating perihelion by
+  `swe_nod_aps()`; of date, equatorial, J2000, topocentric, sidereal,
+  without aberration, true positions, heliocentric and with SEFLG_SPEED3,
+  with and without SEFLG_SPEED; on Moshier, the Swiss files and de200;
+  under the default models, "0,9,1", "0,9,6" and "0,10"; at 12 dates
+  1800-2097 and 30 instants within 5 days of J2000 -+ 2 centuries --
+  identical bit for bit but 855, all on Moshier under "0,9,1" and "0,9,6"
+  within 2^-8 day of an edge: 465 speeds, and 390 places (Selena's, the
+  heliocentric Moon's and the Moon's without aberration, above), whose
+  second differences over 2^-13 day no longer kink at 2^-11 day after the
+  edge (the heliocentric Moon's 2.6e-9 deg there, 1.9e-11 after).
+- Cost: `perf stat -e instructions:u`, bench's calc-moseph (one
+  repetition) 23390373250 before, 23391573184 after (+0.005%);
+  calc-swieph 12246119557 and 12246119517.
+
+G139 `tests/framestep.c`, check (g): Moshier, "0,9,1" and "0,9,6" at
+J2000 -+ 2 centuries; the Sun, the Moon, Mars, Polaris, Poseidon and
+Mars's geocentric osculating perihelion (`swe_nod_aps()`), ecliptic and
+equatorial; check (a)'s reference at the 105 instants (Moshier's places
+under "0,9,1" outside the window are not "0,9,9"'s, its J2000 obliquity
+the window's, so the side's model alone is no reference here), the worst
+over check (a)'s three spans: 144 checks within 1e-8 deg/day. Before the
+fix 50 fail: every body but the Moon on the day after the edge, at both
+edges under both models, and on the day before Poseidon (up to 2.13e-6)
+and under "0,9,1" Polaris's right ascension (5.3e-8 and 3.7e-8). The
+upstream build fails all 144 (its Moshier speeds differences across the
+edge: the Moon 5.4 deg/day, Polaris's right ascension 2.3). G139 598
+checks in all; the upstream build fails 483 of its 502. G24
+`mosh_aberr_window_off`: under "0,9,1" at J2000 + 2 centuries, the Sun's
+longitude and latitude speeds 2^-12 and 2^-20 day after the edge, and
+Poseidon's 2^-9 and 2^-20 day before it, against one-sided five-point
+differences over 2^-6 day of their places on the instant's side, the
+largest: the Sun 2.23e-10 deg/day shipped (3.28e-5 before the fix),
+1.53e-5 compat; Poseidon 2.18e-10 (2.06e-6), 6.35e-6 compat. G155,
+G154, G42, G38, G74, G94, G46, G150, G84, G75 and G108 pass.
+
+Noticed, not fixed (not this entry's):
+- BEHAVIOUR. With the Moon files missing and the fallback allowed, a
+  Swiss request's Moon, read from Moshier at its light-time instant, has
+  within that light time (1.5e-5 day) after a window's edge its place of
+  date put into J2000 by the other side's model: under "0,9,1" after J2000
+  + 2 centuries its longitude 1.715e-4 deg off the side's model alone's
+  ("0,9,9"; on Moshier proper within 1e-12), its latitude 7.8e-6, its
+  speed 2.29e-2 deg/day off the places' rate (2.1e-2 after - 2).
+- RESIDUAL(1.9e-4 deg/day). A topocentric star's site, read at tjd -+
+  1e-5 day for the aberration rate (`fixstar_obs_rate()`'s
+  `swi_get_observer()`), reaches across a window's edge within 1e-5 day
+  of it, on every ephemeris: under "0,9,1" Polaris's topocentric right
+  ascension speed 8.2e-5 deg/day off the side's model alone's within
+  2^-17 day before J2000 + 2 centuries (latitude 1.9e-6), 1.9e-4 (5.5e-6)
+  before - 2.
 
 ## How these were found
 

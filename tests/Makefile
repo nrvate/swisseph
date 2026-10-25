@@ -1405,7 +1405,9 @@ check-woolard: woolard
 # 160); the joins of Owen 1990's pieces in the rates themselves, chosen and
 # under SEFLG_JPLHOR (UPSTREAM-BUGS 183); the Moshier Moon at the IAU 1976
 # window's edges (UPSTREAM-BUGS 184), and the elements of the equinox of
-# date there, seorbel.txt's and swe_calc_orbel()'s (UPSTREAM-BUGS 185).
+# date there, seorbel.txt's and swe_calc_orbel()'s (UPSTREAM-BUGS 185);
+# Moshier's apparent places there, whose aberration rate reads the Earth
+# on the instant's side (UPSTREAM-BUGS 246).
 check-framestep: framestep
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./framestep $(EPHE)
 
@@ -1525,9 +1527,11 @@ check-housejplhora: housejplhora
 # G155: the true node's and osculating apogee's speeds across Owen 1990's
 # joins with Owen 1990 chosen are the instant's piece's own rate, the frame
 # held at the piece (UPSTREAM-BUGS 200), and on Moshier across a short-term
-# precession window's edge the side's model's (UPSTREAM-BUGS 202); the
-# long-term sidereal time's table takes at Owen's joins each interval's own
-# piece's rate, its kink there the precession's (UPSTREAM-BUGS 200).
+# precession window's edge the side's model's (UPSTREAM-BUGS 202), the
+# same after any other call as in a fresh context, bit for bit
+# (UPSTREAM-BUGS 245); the long-term sidereal time's table takes at Owen's
+# joins each interval's own piece's rate, its kink there the precession's
+# (UPSTREAM-BUGS 200).
 check-framehold: framehold
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./framehold $(EPHE)
 

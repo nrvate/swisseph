@@ -4888,6 +4888,53 @@ static double nodaps_sid_rate_off(void)
                          - swe_difdeg2n(p[4][0][0], p[0][0][0])) / (12 * h));
 }
 
+/* UPSTREAM-BUGS 246: Moshier's aberration rate across a short-term
+ * precession window's edge. Under IAU 1976 and Vondrak ("0,9,1") at J2000
+ * + 2 centuries (the edge's instant the window's), far = 0 the apparent
+ * Sun 2^-12 and 2^-20 day after it, far = 1 Poseidon 2^-9 and 2^-20 day
+ * before it; the longitude's and latitude's speeds against a one-sided
+ * five-point difference over 2^-6 day of the body's places on the
+ * instant's side, the largest, deg/day. The shipped build read the Earth
+ * across the edge: the Moon difference's d'' for the Sun (3.28e-5), the
+ * acceleration's second difference for Poseidon (2.06e-6); upstream's
+ * Moshier speeds are off there by its own differences (1.5e-5, 6.3e-6).
+ * -1 if a call fails. */
+static double mosh_aberr_window_off(int far)
+{
+  const double ts = 2524595.0, h = far ? -ldexp(1, -6) : ldexp(1, -6);
+  const double dt[2] = { far ? -1.0 / 512 : 1.0 / 4096, far ? -1.0 / 1048576 : 1.0 / 1048576 };
+  const double o5[5] = { -25.0 / 12, 4, -3, 4.0 / 3, -1.0 / 4 };
+  const int ipl = far ? SE_POSEIDON : SE_SUN;
+  char mod[40] = "0,9,1,0,0,0,0,0", serr[256];
+  double r = 0;
+  int i, j, k;
+  swe_ctx *c = swe_ctx_new();
+  if (c == NULL)
+    return -1;
+  swe_set_ephe_path_r(c, EPHE);
+  swe_set_astro_models_r(c, mod, 0);
+  for (i = 0; i < 2 && r >= 0; i++) {
+    double t = ts + dt[i], x[6], p[5][6];
+    if (swe_calc_r(c, t, ipl, SEFLG_MOSEPH | SEFLG_SPEED, x, serr) < 0) {
+      r = -1;
+      break;
+    }
+    for (k = 0; k < 5; k++)
+      if (swe_calc_r(c, t + k * h, ipl, SEFLG_MOSEPH, p[k], serr) < 0)
+        r = -1;
+    for (j = 0; j < 2 && r >= 0; j++) {
+      double d = 0;
+      for (k = 0; k < 5; k++)
+        d += o5[k] * (j == 0 ? swe_difdeg2n(p[k][0], p[0][0]) : p[k][1] - p[0][1]);
+      d /= h;
+      if (fabs(x[3 + j] - d) > r)
+        r = fabs(x[3 + j] - d);
+    }
+  }
+  swe_ctx_free(c);
+  return r;
+}
+
 /* UPSTREAM-BUGS 187: the house speeds across a short-term precession
  * window's edge. Equal houses' Ascendant speed at Zurich on the Swiss files
  * under IAU 1976 and Vondrak ("0,9,1"), delta t 2^-11 day, at J2000 - 2
@@ -6515,7 +6562,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya;
+  double sidtform, nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, tnodespan, nodapsspan, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote, horfall, nodj2kwin, nodmmwin, nodsidr, ayafar, dtfar, precfar, housett, woolfar, nutorder, sidgauq, staraya, moshabsun, moshabfar;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6700,6 +6747,8 @@ int main(int argc, char **argv)
   nodj2kwin = nodaps_j2000_window_off();
   nodmmwin = nodaps_mosh_moon_window_off();
   nodsidr = nodaps_sid_rate_off();
+  moshabsun = mosh_aberr_window_off(0);
+  moshabfar = mosh_aberr_window_off(1);
   eclnonut = ecl_nut_nonut_stale();
   nut80jit = nut80_args_jitter();
   nut00b = nut00b_sofa_off();
@@ -8195,6 +8244,22 @@ int main(int argc, char **argv)
   else {
     printf("  sidereal points' rate  %.2e deg/day FAIL: expected %s\n",
            nodsidr, WANT_DEFECT ? "> 1e-5" : "< 1e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshabsun > 1e-6) : (moshabsun >= 0 && moshabsun < 5e-9))
+    printf("  Moshier Sun across a window %.2e deg/day OK\n", moshabsun);
+  else {
+    printf("  Moshier Sun across a window %.2e deg/day FAIL: expected %s\n",
+           moshabsun, WANT_DEFECT ? "> 1e-6" : "< 5e-9");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (moshabfar > 1e-6) : (moshabfar >= 0 && moshabfar < 5e-9))
+    printf("  Moshier far body across a window %.2e deg/day OK\n", moshabfar);
+  else {
+    printf("  Moshier far body across a window %.2e deg/day FAIL: expected %s\n",
+           moshabfar, WANT_DEFECT ? "> 1e-6" : "< 5e-9");
     bad++;
   }
 

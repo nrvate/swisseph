@@ -1,7 +1,8 @@
 /* framehold.c -- G155: the frame the true node's and osculating apogee's
  * speeds hold across a step of the precession is Owen 1990's piece too,
- * and Moshier's Moon's; and the long-term sidereal time's table takes at
- * each of Owen 1990's joins each interval's own piece's rate.
+ * and Moshier's Moon's, whatever was called before; and the long-term
+ * sidereal time's table takes at each of Owen 1990's joins each interval's
+ * own piece's rate.
  *
  * The defect (UPSTREAM-BUGS 200): since entry 183 the model of an instant
  * is, with Owen 1990, its piece's (five fits of 80 centuries joined at JD
@@ -30,6 +31,14 @@
  * epochs: under "0,9,1" at J2000 - 2 and + 2 centuries the node's 9.5e-8
  * and 1.05e-7 deg/day off the side's model alone's, the apogee's 5.0e-6 and
  * 1.4e-6, the distances 2.5e-11 AU/day.
+ *
+ * The defect (UPSTREAM-BUGS 245): under that hold swi_moshmoon() answered
+ * from its save of the Moon Moshier's Earth was made with at the epoch,
+ * unheld, which a swe_calc() of the Moon, the Earth, the Sun or a planet
+ * leaves there: under "0,9,1" at J2000 - 2 centuries + 2^-8 day, after one
+ * at that instant - 1/32 day, across the edge, the node's speed 1.66e-3
+ * deg/day off a fresh context's, the apogee's 3.42e-3 (at + 2 centuries
+ * 2.45e-3 and 3.71e-3), and 1.4e-11 from an epoch on tjd's side.
  *
  * Check (a): "0,10", the Swiss files, at the four joins' 105 instants
  * (G139's: every 1/16 day over -+ 2 days, and the join -+ 2^-k, k = 7..26):
@@ -64,16 +73,32 @@
  * for 2e-6"/cy). It calls swi_precess() and is left out of the upstream
  * build.
  *
+ * Check (d): the order of the calls. Moshier, "0,9,1" at J2000 -+ 2
+ * centuries, the true node and the osculating apogee with SEFLG_SPEED,
+ * ecliptic and equatorial of date, at the edge -+ 2^-8 and -+ 2^-5 day,
+ * after a swe_calc() with SEFLG_SPEED of the Moon, the heliocentric Earth,
+ * the Sun, the true node or the osculating apogee at each epoch of the
+ * speed's stencil (tjd + k / 32, k = -2..2), and that body there after the
+ * point, each against the same call in a fresh context: 40 checks (edge,
+ * point, other body, before or after), each over its 40 answers, bit for
+ * bit.
+ *
  * Measured after the fix: (a) within 1.4e-10 deg/day for the node, 1.1e-9
  * for the apogee, 2.2e-14 AU/day (the reference's own; against the side's
  * piece alone, a scratch build forcing the piece, the speeds are its own
  * to 1.4e-13 deg/day); (b) within 3.2e-10 and 8.2e-9, the reference's own
  * (4.5e-11 and 6.7e-9 within 1/16 day), 1.4e-13 AU/day; (c) within
- * 3.9e-7"/cy. Before the fix 24 of the 52 fail: 12 of (a), the node and
+ * 3.9e-7"/cy; (d) every answer bit for bit. Before the fixes of bugs 200
+ * and 202, 24 of the first 52 fail: 12 of (a), the node and
  * apogee within 1/32 day of the joins at -10000, +6000 and +14000 (3.2e-6
  * to 1.1e-5 and 1.5e-7 to 9.3e-7 deg/day), 8 of (b), all within 1/16 day
  * (9.2e-8 to 1.05e-7 and 1.4e-6 to 5.0e-6), and all 4 of (c) (the kink
- * 0). The upstream build fails all 48 of (a) and (b): its speeds are
+ * 0). Before the fix of bug 245, 12 of (d)'s 40 fail: the Moon, the Earth
+ * and the Sun before either point at both edges, 32 of the 40 answers
+ * each (all but those at tjd's own epoch), by up to 1.66e-3 and 3.42e-3
+ * deg/day at - 2 centuries, 2.45e-3 and 3.71e-3 at + 2. The upstream
+ * build passes (d), its answers independent of the order (no hold, no
+ * saved Moon of the Earth), and fails all 48 of (a) and (b): its speeds are
  * differences over 1e-4 day (Moshier's over 0.1 day) across the join or
  * edge, the node 4.3e-4 to 1.5e-3 deg/day off within 1/32 day of the
  * three joins that step and Moshier's 0.12 within 1/16 day of the edges,
@@ -284,6 +309,111 @@ static int check_b(const char *ephe, int *n)
   return bad;
 }
 
+/* a context under "0,9,1" for check (d) */
+static swe_ctx *ctx_091(const char *ephe)
+{
+  char mod[40] = "0,9,1,0,0,0,0,0";
+  swe_ctx *c = swe_ctx_new();
+  swe_set_ephe_path_r(c, ephe);
+  swe_set_astro_models_r(c, mod, 0);
+  return c;
+}
+
+/* the largest difference of two answers, 0 exactly when bit for bit equal */
+static double ans_off(const double *a, const double *b)
+{
+  double w = 0;
+  int j;
+  for (j = 0; j < 6; j++)
+    if (a[j] != b[j]) {
+      double e = (j == 0) ? fabs(swe_difdeg2n(a[j], b[j])) : fabs(a[j] - b[j]);
+      w = (e > w) ? e : w;
+      if (w == 0)
+        w = 1e-300;	/* differing bits of the same value, -0 and 0 */
+    }
+  return w;
+}
+
+/* check (d): the order of the calls. Moshier under "0,9,1" at J2000 -+ 2
+ * centuries, the true node and the osculating apogee with SEFLG_SPEED,
+ * ecliptic and equatorial of date, at the edge -+ 2^-8 and -+ 2^-5 day:
+ * after a swe_calc() with SEFLG_SPEED of the Moon, the Earth
+ * (heliocentric), the Sun, the true node or the osculating apogee at each
+ * epoch of the speed's stencil, tjd + k / 32 for k = -2..2 (before),
+ * against the point in a fresh context; and that other body there after
+ * the point (after), against it in a fresh context: bit for bit, each
+ * edge, point, other body and order over the 40 instants and frames;
+ * returns the failures, *n the checks. */
+static int check_d(const char *ephe, int *n)
+{
+  static const double TSD[2] = { 2378495.0, 2524595.0 };
+  static const double dt[4] = { -1.0 / 32, -1.0 / 256, 1.0 / 256, 1.0 / 32 };
+  static const int OB[5] = { SE_MOON, SE_EARTH, SE_SUN, SE_TRUE_NODE, SE_OSCU_APOG };
+  static const int32 OF[5] = { 0, SEFLG_HELCTR, 0, 0, 0 };
+  static const char *ON[5] = { "Moon", "Earth", "Sun", "true node", "osc. apogee" };
+  static const char *DN[2] = { "before", "after" };
+  int e, b, o, i, f, k, q, bad = 0;
+  for (e = 0; e < 2; e++) {
+    printf("  (d) Moshier, models 0,9,1, edge JD %.1f: answers of 40 differing from a fresh"
+           " context's (the largest), the other body called before / after\n", TSD[e]);
+    for (b = 0; b < 2; b++)
+      for (o = 0; o < 5; o++) {
+        int nd[2] = { 0, 0 }, ne = 0;
+        double wd[2] = { 0, 0 };
+        for (i = 0; i < 4; i++)
+          for (f = 0; f < 2; f++) {
+            double tjd = TSD[e] + dt[i], xf[6];
+            int32 fl = SEFLG_MOSEPH | SEFLG_SPEED | (f ? SEFLG_EQUATORIAL : 0);
+            int32 fo = SEFLG_MOSEPH | SEFLG_SPEED | OF[o];
+            char serr[256];
+            swe_ctx *c = ctx_091(ephe);
+            if ((swe_calc_r(c, tjd, BI[b], fl, xf, serr) & EPHMASK) != SEFLG_MOSEPH)
+              ne++;
+            swe_ctx_free(c);
+            for (k = -2; k <= 2; k++) {
+              double tp = tjd + k / 32.0, x[6], y[6], yf[6], w;
+              c = ctx_091(ephe);
+              if ((swe_calc_r(c, tp, OB[o], fo, yf, serr) & EPHMASK) != SEFLG_MOSEPH)
+                ne++;
+              swe_ctx_free(c);
+              for (q = 0; q < 2; q++) {
+                c = ctx_091(ephe);
+                if (q == 0) {
+                  swe_calc_r(c, tp, OB[o], fo, y, serr);
+                  swe_calc_r(c, tjd, BI[b], fl, x, serr);
+                  w = ans_off(x, xf);
+                } else {
+                  swe_calc_r(c, tjd, BI[b], fl, x, serr);
+                  swe_calc_r(c, tp, OB[o], fo, y, serr);
+                  w = ans_off(y, yf);
+                }
+                swe_ctx_free(c);
+                if (w != 0) {
+                  nd[q]++;
+                  wd[q] = (w > wd[q]) ? w : wd[q];
+                }
+              }
+            }
+          }
+        if (ne) {
+          printf("    ERROR %d calls not answered by Moshier\n", ne);
+          bad++;
+        }
+        printf("    %-12s %-12s %2d (%.2e)  %2d (%.2e)\n", BN[b], ON[o], nd[0], wd[0], nd[1],
+               wd[1]);
+        for (q = 0; q < 2; q++) {
+          (*n)++;
+          if (nd[q]) {
+            bad++;
+            printf("    FAIL edge JD %.1f, %s with the %s %s: %d of 40 differ, by up to %.2e\n",
+                   TSD[e], BN[b], ON[o], DN[q], nd[q], wd[q]);
+          }
+        }
+      }
+  }
+  return bad;
+}
+
 #ifndef SWE_UPSTREAM_COMPAT
 /* the rotation rate of the mean equinox about the mean pole of date,
  * -(dM/dt M^T)[1][0] for M = J2000 -> mean of date (the long-term sidereal
@@ -374,6 +504,7 @@ int main(int argc, char **argv)
   printf("G155: the frame hold keeps Owen 1990's piece and Moshier's Moon's frame\n");
   bad += check_a(argv[1], &n);
   bad += check_b(argv[1], &n);
+  bad += check_d(argv[1], &n);
 #ifndef SWE_UPSTREAM_COMPAT
   bad += check_c(&n);
 #endif

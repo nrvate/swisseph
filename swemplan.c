@@ -1125,22 +1125,34 @@ static void embofs_mosh(swe_ctx *ctx, double tjd, double *xemb)
 void swi_mosh_earth_accel(swe_ctx *ctx, double tjd, const double *x0, double *acc)
 {
   const double h = 1.0 / 256;
-  double xp[3], xm[3], xx[6];
+  double x[3][3], xx[6];
   double seps2000 = ctx->oec2000.seps, ceps2000 = ctx->oec2000.ceps;
-  int i, k;
-  for (k = 0; k < 2; k++) {
-    double *x = k ? xm : xp;
-    double t = tjd + (k ? -h : h), mm[6];
+  int i, k, side;
+  /* Upstream bug 246: the Earth's Moon is of date, put into J2000 by the
+   * precession at its instant (moon_short()), and within h of a step of
+   * the frame's models (a short-term window's edge, Owen 1990's joins;
+   * swi_frame_step_side()) the read across it was of the other model: with
+   * "0,9,1" at J2000 -+ 2 centuries the acceleration 6.5e-6 AU/day^2 off,
+   * 2.1% of a, a far body's speed 2.06e-6 deg/day (Poseidon). There the
+   * one-sided second difference on tjd's side, (2 x0 - 5 x1 + 4 x2 - x3) /
+   * h^2 (truncation 11/12 h^2 x^(4), 5e-9 of a), as entry 184 takes the
+   * Moon's frame turning there. */
+  side = swi_frame_step_side(ctx, tjd, h, 0, SWI_FRAME_PREC);
+  if (side == 0)
+    side = swi_frame_step_side(ctx, tjd, h, ctx->oec.epsflag, SWI_FRAME_EPS);
+  for (k = 0; k < (side ? 3 : 2); k++) {
+    double t = side ? tjd + side * (k + 1) * h : tjd + (k ? -h : h), mm[6];
     swi_moshplan2(ctx, t, pnoint2msh[SEI_EMB], xx);
     swi_polcart(xx, xx);
     swi_coortrf2(xx, xx, -seps2000, ceps2000);
     /* bug 191: with the Moon x0 was made with, carried to t */
     mosh_earth_moon(ctx, t, FALSE, mm);
     for (i = 0; i <= 2; i++)
-      x[i] = xx[i] - mm[i] / (EARTH_MOON_MRAT + 1.0);
+      x[k][i] = xx[i] - mm[i] / (EARTH_MOON_MRAT + 1.0);
   }
   for (i = 0; i <= 2; i++)
-    acc[i] = (xp[i] - 2 * x0[i] + xm[i]) / (h * h);
+    acc[i] = side ? (2 * x0[i] - 5 * x[0][i] + 4 * x[1][i] - x[2][i]) / (h * h)
+                  : (x[0][i] - 2 * x0[i] + x[1][i]) / (h * h);
 }
 
 /* Upstream bug 191: the geocentric Moon Moshier's Earth is made with at
@@ -1216,8 +1228,24 @@ static AS_BOOL mosh_dmoon_da(swe_ctx *ctx)
   int i;
   if (ctx->mosh_dmoon.have_da)
     return TRUE;
+  /* Upstream bug 246: t - h reached across a step of the frame's models
+   * (a short-term window's edge, Owen 1990's joins; swi_frame_step_side()),
+   * where the full series' place is of the other model's precession and
+   * obliquity and the short series' of the other precession and t's
+   * obliquity (ctx->oec): with "0,9,1" within 2^-11 day after J2000 + 2
+   * centuries d'' was 8.2e-3 AU/day^2 off, the Earth's acceleration 1.0e-4
+   * of its 3.0e-4, and the latitude speeds of the apparent Sun, planets and
+   * stars 3.28e-5 deg/day off (6.96e-7 after - 2). There t + h, on t's
+   * side, as entry 184 takes the Moon's frame turning there. */
+  {
+    int side = swi_frame_step_side(ctx, t, h, 0, SWI_FRAME_PREC);
+    if (side == 0)
+      side = swi_frame_step_side(ctx, t, h, ctx->oec.epsflag, SWI_FRAME_EPS);
+    if (side > 0)
+      hs = h;
+  }
   if (swi_moshmoon_place(ctx, t + hs, x) != OK) {
-    hs = h;
+    hs = -hs;
     if (swi_moshmoon_place(ctx, t + hs, x) != OK)
       return FALSE;
   }
