@@ -5419,6 +5419,51 @@ static double moshmoon_setting_ret(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 205 (slot 0): the Moon files missing (a directory of
+ * links to EPHE's others), the fallback allowed, in one context Mars at
+ * 1500 Jan 18 twice, the second from the save area: 1 if that answer says
+ * "using Moshier eph. for moon" in serr, as a fresh context's does; 0
+ * compat (and shipped before the fix).
+ * UPSTREAM-BUGS 227 (slot 1): in one context the Moon and then the Sun
+ * without SEFLG_SPEED, in another the Moon and then Mars with
+ * SEFLG_TRUEPOS (the Moon's slot): how many of the two second answers say
+ * so; 0 compat (and shipped before the fix), 2 shipped. */
+static double moshmoon_hit_note(int slot)
+{
+  char dir[] = "/tmp/compatmnXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double x[6];
+  char serr[AS_MAXCH];
+  struct dirent *e;
+  DIR *d;
+  swe_ctx *c;
+  int k, n = 0;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return 1e9;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strncmp(e->d_name, "semo", 4) != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  for (k = 0; k < (slot ? 2 : 1); k++)
+    if ((c = swe_ctx_new()) != NULL) {
+      int ipl = slot ? (k ? SE_MARS : SE_SUN) : SE_MARS;
+      int32 fl = SEFLG_SWIEPH | (slot ? (k ? SEFLG_TRUEPOS : 0) : SEFLG_SPEED);
+      swe_set_ephe_path_r(c, dir);
+      swe_set_ephe_fallback_r(c, 1);
+      swe_calc_r(c, 2268936.5, slot ? SE_MOON : SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+      *serr = '\0';
+      if (swe_calc_r(c, 2268936.5, ipl, fl, x, serr) >= 0
+          && strstr(serr, "using Moshier eph. for moon") != NULL)
+        n++;
+      swe_ctx_free(c);
+    }
+  rm_dir(dir);
+  return n;
+}
+
 /* UPSTREAM-BUGS 198: Aldebaran by swe_fixstar2() with SEFLG_JPLEPH |
  * SEFLG_SPEED on de200.eph at 1500, outside the file's span, the fallback
  * allowed, its return: the star functions returned the JPL read's
@@ -5933,7 +5978,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm, housewin, nodewin, mmsetting, starjplb, eclnutfar, orbmemb, nodstopo, mosheml, househora, nodowen, nodmoshwin, starspan, fictedge, nodosc5, nodoscwin, eclnonut, nut80jit, nut00b, housefar, sidtfar, nodframe, sidhor, makrcusp, nandate, nansearch, mmhitnote, mmslotnote;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -6077,6 +6122,8 @@ int main(int argc, char **argv)
   starspan = star_span_edge_ret();
   fictedge = fict_lt_edge_off();
   nodframe = nodaps_frame_off();
+  mmhitnote = moshmoon_hit_note(0);
+  mmslotnote = moshmoon_hit_note(1);
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -6907,6 +6954,22 @@ int main(int argc, char **argv)
   else {
     printf("  semo missing, then strict, saved %.0f FAIL: expected %s\n",
            mmsetting, WANT_DEFECT ? "258" : "-1");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (mmhitnote == 0) : (mmhitnote == 1))
+    printf("  semo missing, saved answer noted %.0f OK\n", mmhitnote);
+  else {
+    printf("  semo missing, saved answer noted %.0f FAIL: expected %s\n",
+           mmhitnote, WANT_DEFECT ? "0" : "1");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (mmslotnote == 0) : (mmslotnote == 2))
+    printf("  semo missing, after the Moon noted %.0f OK\n", mmslotnote);
+  else {
+    printf("  semo missing, after the Moon noted %.0f FAIL: expected %s\n",
+           mmslotnote, WANT_DEFECT ? "0" : "2");
     bad++;
   }
 

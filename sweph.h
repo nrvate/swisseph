@@ -1532,6 +1532,10 @@ struct epsilon {
  *     1.05e-7 and 5.0e-6 deg/day with IAU 1976 under Vondrak (the compat
  *     build's are upstream's, over 0.1 day: 5.5e-5 there) (UPSTREAM-BUGS
  *     202, G155, G24)
+ *   - with the Moon files missing and the fallback allowed, a second
+ *     answer at the instant from the save area without the computed
+ *     answer's "using Moshier eph. for moon" (UPSTREAM-BUGS 205, G117,
+ *     G24)
  *   - (nothing for UPSTREAM-BUGS 206: the star's reads of the Earth 2^-9
  *     day either side of tjd, which left the span within that of its edge,
  *     are this fork's (entry 76); the compat build reads it at tjd - 1e-5
@@ -1612,6 +1616,13 @@ struct epsilon {
  *     -+7.8e11 days, -+inf and NaN before a file is named, and
  *     swe_revjul()'s casts INT_MIN, as on x86-64, for a value no int
  *     holds, are in both builds, undefined behaviour's fix; G160)
+ *   - with the Moon files missing, after a Moon request the Moon's slot
+ *     labelled Swiss: a later read at the instant takes that Moshier Moon
+ *     without the file search's note (allowed: the Sun after the Moon 2
+ *     with an empty serr), and the light time's Earth its pull (Cupido's
+ *     speed 1.2e-8 deg/day off a fresh call's at J2000); the strict
+ *     refusal is this fork's (entry 120), which the compat build has not
+ *     (UPSTREAM-BUGS 227, G117, G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1838,6 +1849,9 @@ struct save_positions {
    * passed bug 120's strict test because the fallback was allowed: a hit
    * takes the test again (UPSTREAM-BUGS 197) */
   AS_BOOL moshmoon;
+  /* its computation read Moshier's Moon, so its serr says so: a hit with
+   * a message is computed again (UPSTREAM-BUGS 205) */
+  AS_BOOL moshnote;
 #endif
 };
 

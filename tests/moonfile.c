@@ -61,7 +61,27 @@
  *      default context computes Mars, the Sun and swe_calc_ut()'s Jupiter
  *      with the fallback allowed, the main thread calls
  *      swe_set_ephe_fallback(0), the thread asks again (refused, as a fresh
- *      strict context), then (1) and again (a fresh allowing context's).
+ *      strict context), then (1) and again (a fresh allowing context's);
+ *  (h) UPSTREAM-BUGS 205: each call of (a), (b), rgSet and rgSlot (more
+ *      that the save area or the Moon's slot answers: the Moon without
+ *      speed and topocentric, Mars with SEFLG_TRUEPOS, Mars heliocentric
+ *      and Jupiter barycentric with their resolved flags, the Sun and
+ *      Aldebaran without speed, swe_nod_aps() of Mars without speed, the
+ *      orbit about the Earth with SEFLG_TRUEPOS), both settings, asked
+ *      again in one context after itself with a message and after itself
+ *      without one: return, place and message a fresh context's. Before,
+ *      the save area answered with an empty serr where the computed answer
+ *      carries the file search's "not found" and "using Moshier eph. for
+ *      moon". (e), (f) and (g) compare the message too;
+ *  (i) UPSTREAM-BUGS 227: the same calls after the Moon with SEFLG_SPEED,
+ *      and after the Moon and then the Sun without it. Before, a Moon
+ *      request left its slot labelled Swiss, so a later read at the
+ *      instant took that Moshier Moon without the search (its message
+ *      lost), and an Earth made again from it without bug 120's mark:
+ *      strict, after the Moon and the Sun (both refused) the Moon itself
+ *      answered 258 and Aldebaran without speed 2; and the light time's
+ *      Earth took the Moon's pull from it (speeds 2.3e-10 to 6.6e-9
+ *      deg/day off).
  * A refusal is ret < 0 with "Moshier" in serr (this entry's message, or
  * the true node's own downgrade). Measured: 472 checks, none fail; (c)'s
  * Moon 1.5e-11 deg off SEFLG_MOSEPH's, its planets 3.4e-8 deg off the
@@ -78,6 +98,16 @@
  * 258 for Mars where a fresh strict context gives -1), and (g)'s three
  * strict rows. The SWE_UPSTREAM_COMPAT build fails 308, 96 of them new
  * ((f)'s and (g)'s strict rows but the true node's: it has no bug 120).
+ * (h) and (i) are 1184 of the 1916 rows. The build before bugs 205's and
+ * 227's fix fails 368: 160 of (h) (144 allowed, every call the area
+ * answers; 16 strict, the resolved heliocentric and barycentric hits),
+ * 188 of (i) (152 allowed; 36 strict: the Moon answered, 258, and
+ * Aldebaran without speed, 2, the stars with SEFLG_SPEED refused with the
+ * file search's message, the barycentric Sun and heliocentric Aldebaran
+ * without the note), and for the message 8 of (e) (the SEFLG_TOPOCTR hit)
+ * and 12 of (f) (the Moon after a strict Moon, from the slot, 227). The
+ * SWE_UPSTREAM_COMPAT build fails 824: those 308, 52 of (f) for the
+ * message, 272 of (h) and 192 of (i).
  * Run as
  *   moonfile EPHEDIR
  */
@@ -93,7 +123,7 @@
 
 #define EPHMASK (SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH)
 
-enum { CALC, CALC_UT, STAR2, STAR, ORBEL_E, ORBEL_S };
+enum { CALC, CALC_UT, STAR2, STAR, ORBEL_E, ORBEL_S, NODAPS };
 /* moon: 1 the Moon, its place Moshier's with the fallback; 2 the Moon, its
  * flag only (heliocentric: the fallback's place is the Moshier Moon with
  * the files' Earth, G108 (5), not Moshier's own heliocentric Moon);
@@ -138,6 +168,21 @@ static const struct { const char *sz; int kind, ipl; int32 fl; } rgSet[] = {
    SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_NOABERR | SEFLG_NOGDEFL | SEFLG_SPEED},
 };
 #define NSET ((int) (sizeof rgSet / sizeof rgSet[0]))
+/* (h), (i): more calls bug 205's save area and bug 227's slot reach */
+static const struct { const char *sz; int kind, ipl; int32 fl; } rgSlot[] = {
+  {"Moon, no speed", CALC, SE_MOON, SEFLG_SWIEPH},
+  {"Moon, topocentric", CALC, SE_MOON, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_SPEED},
+  {"Mars, SEFLG_TRUEPOS", CALC, SE_MARS, SEFLG_SWIEPH | SEFLG_TRUEPOS},
+  {"Mars, heliocentric, resolved", CALC, SE_MARS,
+   SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_NOABERR | SEFLG_NOGDEFL | SEFLG_SPEED},
+  {"Jupiter, barycentric, resolved", CALC, SE_JUPITER,
+   SEFLG_SWIEPH | SEFLG_BARYCTR | SEFLG_NOABERR | SEFLG_NOGDEFL | SEFLG_SPEED},
+  {"Sun, no speed", CALC, SE_SUN, SEFLG_SWIEPH},
+  {"Aldebaran, no speed", STAR2, 0, SEFLG_SWIEPH},
+  {"swe_nod_aps() of Mars, no speed", NODAPS, SE_MARS, SEFLG_SWIEPH},
+  {"orbit about the Earth, TRUEPOS", ORBEL_E, 0, SEFLG_SWIEPH | SEFLG_TRUEPOS},
+};
+#define NSLOT ((int) (sizeof rgSlot / sizeof rgSlot[0]))
 /* (e): SEFLG_TOPOCTR with another centre, then SEFLG_TOPOCTR (bug 194) */
 static const struct { const char *sz; int ipl; int32 ctr; } rgComb[] = {
   {"Mars, TOPOCTR | HELCTR, then TOPOCTR", SE_MARS, SEFLG_HELCTR},
@@ -161,26 +206,35 @@ static swe_ctx *open_ctx(const char *dir, int fallback)
   return c;
 }
 
-static struct ans ask(swe_ctx *c, int kind, int ipl, int32 fl, double jd)
+/* nomsg: the call takes no message (serr NULL), (h) */
+static struct ans ask2(swe_ctx *c, int kind, int ipl, int32 fl, double jd, int nomsg)
 {
   static const double ele[6] = {50, 0.00684, 0.1587, 8, 136, 2.5};
   static const double els[6] = {10, 0.387, 0.2056, 29, 48, 7.0};
   struct ans a;
-  char star[64] = "Aldebaran";
+  char star[64] = "Aldebaran", *se;
+  double xs[6], xp[6], xa[6];
   memset(&a, 0, sizeof a);
+  se = nomsg ? NULL : a.serr;
   if (c == NULL) {	/* the default context, (g) */
-    a.r = kind == CALC_UT ? swe_calc_ut(jd, ipl, fl, a.x, a.serr) : swe_calc(jd, ipl, fl, a.x, a.serr);
+    a.r = kind == CALC_UT ? swe_calc_ut(jd, ipl, fl, a.x, se) : swe_calc(jd, ipl, fl, a.x, se);
     return a;
   }
   switch (kind) {
-    case CALC: a.r = swe_calc_r(c, jd, ipl, fl, a.x, a.serr); break;
-    case CALC_UT: a.r = swe_calc_ut_r(c, jd, ipl, fl, a.x, a.serr); break;
-    case STAR2: a.r = swe_fixstar2_r(c, star, jd, fl, a.x, a.serr); break;
-    case STAR: a.r = swe_fixstar_r(c, star, jd, fl, a.x, a.serr); break;
-    case ORBEL_E: a.r = swe_calc_orbel_r(c, jd, ele, SE_EARTH, SE_ORBEL_EQ_J2000, 0, fl, a.x, a.serr); break;
-    default: a.r = swe_calc_orbel_r(c, jd, els, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl, a.x, a.serr); break;
+    case CALC: a.r = swe_calc_r(c, jd, ipl, fl, a.x, se); break;
+    case CALC_UT: a.r = swe_calc_ut_r(c, jd, ipl, fl, a.x, se); break;
+    case STAR2: a.r = swe_fixstar2_r(c, star, jd, fl, a.x, se); break;
+    case STAR: a.r = swe_fixstar_r(c, star, jd, fl, a.x, se); break;
+    case ORBEL_E: a.r = swe_calc_orbel_r(c, jd, ele, SE_EARTH, SE_ORBEL_EQ_J2000, 0, fl, a.x, se); break;
+    case NODAPS: a.r = swe_nod_aps_r(c, jd, ipl, fl, SE_NODBIT_OSCU, a.x, xs, xp, xa, se); break;
+    default: a.r = swe_calc_orbel_r(c, jd, els, SE_SUN, SE_ORBEL_EQ_J2000, 0, fl, a.x, se); break;
   }
   return a;
+}
+
+static struct ans ask(swe_ctx *c, int kind, int ipl, int32 fl, double jd)
+{
+  return ask2(c, kind, ipl, fl, jd, 0);
 }
 
 static struct ans ask_fresh(const char *dir, int fallback, int kind, int ipl, int32 fl, double jd)
@@ -209,6 +263,12 @@ static int refused(const struct ans *a)
 static int same(const struct ans *a, const struct ans *b)
 {
   return a->r == b->r && memcmp(a->x, b->x, sizeof a->x) == 0;
+}
+
+/* and the message, bug 205 */
+static int same_all(const struct ans *a, const struct ans *b)
+{
+  return same(a, b) && strcmp(a->serr, b->serr) == 0;
 }
 
 /* a directory of links to every file of ephe but semo_12.se1 */
@@ -247,6 +307,22 @@ static void unbuild(const char *dir)
     }
   closedir(d);
   rmdir(dir);
+}
+
+/* (h), (i): the r-th call of rgDep, rgInd, rgSet and rgSlot */
+#define NALL (NDEP + NIND + NSET + NSLOT)
+static void call_at(int r, int *kind, int *ipl, int32 *fl, const char **sz)
+{
+  if (r < NDEP) {
+    *kind = rgDep[r].kind; *ipl = rgDep[r].ipl; *fl = rgDep[r].fl; *sz = rgDep[r].sz;
+  } else if ((r -= NDEP) < NIND) {
+    *kind = rgInd[r].kind; *ipl = rgInd[r].ipl; *fl = rgInd[r].fl; *sz = rgInd[r].sz;
+  } else if ((r -= NIND) < NSET) {
+    *kind = rgSet[r].kind; *ipl = rgSet[r].ipl; *fl = rgSet[r].fl; *sz = rgSet[r].sz;
+  } else {
+    r -= NSET;
+    *kind = rgSlot[r].kind; *ipl = rgSlot[r].ipl; *fl = rgSlot[r].fl; *sz = rgSlot[r].sz;
+  }
 }
 
 /* (g): a second thread's default context, the main thread's setting */
@@ -298,7 +374,7 @@ static void shared(const char *dir, double jd)
   for (ph = 0; ph < 3; ph++)
     for (k = 0; k < NTHR; k++) {
       struct ans ref = ask_fresh(dir, fb[ph], rgThr[k].kind, rgThr[k].ipl, SEFLG_SWIEPH | SEFLG_SPEED, jd);
-      check(same(&j.a[ph][k], &ref) && (fb[ph] ? j.a[ph][k].r >= 0 : refused(&j.a[ph][k])),
+      check(same_all(&j.a[ph][k], &ref) && (fb[ph] ? j.a[ph][k].r >= 0 : refused(&j.a[ph][k])),
             fb[ph] ? "g allowed" : "g strict", rgThr[k].sz, jd, &j.a[ph][k],
             "not a fresh context's with the setting");
     }
@@ -386,7 +462,7 @@ int main(int argc, char **argv)
       t = ask(w, CALC, rgComb[k % NCOMB].ipl, fl, jd);
       swe_ctx_free(w);
       ref = ask_fresh(dir, fb, CALC, rgComb[k % NCOMB].ipl, fl, jd);
-      check(same(&t, &ref) && (fb ? t.r >= 0 : refused(&t)) && (fb ? a.r >= 0 : refused(&a)),
+      check(same_all(&t, &ref) && (fb ? t.r >= 0 : refused(&t)) && (fb ? a.r >= 0 : refused(&a)),
             fb ? "e fallback" : "e", rgComb[k % NCOMB].sz, jd, &t,
             "SEFLG_TOPOCTR after it not as in a fresh context");
     }
@@ -405,11 +481,38 @@ int main(int argc, char **argv)
       a = ask(w, kind, ipl, fl, jd);
       swe_ctx_free(w);
       ref = ask_fresh(dir, fb0, kind, ipl, fl, jd);
-      check(same(&a, &ref) && (fb0 || !dep || refused(&a)), fb0 ? "f, then allowed" : "f, then strict",
+      check(same_all(&a, &ref) && (fb0 || !dep || refused(&a)), fb0 ? "f, then allowed" : "f, then strict",
             sz, jd, &a, "not a fresh context's with the setting");
     }
     /* (g) bug 197: the setting adopted from another thread */
     shared(dir, jd);
+    /* (h) bug 205: the call again in one context, after itself with a
+     * message and after itself without one; (i) bug 227: after the Moon
+     * (its slot), and after the Moon and the Sun without SEFLG_SPEED; as
+     * a fresh context gives it, the message too; both settings */
+    for (k = 0; k < 2 * NALL; k++) {
+      static const char *rgV[4] = {"h, after itself", "h, after itself without serr",
+                                   "i, after the Moon", "i, after the Moon and the Sun"};
+      int fb = k < NALL, kind, ipl, v;
+      int32 fl;
+      const char *sz;
+      struct ans ref, a;
+      call_at(k % NALL, &kind, &ipl, &fl, &sz);
+      ref = ask_fresh(dir, fb, kind, ipl, fl, jd);
+      for (v = 0; v < 4; v++) {
+        w = open_ctx(dir, fb);
+        if (v < 2)
+          (void) ask2(w, kind, ipl, fl, jd, v);
+        else
+          (void) ask(w, CALC, SE_MOON, SEFLG_SWIEPH | SEFLG_SPEED, jd);
+        if (v == 3)
+          (void) ask(w, CALC, SE_SUN, SEFLG_SWIEPH, jd);
+        a = ask(w, kind, ipl, fl, jd);
+        swe_ctx_free(w);
+        check(same_all(&a, &ref), rgV[v], sz, jd, &a,
+              fb ? "not a fresh context's, allowed" : "not a fresh context's, strict");
+      }
+    }
   }
   unbuild(dir);
   printf("  rows %d, failed %d; fallback: the Moon %.2e deg off SEFLG_MOSEPH's, the others %.2e deg off the files'\n",

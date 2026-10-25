@@ -234,6 +234,7 @@ worst were in code that had never executed even once.
 | 203 | The sidereal houses' ayanamsa takes its nutation with the caller's flags, and with SEFLG_JPLHOR_APPROX under `SEMOD_JPLHORA_3` (SEFLG_JPLHOR fallen to it too) that nutation steps at 1962 Jan 20 (entry 153), while the houses' side test (entry 187) looked at the precession's and obliquity's models alone: the ayanamsa's difference 1/64 day either side reached across, every sidereal cusp and ascmc speed 6.38e-4 deg/day off its cusps' rate within 1/64 day of the step, every house system, Lahiri, True Citra, the ecliptic of date, de200 and the Swiss files alike | Correctness | `swehouse.c` |
 | 200 | Owen 1990's joins are not held where the model of the instant is taken whole: the true node's and osculating apogee's frame hold (entry 186) took Owen 1990, not the instant's piece (entry 183), so with Owen 1990 chosen their speeds within 1/32 day of the joins at -10000, +6000 and +14000 are 3.4e-6 to 1.1e-5 deg/day off (the apogee's 1.5e-7 to 9.3e-7); and the long-term sidereal time's table (entries 29, 181) gives its nodes half a day from the joins the mean of both pieces' rates, the sidereal time 2.8e-9 deg off the per-piece cubic about +14000 | Correctness | `swephlib.c`, `sweph.c`, `sweph.h` |
 | 202 | `lunar_osc_elem()` leaves Moshier's Moon out of entry 186's frame hold, but its velocity carries the frame's turning (entries 95, 184), which `swi_plan_for_osc_elem()` does not take off, so its true node and osculating apogee move with the precession model's rates: within 1/16 day of a short-term window's edge, with IAU 1976 under Vondrak at J2000 -+ 2 centuries, the node's speed 9.5e-8 and 1.05e-7 deg/day off the side's model's, the apogee's 5.0e-6 and 1.4e-6 | Correctness | `sweph.c` |
+| 205 | With the Moon files missing and the fallback allowed, a second answer at the instant from the save area returns an empty serr where the computed answer says "using Moshier eph. for moon" after the file search's message: Mars at 1500 asked twice, every call the area answers, and under both settings Mars heliocentric and Jupiter barycentric with their resolved flags | Correctness (behaviour) | `sweph.c`, `sweph.h` |
 | 206 | Within 2^-9 day of an ephemeris's edge a star with SEFLG_SPEED is refused or answered with Moshier mixed in, where it answers without the flag: `fixstar_obs_rate()` reads the Earth 2^-9 day either side for the aberration's rate. On de200.eph Aldebaran -1 "outside JPL eph. range" 2^-10 day inside either end (1 without the flag; Mars 257 at the end); with the Swiss files of 1800-2400 alone the downgrade's refusal (strict) or Moshier's heliocentric velocity in the acceleration, 6.6e-4 deg/day on the longitude speed (allowed); at a Moon file's end the same through the Moon | Correctness (behaviour) | `sweph.c` |
 | 208 | A fictitious body or `swe_calc_orbel()`'s orbit whose light time leaves the Swiss files' span is answered from Moshier's Sun, 0, taken for the barycentric one, under either setting: the light-time loop's `main_planet_bary()` falls to Moshier on its own and answers OK. Cupido at JD 2378496.6 with the files of 1800-2400 alone 258, 4.33e-3 deg off the complete directory's and the Moshier request's, strict too | Correctness (behaviour) | `sweph.c` |
 | 199 | `swe_nod_aps()`'s osculating nodes' and apsides' speeds put each epoch of their difference into the frame of date at that epoch, so within the stencil of a short-term precession window's edge the difference took the frame's step: with IAU 1976 under Vondrak ("0,9,1") on JPL and the Swiss files the Moon's points 5.99e-3 deg/day off at J2000 - 2 centuries and 6.49e-3 at + 2, the planets' up to 1.69e-2 (Uranus's); with IAU 2006 ("0,9,8") at -+ 75 centuries the Moon's 7.9, Mars's 8.1, Jupiter's 41.5 | Correctness | `swecl.c` |
@@ -249,6 +250,7 @@ worst were in code that had never executed even once.
 | 210 | The refusals of a date outside a range write "jd %f outside ..." with `sprintf()`, the date's digits in full, into 256 bytes: from about -+1e188 days the Moshier planets', Moon's, mean node's and apogee's messages overrun their local buffer (glibc's fortify aborts), the JPL file's and `swe_nod_aps()`'s mean node's overrun the caller's serr from 1e196 and 1e193 (360 characters at 1e300); `swe_utc_to_jd()`'s "invalid time" the same with the caller's seconds from 1e232 | Memory | `swemplan.c`, `swemmoon.c`, `swecl.c`, `swejpl.c`, `sweph.c`, `swedate.c` |
 | 211 | A NaN date passes every "J < START \|\| J > END": the mean node and apogee, and the Moon's mean points by `swe_nod_aps()`, SIGSEGV in `corr_mean_node()`'s table; the Moshier planets, Moon, fictitious bodies, stars, interpolated apsides, `swe_nod_aps()`, `swe_pheno()`, `swe_gauquelin_sector()`, `swe_rise_trans()` and two heliacal functions answer NaN with their flags; the six crossings loop; the eclipse searches refuse with a date no caller gave ("jd 6634702579155901.000000 outside ..."); `swe_topo_arcus_visionis()` and `swe_heliacal_angle()` answer OK at NaN and -+inf; at -inf the Gauquelin sectors, rise and set and two heliacal functions SIGSEGV in this fork's sidereal time | Correctness (a crash, a hang; wrong answers) | `swemplan.c`, `swemmoon.c`, `sweph.c`, `swecl.c`, `swehel.c`, `swejpl.c`, `swephlib.c` |
 | 216 | On the Swiss files past -+7.84e11 days, and at -+inf and NaN, the file's name is made from `swe_revjul()`'s year cast to int (UB): "SwissEph file 'seplm21474840.se1' not found" for every body, star and `swe_nod_aps()` from 7.9e11 to DBL_MAX | Correctness (undefined behaviour; error reporting) | `sweph.c`, `sweph.h`, `swedate.c` |
+| 227 | With the Moon files missing, after a Moon request `app_pos_etc_moon()` labels the Moon's slot, filled from Moshier, Swiss, and a later read at the instant takes it for the files' Moon: without the file search's note, and an Earth made again from it without entry 120's mark. With sepl_18 and seas_18 alone at J2000, strict, after the Moon and the Sun (both refused) Aldebaran without SEFLG_SPEED answers 2 and the Moon 258, where a fresh process refuses them; allowed, the Sun after the Moon 2 with an empty serr; the speeds after it 1.1e-10 to 1.2e-8 deg/day off a fresh call's | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -14303,6 +14305,79 @@ the node 6.7e-2 to 0.12 deg/day off within 1/16 day, the apogee 3.4, and
 nine-point reference of the side's model alone, the largest: 1.85e-11
 deg/day shipped (9.51e-8 before the fix), 5.47e-5 compat.
 
+## 205. With the Moon files missing and the fallback allowed, a second answer at the instant from the save area loses the computed answer's "using Moshier eph. for moon"
+
+**Severity: Correctness (behaviour: a message that depends on call order)**
+**Where:** `sweph.c`: `swe_calc_r_body()`'s save-area hit; `sweph.h`: `struct save_positions`
+
+Found by entry 197's work (its notes). With the semo files missing,
+`sweplan()` takes the Moon from Moshier and the file search leaves its
+message in serr, then " \nusing Moshier eph. for moon; ". Mars at 1500
+(JD 2268923.5), the fallback allowed, answered 258 with "SwissEph file
+'semo_12.se1' not found in PATH '...' \nusing Moshier eph. for moon; ",
+and the same request again in the same context 258 with the same place
+and an empty serr: the save area answered it, and a hit writes no
+message. So every call the area answers (Mars geocentric with and
+without SEFLG_SPEED, topocentric, with SEFLG_SPEED3, equatorial, in
+J2000, the Sun, Ceres, Cupido, the heliocentric Earth asked with its
+resolved flags, Mars by `swe_calc_ut()`), at 1500 and 1338, and under
+both settings Mars heliocentric and Jupiter barycentric asked with their
+resolved flags, whose computation reads the Earth, and says so, though
+the answer does not depend on it (entry 197's test leaves them out,
+rightly). Upstream the same (the compat build).
+
+After a Moon request the Moon's slot loses the note too, by another
+cache, and more with it: entry 227, fixed with this one (a hit computed
+again reads the Moon through that slot).
+
+Every other cache was looked at for an answer that loses its note:
+- `sweplan()` reads the Earth with the Moon in the same call (do_earth
+  implies do_moon), so a reused Earth comes with the Moon's read and its
+  note (the Moon's slot labelled as it was filled, entry 227).
+- The star functions, `swe_calc_orbel()` and `swe_nod_aps()` keep no
+  answer: they read through `sweplan()` each call, and `swe_calc_pctr()`
+  through `swe_calc()`.
+- The true node's and the osculating apogee's answers are flagged
+  Moshier, and no Swiss request hits them; the mean points read no file.
+- Measured: 58 calls (`swe_calc()` and `swe_calc_ut()` of the Moon, the
+  Sun, Mars, the Earth, Jupiter, Ceres and Cupido in 23 flag sets, the
+  nodes and apsides, the four star functions, `swe_nod_aps()`,
+  `swe_calc_pctr()`, `swe_calc_orbel()`), each after each of the 58 asked
+  with and without a message, at 1500 and 1338: before this fix and
+  entry 227's 382 differ from a fresh context's per instant with the
+  fallback allowed and 24 strict (the message, or the speed after the
+  Moon); after them none, the return, place and message bit for bit.
+
+**Fix, as done here:**
+- The save area keeps whether its computation read Moshier's Moon
+  (`sd->moshnote`, `ctx->moshmoon_used` after it), and a hit on such an
+  answer for a caller that passes serr computes it again: the note is the
+  file search's, which only a computation makes; its place and flag are
+  the same. With serr NULL the hit answers as before; under the strict
+  setting it takes entry 197's test first, as before.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`. The hot path's cost, with entry
+  227's: one `perf stat -e instructions` count of `bench --rep 1`,
+  calc-swieph 12,391,624,855 before and 12,390,481,319 after, calc-moseph
+  23,370,753,115 and 23,359,269,601.
+
+G117 `tests/moonfile.c` (h): each call of (a), (b), (f)'s seven and nine
+more, both settings, asked again in one context after itself with a
+message and after itself without one: return, place and message a fresh
+context's; and (e), (f) and (g) compare the message too. With entry
+227's (i), 1916 rows pass, 1184 new; before the two fixes 368 fail (160
+of (h), 188 of (i), 8 of (e) and 12 of (f) for the message), with entry
+227's alone 132 (120 of (h), 4 of (i), 8 of (e)); the compat build 824
+(308 before, 272 of (h), 192 of (i), 52 of (f)). G24
+`moshmoon_hit_note(0)`: Mars at 1500 Jan 18 asked twice, the semo files
+missing, the fallback allowed: the second answer noted, 1 shipped, 0
+compat (and shipped before the fix).
+
+Noticed, not fixed: a JPL request fallen to the Swiss files, the JPL
+file missing, returns an empty serr: `main_planet()`'s " \ntrying Swiss
+Eph; " is wiped by `sweph()` when the Swiss file opens ("during the search
+error messages may have been built, delete them"). Fresh and warm alike;
+the return flag says SEFLG_SWIEPH.
+
 ## 206. Within 2^-9 day of an ephemeris's edge a star with SEFLG_SPEED is refused, or answered with Moshier's Earth in its aberration's rate, where it answers without the flag
 
 **Severity: Correctness (behaviour: a refusal where the same star answers without SEFLG_SPEED; with the fallback a speed off by 6.6e-4 deg/day)**
@@ -15648,6 +15723,96 @@ Noticed, not fixed (entries 210, 211, 216; one process each, 10 s cap):
   characters, digits only (format kept).
 - BEHAVIOUR. `swe_lmt_to_lat()` and `swe_lat_to_lmt()` return ERR at NaN
   and +inf with the output NaN or inf, not 0.
+
+## 227. With the Moon files missing, after a Moon request a later read at the instant takes the Moon's slot, labelled Swiss, for the files' Moon: its note lost, and an Earth made again from it without entry 120's mark
+
+**Severity: Correctness (behaviour: strict answers given and allowed ones refused or unnoted, by call order; and speeds 1.1e-10 to 1.2e-8 deg/day off a fresh call's)**
+**Where:** `sweph.c`: `app_pos_etc_moon()`
+
+Measured by another agent, and here. A directory with sepl_18.se1 and
+seas_18.se1 only (the Moon files missing), JD 2451545. Strict:
+`swe_calc()` of the Moon with SEFLG_SPEED, then of the Sun, both refused;
+after them `swe_fixstar2()` of Aldebaran without SEFLG_SPEED answered 2
+with no note, where a fresh process refuses it, and the Moon itself again
+258 with an empty serr, Moshier's place (2.2e-12 deg off SEFLG_MOSEPH's)
+under the Swiss flag. The fallback allowed: the Sun after the Moon
+answered 2 with an empty serr, where a fresh process gives "SwissEph file
+'semo_18.se1' not found in PATH '...' \nusing Moshier eph. for moon; ";
+the places identical.
+
+The cause is one cache. `sweplan()` fills the Moon's slot from Moshier
+when the semo file is missing (`swi_moshmoon()` labels it SEFLG_MOSEPH),
+and `app_pos_etc_moon()` then labels it with the request's ephemeris,
+Swiss, through `app_pos_rest()` (and so at its early return).
+`sweplan()` reuses a Moon slot labelled Swiss at the instant without the
+file search: without its message, and without its `moon_mosh`, entry
+120's mark. The Earth slot, reused, carries the mark
+(`ctx->moshmoon_earth_t`); but the Sun's conversions are kept in the
+Earth slot (`app_pos_etc_sun()` writes `pedp->xflgs`), so after the Sun
+without SEFLG_SPEED a request with it makes the Earth again from the
+slot's Moon, unmarked, and the strict test (`ctx->moshmoon_used`) sees no
+Moshier Moon. And `earth_at_lt_sun()` takes the Moon's pull on the light
+time's Earth from a Moon slot labelled Swiss, which a fresh call, its
+slot Moshier's, does not.
+
+Every cache that hands a later call an Earth or a Moon was looked at:
+- `sweplan()`'s reused Earth: do_earth implies do_moon, so the Earth is
+  reused only with the Moon's read; the slot now labelled Moshier, that
+  read searches the file and takes Moshier again, its note and the mark
+  with it.
+- The Earth slot: marked when made from Moshier's Moon; made again, from
+  a Moon read afresh, marked again.
+- The barycentric Sun's slot: read from the planets' file, no Moon; its
+  answer's note is the Moon's read in the same `sweplan()` call.
+- The star functions' Earth: read through `sweplan()`
+  (`main_planet_bary()`), so as above; entry 206's rate reads compare
+  their Moon's origin with the Earth at tjd's (`fixstar_rate_read()`),
+  which had no mark: with the fallback allowed Aldebaran with
+  SEFLG_SPEED after the Moon's `swe_nod_aps()` and the Sun was refused
+  (-1, the file search's message) where a fresh process answers 258.
+- `swe_nod_aps()`, `swe_calc_orbel()`, `swe_calc_pctr()` read through
+  these; `earth_bary_lt()` (entry 208) reads another instant.
+- Measured: the 58 calls of entry 205, each after each pair of them,
+  at J2000 in that directory, both settings: before, of the 29241
+  sequences whose first call is every seventh, 215 strict and 2810
+  allowed differ from a fresh context's (with entry 205's; strict: 20
+  answered where it refuses, Aldebaran's four without SEFLG_SPEED or
+  with SEFLG_TRUEPOS and Mars with SEFLG_TRUEPOS and SEFLG_SPEED, 10
+  refused with the file search's message for the refusal's, the stars
+  with SEFLG_SPEED; allowed: those 10 refused, the rest the note or the
+  speed); after the fix none of the 185193, nor of 61731 at 1500 in
+  entry 205's directory. The speeds after the Moon, the places bit for
+  bit: at J2000 Cupido 1.2e-8 deg/day off, Ceres 5.1e-10, the Sun
+  1.8e-10, Mars 1.1e-10; at 1500 Cupido 6.6e-9, Ceres 1.0e-9, Mars
+  2.3e-10, the Sun 2.0e-10, the orbit about the Sun 1.6e-10 (at 1338
+  4.4e-9 and 1.4e-9 in latitude).
+
+Upstream the same, but for the strict refusals, which are this fork's
+(entry 120): the compat build loses the note, and the speeds.
+
+**Fix, as done here:**
+- `app_pos_etc_moon()` keeps the slot's Moshier label when `sweplan()`
+  filled it from Moshier for the files' Earth (its `mosh_mixed`), at its
+  end and at its early return: a later read at the instant searches the
+  file, takes Moshier's Moon again with its note and mark, and the light
+  time's Earth takes no pull from it, as in a fresh call.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`; with entry 205's fix (one
+  commit, its perf count).
+
+G117 `tests/moonfile.c` (i): each call of (h), both settings, asked in
+one context after the Moon with SEFLG_SPEED, and after the Moon and then
+the Sun without it: return, place and message a fresh context's. 592
+rows, all pass; before the two fixes 188 fail (152 allowed; 36 strict:
+the Moon answered, 258, and Aldebaran without speed, 2, the stars with
+SEFLG_SPEED refused with the file search's message, the barycentric Sun
+and heliocentric Aldebaran without the note), and (f)'s 12 for the
+message (the Moon after a strict Moon); with entry 205's fix alone 240
+(188 of (i), 40 of (h), the Moon's, 12 of (f)); the compat build 192 of
+(i) (G117 1916 rows, 368 before, 824 compat). G24
+`moshmoon_hit_note(1)`: the Moon and then the Sun without SEFLG_SPEED,
+and the Moon and then Mars with SEFLG_TRUEPOS, at 1500 Jan 18, the semo
+files missing, the fallback allowed: the second answers noted, 2
+shipped, 0 compat (and shipped before the fix).
 
 ## How these were found
 

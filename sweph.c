@@ -600,6 +600,16 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
           goto return_error;
         }
       }
+      /* Upstream bug 205: with the fallback allowed a hit returned an
+       * empty serr, where the computed answer says its Moon is Moshier's:
+       * Mars at 1500, the semo files missing, fresh "SwissEph file
+       * 'semo_12.se1' not found in PATH ... using Moshier eph. for moon; ",
+       * from here ''; and so an answer that reads the Earth without
+       * depending on it (Mars heliocentric with its resolved flags). The
+       * note is the file search's, which only a computation makes: for a
+       * caller that takes a message such an answer is computed again (its
+       * place and flag the same). */
+      if (!sd->moshnote || serr == NULL)
 #endif
       goto end_swe_calc;
     }
@@ -610,6 +620,7 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
 #ifndef SWE_UPSTREAM_COMPAT
   ctx->moshmoon_used = FALSE;	/* bug 120 */
   sd->moshmoon = FALSE;		/* bug 197 */
+  sd->moshnote = FALSE;		/* bug 205 */
 #endif
   if (!use_speed3) {
     /* 
@@ -715,6 +726,7 @@ static int32 swe_calc_r_body(swe_ctx *ctx, double tjd, int ipl, int32 iflag,
    * Moshier changes the ephemeris, which forgets the save areas). */
   if (swi_refuse_mosh_bary(ctx, epheflag, sd->iflgsave, tjd, serr))
     goto return_error;
+  sd->moshnote = ctx->moshmoon_used;	/* bug 205, at the hit above */
   /* Upstream bug 120: the Moon, or the Earth through it, from Moshier for
    * want of the semo file. Refused under the strict setting when the
    * answer depends on it: the Moon and the Earth themselves, and any body
@@ -8810,6 +8822,9 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
   flg2 = pdp->xflgs & ~SEFLG_EQUATORIAL & ~SEFLG_XYZ;
   if (flg1 == flg2) {
     pdp->xflgs = iflag;
+#ifndef SWE_UPSTREAM_COMPAT
+    if (!mosh_mixed)	/* bug 227, at the end */
+#endif
     pdp->iephe = iflag & SEFLG_EPHMASK;
     return OK;
   }
@@ -9130,7 +9145,29 @@ static int app_pos_etc_moon(swe_ctx *ctx, int32 iflag, char *serr)
     oe = &ctx->oec;
   } else
     oe = &ctx->oec2000;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 227: app_pos_rest() labels the slot with the request's
+   * ephemeris, so the Moshier Moon of the semo file's fallback was then
+   * taken for the files' Moon at this instant: sweplan() reused it without
+   * the file search, its note and bug 120's mark, and the light time's
+   * Earth took the Moon's pull from it, where a fresh call has none. With
+   * sepl_18 and seas_18 alone at J2000, strict, after the Moon and the Sun
+   * (both refused) Aldebaran without SEFLG_SPEED answered 2 where a fresh
+   * process refuses it; with the fallback allowed the Sun after the Moon
+   * answered 2 with an empty serr (fresh: the file not found, "using
+   * Moshier eph. for moon"), and so Mars with SEFLG_TRUEPOS, the stars and
+   * swe_nod_aps() without SEFLG_SPEED; Aldebaran with it after the Moon's
+   * swe_nod_aps() and the Sun -1 (fresh 258, bug 206's reads seeing a Moon
+   * the Earth at tjd had not); the speeds of Mars, the Sun, Ceres and
+   * Cupido 1.1e-10 to 1.2e-8 deg/day off a fresh call's. The slot keeps
+   * saying Moshier. */
+  retc = app_pos_rest(ctx, pdp, pdp->teval, iflag, xx, xxsv, oe, serr);
+  if (mosh_mixed)
+    pdp->iephe = SEFLG_MOSEPH;
+  return retc;
+#else
   return app_pos_rest(ctx, pdp, pdp->teval, iflag, xx, xxsv, oe, serr);
+#endif
 }
 
 /* transforms the position of the barycentric sun:
