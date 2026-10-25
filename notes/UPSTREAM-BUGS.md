@@ -4497,7 +4497,7 @@ entry 88, where the 1.07e-6 turns out to be the probe's, not the function's.
 Not fixed here: at exactly tjd = 2451545.0 every body's latitude of date
 (planets too; Mars 1.5e-10, the Sun 2.7e-10 deg in a fourth difference) is
 off its neighbours'; one instant only, so a J2000 special case somewhere in
-the frame of date.
+the frame of date. Fixed as entry 87.
 
 ## 85. The Moshier Earth-Moon offset's rate is a difference of rounded arguments
 
@@ -4965,7 +4965,7 @@ Not fixed here: `swe_fixstar_mag()`'s own one-star memo in `sweph.c`
 (`sp.fs1mag`, and `sp.fs1` in `swe_fixstar()`) is not emptied by
 `swe_close()` or a path change either: Sirius -1.46 after `swe_close()`
 and the -1.00 catalogue, and -1.00 after a path back to the -1.46 one,
-until another star is asked for.
+until another star is asked for. Fixed as entry 92.
 
 G81 `tests/helmemo.c`: one sequence of 37 `swe_vis_limit_mag()`,
 `swe_heliacal_pheno_ut()` and `swe_heliacal_ut()` requests alternating the
@@ -5045,6 +5045,7 @@ automatic by every path change, the implicit one at the first calculation
 when the files are named by `SE_EPHE_PATH` included --
 `swe_set_tid_acc(SE_TIDAL_DE200); swe_calc_ut(...)` leaves -25.936 -- where
 the manual says the automatic setting is blocked once it has been used.
+Fixed as entry 92.
 
 G82 `tests/firstset.c`: every public setter and every heliacal entry point
 on the default context, each in a forked, pristine process, set or called
