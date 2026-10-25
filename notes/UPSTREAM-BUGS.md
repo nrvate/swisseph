@@ -80,6 +80,7 @@ worst were in code that had never executed even once.
 | 48 | A fictitious body's speed is a fixed ellipse's, not its elements' | Correctness | `swemplan.c` |
 | 44 | The interpolated apsides depend on SEFLG_SPEED, and x has no light time | Correctness | `sweph.c` |
 | 45 | The interpolated apsides are rough at the JD's resolution, and so are their speeds | Correctness | `swemmoon.c`, `sweph.c` |
+| 49 | A fixed star's speeds are not the rates of its position | Correctness | `sweph.c` |
 
 ---
 
@@ -2316,6 +2317,89 @@ five-point difference at multiples of 2^-8 day (2.1e-7; upstream 1.8e-3
 on the Lahiri SPEED3 perigee). G24 `intp_rough_off`: 1.8e-3 mas shipped,
 1.2 compat. Baselines: interpolated-apsis positions move by <= 0.17 mas
 besides entry 44's light time, their speeds by up to 1.1e-4 deg/day.
+
+## 49. A fixed star's speeds are not the rates of its position
+
+**Severity: Correctness (2.3e-3 AU/day on Spica's distance rate; 3e-8 deg/day on every latitude speed of date, every body; 3.8e-5 deg/day on `swe_fixstar()`'s sidereal speed)**
+**Where:** `sweph.c`: `swi_deflect_light()`, `swi_aberr_light_ex()`, `swi_nutate()`, `swi_precess_speed()`, `fixstar_calc_from_struct()`, `swi_fixstar_calc_from_record()`
+
+A scan (`tests/scan/sescan ephe --only fixstar2`) found the geocentric
+distance rate off a five-point difference of the returned distances by
+3.0e-3 AU/day on Spica and 2.8e-4 on Aldebaran, under SEFLG_NOABERR and
+J2000|NONUT too, clean heliocentric. Taken apart against five-point
+differences over 2^-8 day at binary-fraction instants, nine stars, five
+dates, ten flag sets, there were four causes:
+
+1. The deflection's rate was (xx2 - xx) at t less the same at t + 5e-7
+   day, over 5e-7: differences of two vectors of the star's distance,
+   1.6e7 AU, whose last bits (2e-9 AU) come out as 4e-3 AU/day of noise,
+   1e-8 deg/day in angle. The aberration's rate, A(x(t)) - A(x(t - dt))
+   over dt = 1e-5, the same at 2e-4 AU/day; the nutation's, (N(t) x -
+   N(t - h) x) / h, h = 1e-4, 2e-5 AU/day. In angle these are 1e-12 of
+   the distance per day and below 1e-8 deg/day; the distance rate is where
+   they show. The deflection's is also on every planet: up to 2.9e-8
+   deg/day of roughness (G44's residual spread) and ~1e-7 on a
+   topocentric planet's speed (G43's Venus 1.3e-7, now 2e-8).
+2. `swi_precess_speed()` took the precession's rate as the general
+   precession in longitude about the ecliptic pole of date. The equator of
+   date turns about a different axis: what that leaves out is the
+   planetary precession, chi_A' sin(eps) = 4.2"/cy about the ecliptic's
+   90-degree point, so every latitude speed of date was off by up to 3.2e-8
+   deg/day and a polar star's longitude speed by 7e-8. This is the 5.5e-8
+   entry 33 left on the planets' latitude speeds; it is in every body's
+   path.
+3. The aberration rate was a backward difference over 1e-5 day: the rate
+   at t - dt/2, which for the site's diurnal aberration (0.32", turning
+   once a day) is dt/2 w^2 A = 1.8e-8 deg/day off. And dt was the nominal
+   1e-5 where tjd - dt is rounded to 4.7e-10 day, 2.3e-5 of the step:
+   2.2e-9 deg/day of the annual rate, 1.3e-8 of the diurnal. Topocentric
+   speeds were off by up to 2.9e-8 (delta Dor, Polaris Australis).
+4. `swi_fixstar_calc_from_record()` (`swe_fixstar()`, and the stars
+   `swe_fixstar2()` does not keep) took the ayanamsa off a sidereal
+   longitude and not its rate off the speed: the tropical speed, 3.8e-5
+   deg/day too fast. `fixstar_calc_from_struct()` takes both.
+
+**Fix, as done here:** (1) the displacements formed directly: the
+deflection as ru g1/g2 (uq e - ue q) at both instants; the aberration's
+shift A(x) - x as ((b_1 - 1 - f1) x + f2 ru v) / (1 + f1), b_1 - 1 =
+-v^2 / (1 + b_1) (`aberr_shift()`); the nutation's rate from the angles'
+own, w = deps' e1 + dpsi' (0, -sin eps_t, cos eps_t) in the true frame and
+the velocity gains w x x (backward, -(N^T w) x x). Positions are
+unchanged bit for bit. (2) dP/dt x0 itself, (P(t + 1) x0 - P(t - 1) x0) /
+2, x0 the position back in the frame precessed from: any model
+`swi_precess()` has. Central, because P^T P is not I to the last bits and
+a one-sided difference against x picks that up (5e-12 / h of the rate).
+Three precessions more a call: `bench` calc-swieph 0.71 -> 0.76 s (+7%),
+calc-moseph +2%. (3) for stars, `aberr_light_central()`: the shift's
+change from t - dm to t + dp, dm and dp the exact differences of the
+instants, the observer's velocity at t + dp the Earth's carried on
+linearly from t - dm, t and the site read there. (4) the ayanamsa's rate
+taken with `swi_get_ayanamsa_with_speed()`.
+
+Angular speeds are now within 6.6e-10 deg/day of the positions' rate
+(longitude times cos(latitude)), 2e-11 under J2000|NONUT, sidereal and
+heliocentric alike, both functions; the distance rate within 1.7e-13 of
+the distance per day (the reference's own noise; 5e-7 AU/day on Spica);
+XYZ within 1.1e-11 of the distance per day. G41's planets' latitude
+speeds go to 1.6e-9 (Mars, from 2.8e-8) and 7.5e-10 (Chiron, from 4e-8).
+
+Not done here: the 6.5e-10 deg/day left in every longitude speed of date,
+planets too, is the nutation's rate as a backward difference over 1e-4
+day (the fortnightly term's curvature); a central one needs the nutation
+at t + h in `swi_check_nutation()`. In right ascension near the pole it
+reads 2.7e-8 deg/day (Polaris), 3.5e-10 in angle. Also seen and left
+alone: the topocentric deflection reads the site from `ctx->topd`, which
+the star's path fills NO_SAVE, so it is a stale or empty site (an Earth
+radius in e, 4e-5 of a 4 mas deflection).
+
+G49 `tests/starspeed.c`: nine stars (bright, Barnard's Star, Polaris,
+the galactic centre, 42 Dra and delta Dor near the ecliptic poles), five
+dates, ten flag sets, both functions: 36 checks, angles within 1e-8
+deg/day, distance rate within 1e-12 of the distance per day, XYZ within
+1.7e-10; the upstream build fails all 36. G24 `star_dist_rate_off`:
+Spica's distance rate 5.1e-7 AU/day shipped, 1.8e-3 compat. Baselines
+not regenerated here: G1 and G17 move on speeds (every speed of date, from
+(2), and the last bits of the others, from (1)); positions do not move.
 
 ## How these were found
 

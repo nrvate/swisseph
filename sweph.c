@@ -4802,6 +4802,31 @@ static int app_pos_etc_orbel(swe_ctx *ctx, double tjd, const double *el,
  *		coordinates */
 void swi_precess_speed(swe_ctx *ctx, double *xx, double t, int32 iflag, int direction) 
 {
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 49: the precession's rate was taken as the general
+   * precession in longitude about the ecliptic pole of date, which leaves
+   * out the ecliptic's own turning (the planetary precession, chi_A' sin
+   * eps = 4.2"/cy about the ecliptic's 90-degree point): every latitude
+   * speed of date off by up to 3e-8 deg/day, a polar star's longitude
+   * speed by 7e-8. Now dP/dt x0 itself, x0 the position in the frame
+   * precessed from, as (P(t + 1) x0 - P(t - 1) x0) / 2, for any model
+   * swi_precess() has, the series being smooth over centuries. Central,
+   * because P^T P is not I to the last bits: a one-sided difference
+   * against x itself picks that up, 5e-12 / h of the rate. */
+  int i;
+  double x0[3], a[3];
+  int back = (direction == J2000_TO_J) ? J_TO_J2000 : J2000_TO_J;
+  for (i = 0; i <= 2; i++)
+    x0[i] = xx[i];
+  swi_precess(ctx, x0, t, iflag, back);
+  for (i = 0; i <= 2; i++)
+    a[i] = x0[i];
+  swi_precess(ctx, a, t + 1, iflag, direction);
+  swi_precess(ctx, x0, t - 1, iflag, direction);
+  swi_precess(ctx, xx+3, t, iflag, direction);
+  for (i = 0; i <= 2; i++)
+    xx[i+3] += (a[i] - x0[i]) / 2;
+#else
   struct epsilon *oe;
   double fac, dpre, dpre2;
   double tprec = (t - J2000) / 36525.0;
@@ -4835,6 +4860,7 @@ if (1) {
   swi_polcart_sp(xx, xx);
   swi_coortrf2(xx, xx, -oe->seps, oe->ceps);
   swi_coortrf2(xx+3, xx+3, -oe->seps, oe->ceps);
+#endif
 }
 
 /* multiplies cartesian equatorial coordinates with previously
@@ -4860,7 +4886,7 @@ if (1) {
 static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, const double *u,
                           double *acc, char *serr)
 {
-  const double h = 0.001;
+  const double h = 1.0 / 256;
   double xp[6], xm[6], ru, au = 0;
   int i;
   if (swi_get_observer(ctx, tjd + h, iflag | SEFLG_NONUT, NO_SAVE, xp, serr) != OK
@@ -5078,7 +5104,10 @@ void swi_ecl_frame_speed(double *xx, double edot)
 void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward)
 {
   int i;
-  double x[6], xv[6];
+  double x[6];
+#ifdef SWE_UPSTREAM_COMPAT
+  double xv[6];
+#endif
   for (i = 0; i <= 2; i++) {
     if (backward) {
       x[i] = xx[0] * ctx->nut.matrix[i][0] + 
@@ -5106,6 +5135,33 @@ void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward)
     }
     /* then apparent motion due to change of nutation during day.
      * this makes a difference of 0.01" */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 49: this was (N(t) x - N(t - h) x) / h, h = 1e-4 day,
+     * two vectors of the body's distance differenced: their last bits, 2e-9
+     * AU for a star at 1.6e7 AU, made 2e-5 AU/day of its distance rate.
+     * Now the rotation's rate from the angles' own: N = R1(-eps - deps)
+     * R3(-dpsi) R1(eps), the mean obliquity held, turns at w = deps' e1 +
+     * dpsi' (0, -sin(eps + deps), cos(eps + deps)) in the true frame, and
+     * the velocity gains w x x_true; backward, -(N^T w) x x_mean. */
+    {
+      double w[3], wm[3], et = ctx->oec.eps + ctx->nut.nutlo[1];
+      double dpsi = (ctx->nut.nutlo[0] - ctx->nutv.nutlo[0]) / NUT_SPEED_INTV;
+      w[0] = (ctx->nut.nutlo[1] - ctx->nutv.nutlo[1]) / NUT_SPEED_INTV;
+      w[1] = -dpsi * sin(et);
+      w[2] = dpsi * cos(et);
+      if (backward) {
+        for (i = 0; i <= 2; i++)
+          wm[i] = -(w[0] * ctx->nut.matrix[i][0] + w[1] * ctx->nut.matrix[i][1]
+                    + w[2] * ctx->nut.matrix[i][2]);
+      } else {
+        for (i = 0; i <= 2; i++)
+          wm[i] = w[i];
+      }
+      xx[3] = x[3] + wm[1] * x[2] - wm[2] * x[1];
+      xx[4] = x[4] + wm[2] * x[0] - wm[0] * x[2];
+      xx[5] = x[5] + wm[0] * x[1] - wm[1] * x[0];
+    }
+#else
     for (i = 0; i <= 2; i++) {
       if (backward) {
 	xv[i] = xx[0] * ctx->nutv.matrix[i][0] + 
@@ -5119,6 +5175,7 @@ void swi_nutate(swe_ctx *ctx, double *xx, int32 iflag, AS_BOOL backward)
       /* new speed */
       xx[3+i] = x[3+i] + (x[i] - xv[i]) / NUT_SPEED_INTV;
     }
+#endif
   }
   /* new position */
   for (i = 0; i <= 2; i++) 
@@ -5155,10 +5212,34 @@ static void aberr_light(double *xx, double *xe) {
  * xe_dt    	earth's position and speed at t - dt
  * dt    	time difference for which xe_dt is given
  */
+#ifndef SWE_UPSTREAM_COMPAT
+/* Upstream bug 49: the shift aberr_light() makes, A(x) - x, formed
+ * directly: ((b_1 - 1 - f1) x + f2 ru v) / (1 + f1), b_1 - 1 as
+ * -v^2 / (1 + b_1). */
+static void aberr_shift(const double *xx, const double *xe, double *dx) {
+  int i;
+  double v[3], u[3], ru, b_1, f1, f2, v2;
+  for (i = 0; i <= 2; i++) {
+    u[i] = xx[i];
+    v[i] = xe[i+3] / 24.0 / 3600.0 / CLIGHT * AUNIT;
+  }
+  ru = sqrt(square_sum(u));
+  v2 = square_sum(v);
+  b_1 = sqrt(1 - v2);
+  f1 = dot_prod(u, v) / ru;
+  f2 = 1.0 + f1 / (1.0 + b_1);
+  for (i = 0; i <= 2; i++)
+    dx[i] = ((-v2 / (1.0 + b_1) - f1) * xx[i] + f2 * ru * v[i]) / (1.0 + f1);
+}
+#endif
+
 void swi_aberr_light_ex(double *xx, double *xe, double *xe_dt, double dt, int32 iflag) {
   int i;
   double xxs[6];
   double xx2[6];
+#ifndef SWE_UPSTREAM_COMPAT
+  double d0[3], d1[3];
+#endif
   for (i = 0; i <= 5; i++) {
     xxs[i] = xx[i];
   }
@@ -5170,12 +5251,72 @@ void swi_aberr_light_ex(double *xx, double *xe, double *xe_dt, double dt, int32 
   if (iflag & SEFLG_SPEED) {
     for (i = 0; i <= 2; i++) 
       xx2[i] = xxs[i] - dt * xxs[i + 3];
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 49: the speed was (A(x(t)) - A(x(t - dt))) / dt, two
+     * vectors of the star's distance differenced over 1e-5 day, so their
+     * last bits (2e-9 AU for Spica) made 2e-4 AU/day of the distance rate.
+     * Now the velocity plus the change of the shift alone. */
+    aberr_shift(xxs, xe, d0);
+    aberr_shift(xx2, xe_dt, d1);
+    for (i = 0; i <= 2; i++)
+      xx[i+3] = xxs[i+3] + (d0[i] - d1[i]) / dt;
+#else
     aberr_light(xx2, xe_dt);
     for (i = 0; i <= 2; i++) {
       xx[i+3] = (xx[i] - xx2[i]) / dt;
     }
+#endif
   }
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* A star's aberration with its rate as a central difference of the shift,
+ * observer velocities xe_m at t - dm and xe_p at t + dp (dm, dp the exact
+ * differences of the instants). Upstream bug 49: the backward one over 1e-5
+ * day is the rate at t - dt/2, which for the site's diurnal aberration
+ * (0.32", turning once a day) is off by dt/2 w^2 A = 1.8e-8 deg/day; and dt
+ * was taken as the nominal 1e-5 where tjd - dt is rounded to 4.7e-10 day,
+ * 2.3e-5 of the step: 2.2e-9 deg/day of the annual rate, 1.3e-8 of the
+ * diurnal. */
+static void aberr_light_central(double *xx, const double *xe, const double *xe_m,
+                                const double *xe_p, double dm, double dp, int32 iflag)
+{
+  int i;
+  double xxs[6], xm[3], xp[3], d0[3], d1[3];
+  for (i = 0; i <= 5; i++)
+    xxs[i] = xx[i];
+  aberr_light(xx, (double *) xe);
+  if (iflag & SEFLG_SPEED) {
+    for (i = 0; i <= 2; i++) {
+      xm[i] = xxs[i] - dm * xxs[i+3];
+      xp[i] = xxs[i] + dp * xxs[i+3];
+    }
+    aberr_shift(xm, xe_m, d0);
+    aberr_shift(xp, xe_p, d1);
+    for (i = 0; i <= 2; i++)
+      xx[i+3] = xxs[i+3] + (d1[i] - d0[i]) / (dm + dp);
+  }
+}
+
+/* The observer's velocity at t + dp for aberr_light_central(): the Earth's
+ * carried on from t - dm, t, whose change over 1e-5 day is linear to 1e-7
+ * of itself, and the site's, which turns, read at t + dp. */
+static int fixstar_obs_ahead(swe_ctx *ctx, double tjd, double dm, double dp, int32 iflag,
+                             const double *xb, const double *xb_m, double *xo_p, char *serr)
+{
+  int i;
+  double xs[6];
+  for (i = 0; i <= 5; i++)
+    xo_p[i] = xb[i] + dp / dm * (xb[i] - xb_m[i]);
+  if (iflag & SEFLG_TOPOCTR) {
+    if (swi_get_observer(ctx, tjd + dp, iflag | SEFLG_NONUT, NO_SAVE, xs, serr) != OK)
+      return ERR;
+    for (i = 0; i <= 5; i++)
+      xo_p[i] += xs[i];
+  }
+  return OK;
+}
+#endif
 
 /* computes 'annual' aberration
  * xx		planet's position accounted for light-time 
@@ -5233,8 +5374,11 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
   double u[6], e[6], q[6], ru, re, rq, uq, ue, g1, g2;
 #ifdef SWE_UPSTREAM_COMPAT
   double qe;
+  double xx3[6], dx1, dx2;
+#else
+  double dfl0[3];
 #endif
-  double xx3[6], dx1, dx2, dtsp;
+  double dtsp;
   double xsun[6], xearth[6];
   double sina, sin_sunr, meff_fact;
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
@@ -5329,6 +5473,16 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
   /* compute deflected position */
   for (i = 0; i <= 2; i++) 
     xx2[i] = ru * (u[i] + g1/g2 * (uq * e[i] - ue * q[i]));
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 49: the speed below took the deflection as xx2 - xx, a
+   * difference of two vectors of the star's distance, 1.6e7 AU for Spica,
+   * whose last bits (2e-9 AU) the 5e-7-day step made 4e-3 AU/day of noise:
+   * the distance rate off by 2.3e-3 AU/day, the longitude speed by 1e-8
+   * deg/day. The displacement itself, ru g1/g2 (uq e - ue q), is formed
+   * directly, here and at the step. */
+  for (i = 0; i <= 2; i++)
+    dfl0[i] = ru * g1/g2 * (uq * e[i] - ue * q[i]);
+#endif
   if (iflag & SEFLG_SPEED) {
     /* correction of speed
      * influence of light deflection on a planet's apparent speed:
@@ -5408,6 +5562,10 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
 #else
     g2 = 1.0 + qe;
 #endif
+#ifndef SWE_UPSTREAM_COMPAT
+    for (i = 0; i <= 2; i++)
+      xx[i+3] += (dfl0[i] - ru * g1/g2 * (uq * e[i] - ue * q[i])) / dtsp;
+#else
     for (i = 0; i <= 2; i++) 
       xx3[i] = ru * (u[i] + g1/g2 * (uq * e[i] - ue * q[i]));
     for (i = 0; i <= 2; i++) {
@@ -5416,6 +5574,7 @@ void swi_deflect_light(swe_ctx *ctx, double *xx, double dt, int32 iflag)
       dx1 -= dx2;
       xx[i+3] += dx1 / dtsp;
     }
+#endif
   } /* endif speed */
   /* deflected position */
   for (i = 0; i <= 2; i++) 
@@ -8216,6 +8375,11 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
   double x[6], xxsv[6], xobs[6], xobs_dt[6], *xpo = NULL, *xpo_dt = NULL;
   /* moved to ctx->sp.fx_struct (Phase 3c) */
   double dt = PLAN_SPEED_INTV * 0.1;
+#ifndef SWE_UPSTREAM_COMPAT
+  double xpo_p[6];
+  /* the exact steps to the instants the observer is read at (bug 49) */
+  double dm = tjd - (tjd - dt), dp = (tjd + dt) - tjd;
+#endif
   int32 epheflag, iflgsave;
   struct epsilon *oe = &ctx->oec2000;
   iflgsave = iflag;
@@ -8374,8 +8538,17 @@ static int32 fixstar_calc_from_struct(swe_ctx *ctx, struct fixed_star *stardata,
    * 'annual' aberration of light   *
    * speed is incorrect !!!         *
    **********************************/
+#ifndef SWE_UPSTREAM_COMPAT
+  /* never heliocentric or barycentric: plaus_iflag() sets SEFLG_NOABERR */
+  if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0) {
+    if (fixstar_obs_ahead(ctx, tjd, dm, dp, iflag, ctx->sp.fx_struct.xearth, ctx->sp.fx_struct.xearth_dt, xpo_p, serr) != OK)
+      return ERR;
+    aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, iflag & SEFLG_SPEED);
+  }
+#else
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0)
     swi_aberr_light_ex(x, xpo, xpo_dt, dt, iflag & SEFLG_SPEED);
+#endif
   /* ICRS to J2000 */
   if (!(iflag & SEFLG_ICRS) && (swi_get_denum(ctx, SEI_SUN, iflag) >= 403 || (iflag & SEFLG_BARYCTR))) {
     swi_bias(ctx, x, tjd, iflag, FALSE);
@@ -9600,10 +9773,19 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
   double epoch, radv, parall;
   double ra_pm, de_pm, ra, de, t;
   struct fixed_star stardata;
+#ifndef SWE_UPSTREAM_COMPAT
+  double daya[2], rdist;
+#else
   double daya, rdist;
+#endif
   double x[6], xxsv[6], xobs[6], xobs_dt[6], *xpo = NULL, *xpo_dt = NULL;
   /* moved to ctx->sp.fx_record (Phase 3c) */
   double dt = PLAN_SPEED_INTV * 0.1;
+#ifndef SWE_UPSTREAM_COMPAT
+  double xpo_p[6];
+  /* the exact steps to the instants the observer is read at (bug 49) */
+  double dm = tjd - (tjd - dt), dp = (tjd + dt) - tjd;
+#endif
   int32 epheflag, iflgsave;
   // char s[AS_MAXCH];
   struct epsilon *oe = &ctx->oec2000;
@@ -9764,8 +9946,17 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
    * 'annual' aberration of light   *
    * speed is incorrect !!!         *
    **********************************/
+#ifndef SWE_UPSTREAM_COMPAT
+  /* never heliocentric or barycentric: plaus_iflag() sets SEFLG_NOABERR */
+  if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0) {
+    if (fixstar_obs_ahead(ctx, tjd, dm, dp, iflag, ctx->sp.fx_record.xearth, ctx->sp.fx_record.xearth_dt, xpo_p, serr) != OK)
+      return ERR;
+    aberr_light_central(x, xpo, xpo_dt, xpo_p, dm, dp, iflag & SEFLG_SPEED);
+  }
+#else
   if ((iflag & SEFLG_TRUEPOS) == 0 && (iflag & SEFLG_NOABERR) == 0)
     swi_aberr_light_ex(x, xpo, xpo_dt, dt, iflag & SEFLG_SPEED);
+#endif
   /* ICRS to J2000 */
   if (!(iflag & SEFLG_ICRS) && (swi_get_denum(ctx, SEI_SUN, iflag) >= 403 || (iflag & SEFLG_BARYCTR))) {
     swi_bias(ctx, x, tjd, iflag, FALSE);
@@ -9834,9 +10025,20 @@ static int32 swi_fixstar_calc_from_record(swe_ctx *ctx, char *srecord, double tj
     /* traditional algorithm */
     } else {
       swi_cartpol_sp(x, x); 
+#ifndef SWE_UPSTREAM_COMPAT
+      /* Upstream bug 49: the ayanamsa was taken off the longitude and not
+       * its rate off the speed, so swe_fixstar()'s sidereal longitude speed
+       * was the tropical one, 3.8e-5 deg/day too fast; swe_fixstar2() and
+       * swe_calc() take both. */
+      if (swi_get_ayanamsa_with_speed(ctx, tjd, iflag, daya, serr) == ERR)
+        return ERR;
+      x[0] -= daya[0] * DEGTORAD;
+      x[3] -= daya[1] * DEGTORAD;
+#else
       if (swi_get_ayanamsa_ex(ctx, tjd, iflag, &daya, serr) == ERR)
         return ERR;
       x[0] -= daya * DEGTORAD;
+#endif
       swi_polcart_sp(x, x); 
     }
   } 

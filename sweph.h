@@ -742,6 +742,14 @@ struct epsilon {
  *     wide, rough by 1.3 mas between consecutive JDs, and the speeds
  *     differenced over +-0.1 day and +-8.64 s (1.5e-3 deg/day; UPSTREAM-BUGS
  *     45, G46)
+ *   - a fixed star's speeds were not the rates of its position: the
+ *     deflection's, aberration's and nutation's rates differenced vectors of
+ *     the star's distance (2.3e-3 AU/day on Spica's distance rate), the
+ *     precession's rate left out the ecliptic's turning (3e-8 deg/day on
+ *     every latitude speed of date, all bodies), the aberration rate was a
+ *     backward difference over a rounded step (1.5e-8 deg/day topocentric),
+ *     and swe_fixstar() kept the tropical speed for a sidereal longitude
+ *     (3.8e-5 deg/day) (UPSTREAM-BUGS 49, G49)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

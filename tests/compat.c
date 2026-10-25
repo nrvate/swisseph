@@ -445,6 +445,27 @@ static double intp_rough_off(void)
   return w;
 }
 
+/* A fixed star's distance rate: Spica's, geocentric apparent, against a
+ * five-point difference of its distance over 2^-8 day, AU/day. Upstream
+ * takes the deflection's and the aberration's rates as differences of two
+ * vectors of the star's distance, 1.6e7 AU, over 5e-7 and 1e-5 day, and
+ * their last bits come out as 2e-3 AU/day (UPSTREAM-BUGS 49). */
+static double star_dist_rate_off(void)
+{
+  double t = floor(2460000.3 * 256) / 256, h = 1.0 / 256, x[6], f[5][6];
+  char serr[256], s[64];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  strcpy(s, "Spica");
+  swe_fixstar2(s, t, SEFLG_SWIEPH | SEFLG_SPEED, x, serr);
+  for (k = 0; k < 5; k++) {
+    strcpy(s, "Spica");
+    swe_fixstar2(s, t + (k - 2) * h, SEFLG_SWIEPH, f[k], serr);
+  }
+  return fabs(x[5] - (8 * (f[3][2] - f[1][2]) - (f[4][2] - f[0][2])) / (12 * h));
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -602,7 +623,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -630,6 +651,7 @@ int main(int argc, char **argv)
   nodj2k = nodaps_j2000_off();
   intpsf = intp_speedflag_off();
   intprough = intp_rough_off();
+  stardd = star_dist_rate_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
@@ -819,6 +841,14 @@ int main(int argc, char **argv)
   else {
     printf("  intp perigee rough     %.2e mas     FAIL: expected %s\n",
            intprough, WANT_DEFECT ? "> 0.3" : "< 0.01");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (stardd > 1e-4) : (stardd < 1e-5))
+    printf("  star distance rate     %.2e AU/day OK\n", stardd);
+  else {
+    printf("  star distance rate     %.2e AU/day FAIL: expected %s\n",
+           stardd, WANT_DEFECT ? "> 1e-4" : "< 1e-5");
     bad++;
   }
 
