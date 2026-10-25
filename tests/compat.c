@@ -361,6 +361,29 @@ static double defl_rough_off(void)
   return fmax(hi[0] - lo[0], hi[1] - lo[1]);
 }
 
+/* UPSTREAM-BUGS 34 in swe_nod_aps(): Pluto's osculating ascending node
+ * seen from Zurich, its longitude speed against a five-point difference,
+ * deg/day; the aberration rate was upstream's chord, 3e-4 off */
+static double nodaps_topo_rate_off(void)
+{
+  double jd = floor(2461338.137 * 256) / 256, h = 1.0 / 64, x[6], f[5][6], u[6], d[5], r;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_set_topo(8.55, 47.37, 400);
+  swe_nod_aps(jd, SE_PLUTO, SEFLG_SWIEPH | SEFLG_TOPOCTR | SEFLG_SPEED, SE_NODBIT_OSCU, x, u, u, u, serr);
+  for (k = 0; k < 5; k++)
+    swe_nod_aps(jd + (k - 2) * h, SE_PLUTO, SEFLG_SWIEPH | SEFLG_TOPOCTR, SE_NODBIT_OSCU, f[k], u, u, u, serr);
+  for (k = 0; k < 5; k++) {
+    d[k] = f[k][0] - f[2][0];
+    if (d[k] > 180) d[k] -= 360;
+    if (d[k] < -180) d[k] += 360;
+  }
+  r = (d[0] - 8 * d[1] + 8 * d[3] - d[4]) / (12 * h);
+  return fabs(x[3] - r);
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -518,7 +541,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -541,6 +564,7 @@ int main(int argc, char **argv)
   nodspd = nodaps_turning_off();
   apslat = mean_apsis_lat_speed_off();
   deflr = defl_rough_off();
+  natopo = nodaps_topo_rate_off();
   nodflag = nodaps_speed_flag_move();
   nodj2k = nodaps_j2000_off();
   toposun = topo_sun_speed_off();
@@ -691,6 +715,14 @@ int main(int argc, char **argv)
   else {
     printf("  deflection speed rough %.2e deg/day FAIL: expected %s\n",
            deflr, WANT_DEFECT ? "> 3e-6" : "< 1e-7");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (natopo > 1e-5) : (natopo < 2e-7))
+    printf("  nod_aps topo aberr rate %.2e deg/day OK\n", natopo);
+  else {
+    printf("  nod_aps topo aberr rate %.2e deg/day FAIL: expected %s\n",
+           natopo, WANT_DEFECT ? "> 1e-5" : "< 2e-7");
     bad++;
   }
 

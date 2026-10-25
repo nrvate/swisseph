@@ -4877,11 +4877,18 @@ static int observer_accel(swe_ctx *ctx, double tjd, int32 iflag, const double *u
  * velocities by 1e-9 AU across a segment of the Swiss files (at -3001 and
  * 3000), 3e-6 deg/day once divided by tau. The Moon's part of a', 7.5%,
  * is left out. Below 1e-3 day (the Moon) the term is under 1e-5 of the
- * rate and is skipped. Sets xout to xe with the velocity V(t) - tau^2 a'/2. */
-static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xeteval, const double *xe, double *xout)
+ * rate and is skipped. Past 10 days the series itself fails (3.7e-4
+ * deg/day at the 462 days of a body 80,000 AU out), and tau a(teval) is
+ * taken whole from the Sun's pull, -GM r/r^3: that leaves out the Moon's
+ * 0.6% of a, which the difference of the reads carries below 10 days,
+ * where it matters more than the series' (tau omega)^2 / 6.
+ * xsun is the barycentric Sun at teval (unused on Moshier, whose Earth is
+ * heliocentric); NULL leaves the plain difference. Sets xout to xe with
+ * the velocity the term should read. */
+static void earth_at_lt_sun(swe_ctx *ctx, double teval, double t, const double *xeteval,
+                            const double *xsun, const double *xe, double *xout)
 {
   const double gm = HELGRAVCONST * 86400.0 * 86400.0 / (AUNIT * AUNIT * AUNIT);
-  struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
   double tau = teval - t, r[6], rr, rv = 0, jerk;
   int i;
   for (i = 0; i <= 5; i++)
@@ -4892,12 +4899,17 @@ static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xete
   for (i = 0; i <= 5; i++)
     r[i] = xeteval[i];
   if (ctx->pldat[SEI_EARTH].iephe != SEFLG_MOSEPH) {
-    if (psdp->teval != teval)
+    if (xsun == NULL)
       return;
     for (i = 0; i <= 5; i++)
-      r[i] -= psdp->x[i];
+      r[i] -= xsun[i];
   }
   rr = sqrt(square_sum(r));
+  if (tau > 10) {
+    for (i = 0; i <= 2; i++)
+      xout[i+3] = xeteval[i+3] + tau * gm * r[i] / (rr * rr * rr);
+    return;
+  }
   for (i = 0; i <= 2; i++)
     rv += r[i] * r[i+3];
   for (i = 0; i <= 2; i++) {
@@ -4906,27 +4918,46 @@ static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xete
   }
 }
 
+/* the same, with the Sun from the save area when it is the one at teval */
+static void earth_at_lt(swe_ctx *ctx, double teval, double t, const double *xeteval, const double *xe, double *xout)
+{
+  struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
+  earth_at_lt_sun(ctx, teval, t, xeteval, psdp->teval == teval ? psdp->x : NULL, xe, xout);
+}
+
 /* The observer at the instant the light left, t, as the aberration rate
  * term xobs - xobs2 uses it: the Earth's state at t, xe, and the site's
  * velocity at teval less tau a(teval). xobs is the barycentric observer at
- * teval, xeteval the Earth there, xx the barycentric body (for the line of
- * sight). Only xobs2's velocity is read. */
-static int observer_at_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
-                          const double *xobs, const double *xeteval,
-                          const double *xe, const double *xx, double *xobs2, char *serr)
+ * teval, xeteval the Earth there, xsun the barycentric Sun there (or
+ * NULL), u the line of sight. Only xobs2's velocity is read. */
+static int observer_at_lt_sun(swe_ctx *ctx, double teval, double t, int32 iflag,
+                              const double *xobs, const double *xeteval, const double *xsun,
+                              const double *xe, const double *u, double *xobs2, char *serr)
 {
-  double acc[3], u[3], xel[6];
+  double acc[3], xel[6];
   int i;
-  for (i = 0; i <= 2; i++)
-    u[i] = xx[i] - xobs[i];
   if (observer_accel(ctx, teval, iflag, u, acc, serr) != OK)
     return ERR;
-  earth_at_lt(ctx, teval, t, xeteval, xe, xel);
+  earth_at_lt_sun(ctx, teval, t, xeteval, xsun, xe, xel);
   for (i = 0; i <= 2; i++) {
     xobs2[i] = xel[i] + xobs[i] - xeteval[i];
     xobs2[i+3] = xel[i+3] + xobs[i+3] - xeteval[i+3] - (teval - t) * acc[i];
   }
   return OK;
+}
+
+/* the same, xx the barycentric body, the Sun from the save area */
+static int observer_at_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
+                          const double *xobs, const double *xeteval,
+                          const double *xe, const double *xx, double *xobs2, char *serr)
+{
+  struct plan_data *psdp = &ctx->pldat[SEI_SUNBARY];
+  double u[3];
+  int i;
+  for (i = 0; i <= 2; i++)
+    u[i] = xx[i] - xobs[i];
+  return observer_at_lt_sun(ctx, teval, t, iflag, xobs, xeteval,
+                            psdp->teval == teval ? psdp->x : NULL, xe, u, xobs2, serr);
 }
 
 /* The aberration rate term, xobs - xobs2 (the observer's velocity at the
@@ -4945,6 +4976,26 @@ static void add_aberr_rate(double *xx, const double *xobs, const double *xobs2)
   }
   for (i = 0; i <= 2; i++)
     xx[i+3] += d[i] - dr * xx[i] / r;
+}
+
+/* Bug 34's aberration rate for swe_nod_aps(), whose points are not made
+ * by these paths: xx the apparent point relative to the observer, with
+ * velocity, after aberration; xobs the barycentric observer at teval,
+ * xeteval and xsun the barycentric Earth and Sun there, xe the Earth at t,
+ * the instant the light left. Adds the term to xx[3..5]. */
+int swi_aberr_rate(swe_ctx *ctx, double teval, double t, int32 iflag, const double *xobs,
+                   const double *xeteval, const double *xsun, const double *xe,
+                   double *xx, char *serr)
+{
+  double xobs2[6];
+  if (iflag & SEFLG_TOPOCTR) {
+    if (observer_at_lt_sun(ctx, teval, t, iflag, xobs, xeteval, xsun, xe, xx, xobs2, serr) != OK)
+      return ERR;
+  } else {
+    earth_at_lt_sun(ctx, teval, t, xeteval, xsun, xe, xobs2);
+  }
+  add_aberr_rate(xx, xobs, xobs2);
+  return OK;
 }
 
 /* Upstream bug 35: the light time's rate was taken as the change, over a

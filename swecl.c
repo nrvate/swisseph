@@ -5790,6 +5790,20 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
        * Neglecting this would result in an error of several 0.1"
        */
       if (iflag & SEFLG_SPEED) {
+#ifndef SWE_UPSTREAM_COMPAT
+        /* bug 34 here too: for a point seen from the Earth or a site, the
+         * observer's velocity now less at t - dt, whole, was a chord for a
+         * turning site, radial too and first order only (7e-6 deg/day on
+         * Mercury's points topocentric, 3e-4 on Pluto's); swi_aberr_rate()
+         * is swe_calc()'s term. It needs the Earth and the Sun at tjd,
+         * which the call below replaces in the save area. */
+        double xe0[6], xs0[6];
+        AS_BOOL rate34 = !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)) && ipl != SE_SUN;
+        for (i = 0; i <= 5; i++) {
+          xe0[i] = xear[i];
+          xs0[i] = xsun[i];
+        }
+#endif
         /* get barycentric sun and earth for t-dt into save area */
         if (swe_calc_r(ctx, tjd_et - dt, ipli, iflg0 | (iflag & SEFLG_TOPOCTR), x2, serr) == ERR)
           return ERR;
@@ -5815,6 +5829,12 @@ int32 CALL_CONV swe_nod_aps_r(swe_ctx *ctx, double tjd_et, int32 ipl, int32 ifla
           for (i = 0; i <= 5; i++)
             xobs2[i] += xear[i];
         }
+#ifndef SWE_UPSTREAM_COMPAT
+        if (rate34) {
+          if (swi_aberr_rate(ctx, tjd_et, tjd_et - dt, iflag, xobs, xe0, xs0, xear, xp, serr) != OK)
+            return ERR;
+        } else
+#endif
         for (i = 3; i <= 5; i++) 
           xp[i] += xobs[i] - xobs2[i];
         /* The above call of swe_calc() has destroyed the

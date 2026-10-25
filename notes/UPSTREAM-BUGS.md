@@ -1848,7 +1848,7 @@ on the latitude speed. G17: last digits of six speeds.
 ## 34. The aberration rate is the observer's velocity change over the light time
 
 **Severity: Correctness (3.2e-4 deg/day on the topocentric Sun's speed, a few per cent of the diurnal aberration rate on every topocentric body, up to 7.4e-5 AU/day on distance rates, 2e-6 deg/day on distant bodies' longitude speeds); upstream answered the topocentric case from three positions instead**
-**Where:** `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`, `app_pos_etc_moon()`, `app_pos_etc_sun()`, `swe_calc_r()`
+**Where:** `sweph.c`: `app_pos_etc_plan()`, `app_pos_etc_plan_osc()`, `app_pos_etc_orbel()`, `app_pos_etc_moon()`, `app_pos_etc_sun()`, `swe_calc_r()`; `swecl.c`: `swe_nod_aps_r()`
 
 Aberration moves the apparent place by about tau V across the line of
 sight, V the observer's barycentric velocity and tau the light time, so
@@ -1888,8 +1888,13 @@ of the Swiss files those disagree with the velocities by 1e-9 AU (at
 -3001 and 3000), 2e-5 deg/day once divided by tau; and on Moshier, whose
 Earth velocity is a backward difference over 1e-4 day, the same
 expression would triple that velocity's 1.5e-8 AU/day lag. The Moon's
-part of a', 7.5%, is left out. The sum goes in less its part along the
-line of sight (`add_aberr_rate()`). The Sun's path reads the Earth at
+part of a', 7.5%, is left out. Past a light time of 10 days the series
+fails (3.7e-4 deg/day at the 462 days of a body 80,000 AU out), and tau
+a(teval) is taken whole from the Sun's pull, which leaves out the Moon's
+0.6% of a. The sum goes in less its part along the
+line of sight (`add_aberr_rate()`). `swe_nod_aps()` had upstream's term for
+its points too, 3e-4 deg/day on Pluto's topocentric nodes; it now calls the
+same term (`swi_aberr_rate()`), <= 4e-8. The Sun's path reads the Earth at
 t - tau for it (one more read, +7% on a geocentric Sun with speed). The
 forced three-point path is gone; `SEFLG_SPEED3` still asks for it, and a
 topocentric speed costs 24 us instead of 31-43.
@@ -2152,13 +2157,11 @@ within 2e-7 mas of the same call without SEFLG_SPEED (before: up to 18),
 and speeds by up to 1.3e-7 deg/day through the corrected Earth. No G1
 row is under SEFLG_J2000. G17 unchanged.
 
-Found along the way, not fixed here: `swe_nod_aps()`'s topocentric
-speeds still take the aberration rate upstream's way, from the call at
-tjd - dt, where entry 34 replaced it in `swe_calc()`; against five-point
-differences they are 7e-6 deg/day off on Mercury's points, 2e-4 on
-Neptune's, 3e-4 on Pluto's, in either frame;
-the Moon's mean perigee's latitude speed is a one-day forward difference
-(entry 38), 2e-5 deg/day from the rate.
+Found along the way: `swe_nod_aps()`'s topocentric speeds took the
+aberration rate upstream's way, from the call at tjd - dt, 7e-6 deg/day
+off on Mercury's points, 3e-4 on Pluto's; fixed under entry 34. Not
+fixed: the Moon's mean perigee's latitude speed is a one-day forward
+difference (entry 38), 2e-5 deg/day from the rate.
 
 ## How these were found
 
