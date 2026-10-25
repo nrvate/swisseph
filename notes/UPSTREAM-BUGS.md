@@ -221,6 +221,7 @@ worst were in code that had never executed even once.
 | 174 | `swe_nod_aps()` reads the Moon for the save area of the Moon's mean points, geocentric and topocentric, which do not use it: without the moon files the strict setting refuses them, as in an empty directory and JPL without its file, where `swe_calc()` answers the mean node; with the fallback the read says Moshier, so `swe_nod_aps_ut()` redoing delta t for it (entry 170) moves the mean node 6.0e-8 deg at 1900 and 1.8e-5 in AD 1000, and the site takes Moshier's delta t (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
 | 179 | A refusal inside `swe_nod_aps()` (the strict setting's, a file's, a range's) returns -1 with the four points as the caller had them, where `swe_calc()` zeroes a refused place (the manual: "the position and speed variables are set to zero") and the function itself an unimplemented body's: 1234.5 put in came back 1234.5, all 24 values | Robustness (behaviour) | `swecl.c` |
 | 192 | Under the strict setting without the moon files `swe_nod_aps()` refuses the Sun's points and the Earth's heliocentric and barycentric ones ("Swiss (.se1) Moon file is not available"), which the Moon does not reach: their reads of the Earth, and for the osculating ones of the Moon to rebuild the Earth-Moon barycentre, are refused by entry 120's test; with the fallback they answer 6.5e-15 deg off the complete directory's | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
+| 193 | Under the strict setting without the moon files `swe_nod_aps()` answers a planet's geocentric and topocentric points from the Earth made from Moshier's Moon, its read being the heliocentric planet, which entry 120's test lets through, where `swe_calc()` of the planet refuses: Mars's at 1900 3.7e-9 deg off the complete directory's, Mercury's at 2000 8.7e-9 | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 
 ---
 
@@ -12901,12 +12902,13 @@ Noticed, not fixed (not this entry's):
   bug 120 refuses, though they use the barycentric Sun (the planet file's)
   and the Earth only for the deflection's observer; with the fallback they
   are the complete directory's within 6.5e-15 deg (the Sun's at 1900).
+  Fixed as entry 192, with the osculating ones.
 - **The planets' geocentric and topocentric points answer under the
   strict setting without the moon files**, mean and osculating, though
   they are seen from the Earth made from Moshier's Moon, which bug 120
   refuses for `swe_calc()`: at 1900 Mars's 4.2e-9 deg off the complete
   directory's, Mercury's 8.6e-9, Jupiter's 1.5e-9. Their save-area read is
-  the heliocentric planet, which bug 120 lets through.
+  the heliocentric planet, which bug 120 lets through. Fixed as entry 193.
 - **`swe_calc()` lets SEFLG_TOPOCTR with SEFLG_HELCTR or SEFLG_BARYCTR
   through the strict setting without the moon files.** Bug 120's test
   reads the bits before `plaus_iflag()`, and the answer is topocentric:
@@ -13062,6 +13064,55 @@ Swiss, without the moon files, strict, then the heliocentric Earth with
 its read's flags: 1 if the points are refused, plus 2 if the Earth is
 answered: 0 shipped (1 before the fix, 2 without the save areas dropped),
 2 compat.
+
+## 193. Without the moon files the strict setting answers a planet's points seen from the Earth made from Moshier's Moon
+
+**Severity: Correctness (behaviour: an answer the strict setting refuses for `swe_calc()`; 3.7e-9 deg on Mars's points at 1900, 8.7e-9 on Mercury's at 2000), this fork's build (upstream has no such refusal)**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`; `sweph.c`: `swi_refuse_moshmoon_earth()`, new
+
+Found by entry 174's work. Under the strict setting without the moon
+files, `swe_calc()` of a planet seen from the Earth refuses (entry 120):
+at 1900 Jan 0.75 `swe_calc(SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED)` returns
+-1, "the Moon, and the Earth made from it, would come from Moshier". But
+`swe_nod_aps()` of the planet reads the heliocentric planet for its save
+area and for its ellipse, which the test lets through (a heliocentric
+place reads the Earth and does not use it), and then takes the Earth that
+read saved, made from Moshier's Moon, for the observer of its geocentric
+and topocentric points, mean and osculating: answered (0), off the
+complete directory's by that Earth's error, Mars's at 1900 9.5e-10 deg in
+longitude and 3.7e-9 in latitude, at 2000 8.2e-9; Mercury's at 2000 8.7e-9,
+Jupiter's 1.8e-9. This fork's build alone: upstream refuses nothing for
+Moshier's Moon.
+
+**Fix, as done here:**
+- After the save-area read, a planet's points geocentric or topocentric
+  (not the Moon's, whose geocentric points read the Moon or, mean, no
+  Earth since entry 174; not the Sun's, seen from the Sun, entry 192)
+  are refused under the strict setting when the saved Earth at the
+  instant was made from Moshier's Moon (`ctx->moshmoon_earth_t`), by
+  `swi_refuse_moshmoon_earth()`, with entry 120's message; the points
+  zeroed (entry 179).
+- Now they are refused as `swe_calc()` of the planet is; with the
+  fallback answered as before; the heliocentric and barycentric points,
+  which do not use that Earth, answered strict, bit for bit the complete
+  directory's.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`, as entry 120 is. No hot path.
+
+G143 `tests/nodcentre.c` (i): (h)'s directories, 1900 and 2000,
+`swe_nod_aps()` and `swe_nod_aps_ut()`: Mercury's, Mars's, Jupiter's and
+Pluto's points, mean, osculating, SE_NODBIT_OSCU_BAR and osculating with
+SE_NODBIT_FOPOINT, the four centres, the outputs filled with 1234.5:
+geocentric and topocentric refused strict without the moon files, with
+entry 120's message as `swe_calc()` of the planet, the 24 values zeroed,
+with the fallback within 1e-7 deg of the complete directory's (8.7e-9
+measured); heliocentric and barycentric answered strict, bit for bit the
+complete directory's and the fallback's. 256 rows pass; before the fix
+the 128 geocentric and topocentric fail (answered). G143 2558 rows pass;
+the upstream build fails 1905.
+
+G24 `nodaps_mars_moonless_ret`: `swe_nod_aps()` of Mars's osculating
+points at 1900 Jan 0.75, Swiss, geocentric, without the moon files under
+the strict setting, its return: -1 shipped (0 before the fix), 0 compat.
 
 ## How these were found
 

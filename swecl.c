@@ -6248,6 +6248,19 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   if (out_bary && swi_refuse_mosh_bary(ctx, eph_asked,
                                        (retcs & SEFLG_EPHMASK) | SEFLG_BARYCTR, tjd_et, serr))
     return nodaps_refuse(xnasc, xndsc, xperi, xaphe);
+  /* Upstream bug 193: a planet's points geocentric or topocentric are
+   * seen from the Earth the read above saved, and the read, heliocentric,
+   * passes bug 120's test: without the moon files the strict setting
+   * answered them from an Earth made from Moshier's Moon (Mars's points at
+   * 1900 3.7e-9 deg off the complete directory's in latitude, Mercury's at
+   * 2000 8.7e-9 in longitude), where swe_calc() of the planet refuses ("the
+   * Moon, and the Earth made from it, would come from Moshier"). Refused
+   * now as swe_calc() refuses it, with its message, the points zeroed;
+   * with the fallback answered as before. The heliocentric and barycentric
+   * points do not use that Earth. */
+  if (ipli != SE_MOON && ipli != SE_EARTH && !(iflag & (SEFLG_HELCTR | SEFLG_BARYCTR))
+      && swi_refuse_moshmoon_earth(ctx, tjd_et, serr))
+    return nodaps_refuse(xnasc, xndsc, xperi, xaphe);
   /* Upstream bug 168: the change of centre below read the caller's
    * ephemeris, not the one that answered: Moshier's frame (the Sun its
    * origin, no barycentric Sun added) from SEFLG_MOSEPH, the topocentric

@@ -1462,6 +1462,11 @@ struct epsilon {
  *     this fork's refusal of Moshier's Moon (bug 120), which upstream and
  *     the switch do not have: they answer them; G24's case 0 shipped, 2
  *     compat, the Earth after them refused only here; G143)
+ *   - swe_nod_aps()'s planets seen from the Earth answered under the strict
+ *     setting without the moon files from the Earth made from Moshier's
+ *     Moon, where swe_calc() of the planet refuses: Mars's points at 1900
+ *     3.7e-9 deg off the complete directory's (UPSTREAM-BUGS 193, G143,
+ *     G24)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
@@ -1568,6 +1573,11 @@ extern AS_BOOL swi_env_ephe_fallback(void);
  * swe_nod_aps(), 149). Strict: the downgrade's message; fallback allowed or
  * Moshier asked: swecalc()'s. */
 extern AS_BOOL swi_refuse_mosh_bary(swe_ctx *ctx, int32 wanted, int32 got_iflag, double tjd, char *serr);
+/* The saved Earth at tjd made from Moshier's Moon (the moon files
+ * missing), refused under the strict setting with bug 120's message, for a
+ * place seen from it that a heliocentric read let through (UPSTREAM-BUGS
+ * 193: swe_nod_aps()'s planets) */
+extern AS_BOOL swi_refuse_moshmoon_earth(swe_ctx *ctx, double tjd, char *serr);
 #endif
 /* Close the .se1 files. FORGET_DENUM when the next open may find different
  * files, KEEP_DENUM when the same ones are coming back -- delta-t reads that

@@ -3152,6 +3152,23 @@ static AS_BOOL swi_refuse_moshmoon(swe_ctx *ctx, double tjd, char *serr)
   return TRUE;
 }
 
+/* Upstream bug 193: swe_nod_aps() of a planet seen from the Earth reads
+ * the heliocentric planet, which bug 120's test lets through, and takes the
+ * Earth that read saved for its observer: refused as swe_calc() refuses a
+ * body seen from the Earth when that Earth at tjd was made from Moshier's
+ * Moon. */
+AS_BOOL swi_refuse_moshmoon_earth(swe_ctx *ctx, double tjd, char *serr)
+{
+  AS_BOOL was = ctx->moshmoon_used, r;
+  if (ctx->pldat[SEI_EARTH].teval != tjd || ctx->moshmoon_earth_t != tjd
+      || ctx->pldat[SEI_EARTH].iephe != SEFLG_SWIEPH)
+    return FALSE;
+  ctx->moshmoon_used = TRUE;
+  r = swi_refuse_moshmoon(ctx, tjd, serr);
+  ctx->moshmoon_used = was;
+  return r;
+}
+
 /* Upstream bug 139: Moshier serves no barycentric place (its origin is the
  * Sun, and swecalc() refuses SEFLG_MOSEPH | SEFLG_BARYCTR), so a fallback
  * to it serves none either. got_iflag is the answer's flag as the

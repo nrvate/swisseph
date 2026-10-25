@@ -4819,6 +4819,42 @@ static double nodaps_sun_moonless(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 193: swe_nod_aps() of Mars at 1900 Jan 0.75, Swiss,
+ * osculating, geocentric, along a directory of links to EPHE's files but
+ * the moon files, under the strict setting, on a context made and given
+ * its path: the return. The points are seen from the Earth made from
+ * Moshier's Moon, which swe_calc() of Mars refuses there (bug 120, this
+ * fork's), but the read is heliocentric: answered (0) before the fix,
+ * refused now (-1); upstream refuses nothing for Moshier's Moon (0). */
+static double nodaps_mars_moonless_ret(void)
+{
+  char dir[] = "/tmp/compatnmaXXXXXX", ephe[PATH_MAX], p[PATH_MAX + 300], q[PATH_MAX + 300];
+  double x[24], r = -99;
+  char serr[256];
+  struct dirent *e;
+  swe_ctx *c;
+  DIR *d;
+  if (realpath(EPHE, ephe) == NULL || mkdtemp(dir) == NULL || (d = opendir(ephe)) == NULL)
+    return -99;
+  while ((e = readdir(d)) != NULL)
+    if (e->d_name[0] != '.' && strncmp(e->d_name, "semo", 4) != 0) {
+      snprintf(p, sizeof p, "%s/%s", ephe, e->d_name);
+      snprintf(q, sizeof q, "%s/%s", dir, e->d_name);
+      if (symlink(p, q) != 0)
+        break;
+    }
+  closedir(d);
+  if ((c = swe_ctx_new()) != NULL) {
+    swe_set_ephe_path_r(c, dir);
+    swe_set_ephe_fallback_r(c, 0);
+    r = swe_nod_aps_r(c, 2415020.25, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED, SE_NODBIT_OSCU,
+                      x, x + 6, x + 12, x + 18, serr);
+    swe_ctx_free(c);
+  }
+  rm_dir(dir);
+  return r;
+}
+
 /* swe_calc_ut()'s JPL Moon in AD 1700 after the path,
  * swe_set_jpl_file("de200.eph") and the path again by another string, the
  * first call against the second, deg. Upstream's path setter forgets the
@@ -4948,7 +4984,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, noj2000, moshslot, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, epstab, nodmsun, nodmix, nodhb, jplhor1799, precwin, nutfar, nodfbb, nodhdefl, nodmemb, owenjoin, moshmoonwin, jdatewin, nutjitter, mmtopohel, startopofb, nodutfb, nodmoonm, noderr, nodsunm, nodmarsm;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -5112,6 +5148,7 @@ int main(int argc, char **argv)
   nodmoonm = nodaps_moon_mean_ret();
   noderr = nodaps_err_left();
   nodsunm = nodaps_sun_moonless();
+  nodmarsm = nodaps_mars_moonless_ret();
   dtflag0 = dt_flag0_off();
   closekeep = close_keeps_off();	/* last: see the function */
 
@@ -6216,6 +6253,14 @@ int main(int argc, char **argv)
   else {
     printf("  nod_aps Sun, no moon   %.0f FAIL: expected %s\n",
            nodsunm, WANT_DEFECT ? "2" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodmarsm == 0) : (nodmarsm == -1))
+    printf("  nod_aps Mars, no moon  %.0f OK\n", nodmarsm);
+  else {
+    printf("  nod_aps Mars, no moon  %.0f FAIL: expected %s\n",
+           nodmarsm, WANT_DEFECT ? "0" : "-1");
     bad++;
   }
 

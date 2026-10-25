@@ -56,9 +56,12 @@
  * Sun, the ellipse fitted to the Earth-Moon barycentre), were refused under
  * the strict setting without the moon files, their reads of the Earth and
  * the Moon refused by bug 120; with the fallback 6.5e-15 deg off the
- * complete directory's.
+ * complete directory's. UPSTREAM-BUGS 193: and the planets' points
+ * geocentric and topocentric were answered there from the Earth made from
+ * Moshier's Moon, their read being heliocentric, where swe_calc() of the
+ * planet refuses (Mars's at 1900 3.7e-9 deg off the complete directory's).
  *
- * The check, the complete directory, and for (f) to (h) others:
+ * The check, the complete directory, and for (f) to (i) others:
  *  (a) the Swiss files and Moshier, seven instants -3000..3000: the Sun's
  *      geocentric and topocentric perigee and apogee against the Earth's
  *      heliocentric points of the same ephemeris and method (method 0,
@@ -135,14 +138,23 @@
  *      deg/day, the barycentres' rounding over 2^-6 day); after the Sun's
  *      osculating points the Earth of their reads at the instant and 2^-6
  *      day after, with the flags those answers carry, refused, and the
- *      Earth's geocentric points refused, with bug 120's message.
+ *      Earth's geocentric points refused, with bug 120's message;
+ *  (i) (h)'s directories, 1900 and 2000, swe_nod_aps() and
+ *      swe_nod_aps_ut(): Mercury's, Mars's, Jupiter's and Pluto's points,
+ *      mean, osculating, SE_NODBIT_OSCU_BAR and osculating with
+ *      SE_NODBIT_FOPOINT, the four centres, the outputs filled with
+ *      1234.5: geocentric and topocentric refused strict without the moon
+ *      files, with bug 120's message, as swe_calc() of the planet is, the
+ *      24 values zeroed, with the fallback within 1e-7 deg of the complete
+ *      directory's; heliocentric and barycentric answered strict, bit for
+ *      bit the complete directory's and the fallback's.
  * Measured: (a) distance 4.4e-16 AU, direction 7.6e-7 deg (the focal
  * point, 0.03 AU out), Moshier's mean points 2.9e-6 deg and 2.2e-16 AU off
  * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b), (c),
  * (d) 0; (e) 3.2e-10 deg/day, 1.2e-13 AU/day; (f) the node 1.1e-13 deg off
  * the mean node's, the heliocentric and barycentric points 1.6e-8 deg off;
- * (g) 0; (h) 6.5e-15 deg, the speeds 1.5e-11 deg/day. 2302 rows. Before
- * bug 167's fix the 168 Moshier rows of (a)'s
+ * (g) 0; (h) 6.5e-15 deg, the speeds 1.5e-11 deg/day; (i) the fallback 8.7e-9
+ * deg. 2558 rows. Before bug 167's fix the 168 Moshier rows of (a)'s
  * first check fail (143 deg, 0.97 AU), the 14 of its second and 7 of the
  * third's 14 (the topocentric); before bug 168's, 340 of (b)'s 480 (12
  * deg); before bug 169's, 448 of (c)'s 456 (180 deg: the Sun's
@@ -154,8 +166,9 @@
  * 114 of (f)'s 390 (144 with bug 170's fix and not 174's) and (d)'s 4 rows
  * of the Moon's mean points (refused strict); before bug 179's, 18 of
  * (g)'s 22 (all but the two zeroed already); before bug 192's, all 153 of
- * (h)'s (the strict refusals). The upstream build (SWE_UPSTREAM_COMPAT)
- * fails 1684. Run as
+ * (h)'s (the strict refusals); before bug 193's, the 128 geocentric and
+ * topocentric rows of (i)'s 256 (answered strict). The upstream build
+ * (SWE_UPSTREAM_COMPAT) fails 1905. Run as
  *   nodcentre EPHEDIR
  */
 #include <dirent.h>
@@ -814,6 +827,73 @@ static void part_h(void)
          "      the speeds %.2e deg/day\n", w, wv);
 }
 
+/* (i) a planet's points seen from the Earth without the moon files, bug
+ * 193: refused under the strict setting, as swe_calc() of the planet is,
+ * with its message, the points zeroed; with the fallback answered, within
+ * 1e-7 deg of the complete directory's; heliocentric and barycentric,
+ * which do not use that Earth, answered strict, bit for bit the complete
+ * directory's and the fallback's */
+static void part_i(void)
+{
+  static const int ipl[4] = {SE_MERCURY, SE_MARS, SE_JUPITER, SE_PLUTO};
+  static const int32 M[4] = {SE_NODBIT_MEAN, SE_NODBIT_OSCU, SE_NODBIT_OSCU_BAR,
+                             SE_NODBIT_OSCU | SE_NODBIT_FOPOINT};
+  static const int32 C[4] = {0, SEFLG_TOPOCTR, SEFLG_HELCTR, SEFLG_BARYCTR};
+  static const double JD[2] = {2415020.25, 2451727.0};
+  char what[220];
+  double w = 0;
+  int ut, it, ib, im, ic, i;
+  for (ut = 0; ut < 2; ut++)
+    for (it = 0; it < 2; it++)
+      for (ib = 0; ib < 4; ib++)
+        for (im = 0; im < 4; im++)
+          for (ic = 0; ic < 4; ic++) {
+            int32 fl = SEFLG_SWIEPH | SEFLG_SPEED | C[ic], r[3], rc = -99;
+            double x[3][24], xc[6], d = 0;
+            char serr[AS_MAXCH] = "", sc[AS_MAXCH] = "";
+            int k, zero = 1;
+            for (k = 0; k < 3; k++) {	/* strict, fallback without the moon files; complete */
+              swe_ctx *c = dir_ctx(k < 2 ? D_NOMOON : D_ALL, k == 1);
+              char se[AS_MAXCH] = "";
+              for (i = 0; i < 24; i++)
+                x[k][i] = 1234.5;
+              r[k] = c == NULL ? -99
+                     : ut ? swe_nod_aps_ut_r(c, JD[it], ipl[ib], fl, M[im], x[k], x[k] + 6, x[k] + 12, x[k] + 18, se)
+                          : swe_nod_aps_r(c, JD[it], ipl[ib], fl, M[im], x[k], x[k] + 6, x[k] + 12, x[k] + 18, se);
+              if (k == 0) {
+                strcpy(serr, se);
+                /* swe_calc() of the planet there, on a context of its own */
+                swe_ctx_free(c);
+                c = dir_ctx(D_NOMOON, 0);
+                if (c != NULL)
+                  rc = ut ? swe_calc_ut_r(c, JD[it], ipl[ib], fl, xc, sc) : swe_calc_r(c, JD[it], ipl[ib], fl, xc, sc);
+              }
+              swe_ctx_free(c);
+            }
+            for (i = 0; i < 24; i++) {
+              double e = i % 6 == 0 ? fabs(swe_difdeg2n(x[1][i], x[2][i])) : fabs(x[1][i] - x[2][i]);
+              if (i % 6 < 3 && e > d)
+                d = e;
+              zero = zero && x[0][i] == 0;
+            }
+            snprintf(what, sizeof what, "%s body %d method %d centre %d jd %.2f, no moon files: ret %d %d %d"
+                     " (swe_calc() %d), '%.40s', deg", ut ? "UT" : "TT", ipl[ib], (int) M[im], (int) C[ic],
+                     JD[it], r[0], r[1], r[2], rc, serr);
+            if (ic < 2) {
+              if (r[1] >= 0 && d > w)
+                w = d;
+              check(r[0] < 0 && zero && strstr(serr, "Moon file is not available") != NULL
+                    && rc < 0 && strstr(sc, "Moon file is not available") != NULL
+                    && r[1] >= 0 && r[2] >= 0 && d <= 1e-7, "i", what, d, 1e-7);
+            } else {
+              check(r[0] >= 0 && r[1] == r[0] && r[2] == r[0] && memcmp(x[0], x[2], sizeof x[0]) == 0
+                    && memcmp(x[1], x[2], sizeof x[1]) == 0, "i", what, d, 0);
+            }
+          }
+  printf("  (i) the planets' points seen from the Earth without the moon files: refused strict,\n"
+         "      with the fallback %.2e deg off\n", w);
+}
+
 int main(int argc, char **argv)
 {
   char ephe[PATH_MAX];
@@ -833,6 +913,7 @@ int main(int argc, char **argv)
   if (part_f(ephe) == 0) {
     part_g();
     part_h();
+    part_i();
     for (int id = 1; id < ND; id++)
       unlink_dir(DIRS[id]);
   }
