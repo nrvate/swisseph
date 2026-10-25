@@ -882,6 +882,22 @@ static double mosh_earth_rough_off(void)
   return sqrt(e / an);
 }
 
+/* The Sun's ecliptic latitude of date at exactly J2000 against the mean of
+ * its latitudes at J2000 +- 2^-30 day, deg, Swiss files. Upstream answers
+ * swi_precess() at J2000 with the identity, and the Vondrak series there is
+ * turned 4.848e-12 rad about x: 2.7e-10 deg (UPSTREAM-BUGS 87). */
+static double j2000_lat_off(void)
+{
+  double x0[6], xm[6], xp[6], d = ldexp(1, -30);
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(2451545.0, SE_SUN, SEFLG_SWIEPH, x0, serr);
+  swe_calc(2451545.0 - d, SE_SUN, SEFLG_SWIEPH, xm, serr);
+  swe_calc(2451545.0 + d, SE_SUN, SEFLG_SWIEPH, xp, serr);
+  return fabs(x0[1] - (xm[1] + xp[1]) / 2);
+}
+
 /* The Moshier Earth's velocity, heliocentric J2000, in 1900, against the
  * five-point difference of its positions over 2^-4 day, AU/day. The
  * Earth-Moon offset's rate left out the obliquity's turning, which each
@@ -1773,7 +1789,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1825,6 +1841,7 @@ int main(int argc, char **argv)
   moshrough = mosh_earth_rough_off();
   moonsite = moon_site_speed_off();
   moshvb = mosh_earth_vbias_off();
+  j2klat = j2000_lat_off();
   startd = star_topo_defl_off();
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
@@ -2217,6 +2234,14 @@ int main(int argc, char **argv)
   else {
     printf("  Moshier Earth v bias   %.2e AU/day FAIL: expected %s\n",
            moshvb, WANT_DEFECT ? "> 1e-10" : "< 1e-13");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (j2klat > 1e-10) : (j2klat < 1e-12))
+    printf("  Sun latitude at J2000  %.2e deg OK\n", j2klat);
+  else {
+    printf("  Sun latitude at J2000  %.2e deg FAIL: expected %s\n",
+           j2klat, WANT_DEFECT ? "> 1e-10" : "< 1e-12");
     bad++;
   }
 

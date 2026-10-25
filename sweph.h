@@ -971,6 +971,10 @@ struct epsilon {
  *     light time and the gravitational jerk, off by the series' monthly
  *     terms (1.7e-10 deg/day on Neptune's points' latitude speed;
  *     UPSTREAM-BUGS 93, G92)
+ *   - precess_3() answered J2000 itself with the identity, which the
+ *     Vondrak series is not there (turned 4.848e-12 rad about x): every
+ *     place of date at exactly J2000 2.7e-10 deg off its neighbours in
+ *     latitude (UPSTREAM-BUGS 87, G86)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

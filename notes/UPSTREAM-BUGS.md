@@ -124,6 +124,7 @@ worst were in code that had never executed even once.
 | 83 | A setting made before the first calculation is lost, and the first heliacal call after a setter fails (partly this fork's) | Correctness | `sweconfig.c`, `swehel.c`, `swephlib.c`, `swecl.c`, `sweph.c` |
 | 90 | `swe_calc(SE_ECL_NUT, SEFLG_SPEED3)` differences the four angles as a position; `jplplan()`'s Earth also takes the other-planet branch; `-Og` false positive on `dt` | Correctness / Memory | `sweph.c` |
 | 93 | `swe_nod_aps()`'s aberration rate takes the Moshier Earth's acceleration from the gravitational jerk | Correctness | `sweph.c` |
+| 87 | The precession at exactly J2000 is the identity, which the Vondrak series is not | Correctness | `swephlib.c` |
 
 ---
 
@@ -5203,6 +5204,61 @@ after. G24 `nodaps_mosh_lat_off`: Neptune's mean ascending node's latitude
 speed at 2000 BC, 6.6e-15 deg/day shipped, 1.7e-10 before the fix, 4.8e-6
 compat (upstream's whole aberration rate). G69, G79, G63, G54, G65 and G84
 pass.
+
+## 87. The precession at exactly J2000 is the identity, which the Vondrak series is not
+
+**Severity: Correctness (2.8e-10 deg on every place of date at exactly tjd = J2000, in latitude, declination and right ascension; 2.5e-9 deg on the true node's longitude; 1.7e-8 deg on Polaris's right ascension)**
+**Where:** `swephlib.c`: `precess_3()`, `swi_precess_matrix_rate_eps()`
+
+`precess_3()`, which takes the Vondrak 2011 series (the default, short-
+and long-term) and Owen 1990, returned at once for `J == J2000`, as
+`precess_1()` and `precess_2()` do: from J2000 to J2000 is no rotation.
+For the IAU and Laskar-type polynomials that is exact (their matrices at
+J2000 +- 2^-30 are the identity within 6e-16 rad). The Vondrak series is
+not: its coefficients are published to 1e-6", and their sum at T = 0
+leaves the equator pole of date at y = -4.848e-12 rad, the frame turned
+1 uas about x (Owen 1990: 3.1e-7 rad, 0.063"). Every instant but J2000
+itself carried that turn. So at exactly tjd = 2451545.0 every position
+of date jumped against its neighbours; SEFLG_J2000 output, which is not
+precessed, did not. This fork's `swi_precess_matrix_rate_eps()` (entry
+49) copied the exception, sending J2000's speeds to the differencing
+path.
+
+Measured on ts20 before the fix, the residual of the value at J2000
+against the polynomial through its six neighbours 2^-10 day apart, the
+same at J2000 + 1/4 in brackets: the Sun's latitude 2.73e-10 deg
+(2.1e-15), Mars's 1.47e-10, Pluto's 2.63e-10 (1.1e-14); equatorial,
+Mercury's right ascension 5.3e-11 and declination 1.8e-10; the true
+node's longitude 2.5e-9 (1.3e-13), the mean node's and mean apogee's
+latitudes with SEFLG_J2000 2.3e-10 and 2.8e-10 (precessed from the
+ecliptic of date); Mars's latitude speed 4.2e-11 deg/day (1.1e-13); the
+same on de200 and Moshier, heliocentric, topocentric, sidereal and in
+XYZ (the Sun's z 4.7e-12 AU); a star's right ascension 2.9e-11 deg,
+Polaris's 1.7e-8; and in `swe_nod_aps()` and the ayanamsa. The nutation,
+the obliquity (`oec2000` copied into `oec` at J2000 is the value
+`calc_epsilon()` gives there) and the frame bias are smooth through
+J2000. The defect is upstream's.
+
+**Fix, as done here:** `precess_3()` takes J2000 like any other instant,
+the matrix the series gives there; `swi_precess_matrix_rate_eps()` no
+longer excludes it. No caller passes J2000 to `swi_precess()` meaning
+"no rotation": those that want the J2000 frame (`sip->t0 != J2000`,
+`tequ != J2000`, SEFLG_J2000) skip the call. Only J2000 itself changes;
+the bench checksum is identical, calc-swieph and calc-moseph unchanged
+within noise. After: the residuals above 2.9e-15 (Sun), 6.7e-16 (Mars),
+5.3e-15 (Pluto), 7.7e-12 (true node, its neighbourhood's 1.3e-11).
+
+G86 `tests/j2000inst.c`: the Swiss files, de200 and Moshier; fifteen
+bodies by fourteen flag sets, five stars by five, `swe_nod_aps()` for the
+Moon, Mars and Jupiter by two methods, the ayanamsa for three modes: 744
+rows, every position and speed at J2000 against the mean of J2000 +-
+2^-30 and against the fit through its neighbours, each within three
+times its largest value at twelve instants J2000 + c/16 plus a floor:
+largest 0.61 of the tolerance (Mercury's topocentric latitude speed fit,
+rounding). The upstream build fails 549 rows, ts20 before the fix 526,
+this build with SWE_UPSTREAM_COMPAT 549. G24 `j2000_lat_off`: the Sun's
+latitude at J2000 against the mean of J2000 +- 2^-30, 6.5e-15 deg
+shipped, 2.73e-10 compat. G70, G57, G68, G41 pass.
 
 ## How these were found
 

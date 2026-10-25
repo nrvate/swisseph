@@ -968,7 +968,8 @@ int swi_precess_matrix_rate_eps(swe_ctx *ctx, double J, int32 iflag, double *m, 
       || (prec_model_short == SEMOD_PREC_IAU_2000 && fabs(T) <= PREC_IAU_2000_CTIES)
       || (prec_model_short == SEMOD_PREC_IAU_2006 && fabs(T) <= PREC_IAU_2006_CTIES))
     return FALSE;
-  if (prec_model != SEMOD_PREC_VONDRAK_2011 || J == J2000)
+  /* bug 87: J2000 too, as swi_precess() now takes the series there */
+  if (prec_model != SEMOD_PREC_VONDRAK_2011)
     return FALSE;
   pre_pmat_d(J, m, dm, deps);
   return TRUE;
@@ -1574,8 +1575,17 @@ static int precess_3(double *R, double J, int direction, int iflag, int prec_met
   //double T;
   double x[3], pmat[9];
   int i, j;
+  /* Upstream bug 87: J2000 itself was answered by the identity. The
+   * Vondrak series at T = 0 is not the identity: its published 1e-6"
+   * digits leave the equator of date turned 4.848e-12 rad (1 uas) about
+   * x, so every position of date at exactly J2000 was 2.7e-10 deg off
+   * its own neighbours in latitude (Owen 1990: 3.1e-7 rad, 0.063").
+   * Now J2000 is an instant like any other, the matrix the series gives
+   * there. Callers wanting the J2000 frame skip the call themselves. */
+#ifdef SWE_UPSTREAM_COMPAT
   if( J == J2000 ) 
     return(0);
+#endif
   /* Each precession angle is specified by a polynomial in
    * T = Julian centuries from J2000.0.  See AA page B18.
    */
