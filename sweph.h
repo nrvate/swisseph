@@ -728,6 +728,10 @@ struct epsilon {
  *     equator by J2000's obliquity, without SEFLG_NONUT, and its speeds left
  *     out the frame's turning (7.9" on the Moon's mean node in 2026, 148"
  *     in 2326; 3.2e-5 deg/day; UPSTREAM-BUGS 47, G47)
+ *   - swi_osc_el_plan() took a fictitious body's speed as a fixed
+ *     ellipse's two-body motion, without its elements' rates in T or an
+ *     equinox of date's turning (2.9e-2 deg/day on Vulcan; UPSTREAM-BUGS
+ *     48, G48)
  *   - app_pos_etc_plan() and app_pos_etc_plan_osc() measured a heliocentric
  *     light time from the barycentre on the second pass (0.84" on Mercury;
  *     UPSTREAM-BUGS 26, G36)

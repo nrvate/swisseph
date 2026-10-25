@@ -77,6 +77,7 @@ worst were in code that had never executed even once.
 | 39 | The light deflection's speed is rough behind the Sun's disc | Correctness | `sweph.c` |
 | 46 | `swe_nod_aps()`'s positions depend on SEFLG_SPEED | Correctness | `swecl.c` |
 | 47 | `swe_nod_aps()` under SEFLG_J2000 is not the J2000 frame | Correctness | `swecl.c` |
+| 48 | A fictitious body's speed is a fixed ellipse's, not its elements' | Correctness | `swemplan.c` |
 
 ---
 
@@ -2162,6 +2163,79 @@ aberration rate upstream's way, from the call at tjd - dt, 7e-6 deg/day
 off on Mercury's points, 3e-4 on Pluto's; fixed under entry 34. Not
 fixed: the Moon's mean perigee's latitude speed is a one-day forward
 difference (entry 38), 2e-5 deg/day from the rate.
+
+## 48. A fictitious body's speed is a fixed ellipse's, not its elements'
+
+**Severity: Correctness (2.9e-2 deg/day on Vulcan's heliocentric longitude speed, 1.3e-2 on Waldemath's geocentric one, 9.4e-6 on seorbel.txt's Mercury set, 3.8e-5 on every set referred to the equinox of date)**
+**Where:** `swemplan.c`: `swi_osc_el_plan()`, `read_elements_file()`, `check_t_terms()`
+
+`swi_osc_el_plan()` took the speed as the two-body motion of a fixed
+ellipse, K / sqrt(a) along the orbit with K Gauss's constant, while the
+position follows `seorbel.txt`'s polynomials in T. Three things moved
+that the speed never saw:
+
+1. **The mean anomaly's own rate.** A mean anomaly with T terms is the
+   polynomial itself (the epoch is set to tjd, so the daily motion adds
+   nothing); Vulcan's 252.8987988 + 707550.7341 T advances 19.3717
+   deg/day, against the 19.3428 that a = 0.13744 AU gives.
+2. **The other elements' rates.** Semi-axis, eccentricity, perihelion,
+   node and inclination in T: Vulcan's node and perihelion turn at 1670
+   deg/cy, the Mercury set's elements of date at planetary rates, and a
+   semi-axis in T changes the daily motion that M = M0 + (t - t0) n(a)
+   accumulates.
+3. **An equinox of date's turning.** JDATE elements are referred to the
+   ecliptic and equinox of t, which the position rotates to J2000 with
+   the obliquity and precession of t; the speed was rotated with the
+   same matrices and nothing for their rate, 3.8e-5 deg/day (50"/yr) on
+   Proserpina, Kore, Selena and VEA, which otherwise do not move at all.
+
+Even a fixed ellipse was off for an Earth-centred set: the speed's
+KGAUSS_GEO is 7.6e-8 off the 0.9856076686 / sqrt(SUN_EARTH_MRAT) the
+position's daily motion uses, 4.8e-7 deg/day on Selena. Heliocentric
+J2000 longitude speeds against five-point differences: Vulcan 2.9e-2,
+Waldemath 6.9e-5 (1.3e-2 geocentric), Mercury of date 9.4e-6, the JDATE
+sets 3.8e-5; the built-in table's sets and the file's fixed ellipses
+(Cupido..Pickering, Nibiru, Harrington, Christ Comet, Planet 9, the
+Halleys, 2015 RR245) were already right.
+
+**Fix, as done here:** the speed is the derivative of the position as
+it is computed. `check_t_terms()` returns the polynomial's derivative
+with its value (each term's factor carried with its derivative through
+the products; the value is formed exactly as before), and
+`read_elements_file()` passes the six rates out, with flags for a mean
+anomaly in T and an equinox of date. Then dM/dt is the polynomial's,
+or n - 1.5 n (da/dt) / a (t - t0); Kepler's equation differentiated,
+dE/dt = (dM/dt + sin E de/dt) / (1 - e cos E); the orbit-plane state's
+derivative through a and e; the Gaussian vectors' through the
+perihelion (dP/dw = Q, dQ/dw = -P), the node and the inclination; and
+for JDATE the frame's turning applied to the ecliptic position, a
+central difference of the same rotation (obliquity, then precession to
+J2000) over +-1 day, exact to rounding for smooth polynomials and
+long-period series. Positions are unchanged.
+
+Every set of `ephe/seorbel.txt` (40..69), heliocentric and geocentric,
+geometric, J2000 ecliptic and equator, nine dates -400..+400 years, is
+now within 2.2e-8 deg/day of five-point differences over 2^-6 day (all
+but Vulcan, Waldemath and Mercury within 4e-10), most of it the
+reference's own noise: Vulcan's mean anomaly reaches 3e6 degrees at T =
+5, rounded to 5e-10 degree, which moves each position along the orbit.
+Apparent positions are the body at t - tau, not a binary instant, and
+their differences carry ~1e-7 deg/day of the instant's rounding on
+Vulcan, 3e-7 on Waldemath; ecliptic-of-date output keeps the ~5e-8
+deg/day latitude-speed residual every planet has there.
+
+G48 `tests/orbelspeed.c`: Vulcan, Waldemath, Selena, Mercury of date,
+Proserpina, Harrington and a set with T terms on everything but the
+mean anomaly, heliocentric and geocentric, seven dates -300..+300,
+within 1e-7 deg/day (measured <= 8.4e-9) and the distance rate within
+1e-9 of the distance per day (<= 1.6e-11); the upstream build fails
+every set but Harrington, by 2.1e-6 to 0.68 deg/day. G24
+`orbel_speed_off`: 3.8e-9 shipped, 2.9e-2 compat. G1: the 51
+`cov:fict` rows move in their speed fields only -- 40..54 by <= 8.0e-15
+deg/day (the daily-motion constant in place of KGAUSS, 1.4e-12 of
+it), Vulcan (55) by up to 2.8e-3 and Selena (56) by up to 4.8e-7, both
+now within 2.6e-8 and 7.8e-8 of five-point differences (were 2.8e-3
+and 4.9e-7). G17 unchanged.
 
 ## How these were found
 

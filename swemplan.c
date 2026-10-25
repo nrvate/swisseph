@@ -68,17 +68,21 @@
 
 
 #define FICT_GEO 1
+#ifndef SWE_UPSTREAM_COMPAT
+#define FICT_MANO_T 2	/* the mean anomaly is a polynomial in T, epoch = tjd */
+#define FICT_JDATE  4	/* the elements are referred to the equinox of date */
+#endif
 #define KGAUSS_GEO 0.0000298122353216 /* Earth only */
 /* #define KGAUSS_GEO 0.00002999502129737  Earth + Moon */
 
 static void embofs_mosh(swe_ctx *ctx, double J, double *xemb);
-static int check_t_terms(double t, char *sinp, double *doutp);
+static int check_t_terms(double t, char *sinp, double *doutp, double *drate);
 
 static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd, 
   double *tjd0, double *tequ, 
   double *mano, double *sema, double *ecce, 
   double *parg, double *node, double *incl,
-  char *pname, int32 *fict_ifl, char *serr);
+  char *pname, int32 *fict_ifl, double *drate, char *serr);
 
 static const int pnoint2msh[]   = {2, 2, 0, 1, 3, 4, 5, 6, 7, 8, };
 
@@ -511,7 +515,7 @@ char *swi_get_fict_name(swe_ctx *ctx, int32 ipl, char *snam)
 {
   if (read_elements_file(ctx, ipl, 0, NULL, NULL, 
        NULL, NULL, NULL, NULL, NULL, NULL, 
-       snam, NULL, NULL) == ERR)
+       snam, NULL, NULL, NULL) == ERR)
     strcpy(snam, "name not found");
   return snam;
 }
@@ -581,11 +585,17 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
                     const double * SWI_RESTRICT xsun, char *serr)
 {
   double pqr[9], x[6];
-  double eps, K, fac, rho, cose, sine;
+  double eps, fac, rho, cose, sine;
   double alpha, beta, zeta, sigma, M2, Msgn, M_180_or_0;
   double tjd0, tequ, mano, sema, ecce, parg, node, incl, dmot;
   double cosnode, sinnode, cosincl, sinincl, cosparg, sinparg;
   double M, E;
+#ifdef SWE_UPSTREAM_COMPAT
+  double K;
+#else
+  double drate[6], dM, dE, dsema, decce, dparg, dnode, dincl, dfac;
+  double dP[3], dQ[3], xe[3], xr[3];
+#endif
   struct plan_data *pedp = &ctx->pldat[SEI_EARTH];
   struct plan_data *pdp = &ctx->pldat[ipli];
   int32 fict_ifl = 0;
@@ -593,10 +603,17 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
   /* orbital elements, either from file or, if file not found,
    * from above built-in set  
    */
+#ifndef SWE_UPSTREAM_COMPAT
   if (read_elements_file(ctx, ipl, tjd, &tjd0, &tequ, 
        &mano, &sema, &ecce, &parg, &node, &incl, 
-       NULL, &fict_ifl, serr) == ERR)
+       NULL, &fict_ifl, drate, serr) == ERR)
     return ERR;
+#else
+  if (read_elements_file(ctx, ipl, tjd, &tjd0, &tequ, 
+       &mano, &sema, &ecce, &parg, &node, &incl, 
+       NULL, &fict_ifl, NULL, serr) == ERR)
+    return ERR;
+#endif
   dmot = 0.9856076686 * DEGTORAD / sema / sqrt(sema);	/* daily motion */
   if (fict_ifl & FICT_GEO)
     dmot /= sqrt(SUN_EARTH_MRAT);
@@ -646,18 +663,62 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
   }
   E = swi_kepler(E, M, ecce);
   /* position and speed, referred to orbital plane */
+#ifdef SWE_UPSTREAM_COMPAT
   if (fict_ifl & FICT_GEO)
     K = KGAUSS_GEO / sqrt(sema);
   else
     K = KGAUSS / sqrt(sema);
+#endif
   cose = cos(E);
   sine = sin(E);
   fac = sqrt((1 - ecce) * (1 + ecce));
   rho = 1 - ecce * cose;
   x[0] = sema * (cose - ecce);
   x[1] = sema * fac * sine;
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 48: the speed was the two-body motion of a fixed ellipse,
+   * K / sqrt(a) with K Gauss's constant, while the position follows the
+   * element file's polynomials: a mean anomaly with its own rate (Vulcan's
+   * 707550.7341 deg/cy, 19.3717 deg/day, against the 19.3428 of a = 0.13744
+   * AU), and the semi-axis, eccentricity, perihelion, node and inclination
+   * in T as well (Vulcan's node and perihelion 1670 deg/cy, a planet's
+   * elements of date), and for an equinox of date (JDATE) a frame that
+   * precesses with t. Vulcan's heliocentric longitude speed was off by
+   * 2.9e-2 deg/day, Waldemath's geocentric by 1.3e-2, Mercury's set by
+   * 9.4e-6, and every JDATE set by the precession, 3.8e-5. Even for a
+   * fixed ellipse K and the position's daily motion were different
+   * constants for an Earth-centred one (KGAUSS_GEO, 7.6e-8 off 0.9856..
+   * / sqrt(SUN_EARTH_MRAT): 4.8e-7 deg/day on Selena). The speed is now
+   * the derivative of the position as it is computed: dM/dt as
+   * evaluated (the polynomial's, or the daily motion with the semi-axis's
+   * rate in it), Kepler's equation differentiated, the elements' rates
+   * through the Gaussian vectors, and the frame's turning below. G48. */
+  dsema = drate[1];
+  decce = drate[2];
+  dparg = drate[3];
+  dnode = drate[4];
+  dincl = drate[5];
+  if (fict_ifl & FICT_MANO_T)
+    dM = drate[0];	/* M is the polynomial itself, epoch = tjd */
+  else			/* M = mano + (tjd - tjd0) * dmot(a(t)) */
+    dM = dmot - 1.5 * dmot * dsema / sema * (tjd - tjd0);
+  dE = (dM + sine * decce) / rho;	/* E - e sin E = M */
+  dfac = -ecce * decce / fac;
+  x[3] = dsema * (cose - ecce) - sema * (sine * dE + decce);
+  x[4] = dsema * fac * sine + sema * (dfac * sine + fac * cose * dE);
+  /* d/dt of the Gaussian vectors P (pqr[0,3,6]) and Q (pqr[1,4,7]):
+   * dP/dw = Q, dQ/dw = -P; about the node, (-y, x, 0); and through the
+   * inclination, sin/cos w * (sin i sin N, -sin i cos N, cos i) */
+  dP[0] = pqr[1] * dparg - pqr[3] * dnode + sinparg * sinincl * sinnode * dincl;
+  dP[1] = pqr[4] * dparg + pqr[0] * dnode - sinparg * sinincl * cosnode * dincl;
+  dP[2] = pqr[7] * dparg + sinparg * cosincl * dincl;
+  dQ[0] = -pqr[0] * dparg - pqr[4] * dnode + cosparg * sinincl * sinnode * dincl;
+  dQ[1] = -pqr[3] * dparg + pqr[1] * dnode - cosparg * sinincl * cosnode * dincl;
+  dQ[2] = -pqr[6] * dparg + cosparg * cosincl * dincl;
+#else
   x[3] = -K * sine / rho;
   x[4] = K * fac * cose / rho;
+#endif
   /* transformation to ecliptic */
   xp[0] = pqr[0] * x[0] + pqr[1] * x[1];
   xp[1] = pqr[3] * x[0] + pqr[4] * x[1];
@@ -665,6 +726,12 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
   xp[3] = pqr[0] * x[3] + pqr[1] * x[4];
   xp[4] = pqr[3] * x[3] + pqr[4] * x[4];
   xp[5] = pqr[6] * x[3] + pqr[7] * x[4];
+#ifndef SWE_UPSTREAM_COMPAT
+  for (i = 0; i <= 2; i++) {
+    xp[3+i] += dP[i] * x[0] + dQ[i] * x[1];
+    xe[i] = xp[i];
+  }
+#endif
   /* transformation to equator */
   eps = swi_epsiln(ctx, tequ, 0);
   swi_coortrf(xp, xp, -eps);
@@ -674,6 +741,21 @@ int swi_osc_el_plan(swe_ctx *ctx, double tjd, double * SWI_RESTRICT xp,
     swi_precess(ctx, xp, tequ, 0, J_TO_J2000);
     swi_precess(ctx, xp+3, tequ, 0, J_TO_J2000);
   }
+#ifndef SWE_UPSTREAM_COMPAT
+  /* Elements of the equinox of date: the frame turns with t, by the
+   * obliquity's and the precession's rates. Its turning, applied to the
+   * ecliptic position, as a central difference of the same rotation over
+   * +-1 day: smooth polynomials and long-period series, so the
+   * difference is exact to rounding (1e-16 of the 3.8e-5 deg/day). */
+  if (fict_ifl & FICT_JDATE) {
+    swi_coortrf(xe, xr, -swi_epsiln(ctx, tequ + 1, 0));
+    swi_precess(ctx, xr, tequ + 1, 0, J_TO_J2000);
+    swi_coortrf(xe, xe, -swi_epsiln(ctx, tequ - 1, 0));
+    swi_precess(ctx, xe, tequ - 1, 0, J_TO_J2000);
+    for (i = 0; i <= 2; i++)
+      xp[3+i] += (xr[i] - xe[i]) / 2;
+  }
+#endif
 #ifndef SWE_UPSTREAM_COMPAT
   /* J2000 (dynamical) to ICRS, before the Sun or Earth -- which are ICRS --
    * is added; app_pos_etc_plan_osc() takes the result back to J2000 as it
@@ -760,7 +842,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
   double *tjd0, double *tequ,
   double *mano, double *sema, double *ecce,
   double *parg, double *node, double *incl,
-  char *pname, int32 *fict_ifl, char *serr)
+  char *pname, int32 *fict_ifl, double *drate, char *serr)
 {
   int i, k, iplan, retc, ncpos;
   char s[AS_MAXCH], *sp;
@@ -792,6 +874,9 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
       *incl = plan_oscu_elem[ipl][7] * DEGTORAD;	/* inclination */
     if (pname != NULL)
       strcpy(pname, plan_fict_nam[ipl]);
+    if (drate != NULL)
+      for (i = 0; i < 6; i++)
+        drate[i] = 0;	/* constant elements, fixed equinox */
     return OK;
   }
   /*
@@ -845,8 +930,13 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
         *tequ = B1950;
       else if (strncmp(sp, "j1900", 5) == OK)
         *tequ = J1900;
-      else if (strncmp(sp, "jdate", 5) == OK)
+      else if (strncmp(sp, "jdate", 5) == OK) {
         *tequ = tjd;
+#ifndef SWE_UPSTREAM_COMPAT
+        if (fict_ifl != NULL)
+          *fict_ifl |= FICT_JDATE;
+#endif
+      }
       else if (*sp == 'j' || *sp == 'b') {
         if (serr != NULL) {
           snprintf(serr, AS_MAXCH, "%.200s invalid equinox", serri);
@@ -857,7 +947,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* mean anomaly t0 */
     if (mano != NULL) {
-      retc = check_t_terms(tt, cpos[2], mano);
+      retc = check_t_terms(tt, cpos[2], mano, drate);
 	  *mano = swe_degnorm(*mano);
       if (retc == ERR) {
         if (serr != NULL) {
@@ -871,12 +961,18 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
        * equinox = tjd */
       if (retc == 1) {
 	*tjd0 = tjd;
+#ifndef SWE_UPSTREAM_COMPAT
+	if (fict_ifl != NULL)
+	  *fict_ifl |= FICT_MANO_T;
+#endif
       }
       *mano *= DEGTORAD;
+      if (drate != NULL)
+        drate[0] *= DEGTORAD;
     }
     /* semi-axis */
     if (sema != NULL) {
-      retc = check_t_terms(tt, cpos[3], sema);
+      retc = check_t_terms(tt, cpos[3], sema, drate != NULL ? drate + 1 : NULL);
       if (*sema <= 0 || retc == ERR) {
         if (serr != NULL) {
           snprintf(serr, AS_MAXCH, "%.200s semi-axis value invalid", serri);
@@ -886,7 +982,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* eccentricity */
     if (ecce != NULL) {
-      retc = check_t_terms(tt, cpos[4], ecce);
+      retc = check_t_terms(tt, cpos[4], ecce, drate != NULL ? drate + 2 : NULL);
       if (*ecce >= 1 || *ecce < 0 || retc == ERR) {
         if (serr != NULL) {
           snprintf(serr, AS_MAXCH, "%.150s eccentricity invalid (no parabolic or hyperbolic orbits allowed)", serri);
@@ -896,7 +992,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* perihelion argument */
     if (parg != NULL) {
-      retc = check_t_terms(tt, cpos[5], parg);
+      retc = check_t_terms(tt, cpos[5], parg, drate != NULL ? drate + 3 : NULL);
 	  *parg = swe_degnorm(*parg);
       if (retc == ERR) {
         if (serr != NULL) {
@@ -905,10 +1001,12 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
         goto return_err;
       }
       *parg *= DEGTORAD;
+      if (drate != NULL)
+        drate[3] *= DEGTORAD;
     }
     /* node */
     if (node != NULL) {
-      retc = check_t_terms(tt, cpos[6], node);
+      retc = check_t_terms(tt, cpos[6], node, drate != NULL ? drate + 4 : NULL);
 	  *node = swe_degnorm(*node);
       if (retc == ERR) {
         if (serr != NULL) {
@@ -917,10 +1015,12 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
         goto return_err;
       }
       *node *= DEGTORAD;
+      if (drate != NULL)
+        drate[4] *= DEGTORAD;
     }
     /* inclination */
     if (incl != NULL) {
-      retc = check_t_terms(tt, cpos[7], incl);
+      retc = check_t_terms(tt, cpos[7], incl, drate != NULL ? drate + 5 : NULL);
 	  *incl = swe_degnorm(*incl);
       if (retc == ERR) {
         if (serr != NULL) {
@@ -929,6 +1029,8 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
         goto return_err;
       }
       *incl *= DEGTORAD;
+      if (drate != NULL)
+        drate[5] *= DEGTORAD;
     }
     /* planet name */
     if (pname != NULL) {
@@ -959,33 +1061,49 @@ return_err:
 }
 #endif
 
-static int check_t_terms(double t, char *sinp, double *doutp)
+/* Upstream bug 48 (rate part): drate, when not NULL, receives d/dt of the
+ * polynomial, per day -- each term's factor carried with its derivative
+ * through the products, so a term like 3 * T * T2 differentiates too. The
+ * value is formed exactly as before. */
+static int check_t_terms(double t, char *sinp, double *doutp, double *drate)
 {
   int i, isgn = 1, z;
   int retc = 0;
   char *sp;
   double tt[5], fac;
+  double dtt[5], dfac;
   tt[0] = t / 36525;
   tt[1] = tt[0];
   tt[2] = tt[1] * tt[1];
   tt[3] = tt[2] * tt[1];
   tt[4] = tt[3] * tt[1];
+  dtt[0] = dtt[1] = 1.0 / 36525;
+  dtt[2] = 2 * tt[1] / 36525;
+  dtt[3] = 3 * tt[2] / 36525;
+  dtt[4] = 4 * tt[3] / 36525;
   if ((sp = strpbrk(sinp, "+-")) != NULL)
     retc = 1; /* with additional terms */
   sp = sinp;
   *doutp = 0;
+  if (drate != NULL)
+    *drate = 0;
   fac = 1;
+  dfac = 0;
   z = 0;
   while (1) {
     while(*sp != '\0' && strchr(" \t", *sp) != NULL)
       sp++;
     if (strchr("+-", *sp) || *sp == '\0') {
-	  if (z > 0)
+	  if (z > 0) {
 		*doutp += fac;
+		if (drate != NULL)
+		  *drate += dfac;
+	  }
 	  isgn = 1;
 	  if (*sp == '-')
 	    isgn = -1;
 	  fac = 1 * isgn;
+	  dfac = 0;
 	  if (*sp == '\0')
 		return retc;
 	  sp++;
@@ -995,14 +1113,19 @@ static int check_t_terms(double t, char *sinp, double *doutp)
       if (*sp != '\0' && strchr("tT", *sp) != NULL) {
 		/* a T */
         sp++;
-        if (*sp != '\0' && strchr("+-", *sp))
+        if (*sp != '\0' && strchr("+-", *sp)) {
+		  dfac = dfac * tt[0] + fac * dtt[0];
 		  fac *= tt[0];
-	    else if ((i = atoi(sp)) <= 4 && i >= 0)
+	    } else if ((i = atoi(sp)) <= 4 && i >= 0) {
+		  dfac = dfac * tt[i] + fac * dtt[i];
           fac *= tt[i];
+	    }
 	  } else {
         /* a number */
-        if (atof(sp) != 0 || *sp == '0')
+        if (atof(sp) != 0 || *sp == '0') {
+          dfac *= atof(sp);
           fac *= atof(sp);
+	    }
 	  }
       while (*sp != '\0' && strchr("0123456789.", *sp))
 	    sp++;

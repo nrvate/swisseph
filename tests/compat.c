@@ -384,6 +384,28 @@ static double nodaps_topo_rate_off(void)
   return fabs(x[3] - r);
 }
 
+/* UPSTREAM-BUGS 48: Vulcan (seorbel.txt's set 16, mean anomaly, perihelion
+ * and node in T) against a five-point difference of its heliocentric
+ * geometric J2000 longitude over 2^-6 day, deg/day; the two-body speed of
+ * a fixed ellipse was off by 2.9e-2 of it */
+static double orbel_speed_off(void)
+{
+  double jd = 2461338.125, h = 1.0 / 64, x[6], f[5][6], r;
+  int32 fl = SEFLG_SWIEPH | SEFLG_HELCTR | SEFLG_TRUEPOS | SEFLG_J2000 | SEFLG_NONUT;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  if (swe_calc(jd, SE_FICT_OFFSET + 15, fl | SEFLG_SPEED, x, serr) < 0)
+    return -1;
+  for (k = 0; k < 5; k++)
+    swe_calc(jd + (k - 2) * h, SE_FICT_OFFSET + 15, fl, f[k], serr);
+  for (k = 0; k < 5; k++)
+    f[k][0] = f[2][0] + swe_difdeg2n(f[k][0], f[2][0]);
+  r = (f[0][0] - 8 * f[1][0] + 8 * f[3][0] - f[4][0]) / (12 * h);
+  return fabs(x[3] - r);
+}
+
 /* swe_nod_aps()'s geocentric speeds: the osculating ascending node of Mars
  * against a five-point difference of its latitude, deg/day. The points are
  * built in the ecliptic of date, whose turning is taken out of the
@@ -541,7 +563,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
   printf("G24: SWE_UPSTREAM_COMPAT restores what it claims -- %s\n", MODE);
@@ -570,6 +592,7 @@ int main(int argc, char **argv)
   toposun = topo_sun_speed_off();
   merclt = mercury_lt_rate_off();
   moonanc = topo_moon_ancient_off();
+  orbel = orbel_speed_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -763,6 +786,14 @@ int main(int argc, char **argv)
   else {
     printf("  site turns per TT day  %.2e deg/day FAIL: expected %s\n",
            moonanc, WANT_DEFECT ? "> 1.5e-6" : "< 1e-6");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (orbel > 1e-3) : (orbel >= 0 && orbel < 1e-7))
+    printf("  orbital elements' rate %.2e deg/day OK\n", orbel);
+  else {
+    printf("  orbital elements' rate %.2e deg/day FAIL: expected %s\n",
+           orbel, WANT_DEFECT ? "> 1e-3" : "< 1e-7");
     bad++;
   }
 
