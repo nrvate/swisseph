@@ -79,7 +79,7 @@ static void embofs_mosh(swe_ctx *ctx, double J, double *xemb);
 #ifndef SWE_UPSTREAM_COMPAT
 static void embofs_mosh_rate(swe_ctx *ctx, double tjd, double *vemb, double *moon);
 #endif
-static int check_t_terms(double t, char *sinp, double *doutp, double *drate);
+static int check_t_terms(double t, double tlo, double mod, char *sinp, double *doutp, double *drate);
 
 static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd, 
   double *tjd0, double *tequ, 
@@ -1331,7 +1331,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
   char s[AS_MAXCH], *sp;
   char *cpos[20], serri[AS_MAXCH];
   AS_BOOL elem_found = FALSE;
-  double tt = 0;
+  double tt = 0, ttlo = 0;
   if (ctx->fict_lines == NULL && load_fict_lines(ctx, serr) == ERR) {
     /* file does not exist, use built-in bodies */
     if (ipl >= SE_NFICT_ELEM) {
@@ -1399,6 +1399,12 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
       } else
         *tjd0 = atof(sp);
       tt = tjd - *tjd0;
+#ifndef SWE_UPSTREAM_COMPAT
+      {	/* the rounding of tt, exact (TwoSum), for check_t_terms() */
+        double bb = tt - tjd;
+        ttlo = (tjd - (tt - bb)) + (-*tjd0 - bb);
+      }
+#endif
     }
     /* equinox */
     if (tequ != NULL) {
@@ -1430,7 +1436,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* mean anomaly t0 */
     if (mano != NULL) {
-      retc = check_t_terms(tt, cpos[2], mano, drate);
+      retc = check_t_terms(tt, ttlo, 360, cpos[2], mano, drate);
 	  *mano = swe_degnorm(*mano);
       if (retc == ERR) {
         if (serr != NULL) {
@@ -1455,7 +1461,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* semi-axis */
     if (sema != NULL) {
-      retc = check_t_terms(tt, cpos[3], sema, drate != NULL ? drate + 1 : NULL);
+      retc = check_t_terms(tt, ttlo, 0, cpos[3], sema, drate != NULL ? drate + 1 : NULL);
       if (*sema <= 0 || retc == ERR) {
         if (serr != NULL) {
           snprintf(serr, AS_MAXCH, "%.200s semi-axis value invalid", serri);
@@ -1465,7 +1471,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* eccentricity */
     if (ecce != NULL) {
-      retc = check_t_terms(tt, cpos[4], ecce, drate != NULL ? drate + 2 : NULL);
+      retc = check_t_terms(tt, ttlo, 0, cpos[4], ecce, drate != NULL ? drate + 2 : NULL);
       if (*ecce >= 1 || *ecce < 0 || retc == ERR) {
         if (serr != NULL) {
           snprintf(serr, AS_MAXCH, "%.150s eccentricity invalid (no parabolic or hyperbolic orbits allowed)", serri);
@@ -1475,7 +1481,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* perihelion argument */
     if (parg != NULL) {
-      retc = check_t_terms(tt, cpos[5], parg, drate != NULL ? drate + 3 : NULL);
+      retc = check_t_terms(tt, ttlo, 360, cpos[5], parg, drate != NULL ? drate + 3 : NULL);
 	  *parg = swe_degnorm(*parg);
       if (retc == ERR) {
         if (serr != NULL) {
@@ -1489,7 +1495,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* node */
     if (node != NULL) {
-      retc = check_t_terms(tt, cpos[6], node, drate != NULL ? drate + 4 : NULL);
+      retc = check_t_terms(tt, ttlo, 360, cpos[6], node, drate != NULL ? drate + 4 : NULL);
 	  *node = swe_degnorm(*node);
       if (retc == ERR) {
         if (serr != NULL) {
@@ -1503,7 +1509,7 @@ static int read_elements_file(swe_ctx *ctx, int32 ipl, double tjd,
     }
     /* inclination */
     if (incl != NULL) {
-      retc = check_t_terms(tt, cpos[7], incl, drate != NULL ? drate + 5 : NULL);
+      retc = check_t_terms(tt, ttlo, 360, cpos[7], incl, drate != NULL ? drate + 5 : NULL);
 	  *incl = swe_degnorm(*incl);
       if (retc == ERR) {
         if (serr != NULL) {
@@ -1548,13 +1554,33 @@ return_err:
  * polynomial, per day -- each term's factor carried with its derivative
  * through the products, so a term like 3 * T * T2 differentiates too. The
  * value is formed exactly as before. */
-static int check_t_terms(double t, char *sinp, double *doutp, double *drate)
+/* Upstream bug 81 (part 2): an element's linear term n T was formed as n
+ * times T = t / 36525 and the sum reduced to 0..360 afterwards, so its
+ * rounding was that of the unreduced angle: Vulcan's mean anomaly is
+ * 707550.7341 T, 1.6e7 deg at -200 and 3.5e7 at -3000, an ulp of 1.9e-9
+ * and 3.7e-9 deg, and the rounding of T and of the product as much again.
+ * Its true heliocentric places jittered by 1.2e-8 deg at -200 and 3.0e-8 at
+ * -3000 between instants 2^-9 day apart (fourth differences), 4.3e-7 and
+ * 2.4e-6 deg/day in a five-point difference. For an angle (mod = 360) a
+ * term in T alone is now (n / 36525) (t + tlo), the rate split in two
+ * doubles and the product by fma, its whole revolutions taken out exactly
+ * before it is added: the angle within a few ulps of 360 deg. tlo is the
+ * rounding of t = tjd - epoch. The value differs from before by the old
+ * rounding only, and the rate (drate) is the analytic one as before. */
+static int check_t_terms(double t, double tlo, double mod, char *sinp, double *doutp, double *drate)
 {
   int i, isgn = 1, z;
   int retc = 0;
   char *sp;
   double tt[5], fac;
   double dtt[5], dfac;
+#ifndef SWE_UPSTREAM_COMPAT
+  double cnum = 1;	/* the term's numbers and sign */
+  int pw = 0;		/* its power of T */
+#else
+  (void) tlo;
+  (void) mod;
+#endif
   tt[0] = t / 36525;
   tt[1] = tt[0];
   tt[2] = tt[1] * tt[1];
@@ -1587,6 +1613,17 @@ static int check_t_terms(double t, char *sinp, double *doutp, double *drate)
       sp++;
     if (strchr("+-", *sp) || *sp == '\0') {
 	  if (z > 0) {
+#ifndef SWE_UPSTREAM_COMPAT
+		if (mod > 0 && pw == 1) {
+		  /* n T, exact to rounding of the reduced angle */
+		  double rhi = cnum / 36525;
+		  double rlo = fma(-rhi, 36525, cnum) / 36525;
+		  double p = rhi * t;
+		  double e = fma(rhi, t, -p) + rhi * tlo + rlo * t;
+		  p -= mod * floor(p / mod);	/* exact: 360 k is a multiple of ulp(p) */
+		  *doutp += p + e;
+		} else
+#endif
 		*doutp += fac;
 		if (drate != NULL)
 		  *drate += dfac;
@@ -1596,6 +1633,10 @@ static int check_t_terms(double t, char *sinp, double *doutp, double *drate)
 	    isgn = -1;
 	  fac = 1 * isgn;
 	  dfac = 0;
+#ifndef SWE_UPSTREAM_COMPAT
+	  cnum = isgn;
+	  pw = 0;
+#endif
 	  if (*sp == '\0')
 		return retc;
 	  sp++;
@@ -1608,15 +1649,24 @@ static int check_t_terms(double t, char *sinp, double *doutp, double *drate)
         if (*sp != '\0' && strchr("+-", *sp)) {
 		  dfac = dfac * tt[0] + fac * dtt[0];
 		  fac *= tt[0];
+#ifndef SWE_UPSTREAM_COMPAT
+		  pw++;
+#endif
 	    } else if ((i = atoi(sp)) <= 4 && i >= 0) {
 		  dfac = dfac * tt[i] + fac * dtt[i];
           fac *= tt[i];
+#ifndef SWE_UPSTREAM_COMPAT
+		  pw += i ? i : 1;	/* tt[0] is T, as tt[1] */
+#endif
 	    }
 	  } else {
         /* a number */
         if (atof(sp) != 0 || *sp == '0') {
           dfac *= atof(sp);
           fac *= atof(sp);
+#ifndef SWE_UPSTREAM_COMPAT
+          cnum *= atof(sp);
+#endif
 	    }
 	  }
       while (*sp != '\0' && strchr("0123456789.", *sp))

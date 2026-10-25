@@ -1107,6 +1107,28 @@ static double waldemath_lt_round_off(void)
   return w;
 }
 
+/* UPSTREAM-BUGS 81 part 2: Vulcan's heliocentric true longitude at -3000,
+ * Moshier, the largest fourth difference of eight places 2^-9 day apart,
+ * deg. Its mean anomaly's 707550.7341 T was rounded as 3.5e7 deg before
+ * being reduced to 0..360. */
+static double vulcan_true_jitter_off(void)
+{
+  double w = 0, d[8][6], e, jd = floor((2451545.0 - 5000 * 365.25) * 512) / 512;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  for (k = 0; k < 8; k++)
+    swe_calc(jd + k / 512.0, SE_FICT_OFFSET + 15,
+             SEFLG_MOSEPH | SEFLG_HELCTR | SEFLG_TRUEPOS, d[k], serr);
+  for (k = 0; k + 4 < 8; k++) {
+    e = d[k][0] - 4 * d[k + 1][0] + 6 * d[k + 2][0] - 4 * d[k + 3][0] + d[k + 4][0];
+    if (fabs(e) > w)
+      w = fabs(e);
+  }
+  return w;
+}
+
 /* UPSTREAM-BUGS 77: swe_calc_pctr()'s distance rate of Mercury seen from
  * Mars, default flags, against a five-point difference of its distance
  * over 2^-8 day, nine dates 1800-2335, AU/day. The aberration rate added
@@ -1454,7 +1476,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1521,6 +1543,7 @@ int main(int argc, char **argv)
   kronos = kronos_builtin_off();
   pctrdd = pctr_dist_rate_off();
   waldlr = waldemath_lt_round_off();
+  vulcj = vulcan_true_jitter_off();
   moshlt = mosh_lt_off();
   pctrsd = pctr_sun_defl_off();
   earthlr = earth_helio_lt_rate_off();
@@ -2013,6 +2036,14 @@ int main(int argc, char **argv)
   else {
     printf("  fict. light time, round %.2e deg/day FAIL: expected %s\n",
            waldlr, WANT_DEFECT ? "> 1e-5" : "< 5e-8");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (vulcj > 1e-9) : (vulcj < 2e-11))
+    printf("  fict. element rounding %.2e deg     OK\n", vulcj);
+  else {
+    printf("  fict. element rounding %.2e deg     FAIL: expected %s\n",
+           vulcj, WANT_DEFECT ? "> 1e-9" : "< 2e-11");
     bad++;
   }
 

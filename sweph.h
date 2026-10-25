@@ -915,6 +915,9 @@ struct epsilon {
  *     do (3.0e-6 deg; UPSTREAM-BUGS 78 part 2, G77)
  *   - app_pos_etc_sbar() gave the barycentric Sun its velocity at teval, not
  *     at t - tau (3.1e-9 deg/day; UPSTREAM-BUGS 78 part 3, G77)
+ *   - check_t_terms() rounded an element's n T as the unreduced angle
+ *     (Vulcan's mean anomaly 3.5e7 deg at -3000: its true places 3.0e-8
+ *     deg off a smooth curve; UPSTREAM-BUGS 81 part 2, G80)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.
