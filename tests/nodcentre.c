@@ -18,6 +18,12 @@
  * osculating ellipse by the frame bias, which swi_get_denum() gives
  * Moshier (Mars's node 1.5e-4 deg off). (The same entry's fallback, the
  * frame and site of the ephemeris that answered, is G133's (f).)
+ * UPSTREAM-BUGS 169: it read the centre bits otherwise than swe_calc()
+ * (plaus_iflag(): SEFLG_TOPOCTR over SEFLG_BARYCTR over SEFLG_HELCTR):
+ * SEFLG_HELCTR | SEFLG_BARYCTR answered heliocentric (Mars's node 49.5625
+ * deg for the barycentric 49.6398), SEFLG_TOPOCTR | SEFLG_HELCTR
+ * heliocentric, SEFLG_TOPOCTR | SEFLG_BARYCTR the barycentric points less
+ * the site's offset (1.2e-3 deg off the barycentric node).
  *
  * The check, the complete directory:
  *  (a) the Swiss files and Moshier, seven instants -3000..3000: the Sun's
@@ -39,14 +45,23 @@
  *      (de200): the Sun, the Moon, Mars, Saturn and the Earth, mean,
  *      osculating and SE_NODBIT_OSCU_BAR, geocentric, topocentric,
  *      heliocentric and barycentric, 2000 Jul 1.5 and 1900 Jan 0.75, the
- *      return and the four points bit for bit.
+ *      return and the four points bit for bit;
+ *  (c) SEFLG_HELCTR | SEFLG_BARYCTR against SEFLG_BARYCTR, and
+ *      SEFLG_TOPOCTR with SEFLG_BARYCTR, SEFLG_HELCTR or both against
+ *      SEFLG_TOPOCTR: the Swiss files, Moshier and de200, (b)'s bodies,
+ *      methods and instants, swe_nod_aps() and, for the Moon and Mars,
+ *      mean and osculating, swe_nod_aps_ut(); the return, message and
+ *      points bit for bit (Moshier refusing the barycentric points as
+ *      SEFLG_BARYCTR's, and Saturn's SE_NODBIT_OSCU_BAR ellipse).
  * Measured: (a) distance 4.4e-16 AU, direction 7.6e-7 deg (the focal
  * point, 0.03 AU out), Moshier's mean points 2.9e-6 deg and 2.2e-16 AU off
- * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b) 0.
- * 837 rows. Before bug 167's fix the 168 Moshier rows of (a)'s first
+ * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b), (c)
+ * 0. 1293 rows. Before bug 167's fix the 168 Moshier rows of (a)'s first
  * check fail (143 deg, 0.97 AU), the 14 of its second and 7 of the
  * third's 14 (the topocentric); before bug 168's, 340 of (b)'s 480 (12
- * deg). The upstream build (SWE_UPSTREAM_COMPAT) fails 613. Run as
+ * deg); before bug 169's, 448 of (c)'s 456 (180 deg: the Sun's
+ * topocentric points heliocentric, the Earth's orbit's). The upstream
+ * build (SWE_UPSTREAM_COMPAT) fails 1025. Run as
  *   nodcentre EPHEDIR
  */
 #include <math.h>
@@ -203,6 +218,62 @@ static void part_b(void)
   printf("  (b) mixed ephemeris bits against the ephemeris that answers: %.2e deg\n", w);
 }
 
+/* (c) the centre bits read as swe_calc() reads them, bug 169: SEFLG_HELCTR
+ * | SEFLG_BARYCTR answers as SEFLG_BARYCTR (on Moshier refused alike),
+ * SEFLG_TOPOCTR with either or both as SEFLG_TOPOCTR, return, message and
+ * points bit for bit */
+static void part_c(void)
+{
+  static const int ipl[5] = {SE_SUN, SE_MOON, SE_MARS, SE_SATURN, SE_EARTH};
+  static const int32 M[3] = {SE_NODBIT_MEAN, SE_NODBIT_OSCU, SE_NODBIT_OSCU_BAR};
+  static const int32 E[3] = {SEFLG_SWIEPH, SEFLG_MOSEPH, SEFLG_JPLEPH};
+  static const int32 CC[4][2] = {
+    {SEFLG_HELCTR | SEFLG_BARYCTR, SEFLG_BARYCTR}, {SEFLG_TOPOCTR | SEFLG_BARYCTR, SEFLG_TOPOCTR},
+    {SEFLG_TOPOCTR | SEFLG_HELCTR, SEFLG_TOPOCTR},
+    {SEFLG_TOPOCTR | SEFLG_HELCTR | SEFLG_BARYCTR, SEFLG_TOPOCTR}};
+  static const double JD[2] = {2451727.0, 2415020.25};
+  double a[24], b[24], w = 0;
+  char sa[AS_MAXCH], sb[AS_MAXCH], what[160];
+  int ib, im, ic, ie, id, ut, k;
+  for (ut = 0; ut < 2; ut++)
+    for (ie = 0; ie < 3; ie++)
+      for (id = 0; id < 2; id++)
+        for (ib = 0; ib < 5; ib++)
+          for (im = 0; im < 3; im++)
+            for (ic = 0; ic < 4; ic++) {
+              int32 fa = E[ie] | SEFLG_SPEED | CC[ic][0], fb = E[ie] | SEFLG_SPEED | CC[ic][1], ra, rb;
+              double d = 0;
+              int same;
+              if (ut && ((ipl[ib] != SE_MOON && ipl[ib] != SE_MARS) || im == 2))
+                continue;
+              memset(a, 0, sizeof a);
+              memset(b, 0, sizeof b);
+              *sa = *sb = '\0';
+              if (ut) {
+                ra = swe_nod_aps_ut(JD[id], ipl[ib], fa, M[im], a, a + 6, a + 12, a + 18, sa);
+                rb = swe_nod_aps_ut(JD[id], ipl[ib], fb, M[im], b, b + 6, b + 12, b + 18, sb);
+              } else {
+                ra = swe_nod_aps(JD[id], ipl[ib], fa, M[im], a, a + 6, a + 12, a + 18, sa);
+                rb = swe_nod_aps(JD[id], ipl[ib], fb, M[im], b, b + 6, b + 12, b + 18, sb);
+              }
+              for (k = 0; k < 4; k++)
+                if (dir_off(a, k, b, k) > d)
+                  d = dir_off(a, k, b, k);
+              if (d > w)
+                w = d;
+              same = ra == rb && memcmp(a, b, sizeof a) == 0 && (rb == 0 || strcmp(sa, sb) == 0);
+              snprintf(what, sizeof what, "%s eph %d body %d method %d jd %.2f, centre %d against %d: ret %d %d, deg",
+                       ut ? "swe_nod_aps_ut" : "swe_nod_aps", (int) E[ie], ipl[ib], (int) M[im], JD[id],
+                       (int) CC[ic][0], (int) CC[ic][1], ra, rb);
+              /* Moshier refuses the barycentric points (bug 149), and
+               * every SE_NODBIT_OSCU_BAR ellipse beyond 6 AU (Saturn's) */
+              check(same && (rb == 0 || (E[ie] == SEFLG_MOSEPH
+                                         && strcmp(sb, "barycentric Moshier positions are not supported.") == 0)),
+                    "c", what, d, 0);
+            }
+  printf("  (c) combined centre bits against the centre swe_calc() takes: %.2e deg\n", w);
+}
+
 int main(int argc, char **argv)
 {
   if (argc != 2) {
@@ -215,6 +286,7 @@ int main(int argc, char **argv)
   printf("G143: swe_nod_aps()'s change of centre is the one its points are in\n");
   part_a();
   part_b();
+  part_c();
   printf("  rows %d, failed %d\n", nrow, nbad);
   printf(nbad ? "G143 FAIL: %d\n" : "G143 PASS\n", nbad);
   return nbad ? 1 : 0;

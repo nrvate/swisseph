@@ -201,6 +201,7 @@ worst were in code that had never executed even once.
 | 166 | Without the moon files the Swiss files' tidal term is the default, -25.80 (DE431's), not the planet files' DE number's (DE441, -25.936): delta t in AD 1000 1463.430567 s for 1474.717432, 0.037 s at 1900, the heliocentric Mars 2.6e-7 deg off at 1900 and 5.8e-5 in AD 1000, the mean apogee 4.9e-8 at 1900 -- on every thread and context | Correctness | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 | 167 | `swe_nod_aps()` on Moshier takes the Earth for the observer of the Sun's geocentric points, not the Sun: the mean perigee at 2000 Jul 1.5 281.4259 deg at 1.9993 AU, the apogee 191.4583 deg at 0.0531 AU, where the files' are 282.9417 deg at 0.9833 AU and 102.9417 deg at 1.0167 AU; every method, SEFLG_TOPOCTR too | Correctness (behaviour) | `swecl.c` |
 | 168 | `swe_nod_aps()` takes its frame and site from the caller's ephemeris bits, not from the ephemeris that answered or as `swe_calc()` resolves them: warm, a request fallen to Moshier adds an earlier call's Swiss Sun (Mars's node at 1500 0.13 deg off Moshier's, the Moon's heliocentric 0.40 deg), the site takes the files' delta t (2.9e-4 deg on the Moon's topocentric perigee); SEFLG_SWIEPH with SEFLG_MOSEPH, answered from the files, takes Moshier's frame (0.108 deg), SEFLG_JPLEPH with SEFLG_MOSEPH Moshier's frame bias (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
+| 169 | `swe_nod_aps()` reads the centre bits otherwise than `swe_calc()`: SEFLG_HELCTR with SEFLG_BARYCTR answers heliocentric (Mars's node 49.5625 deg for `swe_calc()`'s barycentric 49.6398), SEFLG_TOPOCTR with SEFLG_HELCTR heliocentric, SEFLG_TOPOCTR with SEFLG_BARYCTR the barycentric points less the site's offset (1.2e-3 deg off the barycentric node), where `swe_calc()` answers topocentric | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -11493,6 +11494,63 @@ deg; 8 rows, failing before the fix and in the upstream build. 1088 pass
 G24 `nodaps_mixed_eph_off`: Mars's geocentric osculating node at 2000 Jul
 1.5, SEFLG_SWIEPH | SEFLG_MOSEPH against SEFLG_SWIEPH: 0 shipped, 0.108
 deg compat.
+
+## 169. `swe_nod_aps()` reads the centre bits otherwise than `swe_calc()`
+
+**Severity: Correctness (behaviour: a centre other than `swe_calc()`'s for the same flags, or none, returned OK; Mars's node 0.077 deg off the barycentric one under SEFLG_HELCTR | SEFLG_BARYCTR), both builds**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Found by entry 149's work. `plaus_iflag()` gives `swe_calc()` one centre
+for any combination of the bits: SEFLG_TOPOCTR turns SEFLG_HELCTR and
+SEFLG_BARYCTR off, SEFLG_BARYCTR SEFLG_HELCTR. `swe_nod_aps()` documents
+the centres "like the planetary function swe_calc()" but tested the raw
+bits: the observer was the barycentric Sun whenever SEFLG_HELCTR was set,
+nothing for SEFLG_BARYCTR without it, the site (its geocentric offset)
+whenever SEFLG_TOPOCTR was set, and the Earth only without SEFLG_HELCTR and
+SEFLG_BARYCTR. At 2000 Jul 1.5, Mars's osculating ascending node on the
+files:
+
+| flags | `swe_nod_aps()` | `swe_calc()`'s centre |
+|---|---|---|
+| SEFLG_HELCTR \| SEFLG_BARYCTR | 49.5625 deg, heliocentric | barycentric: 49.6398 |
+| SEFLG_TOPOCTR \| SEFLG_HELCTR | 49.5625, heliocentric | topocentric: 69.8377 |
+| SEFLG_TOPOCTR \| SEFLG_BARYCTR | 49.6387, the barycentric points less the site's offset, no centre's | topocentric: 69.8377 |
+
+On Moshier the first answered its heliocentric points under a barycentric
+request (`swe_calc()` refuses it, entry 149), and SEFLG_TOPOCTR |
+SEFLG_BARYCTR was refused as barycentric (entry 149) where `swe_calc()`
+answers it topocentric. For the Moon, which takes no aberration
+geocentric, SEFLG_TOPOCTR | SEFLG_HELCTR took it as heliocentric. Every
+body and method alike; the UT form too. Both builds.
+
+**Fix, as done here:**
+- The centre bits as `plaus_iflag()` leaves them, at the top, so every
+  test below (the observer, the change of centre, the Moon's aberration,
+  entry 149's barycentric refusal) reads one centre: SEFLG_HELCTR |
+  SEFLG_BARYCTR is barycentric (on Moshier refused, as SEFLG_BARYCTR is),
+  SEFLG_TOPOCTR with either or both topocentric.
+- Now each combination answers as the centre `swe_calc()` takes, return,
+  message and points bit for bit, on the files, de200 and Moshier.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+G143 `tests/nodcentre.c` (c): SEFLG_HELCTR | SEFLG_BARYCTR against
+SEFLG_BARYCTR, SEFLG_TOPOCTR with SEFLG_BARYCTR, SEFLG_HELCTR or both
+against SEFLG_TOPOCTR, the Swiss files, Moshier and de200, five bodies,
+three methods, two instants, `swe_nod_aps()` and (the Moon and Mars)
+`swe_nod_aps_ut()`: 456 rows pass; before the fix 448 fail (the 8 that
+pass are Moshier's Saturn ellipse, refused either way), and the upstream
+build. G143 1293 rows pass; the upstream build fails 1025. G133 had
+SEFLG_TOPOCTR | SEFLG_BARYCTR among its barycentric requests in (g) and
+SEFLG_HELCTR | SEFLG_BARYCTR among its heliocentric ones in (h): the first
+moves to (h), answered by the fallback as by the Moshier request bit for
+bit, and Moshier now refuses the second as barycentric (60 rows that fail
+before the fix). Its `ask()` now marks a call as answered, which the warm
+checks read unset from the stack (they passed at -O1 and failed 8 at -O0
+once the file changed). 1120 rows pass; the upstream build fails 390.
+
+G24 `nodaps_helbary_off`: Mars's osculating node at 2000 Jul 1.5,
+SEFLG_HELCTR | SEFLG_BARYCTR against SEFLG_BARYCTR: 0 shipped, 0.077 deg
+compat.
 
 ## How these were found
 

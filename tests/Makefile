@@ -1379,7 +1379,9 @@ check-moonlesstid: moonlesstid
 # Sun's geocentric and topocentric perigee and apogee the Earth's
 # heliocentric points seen from the Sun on Moshier as on the files, every
 # method, Moshier's mean points the files' and their speeds the rates of
-# their positions (UPSTREAM-BUGS 167).
+# their positions (UPSTREAM-BUGS 167); mixed ephemeris bits answered as the
+# ephemeris they resolve to (168) and combined centre bits as the centre
+# swe_calc() takes (169), bit for bit.
 check-nodcentre: nodcentre
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./nodcentre $(EPHE)
 

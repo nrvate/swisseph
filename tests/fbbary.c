@@ -83,18 +83,20 @@
  *  (g) swe_nod_aps() and swe_nod_aps_ut() barycentric, every method and
  *      body class: the Sun, the Moon, Mercury, Mars, Saturn, Pluto and the
  *      Earth, mean, osculating, SE_NODBIT_OSCU_BAR, SE_NODBIT_FOPOINT and
- *      method 0, SEFLG_TOPOCTR | SEFLG_BARYCTR (barycentric here), and
- *      Chiron in a directory with the asteroid files alone (Moshier asked
+ *      method 0, and Chiron in a directory with the asteroid files alone (Moshier asked
  *      in the complete directory too): the Moshier request refused,
  *      "barycentric Moshier positions are not supported.", the fallback
  *      alike, strict the downgrade's refusal; the complete directory
  *      answers;
  *  (h) unchanged: those calls heliocentric, geocentric and with
- *      SEFLG_HELCTR | SEFLG_BARYCTR (heliocentric here): the fallback
- *      answers as the Moshier request does, bit for bit, and SEFLG_HELCTR
- *      | SEFLG_BARYCTR as SEFLG_HELCTR; the Sun's geocentric points too,
- *      seen from the Sun on Moshier as on the files (UPSTREAM-BUGS 167).
- *      Not the UT calls, whose fallback takes the files' delta t;
+ *      SEFLG_TOPOCTR | SEFLG_BARYCTR (topocentric, as swe_calc() reads it,
+ *      UPSTREAM-BUGS 169; (g) had it, barycentric before): the fallback
+ *      answers as the Moshier request does, bit for bit; the Sun's
+ *      geocentric points too, seen from the Sun on Moshier as on the files
+ *      (UPSTREAM-BUGS 167). SEFLG_HELCTR | SEFLG_BARYCTR, barycentric now
+ *      as in swe_calc() (bug 169; heliocentric before), refused on Moshier
+ *      and the fallback alike. Not the UT calls, whose fallback takes the
+ *      files' delta t;
  *  (i) swe_calc_pctr()'s return flag: the complete directory's the
  *      ephemeris asked; the JPL file alone missing, JPL asked, the
  *      fallback allowed: Mars from Jupiter (SEFLG_SPEED, SEFLG_TRUEPOS,
@@ -105,7 +107,7 @@
  *      Moon SEFLG_MOSEPH within 1e-6 deg of the complete directory's, Mars
  *      from Jupiter its answer bit for bit, strict bug 120's refusal of
  *      the two and the complete directory's answer for the rest.
- * Measured: 1088 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ * Measured: 1120 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
  * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
  * (osculating), swe_calc_pctr()'s Moon 2.1e-7 deg.
  * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
@@ -128,7 +130,10 @@
  * build, which fails 296 with them, 288 without, on the tests' compat
  * objects. UPSTREAM-BUGS 168 adds 4 to each (f) of the files of
  * 1800-2400: before its fix and in the upstream build those 8 fail (the
- * upstream build 304 in all).
+ * upstream build 304 in all). UPSTREAM-BUGS 169 moves SEFLG_TOPOCTR |
+ * SEFLG_BARYCTR from (g) to (h) (16 rows of (g) and 16 of (h) out, 64 of
+ * (h) in) and has Moshier refuse SEFLG_HELCTR | SEFLG_BARYCTR: before its
+ * fix those 60 rows of (h) fail.
  * Run as
  *   fbbary EPHEDIR
  */
@@ -205,7 +210,6 @@ static const struct cs G[] = {
   {"nod_aps Mars osculating", NODAPS, SE_MARS, SE_NODBIT_OSCU, BS},
   {"nod_aps Mars OSCU_BAR", NODAPS, SE_MARS, SE_NODBIT_OSCU_BAR, BS},
   {"nod_aps Mars osc, FOPOINT", NODAPS, SE_MARS, SE_NODBIT_OSCU | SE_NODBIT_FOPOINT, BS},
-  {"nod_aps Mars osc, topo+bary", NODAPS, SE_MARS, SE_NODBIT_OSCU, BS | SEFLG_TOPOCTR},
   {"nod_aps_ut Mars osculating", NODAPS_UT, SE_MARS, SE_NODBIT_OSCU, BS},
   {"nod_aps_ut Moon mean", NODAPS_UT, SE_MOON, SE_NODBIT_MEAN, BS},
   {"nod_aps Saturn mean", NODAPS, SE_SATURN, SE_NODBIT_MEAN, BS},
@@ -217,9 +221,11 @@ static const struct cs G[] = {
 /* (g): the asteroid class, in a directory with the asteroid files alone */
 static const struct cs GA = {"nod_aps Chiron osculating", NODAPS, SE_CHIRON, SE_NODBIT_OSCU, BS};
 /* (h): the centres Moshier serves, unchanged: G's calls heliocentric,
- * geocentric, and SEFLG_HELCTR | SEFLG_BARYCTR, which this function reads
- * as heliocentric */
-static const int32 HCTR[3] = {SEFLG_HELCTR, 0, SEFLG_HELCTR | SEFLG_BARYCTR};
+ * geocentric, and SEFLG_TOPOCTR | SEFLG_BARYCTR, topocentric; and
+ * SEFLG_HELCTR | SEFLG_BARYCTR, barycentric as in swe_calc() (bug 169) */
+#define NHCTR 4
+static const int32 HCTR[NHCTR] = {SEFLG_HELCTR, 0, SEFLG_HELCTR | SEFLG_BARYCTR,
+                                  SEFLG_TOPOCTR | SEFLG_BARYCTR};
 /* (i): swe_calc_pctr()'s return flag (UPSTREAM-BUGS 150) */
 static const struct cs P[] = {
   {"pctr Mars from Jupiter", PCTR, SE_MARS, SE_JUPITER, SEFLG_SPEED},
@@ -264,6 +270,9 @@ static void ask(const struct cs *c, int32 fl, double jd, struct ans *a)
     case STAR2: a->r = swe_fixstar2(star, jd, fl, a->x, a->serr); break;
     default: a->r = swe_fixstar(star, jd, fl, a->x, a->serr); break;
   }
+  /* answered: warm()'s and warm18()'s own calls are judged on it too (the
+   * checks read ran, which their stack copies did not set) */
+  a->ran = 1;
 }
 
 static void setup(const char *dir, int fb, int32 eph)
@@ -431,7 +440,6 @@ static int warm18(double jd)
   bad += !(a.r == 0);
   for (k = 0; k < NW18; k++) {
     ask(&W18[k], W18[k].fl | SEFLG_SWIEPH, 2268923.5, &b);
-    b.ran = 1;
     bad += !(W18REF[k].ran && b.r == W18REF[k].r
              && (k < NW18 - 1 ? same(&b, &W18REF[k]) : nodaps_off(&b, &W18REF[k]) <= 1e-7));
   }
@@ -632,15 +640,16 @@ int main(int argc, char **argv)
         check(full.ran && full.r == 0, "g", GA.sz, eph, jd, &full, "the complete directory does not answer");
       }
       /* (h) the centres Moshier serves, as before: the fallback answers as
-       * the Moshier request does, and SEFLG_HELCTR | SEFLG_BARYCTR as
-       * SEFLG_HELCTR; the Sun's geocentric points too, seen from the Sun
-       * on Moshier now (bug 167). Not the UT calls, whose fallback takes
-       * the files' delta t. */
+       * the Moshier request does; the Sun's geocentric points too, seen
+       * from the Sun on Moshier now (bug 167), and SEFLG_TOPOCTR |
+       * SEFLG_BARYCTR, topocentric (bug 169). SEFLG_HELCTR | SEFLG_BARYCTR,
+       * barycentric now (bug 169), refused on both. Not the UT calls, whose
+       * fallback takes the files' delta t. */
       for (k = 0; k < NG; k++) {
-        struct ans m[3], f;
+        struct ans m[NHCTR], f;
         if (G[k].kind == NODAPS_UT)
           continue;
-        for (j = 0; j < 3; j++) {
+        for (j = 0; j < NHCTR; j++) {
           struct cs c = G[k];
           c.fl = (c.fl & ~(SEFLG_BARYCTR | SEFLG_TOPOCTR)) | HCTR[j];
           child(DIR_, 0, SEFLG_MOSEPH, &c, jd, &m[j]);
@@ -649,10 +658,11 @@ int main(int argc, char **argv)
                 && (f.r < 0 ? strcmp(f.serr, m[j].serr) == 0 : memcmp(f.x, m[j].x, sizeof f.x) == 0),
                 "h", c.sz, eph, jd, &f, j == 0 ? "heliocentric: not the Moshier request's answer"
                 : j == 1 ? "geocentric: not the Moshier request's answer"
-                : "HELCTR | BARYCTR: not the Moshier request's answer");
+                : j == 2 ? "HELCTR | BARYCTR: not the Moshier request's answer"
+                : "TOPOCTR | BARYCTR: not the Moshier request's answer");
         }
-        check(same(&m[2], &m[0]), "h", G[k].sz, eph, jd, &m[2],
-              "Moshier, HELCTR | BARYCTR: not its heliocentric answer");
+        check(refused_bary(&m[2]), "h", G[k].sz, eph, jd, &m[2],
+              "Moshier, HELCTR | BARYCTR: not refused as barycentric");
       }
       /* (i) swe_calc_pctr()'s return flag, bug 150 */
       for (k = 0; k < NP; k++) {

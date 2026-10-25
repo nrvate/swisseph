@@ -5562,6 +5562,19 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   if (iflag & SEFLG_EPHMASK)
     iflag = (iflag & ~SEFLG_EPHMASK) | ((iflag & SEFLG_JPLEPH) ? SEFLG_JPLEPH
             : (iflag & SEFLG_SWIEPH) ? SEFLG_SWIEPH : SEFLG_MOSEPH);
+  /* Upstream bug 169: and the centre bits as swe_calc() reads them
+   * (plaus_iflag(): SEFLG_TOPOCTR turns SEFLG_HELCTR and SEFLG_BARYCTR
+   * off, SEFLG_BARYCTR SEFLG_HELCTR). The tests below let SEFLG_HELCTR
+   * win: with SEFLG_BARYCTR the points were heliocentric (Mars's
+   * osculating node at 2000 Jul 1.5 49.5625 deg, where swe_calc() answers
+   * barycentric, the files' 49.6398), with SEFLG_TOPOCTR too; and
+   * SEFLG_TOPOCTR | SEFLG_BARYCTR gave the barycentric points less the
+   * site's geocentric offset, nothing's place (49.6387, 1.2e-3 deg off the
+   * barycentric node), where swe_calc() answers topocentric. */
+  if (iflag & SEFLG_TOPOCTR)
+    iflag &= ~(SEFLG_HELCTR | SEFLG_BARYCTR);
+  if (iflag & SEFLG_BARYCTR)
+    iflag &= ~SEFLG_HELCTR;
 #endif
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */

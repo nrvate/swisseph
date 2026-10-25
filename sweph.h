@@ -1361,6 +1361,11 @@ struct epsilon {
  *     delta t; SEFLG_SWIEPH | SEFLG_MOSEPH answered from the files in
  *     Moshier's frame (0.108 deg), JPLEPH | MOSEPH with Moshier's frame
  *     bias (UPSTREAM-BUGS 168, G143, G133)
+ *   - swe_nod_aps() reading the centre bits otherwise than swe_calc():
+ *     SEFLG_HELCTR | SEFLG_BARYCTR heliocentric (Mars's node 0.077 deg off
+ *     the barycentric one), SEFLG_TOPOCTR with SEFLG_HELCTR heliocentric,
+ *     with SEFLG_BARYCTR the barycentric points less the site's offset
+ *     (UPSTREAM-BUGS 169, G143, G133)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

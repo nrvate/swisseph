@@ -2073,6 +2073,25 @@ static double nodaps_mixed_eph_off(void)
   return fabs(swe_difdeg2n(a[0], b[0]));
 }
 
+/* UPSTREAM-BUGS 169: swe_nod_aps() of Mars at 2000 Jul 1.5, Swiss files,
+ * osculating, SEFLG_HELCTR | SEFLG_BARYCTR against SEFLG_BARYCTR: the
+ * ascending node's longitude difference, deg. SEFLG_HELCTR won, the points
+ * heliocentric (49.5625 deg for the barycentric 49.6398), where swe_calc()
+ * takes SEFLG_BARYCTR; now swe_calc()'s precedence. */
+static double nodaps_helbary_off(void)
+{
+  double a[24], b[24];
+  char serr[256];
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  if (swe_nod_aps(2451727.0, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_HELCTR | SEFLG_BARYCTR,
+                  SE_NODBIT_OSCU, a, a + 6, a + 12, a + 18, serr) < 0
+      || swe_nod_aps(2451727.0, SE_MARS, SEFLG_SWIEPH | SEFLG_SPEED | SEFLG_BARYCTR, SE_NODBIT_OSCU,
+                     b, b + 6, b + 12, b + 18, serr) < 0)
+    return 1e9;
+  return fabs(swe_difdeg2n(a[0], b[0]));
+}
+
 /* UPSTREAM-BUGS 140: the site's move for a user delta t a quarter ulp of
  * UT1 longer, at TT 2000 Jan 1.5, Zurich, Swiss files: the site as the
  * Sun's geocentric less topocentric true J2000 equatorial ICRS XYZ place,
@@ -4188,7 +4207,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, nodmsun, nodmix;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, jplnamed, jpldft, moonless, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl, pctredge, eopcut, biaslt, biasstep, biasvel, biastab, nodmsun, nodmix, nodhb;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -4317,6 +4336,7 @@ int main(int argc, char **argv)
   nodmb = nodaps_mosh_bary_ret();
   nodmsun = nodaps_mosh_sun_off();
   nodmix = nodaps_mixed_eph_off();
+  nodhb = nodaps_helbary_off();
   pctreph = pctr_ephe_ret();
   pctredge = pctr_ctr_edge_ret();
   biastab = jplhora_table_jump();
@@ -5236,6 +5256,14 @@ int main(int argc, char **argv)
   else {
     printf("  nod_aps SWIEPH|MOSEPH  %.2e deg FAIL: expected %s\n",
            nodmix, WANT_DEFECT ? "> 0.05" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (nodhb > 0.05 && nodhb < 1e9) : (nodhb == 0))
+    printf("  nod_aps HELCTR|BARYCTR %.2e deg OK\n", nodhb);
+  else {
+    printf("  nod_aps HELCTR|BARYCTR %.2e deg FAIL: expected %s\n",
+           nodhb, WANT_DEFECT ? "> 0.05" : "0");
     bad++;
   }
 
