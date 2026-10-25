@@ -208,6 +208,9 @@ extern void swi_gen_filename(double tjd, int ipli, char *fname);
 extern uint32 swi_crc32(unsigned char *buf, int len);
 extern void swi_seed_leap_table(swe_ctx *ctx);
 extern void swi_seed_dt_table(swe_ctx *ctx);
+/* the path's swe_deltat.txt to be read again, and the memo of the old one
+ * emptied (UPSTREAM-BUGS 147) */
+extern void swi_dt_table_forget(swe_ctx *ctx);
 
 extern int swi_cutstr(char *s, char *cutlist, char *cpos[], int nmax);
 extern char *swi_right_trim(char *s);

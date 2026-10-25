@@ -181,6 +181,7 @@ worst were in code that had never executed even once.
 | 144 | `swe_set_ephe_path()` keeps the IERS corrections read from the old directory (`load_dpsi_deps()` loads once), and so does a thread adopting the path: after path A, the JPL file, path B and the JPL file again, SEFLG_JPLHOR answers A's dpsi, 0.131" off B's on G134's fixtures, and after path B alone A's for SEFLG_JPLHOR_APPROX's, 4.2e-2" | Correctness (behaviour) | `sweph.c` |
 | 151 | Woolard's nutation (`SEMOD_NUT_WOOLARD`) turns the Moon's mean anomaly at 13255523.59 revolutions a century, 10^4 times its 1325.552359, so its terms in it cycle every 3.97 minutes: dpsi up to 0.236" and deps 0.0226" off the series, the interpolation on it 0.196"; `SE_SIDBIT_PREC_ORIG`'s Newcomb ayanamsas take it | Correctness | `swephlib.c` |
 | 152 | The default nutation's grid (this fork's) leaves the IAU 2000A series it interpolates far inside its guard of |J| < 1e12 days, as the arguments' T^3 and T^4 terms speed them up: 2.3e-9 deg at |J| 6e8 (1.6 million years), 1.3e-4 at 1e9, 7 deg at 3e9, answered by `swe_calc(SE_ECL_NUT)` with no error; its rate 5.2e-4 deg/day at 1e9 | Correctness | `swephlib.c` |
+| 147 | A thread adopting another thread's `swe_set_ephe_path()` keeps the old directory's delta t table, leap seconds and planet-name memo (this fork's): delta t at 1990 79.987645 s for 56.856191, the TT of 2026 UTC 1 s late, Cupido's name from the old seorbel.txt; and calc_deltat()'s memo outlives a path change and `swe_close()` on every thread, the same 79.987645 s at an instant asked before it | Correctness (behaviour) | `sweconfig.c`, `swephlib.c`, `sweph.c` |
 
 ---
 
@@ -9172,7 +9173,9 @@ with a swe_deltat.txt giving 80.0 s for 1990 in the first directory, the
 adopting thread's `swe_deltat()` at 1990 Jan 1 stayed 79.987645 s after
 the other thread's path to EPHEDIR, where that thread and a fresh process
 answer 56.856191 (23.13 s). `leapsec_done`, cleared beside it, likewise
-(not measured).
+(not measured). Fixed as entry 147, with the leap seconds (1 s in 2026),
+the planet-name memo and the delta-t memo, which kept the old table on
+the setting thread too.
 
 ## 138. A JPL file a calculation opens sets the automatic tidal term for itself, not for the guess: after a path setter forgets the JPL DE number, `swe_get_tid_acc()` answers a term the next `swe_deltat()` does not use
 
@@ -10007,6 +10010,84 @@ Noticed, not fixed:
   at |J| 1e6, 3.4e-9 at 7.9e6 (the end of -13000..+17000), 1.1e-8 at
   2.5e7 (68000 years), 5.4e-8 at 1e8, 1.2e-6 at 4e8. Above the 1e-8
   deg/day floor only beyond 68000 years, where no body has a speed.
+
+## 147. A thread adopting another thread's `swe_set_ephe_path()` keeps the old directory's delta t table, leap seconds and planet-name memo, and the delta-t memo outlives a path change on every thread (this fork's)
+
+**Severity: Correctness (behaviour: delta t 23.13 s off at 1990 after a path change, on the setting thread at an instant already asked and on every adopting thread; UTC to TT 1 s off in 2026, and a fictitious body's name, on the adopting thread)**
+**Where:** `sweconfig.c`: `swi_config_apply()`, its branch for an adopted path; `swephlib.c`: `calc_deltat()`'s memo, new `swi_dt_table_forget()`; `sweph.c`: `swi_close_keep_topo_etc()`, `ctx_release()`
+
+Entry 137's noticed item, found by its work. A path change on the setting
+thread (`swe_set_ephe_path()`, `swi_close_keep_topo_etc()`) sends what it
+read along the old path back to be read along the new one: the leap
+seconds (`seleapsec.txt`, `leapsec_done`), the delta t table
+(`swe_deltat.txt`, `init_dt_done`), the star file and catalogue
+(`sefstars.txt`, bug 92's `swi_fixstar_forget()`, bug 121's failed load),
+`seorbel.txt`'s lines, the planet-name memo (`saved_planet_name`, which
+holds a name read from `seorbel.txt`, an asteroid file or `seasnam.txt`),
+and the IERS files (bugs 142-144's). A thread on the default context
+adopting the change in `swi_config_apply()` emptied the star and
+`seorbel.txt` caches and kept the rest. Measured with a first directory of
+links to EPHEDIR's files with its own `swe_deltat.txt` (80.0 s for 1990),
+`seleapsec.txt` (a leap second at 2025 Jul 1), `sefstars.txt` (Sirius and
+Aldebaran 10 s of RA on) and `seorbel.txt` (Cupido 1 deg on, named
+Cupido147), the path then set to EPHEDIR by another thread, against a
+fresh process with EPHEDIR:
+
+- the adopting thread's delta t at 1990 Jan 1 79.987645 s for 56.856191,
+  by `swe_deltat()` and by `swe_deltat_ex()` with SEFLG_SWIEPH;
+- its `swe_utc_to_jd()` for 2026 Jan 1 0h UTC TT 2461041.50081231 for
+  2461041.50080074, the old file's leap second (1.0 s);
+- its `swe_get_planet_name(SE_CUPIDO)` "Cupido147" for "Cupido", the memo
+  of the last name asked; Cupido's place was right (the lines were
+  emptied), and so were both star functions (bug 92);
+- under SWE_UPSTREAM_COMPAT, where the star caches are upstream's and
+  stay, its `swe_fixstar()` went on reading the old `sefstars.txt` through
+  the file left open: Sirius 104.136831 deg for the setting thread's
+  104.085304.
+
+And the delta t on the setting thread itself, and on an explicit context
+given the same calls: at an instant asked before the path change, under
+the same tidal term (`swe_deltat_ex()` with SEFLG_SWIEPH, both paths
+holding semo_18.se1), 79.987645 s for 56.856191. `calc_deltat()`'s memo
+(this fork's, G18) is consulted before `init_dt()`, which empties it when
+it reads the table again; clearing `init_dt_done` did not reach it. With
+de200.eph set, `swe_deltat()` dodged it only because the path setter
+changed its guess (F4) and so the memo's key; `swe_close()` the same: a
+`swe_deltat.txt` rewritten to 70.0 s and `swe_close()` left 79.987645 s
+(the manual's way to have a rewritten file read again, bug 103). A
+thread started and a context made after the path change answered right;
+upstream has no memo, and its threads share no configuration.
+
+**Fix, as done here:** in both builds (the adoption and the memo are this
+fork's). The adoption's branch for a new path drops what the setter
+drops: `leapsec_done`, the delta t table, the planet-name memo, and the
+star file and `is_old_starfile` (in the shipped build
+`swi_fixstar_forget()` did already). The delta t table goes with its memo
+everywhere it is sent back to be read (`swi_dt_table_forget()`: the path
+setter, the JPL setter, `swe_close()` and the adoption). Nothing is opened
+by any of it; each file is read again when first asked for, as on the
+setting thread. Not on a hot path: a path change.
+
+`seasnam.txt` is read at each lookup that needs it, through the same name
+memo; not measured on its own (no asteroid file with a provisional
+designation in ephe/). The IERS files are entries 142-144's.
+
+G132 (`tests/jpldenum.c`, entry 137) gains the setting (the first path a
+directory with its own four tables, the last setter the path to EPHEDIR),
+the observation (delta t at 1990 Jan 1 by `swe_deltat_ex()` with
+SEFLG_SWIEPH and by `swe_deltat()`, the TT of 2026 Jan 1 UTC, Sirius by
+`swe_fixstar2()` and `swe_fixstar()`, Aldebaran by `swe_fixstar()`, Cupido
+and its name, read first by the readers that compute before the last
+setter, delta t at 1990 last), and a reader (a context made by
+`swe_ctx_new()` after the last setter): 5 settings x 5 readers x 4
+observations, and a check that the first directory's tables move every
+value: 101 pass. Before the fix 3 fail: the setting thread and the
+explicit context (delta t, the memo) and the running thread (delta t, the
+TT, the name). The compat build fails 52 of 101 with the fix and
+without, by upstream behaviour it restores, of which these 3 by
+`swe_fixstar2()`'s catalogue, which upstream's path setter keeps (bug
+92), the running thread now answering as the setting thread. No G24 case:
+the fix is in both builds. G18 (`check-dtmemo`) and G116 pass.
 
 ## How these were found
 

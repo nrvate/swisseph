@@ -3881,6 +3881,19 @@ void swi_seed_dt_table(swe_ctx *ctx)
   dt_memo_clear(ctx);
 }
 
+/* Upstream bug 147, in both builds (the memo is this fork's): a path
+ * change and swe_close() send the table back to be read along the path
+ * (init_dt_done), and the memo, consulted before init_dt() runs, answered
+ * an instant already computed from the old one: after a path whose
+ * swe_deltat.txt gives 80.0 s for 1990 and a path to a directory without
+ * it, delta t at 1990 Jan 1 stayed 79.987645 s for 56.856191 on the
+ * setting thread. It goes with the table. */
+void swi_dt_table_forget(swe_ctx *ctx)
+{
+  ctx->init_dt_done = FALSE;
+  dt_memo_clear(ctx);
+}
+
 static int init_dt(swe_ctx *ctx)
 {
 FILE *fp;

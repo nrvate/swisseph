@@ -1496,7 +1496,11 @@ check-sunmemo: sunmemo
 # the tidal term the guess takes, so swe_get_tid_acc() after a TT JPL Sun
 # answers the term the next swe_deltat() uses (UPSTREAM-BUGS 138); and
 # swe_deltat_ex() with no ephemeris bit takes the default ephemeris's,
-# the Swiss files', on every thread (UPSTREAM-BUGS 145).
+# the Swiss files', on every thread (UPSTREAM-BUGS 145); and after a path
+# change delta t, the leap seconds, the stars and seorbel.txt's bodies and
+# names are the new directory's on a thread adopting it, and an instant
+# computed before it is not answered from the delta-t memo (UPSTREAM-BUGS
+# 147), on a context made after it too.
 check-jpldenum: jpldenum
 	@env -u SE_EPHE_PATH -u SE_EPHE_FALLBACK ./jpldenum $(EPHE)
 

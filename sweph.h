@@ -1258,6 +1258,11 @@ struct epsilon {
  *     left the IAU 2000A series past 5e8 days and now gives way to it at
  *     4e8, is this fork's; the compat build's default, 2000B, is computed
  *     directly and has no grid; G29)
+ *   - (nothing for UPSTREAM-BUGS 147: a thread adopting another's path
+ *     dropping the old directory's delta t table, leap seconds, star file
+ *     and planet-name memo as the setter does, and calc_deltat()'s memo
+ *     emptied with the table it was made from, are in both builds; the
+ *     adoption and the memo are this fork's; G132)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

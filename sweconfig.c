@@ -457,6 +457,25 @@ AS_BOOL swi_config_apply(swe_ctx *ctx, const struct swe_config *c, int32 groups)
     ctx->jpldenum = 0;
     swi_close_ephe_files(ctx, FORGET_DENUM);
     swi_free_fict_lines(ctx);
+    /* Upstream bug 147, in both builds (the adoption is this fork's): the
+     * tables the old directory's files gave stayed, which the setting
+     * thread reads again (swi_close_keep_topo_etc()): after another
+     * thread's path from a directory whose swe_deltat.txt gives 80.0 s for
+     * 1990 and whose seleapsec.txt adds a leap second, delta t at 1990 Jan
+     * 1 stayed 79.987645 s for 56.856191, the TT of 2026 Jan 1 UTC 1 s
+     * late, and swe_get_planet_name(SE_CUPIDO) that seorbel.txt's name;
+     * under SWE_UPSTREAM_COMPAT swe_fixstar() went on reading the old
+     * sefstars.txt (Sirius 104.136831 deg for 104.085304). They go as the
+     * setter drops them. */
+    ctx->leapsec_done = FALSE;
+    swi_dt_table_forget(ctx);
+    ctx->i_saved_planet_name = 0;
+    *ctx->saved_planet_name = '\0';
+    if (ctx->fixfp != NULL) {
+      fclose(ctx->fixfp);
+      ctx->fixfp = NULL;
+    }
+    ctx->is_old_starfile = FALSE;
     ctx->last_epheflag = 0;
 #ifndef SWE_UPSTREAM_COMPAT
     swi_hel_forget(ctx);	/* a star's magnitude is the path's (bug 82) */

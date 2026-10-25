@@ -2146,10 +2146,10 @@ static void swi_close_keep_topo_etc(swe_ctx *ctx, AS_BOOL forget_denum)
    * from the OLD directory survive into the new one: a second path's
    * seleapsec.txt is simply never seen. The seorbel line cache one line up
    * is dropped for exactly this reason; these two were missed.
-   * init_dt() clears the delta-t memo itself when it re-runs, so the flags
-   * are all that have to go back. */
+   * init_dt() clears the delta-t memo itself when it re-runs -- after the
+   * memo was looked at, so it goes with the flag (bug 147). */
   ctx->leapsec_done = FALSE;
-  ctx->init_dt_done = FALSE;
+  swi_dt_table_forget(ctx);
 #ifndef SWE_UPSTREAM_COMPAT
   /* Upstream bug 92: a manual tidal acceleration was reset to automatic
    * here, so by every swe_set_ephe_path() and swe_set_jpl_file() and by
@@ -2310,9 +2310,10 @@ static void ctx_release(swe_ctx *ctx)
    * one. Left set, the tables loaded from the old directory survive into the
    * new one -- verified for seleapsec.txt, where a second path's leap second
    * is simply never seen. init_dt() clears the delta-t memo itself when it
-   * re-runs, so the flag is all that has to go back. */
+   * re-runs -- after the memo was looked at, so it goes with the flag
+   * (bug 147). */
   ctx->leapsec_done = FALSE;
-  ctx->init_dt_done = FALSE;
+  swi_dt_table_forget(ctx);
   if (ctx->n_fixstars_records > 0) {
     free(ctx->fixed_stars);
     ctx->fixed_stars = NULL;
