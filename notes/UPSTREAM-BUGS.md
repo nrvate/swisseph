@@ -187,6 +187,7 @@ worst were in code that had never executed even once.
 | 149 | `swe_nod_aps()` with barycentric output on Moshier, asked for or fallen to, answers Moshier's heliocentric points, returned OK: Mars's osculating node 0.077 deg off the files' barycentric one, the Moon's mean node 0.37 deg, the Sun's mean perigee 0.40 deg; every method and body class but the SE_NODBIT_OSCU_BAR ellipse beyond 6 AU | Correctness (behaviour) | `swecl.c`, `sweph.c`, `sweph.h` |
 | 150 | `swe_calc_pctr()` returns the caller's flags, not the ephemeris that answered: with the fallback allowed and the JPL file alone missing Mars from Jupiter returns 257 (SEFLG_JPLEPH) with the Swiss answer bit for bit, and with the Moon files missing the Moon from Mars 258 (SEFLG_SWIEPH) with Moshier's Moon | Correctness (behaviour) | `sweph.c` |
 | 157 | `SE_SIDM_LAHIRI_ICRC`'s mean ayanamsa at its epoch is 23.25 deg less 0.00464207 deg (16.7115"), the broken Woolard series' dpsi there (entry 151), not Woolard's 16.792088": with the series fixed, mode 46 with `SE_SIDBIT_PREC_ORIG` gives a true ayanamsa of 23 deg 15' 0.0806" on 1956 Mar 21 for the Calendar Reform Committee's 23 deg 15' 00" | Correctness | `sweph.h` |
+| 154 | `swe_set_jpl_file()` of a file below DE 403, or of one not there, keeps the IERS corrections a DE 403 file loaded from the same directory: SEFLG_JPLHOR answers A's dpsi under its own return flag where a fresh process falls to SEFLG_JPLHOR_APPROX, 4.2e-2" on G134's fixtures, on the setter's thread and an explicit context | Correctness (behaviour) | `sweph.c` |
 
 ---
 
@@ -9993,8 +9994,8 @@ keyed on the instant alone). No hot path.
 
 G134 `tests/eopfollow.c`, extended with 18 checks, each in a forked
 process, bit for bit with its return flag against a fresh process that
-set the final state (B and the fixture; for B alone, the fixture and then
-B, which loads nothing): `SE_ECL_NUT` and `swe_get_ayanamsa_ex()` with
+set the final state (B and the fixture; for B alone, until entry 148, the
+fixture and then B, which loads nothing): `SE_ECL_NUT` and `swe_get_ayanamsa_ex()` with
 SEFLG_JPLHOR at 2000 Jan 7 and 7.37 after path B and the fixture, path B
 alone, or `swe_close()`, B and the fixture, on the setter's thread (B and
 the fixture interpolated too), an explicit context and a second thread
@@ -10015,6 +10016,7 @@ Noticed, not fixed:
   -13.530688" (return 393217) where a fresh process with A and de200.eph
   falls to SEFLG_JPLHOR_APPROX's -13.488712" (524289), 4.20e-2". A thread
   adopting it drops them, as a fresh process has none. Both builds.
+  Fixed as entry 154.
 - `load_dpsi_deps()` loads again over tables it left allocated: after a
   file it gave up on (`eop_dpsi_loaded` -2, a day missing; by reading, -3
   for eop_finals.txt) the next load, by `swe_set_jpl_file()` of another
@@ -10325,6 +10327,15 @@ is bug 131's "the setters' own reads", and an adopting thread reads
 nothing. The one sequence it costs more: a path change followed at once
 by `swe_set_jpl_file()` of another file, one open. No hot path.
 
+G134 (`tests/eopfollow.c`, entry 144): after path A and the DE431 fixture,
+path B alone now reads the kept fixture along B and with it B's IERS
+corrections, so its reference is a fresh process given path B and the
+fixture, as for B and the fixture; it was the fixture and then B, which
+loads nothing (A's corrections had been the defect, none the answer
+expected). SEFLG_JPLHOR answers B's dpsi -13.399987", return 393473, on
+the setter's thread and a thread adopting the path; the 4 checks failed
+against the old reference.
+
 G132 (`tests/jpldenum.c`, entry 137): the reference is now a fresh process
 given the final settings (the last path and the JPL file's name), not a
 replay of the calls, and the observation gains a UT JPL Moon in AD 1700
@@ -10624,6 +10635,52 @@ other.
 G24 `lahiri_icrc_t0_off`: mode 46 | `SE_SIDBIT_PREC_ORIG`, the mean
 ayanamsa at t0 (SEFLG_NONUT) less 23.25 - 0.00464207, in arcseconds:
 -0.0806 shipped, 0.0000 compat.
+
+## 154. `swe_set_jpl_file()` of a file below DE 403, or of one not there, keeps the IERS corrections a DE 403 file loaded: SEFLG_JPLHOR answers with them where a fresh process falls to SEFLG_JPLHOR_APPROX
+
+**Severity: Correctness (behaviour: a setting without effect; dpsi, the ayanamsa and every place of date under SEFLG_JPLHOR 4.20e-2" off a fresh process's on G134's fixtures, under SEFLG_JPLHOR's return flag), both builds**
+**Where:** `sweph.c`: `swe_set_jpl_file_r()`
+
+Entry 144's noticed item. `swe_set_jpl_file()` loads the corrections
+(`load_dpsi_deps()`) for a file of DE 403 or later, and for any other file
+did nothing about them: those a DE 403 file had loaded from the same
+directory stayed, `eop_dpsi_loaded` 1, and `plaus_iflag()` kept
+SEFLG_JPLHOR. Measured on G19's synthetic DE431 header in G134's
+directory A (G122's corrections A, de200.eph linked in), Lahiri: path A,
+the fixture and `SE_ECL_NUT` with SEFLG_JPLEPH | SEFLG_JPLHOR |
+SEFLG_SPEED at 2000 Jan 7, then de200.eph, and dpsi at Jan 7.37 was A's
+-13.530688" under SEFLG_JPLHOR (return 393473) where a fresh process
+with path A and de200.eph answers SEFLG_JPLHOR_APPROX's -13.488712"
+(524545, "you did not call swe_set_jpl_file()"), 4.20e-2" (1.166e-5
+deg); interpolated -13.531351" for -13.489375"; `swe_get_ayanamsa_ex()`
+85872.809871" for 85872.851847"; the same after `swe_set_jpl_file()` of a
+file that is not there, and on an explicit context's
+`swe_set_jpl_file_r()`. Both builds (the compat build -13.530688" for its
+-13.488785"). A thread adopting de200.eph already drops them (entry 143's
+`swi_dpsi_deps_adopt()`), and de200.eph then the fixture loads A's, as a
+fresh process with the fixture does.
+
+**Fix, as done here:** `swe_set_jpl_file_r()` drops the corrections when
+the file it opened loads none -- the open failed, or its DE number is
+below 403 -- with `dpsi_deps_free()`, as the adoption does: the tables
+freed, `eop_dpsi_loaded` back to 0, and what was computed from them, the
+nutation kept at an instant, the topocentric observer and the
+interpolation's nodes built under SEFLG_JPLHOR. The same file again
+(entry 103's early return) keeps them; a file of DE 403 or later loads
+them as before (the same directory's, kept once loaded). Behind `#ifndef
+SWE_UPSTREAM_COMPAT`. No hot path: it runs only in the setter.
+
+G134 `tests/eopfollow.c`, extended with 16 checks, each in a forked
+process, bit for bit with its return flag against a fresh process that
+set path A and the last file: `SE_ECL_NUT` and `swe_get_ayanamsa_ex()`
+with SEFLG_JPLHOR at Jan 7 and 7.37 after path A, the fixture and
+de200.eph (also interpolated), or a file not there, or de200.eph and then
+the fixture, on the setter's thread and an explicit context, and a second
+thread adopting de200.eph. 94 checks; before the fix 10 of the 16 fail,
+all but the other way round and the adopting thread; the compat build
+fails the same 10 (and entry 144's 8). G24 `eop_jpl_kept_off`: dpsi at
+Jan 7.37 after A, the fixture and de200.eph against a fresh context's: 0
+shipped (4.20e-2" before the fix), 4.19e-2" compat.
 
 ## How these were found
 

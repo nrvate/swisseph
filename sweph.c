@@ -3139,6 +3139,14 @@ void CALL_CONV swe_set_jpl_file_r(swe_ctx *ctx, const char *fname)
     }
   }
 #ifndef SWE_UPSTREAM_COMPAT
+  /* Upstream bug 154: a file that loads no IERS corrections -- below DE
+   * 403, or not there -- kept those a DE 403 file had loaded: after path A,
+   * the DE431 fixture and de200.eph, SEFLG_JPLHOR answered A's dpsi
+   * -13.530688" where a fresh process falls to SEFLG_JPLHOR_APPROX's
+   * -13.488712" (G134, 4.20e-2"). They go now, and what was computed from
+   * them, as a thread adopting the file drops them (bug 143). */
+  if (retc != OK || ctx->jpldenum < 403)
+    dpsi_deps_free(ctx);
   setter_tid_acc_auto(ctx);	/* bug 118: for the file just read, or none */
 #endif
 #ifdef TRACE

@@ -63,8 +63,10 @@
  * after it. On the setter's thread (B and the fixture interpolated too), an
  * explicit context, and a second thread on the default context that
  * adopts both settings (interpolated too). Against a fresh process that
- * set the final state: B and the fixture, or for B alone the fixture and
- * then B, which loads nothing. 18 checks, 78 in all.
+ * set the final state, B and the fixture: for B alone too, since the path
+ * setter reads the kept JPL file again along the new path (UPSTREAM-BUGS
+ * 148), as that process's swe_set_jpl_file() reads it. 18 checks, 78 in
+ * all.
  *
  * Measured before the fix, 16 of the 18 fail, all but swe_close() on the
  * setter's thread (G122's case): after B and the fixture A's dpsi
@@ -73,9 +75,29 @@
  * (4.20e-2", the return SEFLG_JPLHOR's), the ayanamsa the same. The
  * upstream build fails the 8 of the setter's thread and the explicit
  * context, whose path setter is upstream's (16 before); the adoption is
- * this fork's, fixed in both builds. Run as
+ * this fork's, fixed in both builds.
+ *
+ * And across swe_set_jpl_file() (UPSTREAM-BUGS 154): a file that loads no
+ * corrections -- below DE 403, or not there -- kept those a DE 403 file had
+ * loaded from the same directory. Path A (de200.eph linked in) and the
+ * fixture, SE_ECL_NUT and swe_get_ayanamsa_ex() with SEFLG_JPLHOR at 2000
+ * Jan 7 under A's corrections, then de200.eph or a file not there, or the
+ * other way de200.eph and then the fixture; the probe at Jan 7 and 7.37
+ * after it. On the setter's thread (de200.eph interpolated too), an
+ * explicit context, and a second thread adopting de200.eph; against a fresh
+ * process that set path A and the last file. 16 checks, 94 in all.
+ *
+ * Measured before the fix, 10 of the 16 fail, all of the setter's thread
+ * and the explicit context but the other way round: A's dpsi -13.530688"
+ * under SEFLG_JPLHOR (return 393473) for SEFLG_JPLHOR_APPROX's -13.488712"
+ * (524545), 4.20e-2"; interpolated -13.531351" for -13.489375"; the
+ * ayanamsa the same. The thread adopting de200.eph passes (entry 143
+ * drops them there), and de200.eph then the fixture loads A's, as before.
+ * The upstream build fails the 10, the fix being behind
+ * SWE_UPSTREAM_COMPAT (-13.530688" for its -13.488785"). Run as
  *   eopfollow EPHEDIR
  */
+#include <limits.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
@@ -318,8 +340,8 @@ static void run2(int a, int p, int fresh, struct obs *o)
  * (other corrections) and the fixture again, or path B alone, or
  * swe_close() and both; the probe at Jan 7 and 7.37 after it. On the
  * setter's thread, a thread on the default context that adopts each, and
- * an explicit context; against a fresh process that set the final state
- * (B and the fixture; or the fixture and then B, which loads nothing). */
+ * an explicit context; against a fresh process that set the final state,
+ * B and the fixture (for B alone too: bug 148 reads the kept file along B). */
 enum { W_MAIN, W_THREAD, W_CTX };
 enum { CH_BF, CH_B, CH_CLOSE };
 struct scen3 {
@@ -396,15 +418,7 @@ static void run3(int k, int p, int fresh, struct obs *o)
   if (s->who == W_CTX && (c = swe_ctx_new()) == NULL)
     exit(3);
   if (fresh) {
-    if (s->change == CH_B) {	/* the fixture, then B: nothing loaded */
-      char jf[64];
-      strcpy(jf, JPL_FIXTURE);
-      swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
-      swe_set_interpolate_nut(s->intp);
-      swe_set_jpl_file(jf);
-      swe_set_ephe_path(DIRS[D_B]);
-    } else
-      setup3(c, D_B, s->intp);
+    setup3(c, D_B, s->intp);
     probe2x(c, p, o);
   } else if (s->who == W_THREAD) {
     pthread_t th;
@@ -429,6 +443,77 @@ static void run3(int k, int p, int fresh, struct obs *o)
     setup3(c, D_A, s->intp);
     probe2(c, p, T0F, &junk);
     change3(c, s->change);
+    probe2x(c, p, o);
+  }
+  swe_ctx_free(c);
+}
+
+/* The corrections across swe_set_jpl_file() (UPSTREAM-BUGS 154): path A,
+ * de200.eph linked in, and the fixture, the probe at 2000 Jan 7 under A's
+ * corrections; then de200.eph, or a file that is not there; or the other
+ * way, de200.eph and then the fixture. The probe at Jan 7 and 7.37 after
+ * it. On the setter's thread (interpolated too), an explicit context, and a
+ * second thread on the default context adopting de200.eph (entry 143's
+ * route); against a fresh process that set path A and the last file. */
+enum { J_DE200, J_NONE, J_BACK };
+static const struct scen3 SC4[] = {
+  { W_MAIN, J_DE200, 0 }, { W_MAIN, J_DE200, 1 }, { W_CTX, J_DE200, 0 },
+  { W_MAIN, J_NONE, 0 }, { W_CTX, J_NONE, 0 },
+  { W_MAIN, J_BACK, 0 }, { W_CTX, J_BACK, 0 }, { W_THREAD, J_DE200, 0 },
+};
+#define NSC4 ((int) (sizeof SC4 / sizeof SC4[0]))
+static const char *JN[] = { "the fixture, then de200.eph",
+  "the fixture, then a file not there", "de200.eph, then the fixture" };
+static const char *JF1[] = { JPL_FIXTURE, JPL_FIXTURE, "de200.eph" };
+static const char *JF2[] = { "de200.eph", "nothere.eph", JPL_FIXTURE };
+
+static void setjpl(swe_ctx *c, const char *f)
+{
+  char jf[64];
+  snprintf(jf, sizeof jf, "%s", f);
+  if (c)
+    swe_set_jpl_file_r(c, jf);
+  else
+    swe_set_jpl_file(jf);
+}
+
+static void run4(int k, int p, int fresh, struct obs *o)
+{
+  const struct scen3 *s = &SC4[k];
+  swe_ctx *c = NULL;
+  struct obs junk;
+  if (s->who == W_CTX && (c = swe_ctx_new()) == NULL)
+    exit(3);
+  if (c) {
+    swe_set_ephe_path_r(c, DIRS[D_A]);
+    swe_set_sid_mode_r(c, SE_SIDM_LAHIRI, 0, 0);
+    swe_set_interpolate_nut_r(c, s->intp);
+  } else {
+    swe_set_ephe_path(DIRS[D_A]);
+    swe_set_sid_mode(SE_SIDM_LAHIRI, 0, 0);
+    swe_set_interpolate_nut(s->intp);
+  }
+  if (fresh) {
+    setjpl(c, JF2[s->change]);
+    probe2x(c, p, o);
+  } else if (s->who == W_THREAD) {
+    pthread_t th;
+    th_p = p;
+    pthread_barrier_init(&bar, NULL, 2);
+    if (pthread_create(&th, NULL, second3, NULL) != 0)
+      exit(3);
+    pthread_barrier_wait(&bar);
+    setjpl(NULL, JF1[s->change]);
+    pthread_barrier_wait(&bar);
+    pthread_barrier_wait(&bar);
+    setjpl(NULL, JF2[s->change]);
+    pthread_barrier_wait(&bar);
+    pthread_join(th, NULL);
+    *o = th_o;
+  } else {
+    setjpl(c, JF1[s->change]);
+    probe2(c, p, T0F, &junk);
+    setjpl(c, JF2[s->change]);
     probe2x(c, p, o);
   }
   swe_ctx_free(c);
@@ -537,11 +622,14 @@ static int write_eop(const char *path, double a, double b, double c, double d, i
 static const char *SUB[ND] = { NULL, "", "/B", "/N", "/G" };
 static int make_fixtures(void)
 {
-  char p[600], base[400];
+  char p[600], base[400], de200[PATH_MAX], q[PATH_MAX + 20];
   const char *tmp = getenv("TMPDIR");
   int d;
   if (snprintf(base, sizeof base, "%s/eopfollow.XXXXXX", tmp && *tmp ? tmp : "/tmp")
       >= (int) sizeof base || mkdtemp(base) == NULL)
+    return -1;
+  snprintf(q, sizeof q, "%s/de200.eph", EPHE);
+  if (realpath(q, de200) == NULL)
     return -1;
   for (d = D_A; d < ND; d++) {
     snprintf(DIRS[d], sizeof DIRS[d], "%s%s", base, SUB[d]);
@@ -549,6 +637,9 @@ static int make_fixtures(void)
       return -1;
     snprintf(p, sizeof p, "%s/%s", DIRS[d], JPL_FIXTURE);
     if (write_jpl(p) != 0)
+      return -1;
+    snprintf(p, sizeof p, "%s/de200.eph", DIRS[d]);
+    if (symlink(de200, p) != 0)
       return -1;
   }
   snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[D_A]);
@@ -571,6 +662,8 @@ static void remove_fixtures(void)
     if (*DIRS[d] == '\0')
       continue;
     snprintf(p, sizeof p, "%s/%s", DIRS[d], JPL_FIXTURE);
+    unlink(p);
+    snprintf(p, sizeof p, "%s/de200.eph", DIRS[d]);
     unlink(p);
     snprintf(p, sizeof p, "%s/eop_1962_today.txt", DIRS[d]);
     unlink(p);
@@ -661,6 +754,24 @@ int main(int argc, char **argv)
       if (differ(&ot, &of, &d)) {
         printf("    %s, %s%s, %s: %.3e off a fresh process's (%.6f\" for %.6f\", return %d, %d) FAIL\n",
                WN[SC3[x].who], CN[SC3[x].change], SC3[x].intp ? ", interpolated" : "", PN[q],
+               d, ot.v[PV[q]] * 3600, of.v[PV[q]] * 3600, ot.ret, of.ret);
+        nfail++;
+      }
+    }
+  for (x = 0; x < NSC4; x++)
+    for (q = 0; q < P_HOUSE; q++) {	/* SE_ECL_NUT, the ayanamsa */
+      struct obs ot, of;
+      double d;
+      n++;
+      if (in_child(run4, x, q, 0, &ot) != 0 || in_child(run4, x, q, 1, &of) != 0) {
+        printf("    %s, %s%s, %s: child failed\n", WN[SC4[x].who], JN[SC4[x].change],
+               SC4[x].intp ? ", interpolated" : "", PN[q]);
+        nfail++;
+        continue;
+      }
+      if (differ(&ot, &of, &d)) {
+        printf("    %s, %s%s, %s: %.3e off a fresh process's (%.6f\" for %.6f\", return %d, %d) FAIL\n",
+               WN[SC4[x].who], JN[SC4[x].change], SC4[x].intp ? ", interpolated" : "", PN[q],
                d, ot.v[PV[q]] * 3600, of.v[PV[q]] * 3600, ot.ret, of.ret);
         nfail++;
       }

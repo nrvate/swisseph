@@ -1300,6 +1300,11 @@ struct epsilon {
  *     the fallback allowed and the JPL file missing 257 (SEFLG_JPLEPH) on
  *     the Swiss answer, with the Moon files missing SEFLG_SWIEPH on a Moon
  *     from Moshier (UPSTREAM-BUGS 150, G133)
+ *   - swe_set_jpl_file() of a file below DE 403, or of one not there,
+ *     keeping the IERS corrections a DE 403 file loaded: after path A, the
+ *     DE431 fixture and de200.eph, SEFLG_JPLHOR answered A's dpsi where a
+ *     fresh process falls to SEFLG_JPLHOR_APPROX (4.2e-2"; UPSTREAM-BUGS
+ *     154, G134). A thread adopting the file drops them in both builds
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

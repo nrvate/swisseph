@@ -3313,6 +3313,58 @@ static double jplhora_step_speed_off(void)
   return r;
 }
 
+/* UPSTREAM-BUGS 154: the IERS corrections across swe_set_jpl_file() of a
+ * file below DE 403. G134's directory A (its corrections, de200.eph linked
+ * in): path A, the DE431 fixture, SE_ECL_NUT with SEFLG_JPLHOR at 2000 Jan
+ * 7, then de200.eph, and dpsi at Jan 7.37 against a fresh context given A
+ * and de200.eph, arcsec; -1 if the fixtures cannot be written. Upstream
+ * keeps A's under SEFLG_JPLHOR where the fresh context falls to
+ * SEFLG_JPLHOR_APPROX: 4.19e-2". */
+static double eop_jpl_kept_off(void)
+{
+  char base[400], p[480], q[PATH_MAX + 20], de200[PATH_MAX];
+  char jf[] = "de431fixture.eph", jd[] = "de200.eph";
+  const char *tmp = getenv("TMPDIR");
+  double x[6], y[6], t = 2451550.5, r = -1;
+  char serr[256];
+  const int32 jh = SEFLG_JPLEPH | SEFLG_JPLHOR;
+  swe_ctx *c;
+  snprintf(base, sizeof base, "%s/compat154.XXXXXX", tmp && *tmp ? tmp : "/tmp");
+  if (mkdtemp(base) == NULL)
+    return -1;
+  snprintf(q, sizeof q, "%s/%s", EPHE, jd);
+  snprintf(p, sizeof p, "%s/%s", base, jd);
+  if (realpath(q, de200) == NULL || symlink(de200, p) != 0)
+    goto out;
+  snprintf(p, sizeof p, "%s/%s", base, jf);
+  if (eop_write_jpl(p) != 0)
+    goto out;
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", base);
+  if (eop_write_eop(p, -0.05, -1e-5, -0.005, -1e-6) != 0)
+    goto out;
+  swe_close();
+  swe_set_ephe_path(base);
+  swe_set_jpl_file(jf);
+  swe_calc(t, SE_ECL_NUT, jh, x, serr);
+  swe_set_jpl_file(jd);
+  swe_calc(t + 0.37, SE_ECL_NUT, jh, x, serr);
+  if ((c = swe_ctx_new()) == NULL)
+    goto out;
+  swe_set_ephe_path_r(c, base);
+  swe_set_jpl_file_r(c, jd);
+  swe_calc_r(c, t + 0.37, SE_ECL_NUT, jh, y, serr);
+  swe_ctx_free(c);
+  r = fabs(x[2] - y[2]) * 3600;
+out:
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  snprintf(p, sizeof p, "%s/%s", base, jd); unlink(p);
+  snprintf(p, sizeof p, "%s/%s", base, jf); unlink(p);
+  snprintf(p, sizeof p, "%s/eop_1962_today.txt", base); unlink(p);
+  rmdir(base);
+  return r;
+}
+
 /* The Earth rotation angle as 1.00273781191135448 * (JD - J2000) rounds at
  * the size of the day count: on the IERS 2010 sidereal time at -13000,
  * consecutive representable JDs scatter off a straight line by ~1 mas.
@@ -3715,7 +3767,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, orbel1st, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc, toposite, oscaps, helmemo, dtfirst, eclnut, nodmosh, j2klat, ayastar, tidpath, moshgeojit, filejoin, modpath, tidget, usernak, moonnbr, moshmoonr, operinoise, refused, dtthr, nodapsgm, moshsunlt, dtpath, nodapsbias, orbelpluto, pathwarn, orbelper, orbelanom, fictstar, moshbary, modtid, mapogspd, starkept, adoptjpl, pathset, cfghold, searchhold, nutintp, moshfarlt, closetid, closekeep, holdstart, nutmodel, orbelbias, teqthr, nutjplhor, jplopen, jplmoon, dtflag0, fbmb, nutstep, toputr, eoppath, woolmd, framestep, nodmb, pctreph, icrct0, eopjpl;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -3844,6 +3896,7 @@ int main(int argc, char **argv)
   pctreph = pctr_ephe_ret();
   starkept = star_load_kept();
   eoppath = eop_path_kept_off();
+  eopjpl = eop_jpl_kept_off();
   adoptjpl = adopt_jpl_off();
   closetid = close_tid_off();
   jplmoon = jpl_path_moon_off();
@@ -4863,6 +4916,14 @@ int main(int argc, char **argv)
   else {
     printf("  speed across a step    %.2e deg/day FAIL: expected %s\n",
            framestep, WANT_DEFECT ? "> 1e-3" : "< 1e-8");
+    bad++;
+  }
+
+  if (eopjpl >= 0 && (WANT_DEFECT ? (eopjpl > 1e-2) : (eopjpl == 0)))
+    printf("  IERS kept by de200.eph %.2e arcsec OK\n", eopjpl);
+  else {
+    printf("  IERS kept by de200.eph %.2e arcsec FAIL: expected %s\n",
+           eopjpl, WANT_DEFECT ? "> 1e-2" : "0");
     bad++;
   }
 
