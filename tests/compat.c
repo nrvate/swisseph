@@ -362,6 +362,31 @@ static double defl_rough_off(void)
   return fmax(hi[0] - lo[0], hi[1] - lo[1]);
 }
 
+/* UPSTREAM-BUGS 74: Isis-Transpluto 0.005 deg from the Sun's centre
+ * (2025-09-21): the deflection's part of its longitude speed (speed less
+ * the speed with SEFLG_NOGDEFL) against a five-point difference of the
+ * deflection over 2^-14 day, deg/day; the rate as a one-sided step was
+ * off by half the step times the deflection's curvature, 1.8e-6 */
+static double defl_disc_rate_off(void)
+{
+  const double t = 2460914.78704834, h = 1.0 / 16384;
+  const int32 fl = SEFLG_SWIEPH;
+  double x[6], y[6], a[6], b[6], d[5], r;
+  char serr[256];
+  int k;
+  swe_close();
+  swe_set_ephe_path(EPHE);
+  swe_calc(t, SE_ISIS, fl | SEFLG_SPEED, x, serr);
+  swe_calc(t, SE_ISIS, fl | SEFLG_SPEED | SEFLG_NOGDEFL, y, serr);
+  for (k = 0; k < 5; k++) {
+    swe_calc(t + (k - 2) * h, SE_ISIS, fl, a, serr);
+    swe_calc(t + (k - 2) * h, SE_ISIS, fl | SEFLG_NOGDEFL, b, serr);
+    d[k] = a[0] - b[0];
+  }
+  r = (8 * (d[3] - d[1]) - (d[4] - d[0])) / (12 * h);
+  return fabs(x[3] - y[3] - r);
+}
+
 /* UPSTREAM-BUGS 34 in swe_nod_aps(): Pluto's osculating ascending node
  * seen from Zurich, its longitude speed against a five-point difference,
  * deg/day; the aberration rate was upstream's chord, 3e-4 off */
@@ -1546,7 +1571,7 @@ int main(int argc, char **argv)
 {
   int bad = 0, contam, wiped, pheno;
   double drift, moonlt, jpltt, sidstep, hlt, obs, gm, siddt, era, spd3, spdlt, latspd, toposun, merclt, moonanc;
-  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale;
+  double nodspd, apslat, deflr, nodflag, nodj2k, natopo, orbel, intpsf, intprough, stardd, fictneg, nutr, startd, hspd, hsid, moshr, moshs, n3spd, moonpspd, moonpull, hfixp, hresp, apsrate, sflags, ayajd0, abr2, intpfix, moonpulle, nutob, merclr, aberrate, kronos, staracc, intplt, pctrdd, waldlr, vulcj, orbellt, oscspd, oscj2k, moshlt, nodjd0, staraccm, pctrsd, moshrough, earthlr, moonsite, moshvb, barysid, jplstale, defldisc;
   int hfix, hres;
 
   EPHE = (argc > 1) ? argv[1] : "../ephe";
@@ -1620,6 +1645,7 @@ int main(int argc, char **argv)
   earthlr = earth_helio_lt_rate_off();
   barysid = bary_sun_sid_off();
   jplstale = jpl_stale_earth_off();
+  defldisc = defl_disc_rate_off();
 
   /* Both are asserted in BOTH directions: a switch that restores nothing is
    * as broken as one that never turns off. */
@@ -2165,6 +2191,14 @@ int main(int argc, char **argv)
   else {
     printf("  JPL Moon after Moshier %.2e deg FAIL: expected %s\n",
            jplstale, WANT_DEFECT ? "> 1" : "0");
+    bad++;
+  }
+
+  if (WANT_DEFECT ? (defldisc > 1e-6) : (defldisc < 2e-8))
+    printf("  deflection rate in disc %.2e deg/day OK\n", defldisc);
+  else {
+    printf("  deflection rate in disc %.2e deg/day FAIL: expected %s\n",
+           defldisc, WANT_DEFECT ? "> 1e-6" : "< 2e-8");
     bad++;
   }
 

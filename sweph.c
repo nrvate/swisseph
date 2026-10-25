@@ -224,6 +224,9 @@ static int observer_at_lt(swe_ctx *ctx, double teval, double t, int32 iflag,
                           const double *xe, double *xobs2, char *serr);
 #endif
 static double meff(double r);
+#ifndef SWE_UPSTREAM_COMPAT
+static double meff_slope(double r);
+#endif
 static void denormalize_positions(double *x0, double *x1, double *x2);
 static void calc_speed(double *x0, double *x1, double *x2, double dt);
 static int32 plaus_iflag(swe_ctx *ctx, int32 iflag, int32 ipl, double tjd, char *serr);
@@ -5947,10 +5950,8 @@ static void deflect_light_from(double *xx, double dt, int32 iflag, const double 
 #ifdef SWE_UPSTREAM_COMPAT
   double qe;
   double xx3[6], dx1, dx2;
-#else
-  double dfl0[3];
-#endif
   double dtsp;
+#endif
   double xsun[6], xearth[6];
   double sina, sin_sunr, meff_fact;
   for (i = 0; i <= 5; i++)
@@ -6039,16 +6040,6 @@ static void deflect_light_from(double *xx, double dt, int32 iflag, const double 
   /* compute deflected position */
   for (i = 0; i <= 2; i++) 
     xx2[i] = ru * (u[i] + g1/g2 * (uq * e[i] - ue * q[i]));
-#ifndef SWE_UPSTREAM_COMPAT
-  /* Upstream bug 49: the speed below took the deflection as xx2 - xx, a
-   * difference of two vectors of the star's distance, 1.6e7 AU for Spica,
-   * whose last bits (2e-9 AU) the 5e-7-day step made 4e-3 AU/day of noise:
-   * the distance rate off by 2.3e-3 AU/day, the longitude speed by 1e-8
-   * deg/day. The displacement itself, ru g1/g2 (uq e - ue q), is formed
-   * directly, here and at the step. */
-  for (i = 0; i <= 2; i++)
-    dfl0[i] = ru * g1/g2 * (uq * e[i] - ue * q[i]);
-#endif
   if (iflag & SEFLG_SPEED) {
     /* correction of speed
      * influence of light deflection on a planet's apparent speed:
@@ -6073,6 +6064,61 @@ static void deflect_light_from(double *xx, double dt, int32 iflag, const double 
      * slightly different u, e, q, and find out the difference in
      * deflection.
      */
+#ifndef SWE_UPSTREAM_COMPAT
+    /* Upstream bug 74: the deflection's rate was its change over the 5e-7
+     * day before t, one-sided, so off by half that step times its second
+     * derivative. Behind the disc the deflection, 1.75" m(r)/r at r solar
+     * radii from the centre, turns about the centre at v/b and curves
+     * fast: Isis-Transpluto's speed 1.8e-6 deg/day off at 0.005 deg from
+     * the centre, 4.3e-7 at 0.026, 2.6e-8 at 0.1. Now the derivative of
+     * the displacement ru g1/g2 (uq e - ue q), through u, e and q's rates
+     * (the step's own) and meff()'s slope on r's segment of its table:
+     * the rate of the deflected position, on r's side of a node.
+     * Upstream bug 49: the step took the deflection as xx2 - xx, a
+     * difference of two vectors of the star's distance, 1.6e7 AU for
+     * Spica, whose last bits (2e-9 AU) it made 4e-3 AU/day of noise; the
+     * displacement and its rate are formed directly. */
+    {
+      double U1[3], E1[3], Q1[3], du[3], de[3], dq[3];
+      double ru1, re1, rq1, duq, due, dmeff = 0, dg1, dg2 = 0, f, df;
+      double k1 = 2.0 * HELGRAVCONST / CLIGHT / CLIGHT / AUNIT;
+      for (i = 0; i <= 2; i++) {
+        U1[i] = xx[i+3];
+        if (iephe == SEFLG_JPLEPH || iephe == SEFLG_SWIEPH)
+          E1[i] = xearth[i+3] - xsb[i+3];
+        else
+          E1[i] = xearth[i+3];
+        Q1[i] = xx[i+3] + xearth[i+3] - xsun[i+3];
+      }
+      ru1 = dot_prod(u, U1);
+      re1 = dot_prod(e, E1);
+      rq1 = dot_prod(q, Q1);
+      for (i = 0; i <= 2; i++) {
+        du[i] = (U1[i] - u[i] * ru1) / ru;
+        de[i] = (E1[i] - e[i] * re1) / re;
+        dq[i] = (Q1[i] - q[i] * rq1) / rq;
+      }
+      duq = dot_prod(du, q) + dot_prod(u, dq);
+      due = dot_prod(du, e) + dot_prod(u, de);
+      if (sina < sin_sunr && sina > 0) {
+        /* r = sina / sin_sunr = sina re / SUN_RADIUS */
+        double c[3], c1[3], c2[3], dsina;
+        swi_cross_prod(u, e, c);
+        swi_cross_prod(du, e, c1);
+        swi_cross_prod(u, de, c2);
+        dsina = (dot_prod(c, c1) + dot_prod(c, c2)) / sina;
+        dmeff = meff_slope(sina / sin_sunr) * (dsina * re + sina * re1) / SUN_RADIUS;
+      }
+      dg1 = k1 * (dmeff - meff_fact * re1 / re) / re;
+      for (i = 0; i <= 2; i++)
+        dg2 += (q[i] + e[i]) * (dq[i] + de[i]);
+      f = ru * g1 / g2;
+      df = ru1 * g1 / g2 + ru * (dg1 - g1 * dg2 / g2) / g2;
+      for (i = 0; i <= 2; i++)
+        xx[i+3] += df * (uq * e[i] - ue * q[i])
+                 + f * (duq * e[i] + uq * de[i] - due * q[i] - ue * dq[i]);
+    }
+#else
     dtsp = -DEFL_SPEED_INTV;
     /* U = planetbary(t-tau) - earthbary(t) = planetgeo */
     for (i = 0; i <= 2; i++) 
@@ -6099,18 +6145,8 @@ static void deflect_light_from(double *xx, double dt, int32 iflag, const double 
     }
     uq = dot_prod(u,q);
     ue = dot_prod(u,e);
-#ifdef SWE_UPSTREAM_COMPAT
     qe = dot_prod(q,e);
-#endif
-#ifndef SWE_UPSTREAM_COMPAT
-    {
-      double ux[3];
-      swi_cross_prod(u, e, ux);
-      sina = sqrt(square_sum(ux));
-    }
-#else
     sina = sqrt(1 - ue * ue);	/* sin(angle) between sun and planet */
-#endif
     sin_sunr = SUN_RADIUS / re; 	/* sine of sun radius (= sun radius) */
     if (sina < sin_sunr) {
       meff_fact = meff(sina / sin_sunr);
@@ -6118,20 +6154,7 @@ static void deflect_light_from(double *xx, double dt, int32 iflag, const double 
       meff_fact = 1;
     }
     g1 = 2.0 * HELGRAVCONST * meff_fact / CLIGHT / CLIGHT / AUNIT / re; 
-#ifndef SWE_UPSTREAM_COMPAT
-    {
-      double qpe[3];
-      for (i = 0; i <= 2; i++)
-        qpe[i] = q[i] + e[i];
-      g2 = square_sum(qpe) / 2;
-    }
-#else
     g2 = 1.0 + qe;
-#endif
-#ifndef SWE_UPSTREAM_COMPAT
-    for (i = 0; i <= 2; i++)
-      xx[i+3] += (dfl0[i] - ru * g1/g2 * (uq * e[i] - ue * q[i])) / dtsp;
-#else
     for (i = 0; i <= 2; i++) 
       xx3[i] = ru * (u[i] + g1/g2 * (uq * e[i] - ue * q[i]));
     for (i = 0; i <= 2; i++) {
@@ -8805,6 +8828,20 @@ static double meff(double r)
   m = eff_arr[i-1].m + f * (eff_arr[i].m - eff_arr[i-1].m);
   return m;
 }
+
+#ifndef SWE_UPSTREAM_COMPAT
+/* meff()'s slope dm/dr on the segment of its table meff(r) interpolates
+ * on (Upstream bug 74) */
+static double meff_slope(double r)
+{
+  int i;
+  if (r <= 0 || r >= 1)
+    return 0.0;
+  for (i = 0; eff_arr[i].r > r; i++)
+    ;	/* empty body */
+  return (eff_arr[i].m - eff_arr[i-1].m) / (eff_arr[i].r - eff_arr[i-1].r);
+}
+#endif
 
 static void denormalize_positions(double *x0, double *x1, double *x2) 
 {

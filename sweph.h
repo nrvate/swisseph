@@ -936,6 +936,10 @@ struct epsilon {
  *     deg/day (NaN as a context's first request) and its sidereal
  *     longitude by the ayanamsa's change since then (0.14 deg ten years
  *     on; UPSTREAM-BUGS 86, G85)
+ *   - deflect_light_from() took the deflection's rate as its change over
+ *     the 5e-7 day before t, one-sided, off by half that step times its
+ *     curvature behind the Sun's disc (1.9e-6 deg/day on Zeus and 1.8e-6
+ *     on Isis-Transpluto 0.005 deg from the centre; UPSTREAM-BUGS 74, G73)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

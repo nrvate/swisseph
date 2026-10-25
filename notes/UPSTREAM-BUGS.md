@@ -109,6 +109,7 @@ worst were in code that had never executed even once.
 | 73 | The Moon's speed is not the rate of its position: the site's turning, the files' TDB rate, the light-time velocity, the aberration's shift rate | Correctness | `sweph.c`, `swejpl.c`, `swephlib.c` |
 | 76 | A fixed star's aberration rate takes the Earth's acceleration half a step back | Correctness | `sweph.c` |
 | 72 | The interpolated perigee's light-time estimate takes one pass, not two (this fork's) | Correctness | `sweph.c` |
+| 74 | The light deflection's rate is a one-sided step, off by the deflection's curvature behind the Sun's disc | Correctness | `sweph.c` |
 | 75 | The true node's and osculating apogee's speeds divide by the step asked for, not the step taken | Correctness | `sweph.c` |
 | 71 | Every other cache emptied by an instant of 0 answers for JD 0, and sweph()'s forced EMB is the Earth there | Correctness | `sweph.c`, `sweconfig.c`, `sweph.h` |
 | 78 | The planets' light time is solved along a straight line, and the Earth's and the Sun's light times have no rate | Correctness | `sweph.c` |
@@ -3696,6 +3697,62 @@ mas); the upstream build fails 68 of 73. G24 `intp_lighttime_off`: the
 same at JD 2486223.6015625, 4.5e-9 mas shipped, 91 compat (4.4e-3 with
 one pass). Baselines: interpolated-perigee positions move by up to
 0.005 mas, their speeds by 1.8e-7 deg/day.
+
+## 74. The light deflection's rate is a one-sided step, off by the deflection's curvature behind the Sun's disc
+
+**Severity: Correctness (up to 1.9e-6 deg/day on a body's speed behind the Sun's disc: Zeus and Isis-Transpluto 0.005 deg from its centre; 4e-7 at 0.03 deg, 3e-8 at 0.1, nothing outside the disc)**
+**Where:** `sweph.c`: `deflect_light_from()` (`swi_deflect_light()`, the fixed stars, `swe_calc_pctr()`)
+
+The deflection's speed is its change over the 5e-7 day before t, one
+step back, so it is off by half that step times the deflection's second
+derivative. Outside the disc that is nothing (3e-9 deg/day at the limb).
+Behind it the deflection, 1.75" m(r)/r at r solar radii from the centre
+(m from `meff()`'s table), turns about the centre at v/b, b the separation
+and v the body's speed relative to the Sun, so it curves at ~D v^2 / b^2:
+Isis-Transpluto (2025-09-21, relative 1.0 deg/day) 1.8e-6 deg/day at 0.005
+deg, 1.2e-6 at 0.01, 5.7e-7 at 0.02, 2.5e-8 at 0.1; Zeus (1960) 1.9e-6;
+Venus (2016-06-06, relative 0.25 deg/day) 3.8e-8 at 0.01 deg. The bug 81
+agent's numbers are this defect: Zeus at year 0 (0.66 R) 5.2e-9 / 7.9e-9
+deg/day in longitude / latitude, Zeus in 1960 (0.17 R) 9.4e-8, Isis in
+year 170 1.1e-8; after, <= 3e-10 at each (five points over 2^-12..2^-14
+day). A star behind the disc
+the same: delta Gem (0.18 deg from the centre, 2025) 1.0e-8, after
+3e-10.
+
+The errors first reported for this item, 3.8e-4 deg/day for Isis at
+0.065 deg, 6.7e-3 at 0.005, 1.4e-4 for Vulcanus at 0.1, 9e-7 for Admetos
+and 4e-7 for Uranus near the limb, are not the library's: five-point
+references over 2^-12 day whose stencils straddle a node of `meff()`'s
+table or the limb. `meff()` interpolates linearly between nodes 0.01
+solar radii apart, so the deflected position's slope breaks at each
+(4e-6 deg/day for Isis at r = 0.9), and no central difference across a
+break is a rate; with the stencil inside one cell, or at 2^-15 day, they
+are the 1e-9..2e-6 above. The positions themselves are the model's and
+unchanged.
+
+**Fix, as done here:** the rate is the displacement's derivative,
+d/dt [ru g1/g2 (uq e - ue q)], through the rates of u, e and q (the
+ones the step extrapolated along: the body's geocentric velocity, the
+observer's and the Sun's) and, inside the disc, `meff()`'s slope on the
+table cell r is in (new `meff_slope()`), with r = |u x e| re / R_sun and
+its rate. The speed is the rate of the returned position on r's side of
+a node, everywhere. Positions are bit-identical (seven bodies, 49
+instants near their conjunctions, with and without SEFLG_SPEED). G44's spreads fall (Venus
+5.6e-10 -> 3.2e-10). `bench`: calc-swieph 0.5537 s against 0.5560 before,
+calc-moseph 1.0303 against 1.0432 (minima of eight interleaved runs): the
+derivative costs no more than the second evaluation it replaces.
+
+G73 `tests/defldisc.c`: the conjunctions with the Sun of Isis-Transpluto,
+Vulcanus, Admetos, Zeus, Uranus, Venus and Mercury; the instants before
+and after at which each is 0.005..1 deg from the centre and 0.998 / 1.002
+of the radius, on the 2^-15-day grid, moved off any table node or the
+limb inside the stencil; the deflection's part of the longitude and
+latitude speeds (less the SEFLG_NOGDEFL speed) against a five-point
+difference of the deflection over 2^-14 day within 5e-9 deg/day, measured
+<= 1.1e-9. The build before the fix fails 76 of the 248 speeds (1.9e-6),
+the upstream build 164 (1.4e-5, entry 39 as well). G24
+`defl_disc_rate_off`: Isis 0.005 deg from the centre, 5.2e-11 deg/day
+shipped, 5.95e-6 compat. G44, G49, G51, G76 pass.
 
 ## 77. `swe_calc_pctr()` reads its bodies at the rounded instant, its aberration rate is the centre's whole velocity change over the light time, it deflects as seen from the Earth, and its light time stops short of its fixed point
 
