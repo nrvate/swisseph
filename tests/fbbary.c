@@ -72,6 +72,14 @@
  *      Mars barycentric answered at the instant, refused at 1500, where it
  *      falls to Moshier (it answered Moshier's heliocentric points plus the
  *      files' Sun of the call before), and at the instant again bit for bit;
+ *      after the first, at 1500, Mars geocentric and topocentric under
+ *      SEFLG_NOGDEFL and the Moon's heliocentric mean points bit for bit the
+ *      Moshier request's in a fresh process, Mars geocentric within 1e-7
+ *      deg of it (UPSTREAM-BUGS 168: they added the files' Sun of the call
+ *      before, 0.13 deg on Mars's node and 0.40 on the Moon's, and placed
+ *      the site by the files' delta t, 2.9e-4 deg on the Moon's perigee;
+ *      with the deflection 3.0e-8 deg remain, the deflection's own reading
+ *      of the save area's Sun);
  *  (g) swe_nod_aps() and swe_nod_aps_ut() barycentric, every method and
  *      body class: the Sun, the Moon, Mercury, Mars, Saturn, Pluto and the
  *      Earth, mean, osculating, SE_NODBIT_OSCU_BAR, SE_NODBIT_FOPOINT and
@@ -97,7 +105,7 @@
  *      Moon SEFLG_MOSEPH within 1e-6 deg of the complete directory's, Mars
  *      from Jupiter its answer bit for bit, strict bug 120's refusal of
  *      the two and the complete directory's answer for the rest.
- * Measured: 1080 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
+ * Measured: 1088 checks, none fail; (e)'s Moon 5.2e-7 deg off the files',
  * swe_nod_aps()'s Moon points 6.4e-9 deg (mean) and 2.1e-5 deg
  * (osculating), swe_calc_pctr()'s Moon 2.1e-7 deg.
  * Before bug 139's fix 72 of the first 368 failed: the 60 fallback calls
@@ -118,7 +126,9 @@
  * term the missing Moon file changes). UPSTREAM-BUGS 167 adds the Sun's 8
  * geocentric rows of (h): they fail before its fix, and in the upstream
  * build, which fails 296 with them, 288 without, on the tests' compat
- * objects.
+ * objects. UPSTREAM-BUGS 168 adds 4 to each (f) of the files of
+ * 1800-2400: before its fix and in the upstream build those 8 fail (the
+ * upstream build 304 in all).
  * Run as
  *   fbbary EPHEDIR
  */
@@ -396,15 +406,35 @@ static int warm(int32 eph, double jd)
  * swe_nod_aps() of Mars barycentric answered at jd, refused at 1500 (it
  * falls to Moshier there; it was answered with Moshier's heliocentric
  * points plus the files' Sun of the call before), and at jd again the
- * first answer bit for bit (bug 149); returns the failures */
+ * first answer bit for bit (bug 149); after the first, W18's calls at
+ * 1500, fallen to Moshier, answered as the Moshier request in a fresh
+ * process (W18REF): bit for bit without the deflection, within 1e-7 deg
+ * with it (bug 168: they added the files' Sun the call at jd left, and
+ * placed the site by the files' delta t); returns the failures */
+#define NW18 4
+static const struct cs W18[NW18] = {
+  {"nod_aps Mars, NOGDEFL", NODAPS, SE_MARS, SE_NODBIT_OSCU, SEFLG_SPEED | SEFLG_NOGDEFL},
+  {"nod_aps Mars, topo., NOGDEFL", NODAPS, SE_MARS, SE_NODBIT_OSCU,
+   SEFLG_SPEED | SEFLG_NOGDEFL | SEFLG_TOPOCTR},
+  {"nod_aps Moon mean, hel.", NODAPS, SE_MOON, SE_NODBIT_MEAN, SEFLG_SPEED | SEFLG_HELCTR},
+  {"nod_aps Mars", NODAPS, SE_MARS, SE_NODBIT_OSCU, SEFLG_SPEED},
+};
+static struct ans W18REF[NW18];
 static int warm18(double jd)
 {
   static const struct cs nb = {"nod_aps Mars", NODAPS, SE_MARS, SE_NODBIT_OSCU, BS};
   struct ans a, b, c;
-  int bad = 0;
+  int bad = 0, k;
   setup(DIR18, 1, SEFLG_SWIEPH);
+  swe_set_topo(8.55, 47.37, 400);
   ask(&nb, nb.fl | SEFLG_SWIEPH, jd, &a);
   bad += !(a.r == 0);
+  for (k = 0; k < NW18; k++) {
+    ask(&W18[k], W18[k].fl | SEFLG_SWIEPH, 2268923.5, &b);
+    b.ran = 1;
+    bad += !(W18REF[k].ran && b.r == W18REF[k].r
+             && (k < NW18 - 1 ? same(&b, &W18REF[k]) : nodaps_off(&b, &W18REF[k]) <= 1e-7));
+  }
   ask(&nb, nb.fl | SEFLG_SWIEPH, 2268923.5, &b);
   bad += !(b.r < 0 && strcmp(b.serr, BARYMSG) == 0);
   ask(&nb, nb.fl | SEFLG_SWIEPH, jd, &c);
@@ -412,7 +442,7 @@ static int warm18(double jd)
   swe_close();
   return bad;
 }
-#define NWARM18 3
+#define NWARM18 (3 + NW18)
 
 static int warm_child(int32 eph, double jd, int at18)
 {
@@ -671,6 +701,8 @@ int main(int argc, char **argv)
                eph == SEFLG_JPLEPH ? "JPL" : "Swiss", jd, k, NWARM);
       }
       if (eph == SEFLG_SWIEPH) {
+        for (k = 0; k < NW18; k++)
+          child(DIR18, 0, SEFLG_MOSEPH, &W18[k], 2268923.5, &W18REF[k]);
         k = warm_child(eph, jd, 1);
         nwarm += NWARM18;
         nrow += NWARM18;

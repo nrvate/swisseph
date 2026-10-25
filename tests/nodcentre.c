@@ -1,7 +1,7 @@
 /* nodcentre.c -- G143: swe_nod_aps()'s change of centre is the one its
  * points are in.
  *
- * The defect. UPSTREAM-BUGS 167: the Sun's geocentric points are the
+ * The defects. UPSTREAM-BUGS 167: the Sun's geocentric points are the
  * Earth's orbit seen from the Sun and negated, so swe_nod_aps() takes the
  * Sun for the observer: the barycentric Sun, the files' points being made
  * barycentric. On Moshier, whose points stay heliocentric, the test
@@ -10,27 +10,43 @@
  * AU, the apogee 191.4583 deg at 0.0531 AU, for the files' 282.9417 deg at
  * 0.9833 AU and 102.9417 deg at 1.0167 AU; every method, SEFLG_TOPOCTR the
  * site added (its speeds 1.3e-2 deg/day off their positions' rate).
+ * UPSTREAM-BUGS 168: it read the ephemeris bits as the caller gave them,
+ * not as swe_calc() resolves them (JPL, then Swiss, then Moshier):
+ * SEFLG_SWIEPH | SEFLG_MOSEPH, answered from the files, took Moshier's
+ * frame, Mars's geocentric node 69.7303 deg for 69.8382 and the
+ * barycentric one the heliocentric; JPLEPH | MOSEPH on de200 turned the
+ * osculating ellipse by the frame bias, which swi_get_denum() gives
+ * Moshier (Mars's node 1.5e-4 deg off). (The same entry's fallback, the
+ * frame and site of the ephemeris that answered, is G133's (f).)
  *
- * The check, the Swiss files and Moshier, seven instants -3000..3000:
- *  (a) the Sun's geocentric and topocentric perigee and apogee against the
- *      Earth's heliocentric points of the same ephemeris and method
- *      (method 0, mean, osculating, SE_NODBIT_OSCU_BAR, mean and
- *      osculating with SE_NODBIT_FOPOINT): each the Earth's at its own
- *      distance (within 1e-12 AU) and in the direction of the opposite one
- *      (the perigee the aphelion's, the apogee or focal point the
- *      perihelion's; within 1e-5 deg, the deflection, which takes the
- *      distance, the difference); Moshier's mean points the files' within
- *      1e-5 deg and 1e-12 AU (the elements are the same; the files'
- *      observer moves with the Sun's barycentric velocity); and Moshier's
- *      mean points' speeds, geocentric and topocentric, against five-point
- *      differences of their positions over 2^-6 day at binary instants,
- *      within 1e-10 deg/day and 1e-12 AU/day.
- * Measured: distance 4.4e-16 AU, direction 7.6e-7 deg (the focal point,
- * 0.03 AU out), Moshier's mean points 2.9e-6 deg and 2.2e-16 AU off the
- * files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day. Before the fix
- * the 168 Moshier rows of (a)'s first check fail (143 deg, 0.97 AU), the 14
- * of its second and 7 of the third's 14 (the topocentric). The upstream
- * build fails the same. Run as
+ * The check, the complete directory:
+ *  (a) the Swiss files and Moshier, seven instants -3000..3000: the Sun's
+ *      geocentric and topocentric perigee and apogee against the Earth's
+ *      heliocentric points of the same ephemeris and method (method 0,
+ *      mean, osculating, SE_NODBIT_OSCU_BAR, mean and osculating with
+ *      SE_NODBIT_FOPOINT): each the Earth's at its own distance (within
+ *      1e-12 AU) and in the direction of the opposite one (the perigee the
+ *      aphelion's, the apogee or focal point the perihelion's; within 1e-5
+ *      deg, the deflection, which takes the distance, the difference);
+ *      Moshier's mean points the files' within 1e-5 deg and 1e-12 AU (the
+ *      elements are the same; the files' observer moves with the Sun's
+ *      barycentric velocity); and Moshier's mean points' speeds,
+ *      geocentric and topocentric, against five-point differences of
+ *      their positions over 2^-6 day at binary instants, within 1e-10
+ *      deg/day and 1e-12 AU/day;
+ *  (b) SEFLG_SWIEPH | SEFLG_MOSEPH against SEFLG_SWIEPH, and SEFLG_JPLEPH
+ *      with SEFLG_MOSEPH, SEFLG_SWIEPH or both against SEFLG_JPLEPH
+ *      (de200): the Sun, the Moon, Mars, Saturn and the Earth, mean,
+ *      osculating and SE_NODBIT_OSCU_BAR, geocentric, topocentric,
+ *      heliocentric and barycentric, 2000 Jul 1.5 and 1900 Jan 0.75, the
+ *      return and the four points bit for bit.
+ * Measured: (a) distance 4.4e-16 AU, direction 7.6e-7 deg (the focal
+ * point, 0.03 AU out), Moshier's mean points 2.9e-6 deg and 2.2e-16 AU off
+ * the files', their speeds 2.9e-12 deg/day and 2.9e-14 AU/day; (b) 0.
+ * 837 rows. Before bug 167's fix the 168 Moshier rows of (a)'s first
+ * check fail (143 deg, 0.97 AU), the 14 of its second and 7 of the
+ * third's 14 (the topocentric); before bug 168's, 340 of (b)'s 480 (12
+ * deg). The upstream build (SWE_UPSTREAM_COMPAT) fails 613. Run as
  *   nodcentre EPHEDIR
  */
 #include <math.h>
@@ -138,6 +154,55 @@ static void part_a(void)
          wr, wd, wm, wmr, ws, wsr);
 }
 
+/* (b) the ephemeris bits resolved as swe_calc() resolves them, bug 168:
+ * SEFLG_SWIEPH | SEFLG_MOSEPH answers as SEFLG_SWIEPH, SEFLG_JPLEPH with
+ * either or both as SEFLG_JPLEPH, return and points bit for bit */
+static void part_b(void)
+{
+  static const int ipl[5] = {SE_SUN, SE_MOON, SE_MARS, SE_SATURN, SE_EARTH};
+  static const int32 M[3] = {SE_NODBIT_MEAN, SE_NODBIT_OSCU, SE_NODBIT_OSCU_BAR};
+  static const int32 C[4] = {0, SEFLG_TOPOCTR, SEFLG_HELCTR, SEFLG_BARYCTR};
+  static const int32 MIX[4][2] = {
+    {SEFLG_SWIEPH | SEFLG_MOSEPH, SEFLG_SWIEPH}, {SEFLG_JPLEPH | SEFLG_MOSEPH, SEFLG_JPLEPH},
+    {SEFLG_JPLEPH | SEFLG_SWIEPH, SEFLG_JPLEPH}, {SEFLG_JPLEPH | SEFLG_SWIEPH | SEFLG_MOSEPH, SEFLG_JPLEPH}};
+  static const double JD[2] = {2451727.0, 2415020.25};
+  double a[24], b[24], w = 0;
+  char sa[AS_MAXCH], sb[AS_MAXCH], what[160];
+  int ib, im, ic, ix, id, ut;
+  for (ut = 0; ut < 1; ut++)
+    for (ix = 0; ix < 4; ix++)
+      for (id = 0; id < 2; id++)
+        for (ib = 0; ib < 5; ib++)
+          for (im = 0; im < 3; im++)
+            for (ic = 0; ic < 4; ic++) {
+              int32 fa = MIX[ix][0] | SEFLG_SPEED | C[ic], fb = MIX[ix][1] | SEFLG_SPEED | C[ic], ra, rb;
+              int k, same;
+              double d = 0;
+              if (ut && (ipl[ib] == SE_SUN || ipl[ib] == SE_SATURN || ipl[ib] == SE_EARTH || im == 2))
+                continue;
+              memset(a, 0, sizeof a);
+              memset(b, 0, sizeof b);
+              if (ut) {
+                ra = swe_nod_aps_ut(JD[id], ipl[ib], fa, M[im], a, a + 6, a + 12, a + 18, sa);
+                rb = swe_nod_aps_ut(JD[id], ipl[ib], fb, M[im], b, b + 6, b + 12, b + 18, sb);
+              } else {
+                ra = swe_nod_aps(JD[id], ipl[ib], fa, M[im], a, a + 6, a + 12, a + 18, sa);
+                rb = swe_nod_aps(JD[id], ipl[ib], fb, M[im], b, b + 6, b + 12, b + 18, sb);
+              }
+              for (k = 0; k < 4; k++)
+                if (dir_off(a, k, b, k) > d)
+                  d = dir_off(a, k, b, k);
+              if (d > w)
+                w = d;
+              same = ra == rb && memcmp(a, b, sizeof a) == 0;
+              snprintf(what, sizeof what, "%s body %d method %d centre %d jd %.2f, flags %d against %d: ret %d %d, deg",
+                       ut ? "swe_nod_aps_ut" : "swe_nod_aps", ipl[ib], (int) M[im], (int) C[ic], JD[id],
+                       (int) MIX[ix][0], (int) MIX[ix][1], ra, rb);
+              check(same && rb == 0, "b", what, d, 0);
+            }
+  printf("  (b) mixed ephemeris bits against the ephemeris that answers: %.2e deg\n", w);
+}
+
 int main(int argc, char **argv)
 {
   if (argc != 2) {
@@ -146,8 +211,10 @@ int main(int argc, char **argv)
   }
   swe_set_ephe_path(argv[1]);
   swe_set_topo(8.55, 47.37, 400);
+  swe_set_jpl_file("de200.eph");
   printf("G143: swe_nod_aps()'s change of centre is the one its points are in\n");
   part_a();
+  part_b();
   printf("  rows %d, failed %d\n", nrow, nbad);
   printf(nbad ? "G143 FAIL: %d\n" : "G143 PASS\n", nbad);
   return nbad ? 1 : 0;

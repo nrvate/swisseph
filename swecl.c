@@ -5525,8 +5525,8 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   const double *ep;
   double Gmsm, dzmin;
 #ifndef SWE_UPSTREAM_COMPAT
-  int32 retc0 = 0, retcs = 0, eph_asked;
-  AS_BOOL out_bary;
+  int32 retc0 = 0, retcs = 0, eph_asked, iflag_ctr = iflag;
+  AS_BOOL out_bary, mosh_ctr = FALSE;
 #endif
   double rxy, rxyz, fac, sgn;
   double sinnode, cosnode, sinincl, cosincl, sinu, cosu, cosE, cosE2;
@@ -5552,6 +5552,16 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
    * no nutation"), UPSTREAM-BUGS 47 */
   if (iflag & SEFLG_J2000)
     iflag |= SEFLG_NONUT;
+  /* Upstream bug 168: and one ephemeris bit, by plaus_iflag()'s
+   * precedence (JPL, then Swiss, then Moshier). Its calls resolved the
+   * bits so, but the tests here (SEFLG_MOSEPH, below) and those it passes
+   * them to did not: swi_get_denum() reads Moshier first, so JPLEPH |
+   * MOSEPH on de200, answered from DE200, turned the osculating ellipse
+   * by the frame bias of DE >= 403 in swi_plan_for_osc_elem(): Mars's node
+   * at 2000 Jul 1.5 1.5e-4 deg off the JPLEPH request's. */
+  if (iflag & SEFLG_EPHMASK)
+    iflag = (iflag & ~SEFLG_EPHMASK) | ((iflag & SEFLG_JPLEPH) ? SEFLG_JPLEPH
+            : (iflag & SEFLG_SWIEPH) ? SEFLG_SWIEPH : SEFLG_MOSEPH);
 #endif
   /* function calls for Pluto with asteroid number 134340
    * are treated as calls for Pluto as main body SE_PLUTO */
@@ -6102,13 +6112,37 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
   if (out_bary && swi_refuse_mosh_bary(ctx, eph_asked,
                                        (retcs & SEFLG_EPHMASK) | SEFLG_BARYCTR, tjd_et, serr))
     return nodaps_refuse(xnasc, xndsc, xperi, xaphe);
+  /* Upstream bug 168: the change of centre below read the caller's
+   * ephemeris, not the one that answered: Moshier's frame (the Sun its
+   * origin, no barycentric Sun added) from SEFLG_MOSEPH, the topocentric
+   * site from the asked ephemeris's delta t. A Swiss or JPL request fallen
+   * to Moshier added the save area's Sun and took it for the heliocentric
+   * observer, zero in a fresh process but another call's Swiss Sun in a
+   * warm one (the files of 1800-2400 alone, after a call at 2000: Mars's
+   * geocentric osculating node at 1500 Jan 1 4.3236 deg for Moshier's
+   * 4.4536, the Moon's heliocentric mean node 99.7972 for 100.1993), and
+   * placed the site by the files' delta t (the Moon's topocentric mean
+   * perigee there 2.9e-4 deg off Moshier's, fresh or warm); and SEFLG_SWIEPH
+   * | SEFLG_MOSEPH, answered from the files, took Moshier's frame: Mars's
+   * geocentric node at 2000 Jul 1.5 69.7303 deg for 69.8382, the
+   * barycentric one the heliocentric 49.5625 for 49.6398 (its bits are one
+   * now, above). Now both are those of the Earth and the Sun the call
+   * above has set, the ephemeris of the save area's Earth: a Moon from
+   * Moshier on the files' Earth, the Moon file alone missing, keeps the
+   * files' frame and site, as swe_calc() computes it. */
+  mosh_ctr = pedp->iephe == SEFLG_MOSEPH;
+  iflag_ctr = (iflag & ~SEFLG_EPHMASK) | (pedp->iephe & SEFLG_EPHMASK);
 #endif
   /***********************
    * position of observer
    ***********************/
   if (iflag & SEFLG_TOPOCTR) {
     /* geocentric position of observer */
+#ifndef SWE_UPSTREAM_COMPAT
+    if (swi_get_observer(ctx, tjd_et, iflag_ctr, FALSE, xobs, serr) != OK)	/* bug 168 */
+#else
     if (swi_get_observer(ctx, tjd_et, iflag, FALSE, xobs, serr) != OK)
+#endif
       return ERR;
     /*for (i = 0; i <= 5; i++)
       xobs[i] = ctx->topd.xobs[i];*/
@@ -6117,7 +6151,11 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
       xobs[i] = 0;
   }
   if (iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)) {
+#ifndef SWE_UPSTREAM_COMPAT
+    if ((iflag & SEFLG_HELCTR) && !mosh_ctr)	/* bug 168 */
+#else
     if ((iflag & SEFLG_HELCTR) && !(iflag & SEFLG_MOSEPH))
+#endif
       for (i = 0; i <= 5; i++)
         xobs[i] = xsun[i];
 #ifndef SWE_UPSTREAM_COMPAT
@@ -6134,7 +6172,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
      * deg for the mean perigee (the files' observer moving with the Sun's
      * barycentric velocity, aberration that Moshier's lacks). */
     for (i = 0; i <= 5; i++)
-      xobs[i] = (iflag & SEFLG_MOSEPH) ? 0 : xsun[i];
+      xobs[i] = mosh_ctr ? 0 : xsun[i];
 #else
   } else if (ipl == SE_SUN && !(iflag & SEFLG_MOSEPH)) {
     for (i = 0; i <= 5; i++)
@@ -6224,7 +6262,11 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
       for (i = 0; i <= 5; i++)
         xp[i] += xear[i];
     } else {
+#ifndef SWE_UPSTREAM_COMPAT
+      if (!mosh_ctr && !ellipse_is_bary)	/* bug 168 */
+#else
       if (!(iflag & SEFLG_MOSEPH) && !ellipse_is_bary)
+#endif
         for (j = 0; j <= 5; j++)
           xp[j] += xsun[j];
     }
@@ -6288,14 +6330,18 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
             xobs2[i] = 0;
         }
         if (iflag & (SEFLG_HELCTR | SEFLG_BARYCTR)) {
+#ifndef SWE_UPSTREAM_COMPAT
+          if ((iflag & SEFLG_HELCTR) && !mosh_ctr)	/* bug 168 */
+#else
           if ((iflag & SEFLG_HELCTR) && !(iflag & SEFLG_MOSEPH))
+#endif
             for (i = 0; i <= 5; i++)
               xobs2[i] = xsun[i];
 #ifndef SWE_UPSTREAM_COMPAT
         } else if (ipl == SE_SUN) {
           /* bug 167: the Sun, Moshier's origin, as above */
           for (i = 0; i <= 5; i++)
-            xobs2[i] = (iflag & SEFLG_MOSEPH) ? 0 : xsun[i];
+            xobs2[i] = mosh_ctr ? 0 : xsun[i];
 #else
         } else if (ipl == SE_SUN && !(iflag & SEFLG_MOSEPH)) {
           for (i = 0; i <= 5; i++)
@@ -6365,7 +6411,7 @@ static int32 swe_nod_aps_r_body(swe_ctx *ctx, double tjd_et, int32 ipl, int32 if
           double acc[3], xa[2][6], oa[6], d[2][3];
           int sg;
           if (rate34) {
-            if (swi_observer_accel_lt(ctx, tjd_et, tjd_et - dt, iflag, xear, xsun, xe1, acc, serr) != OK)
+            if (swi_observer_accel_lt(ctx, tjd_et, tjd_et - dt, iflag_ctr, xear, xsun, xe1, acc, serr) != OK)
               return ERR;
           } else {
             for (i = 0; i <= 2; i++)

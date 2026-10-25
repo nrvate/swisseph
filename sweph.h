@@ -1355,6 +1355,12 @@ struct epsilon {
  *     Earth, not the Sun: the mean perigee at 2000 Jul 1.5 281.4259 deg at
  *     1.9993 AU for the files' 282.9417 deg at 0.9833 AU, every method
  *     (UPSTREAM-BUGS 167, G143)
+ *   - swe_nod_aps() taking its frame and site from the caller's ephemeris
+ *     bits: warm, a request fallen to Moshier adding an earlier call's
+ *     Swiss Sun (Mars's node 0.13 deg off Moshier's), the site the files'
+ *     delta t; SEFLG_SWIEPH | SEFLG_MOSEPH answered from the files in
+ *     Moshier's frame (0.108 deg), JPLEPH | MOSEPH with Moshier's frame
+ *     bias (UPSTREAM-BUGS 168, G143, G133)
  *
  * Anything added here needs a check-compat case, or the switch rots into a
  * macro that silently does nothing.

@@ -200,6 +200,7 @@ worst were in code that had never executed even once.
 | 165 | With no JPL file set, a JPLEPH delta t knows no DE number and takes the default tidal term, and the calculation after it opens the default file, de431.eph, by its name (or its fallback de406.eph): with a de431.eph that is de200.eph the first UT JPL Moon in AD 1700 40.0057507520 deg and the second 40.0039614086 in a fresh process, the JPLEPH delta t 14.286718 s before a JPL calculation and 3.012003 after one | Correctness (behaviour) | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h` |
 | 166 | Without the moon files the Swiss files' tidal term is the default, -25.80 (DE431's), not the planet files' DE number's (DE441, -25.936): delta t in AD 1000 1463.430567 s for 1474.717432, 0.037 s at 1900, the heliocentric Mars 2.6e-7 deg off at 1900 and 5.8e-5 in AD 1000, the mean apogee 4.9e-8 at 1900 -- on every thread and context | Correctness | `sweph.c`, `swephlib.c`, `sweconfig.c`, `sweph.h`, `sweconfig.h` |
 | 167 | `swe_nod_aps()` on Moshier takes the Earth for the observer of the Sun's geocentric points, not the Sun: the mean perigee at 2000 Jul 1.5 281.4259 deg at 1.9993 AU, the apogee 191.4583 deg at 0.0531 AU, where the files' are 282.9417 deg at 0.9833 AU and 102.9417 deg at 1.0167 AU; every method, SEFLG_TOPOCTR too | Correctness (behaviour) | `swecl.c` |
+| 168 | `swe_nod_aps()` takes its frame and site from the caller's ephemeris bits, not from the ephemeris that answered or as `swe_calc()` resolves them: warm, a request fallen to Moshier adds an earlier call's Swiss Sun (Mars's node at 1500 0.13 deg off Moshier's, the Moon's heliocentric 0.40 deg), the site takes the files' delta t (2.9e-4 deg on the Moon's topocentric perigee); SEFLG_SWIEPH with SEFLG_MOSEPH, answered from the files, takes Moshier's frame (0.108 deg), SEFLG_JPLEPH with SEFLG_MOSEPH Moshier's frame bias (1.5e-4 deg) | Correctness (behaviour) | `swecl.c` |
 
 ---
 
@@ -11422,6 +11423,76 @@ flag Swiss, from the Sun). 1080 rows pass; the compat build fails 296.
 G24 `nodaps_mosh_sun_off`: the Sun's mean perigee on Moshier at 2000 Jul
 1.5, its distance less the Earth's heliocentric perihelion distance: 0
 shipped, 1.02 AU compat.
+
+## 168. `swe_nod_aps()` takes its frame and site from the caller's ephemeris bits, not from the ephemeris that answered
+
+**Severity: Correctness (behaviour: a wrong answer, returned OK, that depends on call order or on a redundant flag bit; Mars's node 0.13 deg off on a warm fallback, 0.108 deg under SEFLG_SWIEPH | SEFLG_MOSEPH), both builds**
+**Where:** `swecl.c`: `swe_nod_aps_r_body()`, and through it `swe_nod_aps_ut()`
+
+Found by entry 149's work. `swe_nod_aps()` builds its points
+heliocentric and moves them to the centre asked with the save area's Sun
+and Earth: on the files, it adds the barycentric Sun and takes the
+barycentric Sun or Earth for the observer; on Moshier, whose origin is the
+Sun, it adds nothing and the heliocentric observer is the origin. It chose
+between the two by the caller's SEFLG_MOSEPH, and placed a topocentric
+site by the delta t of the caller's ephemeris bits, where `swe_calc()`
+resolves the bits (JPL, then Swiss, then Moshier) and, after a fallback,
+goes on with the ephemeris that answered:
+- A Swiss or JPL request fallen to Moshier, the fallback allowed, added
+  the save area's Sun to Moshier's heliocentric points and took it for
+  the heliocentric observer: zero in a fresh process (the answer was
+  Moshier's), another call's Swiss Sun in a warm one. The files of
+  1800-2400 alone, after Mars's points at 2000 Jul 1.5, Mars's geocentric
+  osculating node at 1500 Jan 1 came out 4.3236 deg, latitude 9.1e-3, for
+  Moshier's 4.4536 and 1.4e-4 (0.13 deg); the Moon's heliocentric mean
+  node 99.7972 deg for 100.1993 (0.40). The site took the files' delta t
+  for Moshier's places, fresh or warm: the Moon's topocentric mean perigee
+  there 2.9e-4 deg off Moshier's, Mars's 3.3e-7.
+- SEFLG_SWIEPH | SEFLG_MOSEPH, answered from the files, took Moshier's
+  frame: Mars's geocentric osculating node at 2000 Jul 1.5 69.7303 deg for
+  the SEFLG_SWIEPH request's 69.8382, the barycentric node the
+  heliocentric 49.5625 for 49.6398, the heliocentric points without the
+  aberration the files' carry (3e-6 deg). And the bits went on, unresolved,
+  to `swi_plan_for_osc_elem()`, whose `swi_get_denum()` reads SEFLG_MOSEPH
+  first: SEFLG_JPLEPH | SEFLG_MOSEPH on de200, answered from DE200, turned
+  the osculating ellipse by the frame bias of DE >= 403, Mars's node 1.5e-4
+  deg off the SEFLG_JPLEPH request's (1.6e-4 heliocentric).
+Both builds.
+
+**Fix, as done here:**
+- One ephemeris bit at the top, by `plaus_iflag()`'s precedence, as
+  `swe_calc()` resolves them; no bit stays no bit.
+- After the call that sets the save area's Sun and Earth, the frame (the
+  barycentric Sun added, the heliocentric observer, the Sun's observer of
+  entry 167) and the topocentric site's delta t (and the site's
+  acceleration in the aberration's rate) are those of the ephemeris of the
+  save area's Earth, the one that answered. A Moon from Moshier on the
+  files' Earth, the Moon files alone missing (SEFLG_MOSEPH in its flag,
+  entry 120), keeps the files' frame and site, as `swe_calc()` computes it.
+- Now the mixed bits answer as the ephemeris they resolve to, return and
+  points bit for bit; the warm fallback as the Moshier request in a fresh
+  process, bit for bit under SEFLG_NOGDEFL, geocentric, topocentric and
+  heliocentric. With the deflection Mars's points stay 3.0e-8 deg off:
+  `deflect_light_from()` (sweph.c) takes the save area's barycentric Sun on
+  Moshier too, the stale one here, as `swe_calc()`'s own Mars on the same
+  warm fallback (1.7e-9 deg); not this entry's.
+- Behind `#ifndef SWE_UPSTREAM_COMPAT`: upstream answers so. No hot path.
+
+G143 `tests/nodcentre.c` (b): SEFLG_SWIEPH | SEFLG_MOSEPH against
+SEFLG_SWIEPH, and SEFLG_JPLEPH with SEFLG_MOSEPH, SEFLG_SWIEPH or both
+against SEFLG_JPLEPH (de200), five bodies, three methods, four centres, two
+instants, the return and the points bit for bit: 480 rows pass; before the
+fix 340 fail (12 deg at most), the upstream build all 340 too (613 of
+G143's 837). G133 (f), the files of 1800-2400, warm after the call at the
+instant: four calls at 1500 against the Moshier request in a fresh
+process, Mars geocentric and topocentric under SEFLG_NOGDEFL and the
+Moon's heliocentric mean points bit for bit, Mars geocentric within 1e-7
+deg; 8 rows, failing before the fix and in the upstream build. 1088 pass
+(the compat build fails 304).
+
+G24 `nodaps_mixed_eph_off`: Mars's geocentric osculating node at 2000 Jul
+1.5, SEFLG_SWIEPH | SEFLG_MOSEPH against SEFLG_SWIEPH: 0 shipped, 0.108
+deg compat.
 
 ## How these were found
 
